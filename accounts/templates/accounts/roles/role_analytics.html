@@ -1,0 +1,440 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Analytics - {{ role.group.name }}{% endblock %}
+
+{% block extra_css %}
+<style>
+    .analytics-card {
+        border-radius: 12px;
+        transition: transform 0.3s ease;
+    }
+    .analytics-card:hover {
+        transform: translateY(-4px);
+    }
+    .chart-container {
+        position: relative;
+        height: 300px;
+    }
+    .stat-widget {
+        padding: 20px;
+        border-radius: 12px;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        text-align: center;
+    }
+    .stat-widget h3 {
+        font-size: 2.5rem;
+        margin-bottom: 0;
+    }
+    .timeline-item {
+        border-left: 3px solid {{ role.color_code }};
+        padding-left: 20px;
+        margin-bottom: 20px;
+        position: relative;
+    }
+    .timeline-item::before {
+        content: '';
+        position: absolute;
+        left: -7px;
+        top: 0;
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        background: {{ role.color_code }};
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <!-- Breadcrumb -->
+    <nav aria-label="breadcrumb" class="mb-4">
+        <ol class="breadcrumb">
+            <li class="breadcrumb-item"><a href="{% url 'role_list' %}">Roles</a></li>
+            <li class="breadcrumb-item"><a href="{% url 'role_detail' role.pk %}">{{ role.group.name }}</a></li>
+            <li class="breadcrumb-item active">Analytics</li>
+        </ol>
+    </nav>
+
+    <!-- Header -->
+    <div class="row mb-4">
+        <div class="col-md-8">
+            <h2 class="mb-2">
+                <i class="fas fa-chart-line me-2" style="color: {{ role.color_code }};"></i>
+                Analytics: {{ role.group.name }}
+            </h2>
+            <p class="text-muted">Performance metrics and usage insights</p>
+        </div>
+        <div class="col-md-4 text-end">
+            <a href="{% url 'role_detail' role.pk %}" class="btn btn-outline-secondary">
+                <i class="fas fa-arrow-left me-1"></i>
+                Back to Role
+            </a>
+        </div>
+    </div>
+
+    <!-- Key Metrics -->
+    <div class="row mb-4">
+        <div class="col-lg-3 col-md-6 mb-4">
+            <div class="analytics-card card shadow-sm border-0">
+                <div class="card-body stat-widget">
+                    <i class="fas fa-users fa-2x mb-2 opacity-75"></i>
+                    <h3>{{ role.user_count }}</h3>
+                    <p class="mb-0">Total Users</p>
+                    <small class="opacity-75">
+                        {{ active_users_count }} active
+                    </small>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-lg-3 col-md-6 mb-4">
+            <div class="analytics-card card shadow-sm border-0">
+                <div class="card-body stat-widget" style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);">
+                    <i class="fas fa-key fa-2x mb-2 opacity-75"></i>
+                    <h3>{{ role.permission_count }}</h3>
+                    <p class="mb-0">Permissions</p>
+                    <small class="opacity-75">
+                        Across {{ permissions_by_app|length }} modules
+                    </small>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-lg-3 col-md-6 mb-4">
+            <div class="analytics-card card shadow-sm border-0">
+                <div class="card-body stat-widget" style="background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);">
+                    <i class="fas fa-chart-line fa-2x mb-2 opacity-75"></i>
+                    <h3>{{ capacity_usage.percentage|floatformat:0 }}%</h3>
+                    <p class="mb-0">Capacity Used</p>
+                    <small class="opacity-75">
+                        {% if capacity_usage.maximum == 'Unlimited' %}
+                        Unlimited
+                        {% else %}
+                        {{ capacity_usage.available }} slots left
+                        {% endif %}
+                    </small>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-lg-3 col-md-6 mb-4">
+            <div class="analytics-card card shadow-sm border-0">
+                <div class="card-body stat-widget" style="background: linear-gradient(135deg, #fa709a 0%, #fee140 100%);">
+                    <i class="fas fa-history fa-2x mb-2 opacity-75"></i>
+                    <h3>{{ history_data|length }}</h3>
+                    <p class="mb-0">Changes (30d)</p>
+                    <small class="opacity-75">
+                        Last {{ timeline_days }} days
+                    </small>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+        <!-- User Status Distribution -->
+        <div class="col-lg-6 mb-4">
+            <div class="card analytics-card shadow-sm">
+                <div class="card-header bg-white">
+                    <h5 class="mb-0">
+                        <i class="fas fa-user-check me-2"></i>
+                        User Status Distribution
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div class="chart-container">
+                        <canvas id="userStatusChart"></canvas>
+                    </div>
+                    <div class="row mt-4 text-center">
+                        <div class="col-6">
+                            <h4 class="text-success">{{ active_users_count }}</h4>
+                            <small class="text-muted">Active Users</small>
+                        </div>
+                        <div class="col-6">
+                            <h4 class="text-danger">{{ inactive_users_count }}</h4>
+                            <small class="text-muted">Inactive Users</small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Permission Distribution -->
+        <div class="col-lg-6 mb-4">
+            <div class="card analytics-card shadow-sm">
+                <div class="card-header bg-white">
+                    <h5 class="mb-0">
+                        <i class="fas fa-chart-pie me-2"></i>
+                        Permissions by Module
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div class="chart-container">
+                        <canvas id="permissionDistributionChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Permission Types -->
+        <div class="col-lg-6 mb-4">
+            <div class="card analytics-card shadow-sm">
+                <div class="card-header bg-white">
+                    <h5 class="mb-0">
+                        <i class="fas fa-tasks me-2"></i>
+                        Permission Types Breakdown
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div class="chart-container">
+                        <canvas id="permissionTypesChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Activity Timeline -->
+        <div class="col-lg-6 mb-4">
+            <div class="card analytics-card shadow-sm">
+                <div class="card-header bg-white">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0">
+                            <i class="fas fa-clock me-2"></i>
+                            Recent Activity
+                        </h5>
+                        <a href="{% url 'role_history' role.pk %}" class="btn btn-sm btn-outline-primary">
+                            View All
+                        </a>
+                    </div>
+                </div>
+                <div class="card-body" style="max-height: 400px; overflow-y: auto;">
+                    {% if recent_history %}
+                    {% for entry in recent_history %}
+                    <div class="timeline-item">
+                        <div class="d-flex justify-content-between align-items-start">
+                            <div>
+                                <h6 class="mb-1">
+                                    {% if entry.action == 'created' %}
+                                    <i class="fas fa-plus-circle text-success me-1"></i>
+                                    {% elif entry.action == 'updated' %}
+                                    <i class="fas fa-edit text-primary me-1"></i>
+                                    {% elif entry.action == 'deleted' %}
+                                    <i class="fas fa-trash text-danger me-1"></i>
+                                    {% elif entry.action == 'activated' %}
+                                    <i class="fas fa-check-circle text-success me-1"></i>
+                                    {% elif entry.action == 'deactivated' %}
+                                    <i class="fas fa-times-circle text-warning me-1"></i>
+                                    {% else %}
+                                    <i class="fas fa-info-circle text-info me-1"></i>
+                                    {% endif %}
+                                    {{ entry.get_action_display }}
+                                </h6>
+                                <p class="text-muted small mb-1">
+                                    By {{ entry.user.get_full_name|default:"System" }}
+                                </p>
+                                {% if entry.notes %}
+                                <p class="small mb-0">{{ entry.notes }}</p>
+                                {% endif %}
+                            </div>
+                            <small class="text-muted">{{ entry.timestamp|timesince }} ago</small>
+                        </div>
+                    </div>
+                    {% endfor %}
+                    {% else %}
+                    <p class="text-center text-muted py-4">
+                        <i class="fas fa-inbox fa-2x mb-2"></i><br>
+                        No recent activity
+                    </p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Users by Company (for system roles) -->
+        {% if users_by_company|length > 1 %}
+        <div class="col-lg-6 mb-4">
+            <div class="card analytics-card shadow-sm">
+                <div class="card-header bg-white">
+                    <h5 class="mb-0">
+                        <i class="fas fa-building me-2"></i>
+                        Users by Company
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div class="chart-container">
+                        <canvas id="usersByCompanyChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Permissions Details Table -->
+        <div class="col-12">
+            <div class="card analytics-card shadow-sm">
+                <div class="card-header bg-white">
+                    <h5 class="mb-0">
+                        <i class="fas fa-list me-2"></i>
+                        Detailed Permission Breakdown
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Module</th>
+                                    <th class="text-center">Total</th>
+                                    <th class="text-center">View</th>
+                                    <th class="text-center">Add</th>
+                                    <th class="text-center">Change</th>
+                                    <th class="text-center">Delete</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for app, stats in permission_stats.items %}
+                                <tr>
+                                    <td><strong>{{ app|title }}</strong></td>
+                                    <td class="text-center">
+                                        <span class="badge bg-primary">{{ stats.total }}</span>
+                                    </td>
+                                    <td class="text-center">
+                                        <span class="badge bg-info">{{ stats.view }}</span>
+                                    </td>
+                                    <td class="text-center">
+                                        <span class="badge bg-success">{{ stats.add }}</span>
+                                    </td>
+                                    <td class="text-center">
+                                        <span class="badge bg-warning">{{ stats.change }}</span>
+                                    </td>
+                                    <td class="text-center">
+                                        <span class="badge bg-danger">{{ stats.delete }}</span>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+    // User Status Chart
+    new Chart(document.getElementById('userStatusChart'), {
+        type: 'doughnut',
+        data: {
+            labels: ['Active Users', 'Inactive Users'],
+            datasets: [{
+                data: [{{ active_users_count }}, {{ inactive_users_count }}],
+                backgroundColor: ['#198754', '#dc3545'],
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    position: 'bottom'
+                }
+            }
+        }
+    });
+
+    // Permission Distribution Chart
+    new Chart(document.getElementById('permissionDistributionChart'), {
+        type: 'pie',
+        data: {
+            labels: [{% for app in permissions_by_app %}'{{ app|title }}'{% if not forloop.last %},{% endif %}{% endfor %}],
+            datasets: [{
+                data: [{% for app, perms in permissions_by_app.items %}{{ perms|length }}{% if not forloop.last %},{% endif %}{% endfor %}],
+                backgroundColor: [
+                    '#667eea', '#764ba2', '#f093fb', '#f5576c',
+                    '#4facfe', '#00f2fe', '#43e97b', '#38f9d7',
+                    '#fa709a', '#fee140'
+                ]
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    position: 'right'
+                }
+            }
+        }
+    });
+
+    // Permission Types Chart
+    const permStats = {{ permission_stats|safe }};
+    let totalView = 0, totalAdd = 0, totalChange = 0, totalDelete = 0;
+    Object.values(permStats).forEach(stats => {
+        totalView += stats.view;
+        totalAdd += stats.add;
+        totalChange += stats.change;
+        totalDelete += stats.delete;
+    });
+
+    new Chart(document.getElementById('permissionTypesChart'), {
+        type: 'bar',
+        data: {
+            labels: ['View', 'Add', 'Change', 'Delete'],
+            datasets: [{
+                label: 'Permission Count',
+                data: [totalView, totalAdd, totalChange, totalDelete],
+                backgroundColor: ['#0dcaf0', '#198754', '#ffc107', '#dc3545']
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    display: false
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    ticks: {
+                        stepSize: 1
+                    }
+                }
+            }
+        }
+    });
+
+    {% if users_by_company|length > 1 %}
+    // Users by Company Chart
+    new Chart(document.getElementById('usersByCompanyChart'), {
+        type: 'bar',
+        data: {
+            labels: [{% for company in users_by_company %}'{{ company }}'{% if not forloop.last %},{% endif %}{% endfor %}],
+            datasets: [{
+                label: 'Users',
+                data: [{% for company, count in users_by_company.items %}{{ count }}{% if not forloop.last %},{% endif %}{% endfor %}],
+                backgroundColor: '{{ role.color_code }}'
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            indexAxis: 'y',
+            plugins: {
+                legend: {
+                    display: false
+                }
+            }
+        }
+    });
+    {% endif %}
+</script>
+{% endblock %}

@@ -1,0 +1,130 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block content %}
+<style>
+  table {
+    border-collapse: collapse;
+    width: 100%;
+    margin-bottom: 2rem;
+    font-family: Arial, sans-serif;
+  }
+
+  th, td {
+    border: 1px solid #ddd;
+    padding: 12px 10px;
+    text-align: left;
+  }
+
+  th {
+    background-color: #f4f4f4;
+    font-weight: bold;
+  }
+
+  tr:nth-child(even) {
+    background-color: #fafafa;
+  }
+
+  tr:hover {
+    background-color: #f1f1f1;
+  }
+
+  form button {
+    padding: 8px 16px;
+    background-color: #007bff;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+  }
+
+  form button:hover {
+    background-color: #0056b3;
+  }
+
+  h2 {
+    font-family: Arial, sans-serif;
+    color: #333;
+  }
+</style>
+
+<h2>{% if store %}Update{% else %}Create{% endif %} Store</h2>
+
+<form method="post" enctype="multipart/form-data">
+  {% csrf_token %}
+  <table>
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th>Email</th>
+        <th>Phone</th>
+        <th>Secondary Phone</th>
+        <th>Active</th>
+        <th>Latitude</th>
+        <th>Longitude</th>
+        <th>Logo</th>
+        <th>Location</th>
+        <th>Submit</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>{{ form.name }}</td>
+        <td>{{ form.email }}</td>
+        <td>{{ form.phone }}</td>
+        <td>{{ form.secondary_phone }}</td>
+        <td>{{ form.is_active }}</td>
+        <td>{{ form.latitude }}</td>
+        <td>{{ form.longitude }}</td>
+        <td>{{ form.logo }}</td>
+        <td>{{ form.location }}</td>
+        <td>
+          <button type="submit">
+            {% if store %}Update{% else %}Create{% endif %}
+          </button>
+        </td>
+      </tr>
+    </tbody>
+  </table>
+</form>
+
+{% if form.errors %}
+  <div style="color: red; font-family: Arial, sans-serif; margin-top: 1rem;">
+    <ul>
+      {% for field in form %}
+        {% for error in field.errors %}
+          <li><strong>{{ field.label }}:</strong> {{ error }}</li>
+        {% endfor %}
+      {% endfor %}
+    </ul>
+  </div>
+{% endif %}
+
+<hr>
+
+<h2>All Stores</h2>
+<table>
+  <thead>
+    <tr>
+      <th>Name</th>
+      <th>Email</th>
+      <th>Phone</th>
+      <th>Active</th>
+      <th>Actions</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for s in stores %}
+    <tr>
+      <td>{{ s.name }}</td>
+      <td>{{ s.email }}</td>
+      <td>{{ s.phone }}</td>
+      <td>{{ s.is_active }}</td>
+      <td><a href="{% url 'store_manage' s.id %}">Edit</a></td>
+    </tr>
+    {% empty %}
+    <tr><td colspan="5">No stores available.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

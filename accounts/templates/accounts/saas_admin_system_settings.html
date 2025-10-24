@@ -1,0 +1,560 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}System Settings{% endblock %}
+
+{% block extra_css %}
+<style>
+    .settings-container {
+        max-width: 1200px;
+        margin: 0 auto;
+    }
+
+    .settings-card {
+        background: white;
+        border-radius: 16px;
+        padding: 32px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+        margin-bottom: 24px;
+    }
+
+    .settings-card h3 {
+        font-size: 20px;
+        font-weight: 700;
+        color: #1f2937;
+        margin-bottom: 8px;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+    }
+
+    .settings-card h3 i {
+        width: 40px;
+        height: 40px;
+        border-radius: 10px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 20px;
+    }
+
+    .settings-card .subtitle {
+        color: #6b7280;
+        font-size: 14px;
+        margin-bottom: 24px;
+    }
+
+    .setting-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 20px 0;
+        border-bottom: 1px solid #e5e7eb;
+    }
+
+    .setting-row:last-child {
+        border-bottom: none;
+    }
+
+    .setting-info {
+        flex: 1;
+    }
+
+    .setting-title {
+        font-size: 16px;
+        font-weight: 600;
+        color: #1f2937;
+        margin-bottom: 4px;
+    }
+
+    .setting-description {
+        font-size: 14px;
+        color: #6b7280;
+    }
+
+    .toggle-switch {
+        position: relative;
+        width: 56px;
+        height: 28px;
+    }
+
+    .toggle-switch input {
+        opacity: 0;
+        width: 0;
+        height: 0;
+    }
+
+    .toggle-slider {
+        position: absolute;
+        cursor: pointer;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background-color: #d1d5db;
+        transition: .4s;
+        border-radius: 28px;
+    }
+
+    .toggle-slider:before {
+        position: absolute;
+        content: "";
+        height: 20px;
+        width: 20px;
+        left: 4px;
+        bottom: 4px;
+        background-color: white;
+        transition: .4s;
+        border-radius: 50%;
+    }
+
+    input:checked + .toggle-slider {
+        background-color: #667eea;
+    }
+
+    input:checked + .toggle-slider:before {
+        transform: translateX(28px);
+    }
+
+    .stat-box {
+        background: linear-gradient(135deg, #f8f9ff 0%, #f0f2ff 100%);
+        border-radius: 12px;
+        padding: 20px;
+        text-align: center;
+    }
+
+    .stat-box .value {
+        font-size: 32px;
+        font-weight: 700;
+        color: #667eea;
+        margin-bottom: 4px;
+    }
+
+    .stat-box .label {
+        font-size: 14px;
+        color: #6b7280;
+        font-weight: 500;
+    }
+
+    .form-group-modern {
+        margin-bottom: 24px;
+    }
+
+    .form-group-modern label {
+        font-size: 14px;
+        font-weight: 600;
+        color: #374151;
+        margin-bottom: 8px;
+        display: block;
+    }
+
+    .form-group-modern input,
+    .form-group-modern select,
+    .form-group-modern textarea {
+        width: 100%;
+        padding: 12px 16px;
+        border: 2px solid #e5e7eb;
+        border-radius: 10px;
+        font-size: 14px;
+        transition: all 0.2s;
+    }
+
+    .form-group-modern input:focus,
+    .form-group-modern select:focus,
+    .form-group-modern textarea:focus {
+        border-color: #667eea;
+        outline: none;
+        box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+    }
+
+    .btn-save {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        border: none;
+        padding: 12px 32px;
+        border-radius: 10px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+
+    .btn-save:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+    }
+
+    .danger-zone {
+        background: #fef2f2;
+        border: 2px solid #fee2e2;
+        border-radius: 12px;
+        padding: 24px;
+        margin-top: 24px;
+    }
+
+    .danger-zone h4 {
+        color: #dc2626;
+        font-size: 16px;
+        font-weight: 700;
+        margin-bottom: 12px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+    .btn-danger-action {
+        background: #dc2626;
+        color: white;
+        border: none;
+        padding: 10px 24px;
+        border-radius: 8px;
+        font-weight: 600;
+        cursor: pointer;
+        margin-top: 16px;
+    }
+
+    .icon-primary { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; }
+    .icon-success { background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: white; }
+    .icon-warning { background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); color: white; }
+    .icon-danger { background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%); color: white; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <div class="settings-container">
+        <!-- Header -->
+        <div class="mb-4">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <h1 class="mb-2">⚙️ System Settings</h1>
+                    <p class="text-muted mb-0">Configure global system settings and preferences</p>
+                </div>
+                <a href="{% url 'saas_admin_dashboard' %}" class="btn btn-outline-secondary">
+                    <i class="bi bi-arrow-left me-2"></i>Back to Dashboard
+                </a>
+            </div>
+        </div>
+
+        <!-- System Statistics -->
+        <div class="row mb-4">
+            <div class="col-md-4 mb-3">
+                <div class="stat-box">
+                    <div class="value">{{ system_stats.total_companies }}</div>
+                    <div class="label">Total Companies</div>
+                </div>
+            </div>
+            <div class="col-md-4 mb-3">
+                <div class="stat-box">
+                    <div class="value">{{ system_stats.total_users }}</div>
+                    <div class="label">Total Users</div>
+                </div>
+            </div>
+            <div class="col-md-4 mb-3">
+                <div class="stat-box">
+                    <div class="value">{{ system_stats.active_sessions }}</div>
+                    <div class="label">Active Sessions</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- General Settings -->
+        <div class="settings-card">
+            <h3>
+                <i class="bi bi-gear-fill icon-primary"></i>
+                General Settings
+            </h3>
+            <p class="subtitle">Configure general system behavior and features</p>
+
+            <form method="POST" id="generalSettingsForm">
+                {% csrf_token %}
+                <input type="hidden" name="setting_type" value="maintenance_mode">
+
+                <div class="setting-row">
+                    <div class="setting-info">
+                        <div class="setting-title">Maintenance Mode</div>
+                        <div class="setting-description">
+                            Enable maintenance mode to prevent users from accessing the system
+                        </div>
+                    </div>
+                    <label class="toggle-switch">
+                        <input type="checkbox" name="maintenance_mode"
+                               {% if maintenance_mode %}checked{% endif %}
+                               onchange="this.form.submit()">
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+            </form>
+
+            <form method="POST" id="registrationForm">
+                {% csrf_token %}
+                <input type="hidden" name="setting_type" value="user_registration">
+
+                <div class="setting-row">
+                    <div class="setting-info">
+                        <div class="setting-title">User Registration</div>
+                        <div class="setting-description">
+                            Allow new users to register accounts on the platform
+                        </div>
+                    </div>
+                    <label class="toggle-switch">
+                        <input type="checkbox" name="allow_registration"
+                               {% if allow_registration %}checked{% endif %}
+                               onchange="this.form.submit()">
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+            </form>
+        </div>
+
+        <!-- Email Settings -->
+        <div class="settings-card">
+            <h3>
+                <i class="bi bi-envelope-fill icon-success"></i>
+                Email Settings
+            </h3>
+            <p class="subtitle">Configure email server and notification settings</p>
+
+            <form method="POST" id="emailSettingsForm">
+                {% csrf_token %}
+                <input type="hidden" name="setting_type" value="email_settings">
+
+                <div class="row">
+                    <div class="col-md-6">
+                        <div class="form-group-modern">
+                            <label>SMTP Host</label>
+                            <input type="text" name="smtp_host"
+                                   value="{{ email_settings.smtp_host|default:'smtp.gmail.com' }}"
+                                   placeholder="smtp.gmail.com">
+                        </div>
+                    </div>
+
+                    <div class="col-md-6">
+                        <div class="form-group-modern">
+                            <label>SMTP Port</label>
+                            <input type="number" name="smtp_port"
+                                   value="{{ email_settings.smtp_port|default:'587' }}"
+                                   placeholder="587">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="row">
+                    <div class="col-md-6">
+                        <div class="form-group-modern">
+                            <label>SMTP Username</label>
+                            <input type="text" name="smtp_user"
+                                   value="{{ email_settings.smtp_user|default:'' }}"
+                                   placeholder="your-email@example.com">
+                        </div>
+                    </div>
+
+                    <div class="col-md-6">
+                        <div class="form-group-modern">
+                            <label>SMTP Password</label>
+                            <input type="password" name="smtp_password"
+                                   placeholder="••••••••••••">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="form-group-modern">
+                    <label>From Email</label>
+                    <input type="email" name="from_email"
+                           value="{{ email_settings.from_email|default:'' }}"
+                           placeholder="noreply@yourdomain.com">
+                </div>
+
+                <button type="submit" class="btn-save">
+                    <i class="bi bi-save me-2"></i>Save Email Settings
+                </button>
+            </form>
+        </div>
+
+        <!-- Security Settings -->
+        <div class="settings-card">
+            <h3>
+                <i class="bi bi-shield-fill-check icon-warning"></i>
+                Security Settings
+            </h3>
+            <p class="subtitle">Configure security and authentication settings</p>
+
+            <form method="POST" id="securitySettingsForm">
+                {% csrf_token %}
+                <input type="hidden" name="setting_type" value="security_settings">
+
+                <div class="setting-row">
+                    <div class="setting-info">
+                        <div class="setting-title">Require Email Verification</div>
+                        <div class="setting-description">
+                            Require users to verify their email before accessing the system
+                        </div>
+                    </div>
+                    <label class="toggle-switch">
+                        <input type="checkbox" name="require_email_verification"
+                               {% if security_settings.require_email_verification %}checked{% endif %}>
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+
+                <div class="setting-row">
+                    <div class="setting-info">
+                        <div class="setting-title">Enforce Two-Factor Authentication</div>
+                        <div class="setting-description">
+                            Require all users to enable 2FA for enhanced security
+                        </div>
+                    </div>
+                    <label class="toggle-switch">
+                        <input type="checkbox" name="enforce_2fa"
+                               {% if security_settings.enforce_2fa %}checked{% endif %}>
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+
+                <div class="row mt-4">
+                    <div class="col-md-6">
+                        <div class="form-group-modern">
+                            <label>Session Timeout (minutes)</label>
+                            <input type="number" name="session_timeout"
+                                   value="{{ security_settings.session_timeout|default:'30' }}"
+                                   min="5" max="1440">
+                        </div>
+                    </div>
+
+                    <div class="col-md-6">
+                        <div class="form-group-modern">
+                            <label>Max Login Attempts</label>
+                            <input type="number" name="max_login_attempts"
+                                   value="{{ security_settings.max_login_attempts|default:'5' }}"
+                                   min="3" max="10">
+                        </div>
+                    </div>
+                </div>
+
+                <button type="submit" class="btn-save">
+                    <i class="bi bi-save me-2"></i>Save Security Settings
+                </button>
+            </form>
+        </div>
+
+        <!-- Backup & Maintenance -->
+        <div class="settings-card">
+            <h3>
+                <i class="bi bi-cloud-download-fill icon-primary"></i>
+                Backup & Maintenance
+            </h3>
+            <p class="subtitle">Manage system backups and maintenance tasks</p>
+
+            <div class="setting-row">
+                <div class="setting-info">
+                    <div class="setting-title">Database Backup</div>
+                    <div class="setting-description">
+                        Last backup: <strong>{{ last_backup|default:"Never" }}</strong>
+                    </div>
+                </div>
+                <button class="btn btn-outline-primary" onclick="createBackup()">
+                    <i class="bi bi-download me-2"></i>Create Backup
+                </button>
+            </div>
+
+            <div class="setting-row">
+                <div class="setting-info">
+                    <div class="setting-title">Clear Cache</div>
+                    <div class="setting-description">
+                        Clear system cache to improve performance
+                    </div>
+                </div>
+                <button class="btn btn-outline-warning" onclick="clearCache()">
+                    <i class="bi bi-trash me-2"></i>Clear Cache
+                </button>
+            </div>
+
+            <div class="setting-row">
+                <div class="setting-info">
+                    <div class="setting-title">System Health Check</div>
+                    <div class="setting-description">
+                        Run comprehensive system diagnostics
+                    </div>
+                </div>
+                <button class="btn btn-outline-info" onclick="runHealthCheck()">
+                    <i class="bi bi-heart-pulse me-2"></i>Run Check
+                </button>
+            </div>
+        </div>
+
+        <!-- Danger Zone -->
+        <div class="settings-card">
+            <div class="danger-zone">
+                <h4>
+                    <i class="bi bi-exclamation-triangle-fill"></i>
+                    Danger Zone
+                </h4>
+                <p class="text-muted mb-0">Irreversible and destructive actions</p>
+
+                <div class="mt-3">
+                    <button class="btn-danger-action" onclick="confirmAction('reset')">
+                        <i class="bi bi-arrow-clockwise me-2"></i>Reset All Settings
+                    </button>
+
+                    <button class="btn-danger-action ms-2" onclick="confirmAction('delete')">
+                        <i class="bi bi-trash-fill me-2"></i>Delete Inactive Companies
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function createBackup() {
+    if (confirm('Create a full system backup? This may take several minutes.')) {
+        alert('Backup creation started. You will be notified when complete.');
+        // Implement backup logic
+    }
+}
+
+function clearCache() {
+    if (confirm('Clear all system cache? This may temporarily slow down the application.')) {
+        fetch('/api/admin/clear-cache/', {
+            method: 'POST',
+            headers: {
+                'X-CSRFToken': '{{ csrf_token }}',
+                'Content-Type': 'application/json'
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            alert('Cache cleared successfully!');
+        })
+        .catch(error => {
+            alert('Error clearing cache: ' + error);
+        });
+    }
+}
+
+function runHealthCheck() {
+    alert('Running system health check...');
+    // Implement health check logic
+}
+
+function confirmAction(action) {
+    const messages = {
+        'reset': 'Are you sure you want to reset ALL system settings to default? This cannot be undone!',
+        'delete': 'Are you sure you want to delete all inactive companies? This cannot be undone!'
+    };
+
+    if (confirm(messages[action])) {
+        if (confirm('This is your last warning. Type "DELETE" in the next dialog to continue.')) {
+            const confirmation = prompt('Type DELETE to confirm:');
+            if (confirmation === 'DELETE') {
+                alert('Action confirmed. Processing...');
+                // Implement the action
+            } else {
+                alert('Action cancelled.');
+            }
+        }
+    }
+}
+</script>
+{% endblock %}

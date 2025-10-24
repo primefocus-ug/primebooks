@@ -1,0 +1,1172 @@
+from django.core.cache import cache
+from django.db.models import Sum, Count, Avg, F, Q, Value, Case, When
+from django.utils import timezone
+import time
+import logging
+from typing import Dict, Any, Optional
+from datetime import date, datetime
+from decimal import Decimal
+from sales.models import Sale, SaleItem
+from inventory.models import Stock, Product, StockMovement
+from stores.models import Store
+from ..models import SavedReport, GeneratedReport, ReportAccessLog
+from django.db.models.functions import TruncDate
+logger = logging.getLogger(__name__)
+
+
+class ReportGeneratorService:
+    """Main service for generating reports with caching and optimization"""
+
+    def __init__(self, user, report):
+        self.user = user
+        self.report = report
+        self.start_time = time.time()
+
+    def get_accessible_stores(self):
+        """Get stores accessible to the user"""
+        from stores.models import Store
+        if self.user.is_superuser or self.user.user_type == 'SUPER_ADMIN':
+            return Store.objects.filter(is_active=True)
+        return self.user.stores.filter(is_active=True)
+
+    def get_cache_key(self, **kwargs) -> str:
+        """Generate unique cache key for report"""
+        # Convert non-serializable objects
+        serializable_kwargs = {}
+        for key, value in kwargs.items():
+            if isinstance(value, (date, datetime)):
+                serializable_kwargs[key] = value.isoformat()
+            elif isinstance(value, Decimal):
+                serializable_kwargs[key] = float(value)
+            elif hasattr(value, 'id'):  # Django model instance
+                serializable_kwargs[key] = value.id
+            else:
+                serializable_kwargs[key] = value
+
+        return self.report.get_cache_key(self.user.id, **serializable_kwargs)
+
+    def get_cached_results(self, **kwargs) -> Optional[Dict]:
+        """Retrieve cached report results"""
+        if not self.report.enable_caching:
+            return None
+
+        cache_key = self.get_cache_key(**kwargs)
+        cached_data = cache.get(cache_key)
+
+        if cached_data:
+            logger.info(f"Cache hit for report {self.report.id}")
+            return cached_data
+
+        logger.info(f"Cache miss for report {self.report.id}")
+        return None
+
+    def cache_results(self, data: Dict, **kwargs):
+        """Cache report results"""
+        if not self.report.enable_caching:
+            return
+
+        cache_key = self.get_cache_key(**kwargs)
+        cache.set(cache_key, data, self.report.cache_duration)
+        logger.info(f"Cached report {self.report.id} for {self.report.cache_duration}s")
+
+    def generate(self, **kwargs) -> Dict[str, Any]:
+        """Generate report with intelligent caching"""
+        # Check cache first
+        cached_results = self.get_cached_results(**kwargs)
+        if cached_results:
+            cached_results['from_cache'] = True
+            return cached_results
+
+        # Generate fresh data
+        logger.info(f"Generating fresh report: {self.report.name}")
+
+        # Route to appropriate generator
+        generator_map = {
+            'SALES_SUMMARY': self._generate_sales_summary,
+            'PRODUCT_PERFORMANCE': self._generate_product_performance,
+            'INVENTORY_STATUS': self._generate_inventory_status,
+            'TAX_REPORT': self._generate_tax_report,
+            'Z_REPORT': self._generate_z_report,
+            'EFRIS_COMPLIANCE': self._generate_efris_compliance,
+            'CASHIER_PERFORMANCE': self._generate_cashier_performance,
+            'PROFIT_LOSS': self._generate_profit_loss,
+            'STOCK_MOVEMENT': self._generate_stock_movement,
+            'PRICE_LOOKUP': self._generate_price_lookup,
+            'CUSTOMER_ANALYTICS': self._generate_customer_analytics,
+            'CUSTOM': self._generate_custom,  # Fallback
+        }
+
+        generator = generator_map.get(self.report.report_type)
+        if not generator:
+            raise ValueError(f"Unknown report type: {self.report.report_type}")
+
+        # Generate data
+        results = generator(**kwargs)
+
+        # Add metadata
+        results['metadata'] = {
+            'generated_at': timezone.now().isoformat(),
+            'generated_by': self.user.get_full_name(),
+            'generation_time': time.time() - self.start_time,
+            'from_cache': False,
+            'report_name': self.report.name,
+            'report_type': self.report.get_report_type_display(),
+        }
+
+        # Cache results
+        self.cache_results(results, **kwargs)
+
+        # Update execution count
+        self.report.increment_execution_count()
+
+        return results
+
+    def _generate_sales_summary(self, **kwargs) -> Dict:
+        """Generate sales summary report with optimized queries - FIXED"""
+        from sales.models import Sale, SaleItem
+
+        start_date = kwargs.get('start_date')
+        end_date = kwargs.get('end_date')
+        store_id = kwargs.get('store_id')
+        group_by = kwargs.get('group_by', 'date')
+
+        stores = self.get_accessible_stores()
+
+        # Build optimized queryset
+        queryset = Sale.objects.filter(
+            store__in=stores,
+            is_completed=True
+        ).select_related('store', 'store__company', 'created_by')
+
+        if start_date:
+            queryset = queryset.filter(created_at__date__gte=start_date)
+        if end_date:
+            queryset = queryset.filter(created_at__date__lte=end_date)
+        if store_id:
+            queryset = queryset.filter(store_id=store_id)
+
+        # Summary statistics with single query
+        summary = queryset.aggregate(
+            total_sales=Sum('total_amount'),
+            total_transactions=Count('id'),
+            avg_transaction=Avg('total_amount'),
+            total_tax=Sum('tax_amount'),
+            total_discount=Sum('discount_amount'),
+        )
+
+        if group_by == 'date':
+            grouped_data = list(queryset.extra(
+                select={'date': "DATE(created_at)"}
+            ).values('date').annotate(
+                total_amount=Sum('total_amount'),
+                transaction_count=Count('id'),
+                total_tax=Sum('tax_amount'),
+            ).order_by('date'))
+
+            # Calculate avg_amount in Python to avoid double aggregation
+            for day in grouped_data:
+                day['avg_amount'] = (day['total_amount'] / day['transaction_count']) if day['transaction_count'] else 0
+
+        elif group_by == 'store':
+            grouped_data = list(queryset.values(
+                'store__name', 'store__code', 'store__company__name'
+            ).annotate(
+                total_amount=Sum('total_amount'),
+                transaction_count=Count('id'),
+                total_tax=Sum('tax_amount'),
+            ).order_by('-total_amount'))
+
+            # Calculate avg_amount in Python
+            for store in grouped_data:
+                store['avg_amount'] = (store['total_amount'] / store['transaction_count']) if store[
+                    'transaction_count'] else 0
+
+        elif group_by == 'payment_method':
+            grouped_data = list(queryset.values('payment_method').annotate(
+                total_amount=Sum('total_amount'),
+                transaction_count=Count('id'),
+            ).order_by('-total_amount'))
+
+            # Calculate avg_amount in Python
+            for pm in grouped_data:
+                pm['avg_amount'] = (pm['total_amount'] / pm['transaction_count']) if pm['transaction_count'] else 0
+
+        elif group_by == 'hour':
+            grouped_data = list(queryset.extra(
+                select={'hour': "EXTRACT(hour FROM created_at)"}
+            ).values('hour').annotate(
+                total_amount=Sum('total_amount'),
+                transaction_count=Count('id'),
+            ).order_by('hour'))
+
+            # Calculate avg_amount in Python
+            for hour in grouped_data:
+                hour['avg_amount'] = (hour['total_amount'] / hour['transaction_count']) if hour[
+                    'transaction_count'] else 0
+        else:
+            grouped_data = []
+
+        # Top products in period
+        top_products = list(SaleItem.objects.filter(
+            sale__in=queryset,
+            sale__is_completed=True
+        ).values(
+            'product__name', 'product__sku'
+        ).annotate(
+            quantity=Sum('quantity'),
+            revenue=Sum('total_price')
+        ).order_by('-revenue')[:10])
+
+        # Payment method breakdown
+        payment_methods = list(queryset.values('payment_method').annotate(
+            count=Count('id'),
+            amount=Sum('total_amount')
+        ).order_by('-amount'))
+
+        # Calculate percentages
+        total_amount = summary['total_sales'] or 0
+        for pm in payment_methods:
+            pm['percentage'] = (pm['amount'] / total_amount * 100) if total_amount > 0 else 0
+
+        return {
+            'summary': summary,
+            'grouped_data': grouped_data,
+            'top_products': top_products,
+            'payment_methods': payment_methods,
+            'filters': kwargs,
+        }
+
+    def _generate_custom(self, **kwargs) -> Dict:
+        """Fallback for custom reports"""
+        return {
+            'message': 'Custom report type. Please configure specific parameters.',
+            'filters': kwargs,
+        }
+
+    def _generate_customer_analytics(self, **kwargs) -> Dict:
+        """Generate customer analytics report - NEW"""
+        from sales.models import Sale, SaleItem
+        from customers.models import Customer  # Adjust import based on your model
+
+        start_date = kwargs.get('start_date')
+        end_date = kwargs.get('end_date')
+        store_id = kwargs.get('store_id')
+
+        stores = self.get_accessible_stores()
+
+        # Build queryset
+        queryset = Sale.objects.filter(
+            store__in=stores,
+            is_completed=True,
+            customer__isnull=False  # Only sales with customer data
+        ).select_related('customer', 'store')
+
+        if start_date:
+            queryset = queryset.filter(created_at__date__gte=start_date)
+        if end_date:
+            queryset = queryset.filter(created_at__date__lte=end_date)
+        if store_id:
+            queryset = queryset.filter(store_id=store_id)
+
+        # Customer metrics
+        customer_data = list(queryset.values(
+            'customer__id',
+            'customer__name',
+            'customer__email',
+            'customer__phone'
+        ).annotate(
+            total_purchases=Count('id'),
+            total_spent=Sum('total_amount'),
+            avg_purchase=Sum('total_amount') / Count('id'),
+            last_purchase=Max('created_at')
+        ).order_by('-total_spent'))
+
+        # Calculate in Python
+        for customer in customer_data:
+            customer['avg_purchase'] = (
+                    customer['total_spent'] / customer['total_purchases']
+            ) if customer['total_purchases'] else 0
+
+        # Summary
+        summary = {
+            'total_customers': queryset.values('customer').distinct().count(),
+            'total_revenue': queryset.aggregate(Sum('total_amount'))['total_amount__sum'] or 0,
+            'avg_customer_value': 0,
+            'repeat_customers': queryset.values('customer').annotate(
+                purchase_count=Count('id')
+            ).filter(purchase_count__gt=1).count()
+        }
+
+        if summary['total_customers'] > 0:
+            summary['avg_customer_value'] = summary['total_revenue'] / summary['total_customers']
+
+        # Top products per customer segment
+        top_products = list(SaleItem.objects.filter(
+            sale__in=queryset
+        ).values(
+            'product__name'
+        ).annotate(
+            quantity=Sum('quantity'),
+            revenue=Sum('total_price')
+        ).order_by('-revenue')[:10])
+
+        return {
+            'customers': customer_data,
+            'summary': summary,
+            'top_products': top_products,
+            'filters': kwargs,
+        }
+
+    def _generate_stock_movement(self, **kwargs) -> Dict:
+        """Generate stock movement report - ALREADY PROVIDED"""
+        from inventory.models import StockMovement
+
+        start_date = kwargs.get('start_date')
+        end_date = kwargs.get('end_date')
+        store_id = kwargs.get('store_id')
+        movement_type = kwargs.get('movement_type')
+
+        stores = self.get_accessible_stores()
+
+        queryset = StockMovement.objects.filter(
+            store__in=stores
+        ).select_related('product', 'store', 'created_by')
+
+        if start_date:
+            queryset = queryset.filter(created_at__date__gte=start_date)
+        if end_date:
+            queryset = queryset.filter(created_at__date__lte=end_date)
+        if store_id:
+            queryset = queryset.filter(store_id=store_id)
+        if movement_type:
+            queryset = queryset.filter(movement_type=movement_type)
+
+        # Movement details
+        movements = []
+        for movement in queryset[:500]:  # Limit to 500
+            movements.append({
+                'id': movement.id,
+                'product_name': movement.product.name,
+                'product_sku': movement.product.sku,
+                'store_name': movement.store.name,
+                'movement_type': movement.movement_type,
+                'quantity': movement.quantity,
+                'reference_number': movement.reference_number,
+                'created_at': movement.created_at.isoformat(),
+                'created_by': movement.created_by.get_full_name() if movement.created_by else None,
+                'notes': movement.notes
+            })
+
+        # Summary by type
+        summary = list(queryset.values('movement_type').annotate(
+            total_quantity=Sum('quantity'),
+            movement_count=Count('id')
+        ).order_by('movement_type'))
+
+        return {
+            'movements': movements,
+            'summary': summary,
+            'filters': kwargs,
+        }
+
+    def _generate_cashier_performance(self, **kwargs) -> Dict:
+        """Generate cashier performance report - ALREADY PROVIDED"""
+        from sales.models import Sale
+
+        start_date = kwargs.get('start_date')
+        end_date = kwargs.get('end_date')
+        store_id = kwargs.get('store_id')
+
+        stores = self.get_accessible_stores()
+
+        queryset = Sale.objects.filter(
+            store__in=stores,
+            is_completed=True
+        ).select_related('created_by', 'store')
+
+        if start_date:
+            queryset = queryset.filter(created_at__date__gte=start_date)
+        if end_date:
+            queryset = queryset.filter(created_at__date__lte=end_date)
+        if store_id:
+            queryset = queryset.filter(store_id=store_id)
+
+        # Cashier performance
+        performance = list(queryset.values(
+            'created_by__id',
+            'created_by__first_name',
+            'created_by__last_name',
+            'created_by__username',
+            'store__name'
+        ).annotate(
+            total_sales=Sum('total_amount'),
+            transaction_count=Count('id'),
+            total_items=Count('items'),
+            total_discount=Sum('discount_amount'),
+            refund_count=Count('id', filter=Q(is_refunded=True)),
+        ).order_by('-total_sales'))
+
+        # Calculate metrics in Python
+        for cashier in performance:
+            if cashier['transaction_count'] > 0:
+                cashier['avg_transaction'] = cashier['total_sales'] / cashier['transaction_count']
+                cashier['items_per_transaction'] = cashier['total_items'] / cashier['transaction_count']
+                cashier['refund_rate'] = (cashier['refund_count'] / cashier['transaction_count']) * 100
+            else:
+                cashier['avg_transaction'] = 0
+                cashier['items_per_transaction'] = 0
+                cashier['refund_rate'] = 0
+
+        # Summary
+        summary = {
+            'total_cashiers': queryset.values('created_by').distinct().count(),
+            'total_sales': queryset.aggregate(Sum('total_amount'))['total_amount__sum'] or 0,
+            'total_transactions': queryset.count(),
+        }
+
+        if summary['total_cashiers'] > 0:
+            summary['avg_per_cashier'] = summary['total_sales'] / summary['total_cashiers']
+        else:
+            summary['avg_per_cashier'] = 0
+
+        return {
+            'performance': performance,
+            'summary': summary,
+            'filters': kwargs,
+        }
+
+    def _generate_profit_loss(self, **kwargs) -> Dict:
+        """Generate profit and loss statement - ALREADY PROVIDED"""
+        from sales.models import SaleItem
+
+        start_date = kwargs.get('start_date')
+        end_date = kwargs.get('end_date')
+        store_id = kwargs.get('store_id')
+
+        stores = self.get_accessible_stores()
+
+        # Revenue from sales
+        sales_queryset = SaleItem.objects.filter(
+            sale__store__in=stores,
+            sale__is_completed=True
+        ).select_related('sale', 'product')
+
+        if start_date:
+            sales_queryset = sales_queryset.filter(sale__created_at__date__gte=start_date)
+        if end_date:
+            sales_queryset = sales_queryset.filter(sale__created_at__date__lte=end_date)
+        if store_id:
+            sales_queryset = sales_queryset.filter(sale__store_id=store_id)
+
+        # Calculate revenue and costs
+        financial_summary = sales_queryset.aggregate(
+            gross_revenue=Sum('total_price'),
+            cost_of_goods_sold=Sum(F('product__cost_price') * F('quantity')),
+            total_tax=Sum('tax_amount'),
+        )
+
+        # Get discount from sales
+        from sales.models import Sale
+        discount_sum = Sale.objects.filter(
+            store__in=stores,
+            is_completed=True
+        )
+        if start_date:
+            discount_sum = discount_sum.filter(created_at__date__gte=start_date)
+        if end_date:
+            discount_sum = discount_sum.filter(created_at__date__lte=end_date)
+        if store_id:
+            discount_sum = discount_sum.filter(store_id=store_id)
+
+        total_discount = discount_sum.aggregate(Sum('discount_amount'))['discount_amount__sum'] or 0
+
+        # Calculate profit metrics
+        gross_revenue = financial_summary['gross_revenue'] or 0
+        cogs = financial_summary['cost_of_goods_sold'] or 0
+        tax = financial_summary['total_tax'] or 0
+        discount = total_discount
+
+        gross_profit = gross_revenue - cogs
+        net_revenue = gross_revenue - discount
+        net_profit = gross_profit - tax
+
+        profit_loss = {
+            'revenue': {
+                'gross_revenue': float(gross_revenue),
+                'discounts': float(discount),
+                'net_revenue': float(net_revenue),
+            },
+            'costs': {
+                'cost_of_goods_sold': float(cogs),
+                'tax': float(tax),
+                'total_costs': float(cogs + tax),
+            },
+            'profit': {
+                'gross_profit': float(gross_profit),
+                'gross_margin': (gross_profit / gross_revenue * 100) if gross_revenue > 0 else 0,
+                'net_profit': float(net_profit),
+                'net_margin': (net_profit / gross_revenue * 100) if gross_revenue > 0 else 0,
+            }
+        }
+
+        # Category-wise profit
+        category_profit = list(sales_queryset.values(
+            'product__category__name'
+        ).annotate(
+            revenue=Sum('total_price'),
+            cost=Sum(F('product__cost_price') * F('quantity')),
+            quantity=Sum('quantity')
+        ).order_by('-revenue'))
+
+        for cat in category_profit:
+            revenue = cat['revenue'] or 0
+            cost = cat['cost'] or 0
+            cat['profit'] = float(revenue - cost)
+            cat['margin'] = ((revenue - cost) / revenue * 100) if revenue > 0 else 0
+
+        return {
+            'profit_loss': profit_loss,
+            'category_profit': category_profit,
+            'filters': kwargs,
+        }
+
+
+    def _generate_price_lookup(self, **kwargs) -> Dict:
+        """Generate price lookup report - NEW"""
+        from inventory.models import Product, Stock
+        from django.db.models import Sum
+
+        search_query = kwargs.get('search', '')
+        category_id = kwargs.get('category_id')
+
+        stores = self.get_accessible_stores()
+
+        # Build product queryset
+        products = Product.objects.filter(is_active=True)
+
+        if search_query:
+            products = products.filter(
+                Q(name__icontains=search_query) |
+                Q(sku__icontains=search_query) |
+                Q(barcode__icontains=search_query)
+            )
+
+        if category_id:
+            products = products.filter(category_id=category_id)
+
+        # Get stock information for each product
+        products_with_stock = []
+        for product in products[:100]:  # Limit to 100
+            stock_info = Stock.objects.filter(
+                product=product,
+                store__in=stores
+            ).values('store__name', 'store__id').annotate(
+                quantity=Sum('quantity')
+            )
+
+            products_with_stock.append({
+                'product_id': product.id,
+                'product_name': product.name,
+                'sku': product.sku,
+                'barcode': product.barcode,
+                'category': product.category.name if product.category else None,
+                'selling_price': float(product.selling_price),
+                'cost_price': float(product.cost_price),
+                'stock_info': list(stock_info),
+                'total_stock': sum([s['quantity'] for s in stock_info])
+            })
+
+        return {
+            'products': products_with_stock,
+            'filters': kwargs,
+        }
+
+    def _generate_product_performance(self, **kwargs) -> Dict:
+        """Generate product performance report"""
+        start_date = kwargs.get('start_date')
+        end_date = kwargs.get('end_date')
+        store_id = kwargs.get('store_id')
+        category_id = kwargs.get('category_id')
+        limit = kwargs.get('limit', 100)
+
+        stores = self.get_accessible_stores()
+
+        queryset = SaleItem.objects.filter(
+            sale__store__in=stores,
+            sale__is_completed=True
+        ).select_related('product', 'product__category', 'sale__store')
+
+        if start_date:
+            queryset = queryset.filter(sale__created_at__date__gte=start_date)
+        if end_date:
+            queryset = queryset.filter(sale__created_at__date__lte=end_date)
+        if store_id:
+            queryset = queryset.filter(sale__store_id=store_id)
+        if category_id:
+            queryset = queryset.filter(product__category_id=category_id)
+
+        # Product performance with profit calculation
+        products = list(queryset.values(
+            'product__id',
+            'product__name',
+            'product__sku',
+            'product__category__name',
+            'product__selling_price',
+            'product__cost_price'
+        ).annotate(
+            total_quantity=Sum('quantity'),
+            total_revenue=Sum('total_price'),
+            total_cost=Sum(F('product__cost_price') * F('quantity')),
+            avg_price=Avg('unit_price'),
+            transaction_count=Count('sale', distinct=True),
+            total_tax=Sum('tax_amount')
+        ).order_by('-total_revenue')[:limit])
+
+        # Calculate profit and margin
+        for product in products:
+            cost = product['total_cost'] or 0
+            revenue = product['total_revenue'] or 0
+            product['total_profit'] = revenue - cost
+            product['profit_margin'] = ((revenue - cost) / revenue * 100) if revenue > 0 else 0
+
+        # Summary statistics
+        summary = {
+            'total_products': queryset.values('product').distinct().count(),
+            'total_quantity_sold': queryset.aggregate(Sum('quantity'))['quantity__sum'] or 0,
+            'total_revenue': queryset.aggregate(Sum('total_price'))['total_price__sum'] or 0,
+            'total_cost': queryset.aggregate(
+                total_cost=Sum(F('product__cost_price') * F('quantity'))
+            )['total_cost'] or 0,
+        }
+        summary['total_profit'] = summary['total_revenue'] - summary['total_cost']
+        summary['avg_profit_margin'] = (
+            (summary['total_profit'] / summary['total_revenue'] * 100)
+            if summary['total_revenue'] > 0 else 0
+        )
+
+        # Category breakdown
+        category_performance = list(queryset.values(
+            'product__category__name'
+        ).annotate(
+            quantity=Sum('quantity'),
+            revenue=Sum('total_price'),
+            product_count=Count('product', distinct=True)
+        ).order_by('-revenue'))
+
+        return {
+            'products': products,
+            'summary': summary,
+            'category_performance': category_performance,
+            'filters': kwargs,
+        }
+
+    def _generate_inventory_status(self, **kwargs) -> Dict:
+        """Generate inventory status report"""
+        store_id = kwargs.get('store_id')
+        category_id = kwargs.get('category_id')
+        status_filter = kwargs.get('status')
+
+        stores = self.get_accessible_stores()
+
+        queryset = Stock.objects.filter(
+            store__in=stores
+        ).select_related('product', 'store', 'product__category')
+
+        if store_id:
+            queryset = queryset.filter(store_id=store_id)
+        if category_id:
+            queryset = queryset.filter(product__category_id=category_id)
+
+        # Apply status filter
+        if status_filter == 'low_stock':
+            queryset = queryset.filter(quantity__lte=F('low_stock_threshold'), quantity__gt=0)
+        elif status_filter == 'out_of_stock':
+            queryset = queryset.filter(quantity=0)
+        elif status_filter == 'in_stock':
+            queryset = queryset.filter(quantity__gt=F('low_stock_threshold'))
+
+        # Annotate with status and value
+        inventory = list(queryset.annotate(
+            stock_value=F('quantity') * F('product__cost_price'),
+            retail_value=F('quantity') * F('product__selling_price'),
+            status=Case(
+                When(quantity=0, then=Value('out_of_stock')),
+                When(quantity__lte=F('low_stock_threshold'), then=Value('low_stock')),
+                default=Value('in_stock'),
+            )
+        ).values(
+            'id', 'product__name', 'product__sku', 'product__category__name',
+            'store__name', 'quantity', 'low_stock_threshold',
+            'product__cost_price', 'product__selling_price', 'stock_value',
+            'retail_value', 'status', 'last_import_update'
+        ).order_by('product__name'))
+
+        # Summary statistics
+        summary = queryset.aggregate(
+            total_products=Count('id'),
+            total_quantity=Sum('quantity'),
+            total_stock_value=Sum(F('quantity') * F('product__cost_price')),
+            total_retail_value=Sum(F('quantity') * F('product__selling_price')),
+            low_stock_count=Count('id', filter=Q(
+                quantity__lte=F('low_stock_threshold'),
+                quantity__gt=0
+            )),
+            out_of_stock_count=Count('id', filter=Q(quantity=0)),
+        )
+
+        # Alerts for low stock items
+        alerts = list(queryset.filter(
+            quantity__lte=F('low_stock_threshold'),
+            quantity__gt=0
+        ).values(
+            'product__name', 'product__sku', 'store__name',
+            'quantity', 'low_stock_threshold',
+        ).order_by('quantity')[:20])
+
+        # Category breakdown
+        category_summary = list(queryset.values(
+            'product__category__name'
+        ).annotate(
+            product_count=Count('id'),
+            total_quantity=Sum('quantity'),
+            stock_value=Sum(F('quantity') * F('product__cost_price'))
+        ).order_by('-stock_value'))
+
+        return {
+            'inventory': inventory,
+            'summary': summary,
+            'alerts': alerts,
+            'category_summary': category_summary,
+            'filters': kwargs,
+        }
+
+    def _generate_tax_report(self, **kwargs) -> Dict:
+        """Generate tax report for EFRIS compliance"""
+        start_date = kwargs.get('start_date')
+        end_date = kwargs.get('end_date')
+        store_id = kwargs.get('store_id')
+
+        stores = self.get_accessible_stores()
+
+        queryset = SaleItem.objects.filter(
+            sale__store__in=stores,
+            sale__is_completed=True
+        ).select_related('sale', 'sale__store', 'product')
+
+        if start_date:
+            queryset = queryset.filter(sale__created_at__date__gte=start_date)
+        if end_date:
+            queryset = queryset.filter(sale__created_at__date__lte=end_date)
+        if store_id:
+            queryset = queryset.filter(sale__store_id=store_id)
+
+        # Tax breakdown by rate
+        tax_breakdown = list(queryset.values('tax_rate').annotate(
+            tax_rate_display=Case(
+                When(tax_rate='A', then=Value('Standard (18%)')),
+                When(tax_rate='B', then=Value('Zero Rate (0%)')),
+                When(tax_rate='C', then=Value('Exempt')),
+                When(tax_rate='D', then=Value('Deemed (18%)')),
+                When(tax_rate='E', then=Value('Excise Duty')),
+                default=Value('Unknown'),
+            ),
+            total_sales=Sum('total_price'),
+            total_tax=Sum('tax_amount'),
+            transaction_count=Count('sale', distinct=True),
+            item_count=Count('id')
+        ).order_by('tax_rate'))
+
+        # Summary
+        summary = queryset.aggregate(
+            total_sales_amount=Sum('total_price'),
+            total_tax_collected=Sum('tax_amount'),
+            total_items=Count('id'),
+            total_transactions=Count('sale', distinct=True)
+        )
+
+        # EFRIS compliance check
+        sales_queryset = Sale.objects.filter(
+            store__in=stores,
+            is_completed=True
+        )
+        if start_date:
+            sales_queryset = sales_queryset.filter(created_at__date__gte=start_date)
+        if end_date:
+            sales_queryset = sales_queryset.filter(created_at__date__lte=end_date)
+        if store_id:
+            sales_queryset = sales_queryset.filter(store_id=store_id)
+
+        efris_stats = sales_queryset.aggregate(
+            total_sales=Count('id'),
+            fiscalized=Count('id', filter=Q(is_fiscalized=True)),
+            pending=Count('id', filter=Q(is_fiscalized=False)),
+        )
+        efris_stats['compliance_rate'] = (
+            (efris_stats['fiscalized'] / efris_stats['total_sales'] * 100)
+            if efris_stats['total_sales'] > 0 else 0
+        )
+
+        # Daily tax summary
+        daily_tax = list(
+            queryset
+            .annotate(date=TruncDate('sale__created_at'))
+            .values('date')
+            .annotate(
+                total_sales=Sum('total_price'),
+                total_tax=Sum('tax_amount'),
+                transaction_count=Count('sale', distinct=True)
+            )
+            .order_by('date')
+        )
+
+        return {
+            'tax_breakdown': tax_breakdown,
+            'summary': summary,
+            'efris_stats': efris_stats,
+            'daily_tax': daily_tax,
+            'filters': kwargs,
+        }
+
+    def _generate_z_report(self, **kwargs) -> Dict:
+        """Generate Z-Report (end of day summary)"""
+        report_date = kwargs.get('report_date', timezone.now().date())
+        store_id = kwargs.get('store_id')
+
+        stores = self.get_accessible_stores()
+
+        queryset = Sale.objects.filter(
+            store__in=stores,
+            is_completed=True,
+            created_at__date=report_date
+        ).select_related('store', 'created_by')
+
+        if store_id:
+            queryset = queryset.filter(store_id=store_id)
+
+        # Main summary
+        summary = queryset.aggregate(
+            total_sales=Sum('total_amount'),
+            total_transactions=Count('id'),
+            total_tax=Sum('tax_amount'),
+            total_discount=Sum('discount_amount'),
+            avg_transaction=Avg('total_amount'),
+        )
+
+        # Payment method breakdown
+        payment_breakdown = list(queryset.values('payment_method').annotate(
+            count=Count('id'),
+            amount=Sum('total_amount')
+        ).order_by('payment_method'))
+
+        # Hourly breakdown
+        hourly_breakdown = list(queryset.extra(
+            select={'hour': "EXTRACT(hour FROM created_at)"}
+        ).values('hour').annotate(
+            count=Count('id'),
+            amount=Sum('total_amount')
+        ).order_by('hour'))
+
+        # Cashier performance
+        cashier_performance = list(queryset.values(
+            'created_by__first_name',
+            'created_by__last_name',
+            'created_by__username'
+        ).annotate(
+            transaction_count=Count('id'),
+            total_amount=Sum('total_amount'),
+            avg_transaction=Avg('total_amount')
+        ).order_by('-total_amount'))
+
+        # Refunds and voids
+        refunds = queryset.filter(is_refunded=True).aggregate(
+            count=Count('id'),
+            amount=Sum('total_amount')
+        )
+
+        voids = queryset.filter(is_voided=True).aggregate(
+            count=Count('id'),
+            amount=Sum('total_amount')
+        )
+
+        # Top products sold today
+        top_products = list(SaleItem.objects.filter(
+            sale__in=queryset
+        ).values(
+            'product__name', 'product__sku'
+        ).annotate(
+            quantity=Sum('quantity'),
+            revenue=Sum('total_price')
+        ).order_by('-revenue')[:10])
+
+        return {
+            'report_date': report_date.isoformat(),
+            'summary': summary,
+            'payment_breakdown': payment_breakdown,
+            'hourly_breakdown': hourly_breakdown,
+            'cashier_performance': cashier_performance,
+            'refunds': refunds,
+            'voids': voids,
+            'top_products': top_products,
+            'filters': kwargs,
+        }
+
+    def _generate_efris_compliance(self, **kwargs) -> Dict:
+        """Generate EFRIS compliance report"""
+        start_date = kwargs.get('start_date')
+        end_date = kwargs.get('end_date')
+        store_id = kwargs.get('store_id')
+
+        stores = self.get_accessible_stores()
+
+        queryset = Sale.objects.filter(
+            store__in=stores,
+            is_completed=True
+        ).select_related('store')
+
+        if start_date:
+            queryset = queryset.filter(created_at__date__gte=start_date)
+        if end_date:
+            queryset = queryset.filter(created_at__date__lte=end_date)
+        if store_id:
+            queryset = queryset.filter(store_id=store_id)
+
+        # Overall compliance
+        compliance = queryset.aggregate(
+            total_sales=Count('id'),
+            fiscalized=Count('id', filter=Q(is_fiscalized=True)),
+            pending=Count('id', filter=Q(is_fiscalized=False)),
+            failed=Count('id', filter=Q(fiscalization_failed=True)),
+        )
+        compliance['compliance_rate'] = (
+            (compliance['fiscalized'] / compliance['total_sales'] * 100)
+            if compliance['total_sales'] > 0 else 0
+        )
+
+        # Store-wise breakdown
+        store_breakdown = list(queryset.values(
+            'store__name', 'store__code', 'store__efris_device_number'
+        ).annotate(
+            total=Count('id'),
+            fiscalized=Count('id', filter=Q(is_fiscalized=True)),
+            pending=Count('id', filter=Q(is_fiscalized=False)),
+            failed=Count('id', filter=Q(fiscalization_failed=True)),
+        ).order_by('-total'))
+
+        for store in store_breakdown:
+            total = store['total']
+            store['compliance_rate'] = (
+                (store['fiscalized'] / total * 100) if total > 0 else 0
+            )
+
+        # Daily compliance trend
+        daily_breakdown = list(queryset.extra(
+            select={'date': "DATE(created_at)"}
+        ).values('date').annotate(
+            total=Count('id'),
+            fiscalized=Count('id', filter=Q(is_fiscalized=True)),
+            pending=Count('id', filter=Q(is_fiscalized=False)),
+        ).order_by('-date'))
+
+        for day in daily_breakdown:
+            total = day['total']
+            day['compliance_rate'] = (
+                (day['fiscalized'] / total * 100) if total > 0 else 0
+            )
+
+        # Failed fiscalization details
+        failed_sales = list(queryset.filter(
+            fiscalization_failed=True
+        ).values(
+            'id', 'sale_number', 'store__name', 'total_amount',
+            'created_at', 'fiscalization_error'
+        ).order_by('-created_at')[:50])
+
+        return {
+            'compliance': compliance,
+            'store_breakdown': store_breakdown,
+            'daily_breakdown': daily_breakdown,
+            'failed_sales': failed_sales,
+            'filters': kwargs,
+        }
+
+    def _generate_cashier_performance(self, **kwargs) -> Dict:
+        """Generate cashier performance report"""
+        start_date = kwargs.get('start_date')
+        end_date = kwargs.get('end_date')
+        store_id = kwargs.get('store_id')
+
+        stores = self.get_accessible_stores()
+
+        queryset = Sale.objects.filter(
+            store__in=stores,
+            is_completed=True
+        ).select_related('created_by', 'store')
+
+        if start_date:
+            queryset = queryset.filter(created_at__date__gte=start_date)
+        if end_date:
+            queryset = queryset.filter(created_at__date__lte=end_date)
+        if store_id:
+            queryset = queryset.filter(store_id=store_id)
+
+        # Cashier performance
+        performance = list(queryset.values(
+            'created_by__id',
+            'created_by__first_name',
+            'created_by__last_name',
+            'created_by__username',
+            'store__name'
+        ).annotate(
+            total_sales=Sum('total_amount'),
+            transaction_count=Count('id'),
+            avg_transaction=Avg('total_amount'),
+            total_items=Sum('items__quantity'),
+            total_discount=Sum('discount_amount'),
+            refund_count=Count('id', filter=Q(is_refunded=True)),
+        ).order_by('-total_sales'))
+
+        # Calculate additional metrics
+        for cashier in performance:
+            if cashier['transaction_count'] > 0:
+                cashier['items_per_transaction'] = (
+                        cashier['total_items'] / cashier['transaction_count']
+                )
+                cashier['refund_rate'] = (
+                        cashier['refund_count'] / cashier['transaction_count'] * 100
+                )
+            else:
+                cashier['items_per_transaction'] = 0
+                cashier['refund_rate'] = 0
+
+        # Summary
+        summary = queryset.aggregate(
+            total_cashiers=Count('created_by', distinct=True),
+            total_sales=Sum('total_amount'),
+            total_transactions=Count('id'),
+            avg_per_cashier=Avg('total_amount'),
+        )
+
+        return {
+            'performance': performance,
+            'summary': summary,
+            'filters': kwargs,
+        }
+
+    def _generate_profit_loss(self, **kwargs) -> Dict:
+        """Generate profit and loss statement"""
+        start_date = kwargs.get('start_date')
+        end_date = kwargs.get('end_date')
+        store_id = kwargs.get('store_id')
+
+        stores = self.get_accessible_stores()
+
+        # Revenue from sales
+        sales_queryset = SaleItem.objects.filter(
+            sale__store__in=stores,
+            sale__is_completed=True
+        ).select_related('sale', 'product')
+
+        if start_date:
+            sales_queryset = sales_queryset.filter(sale__created_at__date__gte=start_date)
+        if end_date:
+            sales_queryset = sales_queryset.filter(sale__created_at__date__lte=end_date)
+        if store_id:
+            sales_queryset = sales_queryset.filter(sale__store_id=store_id)
+
+        # Calculate revenue and costs
+        financial_summary = sales_queryset.aggregate(
+            gross_revenue=Sum('total_price'),
+            cost_of_goods_sold=Sum(F('product__cost_price') * F('quantity')),
+            total_tax=Sum('tax_amount'),
+            total_discount=Sum('sale__discount_amount'),
+        )
+
+        # Calculate profit metrics
+        gross_revenue = financial_summary['gross_revenue'] or 0
+        cogs = financial_summary['cost_of_goods_sold'] or 0
+        tax = financial_summary['total_tax'] or 0
+        discount = financial_summary['total_discount'] or 0
+
+        gross_profit = gross_revenue - cogs
+        net_profit = gross_profit - tax - discount
+
+        profit_loss = {
+            'revenue': {
+                'gross_revenue': gross_revenue,
+                'discounts': discount,
+                'net_revenue': gross_revenue - discount,
+            },
+            'costs': {
+                'cost_of_goods_sold': cogs,
+                'tax': tax,
+                'total_costs': cogs + tax,
+            },
+            'profit': {
+                'gross_profit': gross_profit,
+                'gross_margin': (gross_profit / gross_revenue * 100) if gross_revenue > 0 else 0,
+                'net_profit': net_profit,
+                'net_margin': (net_profit / gross_revenue * 100) if gross_revenue > 0 else 0,
+            }
+        }
+
+        # Category-wise profit
+        category_profit = list(sales_queryset.values(
+            'product__category__name'
+        ).annotate(
+            revenue=Sum('total_price'),
+            cost=Sum(F('product__cost_price') * F('quantity')),
+            quantity=Sum('quantity')
+        ).order_by('-revenue'))
+
+        for cat in category_profit:
+            revenue = cat['revenue'] or 0
+            cost = cat['cost'] or 0
+            cat['profit'] = revenue - cost
+            cat['margin'] = ((revenue - cost) / revenue * 100) if revenue > 0 else 0
+
+        return {
+            'profit_loss': profit_loss,
+            'category_profit': category_profit,
+            'filters': kwargs,
+        }
+
+    def _generate_stock_movement(self, **kwargs) -> Dict:
+        """Generate stock movement report"""
+        start_date = kwargs.get('start_date')
+        end_date = kwargs.get('end_date')
+        store_id = kwargs.get('store_id')
+        movement_type = kwargs.get('movement_type')
+
+        stores = self.get_accessible_stores()
+
+        queryset = StockMovement.objects.filter(
+            store__in=stores
+        ).select_related('product', 'store', 'created_by')
+
+        if start_date:
+            queryset = queryset.filter(created_at__date__gte=start_date)
+        if end_date:
+            queryset = queryset.filter(created_at__date__lte=end_date)
+        if store_id:
+            queryset = queryset.filter(store_id=store_id)
+        if movement_type:
+            queryset = queryset.filter(movement_type=movement_type)
+
+        # Movement summary
+        movements = list(queryset.values(
+            'id', 'product__name', 'product__sku', 'store__name',
+            'movement_type', 'quantity', 'reference_number',
+            'created_at', 'created_by__username', 'notes'
+        ).order_by('-created_at')[:500])
+
+        # Summary by type
+        summary = queryset.values('movement_type').annotate(
+            total_quantity=Sum('quantity'),
+            movement_count=Count('id')
+        ).order_by('movement_type')
+
+        return {
+            'movements': movements,
+            'summary': list(summary),
+            'filters': kwargs,
+        }

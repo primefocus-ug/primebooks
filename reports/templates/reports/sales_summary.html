@@ -1,0 +1,553 @@
+{% extends 'base.html' %}
+{% load static %}
+{% load custom_filters %}
+
+{% block title %}Sales Summary Report{% endblock %}
+
+{% block extra_css %}
+<style>
+    .filter-card {
+        background: #ffffff;
+        border-radius: 10px;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+        padding: 25px;
+        margin-bottom: 25px;
+    }
+    .summary-box {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        border-radius: 10px;
+        padding: 20px;
+        margin-bottom: 15px;
+        text-align: center;
+    }
+    .summary-box h3 {
+        font-size: 2rem;
+        margin-bottom: 5px;
+    }
+    .summary-box p {
+        margin: 0;
+        opacity: 0.9;
+        font-size: 0.9rem;
+    }
+    .chart-tabs {
+        border-bottom: 2px solid #e5e7eb;
+        margin-bottom: 20px;
+    }
+    .chart-tab {
+        padding: 10px 20px;
+        cursor: pointer;
+        border-bottom: 3px solid transparent;
+        transition: all 0.3s;
+    }
+    .chart-tab.active {
+        border-bottom-color: #3b82f6;
+        color: #3b82f6;
+        font-weight: 600;
+    }
+    .export-dropdown {
+        position: relative;
+        display: inline-block;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <!-- Header -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h2 class="mb-1">Sales Summary Report</h2>
+            <p class="text-muted mb-0">Comprehensive sales analysis and trends</p>
+        </div>
+        <div>
+            <a href="{% url 'reports:dashboard' %}" class="btn btn-outline-secondary me-2">
+                <i class="fas fa-arrow-left"></i> Back
+            </a>
+            {% if sales_data %}
+            <div class="btn-group">
+                <button type="button" class="btn btn-success dropdown-toggle" data-bs-toggle="dropdown">
+                    <i class="fas fa-download"></i> Export
+                </button>
+                <ul class="dropdown-menu">
+                    <li><a class="dropdown-item" href="#" onclick="exportReport('PDF')"><i class="far fa-file-pdf text-danger"></i> Export as PDF</a></li>
+                    <li><a class="dropdown-item" href="#" onclick="exportReport('XLSX')"><i class="far fa-file-excel text-success"></i> Export as Excel</a></li>
+                    <li><a class="dropdown-item" href="#" onclick="exportReport('CSV')"><i class="fas fa-file-csv text-info"></i> Export as CSV</a></li>
+                </ul>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Filters -->
+    <div class="filter-card">
+        <form method="get" id="filterForm">
+            <div class="row g-3">
+                <div class="col-md-3">
+                    {{ form.period.label_tag }}
+                    {{ form.period }}
+                </div>
+                <div class="col-md-3">
+                    {{ form.start_date.label_tag }}
+                    {{ form.start_date }}
+                </div>
+                <div class="col-md-3">
+                    {{ form.end_date.label_tag }}
+                    {{ form.end_date }}
+                </div>
+                <div class="col-md-3">
+                    {{ form.store.label_tag }}
+                    {{ form.store }}
+                </div>
+                <div class="col-md-3">
+                    {{ form.group_by.label_tag }}
+                    {{ form.group_by }}
+                </div>
+                <div class="col-md-3">
+                    {{ form.payment_method.label_tag }}
+                    {{ form.payment_method }}
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">&nbsp;</label>
+                    <button type="submit" class="btn btn-primary w-100">
+                        <i class="fas fa-search"></i> Generate Report
+                    </button>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">&nbsp;</label>
+                    <a href="{% url 'reports:sales_summary' %}" class="btn btn-outline-secondary w-100">
+                        <i class="fas fa-redo"></i> Reset
+                    </a>
+                </div>
+            </div>
+        </form>
+    </div>
+
+    {% if summary_stats %}
+    <!-- Summary Statistics -->
+    <div class="row g-3 mb-4">
+        <div class="col-md-3">
+            <div class="summary-box" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
+                <h3>UGX {{ summary_stats.total_sales|floatformat:0|default:"0" }}</h3>
+                <p>Total Sales</p>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="summary-box" style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);">
+                <h3>{{ summary_stats.total_transactions|default:"0" }}</h3>
+                <p>Total Transactions</p>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="summary-box" style="background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);">
+                <h3>UGX {{ summary_stats.avg_transaction|floatformat:0|default:"0" }}</h3>
+                <p>Average Transaction</p>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="summary-box" style="background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);">
+                <h3>UGX {{ summary_stats.total_tax|floatformat:0|default:"0" }}</h3>
+                <p>Total Tax Collected</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Charts -->
+    <div class="row g-4 mb-4">
+        <div class="col-lg-8">
+            <div class="card shadow-sm">
+                <div class="card-header bg-white">
+                    <h5 class="mb-0"><i class="fas fa-chart-bar text-primary"></i> Sales Analysis</h5>
+                </div>
+                <div class="card-body">
+                    <div style="position: relative; height: 350px;">
+                        <canvas id="salesChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-4">
+            <div class="card shadow-sm">
+                <div class="card-header bg-white">
+                    <h5 class="mb-0"><i class="fas fa-chart-pie text-success"></i> Payment Methods</h5>
+                </div>
+                <div class="card-body">
+                    <div style="position: relative; height: 350px;">
+                        <canvas id="paymentChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Data Table -->
+    <div class="card shadow-sm">
+        <div class="card-header bg-white d-flex justify-content-between align-items-center">
+            <h5 class="mb-0"><i class="fas fa-table text-info"></i> Detailed Data</h5>
+            <div class="input-group" style="width: 300px;">
+                <input type="text" class="form-control" id="searchTable" placeholder="Search...">
+                <span class="input-group-text"><i class="fas fa-search"></i></span>
+            </div>
+        </div>
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-hover" id="dataTable">
+                    <thead class="table-light">
+                        <tr>
+                            {% for key in sales_data.0.keys %}
+                            <th>{{ key|replace:"_, "|title }}</th>
+
+                            {% endfor %}
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in sales_data %}
+                        <tr>
+                            {% for value in row.values %}
+                            <td>
+                                {% if 'amount' in row.keys or 'price' in row.keys or 'total' in row.keys %}
+                                    {% if value|floatformat:0 %}
+                                        UGX {{ value|floatformat:0 }}
+                                    {% else %}
+                                        {{ value }}
+                                    {% endif %}
+                                {% else %}
+                                    {{ value }}
+                                {% endif %}
+                            </td>
+                            {% endfor %}
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    {% else %}
+    <div class="card shadow-sm">
+        <div class="card-body text-center py-5">
+            <i class="fas fa-chart-line fa-4x text-muted mb-3"></i>
+            <h4 class="text-muted">No Data Available</h4>
+            <p class="text-muted">Please select filters above and click "Generate Report" to view sales data.</p>
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+<!-- Export Modal -->
+<div class="modal fade" id="exportModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Export Report</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="exportForm" method="post">
+                    {% csrf_token %}
+                    <input type="hidden" name="format" id="exportFormat">
+                    <div class="mb-3">
+                        <label class="form-label">Export Options</label>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="includeCharts" name="include_charts" checked>
+                            <label class="form-check-label" for="includeCharts">Include Charts</label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="includeSummary" name="include_summary" checked>
+                            <label class="form-check-label" for="includeSummary">Include Summary</label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="confidential" name="confidential">
+                            <label class="form-check-label" for="confidential">Mark as Confidential</label>
+                        </div>
+                    </div>
+                    <div class="mb-3" id="watermarkField" style="display:none;">
+                        <label class="form-label">Watermark Text</label>
+                        <input type="text" class="form-control" name="watermark" value="CONFIDENTIAL">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Email Report (Optional)</label>
+                        <input type="email" class="form-control" name="email_recipients" placeholder="email@example.com">
+                        <small class="text-muted">Leave empty to download directly</small>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" onclick="submitExport()">
+                    <i class="fas fa-download"></i> Generate Export
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // Period selector logic
+    document.getElementById('id_period').addEventListener('change', function() {
+        const period = this.value;
+        const today = new Date();
+        let startDate, endDate = today;
+
+        if (period === 'custom') {
+            document.getElementById('id_start_date').disabled = false;
+            document.getElementById('id_end_date').disabled = false;
+            return;
+        }
+
+        document.getElementById('id_start_date').disabled = true;
+        document.getElementById('id_end_date').disabled = true;
+
+        switch(period) {
+            case 'today':
+                startDate = today;
+                break;
+            case 'yesterday':
+                startDate = new Date(today.setDate(today.getDate() - 1));
+                endDate = startDate;
+                break;
+            case 'this_week':
+                startDate = new Date(today.setDate(today.getDate() - today.getDay()));
+                break;
+            case 'this_month':
+                startDate = new Date(today.getFullYear(), today.getMonth(), 1);
+                break;
+        }
+
+        if (startDate) {
+            document.getElementById('id_start_date').value = startDate.toISOString().split('T')[0];
+            document.getElementById('id_end_date').value = endDate.toISOString().split('T')[0];
+        }
+    });
+
+    // Confidential checkbox toggle
+    document.getElementById('confidential').addEventListener('change', function() {
+        document.getElementById('watermarkField').style.display = this.checked ? 'block' : 'none';
+    });
+
+    // Export functions
+    function exportReport(format) {
+        document.getElementById('exportFormat').value = format;
+        const modal = new bootstrap.Modal(document.getElementById('exportModal'));
+        modal.show();
+    }
+
+    function submitExport() {
+        const form = document.getElementById('exportForm');
+        const formData = new FormData(form);
+
+        // Show loading
+        const submitBtn = event.target;
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Generating...';
+
+        fetch('{% url "reports:generate_report" 1 %}', {
+            method: 'POST',
+            body: formData,
+            headers: {
+                'X-CSRFToken': '{{ csrf_token }}'
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                // Close modal
+                bootstrap.Modal.getInstance(document.getElementById('exportModal')).hide();
+
+                // Show progress modal
+                showProgressModal(data.generated_report_id, data.websocket_url);
+            } else {
+                alert('Error: ' + JSON.stringify(data.errors));
+            }
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = '<i class="fas fa-download"></i> Generate Export';
+        })
+        .catch(error => {
+            alert('Error generating report: ' + error);
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = '<i class="fas fa-download"></i> Generate Export';
+        });
+    }
+
+    function showProgressModal(reportId, wsUrl) {
+        // Create progress modal dynamically
+        const modalHtml = `
+            <div class="modal fade" id="progressModal" tabindex="-1" data-bs-backdrop="static">
+                <div class="modal-dialog">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h5 class="modal-title">Generating Report</h5>
+                        </div>
+                        <div class="modal-body">
+                            <div class="progress mb-3">
+                                <div class="progress-bar progress-bar-striped progress-bar-animated"
+                                     id="progressBar" role="progressbar" style="width: 0%">0%</div>
+                            </div>
+                            <p id="progressMessage" class="text-center">Initializing...</p>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-danger" onclick="cancelGeneration(${reportId})">Cancel</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        document.body.insertAdjacentHTML('beforeend', modalHtml);
+        const progressModal = new bootstrap.Modal(document.getElementById('progressModal'));
+        progressModal.show();
+
+        // Connect to WebSocket for progress updates
+        connectProgressWebSocket(reportId, progressModal);
+    }
+
+    function connectProgressWebSocket(reportId, modal) {
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const ws = new WebSocket(`${protocol}//${window.location.host}/ws/reports/generation/${reportId}/`);
+
+        ws.onmessage = function(event) {
+            const data = JSON.parse(event.data);
+
+            if (data.type === 'progress') {
+                updateProgress(data.progress, data.message);
+            } else if (data.type === 'complete') {
+                modal.hide();
+                window.location.href = data.download_url;
+                showSuccess('Report generated successfully!');
+            } else if (data.type === 'failed') {
+                modal.hide();
+                showError('Report generation failed: ' + data.error);
+            }
+        };
+
+        ws.onerror = function() {
+            console.error('WebSocket error');
+        };
+    }
+
+    function updateProgress(percentage, message) {
+        const progressBar = document.getElementById('progressBar');
+        progressBar.style.width = percentage + '%';
+        progressBar.textContent = percentage + '%';
+        document.getElementById('progressMessage').textContent = message;
+    }
+
+    function cancelGeneration(reportId) {
+        fetch(`/reports/ajax/cancel/${reportId}/`, {
+            method: 'POST',
+            headers: {
+                'X-CSRFToken': '{{ csrf_token }}'
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                bootstrap.Modal.getInstance(document.getElementById('progressModal')).hide();
+                showSuccess('Report generation cancelled');
+            }
+        });
+    }
+
+    function showSuccess(message) {
+        const alert = `<div class="alert alert-success alert-dismissible fade show" role="alert">
+            ${message}
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>`;
+        document.querySelector('.container-fluid').insertAdjacentHTML('afterbegin', alert);
+    }
+
+    function showError(message) {
+        const alert = `<div class="alert alert-danger alert-dismissible fade show" role="alert">
+            ${message}
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>`;
+        document.querySelector('.container-fluid').insertAdjacentHTML('afterbegin', alert);
+    }
+
+    // Table search
+    document.getElementById('searchTable').addEventListener('keyup', function() {
+        const value = this.value.toLowerCase();
+        const rows = document.querySelectorAll('#dataTable tbody tr');
+
+        rows.forEach(row => {
+            const text = row.textContent.toLowerCase();
+            row.style.display = text.includes(value) ? '' : 'none';
+        });
+    });
+
+    {% if chart_data %}
+    // Sales Chart
+    const chartData = {{ chart_data|safe }};
+    const ctx = document.getElementById('salesChart').getContext('2d');
+
+    new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: chartData.map(d => d.date || d.store__name || d.payment_method || 'Unknown'),
+            datasets: [{
+                label: 'Total Amount',
+                data: chartData.map(d => d.total_amount),
+                backgroundColor: 'rgba(59, 130, 246, 0.8)',
+                borderColor: 'rgba(59, 130, 246, 1)',
+                borderWidth: 1
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    display: false
+                },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            return 'UGX ' + context.parsed.y.toLocaleString();
+                        }
+                    }
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    ticks: {
+                        callback: function(value) {
+                            return 'UGX ' + value.toLocaleString();
+                        }
+                    }
+                }
+            }
+        }
+    });
+
+    // Payment Methods Pie Chart
+    const paymentCtx = document.getElementById('paymentChart').getContext('2d');
+    new Chart(paymentCtx, {
+        type: 'doughnut',
+        data: {
+            labels: ['Cash', 'Card', 'Mobile Money', 'Other'],
+            datasets: [{
+                data: [45, 30, 20, 5],
+                backgroundColor: [
+                    'rgba(59, 130, 246, 0.8)',
+                    'rgba(16, 185, 129, 0.8)',
+                    'rgba(245, 158, 11, 0.8)',
+                    'rgba(239, 68, 68, 0.8)'
+                ]
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    position: 'bottom'
+                }
+            }
+        }
+    });
+    {% endif %}
+</script>
+{% endblock %}

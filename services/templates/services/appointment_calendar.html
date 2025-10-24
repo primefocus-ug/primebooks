@@ -1,0 +1,350 @@
+{% extends "services/base.html" %}
+
+{% block title %}Appointment Calendar{% endblock %}
+{% block page_title %}Appointment Calendar{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <h5 class="mb-0"><i class="fas fa-calendar-alt"></i> Appointment Calendar</h5>
+        <div>
+            <a href="{% url 'services:appointment_list' %}" class="btn btn-info btn-sm me-2">
+                <i class="fas fa-list"></i> List View
+            </a>
+            <a href="{% url 'services:appointment_create' %}" class="btn btn-primary btn-sm">
+                <i class="fas fa-plus"></i> New Appointment
+            </a>
+        </div>
+    </div>
+    <div class="card-body">
+        <!-- Month Navigation -->
+        <div class="row mb-4">
+            <div class="col-md-4">
+                <a href="?year={{ year }}&month={% if month == 1 %}12{% else %}{{ month|add:'-1' }}{% endif %}" 
+                   class="btn btn-outline-primary">
+                    <i class="fas fa-chevron-left"></i> Previous Month
+                </a>
+            </div>
+            <div class="col-md-4 text-center">
+                <h3 class="mb-0">
+                    {% if month == 1 %}January{% elif month == 2 %}February{% elif month == 3 %}March
+                    {% elif month == 4 %}April{% elif month == 5 %}May{% elif month == 6 %}June
+                    {% elif month == 7 %}July{% elif month == 8 %}August{% elif month == 9 %}September
+                    {% elif month == 10 %}October{% elif month == 11 %}November{% else %}December{% endif %}
+                    {{ year }}
+                </h3>
+            </div>
+            <div class="col-md-4 text-end">
+                <a href="?year={{ year }}&month={% if month == 12 %}1{% else %}{{ month|add:'1' }}{% endif %}" 
+                   class="btn btn-outline-primary">
+                    Next Month <i class="fas fa-chevron-right"></i>
+                </a>
+            </div>
+        </div>
+
+        <!-- Calendar Grid -->
+        <div class="calendar-wrapper">
+            <!-- Calendar Header (Days of Week) -->
+            <div class="calendar-grid">
+                <div class="calendar-header-row">
+                    <div class="calendar-day-header">Sunday</div>
+                    <div class="calendar-day-header">Monday</div>
+                    <div class="calendar-day-header">Tuesday</div>
+                    <div class="calendar-day-header">Wednesday</div>
+                    <div class="calendar-day-header">Thursday</div>
+                    <div class="calendar-day-header">Friday</div>
+                    <div class="calendar-day-header">Saturday</div>
+                </div>
+
+                <!-- Calendar Body (Days) -->
+                <div class="calendar-body-grid">
+                    {% load static %}
+                    {% comment %}
+                    Note: You'll need to implement calendar logic in your view to generate days
+                    This is a placeholder showing how to display the calendar
+                    {% endcomment %}
+                    
+                    {% for week in calendar_weeks %}
+                        {% for day in week %}
+                        <div class="calendar-day-cell {% if day.is_today %}today{% endif %} {% if not day.in_month %}other-month{% endif %}">
+                            {% if day.date %}
+                                <div class="day-number">{{ day.date.day }}</div>
+                                
+                                <!-- Appointments for this day -->
+                                {% with date_key=day.date|date:"Y-m-d" %}
+                                    {% if date_key in appointments_by_date %}
+                                        <div class="appointments-container">
+                                            {% for appointment in appointments_by_date|get_item:date_key %}
+                                            <div class="appointment-badge status-{{ appointment.status }}"
+                                                 onclick="window.location.href='{% url 'services:appointment_detail' appointment.pk %}'"
+                                                 title="{{ appointment.service.name }} - {{ appointment.customer_name }}">
+                                                <div class="appointment-time">
+                                                    <i class="fas fa-clock"></i> {{ appointment.scheduled_time|time:"g:i A" }}
+                                                </div>
+                                                <div class="appointment-info">
+                                                    <strong>{{ appointment.service.name|truncatewords:2 }}</strong><br>
+                                                    <small>{{ appointment.customer_name|truncatewords:2 }}</small>
+                                                </div>
+                                            </div>
+                                            {% endfor %}
+                                        </div>
+                                    {% else %}
+                                        <div class="no-appointments text-muted text-center">
+                                            <small>No appointments</small>
+                                        </div>
+                                    {% endif %}
+                                {% endwith %}
+                            {% endif %}
+                        </div>
+                        {% endfor %}
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Legend -->
+        <div class="mt-4 p-3 bg-light rounded">
+            <strong><i class="fas fa-info-circle"></i> Status Legend:</strong>
+            <span class="badge status-scheduled ms-2">Scheduled</span>
+            <span class="badge status-confirmed ms-2">Confirmed</span>
+            <span class="badge status-in_progress ms-2">In Progress</span>
+            <span class="badge status-completed ms-2">Completed</span>
+            <span class="badge status-cancelled ms-2">Cancelled</span>
+        </div>
+
+        <!-- Quick Stats -->
+        <div class="row mt-4">
+            <div class="col-md-3">
+                <div class="stat-mini">
+                    <i class="fas fa-calendar-check text-primary"></i>
+                    <div>
+                        <h4>{{ total_appointments }}</h4>
+                        <small>Total This Month</small>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="stat-mini">
+                    <i class="fas fa-clock text-warning"></i>
+                    <div>
+                        <h4>{{ pending_appointments }}</h4>
+                        <small>Pending</small>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="stat-mini">
+                    <i class="fas fa-check-circle text-success"></i>
+                    <div>
+                        <h4>{{ completed_appointments }}</h4>
+                        <small>Completed</small>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="stat-mini">
+                    <i class="fas fa-dollar-sign text-info"></i>
+                    <div>
+                        <h4>${{ month_revenue|floatformat:0 }}</h4>
+                        <small>Revenue</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+    .calendar-wrapper {
+        overflow-x: auto;
+    }
+    
+    .calendar-grid {
+        min-width: 900px;
+    }
+    
+    .calendar-header-row {
+        display: grid;
+        grid-template-columns: repeat(7, 1fr);
+        gap: 2px;
+        background: #e2e8f0;
+        border-radius: 8px 8px 0 0;
+        overflow: hidden;
+    }
+    
+    .calendar-day-header {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 15px;
+        text-align: center;
+        font-weight: 600;
+        font-size: 14px;
+    }
+    
+    .calendar-body-grid {
+        display: grid;
+        grid-template-columns: repeat(7, 1fr);
+        gap: 2px;
+        background: #e2e8f0;
+        border-radius: 0 0 8px 8px;
+        overflow: hidden;
+    }
+    
+    .calendar-day-cell {
+        background: white;
+        min-height: 140px;
+        padding: 10px;
+        position: relative;
+        transition: all 0.3s;
+    }
+    
+    .calendar-day-cell:hover {
+        background: #f8fafc;
+        transform: scale(1.02);
+        z-index: 10;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    }
+    
+    .calendar-day-cell.today {
+        background: #fef3c7;
+        border: 2px solid #f59e0b;
+    }
+    
+    .calendar-day-cell.other-month {
+        background: #f8fafc;
+        opacity: 0.5;
+    }
+    
+    .day-number {
+        font-weight: 700;
+        font-size: 18px;
+        color: #334155;
+        margin-bottom: 8px;
+    }
+    
+    .appointments-container {
+        max-height: 100px;
+        overflow-y: auto;
+        overflow-x: hidden;
+    }
+    
+    .appointment-badge {
+        padding: 6px 8px;
+        margin-bottom: 6px;
+        border-radius: 6px;
+        cursor: pointer;
+        transition: all 0.2s;
+        font-size: 11px;
+        border-left: 4px solid;
+    }
+    
+    .appointment-badge:hover {
+        transform: translateX(3px);
+        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+    
+    .appointment-badge.status-scheduled {
+        background: #dbeafe;
+        border-left-color: #3b82f6;
+        color: #1e40af;
+    }
+    
+    .appointment-badge.status-confirmed {
+        background: #d1fae5;
+        border-left-color: #10b981;
+        color: #065f46;
+    }
+    
+    .appointment-badge.status-in_progress {
+        background: #fef3c7;
+        border-left-color: #f59e0b;
+        color: #92400e;
+    }
+    
+    .appointment-badge.status-completed {
+        background: #dcfce7;
+        border-left-color: #22c55e;
+        color: #14532d;
+    }
+    
+    .appointment-badge.status-cancelled {
+        background: #fee2e2;
+        border-left-color: #ef4444;
+        color: #991b1b;
+    }
+    
+    .appointment-time {
+        font-weight: 600;
+        margin-bottom: 3px;
+    }
+    
+    .appointment-info {
+        line-height: 1.3;
+    }
+    
+    .no-appointments {
+        padding: 20px 0;
+    }
+    
+    .stat-mini {
+        display: flex;
+        align-items: center;
+        gap: 15px;
+        padding: 15px;
+        background: white;
+        border-radius: 8px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    }
+    
+    .stat-mini i {
+        font-size: 32px;
+    }
+    
+    .stat-mini h4 {
+        margin: 0;
+        font-size: 24px;
+        font-weight: 700;
+    }
+    
+    .stat-mini small {
+        color: #64748b;
+    }
+    
+    /* Scrollbar styling */
+    .appointments-container::-webkit-scrollbar {
+        width: 4px;
+    }
+    
+    .appointments-container::-webkit-scrollbar-track {
+        background: #f1f5f9;
+    }
+    
+    .appointments-container::-webkit-scrollbar-thumb {
+        background: #cbd5e1;
+        border-radius: 4px;
+    }
+    
+    @media (max-width: 768px) {
+        .calendar-day-header {
+            font-size: 12px;
+            padding: 10px 5px;
+        }
+        
+        .calendar-day-cell {
+            min-height: 100px;
+            padding: 5px;
+        }
+        
+        .day-number {
+            font-size: 14px;
+        }
+        
+        .appointment-badge {
+            font-size: 10px;
+            padding: 4px 6px;
+        }
+    }
+</style>
+{% endblock %}

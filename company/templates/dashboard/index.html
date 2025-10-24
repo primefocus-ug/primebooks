@@ -1,0 +1,190 @@
+{% extends 'base.html' %}
+
+{% block title %}Dashboard{% endblock %}
+
+{% block content %}
+<div class="container mx-auto px-4 py-8">
+    <div class="max-w-7xl mx-auto">
+        <!-- Header with Company Status -->
+        <div class="mb-8">
+            <div class="flex justify-between items-center">
+                <div>
+                    <h1 class="text-3xl font-bold text-gray-900">Dashboard</h1>
+                    <p class="text-gray-600 mt-2">Welcome back, {{ request.user.get_full_name }}</p>
+                </div>
+                <div class="text-right">
+                    <div class="text-sm text-gray-600">{{ company.display_name }}</div>
+                    <div class="flex items-center mt-1">
+                        <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full
+                            {% if company.status == 'ACTIVE' %}bg-green-100 text-green-800
+                            {% elif company.status == 'TRIAL' %}bg-blue-100 text-blue-800
+                            {% elif company.status == 'SUSPENDED' %}bg-yellow-100 text-yellow-800
+                            {% else %}bg-red-100 text-red-800{% endif %}">
+                            {{ company.access_status_display }}
+                        </span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Status Alerts -->
+        {% if company.days_until_expiry <= 7 and company.days_until_expiry > 0 %}
+        <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-6">
+            <div class="flex">
+                <div class="flex-shrink-0">
+                    <svg class="h-5 w-5 text-yellow-400" fill="currentColor" viewBox="0 0 20 20">
+                        <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"/>
+                    </svg>
+                </div>
+                <div class="ml-3">
+                    <h3 class="text-sm font-medium text-yellow-800">Subscription Expiring Soon</h3>
+                    <p class="text-sm text-yellow-700 mt-1">
+                        Your subscription expires in {{ company.days_until_expiry }} day{{ company.days_until_expiry|pluralize }}.
+                        <a href="{% url 'company:billing' %}" class="underline font-medium">Renew now</a> to avoid service interruption.
+                    </p>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Usage Statistics -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+            <!-- Users -->
+            <div class="bg-white rounded-lg shadow p-6">
+                <div class="flex items-center">
+                    <div class="p-3 rounded-full bg-blue-100 mr-4">
+                        <svg class="h-6 w-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197m13.5-9a2.5 2.5 0 11-5 0 2.5 2.5 0 015 0z"/>
+                        </svg>
+                    </div>
+                    <div class="flex-1">
+                        <h3 class="text-lg font-medium text-gray-900">Users</h3>
+                        <div class="flex items-baseline">
+                            <span class="text-2xl font-semibold text-gray-900">{{ usage_stats.users_count }}</span>
+                            <span class="ml-2 text-sm text-gray-500">/ {{ usage_stats.max_users }}</span>
+                        </div>
+                        <div class="w-full bg-gray-200 rounded-full h-2 mt-2">
+                            <div class="bg-blue-600 h-2 rounded-full" style="width: {{ usage_stats.users_count|mul:100|div:usage_stats.max_users }}%"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Storage -->
+            <div class="bg-white rounded-lg shadow p-6">
+                <div class="flex items-center">
+                    <div class="p-3 rounded-full bg-green-100 mr-4">
+                        <svg class="h-6 w-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 4V2a1 1 0 011-1h8a1 1 0 011 1v2h4a1 1 0 011 1v2a1 1 0 01-1 1h-1v12a2 2 0 01-2 2H6a2 2 0 01-2-2V8H3a1 1 0 01-1-1V5a1 1 0 011-1h4z"/>
+                        </svg>
+                    </div>
+                    <div class="flex-1">
+                        <h3 class="text-lg font-medium text-gray-900">Storage</h3>
+                        <div class="flex items-baseline">
+                            <span class="text-2xl font-semibold text-gray-900">{{ usage_stats.storage_percentage|floatformat:1 }}%</span>
+                            <span class="ml-2 text-sm text-gray-500">used</span>
+                        </div>
+                        <div class="w-full bg-gray-200 rounded-full h-2 mt-2">
+                            <div class="bg-green-600 h-2 rounded-full" style="width: {{ usage_stats.storage_percentage }}%"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Branches -->
+            <div class="bg-white rounded-lg shadow p-6">
+                <div class="flex items-center">
+                    <div class="p-3 rounded-full bg-purple-100 mr-4">
+                        <svg class="h-6 w-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"/>
+                        </svg>
+                    </div>
+                    <div class="flex-1">
+                        <h3 class="text-lg font-medium text-gray-900">Branches</h3>
+                        <div class="flex items-baseline">
+                            <span class="text-2xl font-semibold text-gray-900">{{ company.branches_count }}</span>
+                            <span class="ml-2 text-sm text-gray-500">active</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Quick Actions -->
+        <div class="bg-white rounded-lg shadow p-6 mb-8">
+            <h2 class="text-lg font-medium text-gray-900 mb-4">Quick Actions</h2>
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <a href="{% url 'invoices:create' %}"
+                   class="flex items-center p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition duration-200
+                          {% if not actions_status.create_invoice.allowed %}opacity-50 cursor-not-allowed{% endif %}"
+                   {% if not actions_status.create_invoice.allowed %}title="{{ actions_status.create_invoice.reason }}"{% endif %}>
+                    <div class="p-2 bg-blue-100 rounded-lg mr-3">
+                        <svg class="h-5 w-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                        </svg>
+                    </div>
+                    <span class="font-medium">Create Invoice</span>
+                </a>
+
+                <a href="{% url 'company:users' %}"
+                   class="flex items-center p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition duration-200
+                          {% if not actions_status.add_user.allowed %}opacity-50 cursor-not-allowed{% endif %}"
+                   {% if not actions_status.add_user.allowed %}title="{{ actions_status.add_user.reason }}"{% endif %}>
+                    <div class="p-2 bg-green-100 rounded-lg mr-3">
+                        <svg class="h-5 w-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z"/>
+                        </svg>
+                    </div>
+                    <span class="font-medium">Add User</span>
+                </a>
+
+                <a href="{% url 'reports:export' %}"
+                   class="flex items-center p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition duration-200
+                          {% if not actions_status.export_data.allowed %}opacity-50 cursor-not-allowed{% endif %}"
+                   {% if not actions_status.export_data.allowed %}title="{{ actions_status.export_data.reason }}"{% endif %}>
+                    <div class="p-2 bg-purple-100 rounded-lg mr-3">
+                        <svg class="h-5 w-5 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                        </svg>
+                    </div>
+                    <span class="font-medium">Export Data</span>
+                </a>
+
+                <a href="{% url 'company:settings' %}"
+                   class="flex items-center p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition duration-200">
+                    <div class="p-2 bg-gray-100 rounded-lg mr-3">
+                        <svg class="h-5 w-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                        </svg>
+                    </div>
+                    <span class="font-medium">Settings</span>
+                </a>
+            </div>
+        </div>
+
+        <!-- Recent Activity -->
+        <div class="bg-white rounded-lg shadow p-6">
+            <h2 class="text-lg font-medium text-gray-900 mb-4">Recent Activity</h2>
+            <div class="space-y-4">
+                <p class="text-gray-500 text-center py-8">No recent activity to display.</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// Auto-refresh company status every 5 minutes
+setInterval(function() {
+    fetch('/api/company/status/')
+        .then(response => response.json())
+        .then(data => {
+            if (data.status_changed) {
+                // Reload page if status changed
+                window.location.reload();
+            }
+        })
+        .catch(error => console.error('Error checking company status:', error));
+}, 300000); // 5 minutes
+</script>
+{% endblock %}

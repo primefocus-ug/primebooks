@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ invoice.get_document_type_display }} #{{ invoice.invoice_number }}</title>
+    <style>
+    :root {
+        --primary: #ff9800;
+        --dark: #1b1f3b;
+        --text: #333;
+        --border: #ddd;
+        --light-gray: #f5f6fa;
+        --accent: #e0e0e0;
+    }
+
+    @media print {
+        .no-print { display: none !important; }
+        body { margin: 0; }
+        .page { box-shadow: none; border: none; }
+        @page { margin: 1cm; size: A4; }
+        .header, .footer {
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+            background: var(--dark) !important;
+            color: #fff !important;
+        }
+        .invoice-title h2 {
+            color: var(--primary) !important;
+        }
+        * {
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+        }
+    }
+
+    body {
+        font-family: "Segoe UI", Arial, sans-serif;
+        font-size: 12px;
+        color: var(--text);
+        background: var(--light-gray);
+        margin: 0;
+        padding: 20px;
+    }
+
+    .page {
+        max-width: 850px;
+        margin: 0 auto;
+        background: #fff;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+        border-radius: 8px;
+        overflow: hidden;
+        position: relative;
+    }
+
+    .header {
+        background: var(--dark);
+        color: #fff;
+        padding: 30px 40px;
+        position: relative;
+        overflow: hidden;
+    }
+
+    .header::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: linear-gradient(135deg, transparent 50%, var(--primary) 50%);
+        z-index: 0;
+        opacity: 0.1;
+    }
+
+    .header-content {
+        position: relative;
+        z-index: 1;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+    .company {
+        max-width: 50%;
+    }
+
+    .company img {
+        max-height: 70px;
+        margin-bottom: 10px;
+    }
+
+    .company h1 {
+        margin: 0;
+        font-size: 24px;
+        text-transform: uppercase;
+        letter-spacing: 1.5px;
+        font-weight: 600;
+    }
+
+    .company small {
+        display: block;
+        font-size: 11px;
+        color: #ccc;
+    }
+
+    .invoice-title {
+        text-align: right;
+    }
+
+    .invoice-title h2 {
+        margin: 0;
+        font-size: 28px;
+        color: var(--primary);
+        font-weight: 700;
+        text-transform: uppercase;
+    }
+
+    .invoice-title p {
+        margin: 5px 0;
+        font-size: 12px;
+        color: #fff;
+    }
+
+    .content {
+        padding: 40px;
+    }
+
+    .row {
+        display: flex;
+        justify-content: space-between;
+        margin-bottom: 30px;
+    }
+
+    .info-box {
+        width: 48%;
+        background: #fff;
+        border: 1px solid var(--border);
+        padding: 20px;
+        border-left: 6px solid var(--primary);
+        border-radius: 6px;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+    }
+
+    .info-box h4 {
+        margin: 0 0 10px;
+        color: var(--primary);
+        font-size: 14px;
+        font-weight: 500;
+        text-transform: uppercase;
+        border-bottom: 1px dashed var(--border);
+        padding-bottom: 5px;
+    }
+
+    table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 25px;
+        background: #fff;
+        border-radius: 6px;
+        overflow: hidden;
+    }
+
+    th, td {
+        border: 1px solid var(--border);
+        padding: 10px 12px;
+        text-align: left;
+    }
+
+    th {
+        background: var(--primary);
+        color: #fff;
+        text-transform: uppercase;
+        font-size: 11px;
+        font-weight: 600;
+    }
+
+    tr:nth-child(even) td {
+        background: #fafafa;
+    }
+
+    td.text-right, th.text-right { text-align: right; }
+    td.text-center, th.text-center { text-align: center; }
+
+    .totals {
+        margin-top: 30px;
+        width: 350px;
+        float: right;
+        background: #f9fafc;
+        padding: 20px;
+        border-radius: 6px;
+        border: 1px solid var(--border);
+    }
+
+    .totals table {
+        width: 100%;
+        border-collapse: collapse;
+    }
+
+    .totals td {
+        padding: 10px;
+        border-bottom: 1px solid #eee;
+        font-size: 12px;
+    }
+
+    .total-row td {
+        border-top: 2px solid var(--dark);
+        font-weight: 600;
+        font-size: 14px;
+        color: var(--dark);
+    }
+
+    .footer {
+        background: var(--dark);
+        color: #fff;
+        padding: 20px 40px;
+        font-size: 11px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-top: 40px;
+    }
+
+    .footer div {
+        width: 45%;
+    }
+
+    .footer p {
+        margin: 5px 0;
+    }
+
+    .footer strong {
+        color: var(--primary);
+    }
+
+    .qr {
+        border: 2px dashed var(--border);
+        width: 120px;
+        height: 120px;
+        text-align: center;
+        line-height: 120px;
+        font-size: 10px;
+        color: #888;
+        background: #fff;
+        float: right;
+        margin-left: 20px;
+    }
+
+    .no-print {
+        text-align: right;
+        margin-bottom: 15px;
+    }
+
+    .btn {
+        background: var(--primary);
+        color: #fff;
+        border: none;
+        padding: 8px 16px;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 12px;
+        margin-left: 10px;
+        transition: background 0.3s;
+    }
+
+    .btn:hover {
+        background: #e68a00;
+    }
+</style>
+</head>
+<body>
+<div class="no-print">
+    <button class="btn" onclick="window.print()">🖨️ Print</button>
+    <button class="btn" onclick="window.close()">✖ Close</button>
+</div>
+
+<div class="page">
+    <div class="header">
+        <div class="header-content">
+            <div class="company">
+                {% if company_info.logo %}
+                    <img src="{{ company_info.logo.url }}" alt="Logo" style="max-height:70px;margin-bottom:10px;">
+                {% endif %}
+                <h1>{{ company_info.name }}</h1>
+                <small>{{ company_info.address }} | Tel: {{ company_info.phone }} | Email: {{ company_info.email }}</small>
+            </div>
+            <div class="invoice-title">
+                <h2>{{ invoice.get_document_type_display }}</h2>
+                <p><strong>No:</strong> {{ invoice.invoice_number }}</p>
+                <p><strong>Date:</strong> {{ invoice.issue_date|date:"F d, Y" }}</p>
+                {% if invoice.due_date %}
+                <p><strong>Due:</strong> {{ invoice.due_date|date:"F d, Y" }}</p>
+                {% endif %}
+                <p><strong>Status:</strong> {{ invoice.get_status_display }}</p>
+            </div>
+        </div>
+    </div>
+
+    <div class="content">
+        <div class="row">
+            <div class="info-box">
+                <h4>Invoice To</h4>
+                {% if invoice.sale.customer %}
+                    <p><strong>{{ invoice.sale.customer.name }}</strong><br>
+                    {{ invoice.sale.customer.address|default:"" }}<br>
+                    {{ invoice.sale.customer.phone|default:"" }}<br>
+                    {{ invoice.sale.customer.email|default:"" }}</p>
+                {% else %}
+                    <p>Walk-in Customer</p>
+                {% endif %}
+            </div>
+            <div class="info-box">
+                <h4>Issued By</h4>
+                <p><strong>{{ request.user.get_full_name|default:request.user.username }}</strong><br>
+                {{ company_info.name }}<br>
+                {{ company_info.email }}</p>
+            </div>
+        </div>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>Description</th>
+                    <th class="text-center">Qty</th>
+                    <th class="text-right">Price</th>
+                    <th class="text-right">Total</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in invoice.sale.items.all %}
+                <tr>
+                    <td>{{ item.product.name }}</td>
+                    <td class="text-center">{{ item.quantity }}</td>
+                    <td class="text-right">UGX {{ item.unit_price|floatformat:"2g" }}</td>
+                    <td class="text-right">UGX {{ item.total_price|floatformat:"2g" }}</td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="4" class="text-center">No items</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+
+        <div class="totals">
+            <table>
+                <tr><td>Subtotal:</td><td class="text-right">UGX {{ invoice.subtotal|floatformat:"2g" }}</td></tr>
+                {% if invoice.discount_amount > 0 %}
+                <tr><td>Discount:</td><td class="text-right">-UGX {{ invoice.discount_amount|floatformat:"2g" }}</td></tr>
+                {% endif %}
+                <tr><td>Tax:</td><td class="text-right">UGX {{ invoice.tax_amount|floatformat:"2g" }}</td></tr>
+                <tr class="total-row"><td>Total:</td><td class="text-right">UGX {{ invoice.total_amount|floatformat:"2g" }}</td></tr>
+            </table>
+        </div>
+
+        {% if invoice.is_fiscalized %}
+        <div class="info-box" style="margin-top:30px;">
+            <h4>URA EFRIS Fiscalization Details</h4>
+            <p>
+                <strong>Fiscal Document No:</strong> {{ invoice.fiscal_number }}<br>
+                <strong>Verification Code:</strong> {{ invoice.verification_code }}<br>
+                <strong>Fiscalization Time:</strong> {{ invoice.fiscalization_time|date:"F d, Y H:i:s" }}
+            </p>
+            {% if invoice.qr_code %}
+            <div class="qr">QR CODE</div>
+            {% endif %}
+        </div>
+        {% endif %}
+    </div>
+
+    <div class="footer">
+        <div>
+            <p><strong>Payment Method:</strong> Cash / Mobile Money / Bank Transfer</p>
+            <p>Thank you for your business!</p>
+        </div>
+        <div style="text-align:right;">
+            <p><strong>Contact Us:</strong> {{ company_info.email }} | {{ company_info.phone }}</p>
+            <p><small>Generated on {{ invoice.created_at|date:"F d, Y H:i:s" }}</small></p>
+        </div>
+    </div>
+</div>
+</body>
+</html>

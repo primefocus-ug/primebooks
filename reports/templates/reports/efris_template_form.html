@@ -1,0 +1,235 @@
+{% extends 'base.html' %}
+{% load crispy_forms_tags %}
+
+{% block title %}{% if object %}Edit{% else %}Create{% endif %} EFRIS Template - {{company.trading_name|default:company.name}}{% endblock %}
+
+{% block breadcrumbs %}
+<li class="breadcrumb-item">
+    {% if perms.reports.view_savedreport %}
+    <a href="{% url 'reports:dashboard' %}">
+        <i class="fas fa-chart-pie"></i> Reports
+    </a>
+    {% endif %}
+</li>
+<li class="breadcrumb-item">
+    {% if perms.reports.view_efrisreporttemplate %}
+    <a href="{% url 'reports:efris_templates_list' %}">
+        <i class="fas fa-file-contract"></i> EFRIS Templates
+    </a>
+    {% endif %}
+</li>
+<li class="breadcrumb-item active">
+    <i class="fas fa-{% if object %}edit{% else %}plus{% endif %}"></i> {% if object %}Edit{% else %}Create{% endif %} Template
+</li>
+{% endblock %}
+
+{% block content %}
+<div class="efris-template-form-container">
+    <div class="row">
+        <div class="col-lg-8">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">
+                        <i class="fas fa-{% if object %}edit{% else %}plus{% endif %}"></i> 
+                        {% if object %}Edit EFRIS Template{% else %}Create New EFRIS Template{% endif %}
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <form method="post" enctype="multipart/form-data">
+                        {% csrf_token %}
+                        
+                        <div class="row">
+                            <div class="col-md-6">
+                                {{ form.name|as_crispy_field }}
+                            </div>
+                            <div class="col-md-6">
+                                {{ form.report_type|as_crispy_field }}
+                            </div>
+                        </div>
+                        
+                        <div class="row">
+                            <div class="col-md-6">
+                                {{ form.version|as_crispy_field }}
+                            </div>
+                            <div class="col-md-6">
+                                {{ form.is_default|as_crispy_field }}
+                            </div>
+                        </div>
+                        
+                        <div class="row">
+                            <div class="col-md-6">
+                                {{ form.valid_from|as_crispy_field }}
+                            </div>
+                            <div class="col-md-6">
+                                {{ form.valid_to|as_crispy_field }}
+                            </div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            {{ form.template_file|as_crispy_field }}
+                            {% if object and object.template_file %}
+                            <div class="mt-2">
+                                <a href="{{ object.template_file.url }}" class="btn btn-sm btn-outline-primary">
+                                    <i class="fas fa-download"></i> Download Current Template
+                                </a>
+                            </div>
+                            {% endif %}
+                        </div>
+                        
+                        <div class="mb-3">
+                            {{ form.description|as_crispy_field }}
+                        </div>
+                        
+                        <div class="form-check form-switch mb-3">
+                            {{ form.is_active }}
+                            <label class="form-check-label" for="{{ form.is_active.id_for_label }}">
+                                {{ form.is_active.label }}
+                            </label>
+                        </div>
+                        
+                        <div class="form-actions">
+                            <button type="submit" class="btn btn-primary">
+                                <i class="fas fa-save"></i> {% if object %}Update{% else %}Create{% endif %} Template
+                            </button>
+                            {% if perms.reports.view_efrisreporttemplate %}
+                            <a href="{% url 'reports:efris_templates_list' %}" class="btn btn-outline-secondary">
+                                <i class="fas fa-times"></i> Cancel
+                            </a>
+                            {% endif %}
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-lg-4">
+            <!-- Template Requirements Card -->
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">
+                        <i class="fas fa-clipboard-check"></i> EFRIS Requirements
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div class="requirements-list">
+                        <div class="requirement-item mb-3">
+                            <h6><i class="fas fa-check-circle text-success me-2"></i> Required Fields</h6>
+                            <ul class="list-unstyled ms-4">
+                                <li><i class="fas fa-check text-success me-2"></i> Invoice Number</li>
+                                <li><i class="fas fa-check text-success me-2"></i> Tax Identification Number</li>
+                                <li><i class="fas fa-check text-success me-2"></i> Transaction Date</li>
+                                <li><i class="fas fa-check text-success me-2"></i> Tax Amount</li>
+                                <li><i class="fas fa-check text-success me-2"></i> Verification Code</li>
+                            </ul>
+                        </div>
+                        
+                        <div class="requirement-item mb-3">
+                            <h6><i class="fas fa-file-excel text-primary me-2"></i> Format Requirements</h6>
+                            <ul class="list-unstyled ms-4">
+                                <li><i class="fas fa-check text-success me-2"></i> Excel (.xlsx) format</li>
+                                <li><i class="fas fa-check text-success me-2"></i> Column headers in row 1</li>
+                                <li><i class="fas fa-check text-success me-2"></i> No merged cells</li>
+                                <li><i class="fas fa-check text-success me-2"></i> No formulas</li>
+                            </ul>
+                        </div>
+                        
+                        <div class="requirement-item">
+                            <h6><i class="fas fa-calendar-alt text-info me-2"></i> Submission Timeline</h6>
+                            <ul class="list-unstyled ms-4">
+                                <li><i class="fas fa-check text-success me-2"></i> Monthly by 15th</li>
+                                <li><i class="fas fa-check text-success me-2"></i> Quarterly by 15th</li>
+                                <li><i class="fas fa-check text-success me-2"></i> Annually by January 31st</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Validation Help Card -->
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">
+                        <i class="fas fa-question-circle"></i> Validation Help
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <p>To validate your template before submission:</p>
+                    <ol class="ps-3">
+                        <li>Download the URA validation tool</li>
+                        <li>Open your template file</li>
+                        <li>Run the validation checks</li>
+                        <li>Fix any reported errors</li>
+                    </ol>
+                    <a href="#" class="btn btn-sm btn-outline-primary w-100">
+                        <i class="fas fa-download"></i> Download Validator
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+.efris-template-form-container {
+    padding: 1.5rem;
+    max-width: 1400px;
+    margin: 0 auto;
+}
+
+.card {
+    border-radius: 0.75rem;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+    margin-bottom: 1.5rem;
+}
+
+.card-header {
+    background-color: rgba(46, 89, 217, 0.1);
+    border-bottom: 1px solid rgba(46, 89, 217, 0.2);
+}
+
+.form-actions {
+    display: flex;
+    gap: 0.75rem;
+}
+
+/* Requirements List */
+.requirements-list h6 {
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+}
+
+.requirement-item {
+    padding-bottom: 1rem;
+    border-bottom: 1px solid #e9ecef;
+}
+
+.requirement-item:last-child {
+    border-bottom: none;
+    padding-bottom: 0;
+}
+
+/* Form switch styling */
+.form-check.form-switch {
+    padding-left: 3.5em;
+}
+
+.form-check-input {
+    width: 3em;
+    margin-left: -3.5em;
+}
+</style>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+$(document).ready(function() {
+    // Initialize tooltips
+    $('[data-bs-toggle="tooltip"]').tooltip({
+        trigger: 'hover',
+        placement: 'top'
+    });
+});
+</script>
+{% endblock %}

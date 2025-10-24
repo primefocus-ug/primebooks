@@ -1,0 +1,239 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Query Stock - {{ product.name }}{% endblock %}
+
+{% block breadcrumb_items %}
+<li class="breadcrumb-item"><a href="{% url 'user_dashboard' %}">Home</a></li>
+<li class="breadcrumb-item"><a href="{% url 'efris:dashboard' %}">EFRIS</a></li>
+<li class="breadcrumb-item"><a href="{% url 'efris:stock_management_dashboard' %}">Stock Management</a></li>
+<li class="breadcrumb-item active">Query Stock</li>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row justify-content-center">
+        <div class="col-md-10">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <div>
+                    <h1 class="h2 mb-1">Query Stock from EFRIS</h1>
+                    <p class="text-muted mb-0">View stock information for {{ product.name }}</p>
+                </div>
+                <a href="{% url 'efris:stock_management_dashboard' %}" class="btn btn-outline-secondary">
+                    <i class="bi bi-arrow-left"></i> Back
+                </a>
+            </div>
+
+            <!-- Product Info -->
+            <div class="card mb-4">
+                <div class="card-header bg-primary text-white">
+                    <h5 class="mb-0"><i class="bi bi-box-seam me-2"></i>Product Information</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-4">
+                            <p class="mb-2"><strong>Product Name:</strong></p>
+                            <p class="lead">{{ product.name }}</p>
+                        </div>
+                        <div class="col-md-4">
+                            <p class="mb-2"><strong>SKU:</strong></p>
+                            <p class="lead"><code>{{ product.sku }}</code></p>
+                        </div>
+                        <div class="col-md-4">
+                            <p class="mb-2"><strong>EFRIS Goods ID:</strong></p>
+                            <p class="lead"><code>{{ product.efris_goods_id }}</code></p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Query Form -->
+            <div class="card mb-4">
+                <div class="card-header bg-info text-white">
+                    <h5 class="mb-0"><i class="bi bi-search me-2"></i>Query Parameters</h5>
+                </div>
+                <div class="card-body">
+                    <form id="stockQueryForm" method="POST" action="{% url 'efris:stock_query' product.id %}">
+                        {% csrf_token %}
+                        <div class="row">
+                            <div class="col-md-8">
+                                <label for="branch_id" class="form-label">Branch/Store (Optional)</label>
+                                <select class="form-select" id="branch_id" name="branch_id">
+                                    <option value="">All Branches</option>
+                                    {% for store in stores %}
+                                    {% if store.efris_branch_id %}
+                                    <option value="{{ store.efris_branch_id }}">{{ store.name }}</option>
+                                    {% endif %}
+                                    {% endfor %}
+                                </select>
+                                <small class="form-text text-muted">Leave blank to query all branches</small>
+                            </div>
+                            <div class="col-md-4 d-flex align-items-end">
+                                <button type="submit" class="btn btn-info w-100">
+                                    <i class="bi bi-search"></i> Query EFRIS
+                                </button>
+                            </div>
+                        </div>
+                    </form>
+
+                    <div id="efrisResult" class="mt-4"></div>
+
+
+                </div>
+            </div>
+
+            <!-- Results -->
+            {% if efris_stock_data %}
+            <div class="card">
+                <div class="card-header bg-success text-white">
+                    <h5 class="mb-0"><i class="bi bi-check-circle me-2"></i>EFRIS Stock Information</h5>
+                </div>
+                <div class="card-body">
+                    {% if efris_stock_data.stockList %}
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Branch</th>
+                                    <th>Quantity</th>
+                                    <th>Unit</th>
+                                    <th>Last Updated</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for stock in efris_stock_data.stockList %}
+                                <tr>
+                                    <td>{{ stock.branchName|default:"-" }}</td>
+                                    <td><strong>{{ stock.quantity }}</strong></td>
+                                    <td>{{ stock.measureUnit|default:product.unit_of_measure }}</td>
+                                    <td>{{ stock.updateDate|default:"-" }}</td>
+                                    <td>
+                                        {% if stock.quantity > 0 %}
+                                        <span class="badge bg-success">In Stock</span>
+                                        {% else %}
+                                        <span class="badge bg-danger">Out of Stock</span>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- Summary -->
+                    <div class="row mt-4">
+                        <div class="col-md-4">
+                            <div class="card bg-light">
+                                <div class="card-body text-center">
+                                    <h3 class="text-primary">{{ efris_stock_data.totalQuantity|default:0 }}</h3>
+                                    <p class="text-muted mb-0">Total Stock</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="card bg-light">
+                                <div class="card-body text-center">
+                                    <h3 class="text-success">{{ efris_stock_data.stockList|length }}</h3>
+                                    <p class="text-muted mb-0">Branches</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="card bg-light">
+                                <div class="card-body text-center">
+                                    <h3 class="text-info">{{ product.unit_of_measure|upper }}</h3>
+                                    <p class="text-muted mb-0">Unit of Measure</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    {% else %}
+                    <div class="alert alert-info">
+                        <i class="bi bi-info-circle me-2"></i>
+                        No stock records found in EFRIS for this product.
+                    </div>
+                    {% endif %}
+
+                    <!-- Raw Data (Collapsible) -->
+                    <div class="mt-4">
+                        <button class="btn btn-sm btn-outline-secondary" type="button" data-bs-toggle="collapse" data-bs-target="#rawData">
+                            <i class="bi bi-code-square"></i> View Raw Data
+                        </button>
+                        <div class="collapse mt-3" id="rawData">
+                            <div class="bg-dark text-light p-3 rounded">
+                                <pre class="text-light mb-0">{{ efris_stock_data|pprint }}</pre>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}
+{% block extra_js %}
+<script>
+document.getElementById('stockQueryForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    const form = e.target;
+    const formData = new FormData(form);
+
+    const response = await fetch(form.action, {
+        method: 'POST',
+        headers: { 'X-CSRFToken': formData.get('csrfmiddlewaretoken') },
+        body: formData
+    });
+
+    const data = await response.json();
+    const resultDiv = document.getElementById('efrisResult');
+    resultDiv.innerHTML = ''; // Clear previous results
+
+    if (data.error) {
+        resultDiv.innerHTML = `<div class="alert alert-danger">${data.error}</div>`;
+        return;
+    }
+
+    if (!data.success) {
+        resultDiv.innerHTML = `<div class="alert alert-warning">${data.message || 'No data found.'}</div>`;
+        return;
+    }
+
+    const stock = data.data.stock || '-';
+    const prewarn = data.data.stockPrewarning || '-';
+
+    resultDiv.innerHTML = `
+        <div class="card">
+            <div class="card-header bg-success text-white">
+                <h5 class="mb-0"><i class="bi bi-check-circle me-2"></i>EFRIS Stock Information</h5>
+            </div>
+            <div class="card-body">
+                <div class="row text-center">
+                    <div class="col-md-6">
+                        <h3 class="text-primary">${stock}</h3>
+                        <p class="text-muted mb-0">Current Stock</p>
+                    </div>
+                    <div class="col-md-6">
+                        <h3 class="text-warning">${prewarn}</h3>
+                        <p class="text-muted mb-0">Stock Prewarning</p>
+                    </div>
+                </div>
+
+                <div class="mt-4">
+                    <button class="btn btn-sm btn-outline-secondary" type="button" data-bs-toggle="collapse" data-bs-target="#rawData">
+                        <i class="bi bi-code-square"></i> View Raw Data
+                    </button>
+                    <div class="collapse mt-3" id="rawData">
+                        <div class="bg-dark text-light p-3 rounded">
+                            <pre class="text-light mb-0">${JSON.stringify(data.data, null, 2)}</pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+});
+</script>
+
+{% endblock %}

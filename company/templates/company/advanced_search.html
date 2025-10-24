@@ -1,0 +1,419 @@
+{% extends 'base.html' %}
+{% load i18n %}
+{% load static %}
+
+{% block title %}Advanced Search - {{ company.trading_name|default:company.name }}{% endblock %}
+{% block page_title %}Advanced Company Search{% endblock %}
+
+{% block extra_css %}
+<link href="https://cdnjs.cloudflare.com/ajax/libs/select2/4.1.0-rc.0/css/select2.min.css" rel="stylesheet">
+<style>
+    .search-container {
+        background: white;
+        border-radius: 12px;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        padding: 2rem;
+        margin-bottom: 2rem;
+        border: 1px solid #e5e7eb;
+    }
+
+    .search-header {
+        border-bottom: 2px solid #3b82f6;
+        padding-bottom: 1rem;
+        margin-bottom: 2rem;
+    }
+
+    .search-results {
+        background: white;
+        border-radius: 12px;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        overflow: hidden;
+        border: 1px solid #e5e7eb;
+    }
+
+    .filter-group {
+        background: #f8fafc;
+        border-radius: 8px;
+        padding: 1.5rem;
+        margin-bottom: 1.5rem;
+        border: 1px solid #e5e7eb;
+    }
+
+    .filter-group h6 {
+        color: #374151;
+        font-weight: 600;
+        margin-bottom: 1rem;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
+    .search-stats {
+        background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
+        color: white;
+        border-radius: 8px;
+        padding: 1rem;
+        margin-bottom: 1.5rem;
+    }
+
+    .result-card {
+        border: 1px solid #e5e7eb;
+        border-radius: 8px;
+        padding: 1.5rem;
+        margin-bottom: 1rem;
+        transition: all 0.3s ease;
+        background: white;
+    }
+
+    .result-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 15px rgba(0, 0, 0, 0.1);
+        border-color: #3b82f6;
+    }
+
+    .company-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.5rem 1rem;
+        border-radius: 20px;
+        font-size: 0.875rem;
+        font-weight: 600;
+        margin-right: 0.5rem;
+        margin-bottom: 0.5rem;
+    }
+
+    .badge-success {
+        background: #dcfce7;
+        color: #16a34a;
+        border: 1px solid #bbf7d0;
+    }
+
+    .badge-warning {
+        background: #fef3c7;
+        color: #d97706;
+        border: 1px solid #fde68a;
+    }
+
+    .badge-info {
+        background: #dbeafe;
+        color: #2563eb;
+        border: 1px solid #bfdbfe;
+    }
+
+    .badge-danger {
+        background: #fee2e2;
+        color: #dc2626;
+        border: 1px solid #fecaca;
+    }
+
+    .search-highlight {
+        background: #fef08a;
+        padding: 0.1rem 0.3rem;
+        border-radius: 4px;
+        font-weight: 600;
+    }
+
+    .no-results {
+        text-align: center;
+        padding: 3rem;
+        color: #6b7280;
+    }
+
+    .no-results i {
+        font-size: 4rem;
+        margin-bottom: 1rem;
+        opacity: 0.5;
+    }
+
+    .advanced-toggle {
+        background: none;
+        border: none;
+        color: #3b82f6;
+        cursor: pointer;
+        font-size: 0.875rem;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0;
+    }
+
+    .advanced-filters {
+        background: #f1f5f9;
+        border-radius: 8px;
+        padding: 1.5rem;
+        margin-top: 1rem;
+        border: 1px dashed #cbd5e1;
+    }
+
+    @media (max-width: 768px) {
+        .search-container {
+            padding: 1rem;
+        }
+
+        .filter-group {
+            padding: 1rem;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="search-container animate__animated animate__fadeIn">
+    <div class="search-header">
+        <h4 class="mb-0 d-flex align-items-center">
+            <i class="fas fa-search me-2 text-primary"></i>
+            Advanced Company Search
+        </h4>
+        <p class="text-muted mb-0">{% trans "Find companies using multiple search criteria"%}</p>
+    </div>
+
+    <form method="GET" class="row g-3">
+        <!-- Basic Search -->
+        <div class="col-md-8">
+            <label class="form-label fw-bold">{% trans"Search Terms"%}</label>
+            <div class="input-group">
+                <span class="input-group-text bg-primary text-white">
+                    <i class="fas fa-search"></i>
+                </span>
+                <input type="text"
+                       class="form-control"
+                       name="q"
+                       value="{{ request.GET.q }}"
+                       placeholder="Search by company name, TIN, BRN, email, etc.">
+            </div>
+        </div>
+
+        <div class="col-md-4">
+            <label class="form-label fw-bold">{% trans"Status"%}</label>
+            <select class="form-select" name="status">
+                <option value="">All Status</option>
+                <option value="ACTIVE" {% if request.GET.status == 'ACTIVE' %}selected{% endif %}>Active</option>
+                <option value="TRIAL" {% if request.GET.status == 'TRIAL' %}selected{% endif %}>Trial</option>
+                <option value="SUSPENDED" {% if request.GET.status == 'SUSPENDED' %}selected{% endif %}>Suspended</option>
+                <option value="EXPIRED" {% if request.GET.status == 'EXPIRED' %}selected{% endif %}>Expired</option>
+            </select>
+        </div>
+
+        <!-- Advanced Filters Toggle -->
+        <div class="col-12">
+            <button type="button" class="advanced-toggle" onclick="toggleAdvancedFilters()">
+                <i class="fas fa-cog"></i>
+                Advanced Filters
+                <i class="fas fa-chevron-down"></i>
+            </button>
+        </div>
+
+        <!-- Advanced Filters -->
+        <div class="col-12 advanced-filters" id="advancedFilters" style="display: none;">
+            <div class="row g-3">
+                <div class="col-md-4">
+                    <label class="form-label fw-bold">{% trans"Plan"%}</label>
+                    <input type="text"
+                           class="form-control"
+                           name="plan"
+                           value="{{ request.GET.plan }}"
+                           placeholder="Plan name">
+                </div>
+
+                <div class="col-md-4">
+                    <label class="form-label fw-bold">{% trans"Domain"%}</label>
+                    <input type="text"
+                           class="form-control"
+                           name="domain"
+                           value="{{ request.GET.domain }}"
+                           placeholder="Domain name">
+                </div>
+
+                <div class="col-md-4">
+                    <label class="form-label fw-bold">{% trans"Has Admin"%}</label>
+                    <select class="form-select" name="has_admin">
+                        <option value="">All</option>
+                        <option value="yes" {% if request.GET.has_admin == 'yes' %}selected{% endif %}>Yes</option>
+                        <option value="no" {% if request.GET.has_admin == 'no' %}selected{% endif %}>No</option>
+                    </select>
+                </div>
+
+                <div class="col-md-6">
+                    <label class="form-label fw-bold">{% trans"Start Date"%}</label>
+                    <input type="date"
+                           class="form-control"
+                           name="start_date"
+                           value="{{ request.GET.start_date }}">
+                </div>
+
+                <div class="col-md-6">
+                    <label class="form-label fw-bold">{% trans"End Date"%}</label>
+                    <input type="date"
+                           class="form-control"
+                           name="end_date"
+                           value="{{ request.GET.end_date }}">
+                </div>
+            </div>
+        </div>
+
+        <!-- Action Buttons -->
+        <div class="col-12">
+            <div class="d-flex gap-2">
+                <button type="submit" class="btn btn-primary">
+                    <i class="fas fa-search me-1"></i>Search
+                </button>
+                <button type="reset" class="btn btn-outline-secondary" onclick="resetForm()">
+                    <i class="fas fa-times me-1"></i>Reset
+                </button>
+                {% if perms.company.view_company %}
+                <a href="{% url 'companies:company_list' %}" class="btn btn-outline-secondary">
+                    <i class="fas fa-list me-1"></i>View All
+                </a>
+                {% endif %}
+            </div>
+        </div>
+    </form>
+</div>
+
+{% if companies %}
+<div class="search-stats animate__animated animate__fadeInUp">
+    <div class="row">
+        <div class="col-md-6">
+            <h6 class="mb-0">{% trans"Search Results"%}</h6>
+            <p class="mb-0">{{ companies.count }} companies found</p>
+        </div>
+        <div class="col-md-6 text-end">
+            <a href="?{% if request.GET %}{{ request.GET.urlencode }}&{% endif %}format=csv"
+               class="btn btn-sm btn-light">
+                <i class="fas fa-download me-1"></i>Export CSV
+            </a>
+        </div>
+    </div>
+</div>
+
+<div class="search-results animate__animated animate__fadeInUp">
+    {% for company in companies %}
+    <div class="result-card">
+        <div class="row">
+            <div class="col-md-8">
+                <h6 class="mb-2">
+                    {% if perms.company.view_company %}
+                    <a href="{% url 'companies:company_detail' company.company_id %}"
+                       class="text-decoration-none">
+                        {{ company.name }}
+                    </a>
+                    {% endif %}
+                </h6>
+                {% if company.trading_name %}
+                <p class="text-muted mb-2">Trading as: {{ company.trading_name }}</p>
+                {% endif %}
+
+                <div class="mb-2">
+                    {% if company.tin %}
+                    <span class="company-badge badge-info">
+                        <i class="fas fa-id-card"></i>TIN: {{ company.tin }}
+                    </span>
+                    {% endif %}
+                    {% if company.brn %}
+                    <span class="company-badge badge-info">
+                        <i class="fas fa-building"></i>BRN: {{ company.brn }}
+                    </span>
+                    {% endif %}
+                </div>
+
+                <div class="mb-2">
+                    <span class="company-badge {% if company.status == 'ACTIVE' %}badge-success{% elif company.status == 'TRIAL' %}badge-warning{% else %}badge-danger{% endif %}">
+                        <i class="fas fa-circle"></i>{{ company.get_status_display }}
+                    </span>
+
+                    {% if company.is_verified %}
+                    <span class="company-badge badge-success">
+                        <i class="fas fa-check"></i>Verified
+                    </span>
+                    {% endif %}
+
+                    {% if company.efris_enabled %}
+                    <span class="company-badge badge-info">
+                        <i class="fas fa-bolt"></i>EFRIS Enabled
+                    </span>
+                    {% endif %}
+                </div>
+            </div>
+
+            <div class="col-md-4 text-end">
+                <div class="mb-2">
+                    <small class="text-muted">Created: {{ company.created_at|date:"M d, Y" }}</small>
+                </div>
+                <div class="btn-group">
+                    {% if perms.compnay.view_company %}
+                    <a href="{% url 'companies:company_detail' company.company_id %}"
+                       class="btn btn-sm btn-outline-primary">
+                        <i class="fas fa-eye"></i>
+                    </a>
+                    {% endif %}
+                    {% if perms.company.change_company %}
+                    <a href="{% url 'companies:company_update' company.company_id %}"
+                       class="btn btn-sm btn-outline-secondary">
+                        <i class="fas fa-edit"></i>
+                    </a>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        {% if company.email %}
+        <div class="row mt-2">
+            <div class="col-12">
+                <small class="text-muted">
+                    <i class="fas fa-envelope me-1"></i>{{ company.email }}
+                    {% if company.phone %}
+                    | <i class="fas fa-phone me-1"></i>{{ company.phone }}
+                    {% endif %}
+                </small>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+    {% endfor %}
+</div>
+{% elif request.GET %}
+<div class="no-results animate__animated animate__fadeIn">
+    <i class="fas fa-search"></i>
+    <h5>{% trans"No companies found"%}</h5>
+    <p class="mb-3">{% trans"Try adjusting your search criteria or try a different search term."%}</p>
+    <button onclick="resetForm()" class="btn btn-primary">
+        <i class="fas fa-times me-2"></i>Clear Filters
+    </button>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function toggleAdvancedFilters() {
+    const filters = document.getElementById('advancedFilters');
+    const icon = document.querySelector('.advanced-toggle .fa-chevron-down');
+
+    if (filters.style.display === 'none') {
+        filters.style.display = 'block';
+        icon.classList.replace('fa-chevron-down', 'fa-chevron-up');
+    } else {
+        filters.style.display = 'none';
+        icon.classList.replace('fa-chevron-up', 'fa-chevron-down');
+    }
+}
+
+function resetForm() {
+    document.querySelector('form').reset();
+    window.location.href = '{% url "companies:advanced_search" %}';
+}
+
+// Show advanced filters if any are filled
+document.addEventListener('DOMContentLoaded', function() {
+    const urlParams = new URLSearchParams(window.location.search);
+    const hasAdvancedFilters = ['plan', 'domain', 'has_admin', 'start_date', 'end_date'].some(
+        param => urlParams.has(param)
+    );
+
+    if (hasAdvancedFilters) {
+        toggleAdvancedFilters();
+    }
+});
+</script>
+{% endblock %}

@@ -1,0 +1,859 @@
+{% extends 'base.html' %}
+{% load widget_tweaks %}
+
+{% block title %}Stock Movements - {{ company.trading_name|default:company.name }}{% endblock %}
+
+{% block page_title %}Stock Movements{% endblock %}
+
+{% block extra_css %}
+<link href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/4.1.1/animate.min.css" rel="stylesheet">
+
+<style>
+    :root {
+        --primary-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        --success-gradient: linear-gradient(135deg, #84fab0 0%, #8fd3f4 100%);
+        --warning-gradient: linear-gradient(135deg, #ffecd2 0%, #fcb69f 100%);
+        --danger-gradient: linear-gradient(135deg, #ff9a9e 0%, #fecfef 100%);
+        --shadow-light: 0 2px 12px rgba(0,0,0,0.08);
+        --shadow-medium: 0 4px 20px rgba(0,0,0,0.12);
+        --border-radius: 16px;
+        --transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .movements-container {
+        max-width: 1400px;
+        margin: 0 auto;
+    }
+
+    .movements-header {
+        background: var(--primary-gradient);
+        color: white;
+        padding: 2rem;
+        border-radius: var(--border-radius);
+        margin-bottom: 2rem;
+        position: relative;
+        overflow: hidden;
+    }
+
+    .movements-header::before {
+        content: '';
+        position: absolute;
+        top: -50%;
+        right: -50%;
+        width: 100%;
+        height: 100%;
+        background: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><circle cx="50" cy="50" r="2" fill="rgba(255,255,255,0.1)"/><circle cx="20" cy="20" r="1" fill="rgba(255,255,255,0.05)"/><circle cx="80" cy="30" r="1.5" fill="rgba(255,255,255,0.1)"/></svg>');
+        animation: float 20s infinite linear;
+    }
+
+    @keyframes float {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+    }
+
+    .movements-title {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin: 0;
+    }
+
+    .movements-title h4 {
+        margin: 0;
+        font-weight: 600;
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+    }
+
+    .header-actions {
+        display: flex;
+        gap: 1rem;
+    }
+
+    .btn-header {
+        background: rgba(255, 255, 255, 0.2);
+        border: 2px solid rgba(255, 255, 255, 0.3);
+        color: white;
+        padding: 0.75rem 1.5rem;
+        border-radius: 12px;
+        font-weight: 600;
+        text-decoration: none;
+        transition: var(--transition);
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
+    .btn-header:hover {
+        background: white;
+        color: #667eea;
+        transform: translateY(-2px);
+        box-shadow: var(--shadow-medium);
+    }
+
+    /* Filters Card */
+    .filters-card {
+        background: white;
+        border-radius: var(--border-radius);
+        box-shadow: var(--shadow-light);
+        padding: 2rem;
+        margin-bottom: 2rem;
+        border: 1px solid rgba(0,0,0,0.05);
+    }
+
+    .filters-title {
+        font-size: 1.125rem;
+        font-weight: 700;
+        color: #1a202c;
+        margin: 0 0 1.5rem 0;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
+    .filters-form {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 1.5rem;
+        align-items: end;
+    }
+
+    .form-group {
+        display: flex;
+        flex-direction: column;
+    }
+
+    .form-group label {
+        font-weight: 600;
+        color: #374151;
+        margin-bottom: 0.5rem;
+        font-size: 0.875rem;
+    }
+
+    .form-group select,
+    .form-group input {
+        border: 2px solid #e2e8f0;
+        border-radius: 8px;
+        padding: 0.75rem;
+        font-size: 0.925rem;
+        transition: var(--transition);
+    }
+
+    .form-group select:focus,
+    .form-group input:focus {
+        outline: none;
+        border-color: #667eea;
+        box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+    }
+
+    .filter-actions {
+        display: flex;
+        gap: 1rem;
+    }
+
+    .btn-filter {
+        background: var(--primary-gradient);
+        border: none;
+        color: white;
+        padding: 0.75rem 1.5rem;
+        border-radius: 8px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: var(--transition);
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
+    .btn-filter:hover {
+        transform: translateY(-2px);
+        box-shadow: var(--shadow-medium);
+    }
+
+    .btn-clear {
+        background: white;
+        border: 2px solid #e2e8f0;
+        color: #64748b;
+        padding: 0.75rem 1.5rem;
+        border-radius: 8px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: var(--transition);
+        text-decoration: none;
+    }
+
+    .btn-clear:hover {
+        border-color: #667eea;
+        color: #667eea;
+    }
+
+    /* Movements Table */
+    .movements-table-card {
+        background: white;
+        border-radius: var(--border-radius);
+        box-shadow: var(--shadow-light);
+        overflow: hidden;
+        border: 1px solid rgba(0,0,0,0.05);
+    }
+
+    .table-header {
+        background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+        padding: 1.5rem 2rem;
+        border-bottom: 1px solid #e2e8f0;
+    }
+
+    .table-title {
+        font-size: 1.25rem;
+        font-weight: 700;
+        color: #1a202c;
+        margin: 0;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+    }
+
+    .table-meta {
+        font-size: 0.875rem;
+        color: #64748b;
+        margin-top: 0.5rem;
+    }
+
+    .movements-table {
+        width: 100%;
+        border-collapse: collapse;
+    }
+
+    .movements-table th {
+        background: #f8fafc;
+        padding: 1.25rem 1.5rem;
+        text-align: left;
+        font-weight: 700;
+        color: #1a202c;
+        border-bottom: 2px solid #e2e8f0;
+        font-size: 0.875rem;
+        text-transform: uppercase;
+        letter-spacing: 0.025em;
+    }
+
+    .movements-table td {
+        padding: 1.25rem 1.5rem;
+        border-bottom: 1px solid #f1f5f9;
+        font-size: 0.925rem;
+    }
+
+    .movements-table tbody tr {
+        transition: var(--transition);
+    }
+
+    .movements-table tbody tr:hover {
+        background: #f8fafc;
+    }
+
+    .movement-type-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.5rem 1rem;
+        border-radius: 20px;
+        font-size: 0.75rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.025em;
+    }
+
+    .movement-type-in {
+        background: rgba(16, 185, 129, 0.1);
+        color: #10b981;
+    }
+
+    .movement-type-out {
+        background: rgba(239, 68, 68, 0.1);
+        color: #ef4444;
+    }
+
+    .movement-type-adjustment {
+        background: rgba(59, 130, 246, 0.1);
+        color: #3b82f6;
+    }
+
+    .product-info {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+    }
+
+    .product-avatar {
+        width: 40px;
+        height: 40px;
+        border-radius: 8px;
+        background: linear-gradient(135deg, #f1f5f9, #e2e8f0);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #64748b;
+        font-size: 1rem;
+        flex-shrink: 0;
+    }
+
+    .product-details h6 {
+        margin: 0 0 0.25rem 0;
+        font-weight: 600;
+        color: #1a202c;
+        font-size: 0.925rem;
+    }
+
+    .product-details p {
+        margin: 0;
+        font-size: 0.8rem;
+        color: #64748b;
+    }
+
+    .quantity-display {
+        font-weight: 700;
+        font-size: 1rem;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
+    .quantity-positive {
+        color: #10b981;
+    }
+
+    .quantity-negative {
+        color: #ef4444;
+    }
+
+    .quantity-neutral {
+        color: #3b82f6;
+    }
+
+    .store-tag {
+        background: rgba(102, 126, 234, 0.1);
+        color: #667eea;
+        padding: 0.25rem 0.75rem;
+        border-radius: 12px;
+        font-size: 0.8rem;
+        font-weight: 600;
+    }
+
+    .timestamp {
+        color: #64748b;
+        font-size: 0.85rem;
+    }
+
+    .user-info {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        color: #64748b;
+        font-size: 0.85rem;
+    }
+
+    .user-avatar {
+        width: 24px;
+        height: 24px;
+        border-radius: 50%;
+        background: var(--primary-gradient);
+        color: white;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 0.7rem;
+        font-weight: 700;
+    }
+
+    .actions-dropdown {
+        position: relative;
+        display: inline-block;
+    }
+
+    .dropdown-toggle {
+        background: #f1f5f9;
+        border: none;
+        color: #64748b;
+        padding: 0.5rem 1rem;
+        border-radius: 8px;
+        cursor: pointer;
+        transition: var(--transition);
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
+    .dropdown-toggle:hover {
+        background: #e2e8f0;
+        color: #1a202c;
+    }
+
+    .dropdown-menu {
+        position: absolute;
+        right: 0;
+        top: 100%;
+        background: white;
+        border-radius: 8px;
+        box-shadow: var(--shadow-medium);
+        border: 1px solid #e2e8f0;
+        min-width: 150px;
+        z-index: 1000;
+        display: none;
+    }
+
+    .dropdown-menu.show {
+        display: block;
+    }
+
+    .dropdown-item {
+        padding: 0.75rem 1rem;
+        color: #374151;
+        text-decoration: none;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        font-size: 0.875rem;
+        transition: var(--transition);
+    }
+
+    .dropdown-item:hover {
+        background: #f8fafc;
+        color: #667eea;
+    }
+
+    /* Pagination */
+    .pagination-wrapper {
+        padding: 1.5rem 2rem;
+        background: #f8fafc;
+        border-top: 1px solid #e2e8f0;
+        display: flex;
+        justify-content: between;
+        align-items: center;
+    }
+
+    .pagination-info {
+        color: #64748b;
+        font-size: 0.875rem;
+    }
+
+    .pagination {
+        margin: 0;
+    }
+
+    .page-link {
+        border: 2px solid #e2e8f0;
+        color: #64748b;
+        padding: 0.5rem 0.75rem;
+        margin: 0 0.25rem;
+        border-radius: 8px;
+        transition: var(--transition);
+    }
+
+    .page-link:hover {
+        border-color: #667eea;
+        color: #667eea;
+        background: #f8fafc;
+    }
+
+    .page-item.active .page-link {
+        background: var(--primary-gradient);
+        border-color: #667eea;
+        color: white;
+    }
+
+    /* Empty State */
+    .empty-state {
+        text-align: center;
+        padding: 4rem 2rem;
+        color: #64748b;
+    }
+
+    .empty-state i {
+        font-size: 4rem;
+        margin-bottom: 1.5rem;
+        opacity: 0.5;
+    }
+
+    .empty-state h5 {
+        font-weight: 600;
+        margin-bottom: 1rem;
+        color: #1a202c;
+    }
+
+    .empty-state p {
+        margin-bottom: 2rem;
+        max-width: 400px;
+        margin-left: auto;
+        margin-right: auto;
+        line-height: 1.6;
+    }
+
+    .empty-state .btn-primary {
+        background: var(--primary-gradient);
+        border: none;
+        padding: 0.75rem 2rem;
+        border-radius: 12px;
+        font-weight: 600;
+        text-decoration: none;
+        color: white;
+        transition: var(--transition);
+    }
+
+    .empty-state .btn-primary:hover {
+        transform: translateY(-2px);
+        box-shadow: var(--shadow-medium);
+        color: white;
+    }
+
+    /* Responsive Design */
+    @media (max-width: 1200px) {
+        .movements-container {
+            padding: 0 1rem;
+        }
+    }
+
+    @media (max-width: 768px) {
+        .movements-header {
+            padding: 1.5rem;
+        }
+
+        .movements-title {
+            flex-direction: column;
+            gap: 1rem;
+            text-align: center;
+        }
+
+        .header-actions {
+            width: 100%;
+            justify-content: center;
+        }
+
+        .filters-card {
+            padding: 1.5rem;
+        }
+
+        .filters-form {
+            grid-template-columns: 1fr;
+        }
+
+        .filter-actions {
+            flex-direction: column;
+        }
+
+        .movements-table {
+            font-size: 0.85rem;
+        }
+
+        .movements-table th,
+        .movements-table td {
+            padding: 1rem 0.75rem;
+        }
+
+        .product-info {
+            flex-direction: column;
+            align-items: flex-start;
+        }
+    }
+
+    @media (max-width: 576px) {
+        .movements-table-card {
+            overflow-x: auto;
+        }
+
+        .movements-table {
+            min-width: 800px;
+        }
+
+        .pagination-wrapper {
+            flex-direction: column;
+            gap: 1rem;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="movements-container">
+    <!-- Header -->
+    <div class="movements-header animate__animated animate__fadeInDown">
+        <div class="movements-title">
+            <h4>
+                <i class="fas fa-exchange-alt"></i>
+                Stock Movements
+            </h4>
+            <div class="header-actions">
+                {% if perms.inventory.add_stockmovement %}
+                <a href="{% url 'inventory:movement_create' %}" class="btn-header">
+                    <i class="fas fa-plus"></i>
+                    Record Movement
+                </a>
+                {% endif %}
+                {% if perms.inventory.view_stock %}
+                <a href="{% url 'efris:stock_management_dashboard' %}" class="btn-header">
+                    <i class="fas fa-chart-bar"></i>
+                    Dashboard
+                </a>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Filters -->
+    <div class="filters-card animate__animated animate__fadeInUp">
+        <h5 class="filters-title">
+            <i class="fas fa-filter"></i>
+            Filter Movements
+        </h5>
+
+        <form method="get" class="filters-form">
+            <div class="form-group">
+                <label for="movement_type">Movement Type</label>
+                <select name="movement_type" id="movement_type">
+                    <option value="">All Types</option>
+                    {% for value, label in movement_types %}
+                    <option value="{{ value }}" {% if current_filters.movement_type == value %}selected{% endif %}>
+                        {{ label }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label for="store">Store</label>
+                <select name="store" id="store">
+                    <option value="">All Stores</option>
+                    {% for store in stores %}
+                    <option value="{{ store.id }}" {% if current_filters.store == store.id|stringformat:'s' %}selected{% endif %}>
+                        {{ store.name }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label for="product">Product</label>
+                <select name="product" id="product">
+                    <option value="">All Products</option>
+                    {% for product in products %}
+                    <option value="{{ product.id }}" {% if current_filters.product == product.id|stringformat:'s' %}selected{% endif %}>
+                        {{ product.name }} ({{ product.sku }})
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label for="date_from">Date From</label>
+                <input type="date" name="date_from" id="date_from" value="{{ current_filters.date_from }}">
+            </div>
+
+            <div class="form-group">
+                <label for="date_to">Date To</label>
+                <input type="date" name="date_to" id="date_to" value="{{ current_filters.date_to }}">
+            </div>
+
+            <div class="filter-actions">
+                <button type="submit" class="btn-filter">
+                    <i class="fas fa-search"></i>
+                    Apply Filters
+                </button>
+                {% if perms.inventory.view_stockmovement %}
+                <a href="{% url 'inventory:movement_list' %}" class="btn-clear">
+                    <i class="fas fa-times"></i>
+                    Clear
+                </a>
+                {% endif %}
+            </div>
+        </form>
+    </div>
+
+    <!-- Movements Table -->
+    <div class="movements-table-card animate__animated animate__fadeInUp" style="animation-delay: 0.2s;">
+        <div class="table-header">
+            <div class="table-title">
+                <span>Movement Records</span>
+                <span class="table-meta">{{ paginator.count }} total movements</span>
+            </div>
+        </div>
+
+        {% if movements %}
+        <table class="movements-table">
+            <thead>
+                <tr>
+                    <th>Type</th>
+                    <th>Product</th>
+                    <th>Store</th>
+                    <th>Quantity</th>
+                    <th>Reference</th>
+                    <th>Date</th>
+                    <th>User</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for movement in movements %}
+                <tr>
+                    <td>
+                        <div class="movement-type-badge {% if movement.movement_type == 'PURCHASE' or movement.movement_type == 'RETURN' or movement.movement_type == 'TRANSFER_IN' %}movement-type-in{% elif movement.movement_type == 'SALE' or movement.movement_type == 'TRANSFER_OUT' %}movement-type-out{% else %}movement-type-adjustment{% endif %}">
+                            <i class="fas {% if movement.movement_type == 'PURCHASE' or movement.movement_type == 'RETURN' or movement.movement_type == 'TRANSFER_IN' %}fa-plus{% elif movement.movement_type == 'SALE' or movement.movement_type == 'TRANSFER_OUT' %}fa-minus{% else %}fa-balance-scale{% endif %}"></i>
+                            {{ movement.get_movement_type_display }}
+                        </div>
+                    </td>
+                    <td>
+                        <div class="product-info">
+                            <div class="product-avatar">
+                                <i class="fas fa-box"></i>
+                            </div>
+                            <div class="product-details">
+                                <h6>{{ movement.product.name }}</h6>
+                                <p>{{ movement.product.sku }}</p>
+                            </div>
+                        </div>
+                    </td>
+                    <td>
+                        <div class="store-tag">{{ movement.store.name }}</div>
+                    </td>
+                    <td>
+                        <div class="quantity-display {% if movement.movement_type == 'PURCHASE' or movement.movement_type == 'RETURN' or movement.movement_type == 'TRANSFER_IN' %}quantity-positive{% elif movement.movement_type == 'SALE' or movement.movement_type == 'TRANSFER_OUT' %}quantity-negative{% else %}quantity-neutral{% endif %}">
+                            {% if movement.movement_type == 'PURCHASE' or movement.movement_type == 'RETURN' or movement.movement_type == 'TRANSFER_IN' %}+{% elif movement.movement_type == 'SALE' or movement.movement_type == 'TRANSFER_OUT' %}-{% endif %}{{ movement.quantity }}
+                            <span style="font-size: 0.8rem; opacity: 0.7;">{{ movement.product.unit_of_measure }}</span>
+                        </div>
+                    </td>
+                    <td>
+                        <span class="reference">{{ movement.reference|default:"—" }}</span>
+                    </td>
+                    <td>
+                        <div class="timestamp">{{ movement.created_at|date:"M d, Y" }}<br><small>{{ movement.created_at|time:"g:i A" }}</small></div>
+                    </td>
+                    <td>
+                        <div class="user-info">
+                            <div class="user-avatar">
+                                {{ movement.created_by.first_name.0|default:movement.created_by.username.0|upper }}
+                            </div>
+                            {{ movement.created_by.get_full_name|default:movement.created_by.username }}
+                        </div>
+                    </td>
+                    <td>
+                        <div class="actions-dropdown">
+                            <button class="dropdown-toggle" onclick="toggleDropdown(this)">
+                                <i class="fas fa-ellipsis-v"></i>
+                            </button>
+                            <div class="dropdown-menu">
+                                {% if perms.inventory.change_stockmovement %}
+                                <a href="{% url 'inventory:movement_update' movement.pk %}" class="dropdown-item">
+                                    <i class="fas fa-edit"></i>
+                                    Edit
+                                </a>
+                                {% endif %}
+                                <a href="#" class="dropdown-item" onclick="viewDetails({{ movement.pk }})">
+                                    <i class="fas fa-eye"></i>
+                                    View Details
+                                </a>
+                            </div>
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+
+        <!-- Pagination -->
+        {% if is_paginated %}
+        <div class="pagination-wrapper">
+            <div class="pagination-info">
+                Showing {{ page_obj.start_index }}-{{ page_obj.end_index }} of {{ paginator.count }} movements
+            </div>
+
+            <nav aria-label="Movement pagination">
+                <ul class="pagination">
+                    {% if page_obj.has_previous %}
+                    <li class="page-item">
+                        <a class="page-link" href="?{% for key, value in request.GET.items %}{% if key != 'page' %}{{ key }}={{ value }}&{% endif %}{% endfor %}page={{ page_obj.previous_page_number }}">
+                            <i class="fas fa-chevron-left"></i>
+                        </a>
+                    </li>
+                    {% endif %}
+
+                    {% for num in page_obj.paginator.page_range %}
+                    {% if page_obj.number == num %}
+                    <li class="page-item active">
+                        <span class="page-link">{{ num }}</span>
+                    </li>
+                    {% elif num > page_obj.number|add:'-3' and num < page_obj.number|add:'3' %}
+                    <li class="page-item">
+                        <a class="page-link" href="?{% for key, value in request.GET.items %}{% if key != 'page' %}{{ key }}={{ value }}&{% endif %}{% endfor %}page={{ num }}">{{ num }}</a>
+                    </li>
+                    {% endif %}
+                    {% endfor %}
+
+                    {% if page_obj.has_next %}
+                    <li class="page-item">
+                        <a class="page-link" href="?{% for key, value in request.GET.items %}{% if key != 'page' %}{{ key }}={{ value }}&{% endif %}{% endfor %}page={{ page_obj.next_page_number }}">
+                            <i class="fas fa-chevron-right"></i>
+                        </a>
+                    </li>
+                    {% endif %}
+                </ul>
+            </nav>
+        </div>
+        {% endif %}
+
+        {% else %}
+        <div class="empty-state">
+            <i class="fas fa-exchange-alt"></i>
+            <h5>No Stock Movements Found</h5>
+            <p>There are no stock movements matching your current filters. Try adjusting your search criteria or record your first movement.</p>
+            {% if perms.inventory.add_stockmovement %}
+            <a href="{% url 'inventory:movement_create' %}" class="btn-primary">
+                <i class="fas fa-plus me-2"></i>
+                Record First Movement
+            </a>
+            {% endif %}
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    function toggleDropdown(button) {
+        // Close all other dropdowns
+        document.querySelectorAll('.dropdown-menu.show').forEach(menu => {
+            if (menu !== button.nextElementSibling) {
+                menu.classList.remove('show');
+            }
+        });
+
+        // Toggle current dropdown
+        const menu = button.nextElementSibling;
+        menu.classList.toggle('show');
+    }
+
+    function viewDetails(movementId) {
+        // In a real implementation, this would show a modal with movement details
+        alert('View details for movement #' + movementId + '\n\nThis would show a detailed modal with all movement information, notes, and related data.');
+    }
+
+    // Close dropdowns when clicking outside
+    document.addEventListener('click', function(event) {
+        if (!event.target.closest('.actions-dropdown')) {
+            document.querySelectorAll('.dropdown-menu.show').forEach(menu => {
+                menu.classList.remove('show');
+            });
+        }
+    });
+
+    // Auto-submit form when date inputs change
+    document.getElementById('date_from').addEventListener('change', function() {
+        if (this.value && document.getElementById('date_to').value) {
+            this.form.submit();
+        }
+    });
+
+    document.getElementById('date_to').addEventListener('change', function() {
+        if (this.value && document.getElementById('date_from').value) {
+            this.form.submit();
+        }
+    });
+</script>
+{% endblock %}

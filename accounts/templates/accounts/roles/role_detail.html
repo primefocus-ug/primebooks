@@ -1,0 +1,433 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}{{ company.trading_name|default:company.name }} {{ role.group.name }} - Role Details - {{ block.super }}{% endblock %}
+
+{% block breadcrumb %}
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb mb-0">
+        {% if perms.auth.view_customuser %}
+        <li class="breadcrumb-item"><a href="{% url 'user_dashboard' %}">Dashboard</a></li>
+        {% endif %}
+        {% if perms.auth.view_group %}
+        <li class="breadcrumb-item"><a href="{% url 'role_list' %}">Roles</a></li>
+        {% endif %}
+        <li class="breadcrumb-item active">{{ role.group.name }}</li>
+    </ol>
+</nav>
+{% endblock %}
+
+{% block page_header %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div class="d-flex align-items-center">
+        <div class="badge rounded-pill me-3" style="background-color: {{ role.color_code }}; width: 24px; height: 24px;"></div>
+        <div>
+            <h1 class="h3 mb-0">{{ role.group.name }}</h1>
+            <div class="d-flex align-items-center mt-2">
+                {% if role.is_system_role %}
+                <span class="badge bg-info me-2">
+                    <i class="bi bi-gear me-1"></i>System Role
+                </span>
+                {% else %}
+                <span class="badge bg-primary me-2">
+                    <i class="bi bi-person-gear me-1"></i>Custom Role
+                </span>
+                {% endif %}
+
+                {% if role.is_active %}
+                <span class="badge bg-success me-2">
+                    <i class="bi bi-check-circle me-1"></i>Active
+                </span>
+                {% else %}
+                <span class="badge bg-danger me-2">
+                    <i class="bi bi-x-circle me-1"></i>Inactive
+                </span>
+                {% endif %}
+
+                {% if role.company %}
+                <span class="badge bg-light text-dark">{{ role.company.name }}</span>
+                {% else %}
+                <span class="badge bg-secondary">System-wide</span>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <div class="btn-group">
+        {% if can_edit %}
+        {% if perms.auth.change_group %}
+        <a href="{% url 'role_edit' role.pk %}" class="btn btn-primary">
+            <i class="bi bi-pencil me-2"></i>Edit Role
+        </a>
+        {% endif %}
+        {% endif %}
+        <div class="dropdown">
+            <button class="btn btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown">
+                Actions
+            </button>
+            <ul class="dropdown-menu dropdown-menu-end">
+                <li>
+                    {% if perms.accounts.can_view_role_analytics %}
+                    <a class="dropdown-item" href="{% url 'role_analytics' role.pk %}">
+                        <i class="bi bi-graph-up me-2"></i>Analytics
+                    </a>
+                    {% endif %}
+                </li>
+                <li>
+                    {% if perms.auth.view_group %}
+                    <a class="dropdown-item" href="{% url 'role_history' role.pk %}">
+                        <i class="bi bi-clock-history me-2"></i>History
+                    </a>
+                    {% endif %}
+                </li>
+                <li>
+                    {% if perms.auth.view_group %}
+                    <a class="dropdown-item" href="{% url 'role_permissions_api' role.pk %}">
+                        <i class="bi bi-shield-check me-2"></i>Export Permissions
+                    </a>
+                    {% endif %}
+                </li>
+                {% if can_edit %}
+                <li><hr class="dropdown-divider"></li>
+                <li>
+                    <button class="dropdown-item toggle-active-btn"
+                            data-role-id="{{ role.pk }}"
+                            data-current-status="{{ role.is_active|yesno:'true,false' }}">
+                        <i class="bi bi-{% if role.is_active %}pause{% else %}play{% endif %}-circle me-2"></i>
+                        {% if role.is_active %}Deactivate{% else %}Activate{% endif %}
+                    </button>
+                </li>
+                {% endif %}
+                {% if can_delete %}
+                <li><hr class="dropdown-divider"></li>
+                <li>
+                    {% if perms.auth.delete_group %}
+                    <a class="dropdown-item text-danger" href="{% url 'role_delete' role.pk %}">
+                        <i class="bi bi-trash me-2"></i>Delete Role
+                    </a>
+                    {% endif %}
+                </li>
+                {% endif %}
+            </ul>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="row">
+    <!-- Role Information -->
+    <div class="col-lg-8">
+        <!-- Basic Information -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="card-title mb-0">
+                    <i class="bi bi-info-circle me-2"></i>Role Information
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <dl class="row">
+                            <dt class="col-sm-4">Name:</dt>
+                            <dd class="col-sm-8">{{ role.group.name }}</dd>
+
+                            <dt class="col-sm-4">Type:</dt>
+                            <dd class="col-sm-8">
+                                {% if role.is_system_role %}
+                                <span class="badge bg-info">System Role</span>
+                                {% else %}
+                                <span class="badge bg-primary">Custom Role</span>
+                                {% endif %}
+                            </dd>
+
+                            <dt class="col-sm-4">Company:</dt>
+                            <dd class="col-sm-8">
+                                {% if role.company %}
+                                {{ role.company.name }}
+                                {% else %}
+                                <span class="text-muted">System-wide</span>
+                                {% endif %}
+                            </dd>
+
+                            <dt class="col-sm-4">Priority:</dt>
+                            <dd class="col-sm-8">
+                                <span class="badge bg-light text-dark">{{ role.priority }}</span>
+                            </dd>
+                        </dl>
+                    </div>
+                    <div class="col-md-6">
+                        <dl class="row">
+                            <dt class="col-sm-4">Status:</dt>
+                            <dd class="col-sm-8">
+                                {% if role.is_active %}
+                                <span class="badge bg-success">Active</span>
+                                {% else %}
+                                <span class="badge bg-danger">Inactive</span>
+                                {% endif %}
+                            </dd>
+
+                            <dt class="col-sm-4">Created:</dt>
+                            <dd class="col-sm-8">
+                                {{ role.created_at|date:"M d, Y" }}
+                                {% if role.created_by %}
+                                <br><small class="text-muted">by {{ role.created_by.get_full_name|default:role.created_by.username }}</small>
+                                {% endif %}
+                            </dd>
+
+                            <dt class="col-sm-4">Updated:</dt>
+                            <dd class="col-sm-8">{{ role.updated_at|date:"M d, Y H:i" }}</dd>
+
+                            <dt class="col-sm-4">Color:</dt>
+                            <dd class="col-sm-8">
+                                <div class="d-flex align-items-center">
+                                    <div class="rounded me-2" style="background-color: {{ role.color_code }}; width: 20px; height: 20px;"></div>
+                                    <code>{{ role.color_code }}</code>
+                                </div>
+                            </dd>
+                        </dl>
+                    </div>
+                </div>
+
+                {% if role.description %}
+                <hr>
+                <div>
+                    <strong>Description:</strong>
+                    <p class="mt-2 mb-0">{{ role.description|linebreaksbr }}</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Users with this Role -->
+        <div class="card mb-4">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="card-title mb-0">
+                    <i class="bi bi-people me-2"></i>Users ({{ users_with_role.count }})
+                </h5>
+                {% if role.max_users %}
+                <div class="text-end">
+                    <small class="text-muted">Capacity: {{ capacity_info.current }}/{{ capacity_info.maximum }}</small>
+                    <div class="progress mt-1" style="width: 100px; height: 6px;">
+                        <div class="progress-bar {% if capacity_info.percentage > 80 %}bg-warning{% elif capacity_info.percentage > 95 %}bg-danger{% else %}bg-success{% endif %}"
+                             style="width: {{ capacity_info.percentage }}%"></div>
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+            <div class="card-body">
+                {% if users_with_role %}
+                <div class="row">
+                    {% for user in users_with_role %}
+                    <div class="col-md-6 mb-3">
+                        <div class="d-flex align-items-center">
+                            <div class="avatar-sm bg-primary text-white rounded-circle d-flex align-items-center justify-content-center me-3">
+                                {{ user.get_full_name|default:user.username|first|upper }}
+                            </div>
+                            <div>
+                                <div class="fw-medium">{{ user.get_full_name|default:user.username }}</div>
+                                <small class="text-muted">{{ user.email }}</small>
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <div class="text-center text-muted py-4">
+                    <i class="bi bi-person-x display-4"></i>
+                    <p class="mt-2">No users assigned to this role</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Sidebar -->
+    <div class="col-lg-4">
+        <!-- Capacity Status -->
+        {% if role.max_users %}
+        <div class="card mb-4">
+            <div class="card-header">
+                <h6 class="card-title mb-0">
+                    <i class="bi bi-speedometer2 me-2"></i>Capacity Status
+                </h6>
+            </div>
+            <div class="card-body text-center">
+                <div class="display-6 mb-2 {% if capacity_info.percentage > 95 %}text-danger{% elif capacity_info.percentage > 80 %}text-warning{% else %}text-success{% endif %}">
+                    {{ capacity_info.percentage|floatformat:0 }}%
+                </div>
+                <p class="mb-0">{{ capacity_info.current }} of {{ capacity_info.maximum }} users</p>
+                {% if not capacity_info.can_assign %}
+                <div class="alert alert-warning alert-sm mt-2 mb-0">
+                    <i class="bi bi-exclamation-triangle me-1"></i>At capacity
+                </div>
+                {% endif %}
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Quick Stats -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <h6 class="card-title mb-0">
+                    <i class="bi bi-bar-chart me-2"></i>Quick Stats
+                </h6>
+            </div>
+            <div class="card-body">
+                <div class="row text-center">
+                    <div class="col-4">
+                        <div class="h4 mb-0 text-primary">{{ role.user_count }}</div>
+                        <small class="text-muted">Users</small>
+                    </div>
+                    <div class="col-4">
+                        <div class="h4 mb-0 text-success">{{ role.permission_count }}</div>
+                        <small class="text-muted">Permissions</small>
+                    </div>
+                    <div class="col-4">
+                        <div class="h4 mb-0 text-info">{{ role.priority }}</div>
+                        <small class="text-muted">Priority</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Recent Activity -->
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h6 class="card-title mb-0">
+                    <i class="bi bi-clock-history me-2"></i>Recent Activity
+                </h6>
+                <a href="{% url 'role_history' role.pk %}" class="btn btn-sm btn-outline-primary">View All</a>
+            </div>
+            <div class="card-body p-0">
+                {% if recent_history %}
+                <div class="list-group list-group-flush">
+                    {% for entry in recent_history %}
+                    <div class="list-group-item">
+                        <div class="d-flex justify-content-between align-items-start">
+                            <div>
+                                <div class="fw-medium">{{ entry.get_action_display }}</div>
+                                {% if entry.user %}
+                                <small class="text-muted">by {{ entry.user.get_full_name|default:entry.user.username }}</small>
+                                {% endif %}
+                            </div>
+                            <small class="text-muted">{{ entry.timestamp|timesince }} ago</small>
+                        </div>
+                        {% if entry.notes %}
+                        <small class="text-muted d-block mt-1">{{ entry.notes|truncatechars:60 }}</small>
+                        {% endif %}
+                    </div>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <div class="text-center text-muted py-3">
+                    <i class="bi bi-clock display-6"></i>
+                    <p class="mt-2 mb-0">No recent activity</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Permissions Section -->
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="card-title mb-0">
+                    <i class="bi bi-shield-check me-2"></i>Permissions ({{ role.permission_count }})
+                </h5>
+            </div>
+            <div class="card-body">
+                {% if permission_groups %}
+                <div class="accordion" id="permissionsAccordion">
+                    {% for app_name, permissions in permission_groups.items %}
+                    <div class="accordion-item">
+                        <h2 class="accordion-header">
+                            <button class="accordion-button {% if not forloop.first %}collapsed{% endif %}"
+                                    type="button"
+                                    data-bs-toggle="collapse"
+                                    data-bs-target="#permissions{{ forloop.counter }}"
+                                    aria-expanded="{% if forloop.first %}true{% else %}false{% endif %}">
+                                <strong>{{ app_name }}</strong>
+                                <span class="badge bg-secondary ms-2">{{ permissions|length }}</span>
+                            </button>
+                        </h2>
+                        <div id="permissions{{ forloop.counter }}"
+                             class="accordion-collapse collapse {% if forloop.first %}show{% endif %}"
+                             data-bs-parent="#permissionsAccordion">
+                            <div class="accordion-body">
+                                <div class="row">
+                                    {% for permission in permissions %}
+                                    <div class="col-md-6 col-lg-4 mb-2">
+                                        <div class="d-flex align-items-center">
+                                            <i class="bi bi-check-circle text-success me-2"></i>
+                                            <div>
+                                                <div class="fw-medium">{{ permission.name }}</div>
+                                                <small class="text-muted">{{ permission.codename }}</small>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    {% endfor %}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <div class="text-center text-muted py-4">
+                    <i class="bi bi-shield-x display-4"></i>
+                    <p class="mt-2">No permissions assigned to this role</p>
+                    {% if can_edit %}
+                    <a href="{% url 'role_edit' role.pk %}" class="btn btn-primary">
+                        <i class="bi bi-plus-lg me-2"></i>Add Permissions
+                    </a>
+                    {% endif %}
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Initialize tooltips
+    var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+    var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
+        return new bootstrap.Tooltip(tooltipTriggerEl);
+    });
+
+    // Handle toggle active status
+    document.querySelectorAll('.toggle-active-btn').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+            const roleId = this.getAttribute('data-role-id');
+
+            fetch(`/accounts/roles/${roleId}/toggle-active/`, {
+                method: 'POST',
+                headers: {
+                    'X-CSRFToken': window.csrfToken,
+                    'Content-Type': 'application/json',
+                },
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    window.location.reload();
+                } else {
+                    alert(data.message);
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('An error occurred while updating the role status.');
+            });
+        });
+    });
+});
+</script>
+{% endblock %}

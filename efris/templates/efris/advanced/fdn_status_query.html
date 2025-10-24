@@ -1,0 +1,84 @@
+{% extends "efris/base.html" %}
+{% load static %}
+
+{% block efris_content %}
+<div class="efris-card">
+    <div class="card-body">
+        <h5 class="card-title">
+            <i class="fas fa-shipping-fast"></i> Export FDN Status Query
+        </h5>
+
+        <form method="post" class="mt-4">
+            {% csrf_token %}
+
+            <div class="alert alert-info">
+                <i class="fas fa-info-circle"></i>
+                Query the status of export Fiscal Document Number (FDN) to check if goods have exited the country.
+            </div>
+
+            <div class="mb-3">
+                <label for="invoice_no" class="form-label">FDN / Invoice Number</label>
+                <input type="text" class="form-control" id="invoice_no"
+                       name="invoice_no" required
+                       placeholder="Enter FDN or invoice number">
+            </div>
+
+            <button type="submit" class="btn btn-primary">
+                <i class="fas fa-search"></i> Query Status
+            </button>
+        </form>
+
+        {% if fdn_status %}
+        <hr>
+
+        <div class="card mt-4">
+            <div class="card-header bg-primary text-white">
+                <h6 class="mb-0">FDN Status Result</h6>
+            </div>
+            <div class="card-body">
+                <dl class="row">
+                    <dt class="col-sm-3">Invoice Number:</dt>
+                    <dd class="col-sm-9">
+                        <code>{{ fdn_status.invoice_no }}</code>
+                    </dd>
+
+                    <dt class="col-sm-3">Document Status:</dt>
+                    <dd class="col-sm-9">
+                        {% if fdn_status.document_status_code == '101' %}
+                            <span class="badge bg-warning text-dark">
+                                <i class="fas fa-clock"></i> FDN Under Processing
+                            </span>
+                        {% elif fdn_status.document_status_code == '102' %}
+                            <span class="badge bg-success">
+                                <i class="fas fa-check-circle"></i> Exited
+                            </span>
+                        {% else %}
+                            <span class="badge bg-secondary">
+                                {{ fdn_status.document_status_name }}
+                            </span>
+                        {% endif %}
+                    </dd>
+
+                    <dt class="col-sm-3">Status Code:</dt>
+                    <dd class="col-sm-9">
+                        <code>{{ fdn_status.document_status_code }}</code>
+                    </dd>
+                </dl>
+
+                {% if fdn_status.document_status_code == '102' %}
+                <div class="alert alert-success mt-3">
+                    <i class="fas fa-check-circle"></i>
+                    <strong>Export Completed:</strong> The goods have successfully exited the country.
+                </div>
+                {% elif fdn_status.document_status_code == '101' %}
+                <div class="alert alert-warning mt-3">
+                    <i class="fas fa-hourglass-half"></i>
+                    <strong>Processing:</strong> The FDN is still under processing. Goods have not yet exited.
+                </div>
+                {% endif %}
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

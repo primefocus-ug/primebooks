@@ -1,0 +1,152 @@
+{% extends "services/base.html" %}
+
+{% block title %}Dashboard{% endblock %}
+{% block page_title %}Services Dashboard{% endblock %}
+
+{% block content %}
+<!-- Statistics Cards -->
+<div class="row mb-4">
+    <div class="col-md-3 mb-3">
+        <div class="stat-card">
+            <div class="icon" style="background-color: #dbeafe; color: #3b82f6;">
+                <i class="fas fa-concierge-bell"></i>
+            </div>
+            <h3>{{ total_services }}</h3>
+            <p>Active Services</p>
+        </div>
+    </div>
+    <div class="col-md-3 mb-3">
+        <div class="stat-card">
+            <div class="icon" style="background-color: #fef3c7; color: #f59e0b;">
+                <i class="fas fa-calendar-alt"></i>
+            </div>
+            <h3>{{ active_appointments }}</h3>
+            <p>Active Appointments</p>
+        </div>
+    </div>
+    <div class="col-md-3 mb-3">
+        <div class="stat-card">
+            <div class="icon" style="background-color: #d1fae5; color: #10b981;">
+                <i class="fas fa-check-circle"></i>
+            </div>
+            <h3>{{ completed_today }}</h3>
+            <p>Completed Today</p>
+        </div>
+    </div>
+    <div class="col-md-3 mb-3">
+        <div class="stat-card">
+            <div class="icon" style="background-color: #e0e7ff; color: #6366f1;">
+                <i class="fas fa-dollar-sign"></i>
+            </div>
+            <h3>${{ revenue_today|floatformat:2 }}</h3>
+            <p>Revenue Today</p>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <!-- Today's Appointments -->
+    <div class="col-lg-8 mb-4">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0"><i class="fas fa-calendar-day"></i> Today's Appointments</h5>
+                <a href="{% url 'services:appointment_create' %}" class="btn btn-primary btn-sm">
+                    <i class="fas fa-plus"></i> New Appointment
+                </a>
+            </div>
+            <div class="card-body">
+                {% if today_appointments %}
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead>
+                            <tr>
+                                <th>Time</th>
+                                <th>Service</th>
+                                <th>Customer</th>
+                                <th>Staff</th>
+                                <th>Status</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for appointment in today_appointments %}
+                            <tr>
+                                <td><strong>{{ appointment.scheduled_time|time:"g:i A" }}</strong></td>
+                                <td>{{ appointment.service.name }}</td>
+                                <td>{{ appointment.customer_name }}</td>
+                                <td>{{ appointment.assigned_staff.get_full_name|default:"Not assigned" }}</td>
+                                <td>
+                                    <span class="badge status-{{ appointment.status }}">
+                                        {{ appointment.get_status_display }}
+                                    </span>
+                                </td>
+                                <td>
+                                    <a href="{% url 'services:appointment_detail' appointment.pk %}"
+                                       class="btn btn-sm btn-outline-primary">
+                                        <i class="fas fa-eye"></i>
+                                    </a>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <p class="text-muted text-center py-4">No appointments scheduled for today</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Quick Stats -->
+    <div class="col-lg-4 mb-4">
+        <!-- Upcoming Appointments -->
+        <div class="card mb-3">
+            <div class="card-header">
+                <h6 class="mb-0"><i class="fas fa-clock"></i> Upcoming Appointments</h6>
+            </div>
+            <div class="card-body" style="max-height: 300px; overflow-y: auto;">
+                {% if upcoming %}
+                    {% for appointment in upcoming %}
+                    <div class="d-flex justify-content-between align-items-center mb-3 pb-3 border-bottom">
+                        <div>
+                            <strong>{{ appointment.service.name }}</strong><br>
+                            <small class="text-muted">
+                                {{ appointment.scheduled_date|date:"M d" }} at {{ appointment.scheduled_time|time:"g:i A" }}
+                            </small>
+                        </div>
+                        <span class="badge status-{{ appointment.status }}">
+                            {{ appointment.get_status_display }}
+                        </span>
+                    </div>
+                    {% endfor %}
+                {% else %}
+                    <p class="text-muted">No upcoming appointments</p>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Top Services -->
+        <div class="card">
+            <div class="card-header">
+                <h6 class="mb-0"><i class="fas fa-star"></i> Top Services This Month</h6>
+            </div>
+            <div class="card-body">
+                {% if top_services %}
+                    {% for service in top_services %}
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <div>
+                            <strong>{{ service.name }}</strong><br>
+                            <small class="text-muted">{{ service.bookings }} booking{{ service.bookings|pluralize }}</small>
+                        </div>
+                        <span class="badge bg-success">{{ service.bookings }}</span>
+                    </div>
+                    {% endfor %}
+                {% else %}
+                    <p class="text-muted">No data available</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

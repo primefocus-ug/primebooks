@@ -1,0 +1,430 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}{{ supplier.name }} - Supplier Details |{{ company.trading_name|default:company.name }}{% endblock %}
+
+{% block breadcrumbs %}
+<li class="breadcrumb-item">
+    {% if perms.inventory.view_product %}
+    <a href="{% url 'inventory:dashboard' %}">
+        <i class="fas fa-home"></i> Dashboard
+    </a>
+    {% endif %}
+</li>
+<li class="breadcrumb-item">
+    {% if perms.inventory.view_supplier %}
+    <a href="{% url 'inventory:supplier_list' %}">
+        <i class="fas fa-truck"></i> Suppliers
+    </a>
+    {% endif %}
+</li>
+<li class="breadcrumb-item active">
+    <i class="fas fa-info-circle"></i> {{ supplier.name }}
+</li>
+{% endblock %}
+
+{% block content %}
+<div class="supplier-detail-container">
+    <div class="row">
+        <div class="col-lg-8">
+            <!-- Supplier Info Card -->
+            <div class="card mb-4">
+                <div class="card-header">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <h5 class="card-title mb-0">
+                            <i class="fas fa-truck"></i> Supplier Information
+                        </h5>
+                        <div>
+                            <span class="badge bg-{% if supplier.is_active %}success{% else %}danger{% endif %} rounded-pill">
+                                {% if supplier.is_active %}Active{% else %}Inactive{% endif %}
+                            </span>
+                        </div>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="detail-row">
+                                <div class="detail-label">Supplier Name</div>
+                                <div class="detail-value">{{ supplier.name }}</div>
+                            </div>
+                            <div class="detail-row">
+                                <div class="detail-label">Tax Identification</div>
+                                <div class="detail-value">{{ supplier.tin|default:"Not provided" }}</div>
+                            </div>
+                            <div class="detail-row">
+                                <div class="detail-label">Contact Person</div>
+                                <div class="detail-value">{{ supplier.contact_person|default:"Not provided" }}</div>
+                            </div>
+                            <div class="detail-row">
+                                <div class="detail-label">Phone Number</div>
+                                <div class="detail-value">{{ supplier.phone|default:"Not provided" }}</div>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="detail-row">
+                                <div class="detail-label">Email Address</div>
+                                <div class="detail-value">{{ supplier.email|default:"Not provided" }}</div>
+                            </div>
+                            <div class="detail-row">
+                                <div class="detail-label">Website</div>
+                                <div class="detail-value">
+                                    {% if supplier.website %}
+                                    <a href="{{ supplier.website }}" target="_blank">{{ supplier.website }}</a>
+                                    {% else %}
+                                    Not provided
+                                    {% endif %}
+                                </div>
+                            </div>
+                            <div class="detail-row">
+                                <div class="detail-label">Lead Time</div>
+                                <div class="detail-value">{{ supplier.lead_time|default:"Not specified" }}</div>
+                            </div>
+                            <div class="detail-row">
+                                <div class="detail-label">Payment Terms</div>
+                                <div class="detail-value">{{ supplier.payment_terms|default:"Not specified" }}</div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="detail-row mt-3">
+                        <div class="detail-label">Physical Address</div>
+                        <div class="detail-value">{{ supplier.physical_address|default:"Not provided" }}</div>
+                    </div>
+                    
+                    <div class="detail-row">
+                        <div class="detail-label">Postal Address</div>
+                        <div class="detail-value">{{ supplier.postal_address|default:"Not provided" }}</div>
+                    </div>
+                </div>
+                <div class="card-footer">
+                    <div class="d-flex justify-content-between">
+                        <small class="text-muted">
+                            Created: {{ supplier.created_at|date:"M d, Y" }}
+                        </small>
+                        <small class="text-muted">
+                            Last updated: {{ supplier.updated_at|date:"M d, Y" }}
+                        </small>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Products Supplied Card -->
+            <div class="card">
+                <div class="card-header">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <h5 class="card-title mb-0">
+                            <i class="fas fa-boxes"></i> Products Supplied
+                            <span class="badge bg-primary-soft">{{ total_products }}</span>
+                        </h5>
+                        {% if perms.inventory.add_product %}
+                        <a href="{% url 'inventory:product_create' %}?supplier={{ supplier.id }}" 
+                           class="btn btn-sm btn-primary">
+                            <i class="fas fa-plus"></i> Add Product
+                        </a>
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="card-body">
+                    {% if products %}
+                    <div class="table-responsive">
+                        <table class="table table-hover align-middle">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Product</th>
+                                    <th>SKU</th>
+                                    <th>Price</th>
+                                    <th>Stock</th>
+                                    <th width="100">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for product in products %}
+                                <tr>
+                                    <td>
+                                        <div class="product-info">
+                                            <div class="product-image">
+                                                {% if product.image %}
+                                                <img src="{{ product.image.url }}" alt="{{ product.name }}" loading="lazy">
+                                                {% else %}
+                                                <div class="image-placeholder">
+                                                    <i class="fas fa-box"></i>
+                                                </div>
+                                                {% endif %}
+                                            </div>
+                                            <div class="product-details">
+                                                <h6 class="product-name">{{ product.name }}</h6>
+                                                {% if product.category %}
+                                                <span class="badge bg-secondary-soft">
+                                                    {{ product.category.name }}
+                                                </span>
+                                                {% endif %}
+                                            </div>
+                                        </div>
+                                    </td>
+                                    <td>{{ product.sku }}</td>
+                                    <td>UGX {{ product.selling_price|floatformat:0 }}</td>
+                                    <td>
+                                        <span class="{% if product.current_stock <= product.min_stock_level %}text-danger{% endif %}">
+                                            {{ product.current_stock|default:"0" }}
+                                        </span>
+                                    </td>
+                                    <td>
+                                        <div class="action-buttons">
+                                            {% if perms.inventory.view_product %}
+                                            <a href="{% url 'inventory:product_detail' product.pk %}" 
+                                               class="btn btn-sm btn-outline-info action-btn" 
+                                               data-bs-toggle="tooltip" title="View Details">
+                                                <i class="fas fa-eye"></i>
+                                            </a>
+                                            {% endif %}
+                                        </div>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% else %}
+                    <div class="empty-state">
+                        <div class="empty-state-icon">
+                            <i class="fas fa-box-open"></i>
+                        </div>
+                        <h5>No Products Found</h5>
+                        <p class="text-muted">This supplier doesn't have any products yet.</p>
+                        {% if perms.inventory.add_product %}
+                        <a href="{% url 'inventory:product_create' %}?supplier={{ supplier.id }}" 
+                           class="btn btn-primary btn-sm">
+                            <i class="fas fa-plus"></i> Add Product
+                        </a>
+                        {% endif %}
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-lg-4">
+            <!-- Supplier Actions Card -->
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">
+                        <i class="fas fa-cog"></i> Actions
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div class="d-grid gap-2">
+                        {% if perms.inventory.change_product %}
+                        <a href="{% url 'inventory:supplier_update' supplier.pk %}" 
+                           class="btn btn-primary">
+                            <i class="fas fa-edit"></i> Edit Supplier
+                        </a>
+                        {% endif %}
+                        <a href="#?supplier={{ supplier.id }}"
+                           class="btn btn-outline-success">
+                            <i class="fas fa-file-invoice-dollar"></i> Create Purchase Order
+                        </a>
+                        <a href="mailto:{{ supplier.email|default:'' }}" 
+                           class="btn btn-outline-info {% if not supplier.email %}disabled{% endif %}">
+                            <i class="fas fa-envelope"></i> Send Email
+                        </a>
+                        <a href="tel:{{ supplier.phone|default:'' }}" 
+                           class="btn btn-outline-secondary {% if not supplier.phone %}disabled{% endif %}">
+                            <i class="fas fa-phone"></i> Call Supplier
+                        </a>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Supplier Stats Card -->
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">
+                        <i class="fas fa-chart-bar"></i> Statistics
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div class="supplier-stats">
+                        <div class="stat-item">
+                            <div class="stat-label">Total Products</div>
+                            <div class="stat-value">{{ total_products }}</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-label">Active Products</div>
+                            <div class="stat-value">{{ supplier.active_products.count }}</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-label">Last Order</div>
+                            <div class="stat-value">
+                                {% if supplier.last_order_date %}
+                                    {{ supplier.last_order_date|date:"M d, Y" }}
+                                {% else %}
+                                    Never
+                                {% endif %}
+                            </div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-label">Total Orders</div>
+                            <div class="stat-value">{{ supplier.purchase_orders.count }}</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+.supplier-detail-container {
+    padding: 1.5rem;
+    max-width: 1400px;
+    margin: 0 auto;
+}
+
+.card {
+    border-radius: 0.75rem;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+    margin-bottom: 1.5rem;
+}
+
+.card-header {
+    background-color: rgba(46, 89, 217, 0.1);
+    border-bottom: 1px solid rgba(46, 89, 217, 0.2);
+}
+
+.detail-row {
+    display: flex;
+    margin-bottom: 0.75rem;
+}
+
+.detail-label {
+    flex: 0 0 150px;
+    font-weight: 500;
+    color: #495057;
+}
+
+.detail-value {
+    flex: 1;
+}
+
+/* Product Info */
+.product-info {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+}
+
+.product-image {
+    width: 40px;
+    height: 40px;
+    flex-shrink: 0;
+    border-radius: 0.5rem;
+    overflow: hidden;
+    background-color: #f8f9fa;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.product-image img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.image-placeholder {
+    color: #adb5bd;
+    font-size: 1rem;
+}
+
+.product-name {
+    font-weight: 500;
+    margin-bottom: 0.25rem;
+}
+
+/* Supplier Stats */
+.supplier-stats {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+}
+
+.stat-item {
+    background-color: #f8f9fa;
+    border-radius: 0.5rem;
+    padding: 0.75rem;
+}
+
+.stat-label {
+    font-size: 0.875rem;
+    color: #6c757d;
+}
+
+.stat-value {
+    font-weight: 600;
+    font-size: 1.25rem;
+}
+
+/* Empty State */
+.empty-state {
+    text-align: center;
+    padding: 2rem 1rem;
+}
+
+.empty-state-icon {
+    font-size: 2rem;
+    color: #e9ecef;
+    margin-bottom: 0.5rem;
+}
+
+.empty-state h5 {
+    margin-bottom: 0.5rem;
+    color: #495057;
+}
+
+/* Action Buttons */
+.action-buttons {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.action-btn {
+    width: 32px;
+    height: 32px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 0.5rem;
+}
+
+/* Responsive Adjustments */
+@media (max-width: 768px) {
+    .detail-row {
+        flex-direction: column;
+        gap: 0.25rem;
+    }
+    
+    .detail-label {
+        flex: 1;
+    }
+    
+    .supplier-stats {
+        grid-template-columns: 1fr;
+    }
+}
+</style>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+$(document).ready(function() {
+    // Initialize tooltips
+    $('[data-bs-toggle="tooltip"]').tooltip({
+        trigger: 'hover',
+        placement: 'top'
+    });
+});
+</script>
+{% endblock %}

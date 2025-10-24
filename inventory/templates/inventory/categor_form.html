@@ -1,0 +1,593 @@
+{% extends 'base.html' %}
+{% load widget_tweaks %}
+
+{% block title %}
+    {% if form.instance.pk %}Edit {{ form.instance.name }}{% else %}Create New Category{% endif %} - {{ company.trading_name|default:company.name }}
+{% endblock %}
+
+{% block page_title %}
+    {% if form.instance.pk %}Edit Category{% else %}Create New Category{% endif %}
+{% endblock %}
+
+{% block extra_css %}
+<link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
+<link href="https://cdn.jsdelivr.net/npm/select2-bootstrap-5-theme@1.3.0/dist/select2-bootstrap-5-theme.min.css" rel="stylesheet" />
+<style>
+    .tree-view ul {
+        list-style-type: none;
+        padding-left: 20px;
+    }
+
+    .tree-view li {
+        position: relative;
+        margin: 5px 0;
+    }
+
+    .tree-view li:before {
+        content: "";
+        position: absolute;
+        top: -5px;
+        left: -15px;
+        border-left: 1px solid #ccc;
+        border-bottom: 1px solid #ccc;
+        width: 15px;
+        height: 15px;
+    }
+
+    .tree-view li:after {
+        position: absolute;
+        content: "";
+        top: 10px;
+        left: -15px;
+        border-left: 1px solid #ccc;
+        width: 15px;
+        height: 100%;
+    }
+
+    .tree-view li:last-child:after {
+        display: none;
+    }
+
+    .tree-view li span {
+        display: inline-block;
+        padding: 3px 8px;
+        border-radius: 4px;
+    }
+
+    .tree-view li.active span {
+        background-color: #e3f2fd;
+        color: #1976d2;
+        font-weight: 500;
+    }
+
+    .form-check-input:checked {
+        background-color: #3b82f6;
+        border-color: #3b82f6;
+    }
+
+    .efris-category-result {
+        padding: 5px 0;
+    }
+    .efris-category-result .category-code {
+        font-weight: 600;
+        color: #2c3e50;
+        font-size: 0.95em;
+    }
+    .efris-category-result .category-name {
+        color: #7f8c8d;
+        font-size: 0.85em;
+    }
+    .select2-container--bootstrap-5 .select2-selection {
+        min-height: 38px;
+    }
+    .badge {
+        font-size: 0.7rem;
+        padding: 2px 6px;
+        margin-left: 4px;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-lg-8">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">Category Information</h5>
+            </div>
+            <div class="card-body">
+                <form method="post" enctype="multipart/form-data">
+                    {% csrf_token %}
+
+                    {% if form.non_field_errors %}
+                        <div class="alert alert-danger">
+                            {% for error in form.non_field_errors %}
+                                {{ error }}
+                            {% endfor %}
+                        </div>
+                    {% endif %}
+
+                    <div class="row g-3">
+                        <!-- Name -->
+                        <div class="col-md-12">
+                            <div class="form-group">
+                                <label for="{{ form.name.id_for_label }}" class="form-label">
+                                    {{ form.name.label }}
+                                    {% if form.name.field.required %}<span class="text-danger">*</span>{% endif %}
+                                </label>
+                                {% render_field form.name class="form-control" %}
+                                {% if form.name.errors %}
+                                    <div class="invalid-feedback d-block">
+                                        {% for error in form.name.errors %}
+                                            {{ error }}
+                                        {% endfor %}
+                                    </div>
+                                {% endif %}
+                                <small class="form-text text-muted">Your internal category name (e.g., 'Electronics', 'Beverages')</small>
+                            </div>
+                        </div>
+
+                        <!-- Code and Parent -->
+                        <div class="col-md-6">
+                            <div class="form-group">
+                                <label for="{{ form.code.id_for_label }}" class="form-label">
+                                    {{ form.code.label }}
+                                    {% if form.code.field.required %}<span class="text-danger">*</span>{% endif %}
+                                </label>
+                                {% render_field form.code class="form-control" %}
+                                {% if form.code.errors %}
+                                    <div class="invalid-feedback d-block">
+                                        {% for error in form.code.errors %}
+                                            {{ error }}
+                                        {% endfor %}
+                                    </div>
+                                {% endif %}
+                            </div>
+                        </div>
+
+                        {% if form.parent %}
+                        <div class="col-md-6">
+                            <div class="form-group">
+                                <label for="{{ form.parent.id_for_label }}" class="form-label">
+                                    {{ form.parent.label }}
+                                </label>
+                                {% render_field form.parent class="form-select" %}
+                                {% if form.parent.errors %}
+                                    <div class="invalid-feedback d-block">
+                                        {% for error in form.parent.errors %}
+                                            {{ error }}
+                                        {% endfor %}
+                                    </div>
+                                {% endif %}
+                            </div>
+                        </div>
+                        {% endif %}
+
+                        <!-- Description -->
+                        <div class="col-12">
+                            <div class="form-group">
+                                <label for="{{ form.description.id_for_label }}" class="form-label">
+                                    {{ form.description.label }}
+                                </label>
+                                {% render_field form.description class="form-control" rows="3" %}
+                                {% if form.description.errors %}
+                                    <div class="invalid-feedback d-block">
+                                        {% for error in form.description.errors %}
+                                            {{ error }}
+                                        {% endfor %}
+                                    </div>
+                                {% endif %}
+                            </div>
+                        </div>
+
+
+                        <div class="col-12">
+    <div class="card bg-light">
+        <div class="card-header">
+            <h6 class="mb-0">
+                <i class="fas fa-sync text-primary"></i> EFRIS Configuration
+            </h6>
+        </div>
+        <div class="card-body">
+            <div class="form-group mb-3">
+                <label for="efris_commodity_category_select" class="form-label">
+                    EFRIS Commodity Category <span class="text-danger">*</span>
+                </label>
+                <select id="efris_commodity_category_select"
+                        name="efris_commodity_category_code"
+                        class="form-select efris-category-select"
+                        style="width: 100%;">
+                    {% if form.instance.efris_commodity_category_code %}
+                    <option value="{{ form.instance.efris_commodity_category_code }}" selected>
+                        {{ form.instance.efris_commodity_category_code }} - {{ form.instance.efris_commodity_category_name }}
+                    </option>
+                    {% else %}
+                    <option value="">Search by code or name...</option>
+                    {% endif %}
+                </select>
+                <small class="form-text text-muted">
+                    <i class="fas fa-info-circle"></i>
+                    Search and select the official EFRIS commodity category. Products in this category will inherit this classification.
+                </small>
+                {% if form.efris_commodity_category_code.errors %}
+                    <div class="invalid-feedback d-block">
+                        {% for error in form.efris_commodity_category_code.errors %}
+                            {{ error }}
+                        {% endfor %}
+                    </div>
+                {% endif %}
+            </div>
+
+            <!-- Display current EFRIS category details -->
+            {% if form.instance.efris_commodity_category_code %}
+            <div class="alert alert-info mb-0">
+                <strong>Current Selection:</strong><br>
+                <strong>Code:</strong> {{ form.instance.efris_commodity_category_code }}<br>
+                <strong>Name:</strong> {{ form.instance.efris_commodity_category_name }}
+                {% if form.instance.efris_is_exempt %}
+                <span class="badge bg-info">Exempt</span>
+                {% endif %}
+                {% if form.instance.efris_is_zero_rate %}
+                <span class="badge bg-warning">Zero Rate</span>
+                {% endif %}
+            </div>
+            {% endif %}
+
+            <div class="form-check mt-3">
+                {% render_field form.efris_auto_sync class="form-check-input" %}
+                <label class="form-check-label" for="{{ form.efris_auto_sync.id_for_label }}">
+                    Enable EFRIS Auto Sync
+                </label>
+                <small class="form-text text-muted d-block">
+                    Automatically sync category and products to EFRIS
+                </small>
+            </div>
+        </div>
+    </div>
+</div>
+
+                        <!-- Status and Image -->
+                        <div class="col-md-6">
+                            <div class="form-group">
+                                <label class="form-label">Status</label>
+                                <div class="form-check form-switch">
+                                    {% render_field form.is_active class="form-check-input" role="switch" %}
+                                    <label class="form-check-label" for="{{ form.is_active.id_for_label }}">
+                                        Active
+                                    </label>
+                                </div>
+                                {% if form.is_active.errors %}
+                                    <div class="invalid-feedback d-block">
+                                        {% for error in form.is_active.errors %}
+                                            {{ error }}
+                                        {% endfor %}
+                                    </div>
+                                {% endif %}
+                            </div>
+                        </div>
+
+                        {% if form.image %}
+                        <div class="col-md-6">
+                            <div class="form-group">
+                                <label for="{{ form.image.id_for_label }}" class="form-label">
+                                    {{ form.image.label }}
+                                </label>
+                                {% render_field form.image class="form-control" %}
+                                {% if form.image.errors %}
+                                    <div class="invalid-feedback d-block">
+                                        {% for error in form.image.errors %}
+                                            {{ error }}
+                                        {% endfor %}
+                                    </div>
+                                {% endif %}
+
+                                {% if form.instance.image %}
+                                    <div class="mt-2">
+                                        <img src="{{ form.instance.image.url }}" alt="{{ form.instance.name }}"
+                                             class="img-thumbnail" style="max-height: 100px;">
+                                    </div>
+                                {% endif %}
+                            </div>
+                        </div>
+                        {% endif %}
+                    </div>
+
+                    <div class="d-flex justify-content-between mt-4">
+                        {% if perms.inventory.view_category %}
+                        <a href="{% if form.instance.pk %}{% url 'inventory:category_detail' form.instance.pk %}{% else %}{% url 'inventory:category_list' %}{% endif %}"
+                           class="btn btn-outline-secondary">
+                            <i class="fas fa-arrow-left me-2"></i>Cancel
+                        </a>
+                        {% endif %}
+                        <div class="d-flex gap-2">
+                            {% if form.instance.pk %}
+                                <button type="button" class="btn btn-outline-danger"
+                                        onclick="deleteCategory({{ form.instance.pk }}, '{{ form.instance.name }}')">
+                                    <i class="fas fa-trash me-2"></i>Delete
+                                </button>
+                            {% endif %}
+
+                            <button type="submit" class="btn btn-primary">
+                                <i class="fas fa-save me-2"></i>Save Category
+                            </button>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Sidebar -->
+    <div class="col-lg-4">
+        <!-- Help Card -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="mb-0">Tips</h5>
+            </div>
+            <div class="card-body">
+                <ul class="list-unstyled">
+                    <li class="mb-3">
+                        <h6 class="fw-bold"><i class="fas fa-info-circle me-2"></i>Category Name</h6>
+                        <p class="small text-muted">Your internal name for organizing products (e.g., "Soft Drinks", "Electronics").</p>
+                    </li>
+                    <li class="mb-3">
+                        <h6 class="fw-bold"><i class="fas fa-sync me-2 text-primary"></i>EFRIS Category</h6>
+                        <p class="small text-muted">Official EFRIS classification required for tax compliance. All products in this category will inherit this classification.</p>
+                    </li>
+                    <li class="mb-3">
+                        <h6 class="fw-bold"><i class="fas fa-search me-2"></i>Searching Categories</h6>
+                        <p class="small text-muted">Type code (e.g., "101113010000000000") or name (e.g., "Beverages") to find the correct EFRIS category.</p>
+                    </li>
+                    <li>
+                        <h6 class="fw-bold"><i class="fas fa-toggle-on me-2"></i>Auto Sync</h6>
+                        <p class="small text-muted">When enabled, changes to this category and its products will automatically sync to EFRIS.</p>
+                    </li>
+                </ul>
+            </div>
+        </div>
+
+        <!-- EFRIS Status -->
+        {% if form.instance.pk %}
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="fas fa-info-circle"></i> EFRIS Status</h5>
+            </div>
+            <div class="card-body">
+                <div class="mb-2">
+                    <strong>Status:</strong>
+                    <span class="badge bg-{% if form.instance.efris_is_uploaded %}success{% else %}warning{% endif %}">
+                        {{ form.instance.efris_status_display }}
+                    </span>
+                </div>
+                {% if form.instance.products.count %}
+                <div class="mb-2">
+                    <strong>Products:</strong> {{ form.instance.products.count }}
+                </div>
+                {% endif %}
+                {% if form.instance.efris_commodity_category %}
+                <div class="alert alert-success mt-3 mb-0">
+                    <i class="fas fa-check-circle"></i> EFRIS category configured
+                </div>
+                {% else %}
+                <div class="alert alert-warning mt-3 mb-0">
+                    <i class="fas fa-exclamation-triangle"></i> Please select EFRIS category
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Hierarchy Preview -->
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">Category Hierarchy</h5>
+            </div>
+            <div class="card-body">
+                <div class="tree-view">
+                    {% if form.instance.parent %}
+                        <ul>
+                            <li>
+                                <span>{{ form.instance.parent.name }}</span>
+                                <ul>
+                                    <li class="active">
+                                        <span>{{ form.instance.name }}</span>
+                                        {% if child_categories %}
+                                            <ul>
+                                                {% for child in child_categories %}
+                                                    <li><span>{{ child.name }}</span></li>
+                                                {% endfor %}
+                                            </ul>
+                                        {% endif %}
+                                    </li>
+                                </ul>
+                            </li>
+                        </ul>
+                    {% else %}
+                        <ul>
+                            <li class="active">
+                                <span>{{ form.instance.name }}</span>
+                                {% if child_categories %}
+                                    <ul>
+                                        {% for child in child_categories %}
+                                            <li><span>{{ child.name }}</span></li>
+                                        {% endfor %}
+                                    </ul>
+                                {% endif %}
+                            </li>
+                        </ul>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Delete Confirmation Modal -->
+<div class="modal fade" id="deleteModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Confirm Delete</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p>Are you sure you want to delete the category <strong id="deleteItemName"></strong>?</p>
+                <div class="alert alert-warning">
+                    <i class="fas fa-exclamation-triangle me-2"></i>
+                    This action cannot be undone. All products in this category will be moved to "Uncategorized".
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-danger" id="confirmDelete">Delete Category</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+<script>
+$(document).ready(function() {
+    // Initialize EFRIS Category Select2 with AJAX search
+    $('#efris_commodity_category_select').select2({
+        theme: 'bootstrap-5',
+        ajax: {
+            url: '{% url "inventory:efris_category_search" %}',
+            dataType: 'json',
+            delay: 250,
+            data: function(params) {
+                return {
+                    q: params.term,
+                    page: params.page || 1
+                };
+            },
+            processResults: function(data, params) {
+                params.page = params.page || 1;
+
+                return {
+                    results: data.results,
+                    pagination: {
+                        more: data.pagination.more
+                    }
+                };
+            },
+            cache: true
+        },
+        placeholder: 'Search by EFRIS code or name...',
+        allowClear: true,
+        minimumInputLength: 2,  // Require at least 2 characters
+        width: '100%',
+        templateResult: formatEFRISCategory,
+        templateSelection: formatEFRISCategorySelection
+    });
+
+    // If there's an initial value, set it
+    {% if form.instance.efris_commodity_category_code %}
+    const initialCode = '{{ form.instance.efris_commodity_category_code }}';
+    const initialName = '{{ form.instance.efris_commodity_category_name }}';
+
+    // Create option and set as selected
+    const option = new Option(
+        `${initialCode} - ${initialName}`,
+        initialCode,
+        true,
+        true
+    );
+    $('#efris_commodity_category_select').append(option).trigger('change');
+    {% endif %}
+
+    // Format search results
+    function formatEFRISCategory(category) {
+        if (category.loading) {
+            return category.text;
+        }
+
+        const badges = [];
+        if (category.is_exempt === '101') {
+            badges.push('<span class="badge bg-info">Exempt</span>');
+        }
+        if (category.is_zero_rate === '101') {
+            badges.push('<span class="badge bg-warning">Zero Rate</span>');
+        }
+        if (category.is_leaf_node === '101') {
+            badges.push('<span class="badge bg-success">Leaf</span>');
+        }
+
+        const badgeHtml = badges.length > 0 ? ' ' + badges.join(' ') : '';
+
+        const $result = $(`
+            <div class="efris-category-result">
+                <div class="category-code">
+                    ${escapeHtml(category.code || '')}
+                </div>
+                <div class="category-name">
+                    ${escapeHtml(category.name || '')}${badgeHtml}
+                </div>
+            </div>
+        `);
+
+        return $result;
+    }
+
+    // Format selected item
+    function formatEFRISCategorySelection(category) {
+        if (category.code && category.name) {
+            return `${category.code} - ${category.name}`;
+        }
+        return category.text || category.id;
+    }
+
+    function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+});
+function deleteCategory(categoryId, categoryName) {
+    document.getElementById('deleteItemName').textContent = categoryName;
+
+    const modal = new bootstrap.Modal(document.getElementById('deleteModal'));
+    modal.show();
+
+    document.getElementById('confirmDelete').onclick = function() {
+        fetch(`{% url 'inventory:category_delete' 0 %}`.replace('0', categoryId), {
+            method: 'DELETE',
+            headers: {
+                'X-CSRFToken': getCookie('csrftoken')
+            }
+        })
+        .then(response => {
+            if (response.ok) {
+                window.location.href = '{% url "inventory:category_list" %}';
+            } else {
+                alert('Error deleting category');
+            }
+            modal.hide();
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('Error deleting category');
+            modal.hide();
+        });
+    };
+}
+
+function getCookie(name) {
+    let cookieValue = null;
+    if (document.cookie && document.cookie !== '') {
+        const cookies = document.cookie.split(';');
+        for (let i = 0; i < cookies.length; i++) {
+            const cookie = cookies[i].trim();
+            if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                break;
+            }
+        }
+    }
+    return cookieValue;
+}
+</script>
+{% endblock %}

@@ -1,0 +1,496 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Product Performance Report | {{company.trading_name|default:company.name}}{% endblock %}
+
+{% block extra_css %}
+<link href="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/flatpickr.min.css" rel="stylesheet">
+<style>
+    .performance-metric {
+        background: white;
+        border-radius: 12px;
+        padding: 1.5rem;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        transition: all 0.3s ease;
+        border-left: 4px solid;
+        position: relative;
+        overflow: hidden;
+    }
+
+    .performance-metric::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        right: 0;
+        width: 80px;
+        height: 80px;
+        border-radius: 50%;
+        opacity: 0.1;
+        transform: translate(25px, -25px);
+    }
+
+    .performance-metric:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 8px 25px rgba(0,0,0,0.15);
+    }
+
+    .metric-products { border-left-color: #3b82f6; }
+    .metric-products::before { background: #3b82f6; }
+
+    .metric-quantity { border-left-color: #10b981; }
+    .metric-quantity::before { background: #10b981; }
+
+    .metric-revenue { border-left-color: #f59e0b; }
+    .metric-revenue::before { background: #f59e0b; }
+
+    .product-row {
+        transition: all 0.3s ease;
+        border-radius: 8px;
+    }
+
+    .product-row:hover {
+        background-color: #f8fafc;
+        transform: scale(1.01);
+    }
+
+    .profit-positive { color: #10b981; }
+    .profit-negative { color: #ef4444; }
+    .profit-neutral { color: #64748b; }
+
+    .performance-badge {
+        padding: 0.25rem 0.75rem;
+        border-radius: 20px;
+        font-size: 0.75rem;
+        font-weight: 600;
+    }
+
+    .badge-excellent { background: #d1fae5; color: #065f46; }
+    .badge-good { background: #dbeafe; color: #1e40af; }
+    .badge-average { background: #fef3c7; color: #92400e; }
+    .badge-poor { background: #fee2e2; color: #991b1b; }
+
+    .filter-section {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        border-radius: 12px;
+    }
+
+    .table-actions .btn {
+        padding: 0.375rem 0.5rem;
+        font-size: 0.8rem;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- Page Header -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h1 class="h3 mb-0">Product Performance Report</h1>
+            <p class="text-muted">Analyze product sales, profitability, and performance metrics</p>
+        </div>
+        <div class="btn-group">
+            <button type="button" class="btn btn-primary dropdown-toggle" data-bs-toggle="dropdown">
+                <i class="bi bi-download me-1"></i>Export Report
+            </button>
+            <ul class="dropdown-menu">
+                <li><a class="dropdown-item" href="#" onclick="exportReport('excel')">
+                    <i class="bi bi-file-earmark-excel me-2"></i>Excel Format
+                </a></li>
+                <li><a class="dropdown-item" href="#" onclick="exportReport('csv')">
+                    <i class="bi bi-filetype-csv me-2"></i>CSV Format
+                </a></li>
+                <li><a class="dropdown-item" href="#" onclick="exportReport('pdf')">
+                    <i class="bi bi-file-earmark-pdf me-2"></i>PDF Format
+                </a></li>
+            </ul>
+        </div>
+    </div>
+
+    <!-- Filters -->
+    <div class="card filter-section mb-4">
+        <div class="card-body">
+            <form method="get" class="row g-3" id="filterForm">
+                <div class="col-md-3">
+                    <label class="form-label">Start Date</label>
+                    <input type="text" class="form-control" name="start_date" id="startDate"
+                           value="{{ form.start_date.value|default:'' }}" placeholder="Select start date">
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">End Date</label>
+                    <input type="text" class="form-control" name="end_date" id="endDate"
+                           value="{{ form.end_date.value|default:'' }}" placeholder="Select end date">
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">Store</label>
+                    <select class="form-select" name="store">
+                        <option value="">All Stores</option>
+                        {% for store in stores %}
+                            <option value="{{ store.id }}" {% if form.store.value == store.id|stringformat:"s" %}selected{% endif %}>
+                                {{ store.name }} - {{ store.branch.name }}
+                            </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">Category</label>
+                    <select class="form-select" name="category" id="categoryFilter">
+                        <option value="">All Categories</option>
+                        <!-- Categories will be loaded via AJAX -->
+                    </select>
+                </div>
+                <div class="col-12">
+                    <button type="submit" class="btn btn-light me-2">
+                        <i class="bi bi-search me-1"></i>Generate Report
+                    </button>
+                    <button type="button" class="btn btn-outline-light" onclick="resetFilters()">
+                        <i class="bi bi-arrow-clockwise me-1"></i>Reset
+                    </button>
+                    <button type="button" class="btn btn-outline-light" onclick="saveReport()">
+                        <i class="bi bi-bookmark me-1"></i>Save Configuration
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    {% if summary_stats %}
+    <!-- Summary Metrics -->
+    <div class="row mb-4">
+        <div class="col-lg-4 mb-3">
+            <div class="performance-metric metric-products">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div class="flex-grow-1">
+                        <h6 class="text-muted mb-1">Products Sold</h6>
+                        <h3 class="mb-0">{{ summary_stats.total_products_sold }}</h3>
+                        <small class="text-muted">Different product types</small>
+                    </div>
+                    <div class="text-end">
+                        <i class="bi bi-box-seam text-primary fs-1 opacity-75"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-4 mb-3">
+            <div class="performance-metric metric-quantity">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div class="flex-grow-1">
+                        <h6 class="text-muted mb-1">Total Quantity</h6>
+                        <h3 class="mb-0">{{ summary_stats.total_quantity|floatformat:0 }}</h3>
+                        <small class="text-muted">Units sold</small>
+                    </div>
+                    <div class="text-end">
+                        <i class="bi bi-stack text-success fs-1 opacity-75"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-4 mb-3">
+            <div class="performance-metric metric-revenue">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div class="flex-grow-1">
+                        <h6 class="text-muted mb-1">Total Revenue</h6>
+                        <h3 class="mb-0">UGX {{ summary_stats.total_revenue|floatformat:0 }}</h3>
+                        <small class="text-muted">From product sales</small>
+                    </div>
+                    <div class="text-end">
+                        <i class="bi bi-currency-exchange text-warning fs-1 opacity-75"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Product Performance Table -->
+    <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <div>
+                <h5 class="mb-0">
+                    <i class="bi bi-graph-up me-2"></i>Product Performance Details
+                </h5>
+                <small class="text-muted">Showing {{ page_obj.paginator.count }} products</small>
+            </div>
+            <div class="d-flex gap-2">
+                <div class="input-group" style="width: 250px;">
+                    <input type="text" class="form-control form-control-sm" id="searchProducts"
+                           placeholder="Search products...">
+                    <button class="btn btn-outline-secondary btn-sm" type="button">
+                        <i class="bi bi-search"></i>
+                    </button>
+                </div>
+                <div class="dropdown">
+                    <button class="btn btn-outline-secondary btn-sm dropdown-toggle" type="button"
+                            data-bs-toggle="dropdown">
+                        Sort By
+                    </button>
+                    <ul class="dropdown-menu">
+                        <li><a class="dropdown-item" href="?{{ request.GET.urlencode }}&sort=revenue">Revenue</a></li>
+                        <li><a class="dropdown-item" href="?{{ request.GET.urlencode }}&sort=quantity">Quantity</a></li>
+                        <li><a class="dropdown-item" href="?{{ request.GET.urlencode }}&sort=profit">Profit</a></li>
+                        <li><a class="dropdown-item" href="?{{ request.GET.urlencode }}&sort=margin">Margin</a></li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+        <div class="card-body p-0">
+            {% if page_obj %}
+            <div class="table-responsive">
+                <table class="table table-hover mb-0" id="productTable">
+                    <thead class="table-light">
+                        <tr>
+                            <th width="25%">Product Details</th>
+                            <th width="15%">Performance</th>
+                            <th width="15%">Revenue</th>
+                            <th width="12%">Quantity</th>
+                            <th width="15%">Profitability</th>
+                            <th width="10%">Margin</th>
+                            <th width="8%">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for product in page_obj %}
+                        <tr class="product-row">
+                            <td>
+                                <div class="d-flex align-items-center">
+                                    <div class="flex-shrink-0 me-3">
+                                        <div class="bg-light rounded p-2" style="width: 50px; height: 50px;">
+                                            <i class="bi bi-box text-muted fs-4"></i>
+                                        </div>
+                                    </div>
+                                    <div class="flex-grow-1">
+                                        <h6 class="mb-1">{{ product.product__name|truncatechars:30 }}</h6>
+                                        <div class="d-flex flex-wrap gap-2">
+                                            <span class="badge bg-light text-dark">{{ product.product__sku }}</span>
+                                            <span class="badge bg-secondary">{{ product.product__category__name|default:"Uncategorized" }}</span>
+                                        </div>
+                                        <small class="text-muted">Price: UGX {{ product.product__selling_price|floatformat:0 }}</small>
+                                    </div>
+                                </div>
+                            </td>
+                            <td>
+                                {% if product.total_revenue >= 1000000 %}
+                                    <span class="performance-badge badge-excellent">Excellent</span>
+                                {% elif product.total_revenue >= 500000 %}
+                                    <span class="performance-badge badge-good">Good</span>
+                                {% elif product.total_revenue >= 100000 %}
+                                    <span class="performance-badge badge-average">Average</span>
+                                {% else %}
+                                    <span class="performance-badge badge-poor">Poor</span>
+                                {% endif %}
+                                <div class="mt-1">
+                                    <small class="text-muted">{{ product.transaction_count }} transactions</small>
+                                </div>
+                            </td>
+                            <td>
+                                <div class="fw-bold text-success fs-6">UGX {{ product.total_revenue|floatformat:0 }}</div>
+                                <small class="text-muted">Avg: UGX {{ product.avg_price|floatformat:0 }}</small>
+                            </td>
+                            <td>
+                                <div class="fw-bold">{{ product.total_quantity|floatformat:0 }}</div>
+                                <div class="progress mt-1" style="height: 4px;">
+                                    <div class="progress-bar bg-info" style="width: {{ product.total_quantity|floatformat:0|slice:":2" }}%"></div>
+                                </div>
+                            </td>
+                            <td>
+                                <div class="fw-bold {% if product.total_profit > 0 %}profit-positive{% elif product.total_profit < 0 %}profit-negative{% else %}profit-neutral{% endif %}">
+                                    UGX {{ product.total_profit|floatformat:0 }}
+                                </div>
+                                <small class="text-muted">
+                                    {% if product.total_profit > 0 %}
+                                        <i class="bi bi-arrow-up text-success"></i> Profitable
+                                    {% elif product.total_profit < 0 %}
+                                        <i class="bi bi-arrow-down text-danger"></i> Loss
+                                    {% else %}
+                                        <i class="bi bi-dash text-muted"></i> Break-even
+                                    {% endif %}
+                                </small>
+                            </td>
+                            <td>
+                                <div class="d-flex align-items-center">
+                                    <div class="me-2">
+                                        <strong class="{% if product.profit_margin > 20 %}text-success{% elif product.profit_margin > 10 %}text-warning{% else %}text-danger{% endif %}">
+                                            {{ product.profit_margin|floatformat:1 }}%
+                                        </strong>
+                                    </div>
+                                    <div class="progress flex-grow-1" style="height: 8px;">
+                                        <div class="progress-bar {% if product.profit_margin > 20 %}bg-success{% elif product.profit_margin > 10 %}bg-warning{% else %}bg-danger{% endif %}"
+                                             style="width: {{ product.profit_margin|floatformat:0 }}%"></div>
+                                    </div>
+                                </div>
+                            </td>
+                            <td>
+                                <div class="btn-group btn-group-sm table-actions">
+                                    <button type="button" class="btn btn-outline-primary" title="View Details">
+                                        <i class="bi bi-eye"></i>
+                                    </button>
+                                    <button type="button" class="btn btn-outline-secondary" title="Export">
+                                        <i class="bi bi-download"></i>
+                                    </button>
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Pagination -->
+            {% if page_obj.has_other_pages %}
+            <div class="card-footer">
+                <nav aria-label="Product pagination">
+                    <ul class="pagination justify-content-center mb-0">
+                        {% if page_obj.has_previous %}
+                            <li class="page-item">
+                                <a class="page-link" href="?page=1{% for key, value in request.GET.items %}{% if key != 'page' %}&{{ key }}={{ value }}{% endif %}{% endfor %}">First</a>
+                            </li>
+                            <li class="page-item">
+                                <a class="page-link" href="?page={{ page_obj.previous_page_number }}{% for key, value in request.GET.items %}{% if key != 'page' %}&{{ key }}={{ value }}{% endif %}{% endfor %}">Previous</a>
+                            </li>
+                        {% endif %}
+
+                        {% for num in page_obj.paginator.page_range %}
+                            {% if page_obj.number == num %}
+                                <li class="page-item active">
+                                    <span class="page-link">{{ num }}</span>
+                                </li>
+                            {% elif num > page_obj.number|add:'-3' and num < page_obj.number|add:'3' %}
+                                <li class="page-item">
+                                    <a class="page-link" href="?page={{ num }}{% for key, value in request.GET.items %}{% if key != 'page' %}&{{ key }}={{ value }}{% endif %}{% endfor %}">{{ num }}</a>
+                                </li>
+                            {% endif %}
+                        {% endfor %}
+
+                        {% if page_obj.has_next %}
+                            <li class="page-item">
+                                <a class="page-link" href="?page={{ page_obj.next_page_number }}{% for key, value in request.GET.items %}{% if key != 'page' %}&{{ key }}={{ value }}{% endif %}{% endfor %}">Next</a>
+                            </li>
+                            <li class="page-item">
+                                <a class="page-link" href="?page={{ page_obj.paginator.num_pages }}{% for key, value in request.GET.items %}{% if key != 'page' %}&{{ key }}={{ value }}{% endif %}{% endfor %}">Last</a>
+                            </li>
+                        {% endif %}
+                    </ul>
+                </nav>
+            </div>
+            {% endif %}
+            {% else %}
+            <div class="text-center py-5">
+                <i class="bi bi-inbox display-4 text-muted"></i>
+                <p class="text-muted mt-3">No product data found for the selected filters.</p>
+                <button class="btn btn-primary mt-2" onclick="resetFilters()">
+                    <i class="bi bi-arrow-clockwise me-1"></i>Reset Filters
+                </button>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+    {% else %}
+    <div class="card">
+        <div class="card-body text-center py-5">
+            <i class="bi bi-graph-up display-4 text-muted"></i>
+            <h5 class="text-muted mt-3">Generate Product Performance Report</h5>
+            <p class="text-muted">Select date range and filters to generate the product performance report.</p>
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/flatpickr.min.js"></script>
+<script>
+    // Initialize date pickers
+    flatpickr("#startDate", {
+        dateFormat: "Y-m-d",
+        allowInput: true
+    });
+
+    flatpickr("#endDate", {
+        dateFormat: "Y-m-d",
+        allowInput: true
+    });
+
+    // Load categories via AJAX
+    document.addEventListener('DOMContentLoaded', function() {
+        fetch('/reports/api/filters/?type=categories')
+            .then(response => response.json())
+            .then(data => {
+                const categorySelect = document.getElementById('categoryFilter');
+                data.options.forEach(category => {
+                    const option = document.createElement('option');
+                    option.value = category.id;
+                    option.textContent = category.name;
+                    categorySelect.appendChild(option);
+                });
+
+                // Set selected value if exists
+                const selectedCategory = "{{ form.category.value|default:'' }}";
+                if (selectedCategory) {
+                    categorySelect.value = selectedCategory;
+                }
+            });
+    });
+
+    function resetFilters() {
+        document.getElementById('filterForm').reset();
+        window.location.href = "{% url 'reports:product_performance' %}";
+    }
+
+    function saveReport() {
+        const formData = new FormData(document.getElementById('filterForm'));
+        const filters = {};
+
+        for (let [key, value] of formData.entries()) {
+            if (value) filters[key] = value;
+        }
+
+        // Show modal or prompt for report name
+        const reportName = prompt('Enter a name for this report configuration:');
+        if (reportName) {
+            fetch("{% url 'reports:api_save_report' %}", {
+                method: 'POST',
+                headers: {
+                    'X-CSRFToken': '{{ csrf_token }}',
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    report_name: reportName,
+                    report_type: 'PRODUCT_PERFORMANCE',
+                    filters: JSON.stringify(filters)
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    alert('Report configuration saved successfully!');
+                } else {
+                    alert('Error saving report: ' + data.message);
+                }
+            });
+        }
+    }
+
+    function exportReport(format) {
+        const params = new URLSearchParams(window.location.search);
+        params.set('export', format);
+        window.location.href = '{% url "reports:export_report" "product_performance" %}?' + params.toString();
+    }
+
+    // Search functionality
+    document.getElementById('searchProducts').addEventListener('input', function(e) {
+        const searchTerm = e.target.value.toLowerCase();
+        const rows = document.querySelectorAll('#productTable tbody tr');
+
+        rows.forEach(row => {
+            const productName = row.querySelector('h6').textContent.toLowerCase();
+            const productSku = row.querySelector('.badge.bg-light').textContent.toLowerCase();
+
+            if (productName.includes(searchTerm) || productSku.includes(searchTerm)) {
+                row.style.display = '';
+            } else {
+                row.style.display = 'none';
+            }
+        });
+    });
+</script>
+{% endblock %}

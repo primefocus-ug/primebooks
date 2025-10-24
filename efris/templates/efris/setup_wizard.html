@@ -1,0 +1,409 @@
+{% extends "base.html" %}
+{% load static %}
+{% load i18n %}
+{% load custom_filters %}
+
+{% block title %}{% trans "EFRIS Setup Wizard" %} - {{ block.super }}{% endblock %}
+
+{% block breadcrumb_items %}
+    <li class="breadcrumb-item"><a href="{% url 'efris:dashboard' %}">{% trans "EFRIS" %}</a></li>
+    <li class="breadcrumb-item active">{% trans "Setup Wizard" %}</li>
+{% endblock %}
+
+{% block page_header %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h1 class="h3 mb-1">{% trans "EFRIS Setup Wizard" %}</h1>
+        <p class="text-muted">{% trans "Configure your EFRIS integration step by step" %}</p>
+    </div>
+    <div>
+        <a href="{% url 'efris:dashboard' %}" class="btn btn-outline-secondary">
+            <i class="bi bi-arrow-left me-1"></i>{% trans "Back to Dashboard" %}
+        </a>
+    </div>
+</div>
+{% endblock %}
+
+{% block content %}
+{% if error %}
+    <div class="alert alert-danger">
+        <i class="bi bi-exclamation-triangle me-2"></i>
+        <strong>{% trans "Error:" %}</strong> {{ error }}
+    </div>
+{% endif %}
+
+<div class="row">
+    <div class="col-lg-8">
+        <!-- Setup Progress -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="mb-0">{% trans "Setup Progress" %}</h5>
+            </div>
+            <div class="card-body">
+                {% if checklist %}
+                    <div class="setup-checklist">
+                        {% for item in checklist %}
+                            <div class="d-flex align-items-start mb-3 p-3 border rounded {% if item.completed %}bg-success bg-opacity-10{% else %}bg-light{% endif %}">
+                                <div class="flex-shrink-0 me-3">
+                                    {% if item.completed %}
+                                        <i class="bi bi-check-circle-fill text-success fs-4"></i>
+                                    {% else %}
+                                        <i class="bi bi-circle text-muted fs-4"></i>
+                                    {% endif %}
+                                </div>
+                                <div class="flex-grow-1">
+                                    <h6 class="mb-1 {% if item.completed %}text-success{% endif %}">{{ item.title }}</h6>
+                                    <p class="mb-1 text-muted">{{ item.description }}</p>
+                                    {% if item.actions %}
+                                        <div class="mt-2">
+                                            {% for action in item.actions %}
+                                                <a href="{{ action.url }}" class="btn btn-sm btn-outline-primary me-2">{{ action.title }}</a>
+                                            {% endfor %}
+                                        </div>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        {% endfor %}
+                    </div>
+                {% else %}
+                    <div class="text-center py-4">
+                        <div class="spinner-border text-primary" role="status">
+                            <span class="visually-hidden">{% trans "Loading..." %}</span>
+                        </div>
+                        <p class="mt-2 text-muted">{% trans "Loading setup checklist..." %}</p>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Setup Requirements -->
+        <!-- Replace the entire Requirements section with this: -->
+{% if requirements %}
+<div class="card mb-4">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <h5 class="mb-0">{% trans "System Requirements" %}</h5>
+        {% if requirements.ready_for_setup %}
+            <span class="badge bg-success">{% trans "Ready" %}</span>
+        {% else %}
+            <span class="badge bg-warning">{% trans "Not Ready" %}</span>
+        {% endif %}
+    </div>
+    <div class="card-body">
+        <div class="row">
+            {% for category, data in requirements.requirements.items %}
+                <div class="col-md-6 mb-3">
+                    <h6 class="text-uppercase small fw-bold text-muted">{{ category|title|replace:"_, " }}</h6>
+
+                    <!-- Main status for this category -->
+                    <div class="d-flex align-items-center mb-2">
+                        {% if data.valid %}
+                            <i class="bi bi-check-circle-fill text-success me-2"></i>
+                        {% else %}
+                            <i class="bi bi-x-circle-fill text-danger me-2"></i>
+                        {% endif %}
+                        <span class="{% if not data.valid %}text-danger{% endif %}">
+                            {{ category|title }} {% if data.valid %}- Complete{% else %}- Needs Attention{% endif %}
+                        </span>
+                    </div>
+
+                    <!-- Detailed information for each category -->
+                    {% if category == 'company_info' %}
+                        {% if data.missing_fields %}
+                            <div class="small text-danger">
+                                <strong>Missing:</strong>
+                                <ul class="mb-1">
+                                    {% for field in data.missing_fields %}
+                                        <li>{{ field }}</li>
+                                    {% endfor %}
+                                </ul>
+                            </div>
+                        {% endif %}
+                        {% if data.invalid_fields %}
+                            <div class="small text-warning">
+                                <strong>Invalid:</strong>
+                                <ul class="mb-1">
+                                    {% for field in data.invalid_fields %}
+                                        <li>{{ field }}</li>
+                                    {% endfor %}
+                                </ul>
+                            </div>
+                        {% endif %}
+
+                    {% elif category == 'certificates' %}
+                        <div class="small">
+                            <div>Certificate: {% if data.has_certificate %}✅{% else %}❌{% endif %}</div>
+                            <div>Valid: {% if data.certificate_valid %}✅{% else %}❌{% endif %}</div>
+                            <div>Uploaded: {% if data.certificate_uploaded %}✅{% else %}❌{% endif %}</div>
+                        </div>
+
+                    {% elif category == 'network' %}
+                        <div class="small">
+                            <div>Status Code: {{ data.status_code|default:"N/A" }}</div>
+                            {% if data.response_time_ms %}
+                                <div>Response Time: {{ data.response_time_ms }}ms</div>
+                            {% endif %}
+                            {% if data.error %}
+                                <div class="text-danger">Error: {{ data.error }}</div>
+                            {% endif %}
+                        </div>
+
+                    {% elif category == 'permissions' %}
+                        <div class="small">
+                            <div>Database: {% if data.database_access %}✅{% else %}❌{% endif %}</div>
+                            <div>File System: {% if data.file_system_access %}✅{% else %}❌{% endif %}</div>
+                            <div>Cache: {% if data.cache_access %}✅{% else %}❌{% endif %}</div>
+                        </div>
+                    {% endif %}
+                </div>
+            {% endfor %}
+        </div>
+
+        <!-- Next Steps -->
+        {% if requirements.next_steps %}
+            <div class="mt-3 pt-3 border-top">
+                <h6 class="small fw-bold">{% trans "Next Steps:" %}</h6>
+                <ul class="small mb-0">
+                    {% for step in requirements.next_steps %}
+                        <li>{{ step }}</li>
+                    {% endfor %}
+                </ul>
+            </div>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
+
+        <!-- Update the Setup Progress section -->
+<div class="card mb-4">
+    <div class="card-header">
+        <h5 class="mb-0">{% trans "Setup Progress" %}</h5>
+    </div>
+    <div class="card-body">
+        {% if checklist.checklist_items %}
+            <div class="setup-checklist">
+                {% for item in checklist.checklist_items %}
+                    <div class="d-flex align-items-start mb-3 p-3 border rounded {% if item.completed %}bg-success bg-opacity-10{% else %}bg-light{% endif %}">
+                        <div class="flex-shrink-0 me-3">
+                            {% if item.completed %}
+                                <i class="bi bi-check-circle-fill text-success fs-4"></i>
+                            {% else %}
+                                <i class="bi bi-circle text-muted fs-4"></i>
+                            {% endif %}
+                        </div>
+                        <div class="flex-grow-1">
+                            <h6 class="mb-1 {% if item.completed %}text-success{% endif %}">{{ item.title }}</h6>
+                            <p class="mb-1 text-muted">{{ item.description }}</p>
+
+                            <!-- Show details for incomplete items -->
+                            {% if not item.completed and item.details %}
+                                <div class="mt-2 small">
+                                    {% if item.details.missing_fields %}
+                                        <div class="text-danger">
+                                            <strong>Missing:</strong> {{ item.details.missing_fields|join:", " }}
+                                        </div>
+                                    {% endif %}
+                                    {% if item.details.invalid_fields %}
+                                        <div class="text-warning">
+                                            <strong>Invalid:</strong> {{ item.details.invalid_fields|join:", " }}
+                                        </div>
+                                    {% endif %}
+                                </div>
+                            {% endif %}
+                        </div>
+                    </div>
+                {% endfor %}
+            </div>
+
+            <!-- Progress bar -->
+            <div class="mt-4">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <span class="small">{% trans "Overall Progress" %}</span>
+                    <span class="small">{{ checklist.completion_percentage|floatformat:0 }}%</span>
+                </div>
+                <div class="progress" style="height: 8px;">
+                    <div class="progress-bar bg-success" style="width: {{ checklist.completion_percentage }}%"></div>
+                </div>
+            </div>
+        {% else %}
+            <div class="text-center py-4">
+                <div class="spinner-border text-primary" role="status">
+                    <span class="visually-hidden">{% trans "Loading..." %}</span>
+                </div>
+                <p class="mt-2 text-muted">{% trans "Loading setup checklist..." %}</p>
+            </div>
+        {% endif %}
+    </div>
+</div>
+
+    <div class="col-lg-4">
+        <!-- Setup Help -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <h6 class="mb-0">{% trans "Need Help?" %}</h6>
+            </div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <h6 class="small fw-bold">{% trans "EFRIS Requirements" %}</h6>
+                    <ul class="list-unstyled small text-muted">
+                        <li>• {% trans "Valid TIN number" %}</li>
+                        <li>• {% trans "URA EFRIS account" %}</li>
+                        <li>• {% trans "Device registration" %}</li>
+                        <li>• {% trans "Active internet connection" %}</li>
+                    </ul>
+                </div>
+
+                <div class="mb-3">
+                    <h6 class="small fw-bold">{% trans "Troubleshooting" %}</h6>
+                    <ul class="list-unstyled small text-muted">
+                        <li>• {% trans "Check company information" %}</li>
+                        <li>• {% trans "Verify EFRIS credentials" %}</li>
+                        <li>• {% trans "Test network connection" %}</li>
+                    </ul>
+                </div>
+
+                <a href="#" class="btn btn-outline-primary btn-sm">
+                    <i class="bi bi-question-circle me-1"></i>
+                    {% trans "View Documentation" %}
+                </a>
+            </div>
+        </div>
+
+        <!-- Configuration Status -->
+        <div class="card">
+            <div class="card-header">
+                <h6 class="mb-0">{% trans "Current Status" %}</h6>
+            </div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <div class="d-flex justify-content-between align-items-center mb-1">
+                        <span class="small">{% trans "Configuration" %}</span>
+                        <span class="badge bg-warning">{% trans "Incomplete" %}</span>
+                    </div>
+                    <div class="progress" style="height: 6px;">
+                        <div class="progress-bar bg-warning" style="width: 30%"></div>
+                    </div>
+                </div>
+
+                <div class="mb-3">
+                    <div class="d-flex justify-content-between align-items-center mb-1">
+                        <span class="small">{% trans "Authentication" %}</span>
+                        <span class="badge bg-secondary">{% trans "Pending" %}</span>
+                    </div>
+                    <div class="progress" style="height: 6px;">
+                        <div class="progress-bar bg-secondary" style="width: 0%"></div>
+                    </div>
+                </div>
+
+                <div class="mb-3">
+                    <div class="d-flex justify-content-between align-items-center mb-1">
+                        <span class="small">{% trans "System Health" %}</span>
+                        <span class="badge bg-secondary">{% trans "Unknown" %}</span>
+                    </div>
+                    <div class="progress" style="height: 6px;">
+                        <div class="progress-bar bg-secondary" style="width: 0%"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Setup Result Modal -->
+<div class="modal fade" id="setupResultModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">{% trans "Setup Results" %}</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div id="setupResults">
+                    <!-- Results will be loaded here -->
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">{% trans "Close" %}</button>
+                <a href="{% url 'efris:dashboard' %}" class="btn btn-primary">{% trans "Go to Dashboard" %}</a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const completeSetupBtn = document.getElementById('completeSetup');
+    const setupResultModal = new bootstrap.Modal(document.getElementById('setupResultModal'));
+
+    completeSetupBtn.addEventListener('click', function() {
+        const spinner = this.querySelector('.spinner-border');
+        const icon = this.querySelector('.bi-gear');
+
+        // Show loading state
+        spinner.classList.remove('d-none');
+        icon.classList.add('d-none');
+        this.disabled = true;
+        this.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>{% trans "Setting up..." %}';
+
+        // Make the setup request
+        fetch('{% url "efris:complete_setup" %}', {
+            method: 'POST',
+            headers: {
+                'X-CSRFToken': '{{ csrf_token }}',
+                'Content-Type': 'application/json',
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            // Reset button
+            this.disabled = false;
+            this.innerHTML = '<i class="bi bi-gear me-2"></i>{% trans "Complete EFRIS Setup" %}';
+
+            // Show results
+            const resultsDiv = document.getElementById('setupResults');
+            if (data.success) {
+                resultsDiv.innerHTML = `
+                    <div class="alert alert-success">
+                        <i class="bi bi-check-circle me-2"></i>
+                        <strong>{% trans "Success!" %}</strong> ${data.message}
+                    </div>
+                    <h6>{% trans "Steps Completed:" %}</h6>
+                    <ul>
+                        ${data.steps_completed.map(step => `<li>${step}</li>`).join('')}
+                    </ul>
+                `;
+            } else {
+                resultsDiv.innerHTML = `
+                    <div class="alert alert-danger">
+                        <i class="bi bi-exclamation-triangle me-2"></i>
+                        <strong>{% trans "Setup Failed" %}</strong> ${data.message}
+                    </div>
+                    ${data.errors ? `
+                        <h6>{% trans "Errors:" %}</h6>
+                        <ul class="text-danger">
+                            ${data.errors.map(error => `<li>${error}</li>`).join('')}
+                        </ul>
+                    ` : ''}
+                    ${data.warnings ? `
+                        <h6>{% trans "Warnings:" %}</h6>
+                        <ul class="text-warning">
+                            ${data.warnings.map(warning => `<li>${warning}</li>`).join('')}
+                        </ul>
+                    ` : ''}
+                `;
+            }
+
+            setupResultModal.show();
+        })
+        .catch(error => {
+            console.error('Setup error:', error);
+            this.disabled = false;
+            this.innerHTML = '<i class="bi bi-gear me-2"></i>{% trans "Complete EFRIS Setup" %}';
+
+            showAlert('{% trans "Setup failed. Please try again." %}', 'danger');
+        });
+    });
+});
+</script>
+{% endblock %}

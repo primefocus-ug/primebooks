@@ -1,0 +1,251 @@
+<!-- efris/templates/efris/normal_invoices.html -->
+
+{% extends "efris/base.html" %}
+{% load static %}
+
+{% block page_actions %}
+<button type="button" class="btn btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#helpModal">
+    <i class="fas fa-question-circle"></i> Help
+</button>
+{% endblock %}
+
+{% block efris_content %}
+<!-- Filter Form -->
+<div class="search-box">
+    <form method="get" id="filterForm">
+        <div class="row g-3">
+            <div class="col-md-3">
+                <label for="buyer_tin" class="form-label">Buyer TIN</label>
+                <input type="text" class="form-control" id="buyer_tin" name="buyer_tin"
+                       placeholder="10-digit TIN" maxlength="10">
+            </div>
+
+            <div class="col-md-3">
+                <label for="start_date" class="form-label">Start Date</label>
+                <input type="date" class="form-control" id="start_date" name="start_date">
+            </div>
+
+            <div class="col-md-3">
+                <label for="end_date" class="form-label">End Date</label>
+                <input type="date" class="form-control" id="end_date" name="end_date">
+            </div>
+
+            <div class="col-md-3">
+                <label class="form-label">&nbsp;</label>
+                <button type="submit" class="btn btn-primary w-100">
+                    <i class="fas fa-filter"></i> Filter
+                </button>
+            </div>
+        </div>
+    </form>
+</div>
+
+<!-- Invoices List -->
+<div class="card efris-card">
+    <div class="card-header bg-white d-flex justify-content-between align-items-center">
+        <h5 class="card-title mb-0">
+            Normal Invoices (Eligible for Credit/Debit Notes)
+            {% if pagination %}
+            <span class="badge bg-secondary">{{ pagination.total_size }} invoices</span>
+            {% endif %}
+        </h5>
+    </div>
+    <div class="card-body">
+        {% if invoices %}
+        <div class="alert alert-info">
+            <i class="fas fa-info-circle"></i>
+            These invoices are eligible for credit or debit notes. They are valid invoices without existing credit/debit note applications.
+        </div>
+
+        <div class="table-responsive">
+            <table class="table table-hover">
+                <thead>
+                    <tr>
+                        <th>Invoice No</th>
+                        <th>Issue Date</th>
+                        <th>Buyer</th>
+                        <th>Currency</th>
+                        <th class="text-end">Gross Amount</th>
+                        <th>Data Source</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for invoice in invoices %}
+                    <tr>
+                        <td><strong>{{ invoice.invoiceNo }}</strong></td>
+                        <td>{{ invoice.issuedDate }}</td>
+                        <td>
+                            <div>{{ invoice.buyerLegalName|truncatewords:4 }}</div>
+                            {% if invoice.buyerTin %}
+                            <small class="text-muted">TIN: {{ invoice.buyerTin }}</small>
+                            {% endif %}
+                        </td>
+                        <td>{{ invoice.currency }}</td>
+                        <td class="text-end">{{ invoice.grossAmount|floatformat:2 }}</td>
+                        <td>
+                            {% if invoice.dataSource == '101' %}
+                            <span class="badge bg-primary">EFD</span>
+                            {% elif invoice.dataSource == '102' %}
+                            <span class="badge bg-info">Windows Client</span>
+                            {% elif invoice.dataSource == '103' %}
+                            <span class="badge bg-success">WebService</span>
+                            {% else %}
+                            <span class="badge bg-secondary">{{ invoice.dataSource }}</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <button class="btn btn-sm btn-outline-success"
+                                    onclick="createCreditNote('{{ invoice.invoiceNo }}', '{{ invoice.id }}')">
+                                <i class="fas fa-plus"></i> Credit Note
+                            </button>
+                            <a href="{% url 'efris:invoice_detail' invoice.invoiceNo %}"
+                               class="btn btn-sm btn-outline-primary">
+                                <i class="fas fa-eye"></i>
+                            </a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Pagination -->
+        {% if pagination.page_count > 1 %}
+        <nav aria-label="Invoice pagination">
+            <ul class="pagination justify-content-center">
+                {% if pagination.page_no > 1 %}
+                <li class="page-item">
+                    <a class="page-link" href="?page={{ pagination.page_no|add:"-1" }}&{{ request.GET.urlencode }}">
+                        Previous
+                    </a>
+                </li>
+                {% endif %}
+
+                <li class="page-item disabled">
+                    <span class="page-link">
+                        Page {{ pagination.page_no }} of {{ pagination.page_count }}
+                    </span>
+                </li>
+
+                {% if pagination.page_no < pagination.page_count %}
+                <li class="page-item">
+                    <a class="page-link" href="?page={{ pagination.page_no|add:"1" }}&{{ request.GET.urlencode }}">
+                        Next
+                    </a>
+                </li>
+                {% endif %}
+            </ul>
+        </nav>
+        {% endif %}
+        {% else %}
+        <div class="alert alert-info mb-0">
+            <i class="fas fa-info-circle"></i> No invoices found. Adjust your filters and try again.
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Help Modal -->
+<div class="modal fade" id="helpModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Normal Invoices Help</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <h6>What are Normal Invoices?</h6>
+                <p>Normal invoices are valid invoices that:</p>
+                <ul>
+                    <li>Have been successfully uploaded to EFRIS</li>
+                    <li>Are not obsolete/invalid</li>
+                    <li>Do not have pending credit/debit note applications</li>
+                    <li>Can be used to create credit or debit notes</li>
+                </ul>
+
+                <h6 class="mt-3">Creating Credit/Debit Notes:</h6>
+                <p>Click the "Credit Note" button next to an invoice to initiate a credit note application for that invoice.</p>
+
+                <h6 class="mt-3">Filtering:</h6>
+                <ul>
+                    <li>Use Buyer TIN to find invoices for specific customers</li>
+                    <li>Use date range to narrow down results</li>
+                    <li>Leave filters empty to see all eligible invoices</li>
+                </ul>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Create Credit Note Modal -->
+<div class="modal fade" id="creditNoteModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Create Credit Note</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-info">
+                    <i class="fas fa-info-circle"></i>
+                    This will create a credit note application for invoice: <strong id="modalInvoiceNo"></strong>
+                </div>
+
+                <p class="text-muted">
+                    Note: Credit note creation requires additional steps. This feature redirects you to the credit note application form.
+                </p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" onclick="proceedToCreditNote()">
+                    Proceed to Credit Note Form
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let selectedInvoiceNo = '';
+let selectedInvoiceId = '';
+
+function createCreditNote(invoiceNo, invoiceId) {
+    selectedInvoiceNo = invoiceNo;
+    selectedInvoiceId = invoiceId;
+
+    document.getElementById('modalInvoiceNo').textContent = invoiceNo;
+
+    const modal = new bootstrap.Modal(document.getElementById('creditNoteModal'));
+    modal.show();
+}
+
+function proceedToCreditNote() {
+    // Redirect to credit note creation page (you'll need to create this)
+    // For now, show a message
+    alert('Credit note creation for invoice ' + selectedInvoiceNo + ' will be implemented in your invoice management system.');
+
+    // Close modal
+    bootstrap.Modal.getInstance(document.getElementById('creditNoteModal')).hide();
+}
+
+// Set default date range (last 30 days) if empty
+document.addEventListener('DOMContentLoaded', function() {
+    const startDate = document.getElementById('start_date');
+    const endDate = document.getElementById('end_date');
+
+    if (!startDate.value && !endDate.value) {
+        const today = new Date();
+        const thirtyDaysAgo = new Date(today.getTime() - (30 * 24 * 60 * 60 * 1000));
+
+        endDate.value = today.toISOString().split('T')[0];
+        startDate.value = thirtyDaysAgo.toISOString().split('T')[0];
+    }
+});
+</script>
+{% endblock %}

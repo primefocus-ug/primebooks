@@ -1,0 +1,1197 @@
+{% extends 'base.html' %}
+
+{% block title %}Invoice Dashboard | {{ company.trading_name|default:company.name }}{% endblock %}
+
+{% block extra_css %}
+<style>
+    .dashboard-container {
+        background: #f8f9fa;
+        min-height: 100vh;
+        padding: 2rem 0;
+    }
+
+    .invoice-header {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 2rem;
+        border-radius: 12px;
+        margin-bottom: 2rem;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    }
+
+    .metric-card {
+        background: white;
+        border-radius: 12px;
+        padding: 1.5rem;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.08);
+        transition: all 0.3s ease;
+        border: none;
+        height: 100%;
+    }
+
+    .metric-card:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 8px 16px rgba(0,0,0,0.15);
+    }
+
+    .metric-card .metric-value {
+        font-size: 2rem;
+        font-weight: 700;
+        color: #2d3748;
+        margin: 0.5rem 0;
+    }
+
+    .metric-card .metric-label {
+        font-size: 0.875rem;
+        color: #718096;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        font-weight: 600;
+    }
+
+    .metric-card .metric-change {
+        font-size: 0.875rem;
+        margin-top: 0.5rem;
+    }
+
+    .metric-change.positive {
+        color: #48bb78;
+    }
+
+    .metric-change.negative {
+        color: #f56565;
+    }
+
+    .metric-icon {
+        width: 60px;
+        height: 60px;
+        border-radius: 12px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.75rem;
+    }
+
+    .icon-blue {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+    }
+
+    .icon-green {
+        background: linear-gradient(135deg, #48bb78 0%, #38a169 100%);
+        color: white;
+    }
+
+    .icon-orange {
+        background: linear-gradient(135deg, #ed8936 0%, #dd6b20 100%);
+        color: white;
+    }
+
+    .icon-red {
+        background: linear-gradient(135deg, #f56565 0%, #e53e3e 100%);
+        color: white;
+    }
+
+    .chart-card {
+        background: white;
+        border-radius: 12px;
+        padding: 1.5rem;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.08);
+        margin-bottom: 2rem;
+        border: none;
+    }
+
+    .chart-card .card-header {
+        background: none;
+        border: none;
+        padding: 0 0 1rem 0;
+    }
+
+    .chart-card .card-title {
+        font-size: 1.125rem;
+        font-weight: 600;
+        color: #2d3748;
+        margin: 0;
+    }
+
+    .filter-card {
+        background: white;
+        border-radius: 12px;
+        padding: 1.5rem;
+        margin-bottom: 2rem;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.08);
+    }
+
+    .filter-card .form-label {
+        font-weight: 600;
+        color: #4a5568;
+        font-size: 0.875rem;
+    }
+
+    .table-card {
+        background: white;
+        border-radius: 12px;
+        overflow: hidden;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.08);
+    }
+
+    .table-card .table {
+        margin-bottom: 0;
+    }
+
+    .table-card thead th {
+        background: #f7fafc;
+        color: #4a5568;
+        font-weight: 600;
+        text-transform: uppercase;
+        font-size: 0.75rem;
+        letter-spacing: 0.5px;
+        border: none;
+        padding: 1rem;
+    }
+
+    .table-card tbody td {
+        padding: 1rem;
+        vertical-align: middle;
+        border-color: #e2e8f0;
+    }
+
+    .status-badge {
+        padding: 0.375rem 0.75rem;
+        border-radius: 6px;
+        font-size: 0.75rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+
+    .efris-status-card {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        border-radius: 12px;
+        padding: 1.5rem;
+        margin-bottom: 2rem;
+    }
+
+    .efris-metric {
+        text-align: center;
+        padding: 1rem;
+    }
+
+    .efris-metric .value {
+        font-size: 2rem;
+        font-weight: 700;
+        margin-bottom: 0.5rem;
+    }
+
+    .efris-metric .label {
+        font-size: 0.875rem;
+        opacity: 0.9;
+    }
+
+    .quick-action-btn {
+        border-radius: 8px;
+        padding: 0.75rem 1.5rem;
+        font-weight: 600;
+        transition: all 0.3s ease;
+        border: none;
+    }
+
+    .quick-action-btn:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    }
+
+    .alert-card {
+        border-left: 4px solid;
+        border-radius: 8px;
+        padding: 1rem;
+        margin-bottom: 1rem;
+        background: white;
+    }
+
+    .alert-card.alert-warning {
+        border-color: #ed8936;
+    }
+
+    .alert-card.alert-danger {
+        border-color: #f56565;
+    }
+
+    .chart-container {
+        position: relative;
+        height: 300px;
+    }
+
+    .loading-spinner {
+        display: none;
+        text-align: center;
+        padding: 2rem;
+    }
+
+    .date-range-badge {
+        background: rgba(255,255,255,0.2);
+        padding: 0.5rem 1rem;
+        border-radius: 6px;
+        font-size: 0.875rem;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="dashboard-container">
+    <div class="container-fluid">
+        <!-- Header -->
+        <div class="invoice-header">
+            <div class="row align-items-center">
+                <div class="col-lg-8">
+                    <h1 class="mb-2">
+                        <i class="fas fa-chart-line me-3"></i>Invoice Analytics Dashboard
+                    </h1>
+                    <p class="mb-0 opacity-90">
+                        Real-time insights and comprehensive invoice management overview
+                    </p>
+                    <div class="mt-3">
+                        <span class="date-range-badge">
+                            <i class="fas fa-calendar me-2"></i>
+                            <span id="currentDateRange">Last 30 Days</span>
+                        </span>
+                    </div>
+                </div>
+                <div class="col-lg-4 text-lg-end mt-3 mt-lg-0">
+                    {% if perms.invoices.add_invoice %}
+                    <a href="{% url 'invoices:create' %}" class="btn btn-light btn-lg quick-action-btn me-2">
+                        <i class="fas fa-plus me-2"></i>Create Invoice
+                    </a>
+                    {% endif %}
+                    <button class="btn btn-outline-light btn-lg quick-action-btn" onclick="refreshDashboard()">
+                        <i class="fas fa-sync-alt me-2"></i>Refresh
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Advanced Filters -->
+        <div class="filter-card">
+            <form id="filterForm" class="row g-3">
+                <div class="col-md-3">
+                    <label class="form-label">Date Range</label>
+                    <select class="form-select" id="dateRange" name="date_range">
+                        <option value="7">Last 7 Days</option>
+                        <option value="30" selected>Last 30 Days</option>
+                        <option value="90">Last 90 Days</option>
+                        <option value="365">Last Year</option>
+                        <option value="custom">Custom Range</option>
+                    </select>
+                </div>
+                <div class="col-md-3 d-none" id="customDateFields">
+                    <label class="form-label">From Date</label>
+                    <input type="date" class="form-control" id="dateFrom" name="date_from">
+                </div>
+                <div class="col-md-3 d-none" id="customDateFieldsTo">
+                    <label class="form-label">To Date</label>
+                    <input type="date" class="form-control" id="dateTo" name="date_to">
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">Status</label>
+                    <select class="form-select" id="statusFilter" name="status">
+                        <option value="">All Statuses</option>
+                        <option value="DRAFT">Draft</option>
+                        <option value="SENT">Sent</option>
+                        <option value="PAID">Paid</option>
+                        <option value="PARTIALLY_PAID">Partially Paid</option>
+                        <option value="OVERDUE">Overdue</option>
+                        <option value="CANCELLED">Cancelled</option>
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">Store</label>
+                    <select class="form-select" id="storeFilter" name="store">
+                        <option value="">All Stores</option>
+                        {% for store in stores %}
+                        <option value="{{ store.id }}">{{ store.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">&nbsp;</label>
+                    <button type="submit" class="btn btn-primary w-100">
+                        <i class="fas fa-filter me-2"></i>Apply Filters
+                    </button>
+                </div>
+            </form>
+        </div>
+
+        <!-- Key Metrics Row -->
+        <div class="row mb-4">
+            <div class="col-xl-3 col-md-6 mb-4">
+                <div class="metric-card">
+                    <div class="d-flex justify-content-between align-items-start">
+                        <div class="flex-grow-1">
+                            <div class="metric-label">Total Invoices</div>
+                            <div class="metric-value">{{ metrics.total_invoices|floatformat:0 }}</div>
+                            <div class="metric-change positive">
+                                <i class="fas fa-arrow-up me-1"></i>
+                                <span id="invoiceChange">+{{ metrics.invoices_this_month }}</span> this month
+                            </div>
+                        </div>
+                        <div class="metric-icon icon-blue">
+                            <i class="fas fa-file-invoice"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-xl-3 col-md-6 mb-4">
+                <div class="metric-card">
+                    <div class="d-flex justify-content-between align-items-start">
+                        <div class="flex-grow-1">
+                            <div class="metric-label">Total Revenue</div>
+                            <div class="metric-value">{{ metrics.total_revenue|floatformat:"0" }}</div>
+                            <small class="text-muted">UGX</small>
+                            <div class="metric-change positive">
+                                <i class="fas fa-arrow-up me-1"></i>
+                                <span id="revenueChange">+12.5%</span> vs last period
+                            </div>
+                        </div>
+                        <div class="metric-icon icon-green">
+                            <i class="fas fa-money-bill-wave"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-xl-3 col-md-6 mb-4">
+                <div class="metric-card">
+                    <div class="d-flex justify-content-between align-items-start">
+                        <div class="flex-grow-1">
+                            <div class="metric-label">Pending Amount</div>
+                            <div class="metric-value">{{ metrics.pending_invoices|floatformat:0 }}</div>
+                            <small class="text-muted">Invoices</small>
+                            <div class="metric-change">
+                                <i class="fas fa-clock me-1"></i>
+                                Awaiting payment
+                            </div>
+                        </div>
+                        <div class="metric-icon icon-orange">
+                            <i class="fas fa-hourglass-half"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-xl-3 col-md-6 mb-4">
+                <div class="metric-card">
+                    <div class="d-flex justify-content-between align-items-start">
+                        <div class="flex-grow-1">
+                            <div class="metric-label">Overdue Invoices</div>
+                            <div class="metric-value">{{ metrics.overdue_invoices|floatformat:0 }}</div>
+                            <div class="metric-change negative">
+                                <i class="fas fa-exclamation-triangle me-1"></i>
+                                Requires attention
+                            </div>
+                        </div>
+                        <div class="metric-icon icon-red">
+                            <i class="fas fa-exclamation-circle"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- EFRIS Integration Status -->
+        <div class="efris-status-card">
+            <div class="row">
+                <div class="col-12 mb-3">
+                    <h5 class="mb-0">
+                        <i class="fas fa-shield-alt me-2"></i>
+                        EFRIS Integration Status
+                    </h5>
+                </div>
+                <div class="col-md-3">
+                    <div class="efris-metric">
+                        <div class="value">{{ metrics.fiscalized_invoices|floatformat:0 }}</div>
+                        <div class="label">Fiscalized Invoices</div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="efris-metric">
+                        <div class="value" id="fiscalizationRate">
+                            {% widthratio metrics.fiscalized_invoices metrics.total_invoices 100 %}%
+                        </div>
+                        <div class="label">Fiscalization Rate</div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="efris-metric">
+                        <div class="value" id="pendingFiscalization">-</div>
+                        <div class="label">Pending Fiscalization</div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="efris-metric">
+                        <div class="value" id="failedFiscalization">-</div>
+                        <div class="label">Failed Today</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Alerts Section -->
+        <div class="row" id="alertsSection">
+            <!-- Dynamic alerts will be inserted here -->
+        </div>
+
+        <!-- Charts Row 1 -->
+        <div class="row">
+            <!-- Revenue Trend Chart -->
+            <div class="col-xl-8 mb-4">
+                <div class="chart-card">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h5 class="card-title">Revenue Trend Analysis</h5>
+                        <div class="btn-group btn-group-sm" role="group">
+                            <button type="button" class="btn btn-outline-primary active" onclick="updateRevenueChart('daily')">Daily</button>
+                            <button type="button" class="btn btn-outline-primary" onclick="updateRevenueChart('weekly')">Weekly</button>
+                            <button type="button" class="btn btn-outline-primary" onclick="updateRevenueChart('monthly')">Monthly</button>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <div class="chart-container">
+                            <canvas id="revenueChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Invoice Status Distribution -->
+            <div class="col-xl-4 mb-4">
+                <div class="chart-card">
+                    <div class="card-header">
+                        <h5 class="card-title">Invoice Status Distribution</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="chart-container">
+                            <canvas id="statusChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Charts Row 2 -->
+        <div class="row">
+            <!-- Payment Methods -->
+            <div class="col-xl-6 mb-4">
+                <div class="chart-card">
+                    <div class="card-header">
+                        <h5 class="card-title">Payment Methods Distribution</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="chart-container">
+                            <canvas id="paymentMethodsChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Top Customers -->
+            <div class="col-xl-6 mb-4">
+                <div class="chart-card">
+                    <div class="card-header">
+                        <h5 class="card-title">Top 10 Customers by Revenue</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="chart-container">
+                            <canvas id="topCustomersChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Data Tables Row -->
+        <div class="row">
+            <!-- Recent Invoices -->
+            <div class="col-xl-6 mb-4">
+                <div class="table-card">
+                    <div class="card-header d-flex justify-content-between align-items-center p-3 bg-white">
+                        <h5 class="card-title mb-0">Recent Invoices</h5>
+                        {% if perms.invoices.view_invoice %}
+                        <a href="{% url 'invoices:list' %}" class="btn btn-sm btn-outline-primary">
+                            View All <i class="fas fa-arrow-right ms-1"></i>
+                        </a>
+                        {% endif %}
+                    </div>
+                    <div class="table-responsive">
+                        <table class="table">
+                            <thead>
+                                <tr>
+                                    <th>Invoice #</th>
+                                    <th>Customer</th>
+                                    <th>Amount</th>
+                                    <th>Status</th>
+                                    <th>Date</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for invoice in recent_invoices %}
+                                <tr>
+                                    <td>
+                                        {% if perms.invoices.view_invoice %}
+                                        <a href="{% url 'invoices:detail' invoice.pk %}" class="text-decoration-none fw-semibold">
+                                            {{ invoice.invoice_number }}
+                                        </a>
+                                        {% else %}
+                                        {{ invoice.invoice_number }}
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        {% if invoice.sale and invoice.sale.customer %}
+                                            {{ invoice.sale.customer.name|truncatechars:20 }}
+                                        {% else %}
+                                            <span class="text-muted">N/A</span>
+                                        {% endif %}
+                                    </td>
+                                    <td class="fw-semibold">UGX {{ invoice.total_amount|floatformat:"0" }}</td>
+                                    <td>
+                                        <span class="status-badge bg-{% if invoice.status == 'PAID' %}success{% elif invoice.status == 'OVERDUE' %}danger{% elif invoice.status == 'SENT' %}warning{% else %}secondary{% endif %}">
+                                            {{ invoice.get_status_display }}
+                                        </span>
+                                    </td>
+                                    <td class="text-muted">{{ invoice.issue_date|date:"M d, Y" }}</td>
+                                </tr>
+                                {% empty %}
+                                <tr>
+                                    <td colspan="5" class="text-center text-muted py-4">
+                                        <i class="fas fa-inbox fa-2x mb-2 d-block"></i>
+                                        No recent invoices
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Recent Payments -->
+            <div class="col-xl-6 mb-4">
+                <div class="table-card">
+                    <div class="card-header d-flex justify-content-between align-items-center p-3 bg-white">
+                        <h5 class="card-title mb-0">Recent Payments</h5>
+                        {% if perms.invoices.view_invoicepayment %}
+                        <a href="{% url 'invoices:payments' %}" class="btn btn-sm btn-outline-primary">
+                            View All <i class="fas fa-arrow-right ms-1"></i>
+                        </a>
+                        {% endif %}
+                    </div>
+                    <div class="table-responsive">
+                        <table class="table">
+                            <thead>
+                                <tr>
+                                    <th>Invoice #</th>
+                                    <th>Amount</th>
+                                    <th>Method</th>
+                                    <th>Date</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for payment in recent_payments %}
+                                <tr>
+                                    <td>
+                                        {% if perms.invoices.view_invoice %}
+                                        <a href="{% url 'invoices:detail' payment.invoice.pk %}" class="text-decoration-none fw-semibold">
+                                            {{ payment.invoice.invoice_number }}
+                                        </a>
+                                        {% else %}
+                                        {{ payment.invoice.invoice_number }}
+                                        {% endif %}
+                                    </td>
+                                    <td class="fw-semibold text-success">UGX {{ payment.amount|floatformat:"0" }}</td>
+                                    <td>
+                                        <span class="badge bg-info">
+                                            {{ payment.get_payment_method_display }}
+                                        </span>
+                                    </td>
+                                    <td class="text-muted">{{ payment.payment_date|date:"M d, Y" }}</td>
+                                </tr>
+                                {% empty %}
+                                <tr>
+                                    <td colspan="4" class="text-center text-muted py-4">
+                                        <i class="fas fa-inbox fa-2x mb-2 d-block"></i>
+                                        No recent payments
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="loading-spinner" id="loadingSpinner">
+    <div class="spinner-border text-primary" role="status">
+        <span class="visually-hidden">Loading...</span>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"></script>
+<script>
+// Chart.js default configuration
+Chart.defaults.font.family = "'Inter', sans-serif";
+Chart.defaults.color = '#4a5568';
+
+// Global chart instances
+let revenueChart, statusChart, paymentMethodsChart, topCustomersChart;
+
+// Initialize all charts
+document.addEventListener('DOMContentLoaded', function() {
+    initializeCharts();
+    setupEventListeners();
+    loadDynamicData();
+
+    // Auto-refresh every 5 minutes
+    setInterval(refreshDashboard, 300000);
+});
+
+function initializeCharts() {
+    // Revenue Trend Chart
+    const revenueCtx = document.getElementById('revenueChart').getContext('2d');
+    revenueChart = new Chart(revenueCtx, {
+        type: 'line',
+        data: {
+            labels: [],
+            datasets: [{
+                label: 'Revenue',
+                data: [],
+                borderColor: '#667eea',
+                backgroundColor: 'rgba(102, 126, 234, 0.1)',
+                tension: 0.4,
+                fill: true,
+                pointRadius: 4,
+                pointHoverRadius: 6,
+                pointBackgroundColor: '#667eea',
+                pointBorderColor: '#fff',
+                pointBorderWidth: 2
+            }, {
+                label: 'Invoices Count',
+                data: [],
+                borderColor: '#48bb78',
+                backgroundColor: 'rgba(72, 187, 120, 0.1)',
+                tension: 0.4,
+                fill: true,
+                pointRadius: 4,
+                pointHoverRadius: 6,
+                pointBackgroundColor: '#48bb78',
+                pointBorderColor: '#fff',
+                pointBorderWidth: 2,
+                yAxisID: 'y1'
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: {
+                mode: 'index',
+                intersect: false,
+            },
+            plugins: {
+                legend: {
+                    display: true,
+                    position: 'top',
+                    labels: {
+                        usePointStyle: true,
+                        padding: 15
+                    }
+                },
+                tooltip: {
+                    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                    padding: 12,
+                    cornerRadius: 8,
+                    titleFont: {
+                        size: 14,
+                        weight: 'bold'
+                    },
+                    callbacks: {
+                        label: function(context) {
+                            let label = context.dataset.label || '';
+                            if (label) {
+                                label += ': ';
+                            }
+                            if (context.parsed.y !== null) {
+                                if (context.datasetIndex === 0) {
+                                    label += 'UGX ' + context.parsed.y.toLocaleString();
+                                } else {
+                                    label += context.parsed.y;
+                                }
+                            }
+                            return label;
+                        }
+                    }
+                }
+            },
+            scales: {
+                y: {
+                    type: 'linear',
+                    display: true,
+                    position: 'left',
+                    title: {
+                        display: true,
+                        text: 'Revenue (UGX)'
+                    },
+                    ticks: {
+                        callback: function(value) {
+                            return 'UGX ' + value.toLocaleString();
+                        }
+                    },
+                    grid: {
+                        drawBorder: false
+                    }
+                },
+                y1: {
+                    type: 'linear',
+                    display: true,
+                    position: 'right',
+                    title: {
+                        display: true,
+                        text: 'Invoice Count'
+                    },
+                    grid: {
+                        drawOnChartArea: false
+                    }
+                },
+                x: {
+                    grid: {
+                        display: false
+                    }
+                }
+            }
+        }
+    });
+
+    // Status Distribution Chart
+    const statusCtx = document.getElementById('statusChart').getContext('2d');
+    const statusData = {{ status_chart_data|safe }};
+
+    statusChart = new Chart(statusCtx, {
+        type: 'doughnut',
+        data: {
+            labels: statusData.map(item => item.status),
+            datasets: [{
+                data: statusData.map(item => item.count),
+                backgroundColor: [
+                    '#48bb78', // PAID - green
+                    '#ed8936', // SENT - orange
+                    '#667eea', // DRAFT - blue
+                    '#f56565', // OVERDUE - red
+                    '#a0aec0', // CANCELLED - gray
+                    '#ecc94b'  // PARTIALLY_PAID - yellow
+                ],
+                borderWidth: 0,
+                hoverOffset: 10
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    position: 'bottom',
+                    labels: {
+                        padding: 15,
+                        usePointStyle: true,
+                        font: {
+                            size: 12
+                        }
+                    }
+                },
+                tooltip: {
+                    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                    padding: 12,
+                    cornerRadius: 8,
+                    callbacks: {
+                        label: function(context) {
+                            const label = context.label || '';
+                            const value = context.parsed;
+                            const total = context.dataset.data.reduce((a, b) => a + b, 0);
+                            const percentage = ((value / total) * 100).toFixed(1);
+                            return `${label}: ${value} (${percentage}%)`;
+                        }
+                    }
+                }
+            }
+        }
+    });
+
+    // Payment Methods Chart
+    const paymentMethodsCtx = document.getElementById('paymentMethodsChart').getContext('2d');
+    paymentMethodsChart = new Chart(paymentMethodsCtx, {
+        type: 'bar',
+        data: {
+            labels: [],
+            datasets: [{
+                label: 'Payment Amount',
+                data: [],
+                backgroundColor: [
+                    'rgba(102, 126, 234, 0.8)',
+                    'rgba(72, 187, 120, 0.8)',
+                    'rgba(237, 137, 54, 0.8)',
+                    'rgba(236, 201, 75, 0.8)',
+                    'rgba(159, 122, 234, 0.8)'
+                ],
+                borderRadius: 8,
+                borderWidth: 0
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    display: false
+                },
+                tooltip: {
+                    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                    padding: 12,
+                    cornerRadius: 8,
+                    callbacks: {
+                        label: function(context) {
+                            return 'UGX ' + context.parsed.y.toLocaleString();
+                        }
+                    }
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    ticks: {
+                        callback: function(value) {
+                            return 'UGX ' + value.toLocaleString();
+                        }
+                    },
+                    grid: {
+                        drawBorder: false
+                    }
+                },
+                x: {
+                    grid: {
+                        display: false
+                    }
+                }
+            }
+        }
+    });
+
+    // Top Customers Chart
+    const topCustomersCtx = document.getElementById('topCustomersChart').getContext('2d');
+    topCustomersChart = new Chart(topCustomersCtx, {
+        type: 'horizontalBar',
+        data: {
+            labels: [],
+            datasets: [{
+                label: 'Revenue',
+                data: [],
+                backgroundColor: 'rgba(102, 126, 234, 0.8)',
+                borderRadius: 8,
+                borderWidth: 0
+            }]
+        },
+        options: {
+            indexAxis: 'y',
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    display: false
+                },
+                tooltip: {
+                    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                    padding: 12,
+                    cornerRadius: 8,
+                    callbacks: {
+                        label: function(context) {
+                            return 'UGX ' + context.parsed.x.toLocaleString();
+                        }
+                    }
+                }
+            },
+            scales: {
+                x: {
+                    beginAtZero: true,
+                    ticks: {
+                        callback: function(value) {
+                            return 'UGX ' + value.toLocaleString();
+                        }
+                    },
+                    grid: {
+                        drawBorder: false
+                    }
+                },
+                y: {
+                    grid: {
+                        display: false
+                    }
+                }
+            }
+        }
+    });
+}
+
+function setupEventListeners() {
+    // Date range filter
+    document.getElementById('dateRange').addEventListener('change', function() {
+        if (this.value === 'custom') {
+            document.getElementById('customDateFields').classList.remove('d-none');
+            document.getElementById('customDateFieldsTo').classList.remove('d-none');
+        } else {
+            document.getElementById('customDateFields').classList.add('d-none');
+            document.getElementById('customDateFieldsTo').classList.add('d-none');
+            updateDateRangeLabel(this.value);
+        }
+    });
+
+    // Filter form submission
+    document.getElementById('filterForm').addEventListener('submit', function(e) {
+        e.preventDefault();
+        applyFilters();
+    });
+}
+
+function updateDateRangeLabel(days) {
+    const labels = {
+        '7': 'Last 7 Days',
+        '30': 'Last 30 Days',
+        '90': 'Last 90 Days',
+        '365': 'Last Year'
+    };
+    document.getElementById('currentDateRange').textContent = labels[days] || 'Custom Range';
+}
+
+function loadDynamicData() {
+    // Load revenue trend data
+    fetch('/invoices/api/revenue-trend/?days=30')
+        .then(response => response.json())
+        .then(data => {
+            updateRevenueChartData(data);
+        })
+        .catch(error => console.error('Error loading revenue data:', error));
+
+    // Load payment methods data
+    fetch('/invoices/api/payment-methods/')
+        .then(response => response.json())
+        .then(data => {
+            updatePaymentMethodsChart(data);
+        })
+        .catch(error => console.error('Error loading payment methods:', error));
+
+    // Load top customers data
+    fetch('/invoices/api/top-customers/')
+        .then(response => response.json())
+        .then(data => {
+            updateTopCustomersChart(data);
+        })
+        .catch(error => console.error('Error loading top customers:', error));
+
+    // Load EFRIS status
+    fetch('/invoices/api/efris-status/')
+        .then(response => response.json())
+        .then(data => {
+            updateEFRISStatus(data);
+        })
+        .catch(error => console.error('Error loading EFRIS status:', error));
+
+    // Load alerts
+    loadAlerts();
+}
+
+function updateRevenueChartData(data) {
+    if (revenueChart && data.labels && data.revenue && data.count) {
+        revenueChart.data.labels = data.labels;
+        revenueChart.data.datasets[0].data = data.revenue;
+        revenueChart.data.datasets[1].data = data.count;
+        revenueChart.update();
+    }
+}
+
+function updatePaymentMethodsChart(data) {
+    if (paymentMethodsChart && data.labels && data.amounts) {
+        paymentMethodsChart.data.labels = data.labels;
+        paymentMethodsChart.data.datasets[0].data = data.amounts;
+        paymentMethodsChart.update();
+    }
+}
+
+function updateTopCustomersChart(data) {
+    if (topCustomersChart && data.customers && data.revenue) {
+        topCustomersChart.data.labels = data.customers;
+        topCustomersChart.data.datasets[0].data = data.revenue;
+        topCustomersChart.update();
+    }
+}
+
+function updateEFRISStatus(data) {
+    if (data.pending_fiscalization !== undefined) {
+        document.getElementById('pendingFiscalization').textContent = data.pending_fiscalization;
+    }
+    if (data.failed_today !== undefined) {
+        document.getElementById('failedFiscalization').textContent = data.failed_today;
+    }
+    if (data.fiscalization_rate !== undefined) {
+        document.getElementById('fiscalizationRate').textContent = data.fiscalization_rate.toFixed(1) + '%';
+    }
+}
+
+function loadAlerts() {
+    fetch('/invoices/api/alerts/')
+        .then(response => response.json())
+        .then(data => {
+            const alertsSection = document.getElementById('alertsSection');
+            alertsSection.innerHTML = '';
+
+            if (data.alerts && data.alerts.length > 0) {
+                data.alerts.forEach(alert => {
+                    const alertDiv = document.createElement('div');
+                    alertDiv.className = 'col-12 mb-3';
+                    alertDiv.innerHTML = `
+                        <div class="alert-card alert-${alert.type}">
+                            <div class="d-flex align-items-center">
+                                <i class="fas fa-${alert.icon} me-3 fa-2x"></i>
+                                <div>
+                                    <h6 class="mb-1">${alert.title}</h6>
+                                    <p class="mb-0 small">${alert.message}</p>
+                                </div>
+                                ${alert.action ? `
+                                    <a href="${alert.action_url}" class="btn btn-sm btn-outline-primary ms-auto">
+                                        ${alert.action}
+                                    </a>
+                                ` : ''}
+                            </div>
+                        </div>
+                    `;
+                    alertsSection.appendChild(alertDiv);
+                });
+            }
+        })
+        .catch(error => console.error('Error loading alerts:', error));
+}
+
+function updateRevenueChart(period) {
+    // Update active button
+    document.querySelectorAll('#revenueChart').closest('.chart-card')
+        .querySelectorAll('.btn-group button').forEach(btn => {
+            btn.classList.remove('active');
+        });
+    event.target.classList.add('active');
+
+    // Fetch new data based on period
+    showLoading();
+    fetch(`/invoices/api/revenue-trend/?period=${period}`)
+        .then(response => response.json())
+        .then(data => {
+            updateRevenueChartData(data);
+            hideLoading();
+        })
+        .catch(error => {
+            console.error('Error updating revenue chart:', error);
+            hideLoading();
+        });
+}
+
+function applyFilters() {
+    const formData = new FormData(document.getElementById('filterForm'));
+    const params = new URLSearchParams(formData);
+
+    showLoading();
+
+    // Update all data with filters
+    Promise.all([
+        fetch(`/invoices/api/revenue-trend/?${params}`).then(r => r.json()),
+        fetch(`/invoices/api/payment-methods/?${params}`).then(r => r.json()),
+        fetch(`/invoices/api/top-customers/?${params}`).then(r => r.json()),
+        fetch(`/invoices/api/metrics/?${params}`).then(r => r.json())
+    ]).then(([revenueData, paymentData, customerData, metricsData]) => {
+        updateRevenueChartData(revenueData);
+        updatePaymentMethodsChart(paymentData);
+        updateTopCustomersChart(customerData);
+        updateMetrics(metricsData);
+        hideLoading();
+    }).catch(error => {
+        console.error('Error applying filters:', error);
+        hideLoading();
+    });
+}
+
+function updateMetrics(data) {
+    if (data.total_invoices !== undefined) {
+        document.querySelector('.metric-value').textContent = data.total_invoices.toLocaleString();
+    }
+    // Update other metrics as needed
+}
+
+function refreshDashboard() {
+    showLoading();
+
+    // Show refresh animation
+    const refreshBtn = event.target.closest('button');
+    const icon = refreshBtn.querySelector('i');
+    icon.classList.add('fa-spin');
+
+    // Reload all data
+    loadDynamicData();
+
+    // Reload the page data
+    setTimeout(() => {
+        location.reload();
+    }, 1000);
+}
+
+function showLoading() {
+    document.getElementById('loadingSpinner').style.display = 'block';
+}
+
+function hideLoading() {
+    document.getElementById('loadingSpinner').style.display = 'none';
+}
+
+// Export functions
+function exportToPDF() {
+    window.print();
+}
+
+function exportToExcel() {
+    window.location.href = '/invoices/export/excel/?filters=' +
+        new URLSearchParams(new FormData(document.getElementById('filterForm')));
+}
+
+// Utility functions
+function formatCurrency(amount) {
+    return 'UGX ' + parseFloat(amount).toLocaleString('en-US', {
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 2
+    });
+}
+
+function formatDate(dateString) {
+    const date = new Date(dateString);
+    return date.toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric'
+    });
+}
+
+// Print styles
+window.addEventListener('beforeprint', function() {
+    document.body.classList.add('printing');
+});
+
+window.addEventListener('afterprint', function() {
+    document.body.classList.remove('printing');
+});
+</script>
+{% endblock %}

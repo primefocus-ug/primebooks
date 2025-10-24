@@ -1,0 +1,314 @@
+{% extends "efris/base.html" %}
+{% load static %}
+
+{% block page_actions %}
+<button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addContactModal">
+    <i class="fas fa-plus"></i> Add Contact
+</button>
+{% endblock %}
+
+{% block efris_content %}
+<div class="efris-card">
+    <div class="card-body">
+        <h5 class="card-title">
+            <i class="fas fa-address-book"></i> Frequent Contacts
+            <span class="badge bg-primary">{{ contacts|length }}</span>
+        </h5>
+
+        {% if contacts %}
+        <div class="table-responsive mt-3">
+            <table class="table table-hover">
+                <thead>
+                    <tr>
+                        <th>Type</th>
+                        <th>TIN</th>
+                        <th>Name</th>
+                        <th>Contact Info</th>
+                        <th>Address</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for contact in contacts %}
+                    <tr>
+                        <td>
+                            {% if contact.buyerType == '0' %}
+                                <span class="badge bg-primary">B2B</span>
+                            {% elif contact.buyerType == '1' %}
+                                <span class="badge bg-success">B2C</span>
+                            {% elif contact.buyerType == '2' %}
+                                <span class="badge bg-info">Foreigner</span>
+                            {% elif contact.buyerType == '3' %}
+                                <span class="badge bg-warning">B2G</span>
+                            {% endif %}
+                        </td>
+                        <td><code>{{ contact.buyerTin|default:"-" }}</code></td>
+                        <td>
+                            <strong>{{ contact.buyerLegalName }}</strong>
+                            {% if contact.buyerBusinessName %}
+                            <br><small class="text-muted">{{ contact.buyerBusinessName }}</small>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if contact.buyerEmail %}
+                            <i class="fas fa-envelope"></i> {{ contact.buyerEmail }}<br>
+                            {% endif %}
+                            {% if contact.buyerLinePhone %}
+                            <i class="fas fa-phone"></i> {{ contact.buyerLinePhone }}
+                            {% endif %}
+                        </td>
+                        <td>
+                            <small>{{ contact.buyerAddress|truncatewords:5 }}</small>
+                        </td>
+                        <td>
+                            <button type="button" class="btn btn-sm btn-warning"
+                                    onclick="editContact('{{ contact.id }}', {{ contact|safe }})">
+                                <i class="fas fa-edit"></i>
+                            </button>
+                            <button type="button" class="btn btn-sm btn-danger"
+                                    onclick="deleteContact('{{ contact.id }}', '{{ contact.buyerLegalName }}')">
+                                <i class="fas fa-trash"></i>
+                            </button>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="alert alert-info mt-3">
+            <i class="fas fa-info-circle"></i> No frequent contacts found. Click "Add Contact" to create one.
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Add Contact Modal -->
+<div class="modal fade" id="addContactModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Add Frequent Contact</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="post" id="addContactForm">
+                {% csrf_token %}
+                <input type="hidden" name="operation_type" value="101">
+
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="buyer_type" class="form-label">Buyer Type *</label>
+                        <select class="form-select" id="buyer_type" name="buyer_type" required>
+                            <option value="0">B2B (Business)</option>
+                            <option value="1">B2C (Consumer)</option>
+                            <option value="2">Foreigner</option>
+                            <option value="3">B2G (Government)</option>
+                        </select>
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="buyer_tin" class="form-label">TIN</label>
+                                <input type="text" class="form-control" id="buyer_tin"
+                                       name="buyer_tin" maxlength="20">
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="buyer_nin_brn" class="form-label">NIN/BRN</label>
+                                <input type="text" class="form-control" id="buyer_nin_brn"
+                                       name="buyer_nin_brn" maxlength="100">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="buyer_legal_name" class="form-label">Legal Name *</label>
+                                <input type="text" class="form-control" id="buyer_legal_name"
+                                       name="buyer_legal_name" maxlength="256" required>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="buyer_business_name" class="form-label">Business Name</label>
+                                <input type="text" class="form-control" id="buyer_business_name"
+                                       name="buyer_business_name" maxlength="256">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="buyer_email" class="form-label">Email</label>
+                        <input type="email" class="form-control" id="buyer_email"
+                               name="buyer_email" maxlength="50">
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="buyer_line_phone" class="form-label">Phone</label>
+                        <input type="tel" class="form-control" id="buyer_line_phone"
+                               name="buyer_line_phone" maxlength="30">
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="buyer_address" class="form-label">Address</label>
+                        <textarea class="form-control" id="buyer_address"
+                                  name="buyer_address" rows="2" maxlength="500"></textarea>
+                    </div>
+                </div>
+
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fas fa-save"></i> Save Contact
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Edit Contact Modal -->
+<div class="modal fade" id="editContactModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Edit Frequent Contact</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="post" id="editContactForm">
+                {% csrf_token %}
+                <input type="hidden" name="operation_type" value="102">
+                <input type="hidden" name="contact_id" id="edit_contact_id">
+
+                <div class="modal-body">
+                    <!-- Same fields as add form -->
+                    <div class="mb-3">
+                        <label for="edit_buyer_type" class="form-label">Buyer Type *</label>
+                        <select class="form-select" id="edit_buyer_type" name="buyer_type" required>
+                            <option value="0">B2B (Business)</option>
+                            <option value="1">B2C (Consumer)</option>
+                            <option value="2">Foreigner</option>
+                            <option value="3">B2G (Government)</option>
+                        </select>
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="edit_buyer_tin" class="form-label">TIN</label>
+                                <input type="text" class="form-control" id="edit_buyer_tin"
+                                       name="buyer_tin" maxlength="20">
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="edit_buyer_nin_brn" class="form-label">NIN/BRN</label>
+                                <input type="text" class="form-control" id="edit_buyer_nin_brn"
+                                       name="buyer_nin_brn" maxlength="100">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="edit_buyer_legal_name" class="form-label">Legal Name *</label>
+                                <input type="text" class="form-control" id="edit_buyer_legal_name"
+                                       name="buyer_legal_name" maxlength="256" required>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="edit_buyer_business_name" class="form-label">Business Name</label>
+                                <input type="text" class="form-control" id="edit_buyer_business_name"
+                                       name="buyer_business_name" maxlength="256">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="edit_buyer_email" class="form-label">Email</label>
+                        <input type="email" class="form-control" id="edit_buyer_email"
+                               name="buyer_email" maxlength="50">
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="edit_buyer_line_phone" class="form-label">Phone</label>
+                        <input type="tel" class="form-control" id="edit_buyer_line_phone"
+                               name="buyer_line_phone" maxlength="30">
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="edit_buyer_address" class="form-label">Address</label>
+                        <textarea class="form-control" id="edit_buyer_address"
+                                  name="buyer_address" rows="2" maxlength="500"></textarea>
+                    </div>
+                </div>
+
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-warning">
+                        <i class="fas fa-save"></i> Update Contact
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Delete Confirmation Modal -->
+<div class="modal fade" id="deleteContactModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-danger text-white">
+                <h5 class="modal-title">Confirm Delete</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="post" id="deleteContactForm">
+                {% csrf_token %}
+                <input type="hidden" name="operation_type" value="103">
+                <input type="hidden" name="contact_id" id="delete_contact_id">
+                <input type="hidden" name="buyer_type" value="0">
+
+                <div class="modal-body">
+                    <p>Are you sure you want to delete contact: <strong id="delete_contact_name"></strong>?</p>
+                    <p class="text-danger">This action cannot be undone.</p>
+                </div>
+
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-danger">
+                        <i class="fas fa-trash"></i> Delete Contact
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+function editContact(contactId, contactData) {
+    document.getElementById('edit_contact_id').value = contactId;
+    document.getElementById('edit_buyer_type').value = contactData.buyerType || '0';
+    document.getElementById('edit_buyer_tin').value = contactData.buyerTin || '';
+    document.getElementById('edit_buyer_nin_brn').value = contactData.buyerNinBrn || '';
+    document.getElementById('edit_buyer_legal_name').value = contactData.buyerLegalName || '';
+    document.getElementById('edit_buyer_business_name').value = contactData.buyerBusinessName || '';
+    document.getElementById('edit_buyer_email').value = contactData.buyerEmail || '';
+    document.getElementById('edit_buyer_line_phone').value = contactData.buyerLinePhone || '';
+    document.getElementById('edit_buyer_address').value = contactData.buyerAddress || '';
+
+    new bootstrap.Modal(document.getElementById('editContactModal')).show();
+}
+
+function deleteContact(contactId, contactName) {
+    document.getElementById('delete_contact_id').value = contactId;
+    document.getElementById('delete_contact_name').textContent = contactName;
+
+    new bootstrap.Modal(document.getElementById('deleteContactModal')).show();
+}
+</script>
+{% endblock %}

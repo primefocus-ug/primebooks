@@ -1,0 +1,188 @@
+<!-- efris/templates/efris/exchange_rates.html -->
+
+{% extends "efris/base.html" %}
+{% load static %}
+
+{% block page_actions %}
+<button type="button" class="btn btn-outline-primary" onclick="refreshRates()">
+    <i class="fas fa-sync-alt"></i> Refresh Rates
+</button>
+{% endblock %}
+
+{% block efris_content %}
+<!-- Date Filter -->
+<div class="search-box">
+    <form method="get" class="row g-3 align-items-end">
+        <div class="col-md-4">
+            <label for="date" class="form-label">Select Date</label>
+            <input type="date" class="form-control" id="date" name="date"
+                   value="{{ issue_date|date:'Y-m-d' }}">
+        </div>
+        <div class="col-md-2">
+            <button type="submit" class="btn btn-primary w-100">
+                <i class="fas fa-calendar"></i> Load Rates
+            </button>
+        </div>
+        <div class="col-md-6 text-end">
+            <small class="text-muted">
+                Showing rates for: <strong>{{ issue_date|date:"F d, Y" }}</strong>
+            </small>
+        </div>
+    </form>
+</div>
+
+<!-- Exchange Rates Grid -->
+<div class="row">
+    {% if rates %}
+    {% for rate_info in rates %}
+    <div class="col-md-6 col-lg-4">
+        <div class="card efris-card">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-start mb-3">
+                    <div>
+                        <h3 class="mb-0">{{ rate_info.currency }}</h3>
+                        <small class="text-muted">to UGX</small>
+                    </div>
+                    <span class="badge bg-primary fs-5">
+                        {{ rate_info.rate|floatformat:2 }}
+                    </span>
+                </div>
+
+                <hr>
+
+                <div class="row small">
+                    <div class="col-6">
+                        <div class="mb-2">
+                            <strong>Import Duty/Levy:</strong><br>
+                            <span class="text-muted">{{ rate_info.importDutyLevy|floatformat:4 }}</span>
+                        </div>
+                        <div class="mb-2">
+                            <strong>Income Tax:</strong><br>
+                            <span class="text-muted">{{ rate_info.inComeTax|floatformat:4 }}</span>
+                        </div>
+                    </div>
+                    <div class="col-6">
+                        <div class="mb-2">
+                            <strong>Export Levy:</strong><br>
+                            <span class="text-muted">{{ rate_info.exportLevy|floatformat:4 }}</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+    {% else %}
+    <div class="col-12">
+        <div class="alert alert-info">
+            <i class="fas fa-info-circle"></i> No exchange rates available for the selected date.
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+<!-- Currency Converter Tool -->
+<div class="card efris-card mt-4">
+    <div class="card-header bg-white">
+        <h5 class="card-title mb-0">Currency Converter</h5>
+    </div>
+    <div class="card-body">
+        <div class="row g-3">
+            <div class="col-md-3">
+                <label for="amount" class="form-label">Amount</label>
+                <input type="number" class="form-control" id="amount" placeholder="Enter amount"
+                       value="1" step="0.01" min="0">
+            </div>
+            <div class="col-md-3">
+                <label for="from_currency" class="form-label">From Currency</label>
+                <select class="form-select" id="from_currency">
+                    <option value="UGX">UGX</option>
+                    {% for rate_info in rates %}
+                    <option value="{{ rate_info.currency }}">{{ rate_info.currency }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label for="to_currency" class="form-label">To Currency</label>
+                <select class="form-select" id="to_currency">
+                    <option value="UGX">UGX</option>
+                    {% for rate_info in rates %}
+                    <option value="{{ rate_info.currency }}" {% if forloop.first %}selected{% endif %}>
+                        {{ rate_info.currency }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">&nbsp;</label>
+                <button type="button" class="btn btn-primary w-100" onclick="convertCurrency()">
+                    <i class="fas fa-exchange-alt"></i> Convert
+                </button>
+            </div>
+        </div>
+        <div class="mt-3">
+            <div id="conversionResult" class="alert alert-success" style="display: none;">
+                <h5 class="mb-0"><span id="resultText"></span></h5>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// Store rates in JavaScript
+const exchangeRates = {
+    'UGX': 1,
+    {% for rate_info in rates %}
+    '{{ rate_info.currency }}': {{ rate_info.rate }},
+    {% endfor %}
+};
+
+function convertCurrency() {
+    const amount = parseFloat(document.getElementById('amount').value);
+    const fromCurrency = document.getElementById('from_currency').value;
+    const toCurrency = document.getElementById('to_currency').value;
+
+    if (!amount || amount <= 0) {
+        alert('Please enter a valid amount');
+        return;
+    }
+
+    let result;
+
+    if (fromCurrency === 'UGX' && toCurrency !== 'UGX') {
+        // UGX to other currency
+        result = amount / exchangeRates[toCurrency];
+    } else if (fromCurrency !== 'UGX' && toCurrency === 'UGX') {
+        // Other currency to UGX
+        result = amount * exchangeRates[fromCurrency];
+    } else if (fromCurrency !== 'UGX' && toCurrency !== 'UGX') {
+        // Between two non-UGX currencies
+        const ugxAmount = amount * exchangeRates[fromCurrency];
+        result = ugxAmount / exchangeRates[toCurrency];
+    } else {
+        // Same currency
+        result = amount;
+    }
+
+    const resultDiv = document.getElementById('conversionResult');
+    const resultText = document.getElementById('resultText');
+
+    resultText.textContent = `${amount.toFixed(2)} ${fromCurrency} = ${result.toFixed(2)} ${toCurrency}`;
+    resultDiv.style.display = 'block';
+}
+
+function refreshRates() {
+    location.reload();
+}
+
+// Set today's date as default
+document.addEventListener('DOMContentLoaded', function() {
+    const dateInput = document.getElementById('date');
+    if (!dateInput.value) {
+        dateInput.value = new Date().toISOString().split('T')[0];
+    }
+});
+</script>
+{% endblock %}

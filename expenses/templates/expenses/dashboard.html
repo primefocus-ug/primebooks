@@ -1,0 +1,289 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Expense Dashboard{% endblock %}
+
+{% block extra_css %}
+<style>
+    .stat-card {
+        border-radius: 10px;
+        padding: 20px;
+        margin-bottom: 20px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    .stat-card h3 {
+        font-size: 2.5rem;
+        margin: 10px 0;
+    }
+    .stat-card.primary {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+    }
+    .stat-card.success {
+        background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+        color: white;
+    }
+    .stat-card.warning {
+        background: linear-gradient(135deg, #fccb90 0%, #d57eeb 100%);
+        color: white;
+    }
+    .stat-card.danger {
+        background: linear-gradient(135deg, #fa709a 0%, #fee140 100%);
+        color: white;
+    }
+    .budget-progress {
+        height: 10px;
+        border-radius: 5px;
+        overflow: hidden;
+        background: #e9ecef;
+        margin: 10px 0;
+    }
+    .budget-progress-bar {
+        height: 100%;
+        transition: width 0.3s ease;
+    }
+    .budget-progress-bar.normal {
+        background: #28a745;
+    }
+    .budget-progress-bar.warning {
+        background: #ffc107;
+    }
+    .budget-progress-bar.critical {
+        background: #dc3545;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <div class="row mb-4">
+        <div class="col-12">
+            <h1>Expense Dashboard</h1>
+            <p class="text-muted">Overview of expenses for {{ store.name }}</p>
+        </div>
+    </div>
+
+    <!-- Statistics Cards -->
+    <div class="row">
+        <div class="col-md-3">
+            <div class="stat-card primary">
+                <div>Total Expenses</div>
+                <h3>{{ stats.total_expenses|floatformat:2 }}</h3>
+                <small>UGX this month</small>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="stat-card success">
+                <div>Transactions</div>
+                <h3>{{ stats.expense_count }}</h3>
+                <small>expenses recorded</small>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="stat-card warning">
+                <div>Pending Approval</div>
+                <h3>{{ stats.pending_approvals }}</h3>
+                <small>awaiting review</small>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="stat-card danger">
+                <div>Overdue</div>
+                <h3>{{ stats.overdue_count }}</h3>
+                <small>payments overdue</small>
+            </div>
+        </div>
+    </div>
+
+    <div class="row mt-4">
+        <!-- Recent Expenses -->
+        <div class="col-md-8">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">Recent Expenses</h5>
+                    <a href="{% url 'expenses:expense_list' %}" class="btn btn-sm btn-primary">View All</a>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Expense #</th>
+                                    <th>Category</th>
+                                    <th>Vendor</th>
+                                    <th>Amount</th>
+                                    <th>Status</th>
+                                    <th>Date</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for expense in recent_expenses %}
+                                <tr>
+                                    <td>
+                                        <a href="{% url 'expenses:expense_detail' expense.pk %}">
+                                            {{ expense.expense_number }}
+                                        </a>
+                                    </td>
+                                    <td>{{ expense.category.name }}</td>
+                                    <td>{{ expense.vendor.name|default:"N/A" }}</td>
+                                    <td>{{ expense.total_amount|floatformat:2 }} UGX</td>
+                                    <td>
+                                        <span class="badge badge-{{ expense.status|lower }}">
+                                            {{ expense.get_status_display }}
+                                        </span>
+                                    </td>
+                                    <td>{{ expense.expense_date|date:"Y-m-d" }}</td>
+                                </tr>
+                                {% empty %}
+                                <tr>
+                                    <td colspan="6" class="text-center">No recent expenses</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Budget Status & Category Breakdown -->
+        <div class="col-md-4">
+            <!-- Budget Status -->
+            <div class="card mb-3">
+                <div class="card-header">
+                    <h5 class="mb-0">Active Budgets</h5>
+                </div>
+                <div class="card-body">
+                    {% for budget in active_budgets %}
+                    <div class="mb-3">
+                        <div class="d-flex justify-content-between align-items-center mb-1">
+                            <small class="font-weight-bold">{{ budget.category.name }}</small>
+                            <small class="text-muted">{{ budget.utilization_percentage|floatformat:0 }}%</small>
+                        </div>
+                        <div class="budget-progress">
+                            <div class="budget-progress-bar {{ budget.status|lower }}"
+                                 style="width: {{ budget.utilization_percentage }}%"></div>
+                        </div>
+                        <small class="text-muted">
+                            {{ budget.spent_amount|floatformat:0 }} / {{ budget.allocated_amount|floatformat:0 }} UGX
+                        </small>
+                    </div>
+                    {% empty %}
+                    <p class="text-muted">No active budgets</p>
+                    {% endfor %}
+                    <a href="{% url 'expenses:budget_dashboard' %}" class="btn btn-sm btn-outline-primary btn-block">
+                        View Budget Dashboard
+                    </a>
+                </div>
+            </div>
+
+            <!-- Category Breakdown -->
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0">Top Categories</h5>
+                </div>
+                <div class="card-body">
+                    <canvas id="categoryChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Quick Actions -->
+    <div class="row mt-4">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0">Quick Actions</h5>
+                </div>
+                <div class="card-body">
+                    <div class="btn-group" role="group">
+                        <a href="{% url 'expenses:expense_create' %}" class="btn btn-primary">
+                            <i class="fas fa-plus"></i> New Expense
+                        </a>
+                        <a href="{% url 'expenses:vendor_create' %}" class="btn btn-success">
+                            <i class="fas fa-user-tie"></i> Add Vendor
+                        </a>
+                        <a href="{% url 'expenses:reports' %}" class="btn btn-info">
+                            <i class="fas fa-chart-bar"></i> View Reports
+                        </a>
+                        <a href="{% url 'expenses:export_expenses' %}" class="btn btn-secondary">
+                            <i class="fas fa-download"></i> Export Data
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+    // Category breakdown chart
+    const ctx = document.getElementById('categoryChart').getContext('2d');
+    const categoryData = {{ category_data|safe }};
+
+    const labels = categoryData.map(item => item.category__name);
+    const data = categoryData.map(item => item.total);
+
+    new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+            labels: labels,
+            datasets: [{
+                data: data,
+                backgroundColor: [
+                    '#667eea',
+                    '#764ba2',
+                    '#f093fb',
+                    '#f5576c',
+                    '#fccb90'
+                ]
+            }]
+        },
+        options: {
+            responsive: true,
+            plugins: {
+                legend: {
+                    position: 'bottom'
+                }
+            }
+        }
+    });
+
+    // WebSocket connection for real-time updates
+    const storeId = {{ store.id }};
+    const wsScheme = window.location.protocol === 'https:' ? 'wss' : 'ws';
+    const wsUrl = `${wsScheme}://${window.location.host}/ws/expenses/${storeId}/`;
+
+    const socket = new WebSocket(wsUrl);
+
+    socket.onopen = function(e) {
+        console.log('WebSocket connection established');
+    };
+
+    socket.onmessage = function(event) {
+        const data = JSON.parse(event.data);
+        console.log('Received:', data);
+
+        if (data.type === 'expense_update' || data.type === 'expense_created') {
+            // Reload page or update specific elements
+            location.reload();
+        }
+    };
+
+    socket.onclose = function(event) {
+        console.log('WebSocket connection closed');
+        // Attempt to reconnect after 5 seconds
+        setTimeout(() => {
+            location.reload();
+        }, 5000);
+    };
+
+    socket.onerror = function(error) {
+        console.error('WebSocket error:', error);
+    };
+</script>
+{% endblock %}

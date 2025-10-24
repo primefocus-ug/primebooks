@@ -1,0 +1,249 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}{{ title }} | {{ company.trading_name|default:company.name }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <div class="row justify-content-center">
+        <div class="col-lg-8">
+            <div class="card shadow">
+                <div class="card-header bg-primary text-white">
+                    <h5 class="card-title mb-0">
+                        <i class="bi bi-bookmark-star me-2"></i>{{ title }}
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <form method="post" novalidate id="reportForm">
+                        {% csrf_token %}
+
+                        {% if messages %}
+                        <div class="mb-3">
+                            {% for message in messages %}
+                            <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
+                                {{ message }}
+                                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                            </div>
+                            {% endfor %}
+                        </div>
+                        {% endif %}
+
+                        {% if form.non_field_errors %}
+                        <div class="alert alert-danger alert-dismissible fade show">
+                            {% for error in form.non_field_errors %}
+                                {{ error }}
+                            {% endfor %}
+                            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                        </div>
+                        {% endif %}
+
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="{{ form.name.id_for_label }}" class="form-label">
+                                        Report Name <span class="text-danger">*</span>
+                                    </label>
+                                    {{ form.name }}
+                                    {% if form.name.errors %}
+                                    <div class="invalid-feedback d-block">
+                                        {{ form.name.errors|first }}
+                                    </div>
+                                    {% endif %}
+                                    <small class="text-muted">Give your report a descriptive name</small>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="{{ form.report_type.id_for_label }}" class="form-label">
+                                        Report Type <span class="text-danger">*</span>
+                                    </label>
+                                    {{ form.report_type }}
+                                    {% if form.report_type.errors %}
+                                    <div class="invalid-feedback d-block">
+                                        {{ form.report_type.errors|first }}
+                                    </div>
+                                    {% endif %}
+                                    <small class="text-muted">Select the type of report</small>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="{{ form.description.id_for_label }}" class="form-label">
+                                Description
+                            </label>
+                            {{ form.description }}
+                            {% if form.description.errors %}
+                            <div class="invalid-feedback d-block">
+                                {{ form.description.errors|first }}
+                            </div>
+                            {% endif %}
+                            <small class="text-muted">Optional: Add notes about this report</small>
+                        </div>
+
+                        <!-- PDF Orientation (if field exists) -->
+                        {% if form.pdf_orientation %}
+                        <div class="mb-3">
+                            <label for="{{ form.pdf_orientation.id_for_label }}" class="form-label">
+                                PDF Orientation
+                            </label>
+                            {{ form.pdf_orientation }}
+                            {% if form.pdf_orientation.errors %}
+                            <div class="invalid-feedback d-block">
+                                {{ form.pdf_orientation.errors|first }}
+                            </div>
+                            {% endif %}
+                        </div>
+                        {% endif %}
+
+                        <!-- Default Filters (if show_filters is True) -->
+                        {% if show_filters %}
+                        <div class="card bg-light mb-3">
+                            <div class="card-header">
+                                <h6 class="mb-0">Default Filters (Optional)</h6>
+                            </div>
+                            <div class="card-body">
+                                <div class="row">
+                                    {% if form.start_date %}
+                                    <div class="col-md-6 mb-3">
+                                        <label for="{{ form.start_date.id_for_label }}" class="form-label">
+                                            Default Start Date
+                                        </label>
+                                        {{ form.start_date }}
+                                    </div>
+                                    {% endif %}
+
+                                    {% if form.end_date %}
+                                    <div class="col-md-6 mb-3">
+                                        <label for="{{ form.end_date.id_for_label }}" class="form-label">
+                                            Default End Date
+                                        </label>
+                                        {{ form.end_date }}
+                                    </div>
+                                    {% endif %}
+
+                                    {% if form.group_by %}
+                                    <div class="col-md-6 mb-3">
+                                        <label for="{{ form.group_by.id_for_label }}" class="form-label">
+                                            Default Grouping
+                                        </label>
+                                        {{ form.group_by }}
+                                    </div>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </div>
+                        {% else %}
+                        <div class="mb-3">
+                            <div class="card bg-light">
+                                <div class="card-body">
+                                    <p class="text-muted mb-0">
+                                        <i class="bi bi-info-circle me-2"></i>
+                                        Filters will be configured when you run this report.
+                                        You can set default filters by running the report first with your desired settings.
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                        {% endif %}
+
+                        <div class="mb-4">
+                            <div class="form-check form-switch">
+                                {{ form.is_shared }}
+                                <label class="form-check-label" for="{{ form.is_shared.id_for_label }}">
+                                    <strong>Share this report with other users</strong>
+                                </label>
+                                {% if form.is_shared.errors %}
+                                <div class="invalid-feedback d-block">
+                                    {{ form.is_shared.errors|first }}
+                                </div>
+                                {% endif %}
+                                <div>
+                                    <small class="text-muted">
+                                        When enabled, other users in your organization can view and run this report
+                                    </small>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="d-flex justify-content-between border-top pt-3">
+                            <a href="{% url 'reports:saved_reports' %}" class="btn btn-secondary">
+                                <i class="bi bi-arrow-left me-1"></i>Cancel
+                            </a>
+                            <button type="submit" class="btn btn-primary" id="submitBtn">
+                                <i class="bi bi-check-circle me-1"></i>
+                                <span id="btnText">Save Report</span>
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Add Bootstrap classes to form elements
+        const inputs = document.querySelectorAll('#reportForm input[type="text"], #reportForm textarea, #reportForm select');
+        inputs.forEach(element => {
+            if (!element.classList.contains('form-check-input')) {
+                element.classList.add('form-control');
+            }
+        });
+
+        // Form validation on submit
+        const form = document.getElementById('reportForm');
+        const submitBtn = document.getElementById('submitBtn');
+        const btnText = document.getElementById('btnText');
+
+        form.addEventListener('submit', function(e) {
+            // Check if name is filled
+            const nameInput = document.getElementById('{{ form.name.id_for_label }}');
+            const reportTypeInput = document.getElementById('{{ form.report_type.id_for_label }}');
+
+            let isValid = true;
+
+            if (!nameInput.value.trim()) {
+                nameInput.classList.add('is-invalid');
+                isValid = false;
+            } else {
+                nameInput.classList.remove('is-invalid');
+            }
+
+            if (!reportTypeInput.value) {
+                reportTypeInput.classList.add('is-invalid');
+                isValid = false;
+            } else {
+                reportTypeInput.classList.remove('is-invalid');
+            }
+
+            if (!isValid) {
+                e.preventDefault();
+                alert('Please fill in all required fields');
+                return false;
+            }
+
+            // Show loading state
+            submitBtn.disabled = true;
+            btnText.textContent = 'Saving...';
+        });
+
+        // Report type change handler
+        const reportTypeSelect = document.getElementById('{{ form.report_type.id_for_label }}');
+        if (reportTypeSelect) {
+            reportTypeSelect.addEventListener('change', function() {
+                const selectedType = this.options[this.selectedIndex].text;
+                const nameInput = document.getElementById('{{ form.name.id_for_label }}');
+
+                // Auto-suggest name if empty
+                if (!nameInput.value.trim()) {
+                    nameInput.value = selectedType + ' Report';
+                }
+            });
+        }
+    });
+</script>
+{% endblock %}

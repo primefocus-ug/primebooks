@@ -1,0 +1,205 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Inventory Management | Prime Book{% endblock %}
+
+{% block page_header %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h1 class="h3 mb-1">
+            <i class="bi bi-box-seam me-2"></i>Inventory Management
+        </h1>
+        <p class="text-muted mb-0">Manage inventory across all stores</p>
+    </div>
+    <div>
+        <a href="{% url 'stores:low_stock_alert' %}" class="btn btn-warning me-2">
+            <i class="bi bi-exclamation-triangle me-1"></i>Low Stock Alerts
+        </a>
+        <a href="{% url 'inventory:product_create' %}" class="btn btn-primary">
+            <i class="bi bi-plus-circle me-1"></i>Add Product
+        </a>
+    </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<!-- Filter Form -->
+<div class="card mb-4">
+    <div class="card-header">
+        <h5 class="mb-0">Filter Inventory</h5>
+    </div>
+    <div class="card-body">
+        <form method="get" class="row g-3">
+            <div class="col-md-4">
+                <label class="form-label">Store</label>
+                <select name="store" class="form-select">
+                    <option value="">All Stores</option>
+                    {% for store in stores %}
+                    <option value="{{ store.id }}" {% if selected_store == store.id|stringformat:"s" %}selected{% endif %}>
+                        {{ store.name }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">Show Low Stock Only</label>
+                <select name="low_stock" class="form-select">
+                    <option value="">All Items</option>
+                    <option value="true" {% if request.GET.low_stock == "true" %}selected{% endif %}>Low Stock Only</option>
+                </select>
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">&nbsp;</label>
+                <div class="d-grid">
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-filter me-1"></i>Apply Filters
+                    </button>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Inventory Table -->
+<div class="card">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <h5 class="mb-0">Inventory Items</h5>
+        <span class="badge bg-primary">{{ inventory_items.count }} items</span>
+    </div>
+    <div class="card-body">
+        {% if inventory_items %}
+        <div class="table-responsive">
+            <table class="table table-hover">
+                <thead>
+                    <tr>
+                        <th>Product</th>
+                        <th>Store</th>
+                        <th>Quantity</th>
+                        <th>Low Stock Threshold</th>
+                        <th>Reorder Quantity</th>
+                        <th>Status</th>
+                        <th>Last Updated</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in inventory_items %}
+                    <tr class="{% if item.quantity <= item.low_stock_threshold %}{% if item.quantity <= 0 %}table-danger{% else %}table-warning{% endif %}{% endif %}">
+                        <td>
+                            <strong>{{ item.product.name }}</strong>
+                            <br>
+                            <small class="text-muted">{{ item.product.code|default:"No code" }}</small>
+                        </td>
+                        <td>
+                            <a href="{% url 'stores:store_detail' item.store.id %}" class="text-decoration-none">
+                                {{ item.store.name }}
+                            </a>
+                        </td>
+                        <td>
+                            <span class="fw-bold {% if item.quantity <= 0 %}text-danger{% elif item.quantity <= item.low_stock_threshold %}text-warning{% else %}text-success{% endif %}">
+                                {{ item.quantity }} {{ item.product.unit|default:"" }}
+                            </span>
+                        </td>
+                        <td>{{ item.low_stock_threshold }} {{ item.product.unit|default:"" }}</td>
+                        <td>{{ item.reorder_quantity }} {{ item.product.unit|default:"" }}</td>
+                        <td>
+                            {% if item.quantity <= 0 %}
+                            <span class="badge bg-danger">Out of Stock</span>
+                            {% elif item.quantity <= item.low_stock_threshold %}
+                            <span class="badge bg-warning">Low Stock</span>
+                            {% else %}
+                            <span class="badge bg-success">In Stock</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <span class="text-muted small">{{ item.last_updated|date:"M d, Y" }}</span>
+                        </td>
+                        <td>
+                            <a href="{% url 'inventory:stock_update' item.product.id %}" class="btn btn-sm btn-outline-primary">
+                                <i class="bi bi-pencil"></i> Update
+                            </a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Pagination -->
+        {% if is_paginated %}
+        <nav aria-label="Inventory pagination">
+            <ul class="pagination justify-content-center">
+                {% if page_obj.has_previous %}
+                <li class="page-item">
+                    <a class="page-link" href="?page={{ page_obj.previous_page_number }}{% if selected_store %}&store={{ selected_store }}{% endif %}{% if request.GET.low_stock %}&low_stock={{ request.GET.low_stock }}{% endif %}">Previous</a>
+                </li>
+                {% endif %}
+
+                {% for num in page_obj.paginator.page_range %}
+                <li class="page-item {% if page_obj.number == num %}active{% endif %}">
+                    <a class="page-link" href="?page={{ num }}{% if selected_store %}&store={{ selected_store }}{% endif %}{% if request.GET.low_stock %}&low_stock={{ request.GET.low_stock }}{% endif %}">{{ num }}</a>
+                </li>
+                {% endfor %}
+
+                {% if page_obj.has_next %}
+                <li class="page-item">
+                    <a class="page-link" href="?page={{ page_obj.next_page_number }}{% if selected_store %}&store={{ selected_store }}{% endif %}{% if request.GET.low_stock %}&low_stock={{ request.GET.low_stock }}{% endif %}">Next</a>
+                </li>
+                {% endif %}
+            </ul>
+        </nav>
+        {% endif %}
+
+        {% else %}
+        <div class="text-center py-5">
+            <i class="bi bi-box display-1 text-muted"></i>
+            <h4 class="mt-3">No Inventory Items</h4>
+            <p class="text-muted">No inventory items match your filters.</p>
+            <a href="?{% if selected_store %}store={{ selected_store }}{% endif %}" class="btn btn-primary">
+                <i class="bi bi-arrow-clockwise me-1"></i>Clear Filters
+            </a>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Low Stock Summary -->
+{% if low_stock_items %}
+<div class="card mt-4 border-warning">
+    <div class="card-header bg-warning text-dark">
+        <h5 class="mb-0">
+            <i class="bi bi-exclamation-triangle me-2"></i>Low Stock Summary
+            <span class="badge bg-dark ms-2">{{ low_stock_items.count }} items need attention</span>
+        </h5>
+    </div>
+    <div class="card-body">
+        <div class="row">
+            {% for item in low_stock_items|slice:":6" %}
+            <div class="col-md-4 mb-3">
+                <div class="card border-warning">
+                    <div class="card-body">
+                        <h6 class="card-title">{{ item.product.name }}</h6>
+                        <p class="card-text mb-1">
+                            <strong>Store:</strong> {{ item.store.name }}<br>
+                            <strong>Current:</strong> {{ item.quantity }} {{ item.product.unit|default:"" }}<br>
+                            <strong>Threshold:</strong> {{ item.low_stock_threshold }} {{ item.product.unit|default:"" }}
+                        </p>
+                        <a href="{% url 'inventory:stock_update' item.product.id %}" class="btn btn-sm btn-warning">
+                            <i class="bi bi-arrow-up-circle me-1"></i>Restock
+                        </a>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% if low_stock_items.count > 6 %}
+        <div class="text-center mt-3">
+            <a href="{% url 'stores:low_stock_alert' %}" class="btn btn-outline-warning">
+                View All {{ low_stock_items.count }} Low Stock Items
+            </a>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
+{% endblock %}

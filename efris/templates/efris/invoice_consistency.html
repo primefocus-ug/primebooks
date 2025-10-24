@@ -1,0 +1,204 @@
+<!-- ============================================================================ -->
+<!-- INVOICE CONSISTENCY CHECK TEMPLATE (T117) -->
+<!-- templates/efris/invoice_consistency.html -->
+<!-- ============================================================================ -->
+{% extends 'efris/base.html' %}
+{% load i18n %}
+
+{% block title %}Invoice Consistency Check - EFRIS{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <h4><i class="fas fa-check-double"></i> Invoice Consistency Check (T117)</h4>
+                    <p class="text-muted mb-0">Verify that your invoices match EFRIS server records</p>
+                </div>
+
+                <div class="card-body">
+                    <!-- Info Alert -->
+                    <div class="alert alert-info">
+                        <i class="fas fa-info-circle"></i>
+                        <strong>What does this do?</strong>
+                        This tool checks if your local invoices match the records stored on EFRIS servers.
+                        Any inconsistencies may indicate synchronization issues.
+                    </div>
+
+                    <!-- Action Buttons -->
+                    <div class="row mb-4">
+                        <div class="col-md-6">
+                            <div class="card border-primary">
+                                <div class="card-body">
+                                    <h5><i class="fas fa-file-invoice"></i> Check Single Invoice</h5>
+                                    <p class="text-muted">Verify a specific invoice by number</p>
+
+                                    <form method="post">
+                                        {% csrf_token %}
+                                        <input type="hidden" name="action" value="check_single">
+
+                                        <div class="form-group">
+                                            <label>Invoice Number</label>
+                                            <input type="text" name="invoice_no" class="form-control"
+                                                   placeholder="INV-20250108-001" required>
+                                        </div>
+
+                                        <div class="form-group">
+                                            <label>Invoice Type</label>
+                                            <select name="invoice_type" class="form-control">
+                                                <option value="1">Standard Invoice</option>
+                                                <option value="2">Credit Note (with FDN)</option>
+                                                <option value="4">Debit Note</option>
+                                                <option value="5">Credit Note (without FDN)</option>
+                                            </select>
+                                        </div>
+
+                                        <button type="submit" class="btn btn-primary btn-block">
+                                            <i class="fas fa-check"></i> Check Invoice
+                                        </button>
+                                    </form>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="col-md-6">
+                            <div class="card border-success">
+                                <div class="card-body">
+                                    <h5><i class="fas fa-list"></i> Check Recent Invoices</h5>
+                                    <p class="text-muted">Verify the last 20 fiscalized invoices</p>
+
+                                    <form method="post">
+                                        {% csrf_token %}
+                                        <input type="hidden" name="action" value="check_recent">
+
+                                        <div class="alert alert-light">
+                                            <i class="fas fa-info-circle"></i>
+                                            This will check your 20 most recent fiscalized invoices against EFRIS records.
+                                        </div>
+
+                                        <button type="submit" class="btn btn-success btn-block btn-lg">
+                                            <i class="fas fa-check-double"></i> Check Recent Invoices
+                                        </button>
+                                    </form>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Results Section -->
+                    {% if results %}
+                    <div class="results-section">
+                        <h5 class="border-bottom pb-2 mb-3">
+                            <i class="fas fa-chart-bar"></i> Check Results
+                        </h5>
+
+                        {% if results.result.success %}
+                            <!-- Summary -->
+                            <div class="row mb-4">
+                                <div class="col-md-4">
+                                    <div class="card bg-info text-white">
+                                        <div class="card-body text-center">
+                                            <h3>{{ results.result.checked_count|default:results.checked|length }}</h3>
+                                            <p class="mb-0">Invoices Checked</p>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="col-md-4">
+                                    <div class="card bg-success text-white">
+                                        <div class="card-body text-center">
+                                            {% with inconsistent_count=results.result.inconsistent_invoices|length %}
+                                            {% with consistent_count=results.result.checked_count|default:results.checked|length|add:"-"|add:inconsistent_count %}
+                                            <h3>{{ consistent_count }}</h3>
+                                            {% endwith %}
+                                            {% endwith %}
+                                            <p class="mb-0">Consistent</p>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="col-md-4">
+                                    <div class="card bg-warning text-white">
+                                        <div class="card-body text-center">
+                                            <h3>{{ results.result.inconsistent_invoices|length }}</h3>
+                                            <p class="mb-0">Inconsistent</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Inconsistent Invoices -->
+                            {% if results.result.inconsistent_invoices %}
+                            <div class="alert alert-warning">
+                                <h5><i class="fas fa-exclamation-triangle"></i> Inconsistent Invoices Found</h5>
+                                <p>The following invoices have discrepancies with EFRIS records:</p>
+                            </div>
+
+                            <div class="table-responsive">
+                                <table class="table table-bordered table-hover">
+                                    <thead class="thead-light">
+                                        <tr>
+                                            <th>Invoice Number</th>
+                                            <th>Issue</th>
+                                            <th>Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% for invoice in results.result.inconsistent_invoices %}
+                                        <tr>
+                                            <td><strong>{{ invoice.invoiceNo }}</strong></td>
+                                            <td>
+                                                <span class="badge badge-warning">
+                                                    {{ invoice.issue|default:"Data mismatch" }}
+                                                </span>
+                                            </td>
+                                            <td>
+                                                <a href="{% url 'efris:invoice_detail_query' %}?invoice_no={{ invoice.invoiceNo }}"
+                                                   class="btn btn-sm btn-primary">
+                                                    <i class="fas fa-search"></i> Query Details
+                                                </a>
+                                            </td>
+                                        </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
+                            {% else %}
+                            <div class="alert alert-success">
+                                <h5><i class="fas fa-check-circle"></i> All Invoices Consistent</h5>
+                                <p class="mb-0">All checked invoices match EFRIS server records perfectly!</p>
+                            </div>
+                            {% endif %}
+
+                            <!-- Checked Invoices List -->
+                            <div class="mt-4">
+                                <button class="btn btn-sm btn-outline-secondary" type="button"
+                                        data-toggle="collapse" data-target="#checkedList">
+                                    <i class="fas fa-list"></i> Show All Checked Invoices
+                                </button>
+                                <div class="collapse mt-2" id="checkedList">
+                                    <ul class="list-group">
+                                        {% for invoice_no in results.checked %}
+                                        <li class="list-group-item">
+                                            <i class="fas fa-file-invoice"></i> {{ invoice_no }}
+                                        </li>
+                                        {% endfor %}
+                                    </ul>
+                                </div>
+                            </div>
+                        {% else %}
+                            <div class="alert alert-danger">
+                                <h5><i class="fas fa-times-circle"></i> Check Failed</h5>
+                                <p>{{ results.result.error }}</p>
+                            </div>
+                        {% endif %}
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+

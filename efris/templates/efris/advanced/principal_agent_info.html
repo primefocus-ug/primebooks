@@ -1,0 +1,212 @@
+{% extends "efris/base.html" %}
+{% load static %}
+
+{% block efris_content %}
+<div class="efris-card">
+    <div class="card-body">
+        <h5 class="card-title">
+            <i class="fas fa-info-circle"></i> Principal Agent TIN Information
+        </h5>
+
+        <form method="post" class="mt-4">
+            {% csrf_token %}
+
+            <div class="alert alert-info">
+                <i class="fas fa-info-circle"></i>
+                Query tax type information and settings for a principal agent.
+            </div>
+
+            <div class="row">
+                <div class="col-md-6">
+                    <div class="mb-3">
+                        <label for="tin" class="form-label">Principal Agent TIN *</label>
+                        <input type="text" class="form-control" id="tin"
+                               name="tin" required maxlength="20"
+                               placeholder="Enter 10-20 digit TIN">
+                    </div>
+                </div>
+
+                <div class="col-md-6">
+                    <div class="mb-3">
+                        <label for="branch_id" class="form-label">Branch ID *</label>
+                        <input type="text" class="form-control" id="branch_id"
+                               name="branch_id" required maxlength="18"
+                               placeholder="Enter 18-digit branch ID">
+                    </div>
+                </div>
+            </div>
+
+            <button type="submit" class="btn btn-primary">
+                <i class="fas fa-search"></i> Query Information
+            </button>
+        </form>
+
+        {% if agent_info %}
+        <hr>
+
+        <!-- Tax Types -->
+        <div class="card mt-4">
+            <div class="card-header bg-primary text-white">
+                <h6 class="mb-0">Tax Types</h6>
+            </div>
+            <div class="card-body">
+                {% if agent_info.tax_types %}
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead>
+                            <tr>
+                                <th>Tax Type</th>
+                                <th>Code</th>
+                                <th>Registration Date</th>
+                                <th>Cancellation Date</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for tax in agent_info.tax_types %}
+                            <tr>
+                                <td><strong>{{ tax.taxTypeName }}</strong></td>
+                                <td><code>{{ tax.taxTypeCode }}</code></td>
+                                <td>{{ tax.registrationDate }}</td>
+                                <td>
+                                    {% if tax.cancellationDate %}
+                                        {{ tax.cancellationDate }}
+                                    {% else %}
+                                        <span class="badge bg-success">Active</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if not tax.cancellationDate %}
+                                        <span class="badge bg-success">Registered</span>
+                                    {% else %}
+                                        <span class="badge bg-danger">Cancelled</span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <div class="alert alert-warning">
+                    <i class="fas fa-exclamation-triangle"></i> No tax types registered
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Settings -->
+        <div class="row mt-4">
+            <div class="col-md-6">
+                <div class="card">
+                    <div class="card-header bg-info text-white">
+                        <h6 class="mb-0">Tax Settings</h6>
+                    </div>
+                    <div class="card-body">
+                        <dl class="row">
+                            <dt class="col-sm-6">Issue Tax Type Restrictions:</dt>
+                            <dd class="col-sm-6">
+                                {% if agent_info.issue_tax_type_restrictions == '1' %}
+                                    <span class="badge bg-warning">Yes</span>
+                                {% else %}
+                                    <span class="badge bg-success">No</span>
+                                {% endif %}
+                            </dd>
+
+                            <dt class="col-sm-6">Allow Back Date:</dt>
+                            <dd class="col-sm-6">
+                                {% if agent_info.is_allow_back_date == '1' %}
+                                    <span class="badge bg-success">Yes</span>
+                                {% else %}
+                                    <span class="badge bg-danger">No</span>
+                                {% endif %}
+                            </dd>
+
+                            <dt class="col-sm-6">Duty Free Taxpayer:</dt>
+                            <dd class="col-sm-6">
+                                {% if agent_info.is_duty_free_taxpayer == '1' %}
+                                    <span class="badge bg-success">Yes</span>
+                                {% else %}
+                                    <span class="badge bg-secondary">No</span>
+                                {% endif %}
+                            </dd>
+
+                            <dt class="col-sm-6">Period Date:</dt>
+                            <dd class="col-sm-6">
+                                <span class="badge bg-info">{{ agent_info.period_date }} days</span>
+                            </dd>
+                        </dl>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-md-6">
+                <div class="card">
+                    <div class="card-header bg-warning text-dark">
+                        <h6 class="mb-0">Invoice Settings</h6>
+                    </div>
+                    <div class="card-body">
+                        <dl class="row">
+                            <dt class="col-sm-6">Allow Issue Invoice:</dt>
+                            <dd class="col-sm-6">
+                                {% if agent_info.is_allow_issue_invoice == '1' %}
+                                    <span class="badge bg-success">Yes</span>
+                                {% else %}
+                                    <span class="badge bg-danger">No</span>
+                                {% endif %}
+                            </dd>
+
+                            <dt class="col-sm-6">Allow Out of Scope VAT:</dt>
+                            <dd class="col-sm-6">
+                                {% if agent_info.is_allow_out_of_scope_vat == '1' %}
+                                    <span class="badge bg-success">Yes</span>
+                                {% else %}
+                                    <span class="badge bg-danger">No</span>
+                                {% endif %}
+                            </dd>
+
+                            <dt class="col-sm-6">Has Seller Logo:</dt>
+                            <dd class="col-sm-6">
+                                {% if agent_info.sellers_logo %}
+                                    <span class="badge bg-success">Available</span>
+                                {% else %}
+                                    <span class="badge bg-secondary">None</span>
+                                {% endif %}
+                            </dd>
+                        </dl>
+
+                        {% if agent_info.sellers_logo %}
+                        <div class="mt-3">
+                            <label class="form-label">Seller's Logo:</label>
+                            <div class="border p-2">
+                                <img src="data:image/png;base64,{{ agent_info.sellers_logo }}"
+                                     alt="Seller Logo"
+                                     class="img-fluid"
+                                     style="max-height: 100px;">
+                            </div>
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Raw Data (for debugging) -->
+        <div class="card mt-4">
+            <div class="card-header">
+                <h6 class="mb-0">
+                    <a data-bs-toggle="collapse" href="#rawData" class="text-decoration-none">
+                        <i class="fas fa-code"></i> View Raw Data
+                    </a>
+                </h6>
+            </div>
+            <div id="rawData" class="collapse">
+                <div class="card-body">
+                    <pre class="bg-light p-3">{{ agent_info.raw_data|safe }}</pre>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

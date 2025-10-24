@@ -1,0 +1,198 @@
+{% extends "efris/base.html" %}
+{% load static %}
+
+{% block page_actions %}
+{% if pending_count > 0 %}
+<button type="button" class="btn btn-primary" onclick="uploadPendingLogs()">
+    <i class="fas fa-cloud-upload-alt"></i> Upload Pending Logs ({{ pending_count }})
+</button>
+{% endif %}
+{% endblock %}
+
+{% block efris_content %}
+<!-- Filter Form -->
+<div class="search-box">
+    <form method="get" class="row g-3">
+        <div class="col-md-3">
+            <label for="uploaded" class="form-label">Status</label>
+            <select class="form-select" id="uploaded" name="uploaded">
+                <option value="">All</option>
+                <option value="0" {% if request.GET.uploaded == '0' %}selected{% endif %}>Pending</option>
+                <option value="1" {% if request.GET.uploaded == '1' %}selected{% endif %}>Uploaded</option>
+            </select>
+        </div>
+
+        <div class="col-md-3">
+            <label for="type" class="form-label">Type</label>
+            <select class="form-select" id="type" name="type">
+                <option value="">All Types</option>
+                <option value="101">Disconnected</option>
+                <option value="102">Login Failure</option>
+                <option value="103">Receipt Upload Failure</option>
+                <option value="104">System Errors</option>
+                <option value="105">Paper Roll Replacement</option>
+            </select>
+        </div>
+
+        <div class="col-md-2">
+            <label for="start_date" class="form-label">Start Date</label>
+            <input type="date" class="form-control" id="start_date" name="start_date">
+        </div>
+
+        <div class="col-md-2">
+            <label for="end_date" class="form-label">End Date</label>
+            <input type="date" class="form-control" id="end_date" name="end_date">
+        </div>
+
+        <div class="col-md-2">
+            <label class="form-label">&nbsp;</label>
+            <button type="submit" class="btn btn-primary w-100">
+                <i class="fas fa-filter"></i> Filter
+            </button>
+        </div>
+    </form>
+</div>
+
+<!-- Exception Logs Table -->
+<div class="card efris-card">
+    <div class="card-header bg-white">
+        <h5 class="card-title mb-0">Exception Logs</h5>
+    </div>
+    <div class="card-body">
+        {% if logs %}
+        <div class="table-responsive">
+            <table class="table table-hover">
+                <thead>
+                    <tr>
+                        <th>Time</th>
+                        <th>Type</th>
+                        <th>Description</th>
+                        <th>Status</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for log in logs %}
+                    <tr>
+                        <td>{{ log.interruption_time|date:"M d, Y H:i:s" }}</td>
+                        <td>
+                            <span class="badge bg-warning">
+                                {{ log.get_interruption_type_code_display }}
+                            </span>
+                        </td>
+                        <td>{{ log.description|truncatewords:10 }}</td>
+                        <td>
+                            {% if log.uploaded %}
+                            <span class="badge bg-success">Uploaded</span>
+                            {% else %}
+                            <span class="badge bg-secondary">Pending</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <button class="btn btn-sm btn-outline-primary"
+                                    onclick="showLogDetail({{ log.id }}, '{{ log.description|escapejs }}', '{{ log.error_detail|escapejs }}')">
+                                <i class="fas fa-eye"></i> View
+                            </button>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Pagination -->
+        {% if logs.has_other_pages %}
+        <nav aria-label="Log pagination">
+            <ul class="pagination justify-content-center">
+                {% if logs.has_previous %}
+                <li class="page-item">
+                    <a class="page-link" href="?page={{ logs.previous_page_number }}&{{ request.GET.urlencode }}">
+                        Previous
+                    </a>
+                </li>
+                {% endif %}
+
+                <li class="page-item disabled">
+                    <span class="page-link">
+                        Page {{ logs.number }} of {{ logs.paginator.num_pages }}
+                    </span>
+                </li>
+
+                {% if logs.has_next %}
+                <li class="page-item">
+                    <a class="page-link" href="?page={{ logs.next_page_number }}&{{ request.GET.urlencode }}">
+                        Next
+                    </a>
+                </li>
+                {% endif %}
+            </ul>
+        </nav>
+        {% endif %}
+        {% else %}
+        <div class="alert alert-info mb-0">
+            <i class="fas fa-info-circle"></i> No exception logs found.
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Log Detail Modal -->
+<div class="modal fade" id="logDetailModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Exception Log Details</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <h6>Description:</h6>
+                <p id="modalDescription"></p>
+
+                <h6>Error Detail:</h6>
+                <pre id="modalErrorDetail" class="bg-light p-3" style="max-height: 300px; overflow-y: auto;"></pre>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function showLogDetail(logId, description, errorDetail) {
+    document.getElementById('modalDescription').textContent = description;
+    document.getElementById('modalErrorDetail').textContent = errorDetail || 'No additional details';
+
+    const modal = new bootstrap.Modal(document.getElementById('logDetailModal'));
+    modal.show();
+}
+
+function uploadPendingLogs() {
+    if (!confirm('Upload all pending exception logs to EFRIS?')) {
+        return;
+    }
+
+    fetch('{% url "efris:upload_exception_logs" %}', {
+        method: 'POST',
+        headers: {
+            'X-CSRFToken': '{{ csrf_token }}',
+            'Content-Type': 'application/json'
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            alert(`Successfully uploaded ${data.logs_count} logs`);
+            location.reload();
+        } else {
+            alert('Upload failed: ' + data.error);
+        }
+    })
+    .catch(error => {
+        alert('Upload error: ' + error);
+    });
+}
+</script>
+{% endblock %}

@@ -1,0 +1,151 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}{{ category }} - System Dictionary{% endblock %}
+
+{% block breadcrumb_items %}
+<li class="breadcrumb-item"><a href="{% url 'user_dashboard' %}">Home</a></li>
+<li class="breadcrumb-item"><a href="{% url 'efris:dashboard' %}">EFRIS</a></li>
+<li class="breadcrumb-item"><a href="{% url 'efris:system_dictionary' %}">System Dictionary</a></li>
+<li class="breadcrumb-item active">{{ category }}</li>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row justify-content-center">
+        <div class="col-md-10">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <div>
+                    <h1 class="h2 mb-1">{{ category }}</h1>
+                    <p class="text-muted mb-0">System Dictionary Category Details</p>
+                </div>
+                <a href="{% url 'efris:system_dictionary' %}" class="btn btn-outline-secondary">
+                    <i class="bi bi-arrow-left"></i> Back to Dictionary
+                </a>
+            </div>
+
+            {% if is_list %}
+            <!-- List Type Data -->
+            <div class="card">
+                <div class="card-header bg-primary text-white">
+                    <h5 class="mb-0">
+                        <i class="bi bi-list-ul me-2"></i>
+                        {{ category }} ({{ category_data|length }} items)
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>#</th>
+                                    {% for key in category_data.0.keys %}
+                                    <th>{{ key|title }}</th>
+                                    {% endfor %}
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for item in category_data %}
+                                <tr>
+                                    <td>{{ forloop.counter }}</td>
+                                    {% for key, value in item.items %}
+                                    <td>
+                                        {% if key == 'value' or key == 'code' %}
+                                        <code>{{ value }}</code>
+                                        {% elif key == 'status' %}
+                                            {% if value == '101' %}
+                                            <span class="badge bg-success">Active</span>
+                                            {% else %}
+                                            <span class="badge bg-secondary">Inactive</span>
+                                            {% endif %}
+                                        {% elif key == 'requiredFill' %}
+                                            {% if value == '1' %}
+                                            <span class="badge bg-warning">Yes</span>
+                                            {% else %}
+                                            <span class="badge bg-secondary">No</span>
+                                            {% endif %}
+                                        {% else %}
+                                        {{ value|default:"-" }}
+                                        {% endif %}
+                                    </td>
+                                    {% endfor %}
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            {% elif is_dict %}
+            <!-- Dictionary Type Data -->
+            <div class="card">
+                <div class="card-header bg-success text-white">
+                    <h5 class="mb-0">
+                        <i class="bi bi-card-list me-2"></i>
+                        {{ category }} ({{ category_data.keys|length }} properties)
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Property</th>
+                                    <th>Value</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for key, value in category_data.items %}
+                                <tr>
+                                    <td><strong>{{ key|title }}</strong></td>
+                                    <td>
+                                        {% if value is dict %}
+                                        <pre class="mb-0">{{ value|pprint }}</pre>
+                                        {% elif value is list %}
+                                        <span class="badge bg-info">{{ value|length }} items</span>
+                                        {% else %}
+                                        {{ value }}
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            {% else %}
+            <!-- Unknown Type -->
+            <div class="card">
+                <div class="card-body">
+                    <div class="alert alert-warning">
+                        <i class="bi bi-exclamation-triangle me-2"></i>
+                        Unknown data type for this category
+                    </div>
+                    <pre>{{ category_data|pprint }}</pre>
+                </div>
+            </div>
+            {% endif %}
+
+            <!-- Raw JSON Data -->
+            <div class="card mt-4">
+                <div class="card-header">
+                    <button class="btn btn-sm btn-outline-secondary" type="button"
+                            data-bs-toggle="collapse" data-bs-target="#rawJson">
+                        <i class="bi bi-code-square"></i> View Raw JSON
+                    </button>
+                </div>
+                <div class="collapse" id="rawJson">
+                    <div class="card-body">
+                        <div class="bg-dark text-light p-3 rounded">
+                            <pre class="text-light mb-0">{{ category_data|pprint }}</pre>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

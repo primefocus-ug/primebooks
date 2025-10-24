@@ -1,0 +1,316 @@
+{% extends "services/base.html" %}
+
+{% block title %}Appointment {{ appointment.appointment_number }}{% endblock %}
+{% block page_title %}Appointment Details{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-lg-8">
+        <div class="card mb-4">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">Appointment #{{ appointment.appointment_number }}</h5>
+                <span class="badge status-{{ appointment.status }} fs-6">
+                    {{ appointment.get_status_display }}
+                </span>
+            </div>
+            <div class="card-body">
+                <div class="row mb-3">
+                    <div class="col-md-6">
+                        <h6 class="text-muted">SERVICE INFORMATION</h6>
+                        <p><strong>Service:</strong> {{ appointment.service.name }}</p>
+                        <p><strong>Category:</strong> {{ appointment.service.category.name|default:"N/A" }}</p>
+                        <p><strong>Duration:</strong> {{ appointment.duration_minutes }} minutes</p>
+                        {% if appointment.pricing_tier %}
+                        <p><strong>Pricing Tier:</strong> {{ appointment.pricing_tier.tier_name }}</p>
+                        {% endif %}
+                    </div>
+                    <div class="col-md-6">
+                        <h6 class="text-muted">SCHEDULING</h6>
+                        <p><strong>Date:</strong> {{ appointment.scheduled_date|date:"l, F d, Y" }}</p>
+                        <p><strong>Time:</strong> {{ appointment.scheduled_time|time:"g:i A" }}</p>
+                        <p><strong>Assigned Staff:</strong> {{ appointment.assigned_staff.get_full_name|default:"Not assigned" }}</p>
+                    </div>
+                </div>
+
+                <hr>
+
+                <div class="row mb-3">
+                    <div class="col-md-6">
+                        <h6 class="text-muted">CUSTOMER INFORMATION</h6>
+                        <p><strong>Name:</strong> {{ appointment.customer_name }}</p>
+                        <p><strong>Email:</strong> {{ appointment.customer_email|default:"N/A" }}</p>
+                        <p><strong>Phone:</strong> {{ appointment.customer_phone|default:"N/A" }}</p>
+                    </div>
+                    <div class="col-md-6">
+                        <h6 class="text-muted">PRICING</h6>
+                        <p><strong>Service Price:</strong> ${{ appointment.price }}</p>
+                        <p><strong>Discount:</strong> ${{ appointment.discount_amount }}</p>
+                        <p><strong>Tax:</strong> ${{ appointment.tax_amount }}</p>
+                        <h5 class="mt-3"><strong>Total:</strong> ${{ appointment.total_amount }}</h5>
+                    </div>
+                </div>
+
+                {% if appointment.notes %}
+                <hr>
+                <div class="mb-3">
+                    <h6 class="text-muted">NOTES</h6>
+                    <p>{{ appointment.notes }}</p>
+                </div>
+                {% endif %}
+
+                {% if appointment.internal_notes %}
+                <div class="mb-3">
+                    <h6 class="text-muted">INTERNAL NOTES</h6>
+                    <p>{{ appointment.internal_notes }}</p>
+                </div>
+                {% endif %}
+
+                {% if appointment.status == 'cancelled' and appointment.cancellation_reason %}
+                <div class="alert alert-danger">
+                    <strong>Cancellation Reason:</strong> {{ appointment.cancellation_reason }}
+                </div>
+                {% endif %}
+
+                <hr>
+
+                <div class="row">
+                    <div class="col-md-6">
+                        <small class="text-muted">
+                            <strong>Created:</strong> {{ appointment.created_at|date:"M d, Y g:i A" }}<br>
+                            <strong>By:</strong> {{ appointment.created_by.get_full_name|default:appointment.created_by.username }}
+                        </small>
+                    </div>
+                    <div class="col-md-6 text-end">
+                        <small class="text-muted">
+                            <strong>Last Updated:</strong> {{ appointment.updated_at|date:"M d, Y g:i A" }}
+                        </small>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Execution Details -->
+        {% if execution %}
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="fas fa-tasks"></i> Service Execution</h5>
+            </div>
+            <div class="card-body">
+                <p><strong>Execution #:</strong> {{ execution.execution_number }}</p>
+                <p><strong>Performed By:</strong> {{ execution.performed_by.get_full_name }}</p>
+                <p><strong>Start Time:</strong> {{ execution.start_time|date:"M d, Y g:i A" }}</p>
+                {% if execution.end_time %}
+                <p><strong>End Time:</strong> {{ execution.end_time|date:"M d, Y g:i A" }}</p>
+                <p><strong>Actual Duration:</strong> {{ execution.actual_duration_minutes }} minutes</p>
+                {% endif %}
+
+                {% if execution.work_description %}
+                <hr>
+                <h6>Work Description</h6>
+                <p>{{ execution.work_description }}</p>
+                {% endif %}
+
+                {% if execution.findings %}
+                <h6>Findings</h6>
+                <p>{{ execution.findings }}</p>
+                {% endif %}
+
+                {% if execution.recommendations %}
+                <h6>Recommendations</h6>
+                <p>{{ execution.recommendations }}</p>
+                {% endif %}
+
+                {% if execution.quality_rating %}
+                <hr>
+                <h6>Quality Rating</h6>
+                <div>
+                    {% for i in "12345" %}
+                        {% if forloop.counter <= execution.quality_rating %}
+                        <i class="fas fa-star text-warning"></i>
+                        {% else %}
+                        <i class="far fa-star text-warning"></i>
+                        {% endif %}
+                    {% endfor %}
+                </div>
+                {% endif %}
+
+                {% if execution.customer_feedback %}
+                <h6 class="mt-3">Customer Feedback</h6>
+                <p>{{ execution.customer_feedback }}</p>
+                {% endif %}
+
+                <a href="{% url 'services:execution_update' execution.pk %}" class="btn btn-primary mt-3">
+                    <i class="fas fa-edit"></i> Update Execution
+                </a>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+
+    <div class="col-lg-4">
+        <!-- Status Actions -->
+        <div class="card mb-3">
+            <div class="card-header">
+                <h6 class="mb-0">Actions</h6>
+            </div>
+            <div class="card-body">
+                {% if appointment.status == 'scheduled' %}
+                <button class="btn btn-success w-100 mb-2" onclick="updateStatus('confirmed')">
+                    <i class="fas fa-check"></i> Confirm Appointment
+                </button>
+                {% endif %}
+
+                {% if appointment.status in 'scheduled,confirmed' %}
+                <button class="btn btn-primary w-100 mb-2" onclick="updateStatus('in_progress')">
+                    <i class="fas fa-play"></i> Start Service
+                </button>
+                {% endif %}
+
+                {% if appointment.status == 'in_progress' %}
+                <button class="btn btn-success w-100 mb-2" onclick="updateStatus('completed')">
+                    <i class="fas fa-check-double"></i> Complete Service
+                </button>
+                {% endif %}
+
+                {% if appointment.status not in 'completed,cancelled' %}
+                <button class="btn btn-danger w-100 mb-2" onclick="cancelAppointment()">
+                    <i class="fas fa-times"></i> Cancel Appointment
+                </button>
+                {% endif %}
+
+                <hr>
+
+                <a href="{% url 'services:appointment_list' %}" class="btn btn-secondary w-100">
+                    <i class="fas fa-arrow-left"></i> Back to List
+                </a>
+            </div>
+        </div>
+
+        <!-- Timeline -->
+        <div class="card">
+            <div class="card-header">
+                <h6 class="mb-0"><i class="fas fa-history"></i> Timeline</h6>
+            </div>
+            <div class="card-body">
+                <div class="timeline">
+                    <div class="timeline-item">
+                        <i class="fas fa-plus-circle text-primary"></i>
+                        <div>
+                            <strong>Created</strong><br>
+                            <small>{{ appointment.created_at|date:"M d, Y g:i A" }}</small>
+                        </div>
+                    </div>
+
+                    {% if appointment.status != 'scheduled' %}
+                    <div class="timeline-item">
+                        <i class="fas fa-check-circle text-success"></i>
+                        <div>
+                            <strong>{{ appointment.get_status_display }}</strong><br>
+                            <small>{{ appointment.updated_at|date:"M d, Y g:i A" }}</small>
+                        </div>
+                    </div>
+                    {% endif %}
+
+                    {% if appointment.actual_start_time %}
+                    <div class="timeline-item">
+                        <i class="fas fa-play-circle text-info"></i>
+                        <div>
+                            <strong>Service Started</strong><br>
+                            <small>{{ appointment.actual_start_time|date:"M d, Y g:i A" }}</small>
+                        </div>
+                    </div>
+                    {% endif %}
+
+                    {% if appointment.actual_end_time %}
+                    <div class="timeline-item">
+                        <i class="fas fa-check-double text-success"></i>
+                        <div>
+                            <strong>Service Completed</strong><br>
+                            <small>{{ appointment.actual_end_time|date:"M d, Y g:i A" }}</small>
+                        </div>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+    .timeline {
+        position: relative;
+        padding-left: 30px;
+    }
+    .timeline-item {
+        position: relative;
+        padding-bottom: 20px;
+        border-left: 2px solid #e2e8f0;
+    }
+    .timeline-item:last-child {
+        border-left: none;
+    }
+    .timeline-item i {
+        position: absolute;
+        left: -10px;
+        background: white;
+        font-size: 18px;
+    }
+    .timeline-item div {
+        margin-left: 20px;
+    }
+</style>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function updateStatus(newStatus) {
+    if (!confirm('Are you sure you want to update the appointment status?')) {
+        return;
+    }
+
+    $.ajax({
+        url: '{% url "services:appointment_update_status" appointment.pk %}',
+        method: 'POST',
+        data: {
+            status: newStatus,
+            csrfmiddlewaretoken: '{{ csrf_token }}'
+        },
+        success: function(response) {
+            if (response.success) {
+                alert(response.message);
+                location.reload();
+            }
+        },
+        error: function() {
+            alert('Error updating appointment status');
+        }
+    });
+}
+
+function cancelAppointment() {
+    const reason = prompt('Please enter cancellation reason:');
+    if (!reason) return;
+
+    $.ajax({
+        url: '{% url "services:appointment_update_status" appointment.pk %}',
+        method: 'POST',
+        data: {
+            status: 'cancelled',
+            reason: reason,
+            csrfmiddlewaretoken: '{{ csrf_token }}'
+        },
+        success: function(response) {
+            if (response.success) {
+                alert('Appointment cancelled successfully');
+                location.reload();
+            }
+        },
+        error: function() {
+            alert('Error cancelling appointment');
+        }
+    });
+}
+</script>
+{% endblock %}

@@ -1,0 +1,177 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block content %}
+
+<style>
+  table {
+    border-collapse: collapse;
+    width: 100%;
+    margin-bottom: 2rem;
+    font-family: Arial, sans-serif;
+  }
+  th, td {
+    border: 1px solid #ccc;
+    padding: 8px;
+  }
+  th {
+    background-color: #f4f4f4;
+  }
+  tr:hover {
+    background-color: #f9f9f9;
+  }
+  button {
+    padding: 6px 12px;
+    background-color: #007bff;
+    border: none;
+    color: white;
+    cursor: pointer;
+    border-radius: 4px;
+  }
+  button:hover {
+    background-color: #0056b3;
+  }
+  .error {
+    color: red;
+    margin-top: 10px;
+  }
+</style>
+
+<h2>{% if user %}Welcome, {{ user.username }}{% endif %}</h2>
+
+<h3>Store Form</h3>
+<form id="store-form">
+  {% csrf_token %}
+  <table>
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th>Email</th>
+        <th>Phone</th>
+        <th>Active</th>
+        <th>Action</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><input type="text" id="name" required></td>
+        <td><input type="email" id="email"></td>
+        <td><input type="text" id="phone"></td>
+        <td><input type="checkbox" id="is_active" checked></td>
+        <td>
+          <button type="submit">Save</button>
+          <input type="hidden" id="store-id">
+        </td>
+      </tr>
+    </tbody>
+  </table>
+</form>
+
+<div class="error" id="form-error"></div>
+
+<h3>All Stores</h3>
+<table id="store-table">
+  <thead>
+    <tr>
+      <th>Name</th>
+      <th>Email</th>
+      <th>Phone</th>
+      <th>Active</th>
+      <th>Edit</th>
+    </tr>
+  </thead>
+  <tbody></tbody>
+</table>
+
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  const storeForm = document.getElementById('store-form');
+  const errorDiv = document.getElementById('form-error');
+  const storeTableBody = document.querySelector('#store-table tbody');
+  const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
+
+  const fields = {
+    name: document.getElementById('name'),
+    email: document.getElementById('email'),
+    phone: document.getElementById('phone'),
+    is_active: document.getElementById('is_active'),
+    id: document.getElementById('store-id')
+  };
+
+  function loadStores() {
+    fetch('/api/stores/')
+      .then(res => {
+        if (!res.ok) throw new Error('Could not load stores');
+        return res.json();
+      })
+      .then(data => {
+        storeTableBody.innerHTML = '';
+        data.forEach(store => {
+          const row = document.createElement('tr');
+          row.innerHTML = `
+            <td>${store.name}</td>
+            <td>${store.email || ''}</td>
+            <td>${store.phone || ''}</td>
+            <td>${store.is_active ? 'Yes' : 'No'}</td>
+            <td><button class="edit-btn" data-id="${store.id}">Edit</button></td>
+          `;
+          row.querySelector('.edit-btn').addEventListener('click', () => {
+            fields.name.value = store.name;
+            fields.email.value = store.email || '';
+            fields.phone.value = store.phone || '';
+            fields.is_active.checked = store.is_active;
+            fields.id.value = store.id;
+            errorDiv.textContent = '';
+          });
+          storeTableBody.appendChild(row);
+        });
+      })
+      .catch(err => {
+        errorDiv.textContent = err.message;
+      });
+  }
+
+  storeForm.addEventListener('submit', e => {
+    e.preventDefault();
+    errorDiv.textContent = '';
+
+    const id = fields.id.value;
+    const url = id ? `/api/stores/${id}/` : '/api/stores/';
+    const method = id ? 'PUT' : 'POST';
+
+    fetch(url, {
+      method: method,
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRFToken': csrfToken
+      },
+      body: JSON.stringify({
+        name: fields.name.value,
+        email: fields.email.value,
+        phone: fields.phone.value,
+        is_active: fields.is_active.checked
+      })
+    })
+    .then(res => {
+      if (!res.ok) {
+        return res.json().then(err => {
+          throw new Error(Object.values(err)[0]);
+        });
+      }
+      return res.json();
+    })
+    .then(() => {
+      storeForm.reset();
+      fields.id.value = '';
+      loadStores();
+    })
+    .catch(err => {
+      errorDiv.textContent = err.message || 'Something went wrong.';
+    });
+  });
+
+  loadStores();
+});
+</script>
+
+{% endblock %}

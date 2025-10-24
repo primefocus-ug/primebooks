@@ -1,0 +1,178 @@
+{% extends "efris/base.html" %}
+{% load static %}
+
+{% block efris_content %}
+<div class="row">
+    <div class="col-md-8">
+        <div class="card efris-card">
+            <div class="card-header bg-white">
+                <h5 class="card-title mb-0">Upload Certificate Public Key</h5>
+            </div>
+            <div class="card-body">
+                <form method="post" enctype="multipart/form-data" id="certificateForm">
+                    {% csrf_token %}
+
+                    <div class="mb-4">
+                        <label for="certificate_file" class="form-label">
+                            Certificate File <span class="text-danger">*</span>
+                        </label>
+                        <input type="file" class="form-control" id="certificate_file"
+                               name="certificate_file" accept=".crt,.cer" required>
+                        <small class="form-text text-muted">
+                            Accepted formats: .crt, .cer
+                        </small>
+                    </div>
+
+                    <div class="alert alert-info">
+                        <i class="fas fa-info-circle"></i>
+                        <strong>Important:</strong> Ensure the certificate file is valid and issued
+                        by a recognized certificate authority.
+                    </div>
+
+                    <div class="d-grid gap-2">
+                        <button type="submit" class="btn btn-primary btn-lg">
+                            <i class="fas fa-upload"></i> Upload Certificate
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-4">
+        <div class="card efris-card">
+            <div class="card-header bg-white">
+                <h5 class="card-title mb-0">Certificate Guidelines</h5>
+            </div>
+            <div class="card-body">
+                <h6>Accepted File Types:</h6>
+                <ul class="small">
+                    <li>.crt (Certificate)</li>
+                    <li>.cer (Certificate)</li>
+                </ul>
+
+                <hr>
+
+                <h6>Before Uploading:</h6>
+                <ol class="small">
+                    <li>Verify certificate validity</li>
+                    <li>Check expiration date</li>
+                    <li>Ensure proper encoding</li>
+                    <li>Confirm issuing authority</li>
+                </ol>
+
+                <hr>
+
+                <h6>Security Notes:</h6>
+                <ul class="small">
+                    <li>Only upload trusted certificates</li>
+                    <li>Keep private keys secure</li>
+                    <li>Monitor certificate expiration</li>
+                    <li>Update certificates regularly</li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="card efris-card mt-3">
+            <div class="card-header bg-white">
+                <h5 class="card-title mb-0">Need Help?</h5>
+            </div>
+            <div class="card-body">
+                <p class="small">
+                    If you encounter issues uploading your certificate,
+                    please contact EFRIS support or your system administrator.
+                </p>
+                <div class="d-grid">
+                    <a href="#" class="btn btn-outline-secondary btn-sm">
+                        <i class="fas fa-question-circle"></i> View Documentation
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row mt-4">
+    <div class="col-md-12">
+        <div class="card efris-card">
+            <div class="card-header bg-white">
+                <h5 class="card-title mb-0">Common Certificate Issues</h5>
+            </div>
+            <div class="card-body">
+                <div class="accordion" id="certificateFAQ">
+                    <div class="accordion-item">
+                        <h2 class="accordion-header" id="headingOne">
+                            <button class="accordion-button collapsed" type="button"
+                                    data-bs-toggle="collapse" data-bs-target="#collapseOne">
+                                Invalid Certificate Format
+                            </button>
+                        </h2>
+                        <div id="collapseOne" class="accordion-collapse collapse"
+                             data-bs-parent="#certificateFAQ">
+                            <div class="accordion-body">
+                                Ensure your certificate is in .crt or .cer format.
+                                Convert other formats using OpenSSL or similar tools.
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="accordion-item">
+                        <h2 class="accordion-header" id="headingTwo">
+                            <button class="accordion-button collapsed" type="button"
+                                    data-bs-toggle="collapse" data-bs-target="#collapseTwo">
+                                Certificate Expired
+                            </button>
+                        </h2>
+                        <div id="collapseTwo" class="accordion-collapse collapse"
+                             data-bs-parent="#certificateFAQ">
+                            <div class="accordion-body">
+                                Expired certificates will be rejected. Request a new certificate
+                                from your certificate authority before uploading.
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="accordion-item">
+                        <h2 class="accordion-header" id="headingThree">
+                            <button class="accordion-button collapsed" type="button"
+                                    data-bs-toggle="collapse" data-bs-target="#collapseThree">
+                                Upload Failed
+                            </button>
+                        </h2>
+                        <div id="collapseThree" class="accordion-collapse collapse"
+                             data-bs-parent="#certificateFAQ">
+                            <div class="accordion-body">
+                                Check your internet connection and file size. Ensure the file
+                                is not corrupted and retry the upload.
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.getElementById('certificateForm').addEventListener('submit', function(e) {
+    const fileInput = document.getElementById('certificate_file');
+    const file = fileInput.files[0];
+
+    if (file) {
+        const fileName = file.name.toLowerCase();
+        if (!fileName.endsWith('.crt') && !fileName.endsWith('.cer')) {
+            e.preventDefault();
+            alert('Please select a valid certificate file (.crt or .cer)');
+            return false;
+        }
+
+        // Show loading indicator
+        const submitBtn = this.querySelector('button[type="submit"]');
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Uploading...';
+    }
+});
+</script>
+{% endblock %}

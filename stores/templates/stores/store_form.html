@@ -1,0 +1,785 @@
+<!-- templates/stores/store_form.html -->
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}
+    {% if object %}Edit {{ object.name }}{% else %}Add New Store{% endif %} | Prime Book
+
+{% endblock %}
+
+{% block page_header %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h1 class="h3 mb-1">
+            {% if object %}
+                <i class="bi bi-pencil me-2"></i>Edit Store: {{ object.name }}
+            {% else %}
+                <i class="bi bi-plus-circle me-2"></i>Add New Store
+            {% endif %}
+        </h1>
+        <p class="text-muted mb-0">
+            {% if object %}
+                Update store information and settings
+            {% else %}
+                Create a new store location
+            {% endif %}
+        </p>
+    </div>
+    <a href="{% url 'stores:store_list' %}" class="btn btn-outline-secondary">
+        <i class="bi bi-arrow-left me-1"></i>Back to List
+    </a>
+</div>
+{% endblock %}
+
+{% block content %}
+<form method="post" enctype="multipart/form-data" id="storeForm">
+    {% csrf_token %}
+
+    <!-- Basic Information Section -->
+    <div class="form-section">
+        <h5 class="section-header">
+            <i class="bi bi-info-circle me-2"></i>Basic Information
+        </h5>
+        <div class="form-content">
+            <div class="help-text">
+                <i class="bi bi-lightbulb me-2"></i>
+                <strong>Store Setup:</strong> Enter the basic details for your store location.
+            </div>
+            <div class="row">
+                {% if not form.company.field.disabled %}
+                <div class="col-md-6 mb-3">
+                    <label for="{{ form.company.id_for_label }}" class="form-label">Company *</label>
+                    {{ form.company }}
+                    {% if form.company.errors %}
+                        <div class="text-danger small mt-1">{{ form.company.errors.0 }}</div>
+                    {% endif %}
+                </div>
+                {% else %}
+                <input type="hidden" name="company" value="{{ request.tenant.id }}">
+                {% endif %}
+                <div class="col-md-6 mb-3">
+                    <label for="{{ form.name.id_for_label }}" class="form-label">Store Name *</label>
+                    {{ form.name }}
+                    {% if form.name.errors %}
+                        <div class="text-danger small mt-1">{{ form.name.errors.0 }}</div>
+                    {% endif %}
+                </div>
+            </div>
+            <div class="row">
+                <div class="col-md-6 mb-3">
+                    <label for="{{ form.code.id_for_label }}" class="form-label">Store Code</label>
+                    {{ form.code }}
+                    <div class="form-text">Auto-generated if left blank</div>
+                    {% if form.code.errors %}
+                        <div class="text-danger small mt-1">{{ form.code.errors.0 }}</div>
+                    {% endif %}
+                </div>
+                <div class="col-md-6 mb-3">
+                    <label for="{{ form.region.id_for_label }}" class="form-label">Region</label>
+                    {{ form.region }}
+                    <datalist id="regions_datalist">
+                        <option value="Central Region">
+                        <option value="Eastern Region">
+                        <option value="Northern Region">
+                        <option value="Western Region">
+                        <option value="Kampala">
+                        <option value="Wakiso">
+                        <option value="Mukono">
+                    </datalist>
+                    {% if form.region.errors %}
+                        <div class="text-danger small mt-1">{{ form.region.errors.0 }}</div>
+                    {% endif %}
+                </div>
+            </div>
+            <div class="mb-3">
+                <label for="{{ form.physical_address.id_for_label }}" class="form-label">Physical Address *</label>
+                {{ form.physical_address }}
+                {% if form.physical_address.errors %}
+                    <div class="text-danger small mt-1">{{ form.physical_address.errors.0 }}</div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Location Information Section - ENHANCED -->
+    <div class="form-section">
+        <h5 class="section-header">
+            <i class="bi bi-geo-alt me-2"></i>Location & GPS Coordinates
+        </h5>
+        <div class="form-content">
+            <div class="alert alert-info">
+                <i class="bi bi-info-circle me-2"></i>
+                <strong>Easy Setup:</strong> Choose any method below to set your store location. No technical knowledge required!
+            </div>
+
+            <!-- Coordinate Display -->
+            <div class="coordinate-display" id="coordinateDisplay" style="display: none;">
+                <h6><i class="bi bi-pin-map-fill me-2"></i>Current Coordinates</h6>
+                <p class="mb-1"><strong>Latitude:</strong> <span id="displayLat">Not set</span></p>
+                <p class="mb-1"><strong>Longitude:</strong> <span id="displayLng">Not set</span></p>
+                <p class="mb-0 small text-muted">Location: <span id="displayLocation">Unknown</span></p>
+            </div>
+
+            <!-- Location Setting Options -->
+            <div class="location-options">
+                <!-- Option 1: Use My Current Location -->
+                <div class="location-option-card" id="useCurrentLocation">
+                    <i class="bi bi-crosshair"></i>
+                    <h6>Use My Location</h6>
+                    <p>Get GPS from your device</p>
+                </div>
+
+                <!-- Option 2: Search Address -->
+                <div class="location-option-card" id="searchAddress">
+                    <i class="bi bi-search"></i>
+                    <h6>Search Address</h6>
+                    <p>Find location by address</p>
+                </div>
+
+                <!-- Option 3: Click on Map -->
+                <div class="location-option-card" id="clickOnMap">
+                    <i class="bi bi-map"></i>
+                    <h6>Click on Map</h6>
+                    <p>Point and click location</p>
+                </div>
+
+                <!-- Option 4: Enter Manually -->
+                <div class="location-option-card" id="enterManually">
+                    <i class="bi bi-keyboard"></i>
+                    <h6>Enter Manually</h6>
+                    <p>Type coordinates directly</p>
+                </div>
+            </div>
+
+            <!-- Search Address Panel -->
+            <div id="searchAddressPanel" style="display: none;">
+                <div class="card mb-3">
+                    <div class="card-body">
+                        <h6 class="card-title"><i class="bi bi-search me-2"></i>Search for Location</h6>
+                        <div class="input-group mb-2">
+                            {{ form.geocode_address }}
+                            <button type="button" class="btn btn-primary" id="geocodeBtn">
+                                <i class="bi bi-search"></i> Find Coordinates
+                                <span class="spinner" id="geocodeSpinner"></span>
+                            </button>
+                        </div>
+                        <small class="text-muted">
+                            <i class="bi bi-lightbulb me-1"></i>
+                            Tip: Include landmarks for better results (e.g., "Next to City Mall, Kampala Road")
+                        </small>
+                        <div id="geocodeResults" class="mt-2"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Interactive Map Panel -->
+            <div id="mapPanel" style="display: none;">
+                <div class="map-instructions">
+                    <i class="bi bi-hand-index me-2"></i>
+                    <strong>Instructions:</strong> Click anywhere on the map to set the store location. You can zoom and pan to find the exact spot.
+                </div>
+                <div id="locationMap"></div>
+            </div>
+
+            <!-- Manual Entry Panel -->
+            <div id="manualEntryPanel" style="display: none;">
+                <div class="card mb-3">
+                    <div class="card-body">
+                        <h6 class="card-title"><i class="bi bi-keyboard me-2"></i>Enter Coordinates Manually</h6>
+                        <p class="small text-muted">You can get coordinates from Google Maps: Right-click on location → Click the coordinates to copy</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Actual Form Fields (Always visible but can be readonly) -->
+            <div class="row">
+                <div class="col-md-4 mb-3">
+                    <label for="{{ form.latitude.id_for_label }}" class="form-label">Latitude</label>
+                    <div class="input-group">
+                        {{ form.latitude }}
+                        <button type="button" class="btn btn-outline-secondary btn-sm" id="clearCoordinates" title="Clear coordinates">
+                            <i class="bi bi-x"></i>
+                        </button>
+                    </div>
+                    {% if form.latitude.errors %}
+                        <div class="text-danger small mt-1">{{ form.latitude.errors.0 }}</div>
+                    {% endif %}
+                </div>
+                <div class="col-md-4 mb-3">
+                    <label for="{{ form.longitude.id_for_label }}" class="form-label">Longitude</label>
+                    {{ form.longitude }}
+                    {% if form.longitude.errors %}
+                        <div class="text-danger small mt-1">{{ form.longitude.errors.0 }}</div>
+                    {% endif %}
+                </div>
+                <div class="col-md-4 mb-3">
+                    <label for="{{ form.location_gps.id_for_label }}" class="form-label">GPS String</label>
+                    {{ form.location_gps }}
+                    <small class="form-text text-muted">Auto-filled</small>
+                </div>
+            </div>
+
+            {% if object.latitude and object.longitude %}
+            <div class="alert alert-success">
+                <i class="bi bi-check-circle me-2"></i>
+                This store already has coordinates set. You can update them using the methods above.
+                <a href="{{ object.get_map_url }}" target="_blank" class="alert-link">
+                    <i class="bi bi-box-arrow-up-right"></i> View on Google Maps
+                </a>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Contact Information Section -->
+    <div class="form-section">
+        <h5 class="section-header">
+            <i class="bi bi-telephone me-2"></i>Contact Information
+        </h5>
+        <div class="form-content">
+            <div class="row">
+                <div class="col-md-6 mb-3">
+                    <label for="{{ form.phone.id_for_label }}" class="form-label">Primary Phone</label>
+                    {{ form.phone }}
+                    <div class="form-text">Include country code (e.g., +256XXXXXXXXX)</div>
+                    {% if form.phone.errors %}
+                        <div class="text-danger small mt-1">{{ form.phone.errors.0 }}</div>
+                    {% endif %}
+                </div>
+                <div class="col-md-6 mb-3">
+                    <label for="{{ form.secondary_phone.id_for_label }}" class="form-label">Secondary Phone</label>
+                    {{ form.secondary_phone }}
+                    {% if form.secondary_phone.errors %}
+                        <div class="text-danger small mt-1">{{ form.secondary_phone.errors.0 }}</div>
+                    {% endif %}
+                </div>
+            </div>
+            <div class="mb-3">
+                <label for="{{ form.email.id_for_label }}" class="form-label">Email Address</label>
+                {{ form.email }}
+                {% if form.email.errors %}
+                    <div class="text-danger small mt-1">{{ form.email.errors.0 }}</div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- EFRIS Configuration Section -->
+    <div class="form-section">
+        <h5 class="section-header">
+            <i class="bi bi-receipt me-2"></i>EFRIS Configuration
+        </h5>
+        <div class="form-content">
+            <div class="row">
+                <div class="col-md-8 mb-3">
+                    <label for="{{ form.efris_device_number.id_for_label }}" class="form-label">EFRIS Device Number</label>
+                    {{ form.efris_device_number }}
+                    {% if form.efris_device_number.errors %}
+                        <div class="text-danger small mt-1">{{ form.efris_device_number.errors.0 }}</div>
+                    {% endif %}
+                </div>
+                <div class="col-md-4 mb-3">
+                    <label class="form-label d-block">EFRIS Status</label>
+                    <div class="form-check">
+                        {{ form.efris_enabled }}
+                        <label class="form-check-label" for="{{ form.efris_enabled.id_for_label }}">
+                            Enable EFRIS
+                        </label>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Additional Settings -->
+    <div class="form-section">
+        <h5 class="section-header">
+            <i class="bi bi-gear me-2"></i>Additional Settings
+        </h5>
+        <div class="form-content">
+            <div class="row">
+                <div class="col-md-6 mb-3">
+                    <label for="{{ form.store_type.id_for_label }}" class="form-label">Store Type</label>
+                    {{ form.store_type }}
+                </div>
+                <div class="col-md-6 mb-3">
+                    <label for="{{ form.logo.id_for_label }}" class="form-label">Store Logo</label>
+                    {{ form.logo }}
+                </div>
+            </div>
+            <div class="row">
+                <div class="col-md-6 mb-3">
+                    <div class="form-check">
+                        {{ form.is_main_branch }}
+                        <label class="form-check-label" for="{{ form.is_main_branch.id_for_label }}">
+                            This is the main branch
+                        </label>
+                    </div>
+                </div>
+                <div class="col-md-6 mb-3">
+                    <div class="form-check">
+                        {{ form.is_active }}
+                        <label class="form-check-label" for="{{ form.is_active.id_for_label }}">
+                            Store is active
+                        </label>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Form Actions -->
+    <div class="d-flex justify-content-between mt-4 mb-5">
+        <a href="{% url 'stores:store_list' %}" class="btn btn-outline-secondary btn-lg">
+            <i class="bi bi-x-circle me-1"></i>Cancel
+        </a>
+        <button type="submit" class="btn btn-primary btn-lg">
+            <i class="bi bi-check-circle me-1"></i>
+            {% if object %}Update Store{% else %}Create Store{% endif %}
+        </button>
+    </div>
+</form>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const latField = document.getElementById('latitude_field');
+    const lngField = document.getElementById('longitude_field');
+    const gpsField = document.getElementById('{{ form.location_gps.id_for_label }}');
+    const regionField = document.getElementById('region_field');
+    const addressField = document.getElementById('physical_address_field');
+    const geocodeAddressField = document.getElementById('{{ form.geocode_address.id_for_label }}');
+
+    let map, marker;
+    let currentPanel = null;
+
+    // Initialize coordinate display if coords exist
+    function updateCoordinateDisplay() {
+        const lat = latField.value;
+        const lng = lngField.value;
+        const display = document.getElementById('coordinateDisplay');
+
+        if (lat && lng) {
+            display.style.display = 'block';
+            display.classList.add('success');
+            document.getElementById('displayLat').textContent = parseFloat(lat).toFixed(6);
+            document.getElementById('displayLng').textContent = parseFloat(lng).toFixed(6);
+
+            // Reverse geocode to get location name
+            reverseGeocode(lat, lng);
+        } else {
+            display.style.display = 'none';
+        }
+    }
+
+    // Update GPS string when coordinates change
+    function updateGPSString() {
+        const lat = latField.value;
+        const lng = lngField.value;
+        if (lat && lng) {
+            gpsField.value = `${lat}, ${lng}`;
+        }
+    }
+
+    // Set coordinates
+    function setCoordinates(lat, lng, source = '') {
+        latField.value = parseFloat(lat).toFixed(6);
+        lngField.value = parseFloat(lng).toFixed(6);
+        updateGPSString();
+        updateCoordinateDisplay();
+
+        // Update map marker if map exists
+        if (map && marker) {
+            marker.setLatLng([lat, lng]);
+            map.setView([lat, lng], 15);
+        }
+
+        // Show success message
+        showNotification('success', `Coordinates set successfully! ${source}`);
+    }
+
+    // Clear coordinates
+    document.getElementById('clearCoordinates').addEventListener('click', function() {
+        if (confirm('Are you sure you want to clear the coordinates?')) {
+            latField.value = '';
+            lngField.value = '';
+            gpsField.value = '';
+            updateCoordinateDisplay();
+            if (map && marker) {
+                map.removeLayer(marker);
+                marker = null;
+            }
+            showNotification('info', 'Coordinates cleared');
+        }
+    });
+
+    // Panel management
+    function showPanel(panelId) {
+        // Hide all panels
+        document.querySelectorAll('[id$="Panel"]').forEach(panel => {
+            panel.style.display = 'none';
+        });
+
+        // Show selected panel
+        if (panelId) {
+            document.getElementById(panelId).style.display = 'block';
+            currentPanel = panelId;
+        }
+    }
+
+    // Option 1: Use Current Location
+    document.getElementById('useCurrentLocation').addEventListener('click', function() {
+        if ("geolocation" in navigator) {
+            this.style.opacity = '0.6';
+            this.innerHTML = '<i class="bi bi-arrow-clockwise spinning"></i><h6>Getting location...</h6><p>Please wait</p>';
+
+            navigator.geolocation.getCurrentPosition(
+                function(position) {
+                    const lat = position.coords.latitude;
+                    const lng = position.coords.longitude;
+                    setCoordinates(lat, lng, 'from your device');
+                    document.getElementById('useCurrentLocation').style.opacity = '1';
+                    document.getElementById('useCurrentLocation').innerHTML = '<i class="bi bi-check-circle text-success"></i><h6>Location Set!</h6><p>Using your GPS</p>';
+                },
+                function(error) {
+                    console.error('Geolocation error:', error);
+                    showNotification('error', 'Could not get your location. Please enable location services or try another method.');
+                    document.getElementById('useCurrentLocation').style.opacity = '1';
+                    document.getElementById('useCurrentLocation').innerHTML = '<i class="bi bi-crosshair"></i><h6>Use My Location</h6><p>Get GPS from your device</p>';
+                },
+                {enableHighAccuracy: true, timeout: 10000, maximumAge: 0}
+            );
+        } else {
+            showNotification('error', 'Geolocation is not supported by your browser');
+        }
+    });
+
+    // Option 2: Search Address
+    document.getElementById('searchAddress').addEventListener('click', function() {
+        showPanel('searchAddressPanel');
+
+        // Pre-fill with physical address if available
+        if (!geocodeAddressField.value && addressField.value) {
+            geocodeAddressField.value = addressField.value;
+        }
+
+        geocodeAddressField.focus();
+    });
+
+    // Geocode button click
+    document.getElementById('geocodeBtn').addEventListener('click', function() {
+        const address = geocodeAddressField.value.trim();
+
+        if (!address) {
+            showNotification('warning', 'Please enter an address to search');
+            return;
+        }
+
+        // Show spinner
+        document.getElementById('geocodeSpinner').style.display = 'inline-block';
+        this.disabled = true;
+
+        // Call geocoding API
+        const searchQuery = address + ', Uganda';  // Add country for better results
+
+        fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(searchQuery)}&format=json&limit=5&addressdetails=1`, {
+            headers: {
+                'User-Agent': 'PrimeBookStoreApp/1.0'
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            document.getElementById('geocodeSpinner').style.display = 'none';
+            document.getElementById('geocodeBtn').disabled = false;
+
+            if (data && data.length > 0) {
+                displayGeocodeResults(data);
+            } else {
+                showNotification('warning', 'No results found. Try being more specific with the address.');
+            }
+        })
+        .catch(error => {
+            console.error('Geocoding error:', error);
+            document.getElementById('geocodeSpinner').style.display = 'none';
+            document.getElementById('geocodeBtn').disabled = false;
+            showNotification('error', 'Error searching for address. Please try again.');
+        });
+    });
+
+    // Display geocoding results
+    function displayGeocodeResults(results) {
+        const resultsDiv = document.getElementById('geocodeResults');
+        resultsDiv.innerHTML = '<h6 class="mt-3">Select a location:</h6>';
+
+        results.forEach((result, index) => {
+            const resultCard = document.createElement('div');
+            resultCard.className = 'card mb-2 cursor-pointer';
+            resultCard.style.cursor = 'pointer';
+            resultCard.innerHTML = `
+                <div class="card-body">
+                    <h6 class="card-title mb-1">
+                        <i class="bi bi-pin-map me-2"></i>${result.display_name}
+                    </h6>
+                    <small class="text-muted">
+                        <i class="bi bi-geo-alt"></i> ${parseFloat(result.lat).toFixed(6)}, ${parseFloat(result.lon).toFixed(6)}
+                    </small>
+                </div>
+            `;
+
+            resultCard.addEventListener('click', function() {
+                setCoordinates(result.lat, result.lon, 'from address search');
+
+                // Update region if available
+                if (result.address && result.address.state && !regionField.value) {
+                    regionField.value = result.address.state;
+                }
+
+                showPanel(null);
+                resultsDiv.innerHTML = '';
+            });
+
+            resultsDiv.appendChild(resultCard);
+        });
+    }
+
+    // Option 3: Click on Map
+    document.getElementById('clickOnMap').addEventListener('click', function() {
+        showPanel('mapPanel');
+
+        // Initialize map if not already done
+        if (!map) {
+            initializeMap();
+        }
+    });
+
+    // Initialize Leaflet map
+    function initializeMap() {
+        const existingLat = latField.value || 0.3476;  // Default to Kampala
+        const existingLng = lngField.value || 32.5825;
+
+        map = L.map('locationMap').setView([existingLat, existingLng], 13);
+
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '&copy; OpenStreetMap contributors',
+            maxZoom: 19
+        }).addTo(map);
+
+        // Add existing marker if coordinates exist
+        if (latField.value && lngField.value) {
+            marker = L.marker([latField.value, lngField.value], {
+                draggable: true
+            }).addTo(map);
+
+            marker.on('dragend', function(e) {
+                const pos = marker.getLatLng();
+                setCoordinates(pos.lat, pos.lng, 'from map marker drag');
+            });
+        }
+
+        // Click on map to set location
+        map.on('click', function(e) {
+            const lat = e.latlng.lat;
+            const lng = e.latlng.lng;
+
+            if (marker) {
+                marker.setLatLng([lat, lng]);
+            } else {
+                marker = L.marker([lat, lng], {
+                    draggable: true
+                }).addTo(map);
+
+                marker.on('dragend', function(e) {
+                    const pos = marker.getLatLng();
+                    setCoordinates(pos.lat, pos.lng, 'from map marker drag');
+                });
+            }
+
+            setCoordinates(lat, lng, 'from map click');
+        });
+    }
+
+    // Option 4: Enter Manually
+    document.getElementById('enterManually').addEventListener('click', function() {
+        showPanel('manualEntryPanel');
+        latField.removeAttribute('readonly');
+        lngField.removeAttribute('readonly');
+        latField.focus();
+    });
+
+    // Listen to manual coordinate changes
+    latField.addEventListener('change', updateCoordinateDisplay);
+    lngField.addEventListener('change', updateCoordinateDisplay);
+    latField.addEventListener('change', updateGPSString);
+    lngField.addEventListener('change', updateGPSString);
+
+    // Reverse geocode to get location name
+    function reverseGeocode(lat, lng) {
+        fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json`, {
+            headers: {
+                'User-Agent': 'PrimeBookStoreApp/1.0'
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data && data.display_name) {
+                document.getElementById('displayLocation').textContent = data.display_name;
+
+                // Auto-fill region if empty
+                if (data.address && data.address.state && !regionField.value) {
+                    regionField.value = data.address.state;
+                }
+            }
+        })
+        .catch(error => console.error('Reverse geocoding error:', error));
+    }
+
+    // Notification helper
+    function showNotification(type, message) {
+        const alertClass = {
+            'success': 'alert-success',
+            'error': 'alert-danger',
+            'warning': 'alert-warning',
+            'info': 'alert-info'
+        }[type] || 'alert-info';
+
+        const icon = {
+            'success': 'bi-check-circle',
+            'error': 'bi-x-circle',
+            'warning': 'bi-exclamation-triangle',
+            'info': 'bi-info-circle'
+        }[type] || 'bi-info-circle';
+
+        const notification = document.createElement('div');
+        notification.className = `alert ${alertClass} alert-dismissible fade show position-fixed`;
+        notification.style.cssText = 'top: 20px; right: 20px; z-index: 9999; min-width: 300px;';
+        notification.innerHTML = `
+            <i class="bi ${icon} me-2"></i>${message}
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        `;
+
+        document.body.appendChild(notification);
+
+        setTimeout(() => {
+            notification.remove();
+        }, 5000);
+    }
+
+    // Initialize display on page load
+    updateCoordinateDisplay();
+
+    // Auto-copy physical address to geocode field when it changes
+    addressField.addEventListener('blur', function() {
+        if (!geocodeAddressField.value && this.value) {
+            geocodeAddressField.value = this.value;
+        }
+    });
+});
+</script>
+{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<style>
+.form-section {
+    background: white;
+    border-radius: var(--border-radius);
+    box-shadow: var(--box-shadow);
+    margin-bottom: 1.5rem;
+}
+.section-header {
+    background: linear-gradient(135deg, var(--primary-color) 0%, var(--primary-dark) 100%);
+    color: white;
+    padding: 1rem 1.5rem;
+    border-radius: var(--border-radius) var(--border-radius) 0 0;
+    margin: 0;
+    font-size: 1.1rem;
+    font-weight: 600;
+}
+.form-content {
+    padding: 1.5rem;
+}
+.help-text {
+    background: #f8f9fa;
+    border-left: 4px solid var(--info-color);
+    padding: 1rem;
+    border-radius: 0 var(--border-radius) var(--border-radius) 0;
+    margin-bottom: 1rem;
+}
+#locationMap {
+    height: 400px;
+    border-radius: 8px;
+    margin-bottom: 15px;
+    border: 2px solid #e9ecef;
+}
+.location-method-btn {
+    margin: 5px;
+}
+.coordinate-display {
+    background: #e3f2fd;
+    padding: 15px;
+    border-radius: 8px;
+    border-left: 4px solid #2196f3;
+    margin: 15px 0;
+}
+.coordinate-display.success {
+    background: #e8f5e9;
+    border-left-color: #4caf50;
+}
+.location-options {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 15px;
+    margin-bottom: 20px;
+}
+.location-option-card {
+    border: 2px solid #e9ecef;
+    border-radius: 8px;
+    padding: 15px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+.location-option-card:hover {
+    border-color: var(--primary-color);
+    box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+    transform: translateY(-2px);
+}
+.location-option-card i {
+    font-size: 2rem;
+    color: var(--primary-color);
+    margin-bottom: 10px;
+}
+.location-option-card h6 {
+    margin: 10px 0 5px 0;
+    font-weight: 600;
+}
+.location-option-card p {
+    font-size: 0.85rem;
+    color: #6c757d;
+    margin: 0;
+}
+.spinner {
+    display: none;
+    width: 20px;
+    height: 20px;
+    border: 3px solid #f3f3f3;
+    border-top: 3px solid var(--primary-color);
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+    margin-left: 10px;
+}
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+.map-instructions {
+    background: #fff3cd;
+    border-left: 4px solid #ffc107;
+    padding: 12px;
+    border-radius: 4px;
+    margin-bottom: 15px;
+}
+</style>
+{% endblock %}

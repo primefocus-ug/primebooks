@@ -1,0 +1,347 @@
+{% extends 'base.html' %}
+{% load i18n %}
+{% load static %}
+
+{% block extra_css %}
+<style>
+    .user-avatar {
+        width: 40px;
+        height: 40px;
+        border-radius: 50%;
+        object-fit: cover;
+    }
+    .user-status {
+        display: inline-block;
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        margin-right: 8px;
+    }
+    .user-status.active { background-color: #28a745; }
+    .user-status.inactive { background-color: #dc3545; }
+    .admin-badge {
+        background: linear-gradient(45deg, #007bff, #0056b3);
+        color: white;
+        font-size: 0.75rem;
+        padding: 2px 8px;
+        border-radius: 12px;
+    }
+    .company-header {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 2rem 0;
+        margin-bottom: 2rem;
+    }
+    .stats-card {
+        border: none;
+        border-radius: 15px;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        transition: transform 0.3s ease;
+    }
+    .stats-card:hover {
+        transform: translateY(-5px);
+    }
+    .action-btn {
+        padding: 0.25rem 0.5rem;
+        font-size: 0.875rem;
+        border-radius: 6px;
+    }
+    .bg-primary { background-color: #007bff !important; }
+    .bg-success { background-color: #28a745 !important; }
+    .bg-info { background-color: #17a2b8 !important; }
+    .bg-warning { background-color: #ffc107 !important; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="bg-light">
+    <div class="company-header">
+        <div class="container">
+            <div class="row align-items-center">
+                <div class="col-md-8">
+                    <h1 class="mb-1">
+                        <i class="fas fa-building me-2"></i>
+                        {{ company.display_name }}
+                    </h1>
+                    <p class="mb-0 opacity-75">{% trans "User Management" %}</p>
+                </div>
+                <div class="col-md-4 text-end">
+                    <div class="d-flex gap-2 justify-content-end">
+                        {% if can_add_users %}
+                            <a href="{% url 'invite_user' company.id %}" class="btn btn-light">
+                                <i class="fas fa-user-plus me-1"></i> {% trans "Invite User" %}
+                            </a>
+                            <a href="{% url 'assign_user_to_company' company.id %}" class="btn btn-outline-light">
+                                <i class="fas fa-user-plus me-1"></i> {% trans "Add Existing" %}
+                            </a>
+                        {% else %}
+                            <span class="badge bg-warning">{% trans "User limit reached" %}</span>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="container">
+        <!-- Statistics Cards -->
+        <div class="row mb-4">
+            <div class="col-md-3">
+                <div class="card stats-card text-center">
+                    <div class="card-body">
+                        <i class="fas fa-users text-primary fa-2x mb-2"></i>
+                        <h4 class="mb-1">{{ company_users.paginator.count }}</h4>
+                        <small class="text-muted">{% trans "Total Users" %}</small>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card stats-card text-center">
+                    <div class="card-body">
+                        <i class="fas fa-user-shield text-success fa-2x mb-2"></i>
+                        <h4 class="mb-1">
+                            {% with admins=company_users|filter_attr:"is_company_admin" %}
+                                {{ admins|length }}
+                            {% endwith %}
+                        </h4>
+                        <small class="text-muted">{% trans "Admins" %}</small>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card stats-card text-center">
+                    <div class="card-body">
+                        <i class="fas fa-user-check text-info fa-2x mb-2"></i>
+                        <h4 class="mb-1">
+                            {% with active=company_users|filter_attr:"is_active" %}
+                                {{ active|length }}
+                            {% endwith %}
+                        </h4>
+                        <small class="text-muted">{% trans "Active" %}</small>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card stats-card text-center">
+                    <div class="card-body">
+                        <i class="fas fa-chart-line text-warning fa-2x mb-2"></i>
+                        <h4 class="mb-1">{{ company.plan.max_users }}</h4>
+                        <small class="text-muted">{% trans "Max Allowed" %}</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Search and Filters -->
+        <div class="card mb-4">
+            <div class="card-body">
+                <form method="get" class="row g-3">
+                    <div class="col-md-6">
+                        <div class="input-group">
+                            <span class="input-group-text"><i class="fas fa-search"></i></span>
+                            <input type="text" class="form-control" name="search"
+                                   placeholder="{% trans "Search users..." %}" value="{{ search_query }}">
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="fas fa-search me-1"></i> {% trans "Search" %}
+                        </button>
+                        {% if search_query %}
+                            <a href="{% url 'company_user_list' company.id %}" class="btn btn-outline-secondary ms-2">
+                                <i class="fas fa-times me-1"></i> {% trans "Clear" %}
+                            </a>
+                        {% endif %}
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- Users List -->
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">
+                    <i class="fas fa-users me-2"></i>
+                    {% trans "Company Users" %}
+                </h5>
+                <span class="badge bg-primary">{% blocktrans %}{{ company_users.paginator.count }} users{% endblocktrans %}</span>
+            </div>
+            <div class="card-body p-0">
+                {% if company_users %}
+                    <div class="table-responsive">
+                        <table class="table table-hover mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>{% trans "User" %}</th>
+                                    <th>{% trans "Role" %}</th>
+                                    <th>{% trans "Status" %}</th>
+                                    <th>{% trans "Join Date" %}</th>
+                                    <th>{% trans "Last Login" %}</th>
+                                    <th>{% trans "Actions" %}</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for company_user in company_users %}
+                                    <tr>
+                                        <td>
+                                            <div class="d-flex align-items-center">
+                                                {% if company_user.user.avatar %}
+                                                    <img src="{{ company_user.user.avatar.url }}"
+                                                         class="user-avatar me-3" alt="{% trans "Avatar" %}">
+                                                {% else %}
+                                                    <div class="user-avatar me-3 bg-secondary d-flex align-items-center justify-content-center text-white">
+                                                        {{ company_user.user.get_full_name|first|default:company_user.user.username|first }}
+                                                    </div>
+                                                {% endif %}
+                                                <div>
+                                                    <div class="fw-semibold">
+                                                        {{ company_user.user.get_full_name|default:company_user.user.username }}
+                                                        {% if company.owner == company_user.user %}
+                                                            <i class="fas fa-crown text-warning ms-1" title="{% trans "Company Owner" %}"></i>
+                                                        {% endif %}
+                                                    </div>
+                                                    <small class="text-muted">{{ company_user.user.email }}</small>
+                                                </div>
+                                            </div>
+                                        </td>
+                                        <td>
+                                            <div>
+                                                <span class="badge bg-light text-dark">
+                                                    {{ company_user.user.get_user_type_display }}
+                                                </span>
+                                                {% if company_user.is_company_admin %}
+                                                    <br><span class="admin-badge mt-1">{% trans "Admin" %}</span>
+                                                {% endif %}
+                                            </div>
+                                        </td>
+                                        <td>
+                                            <span class="user-status {% if company_user.is_active and company_user.user.is_active %}active{% else %}inactive{% endif %}"></span>
+                                            {% if company_user.is_active and company_user.user.is_active %}
+                                                <span class="text-success">{% trans "Active" %}</span>
+                                            {% else %}
+                                                <span class="text-danger">{% trans "Inactive" %}</span>
+                                            {% endif %}
+                                        </td>
+                                        <td>
+                                            <small>{% blocktrans %}{{ company_user.created_at|date:"M d, Y" }}{% endblocktrans %}</small>
+                                        </td>
+                                        <td>
+                                            {% if company_user.user.last_login %}
+                                                <small>{% blocktrans %}{{ company_user.user.last_login|date:"M d, Y H:i" }}{% endblocktrans %}</small>
+                                            {% else %}
+                                                <small class="text-muted">{% trans "Never" %}</small>
+                                            {% endif %}
+                                        </td>
+                                        <td>
+                                            <div class="btn-group" role="group">
+                                                <a href="{% url 'user_detail' company_user.user.pk %}"
+                                                   class="btn btn-sm btn-outline-primary action-btn" title="{% trans "View Details" %}">
+                                                    <i class="fas fa-eye"></i>
+                                                </a>
+
+                                                {% if company.owner != company_user.user %}
+                                                    <a href="{% url 'toggle_company_admin' company.id company_user.user.pk %}"
+                                                       class="btn btn-sm {% if company_user.is_company_admin %}btn-outline-warning{% else %}btn-outline-success{% endif %} action-btn"
+                                                       title="{% if company_user.is_company_admin %}{% trans "Remove Admin" %}{% else %}{% trans "Make Admin" %}{% endif %}">
+                                                        <i class="fas {% if company_user.is_company_admin %}fa-user-minus{% else %}fa-user-shield{% endif %}"></i>
+                                                    </a>
+
+                                                    <a href="{% url 'remove_user_from_company' company.id company_user.user.pk %}"
+                                                       class="btn btn-sm btn-outline-danger action-btn"
+                                                       onclick="return confirm('{% trans "Are you sure you want to remove this user from the company?" %}')"
+                                                       title="{% trans "Remove from Company" %}">
+                                                        <i class="fas fa-user-times"></i>
+                                                    </a>
+                                                {% endif %}
+                                            </div>
+                                        </td>
+                                    </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                {% else %}
+                    <div class="text-center py-5">
+                        <i class="fas fa-users fa-3x text-muted mb-3"></i>
+                        <h5 class="text-muted">{% trans "No users found" %}</h5>
+                        <p class="text-muted">
+                            {% if search_query %}
+                                {% trans "No users match your search criteria." %}
+                            {% else %}
+                                {% trans "No users have been added to this company yet." %}
+                            {% endif %}
+                        </p>
+                        {% if can_add_users %}
+                            <a href="{% url 'invite_user' company.id %}" class="btn btn-primary">
+                                <i class="fas fa-user-plus me-1"></i> {% trans "Invite First User" %}
+                            </a>
+                        {% endif %}
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Pagination -->
+        {% if company_users.has_other_pages %}
+            <nav aria-label="{% trans "Users pagination" %}" class="mt-4">
+                <ul class="pagination justify-content-center">
+                    {% if company_users.has_previous %}
+                        <li class="page-item">
+                            <a class="page-link" href="?page=1{% if search_query %}&search={{ search_query }}{% endif %}">
+                                <i class="fas fa-angle-double-left"></i>
+                            </a>
+                        </li>
+                        <li class="page-item">
+                            <a class="page-link" href="?page={{ company_users.previous_page_number }}{% if search_query %}&search={{ search_query }}{% endif %}">
+                                <i class="fas fa-angle-left"></i>
+                            </a>
+                        </li>
+                    {% endif %}
+
+                    {% for num in company_users.paginator.page_range %}
+                        {% if company_users.number == num %}
+                            <li class="page-item active">
+                                <span class="page-link">{{ num }}</span>
+                            </li>
+                        {% elif num > company_users.number|add:'-3' and num < company_users.number|add:'3' %}
+                            <li class="page-item">
+                                <a class="page-link" href="?page={{ num }}{% if search_query %}&search={{ search_query }}{% endif %}">{{ num }}</a>
+                            </li>
+                        {% endif %}
+                    {% endfor %}
+
+                    {% if company_users.has_next %}
+                        <li class="page-item">
+                            <a class="page-link" href="?page={{ company_users.next_page_number }}{% if search_query %}&search={{ search_query }}{% endif %}">
+                                <i class="fas fa-angle-right"></i>
+                            </a>
+                        </li>
+                        <li class="page-item">
+                            <a class="page-link" href="?page={{ company_users.paginator.num_pages }}{% if search_query %}&search={{ search_query }}{% endif %}">
+                                <i class="fas fa-angle-double-right"></i>
+                            </a>
+                        </li>
+                    {% endif %}
+                </ul>
+            </nav>
+        {% endif %}
+    </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Confirm before removing users
+        const removeButtons = document.querySelectorAll('a[href*="remove_user_from_company"]');
+        removeButtons.forEach(button => {
+            button.addEventListener('click', function(e) {
+                if (!confirm('Are you sure you want to remove this user from the company?')) {
+                    e.preventDefault();
+                }
+            });
+        });
+    });
+</script>
+{% endblock %}

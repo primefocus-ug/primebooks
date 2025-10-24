@@ -1,0 +1,274 @@
+{% extends "base.html" %}
+{% load static %}
+{% load i18n %}
+
+{% block title %}{% trans "Diagnostic Tool" %} | {{ block.super }}{% endblock %}
+
+{% block breadcrumb_items %}
+<li class="breadcrumb-item"><a href="{% url 'efris:dashboard' %}">{% trans "EFRIS" %}</a></li>
+<li class="breadcrumb-item active">{% trans "Diagnostic Tool" %}</li>
+{% endblock %}
+
+{% block page_header %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h2 class="mb-2">{% trans "EFRIS Diagnostic Tool" %}</h2>
+        <p class="text-muted mb-0">{% trans "Troubleshoot and diagnose EFRIS integration issues" %}</p>
+    </div>
+    <a href="{% url 'efris:dashboard' %}" class="btn btn-outline-secondary">
+        <i class="bi bi-arrow-left me-2"></i>{% trans "Back" %}
+    </a>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-lg-8 mx-auto">
+        <!-- Diagnostic Form -->
+        <div class="card shadow-sm mb-4">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0">
+                    <i class="bi bi-tools me-2"></i>{% trans "Run Diagnostics" %}
+                </h5>
+            </div>
+            <div class="card-body">
+                <form method="post" id="diagnosticForm">
+                    {% csrf_token %}
+
+                    <div class="mb-4">
+                        <label class="form-label">{% trans "Diagnostic Type" %}</label>
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="diagnostic_type" id="generalDiagnostic" value="general" checked>
+                            <label class="form-check-label" for="generalDiagnostic">
+                                <strong>{% trans "General System Diagnostic" %}</strong>
+                                <br>
+                                <small class="text-muted">{% trans "Check overall EFRIS configuration and connectivity" %}</small>
+                            </label>
+                        </div>
+                        <div class="form-check mt-2">
+                            <input class="form-check-input" type="radio" name="diagnostic_type" id="invoiceDiagnostic" value="invoice">
+                            <label class="form-check-label" for="invoiceDiagnostic">
+                                <strong>{% trans "Invoice-Specific Diagnostic" %}</strong>
+                                <br>
+                                <small class="text-muted">{% trans "Diagnose issues with a specific invoice" %}</small>
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="mb-3" id="invoiceIdContainer" style="display: none;">
+                        <label for="invoice_id" class="form-label">
+                            {% trans "Invoice ID" %} <span class="text-danger">*</span>
+                        </label>
+                        <input
+                            type="number"
+                            class="form-control"
+                            id="invoice_id"
+                            name="invoice_id"
+                            placeholder="{% trans 'Enter invoice ID' %}"
+                        >
+                        <small class="form-text text-muted">
+                            {% trans "Enter the ID of the invoice you want to diagnose" %}
+                        </small>
+                    </div>
+
+                    <div class="alert alert-info">
+                        <i class="bi bi-info-circle me-2"></i>
+                        <strong>{% trans "What diagnostics check:" %}</strong>
+                        <ul class="mb-0 mt-2">
+                            <li>{% trans "EFRIS API connectivity" %}</li>
+                            <li>{% trans "Configuration settings" %}</li>
+                            <li>{% trans "Authentication tokens" %}</li>
+                            <li>{% trans "Product registration status" %}</li>
+                            <li>{% trans "Invoice fiscalization readiness" %}</li>
+                            <li>{% trans "Network and SSL issues" %}</li>
+                        </ul>
+                    </div>
+
+                    <div class="d-grid">
+                        <button type="submit" class="btn btn-primary btn-lg">
+                            <i class="bi bi-play-circle me-2"></i>{% trans "Run Diagnostic" %}
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- Diagnostic Results -->
+        {% if diagnostic_result %}
+        <div class="card shadow-sm border-primary">
+            <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">
+                    <i class="bi bi-clipboard-data me-2"></i>{% trans "Diagnostic Results" %}
+                </h5>
+                <button class="btn btn-sm btn-light" onclick="copyDiagnosticResults()">
+                    <i class="bi bi-clipboard me-1"></i>{% trans "Copy" %}
+                </button>
+            </div>
+            <div class="card-body">
+                <div class="diagnostic-output">
+                    <pre id="diagnosticOutput" class="bg-dark text-light p-4 rounded" style="max-height: 600px; overflow-y: auto;"><code>{{ diagnostic_result }}</code></pre>
+                </div>
+            </div>
+            <div class="card-footer">
+                <div class="d-flex gap-2">
+                    <button class="btn btn-success" onclick="downloadDiagnosticResults()">
+                        <i class="bi bi-download me-2"></i>{% trans "Download Report" %}
+                    </button>
+                    <a href="{% url 'efris:system_health' %}" class="btn btn-outline-primary">
+                        <i class="bi bi-heart-pulse me-2"></i>{% trans "View System Health" %}
+                    </a>
+                </div>
+            </div>
+        </div>
+
+        <!-- Common Issues Guide -->
+        <div class="card border-info shadow-sm mt-4">
+            <div class="card-header bg-info text-white">
+                <h6 class="mb-0">
+                    <i class="bi bi-question-circle me-2"></i>{% trans "Common Issues & Solutions" %}
+                </h6>
+            </div>
+            <div class="card-body">
+                <div class="accordion" id="commonIssuesAccordion">
+                    <!-- Connection Issues -->
+                    <div class="accordion-item">
+                        <h2 class="accordion-header">
+                            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#issue1">
+                                {% trans "Connection Timeout or Network Errors" %}
+                            </button>
+                        </h2>
+                        <div id="issue1" class="accordion-collapse collapse" data-bs-parent="#commonIssuesAccordion">
+                            <div class="accordion-body">
+                                <ul>
+                                    <li>{% trans "Check your internet connection" %}</li>
+                                    <li>{% trans "Verify firewall settings allow HTTPS traffic" %}</li>
+                                    <li>{% trans "Ensure EFRIS API endpoint is accessible" %}</li>
+                                    <li>{% trans "Check SSL certificate validity" %}</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Authentication Issues -->
+                    <div class="accordion-item">
+                        <h2 class="accordion-header">
+                            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#issue2">
+                                {% trans "Authentication Failures" %}
+                            </button>
+                        </h2>
+                        <div id="issue2" class="accordion-collapse collapse" data-bs-parent="#commonIssuesAccordion">
+                            <div class="accordion-body">
+                                <ul>
+                                    <li>{% trans "Verify TIN and device number are correct" %}</li>
+                                    <li>{% trans "Check if private key is properly configured" %}</li>
+                                    <li>{% trans "Ensure token is not expired" %}</li>
+                                    <li>{% trans "Try regenerating authentication token" %}</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Product Registration -->
+                    <div class="accordion-item">
+                        <h2 class="accordion-header">
+                            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#issue3">
+                                {% trans "Product Registration Failures" %}
+                            </button>
+                        </h2>
+                        <div id="issue3" class="accordion-collapse collapse" data-bs-parent="#commonIssuesAccordion">
+                            <div class="accordion-body">
+                                <ul>
+                                    <li>{% trans "Ensure product has valid commodity code" %}</li>
+                                    <li>{% trans "Check product name and description" %}</li>
+                                    <li>{% trans "Verify unit of measure is supported" %}</li>
+                                    <li>{% trans "Ensure tax category is properly set" %}</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Invoice Fiscalization -->
+                    <div class="accordion-item">
+                        <h2 class="accordion-header">
+                            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#issue4">
+                                {% trans "Invoice Fiscalization Errors" %}
+                            </button>
+                        </h2>
+                        <div id="issue4" class="accordion-collapse collapse" data-bs-parent="#commonIssuesAccordion">
+                            <div class="accordion-body">
+                                <ul>
+                                    <li>{% trans "Verify all products are registered in EFRIS" %}</li>
+                                    <li>{% trans "Check customer TIN if B2B invoice" %}</li>
+                                    <li>{% trans "Ensure invoice totals are correct" %}</li>
+                                    <li>{% trans "Verify invoice is not already fiscalized" %}</li>
+                                    <li>{% trans "Check date format and validity" %}</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% else %}
+        <!-- Getting Started Guide -->
+        <div class="card border-info shadow-sm">
+            <div class="card-body">
+                <h5 class="text-info mb-3">
+                    <i class="bi bi-lightbulb me-2"></i>{% trans "How to Use Diagnostic Tool" %}
+                </h5>
+                <ol class="mb-0">
+                    <li class="mb-2">{% trans "Select the type of diagnostic you want to run" %}</li>
+                    <li class="mb-2">{% trans "For invoice-specific issues, enter the invoice ID" %}</li>
+                    <li class="mb-2">{% trans "Click 'Run Diagnostic' to start the analysis" %}</li>
+                    <li class="mb-2">{% trans "Review the results and follow recommended actions" %}</li>
+                    <li>{% trans "Download or copy the report for future reference" %}</li>
+                </ol>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const diagnosticTypeRadios = document.querySelectorAll('input[name="diagnostic_type"]');
+    const invoiceIdContainer = document.getElementById('invoiceIdContainer');
+    const invoiceIdInput = document.getElementById('invoice_id');
+    const diagnosticForm = document.getElementById('diagnosticForm');
+
+    // Toggle invoice ID input based on diagnostic type
+    diagnosticTypeRadios.forEach(radio => {
+        radio.addEventListener('change', function() {
+            if (this.value === 'invoice') {
+                invoiceIdContainer.style.display = 'block';
+                invoiceIdInput.required = true;
+            } else {
+                invoiceIdContainer.style.display = 'none';
+                invoiceIdInput.required = false;
+            }
+        });
+    });
+
+    // Form submission handling
+    diagnosticForm.addEventListener('submit', function(e) {
+        const submitBtn = this.querySelector('button[type="submit"]');
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>{% trans "Running Diagnostic..." %}';
+    });
+});
+
+function copyDiagnosticResults() {
+    const output = document.getElementById('diagnosticOutput');
+    const text = output.textContent;
+
+    navigator.clipboard.writeText(text).then(function() {
+        showAlert('{% trans "Diagnostic results copied to clipboard" %}', 'success');
+    }, function() {
+        showAlert('{% trans "Failed to copy results" %}', 'danger');
+    });
+}
+
+</script>
+{% endblock %}

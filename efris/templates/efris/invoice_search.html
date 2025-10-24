@@ -1,0 +1,259 @@
+<!-- efris/templates/efris/invoice_search.html -->
+
+{% extends "efris/base.html" %}
+{% load static %}
+
+{% block page_actions %}
+<button type="button" class="btn btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#searchHelpModal">
+    <i class="fas fa-question-circle"></i> Help
+</button>
+{% endblock %}
+
+{% block efris_content %}
+<!-- Search Form -->
+<div class="search-box">
+    <form method="post" id="searchForm">
+        {% csrf_token %}
+        <div class="row g-3">
+            <div class="col-md-3">
+                <label for="invoice_no" class="form-label">Invoice Number</label>
+                <input type="text" class="form-control" id="invoice_no" name="invoice_no"
+                       value="{{ search_params.invoice_no }}" placeholder="Enter invoice number">
+            </div>
+
+            <div class="col-md-3">
+                <label for="buyer_tin" class="form-label">Buyer TIN</label>
+                <input type="text" class="form-control" id="buyer_tin" name="buyer_tin"
+                       value="{{ search_params.buyer_tin }}" placeholder="10-digit TIN">
+            </div>
+
+            <div class="col-md-3">
+                <label for="buyer_legal_name" class="form-label">Buyer Name</label>
+                <input type="text" class="form-control" id="buyer_legal_name" name="buyer_legal_name"
+                       value="{{ search_params.buyer_legal_name }}" placeholder="Buyer name">
+            </div>
+
+            <div class="col-md-3">
+                <label for="reference_no" class="form-label">Reference No</label>
+                <input type="text" class="form-control" id="reference_no" name="reference_no"
+                       value="{{ search_params.reference_no }}" placeholder="Reference number">
+            </div>
+        </div>
+
+        <div class="row g-3 mt-1">
+            <div class="col-md-2">
+                <label for="invoice_type" class="form-label">Invoice Type</label>
+                <select class="form-select" id="invoice_type" name="invoice_type">
+                    <option value="">All Types</option>
+                    <option value="1" {% if search_params.invoice_type == '1' %}selected{% endif %}>Invoice/Receipt</option>
+                    <option value="2" {% if search_params.invoice_type == '2' %}selected{% endif %}>Credit Note</option>
+                    <option value="4" {% if search_params.invoice_type == '4' %}selected{% endif %}>Debit Note</option>
+                    <option value="5" {% if search_params.invoice_type == '5' %}selected{% endif %}>Credit Memo</option>
+                </select>
+            </div>
+
+            <div class="col-md-2">
+                <label for="invoice_kind" class="form-label">Kind</label>
+                <select class="form-select" id="invoice_kind" name="invoice_kind">
+                    <option value="">All</option>
+                    <option value="1" {% if search_params.invoice_kind == '1' %}selected{% endif %}>Invoice</option>
+                    <option value="2" {% if search_params.invoice_kind == '2' %}selected{% endif %}>Receipt</option>
+                </select>
+            </div>
+
+            <div class="col-md-2">
+                <label for="is_invalid" class="form-label">Status</label>
+                <select class="form-select" id="is_invalid" name="is_invalid">
+                    <option value="">All</option>
+                    <option value="0" {% if search_params.is_invalid == '0' %}selected{% endif %}>Valid</option>
+                    <option value="1" {% if search_params.is_invalid == '1' %}selected{% endif %}>Invalid</option>
+                </select>
+            </div>
+
+            <div class="col-md-3">
+                <label for="start_date" class="form-label">Start Date</label>
+                <input type="date" class="form-control" id="start_date" name="start_date"
+                       value="{{ search_params.start_date }}">
+            </div>
+
+            <div class="col-md-3">
+                <label for="end_date" class="form-label">End Date</label>
+                <input type="date" class="form-control" id="end_date" name="end_date"
+                       value="{{ search_params.end_date }}">
+            </div>
+        </div>
+
+        <div class="row mt-3">
+            <div class="col-12">
+                <button type="submit" class="btn btn-primary">
+                    <i class="fas fa-search"></i> Search
+                </button>
+                <button type="button" class="btn btn-outline-secondary" onclick="clearSearch()">
+                    <i class="fas fa-times"></i> Clear
+                </button>
+                {% if search_performed %}
+                <a href="{% url 'efris:export_invoices_csv' %}?{{ request.GET.urlencode }}"
+                   class="btn btn-outline-success">
+                    <i class="fas fa-file-excel"></i> Export CSV
+                </a>
+                {% endif %}
+            </div>
+        </div>
+    </form>
+</div>
+
+<!-- Search Results -->
+{% if search_performed %}
+<div class="card efris-card">
+    <div class="card-header bg-white d-flex justify-content-between align-items-center">
+        <h5 class="card-title mb-0">
+            Search Results
+            {% if pagination %}
+            <span class="badge bg-secondary">{{ pagination.total_size }} invoices</span>
+            {% endif %}
+        </h5>
+    </div>
+    <div class="card-body">
+        {% if invoices %}
+        <div class="table-responsive">
+            <table class="table table-hover">
+                <thead>
+                    <tr>
+                        <th>Invoice No</th>
+                        <th>Date</th>
+                        <th>Buyer</th>
+                        <th>Type</th>
+                        <th>Currency</th>
+                        <th class="text-end">Amount</th>
+                        <th class="text-end">Tax</th>
+                        <th>Status</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for invoice in invoices %}
+                    <tr class="invoice-type-{{ invoice.invoiceType }}">
+                        <td><strong>{{ invoice.invoiceNo }}</strong></td>
+                        <td>{{ invoice.issuedDate }}</td>
+                        <td>
+                            <div>{{ invoice.buyerLegalName|truncatewords:4 }}</div>
+                            <small class="text-muted">{{ invoice.buyerTin }}</small>
+                        </td>
+                        <td>
+                            <span class="badge bg-info">
+                                {{ invoice.invoiceType|default:"N/A" }}
+                            </span>
+                        </td>
+                        <td>{{ invoice.currency }}</td>
+                        <td class="text-end">{{ invoice.grossAmount|floatformat:2 }}</td>
+                        <td class="text-end">{{ invoice.taxAmount|floatformat:2 }}</td>
+                        <td>
+                            {% if invoice.isInvalid == '1' %}
+                            <span class="badge bg-danger">Invalid</span>
+                            {% else %}
+                            <span class="badge bg-success">Valid</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <a href="{% url 'efris:invoice_detail' invoice.invoiceNo %}"
+                               class="btn btn-sm btn-outline-primary">
+                                <i class="fas fa-eye"></i>
+                            </a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Pagination -->
+        {% if pagination.page_count > 1 %}
+        <nav aria-label="Invoice pagination">
+            <ul class="pagination justify-content-center">
+                {% if pagination.page_no > 1 %}
+                <li class="page-item">
+                    <a class="page-link" href="?search=1&page={{ pagination.page_no|add:"-1" }}&{{ request.GET.urlencode }}">
+                        Previous
+                    </a>
+                </li>
+                {% endif %}
+
+                <li class="page-item disabled">
+                    <span class="page-link">
+                        Page {{ pagination.page_no }} of {{ pagination.page_count }}
+                    </span>
+                </li>
+
+                {% if pagination.page_no < pagination.page_count %}
+                <li class="page-item">
+                    <a class="page-link" href="?search=1&page={{ pagination.page_no|add:"1" }}&{{ request.GET.urlencode }}">
+                        Next
+                    </a>
+                </li>
+                {% endif %}
+            </ul>
+        </nav>
+        {% endif %}
+        {% else %}
+        <div class="alert alert-info mb-0">
+            <i class="fas fa-info-circle"></i> No invoices found matching your search criteria.
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
+
+<!-- Help Modal -->
+<div class="modal fade" id="searchHelpModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Invoice Search Help</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <h6>Search Tips:</h6>
+                <ul>
+                    <li>Leave fields empty to search all records</li>
+                    <li>Use date range for time-based filtering</li>
+                    <li>Invoice types: 1=Invoice, 2=Credit Note, 4=Debit Note, 5=Credit Memo</li>
+                    <li>Combine multiple criteria for precise results</li>
+                </ul>
+
+                <h6 class="mt-3">Invoice Types:</h6>
+                <ul>
+                    <li><strong>Type 1:</strong> Invoice/Receipt</li>
+                    <li><strong>Type 2:</strong> Credit Note</li>
+                    <li><strong>Type 4:</strong> Debit Note</li>
+                    <li><strong>Type 5:</strong> Credit Memo</li>
+                </ul>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function clearSearch() {
+    document.getElementById('searchForm').reset();
+}
+
+// Set default date range (last 30 days) if empty
+document.addEventListener('DOMContentLoaded', function() {
+    const startDate = document.getElementById('start_date');
+    const endDate = document.getElementById('end_date');
+
+    if (!startDate.value && !endDate.value) {
+        const today = new Date();
+        const thirtyDaysAgo = new Date(today.getTime() - (30 * 24 * 60 * 60 * 1000));
+
+        endDate.value = today.toISOString().split('T')[0];
+        startDate.value = thirtyDaysAgo.toISOString().split('T')[0];
+    }
+});
+</script>
+{% endblock %}

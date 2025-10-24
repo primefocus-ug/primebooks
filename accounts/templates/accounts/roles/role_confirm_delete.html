@@ -1,0 +1,154 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Delete Role - {{ role.group.name }}{% endblock %}
+
+{% block extra_css %}
+<style>
+    .delete-card {
+        max-width: 600px;
+        margin: 50px auto;
+    }
+    .warning-icon {
+        font-size: 4rem;
+        color: #dc3545;
+        animation: pulse 2s infinite;
+    }
+    @keyframes pulse {
+        0%, 100% {
+            transform: scale(1);
+        }
+        50% {
+            transform: scale(1.1);
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+    <div class="delete-card">
+        <div class="card shadow-lg border-danger">
+            <div class="card-header bg-danger text-white">
+                <h4 class="mb-0">
+                    <i class="fas fa-exclamation-triangle me-2"></i>
+                    Confirm Deletion
+                </h4>
+            </div>
+            <div class="card-body text-center">
+                <div class="warning-icon mb-4">
+                    <i class="fas fa-trash-alt"></i>
+                </div>
+
+                <h3 class="mb-3">Delete Role: {{ role.group.name }}?</h3>
+
+                <div class="alert alert-warning text-start">
+                    <h6 class="alert-heading">
+                        <i class="fas fa-info-circle me-2"></i>
+                        What will happen:
+                    </h6>
+                    <ul class="mb-0">
+                        <li>The role "{{ role.group.name }}" will be permanently deleted</li>
+                        <li>All associated permissions will be removed</li>
+                        <li>This action cannot be undone</li>
+                    </ul>
+                </div>
+
+                {% if role.user_count > 0 %}
+                <div class="alert alert-danger text-start">
+                    <h6 class="alert-heading">
+                        <i class="fas fa-exclamation-triangle me-2"></i>
+                        Cannot Delete!
+                    </h6>
+                    <p class="mb-0">
+                        This role has <strong>{{ role.user_count }} user(s)</strong> assigned to it.
+                        You must remove all users before deleting this role.
+                    </p>
+                </div>
+
+                <div class="d-grid gap-2 mt-4">
+                    <a href="{% url 'role_users' role.pk %}" class="btn btn-primary btn-lg">
+                        <i class="fas fa-users me-2"></i>
+                        Manage Users First
+                    </a>
+                    <a href="{% url 'role_detail' role.pk %}" class="btn btn-outline-secondary">
+                        Cancel
+                    </a>
+                </div>
+                {% else %}
+                <div class="alert alert-info text-start">
+                    <p class="mb-0">
+                        <i class="fas fa-check-circle me-2"></i>
+                        This role has no users assigned. It's safe to delete.
+                    </p>
+                </div>
+
+                <form method="post" class="mt-4">
+                    {% csrf_token %}
+                    <div class="d-grid gap-2">
+                        <button type="submit" class="btn btn-danger btn-lg">
+                            <i class="fas fa-trash me-2"></i>
+                            Yes, Delete This Role
+                        </button>
+                        <a href="{% url 'role_detail' role.pk %}" class="btn btn-outline-secondary">
+                            <i class="fas fa-times me-2"></i>
+                            No, Keep This Role
+                        </a>
+                    </div>
+                </form>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Role Information -->
+        <div class="card shadow-sm mt-3">
+            <div class="card-body">
+                <h6 class="mb-3">Role Information</h6>
+                <table class="table table-sm mb-0">
+                    <tr>
+                        <td class="text-muted">Name:</td>
+                        <td><strong>{{ role.group.name }}</strong></td>
+                    </tr>
+                    <tr>
+                        <td class="text-muted">Type:</td>
+                        <td>
+                            {% if role.is_system_role %}
+                            <span class="badge bg-primary">System Role</span>
+                            {% else %}
+                            <span class="badge bg-secondary">Custom Role</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    <tr>
+                        <td class="text-muted">Users:</td>
+                        <td>{{ role.user_count }}</td>
+                    </tr>
+                    <tr>
+                        <td class="text-muted">Permissions:</td>
+                        <td>{{ role.permission_count }}</td>
+                    </tr>
+                    <tr>
+                        <td class="text-muted">Created:</td>
+                        <td>{{ role.created_at|date:"F d, Y" }}</td>
+                    </tr>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // Add confirmation on delete
+    const deleteForm = document.querySelector('form[method="post"]');
+    if (deleteForm) {
+        deleteForm.addEventListener('submit', function(e) {
+            const roleName = '{{ role.group.name }}';
+            if (!confirm(`Are you absolutely sure you want to delete the role "${roleName}"? This action cannot be undone.`)) {
+                e.preventDefault();
+            }
+        });
+    }
+</script>
+{% endblock %}

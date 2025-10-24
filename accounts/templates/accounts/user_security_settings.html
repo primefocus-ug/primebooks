@@ -1,0 +1,446 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Security Settings - {{ user.get_full_name|default:user.username }}</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.0/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <style>
+        .header-section {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 2rem 0;
+            margin-bottom: 2rem;
+        }
+        .security-card {
+            border: none;
+            border-radius: 12px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+            margin-bottom: 2rem;
+            transition: all 0.3s ease;
+        }
+        .security-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(0,0,0,0.15);
+        }
+        .security-status {
+            display: inline-flex;
+            align-items: center;
+            padding: 0.5rem 1rem;
+            border-radius: 20px;
+            font-size: 0.875rem;
+            font-weight: 600;
+        }
+        .status-secure {
+            background-color: #d4edda;
+            color: #155724;
+        }
+        .status-warning {
+            background-color: #fff3cd;
+            color: #856404;
+        }
+        .status-danger {
+            background-color: #f8d7da;
+            color: #721c24;
+        }
+        .security-icon {
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.25rem;
+            margin-bottom: 1rem;
+        }
+        .progress-ring {
+            width: 120px;
+            height: 120px;
+        }
+        .progress-ring__circle {
+            stroke: #e9ecef;
+            stroke-dasharray: 0 0;
+            stroke-width: 8;
+            fill: transparent;
+            r: 50;
+            cx: 60;
+            cy: 60;
+        }
+        .progress-ring__circle.progress {
+            stroke: #28a745;
+            stroke-dasharray: 314 314;
+            stroke-dashoffset: 157; /* 50% progress */
+            transform: rotate(-90deg);
+            transform-origin: 50% 50%;
+            transition: stroke-dashoffset 0.35s;
+        }
+        .two-factor-setup {
+            background: linear-gradient(45deg, #667eea, #764ba2);
+            color: white;
+            border-radius: 12px;
+            padding: 2rem;
+            margin-bottom: 2rem;
+        }
+        .backup-codes {
+            font-family: 'Courier New', monospace;
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            padding: 1rem;
+            font-size: 0.875rem;
+        }
+        .device-item {
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            padding: 1rem;
+            margin-bottom: 1rem;
+            transition: all 0.3s ease;
+        }
+        .device-item:hover {
+            border-color: #007bff;
+            transform: translateX(5px);
+        }
+    </style>
+</head>
+<body class="bg-light">
+    <div class="header-section">
+        <div class="container">
+            <div class="row align-items-center">
+                <div class="col-md-8">
+                    <h1 class="mb-1">
+                        <i class="fas fa-shield-alt me-2"></i>
+                        Security Settings
+                    </h1>
+                    <p class="mb-0 opacity-75">Manage your account security and privacy</p>
+                </div>
+                <div class="col-md-4 text-end">
+                    <div class="d-flex gap-2 justify-content-end">
+                        <a href="{% url 'user_activity_log' %}" class="btn btn-outline-light">
+                            <i class="fas fa-history me-1"></i> Activity Log
+                        </a>
+                        <a href="{% url 'user_profile' %}" class="btn btn-light">
+                            <i class="fas fa-arrow-left me-1"></i> Back to Profile
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="container">
+        <!-- Security Score -->
+        <div class="security-card">
+            <div class="card-body text-center">
+                <div class="row align-items-center">
+                    <div class="col-md-3">
+                        <svg class="progress-ring mx-auto">
+                            <circle class="progress-ring__circle"></circle>
+                            <circle class="progress-ring__circle progress"></circle>
+                            <text x="60" y="65" text-anchor="middle" class="fw-bold" fill="#495057" font-size="18">75%</text>
+                        </svg>
+                    </div>
+                    <div class="col-md-9 text-start">
+                        <h4 class="mb-2">Security Score: Good</h4>
+                        <p class="text-muted mb-3">Your account has good security, but there are some improvements you can make.</p>
+                        <div class="d-flex flex-wrap gap-2">
+                            <span class="security-status status-secure">
+                                <i class="fas fa-check me-1"></i> Password Protected
+                            </span>
+                            {% if user.email_verified %}
+                                <span class="security-status status-secure">
+                                    <i class="fas fa-check me-1"></i> Email Verified
+                                </span>
+                            {% else %}
+                                <span class="security-status status-warning">
+                                    <i class="fas fa-exclamation-triangle me-1"></i> Email Not Verified
+                                </span>
+                            {% endif %}
+                            {% if user.two_factor_enabled %}
+                                <span class="security-status status-secure">
+                                    <i class="fas fa-check me-1"></i> 2FA Enabled
+                                </span>
+                            {% else %}
+                                <span class="security-status status-danger">
+                                    <i class="fas fa-times me-1"></i> 2FA Disabled
+                                </span>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="row">
+            <!-- Password Security -->
+            <div class="col-lg-6">
+                <div class="security-card h-100">
+                    <div class="card-body">
+                        <div class="d-flex align-items-start mb-3">
+                            <div class="security-icon bg-primary bg-opacity-10 text-primary me-3">
+                                <i class="fas fa-key"></i>
+                            </div>
+                            <div class="flex-grow-1">
+                                <h5 class="mb-1">Password Security</h5>
+                                <p class="text-muted mb-3">Manage your password and authentication</p>
+                            </div>
+                        </div>
+
+                        <div class="mb-3">
+                            <div class="d-flex justify-content-between align-items-center mb-2">
+                                <span class="small">Password Age</span>
+                                <span class="badge bg-{% if password_age < 90 %}success{% elif password_age < 180 %}warning{% else %}danger{% endif %}">
+                                    {{ password_age }} days
+                                </span>
+                            </div>
+                            <div class="progress" style="height: 4px;">
+                                <div class="progress-bar bg-{% if password_age < 90 %}success{% elif password_age < 180 %}warning{% else %}danger{% endif %}" 
+                                     style="width: {% if password_age > 180 %}100{% else %}{{ password_age|mul:100|div:180 }}{% endif %}%"></div>
+                            </div>
+                            <small class="text-muted">
+                                {% if password_age < 90 %}
+                                    Password is recent and secure
+                                {% elif password_age < 180 %}
+                                    Consider changing your password soon
+                                {% else %}
+                                    Password is old, change recommended
+                                {% endif %}
+                            </small>
+                        </div>
+
+                        <div class="d-grid gap-2">
+                            <a href="{% url 'change_password' %}" class="btn btn-primary">
+                                <i class="fas fa-key me-1"></i> Change Password
+                            </a>
+                            <button class="btn btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#passwordTipsModal">
+                                <i class="fas fa-lightbulb me-1"></i> Password Tips
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Two-Factor Authentication -->
+            <div class="col-lg-6">
+                <div class="security-card h-100">
+                    <div class="card-body">
+                        <div class="d-flex align-items-start mb-3">
+                            <div class="security-icon bg-{% if user.two_factor_enabled %}success{% else %}warning{% endif %} bg-opacity-10 text-{% if user.two_factor_enabled %}success{% else %}warning{% endif %} me-3">
+                                <i class="fas fa-mobile-alt"></i>
+                            </div>
+                            <div class="flex-grow-1">
+                                <h5 class="mb-1">Two-Factor Authentication</h5>
+                                <p class="text-muted mb-3">Add an extra layer of security to your account</p>
+                            </div>
+                        </div>
+
+                        {% if user.two_factor_enabled %}
+                            <div class="alert alert-success" role="alert">
+                                <i class="fas fa-check-circle me-2"></i>
+                                Two-factor authentication is <strong>enabled</strong>
+                            </div>
+                            
+                            <div class="mb-3">
+                                <small class="text-muted">Backup Codes</small>
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <span>{{ backup_codes_count }} codes remaining</span>
+                                    <button class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#backupCodesModal">
+                                        <i class="fas fa-eye me-1"></i> View Codes
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div class="d-grid gap-2">
+                                <button class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#regenerateCodesModal">
+                                    <i class="fas fa-sync me-1"></i> Generate New Codes
+                                </button>
+                                <a href="{% url 'disable_two_factor' %}" class="btn btn-outline-danger" 
+                                   onclick="return confirm('Are you sure you want to disable two-factor authentication?')">
+                                    <i class="fas fa-times me-1"></i> Disable 2FA
+                                </a>
+                            </div>
+                        {% else %}
+                            <div class="alert alert-warning" role="alert">
+                                <i class="fas fa-exclamation-triangle me-2"></i>
+                                Two-factor authentication is <strong>disabled</strong>
+                            </div>
+                            
+                            <p class="small text-muted mb-3">
+                                Protect your account with an additional security step when you sign in.
+                            </p>
+
+                            <div class="d-grid">
+                                <a href="{% url 'two_factor_setup' %}" class="btn btn-success">
+                                    <i class="fas fa-shield-alt me-1"></i> Enable 2FA
+                                </a>
+                            </div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Account Security -->
+        <div class="security-card">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-user-shield me-2"></i>
+                    Account Security
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <h6 class="mb-3">Email Verification</h6>
+                        {% if user.email_verified %}
+                            <div class="alert alert-success" role="alert">
+                                <i class="fas fa-check-circle me-2"></i>
+                                Your email <strong>{{ user.email }}</strong> is verified
+                            </div>
+                        {% else %}
+                            <div class="alert alert-warning" role="alert">
+                                <i class="                                <i class="fas fa-exclamation-triangle me-2"></i>
+                                Your email <strong>{{ user.email }}</strong> is not verified.
+                            </div>
+                            <a href="{% url 'resend_verification_email' %}" class="btn btn-outline-primary btn-sm">
+                                <i class="fas fa-envelope me-1"></i> Resend Verification Email
+                            </a>
+                        {% endif %}
+                    </div>
+
+                    <div class="col-md-6">
+                        <h6 class="mb-3">Login Notifications</h6>
+                        {% if user.login_alerts_enabled %}
+                            <div class="alert alert-info" role="alert">
+                                <i class="fas fa-bell me-2"></i>
+                                You will receive notifications for new logins to your account.
+                            </div>
+                            <a href="{% url 'disable_login_alerts' %}" class="btn btn-outline-danger btn-sm">
+                                <i class="fas fa-times me-1"></i> Disable Alerts
+                            </a>
+                        {% else %}
+                            <div class="alert alert-secondary" role="alert">
+                                <i class="fas fa-bell-slash me-2"></i>
+                                Login notifications are currently disabled.
+                            </div>
+                            <a href="{% url 'enable_login_alerts' %}" class="btn btn-outline-success btn-sm">
+                                <i class="fas fa-bell me-1"></i> Enable Alerts
+                            </a>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Recent Devices -->
+        <div class="security-card mt-4">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-laptop me-2"></i>
+                    Recently Used Devices
+                </h5>
+            </div>
+            <div class="card-body">
+                {% if recent_devices %}
+                    {% for device in recent_devices %}
+                        <div class="device-item d-flex justify-content-between align-items-center">
+                            <div>
+                                <strong>{{ device.device_name }}</strong><br>
+                                <small class="text-muted">
+                                    {{ device.ip_address }} • {{ device.last_seen|date:"M d, Y H:i" }}
+                                </small>
+                            </div>
+                            <form method="post" action="{% url 'logout_device' device.id %}" style="margin: 0;">
+                                {% csrf_token %}
+                                <button type="submit" class="btn btn-sm btn-outline-danger"
+                                        onclick="return confirm('Log out this device?')">
+                                    <i class="fas fa-sign-out-alt"></i> Logout
+                                </button>
+                            </form>
+                        </div>
+                    {% endfor %}
+                {% else %}
+                    <p class="text-muted mb-0">No recent devices found.</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Modals -->
+    <!-- Password Tips Modal -->
+    <div class="modal fade" id="passwordTipsModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Password Tips</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <ul>
+                        <li>Use at least 12 characters, mixing letters, numbers, and symbols.</li>
+                        <li>Avoid common words or personal information.</li>
+                        <li>Consider using a password manager to store secure passwords.</li>
+                        <li>Change your password regularly, especially if suspicious activity is detected.</li>
+                    </ul>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Backup Codes Modal -->
+    <div class="modal fade" id="backupCodesModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Backup Codes</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    {% if backup_codes %}
+                        <div class="backup-codes">
+                            {% for code in backup_codes %}
+                                <div>{{ code }}</div>
+                            {% endfor %}
+                        </div>
+                        <small class="text-muted d-block mt-2">
+                            Keep these codes safe — they can be used if you lose access to your 2FA device.
+                        </small>
+                    {% else %}
+                        <p>No backup codes available. Generate new ones.</p>
+                    {% endif %}
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Regenerate Codes Modal -->
+    <div class="modal fade" id="regenerateCodesModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Generate New Backup Codes</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <p>Are you sure you want to generate new backup codes? This will invalidate any existing codes.</p>
+                </div>
+                <div class="modal-footer">
+                    <form method="post" action="{% url 'generate_backup_codes' %}">
+                        {% csrf_token %}
+                        <button type="submit" class="btn btn-primary">Generate</button>
+                    </form>
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.0/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

@@ -1,0 +1,453 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Reports Dashboard{% endblock %}
+
+{% block extra_css %}
+<style>
+    .stat-card {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        border-radius: 15px;
+        padding: 25px;
+        box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+        transition: transform 0.3s ease, box-shadow 0.3s ease;
+    }
+    .stat-card:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 15px 40px rgba(0,0,0,0.15);
+    }
+    .stat-card.success {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    }
+    .stat-card.warning {
+        background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+    }
+    .stat-card.info {
+        background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+    }
+    .stat-card.danger {
+        background: linear-gradient(135deg, #fa709a 0%, #fee140 100%);
+    }
+    .stat-value {
+        font-size: 2.5rem;
+        font-weight: bold;
+        margin: 10px 0;
+    }
+    .stat-label {
+        font-size: 0.95rem;
+        opacity: 0.9;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+    }
+    .chart-container {
+        position: relative;
+        height: 300px;
+        margin-top: 20px;
+    }
+    .alert-badge {
+        display: inline-block;
+        padding: 5px 10px;
+        border-radius: 20px;
+        font-size: 0.85rem;
+        font-weight: 600;
+    }
+    .alert-badge.critical {
+        background-color: #fee2e2;
+        color: #dc2626;
+    }
+    .alert-badge.warning {
+        background-color: #fef3c7;
+        color: #d97706;
+    }
+    .live-indicator {
+        display: inline-block;
+        width: 10px;
+        height: 10px;
+        background-color: #10b981;
+        border-radius: 50%;
+        animation: pulse 2s infinite;
+        margin-right: 8px;
+    }
+    @keyframes pulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.5; }
+    }
+    .report-card {
+        border: 1px solid #e5e7eb;
+        border-radius: 10px;
+        padding: 20px;
+        transition: all 0.3s ease;
+        cursor: pointer;
+        height: 100%;
+    }
+    .report-card:hover {
+        border-color: #3b82f6;
+        box-shadow: 0 4px 12px rgba(59, 130, 246, 0.1);
+        transform: translateY(-2px);
+    }
+    .quick-action-btn {
+        border-radius: 8px;
+        padding: 12px 20px;
+        font-weight: 600;
+        transition: all 0.3s ease;
+    }
+    .section-header {
+        border-bottom: 3px solid #3b82f6;
+        padding-bottom: 10px;
+        margin-bottom: 25px;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <!-- Header -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h2 class="mb-1">
+                <span class="live-indicator"></span>
+                Reports Dashboard
+            </h2>
+            <p class="text-muted mb-0">Real-time business insights and analytics</p>
+        </div>
+        <div>
+            <button class="btn btn-outline-primary me-2" onclick="refreshDashboard()">
+                <i class="fas fa-sync-alt"></i> Refresh
+            </button>
+            <a href="{% url 'reports:saved_reports' %}" class="btn btn-primary">
+                <i class="fas fa-folder-open"></i> Saved Reports
+            </a>
+        </div>
+    </div>
+
+    <!-- Key Metrics -->
+    <div class="row g-4 mb-4">
+        <div class="col-md-3">
+            <div class="stat-card success">
+                <div class="stat-label">Today's Sales</div>
+                <div class="stat-value" id="sales-today">UGX {{ stats.total_sales_today|floatformat:0 }}</div>
+                <div class="d-flex justify-content-between align-items-center mt-2">
+                    <small>{{ stats.transactions_today }} transactions</small>
+                    <i class="fas fa-chart-line fa-2x" style="opacity: 0.3;"></i>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="stat-card info">
+                <div class="stat-label">This Week</div>
+                <div class="stat-value" id="sales-week">UGX {{ stats.total_sales_week|floatformat:0 }}</div>
+                <div class="d-flex justify-content-between align-items-center mt-2">
+                    <small>Weekly performance</small>
+                    <i class="fas fa-calendar-week fa-2x" style="opacity: 0.3;"></i>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="stat-card warning">
+                <div class="stat-label">Low Stock Items</div>
+                <div class="stat-value" id="low-stock">{{ stats.low_stock_products }}</div>
+                <div class="d-flex justify-content-between align-items-center mt-2">
+                    <small>Requires attention</small>
+                    <i class="fas fa-exclamation-triangle fa-2x" style="opacity: 0.3;"></i>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="stat-card danger">
+                <div class="stat-label">EFRIS Pending</div>
+                <div class="stat-value" id="pending-fiscal">{{ stats.pending_fiscalization }}</div>
+                <div class="d-flex justify-content-between align-items-center mt-2">
+                    <small>Awaiting fiscalization</small>
+                    <i class="fas fa-file-invoice fa-2x" style="opacity: 0.3;"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row g-4">
+        <!-- Sales Trend Chart -->
+        <div class="col-lg-8">
+            <div class="card shadow-sm">
+                <div class="card-header bg-white">
+                    <h5 class="mb-0"><i class="fas fa-chart-area text-primary"></i> Sales Trend (Last 30 Days)</h5>
+                </div>
+                <div class="card-body">
+                    <div class="chart-container">
+                        <canvas id="salesTrendChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Stock Alerts -->
+        <div class="col-lg-4">
+            <div class="card shadow-sm">
+                <div class="card-header bg-white d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0"><i class="fas fa-bell text-warning"></i> Stock Alerts</h5>
+                    <span class="badge bg-danger">{{ stock_alerts|length }}</span>
+                </div>
+                <div class="card-body" style="max-height: 350px; overflow-y: auto;">
+                    {% for alert in stock_alerts %}
+                    <div class="alert {% if alert.quantity == 0 %}alert-danger{% else %}alert-warning{% endif %} mb-2 py-2 px-3">
+                        <div class="d-flex justify-content-between align-items-start">
+                            <div style="flex: 1;">
+                                <strong class="d-block mb-1">{{ alert.product.name }}</strong>
+                                <small class="text-muted d-block">{{ alert.store.name }}</small>
+                            </div>
+                            <span class="alert-badge {% if alert.quantity == 0 %}critical{% else %}warning{% endif %}">
+                                {% if alert.quantity == 0 %}
+                                    OUT OF STOCK
+                                {% else %}
+                                    {{ alert.quantity }} left
+                                {% endif %}
+                            </span>
+                        </div>
+                    </div>
+                    {% empty %}
+                    <div class="text-center text-muted py-4">
+                        <i class="fas fa-check-circle fa-3x mb-2"></i>
+                        <p>No stock alerts</p>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Quick Report Actions -->
+    <div class="row g-4 mt-3">
+        <div class="col-12">
+            <h4 class="section-header">Quick Actions</h4>
+        </div>
+        <div class="col-md-3">
+            <a href="{% url 'reports:sales_summary' %}" class="text-decoration-none">
+                <div class="report-card">
+                    <div class="text-center">
+                        <i class="fas fa-chart-line fa-3x text-primary mb-3"></i>
+                        <h5>Sales Summary</h5>
+                        <p class="text-muted small mb-0">View detailed sales analysis</p>
+                    </div>
+                </div>
+            </a>
+        </div>
+        <div class="col-md-3">
+            <a href="{% url 'reports:product_performance' %}" class="text-decoration-none">
+                <div class="report-card">
+                    <div class="text-center">
+                        <i class="fas fa-box fa-3x text-success mb-3"></i>
+                        <h5>Product Performance</h5>
+                        <p class="text-muted small mb-0">Analyze product profitability</p>
+                    </div>
+                </div>
+            </a>
+        </div>
+        <div class="col-md-3">
+            <a href="{% url 'reports:inventory_status' %}" class="text-decoration-none">
+                <div class="report-card">
+                    <div class="text-center">
+                        <i class="fas fa-warehouse fa-3x text-info mb-3"></i>
+                        <h5>Inventory Status</h5>
+                        <p class="text-muted small mb-0">Check stock levels</p>
+                    </div>
+                </div>
+            </a>
+        </div>
+        <div class="col-md-3">
+            <a href="{% url 'reports:tax_report' %}" class="text-decoration-none">
+                <div class="report-card">
+                    <div class="text-center">
+                        <i class="fas fa-file-invoice-dollar fa-3x text-warning mb-3"></i>
+                        <h5>Tax Report</h5>
+                        <p class="text-muted small mb-0">EFRIS compliance report</p>
+                    </div>
+                </div>
+            </a>
+        </div>
+    </div>
+
+    <!-- Top Products & Recent Reports -->
+    <div class="row g-4 mt-3">
+        <div class="col-lg-6">
+            <div class="card shadow-sm">
+                <div class="card-header bg-white">
+                    <h5 class="mb-0"><i class="fas fa-star text-warning"></i> Top Products (This Month)</h5>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Product</th>
+                                    <th class="text-end">Quantity</th>
+                                    <th class="text-end">Revenue</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for product in top_products %}
+                                <tr>
+                                    <td>
+                                        <strong>{{ product.product__name }}</strong><br>
+                                        <small class="text-muted">{{ product.product__sku }}</small>
+                                    </td>
+                                    <td class="text-end">{{ product.total_quantity|floatformat:0 }}</td>
+                                    <td class="text-end">UGX {{ product.total_revenue|floatformat:0 }}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-lg-6">
+            <div class="card shadow-sm">
+                <div class="card-header bg-white d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0"><i class="fas fa-history text-primary"></i> Recent Reports</h5>
+                    <a href="{% url 'reports:history' %}" class="btn btn-sm btn-outline-primary">View All</a>
+                </div>
+                <div class="card-body">
+                    {% for report in recent_reports %}
+                    <div class="d-flex justify-content-between align-items-center mb-3 pb-3 border-bottom">
+                        <div>
+                            <strong>{{ report.report.name }}</strong><br>
+                            <small class="text-muted">
+                                <i class="far fa-clock"></i> {{ report.generated_at|timesince }} ago
+                            </small>
+                        </div>
+                        <div class="text-end">
+                            <span class="badge bg-success mb-1">{{ report.file_format }}</span><br>
+                            <a href="{% url 'reports:download_report' report.id %}" class="btn btn-sm btn-primary">
+                                <i class="fas fa-download"></i>
+                            </a>
+                        </div>
+                    </div>
+                    {% empty %}
+                    <div class="text-center text-muted py-4">
+                        <i class="far fa-file fa-3x mb-2"></i>
+                        <p>No recent reports</p>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // WebSocket connection
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const wsUrl = `${protocol}//${window.location.host}/ws/reports/dashboard/`;
+    let ws = null;
+    let reconnectInterval = null;
+
+    function connectWebSocket() {
+        ws = new WebSocket(wsUrl);
+
+        ws.onopen = function() {
+            console.log('WebSocket connected');
+            clearInterval(reconnectInterval);
+            // Request initial data
+            ws.send(JSON.stringify({type: 'request_stats'}));
+        };
+
+        ws.onmessage = function(event) {
+            const data = JSON.parse(event.data);
+
+            if (data.type === 'dashboard_stats') {
+                updateDashboardStats(data.data);
+            } else if (data.type === 'alert') {
+                showAlert(data);
+            }
+        };
+
+        ws.onerror = function(error) {
+            console.error('WebSocket error:', error);
+        };
+
+        ws.onclose = function() {
+            console.log('WebSocket disconnected. Reconnecting...');
+            reconnectInterval = setInterval(connectWebSocket, 5000);
+        };
+    }
+
+    function updateDashboardStats(stats) {
+        document.getElementById('sales-today').textContent = 'UGX ' + Math.round(stats.sales_today).toLocaleString();
+        document.getElementById('sales-week').textContent = 'UGX ' + Math.round(stats.sales_week).toLocaleString();
+        document.getElementById('low-stock').textContent = stats.low_stock_count;
+        document.getElementById('pending-fiscal').textContent = stats.pending_fiscalization;
+    }
+
+    function showAlert(alert) {
+        const alertHtml = `
+            <div class="alert alert-${alert.severity === 'critical' ? 'danger' : 'warning'} alert-dismissible fade show" role="alert">
+                <strong>${alert.alert_type.replace('_', ' ').toUpperCase()}</strong> ${alert.message}
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            </div>
+        `;
+        const container = document.querySelector('.container-fluid');
+        container.insertAdjacentHTML('afterbegin', alertHtml);
+    }
+
+    function refreshDashboard() {
+        location.reload();
+    }
+
+    // Initialize WebSocket
+    connectWebSocket();
+
+    // Sales Trend Chart
+    const salesData = {{ sales_trend|safe }};
+    const ctx = document.getElementById('salesTrendChart').getContext('2d');
+    const salesChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: salesData.map(d => d.date),
+            datasets: [{
+                label: 'Sales Amount',
+                data: salesData.map(d => d.amount),
+                borderColor: 'rgb(59, 130, 246)',
+                backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                tension: 0.4,
+                fill: true
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    display: false
+                },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            return 'UGX ' + context.parsed.y.toLocaleString();
+                        }
+                    }
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    ticks: {
+                        callback: function(value) {
+                            return 'UGX ' + value.toLocaleString();
+                        }
+                    }
+                }
+            }
+        }
+    });
+
+    // Cleanup on page unload
+    window.addEventListener('beforeunload', function() {
+        if (ws) {
+            ws.close();
+        }
+    });
+</script>
+{% endblock %}

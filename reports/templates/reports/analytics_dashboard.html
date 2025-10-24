@@ -1,0 +1,396 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Analytics Dashboard | {{ company.trading_name|default:company.name }} {% endblock %}
+
+{% block extra_css %}
+<link href="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.css" rel="stylesheet">
+<style>
+.analytics-card {
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+.analytics-card:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 8px 25px rgba(0,0,0,0.15);
+}
+.chart-container {
+    position: relative;
+    height: 300px;
+    width: 100%;
+}
+.kpi-card {
+    border-left: 4px solid;
+}
+.kpi-primary { border-left-color: #4e73df; }
+.kpi-success { border-left-color: #1cc88a; }
+.kpi-info { border-left-color: #36b9cc; }
+.kpi-warning { border-left-color: #f6c23e; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row mb-4">
+        <div class="col-12">
+            <h1 class="h3 mb-0 text-gray-800">
+                <i class="bi bi-graph-up me-2"></i>Analytics Dashboard
+            </h1>
+            <p class="text-muted">Comprehensive business intelligence and performance metrics</p>
+        </div>
+    </div>
+
+    <!-- KPI Cards -->
+    <div class="row mb-4">
+        <div class="col-xl-3 col-md-6 mb-4">
+            <div class="card kpi-card kpi-primary shadow h-100 py-2">
+                <div class="card-body">
+                    <div class="row no-gutters align-items-center">
+                        <div class="col mr-2">
+                            <div class="text-xs font-weight-bold text-primary text-uppercase mb-1">
+                                Total Revenue (30 Days)
+                            </div>
+                            <div class="h5 mb-0 font-weight-bold text-gray-800">
+                                UGX {{ store_performance.0.revenue|default:0|floatformat:0 }}
+                            </div>
+                        </div>
+                        <div class="col-auto">
+                            <i class="bi bi-currency-exchange fa-2x text-gray-300"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-xl-3 col-md-6 mb-4">
+            <div class="card kpi-card kpi-success shadow h-100 py-2">
+                <div class="card-body">
+                    <div class="row no-gutters align-items-center">
+                        <div class="col mr-2">
+                            <div class="text-xs font-weight-bold text-success text-uppercase mb-1">
+                                Avg. Transaction Value
+                            </div>
+                            <div class="h5 mb-0 font-weight-bold text-gray-800">
+                                UGX {{ store_performance.0.avg_transaction|default:0|floatformat:0 }}
+                            </div>
+                        </div>
+                        <div class="col-auto">
+                            <i class="bi bi-cart-check fa-2x text-gray-300"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-xl-3 col-md-6 mb-4">
+            <div class="card kpi-card kpi-info shadow h-100 py-2">
+                <div class="card-body">
+                    <div class="row no-gutters align-items-center">
+                        <div class="col mr-2">
+                            <div class="text-xs font-weight-bold text-info text-uppercase mb-1">
+                                Unique Customers
+                            </div>
+                            <div class="h5 mb-0 font-weight-bold text-gray-800">
+                                {{ customer_stats.unique_customers|default:0 }}
+                            </div>
+                        </div>
+                        <div class="col-auto">
+                            <i class="bi bi-people fa-2x text-gray-300"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-xl-3 col-md-6 mb-4">
+            <div class="card kpi-card kpi-warning shadow h-100 py-2">
+                <div class="card-body">
+                    <div class="row no-gutters align-items-center">
+                        <div class="col mr-2">
+                            <div class="text-xs font-weight-bold text-warning text-uppercase mb-1">
+                                Avg. Customer Spend
+                            </div>
+                            <div class="h5 mb-0 font-weight-bold text-gray-800">
+                                UGX {{ customer_stats.avg_customer_spend|default:0|floatformat:0 }}
+                            </div>
+                        </div>
+                        <div class="col-auto">
+                            <i class="bi bi-wallet2 fa-2x text-gray-300"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Charts Row -->
+    <div class="row mb-4">
+        <!-- Sales Trend Chart -->
+        <div class="col-xl-8 col-lg-7">
+            <div class="card shadow mb-4 analytics-card">
+                <div class="card-header py-3 d-flex flex-row align-items-center justify-content-between">
+                    <h6 class="m-0 font-weight-bold text-primary">Sales Trend (Last 30 Days)</h6>
+                    <div class="dropdown no-arrow">
+                        <a class="dropdown-toggle" href="#" role="button" id="dropdownMenuLink"
+                           data-bs-toggle="dropdown" aria-expanded="false">
+                            <i class="bi bi-three-dots-vertical text-gray-400"></i>
+                        </a>
+                        <div class="dropdown-menu dropdown-menu-end shadow animated--fade-in"
+                             aria-labelledby="dropdownMenuLink">
+                            <div class="dropdown-header">Chart Options:</div>
+                            <a class="dropdown-item" href="#" onclick="updateChart('sales_trend', 7)">Last 7 Days</a>
+                            <a class="dropdown-item" href="#" onclick="updateChart('sales_trend', 30)">Last 30 Days</a>
+                            <a class="dropdown-item" href="#" onclick="updateChart('sales_trend', 90)">Last 90 Days</a>
+                        </div>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <div class="chart-container">
+                        <canvas id="salesTrendChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Payment Methods Chart -->
+        <div class="col-xl-4 col-lg-5">
+            <div class="card shadow mb-4 analytics-card">
+                <div class="card-header py-3">
+                    <h6 class="m-0 font-weight-bold text-primary">Payment Methods</h6>
+                </div>
+                <div class="card-body">
+                    <div class="chart-container">
+                        <canvas id="paymentMethodsChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Additional Charts -->
+    <div class="row mb-4">
+        <!-- Monthly Comparison -->
+        <div class="col-xl-6 col-lg-6">
+            <div class="card shadow mb-4 analytics-card">
+                <div class="card-header py-3">
+                    <h6 class="m-0 font-weight-bold text-primary">Monthly Sales Comparison</h6>
+                </div>
+                <div class="card-body">
+                    <div class="chart-container">
+                        <canvas id="monthlyComparisonChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Top Products -->
+        <div class="col-xl-6 col-lg-6">
+            <div class="card shadow mb-4 analytics-card">
+                <div class="card-header py-3">
+                    <h6 class="m-0 font-weight-bold text-primary">Top Selling Products</h6>
+                </div>
+                <div class="card-body">
+                    <div class="chart-container">
+                        <canvas id="topProductsChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Store Performance Table -->
+    <div class="card shadow mb-4 analytics-card">
+        <div class="card-header py-3">
+            <h6 class="m-0 font-weight-bold text-primary">Store Performance</h6>
+        </div>
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-bordered table-hover">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Store</th>
+                            <th>Branch</th>
+                            <th>Revenue</th>
+                            <th>Transactions</th>
+                            <th>Avg. Transaction</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for store in store_performance %}
+                        <tr>
+                            <td>{{ store.store__name }}</td>
+                            <td>{{ store.store__branch__name }}</td>
+                            <td>UGX {{ store.revenue|floatformat:0 }}</td>
+                            <td>{{ store.transactions }}</td>
+                            <td>UGX {{ store.avg_transaction|floatformat:0 }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"></script>
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Sales Trend Chart
+        const salesTrendData = JSON.parse('{{ sales_trend|escapejs }}');
+        const salesTrendCtx = document.getElementById('salesTrendChart').getContext('2d');
+        new Chart(salesTrendCtx, {
+            type: 'line',
+            data: {
+                labels: salesTrendData.map(item => item.date),
+                datasets: [{
+                    label: 'Sales Amount',
+                    data: salesTrendData.map(item => item.amount),
+                    borderColor: '#4e73df',
+                    backgroundColor: 'rgba(78, 115, 223, 0.05)',
+                    pointBackgroundColor: '#4e73df',
+                    pointBorderColor: '#4e73df',
+                    pointHoverBackgroundColor: '#fff',
+                    pointHoverBorderColor: '#4e73df',
+                    fill: true,
+                    tension: 0.3
+                }]
+            },
+            options: {
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        display: false
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        ticks: {
+                            callback: function(value) {
+                                return 'UGX ' + value.toLocaleString();
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
+        // Payment Methods Chart
+        const paymentMethodsData = JSON.parse('{{ payment_methods|escapejs }}');
+        const paymentMethodsCtx = document.getElementById('paymentMethodsChart').getContext('2d');
+        new Chart(paymentMethodsCtx, {
+            type: 'doughnut',
+            data: {
+                labels: paymentMethodsData.map(item => item.payment_method),
+                datasets: [{
+                    data: paymentMethodsData.map(item => item.amount),
+                    backgroundColor: ['#4e73df', '#1cc88a', '#36b9cc', '#f6c23e', '#e74a3b'],
+                    hoverBackgroundColor: ['#2e59d9', '#17a673', '#2c9faf', '#f4b619', '#e02d1b'],
+                    hoverOffset: 4
+                }]
+            },
+            options: {
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        position: 'bottom'
+                    }
+                }
+            }
+        });
+
+        // Monthly Comparison Chart
+        const monthlyComparisonData = JSON.parse('{{ monthly_comparison|escapejs }}');
+        const monthlyComparisonCtx = document.getElementById('monthlyComparisonChart').getContext('2d');
+        new Chart(monthlyComparisonCtx, {
+            type: 'bar',
+            data: {
+                labels: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'],
+                datasets: [
+                    {
+                        label: 'This Year',
+                        data: monthlyComparisonData.map(item => item.this_year),
+                        backgroundColor: '#4e73df',
+                        borderColor: '#4e73df',
+                        borderWidth: 1
+                    },
+                    {
+                        label: 'Last Year',
+                        data: monthlyComparisonData.map(item => item.last_year),
+                        backgroundColor: '#858796',
+                        borderColor: '#858796',
+                        borderWidth: 1
+                    }
+                ]
+            },
+            options: {
+                maintainAspectRatio: false,
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        ticks: {
+                            callback: function(value) {
+                                return 'UGX ' + value.toLocaleString();
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
+        // Top Products Chart
+        const topProductsData = JSON.parse('{{ top_products|escapejs }}');
+        const topProductsCtx = document.getElementById('topProductsChart').getContext('2d');
+        new Chart(topProductsCtx, {
+            type: 'bar',
+            data: {
+                labels: topProductsData.map(item => item.product__name),
+                datasets: [{
+                    label: 'Revenue',
+                    data: topProductsData.map(item => item.revenue),
+                    backgroundColor: '#1cc88a',
+                    borderColor: '#1cc88a',
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                indexAxis: 'y',
+                maintainAspectRatio: false,
+                scales: {
+                    x: {
+                        beginAtZero: true,
+                        ticks: {
+                            callback: function(value) {
+                                return 'UGX ' + value.toLocaleString();
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    });
+
+    function updateChart(chartType, days) {
+        // AJAX call to update chart data
+        fetch(`/reports/api/chart-data/?type=${chartType}&days=${days}`)
+            .then(response => response.json())
+            .then(data => {
+                if (chartType === 'sales_trend') {
+                    // Update the sales trend chart
+                    const salesTrendCtx = document.getElementById('salesTrendChart').getContext('2d');
+                    const chart = Chart.getChart(salesTrendCtx);
+
+                    if (chart) {
+                        chart.data.labels = data.data.map(item => item.date);
+                        chart.data.datasets[0].data = data.data.map(item => item.amount);
+                        chart.update();
+                    }
+                }
+            })
+            .catch(error => {
+                console.error('Error updating chart:', error);
+            });
+    }
+</script>
+{% endblock %}

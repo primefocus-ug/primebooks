@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Import Progress - {{ session.filename }}</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        .progress-container {
+            min-height: 300px;
+        }
+        .log-container {
+            max-height: 400px;
+            overflow-y: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 0.875rem;
+            background-color: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 0.375rem;
+            padding: 1rem;
+        }
+        .status-indicator {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            margin-right: 8px;
+        }
+        .status-processing {
+            background-color: #ffc107;
+            animation: pulse 1.5s infinite;
+        }
+        .status-completed {
+            background-color: #28a745;
+        }
+        .status-failed {
+            background-color: #dc3545;
+        }
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.5; }
+            100% { opacity: 1; }
+        }
+    </style>
+</head>
+<body data-page="import-progress" data-session-id="{{ session.id }}">
+    <div class="container-fluid">
+        <!-- Header -->
+        <div class="row mb-4">
+            <div class="col">
+                <nav aria-label="breadcrumb">
+                    <ol class="breadcrumb">
+                        <li class="breadcrumb-item"><a href="{% url 'inventory:dashboard' %}">Dashboard</a></li>
+                        <li class="breadcrumb-item"><a href="{% url 'inventory:import_sessions' %}">Import Sessions</a></li>
+                        <li class="breadcrumb-item active">{{ session.filename }}</li>
+                    </ol>
+                </nav>
+
+                <h1 class="h3 mb-0">
+                    <i class="fas fa-upload"></i> Import Progress
+                </h1>
+                <p class="text-muted mb-0">
+                    Monitoring import of {{ session.filename }}
+                    <span class="badge badge-info ms-2">Real-time</span>
+                </p>
+            </div>
+        </div>
+
+        <!-- Progress Overview -->
+        <div class="row mb-4">
+            <div class="col-lg-8">
+                <div class="card">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h5 class="card-title mb-0">
+                            <span class="status-indicator status-processing" id="status-indicator"></span>
+                            Import Status
+                        </h5>
+                        <span class="badge badge-secondary" id="import-status">{{ session.status|title }}</span>
+                    </div>
+                    <div class="card-body">
+                        <!-- Progress Bar -->
+                        <div class="mb-3">
+                            <div class="d-flex justify-content-between mb-1">
+                                <small class="text-muted">Progress</small>
+                                <small class="text-muted">
+                                    <span id="progress-text">0%</span>
+                                </small>
+                            </div>
+                            <div class="progress" style="height: 20px;">
+                                <div class="progress-bar progress-bar-striped progress-bar-animated"
+                                     id="import-progress-bar"
+                                     role="progressbar"
+                                     style="width: 0%"
+                                     aria-valuenow="0"
+                                     aria-valuemin="0"
+                                     aria-valuemax="100">
+                                    0%
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Import Details -->
+                        <div class="row">
+                            <div class="col-md-6">
+                                <p class="mb-1">
+                                    <strong>File:</strong> {{ session.filename }}
+                                </p>
+                                <p class="mb-1">
+                                    <strong>Size:</strong> {{ session.file_size|filesizeformat }}
+                                </p>
+                                <p class="mb-1">
+                                    <strong>Started:</strong>
+                                    {% if session.started_at %}
+                                        {{ session.started_at|date:"M d, Y H:i" }}
+                                    {% else %}
+                                        Not started
+                                    {% endif %}
+                                </p>
+                            </div>
+                            <div class="col-md-6">
+                                <p class="mb-1">
+                                    <strong>Mode:</strong> {{ session.get_import_mode_display }}
+                                </p>
+                                <p class="mb-1">
+                                    <strong>Conflict Resolution:</strong> {{ session.get_conflict_resolution_display }}
+                                </p>
+                                <p class="mb-1">
+                                    <strong>Total Rows:</strong>
+                                    <span id="total-rows">{{ session.total_rows|default:"Loading..." }}</span>
+                                </p>
+                            </div>
+                        </div>
+
+                        <!-- Current Message -->
+                        <div class="alert alert-info" id="import-message">
+                            <div class="d-flex align-items-center">
+                                <div class="spinner-border spinner-border-sm me-2" role="status" id="message-spinner">
+                                    <span class="visually-hidden">Loading...</span>
+                                </div>
+                                <span id="message-text">Initializing import process...</span>
+                            </div>
+                        </div>
+
+                        <!-- Action Buttons -->
+                        <div class="d-flex justify-content-between">
+                            <div>
+                                {% if session.status == 'processing' %}
+                                    <button type="button" class="btn btn-danger btn-sm" onclick="cancelImport()">
+                                        <i class="fas fa-stop"></i> Cancel Import
+                                    </button>
+                                {% endif %}
+                            </div>
+                            <div>
+                                <button type="button" class="btn btn-outline-secondary btn-sm" onclick="refreshStatus()">
+                                    <i class="fas fa-sync-alt"></i> Refresh
+                                </button>
+                                {% if session.status == 'completed' %}
+                                    <a href="{% url 'inventory:import_session_detail' session.id %}" class="btn btn-primary btn-sm">
+                                        <i class="fas fa-eye"></i> View Results
+                                    </a>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Statistics Card -->
+            <div class="col-lg-4">
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="card-title mb-0">
+                            <i class="fas fa-chart-bar"></i> Statistics
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row text-center">
+                            <div class="col-6 mb-3">
+                                <div class="text-success">
+                                    <h4 class="mb-0" id="created-count">{{ session.created_count }}</h4>
+                                    <small class="text-muted">Created</small>
+                                </div>
+                            </div>
+                            <div class="col-6 mb-3">
+                                <div class="text-info">
+                                    <h4 class="mb-0" id="updated-count">{{ session.updated_count }}</h4>
+                                    <small class="text-muted">Updated</small>
+                                </div>
+                            </div>
+                            <div class="col-6 mb-3">
+                                <div class="text-warning">
+                                    <h4 class="mb-0" id="skipped-count">{{ session.skipped_count }}</h4>
+                                    <small class="text-muted">Skipped</small>
+                                </div>
+                            </div>
+                            <div class="col-6 mb-3">
+                                <div class="text-danger">
+                                    <h4 class="mb-0" id="error-count">{{ session.error_count }}</h4>
+                                    <small class="text-muted">Errors</small>
+                                </div>
+                            </div>
+                        </div>
+
+                        {% if session.success_rate %}
+                            <div class="progress mb-2">
+                                <div class="progress-bar bg-success"
+                                     style="width: {{ session.success_rate }}%"
+                                     id="success-rate-bar">
+                                </div>
+                            </div>
+                            <small class="text-muted">
+                                Success Rate: <span id="success-rate">{{ session.success_rate|floatformat:1 }}%</span>
+                            </small>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Import Logs -->
+        <div class="row">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h5 class="card-title mb-0">
+                            <i class="fas fa-terminal"></i> Import Logs
+                        </h5>
+                        <div>
+                            <button type="button" class="btn btn-outline-secondary btn-sm" onclick="clearLogs()">
+                                <i class="fas fa-trash"></i> Clear
+                            </button>
+                            <button type="button" class="btn btn-outline-primary btn-sm" onclick="downloadLogs()">
+                                <i class="fas fa-download"></i> Download
+                            </button>
+                        </div>
+                    </div>
+                    <div class="card-body p-0">
+                        <div class="log-container" id="import-logs">
+                            <div class="text-muted">Waiting for import logs...</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.6.0/jquery.min.js"></script>
+    <script src="{% static 'js/inventory/websocket-manager.js' %}"></script>
+
+    <script>
+        // Global functions for button actions
+        function cancelImport() {
+            if (window.importHandler) {
+                window.importHandler.cancelImport();
+            }
+        }
+
+        function refreshStatus() {
+            if (window.importHandler) {
+                window.importHandler.requestStatus();
+            }
+        }
+
+        function clearLogs() {
+            const logsContainer = document.getElementById('import-logs');
+            if (logsContainer) {
+                logsContainer.innerHTML = '<div class="text-muted">Logs cleared</div>';
+            }
+        }
+
+        function downloadLogs() {
+            // Implementation for downloading logs
+            const logs = document.getElementById('import-logs').innerText;
+            const blob = new Blob([logs], { type: 'text/plain' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `import_logs_{{ session.id }}_${new Date().toISOString().slice(0,19)}.txt`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            window.URL.revokeObjectURL(url);
+        }
+
+        // Status indicator updates
+        function updateStatusIndicator(status) {
+            const indicator = document.getElementById('status-indicator');
+            const statusBadge = document.getElementById('import-status');
+
+            // Remove all status classes
+            indicator.classList.remove('status-processing', 'status-completed', 'status-failed');
+
+            switch (status.toLowerCase()) {
+                case 'processing':
+                    indicator.classList.add('status-processing');
+                    statusBadge.className = 'badge badge-warning';
+                    statusBadge.textContent = 'Processing';
+                    break;
+                case 'completed':
+                    indicator.classList.add('status-completed');
+                    statusBadge.className = 'badge badge-success';
+                    statusBadge.textContent = 'Completed';
+                    document.getElementById('message-spinner').style.display = 'none';
+                    break;
+                case 'failed':
+                    indicator.classList.add('status-failed');
+                    statusBadge.className = 'badge badge-danger';
+                    statusBadge.textContent = 'Failed';
+                    document.getElementById('message-spinner').style.display = 'none';
+                    break;
+                default:
+                    statusBadge.className = 'badge badge-secondary';
+                    statusBadge.textContent = status;
+            }
+        }
+
+        // Auto-scroll logs to bottom
+        function scrollLogsToBottom() {
+            const logsContainer = document.getElementById('import-logs');
+            if (logsContainer) {
+                logsContainer.scrollTop = logsContainer.scrollHeight;
+            }
+        }
+
+        // WebSocket event listeners specific to import progress
+        document.addEventListener('websocket:import_{{ session.id }}:import_status', function(e) {
+            const data = e.detail.data;
+            updateStatusIndicator(data.status);
+
+            // Update statistics
+            document.getElementById('created-count').textContent = data.created_count || 0;
+            document.getElementById('updated-count').textContent = data.updated_count || 0;
+            document.getElementById('skipped-count').textContent = data.skipped_count || 0;
+            document.getElementById('error-count').textContent = data.error_count || 0;
+
+            if (data.success_rate !== undefined) {
+                document.getElementById('success-rate').textContent = data.success_rate.toFixed(1) + '%';
+                document.getElementById('success-rate-bar').style.width = data.success_rate + '%';
+            }
+        });
+
+        document.addEventListener('websocket:import_{{ session.id }}:progress_update', function(e) {
+            const data = e.detail.data;
+            const progressBar = document.getElementById('import-progress-bar');
+            const progressText = document.getElementById('progress-text');
+            const messageText = document.getElementById('message-text');
+
+            if (data.progress_percentage !== undefined) {
+                progressBar.style.width = data.progress_percentage + '%';
+                progressBar.setAttribute('aria-valuenow', data.progress_percentage);
+                progressBar.textContent = Math.round(data.progress_percentage) + '%';
+                progressText.textContent = Math.round(data.progress_percentage) + '%';
+            }
+
+            if (data.processed_rows && data.total_rows) {
+                messageText.textContent = `Processing row ${data.processed_rows} of ${data.total_rows}`;
+            }
+        });
+
+        document.addEventListener('websocket:import_{{ session.id }}:import_completed', function(e) {
+            const data = e.detail.data;
+            updateStatusIndicator('completed');
+
+            // Show completion message
+            const messageDiv = document.getElementById('import-message');
+            messageDiv.className = 'alert alert-success';
+            messageDiv.innerHTML = `
+                <div class="d-flex align-items-center">
+                    <i class="fas fa-check-circle me-2"></i>
+                    <span><strong>Import completed successfully!</strong><br>${data.summary || ''}</span>
+                </div>
+            `;
+        });
+
+        document.addEventListener('websocket:import_{{ session.id }}:import_error', function(e) {
+            const data = e.detail.data;
+            updateStatusIndicator('failed');
+
+            // Show error message
+            const messageDiv = document.getElementById('import-message');
+            messageDiv.className = 'alert alert-danger';
+            messageDiv.innerHTML = `
+                <div class="d-flex align-items-center">
+                    <i class="fas fa-exclamation-triangle me-2"></i>
+                    <span><strong>Import failed:</strong><br>${data.error || data.message || 'Unknown error'}</span>
+                </div>
+            `;
+        });
+
+        // Initialize with current session status
+        document.addEventListener('DOMContentLoaded', function() {
+            updateStatusIndicator('{{ session.status }}');
+
+            // Auto-scroll logs when new entries are added
+            const observer = new MutationObserver(function(mutations) {
+                mutations.forEach(function(mutation) {
+                    if (mutation.type === 'childList') {
+                        scrollLogsToBottom();
+                    }
+                });
+            });
+
+            const logsContainer = document.getElementById('import-logs');
+            if (logsContainer) {
+                observer.observe(logsContainer, { childList: true });
+            }
+        });
+    </script>
+</body>
+</html>

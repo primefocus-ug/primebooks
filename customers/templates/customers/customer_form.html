@@ -1,0 +1,539 @@
+{% extends 'base.html' %}
+{% load static %}
+{% load crispy_forms_tags %}
+
+{% block title %}
+    {% if object %}Edit Customer |{{ company.trading_name|default:company.name }}| {{ block.super }}{% else %}Add Customer | {{ block.super }}{% endif %}
+{% endblock %}
+
+{% block extra_css %}
+<style>
+.form-section {
+    background: #f8f9fa;
+    border-left: 4px solid var(--primary-color);
+    margin-bottom: 1.5rem;
+}
+
+.required-field::after {
+    content: " *";
+    color: #dc3545;
+}
+
+.field-help {
+    font-size: 0.875rem;
+    color: #6c757d;
+    margin-top: 0.25rem;
+}
+
+.validation-feedback {
+    display: block;
+    width: 100%;
+    margin-top: 0.25rem;
+    font-size: 0.875rem;
+    color: #dc3545;
+}
+
+.is-invalid {
+    border-color: #dc3545 !important;
+    box-shadow: 0 0 0 0.2rem rgba(220, 53, 69, 0.25) !important;
+}
+
+.is-valid {
+    border-color: #198754 !important;
+    box-shadow: 0 0 0 0.2rem rgba(25, 135, 84, 0.25) !important;
+}
+
+.customer-type-options {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+    margin-top: 0.5rem;
+}
+
+.customer-type-option {
+    flex: 1;
+    min-width: 200px;
+}
+
+.form-check-card {
+    border: 2px solid #dee2e6;
+    border-radius: 8px;
+    padding: 1rem;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.form-check-card:hover {
+    border-color: var(--primary-color);
+    background-color: rgba(37, 99, 235, 0.05);
+}
+
+.form-check-card.checked {
+    border-color: var(--primary-color);
+    background-color: rgba(37, 99, 235, 0.1);
+}
+
+.form-check-card input[type="radio"] {
+    display: none;
+}
+
+.form-check-card .form-check-icon {
+    font-size: 2rem;
+    color: var(--primary-color);
+    margin-bottom: 0.5rem;
+}
+</style>
+{% endblock %}
+
+{% block page_header %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h1 class="h3 mb-0">
+            {% if object %}
+                <i class="bi bi-pencil-square me-2"></i>Edit Customer
+            {% else %}
+                <i class="bi bi-person-plus me-2"></i>Add New Customer
+            {% endif %}
+        </h1>
+        <p class="text-muted mb-0">
+            {% if object %}
+                Update customer information for {{ object.name }}
+            {% else %}
+                Enter customer details to add them to your database
+            {% endif %}
+        </p>
+    </div>
+    <div>
+        {% if perms.customers.view_customer %}
+        <a href="{% url 'customers:list' %}" class="btn btn-outline-secondary">
+            <i class="bi bi-arrow-left me-1"></i>Back to List
+        </a>
+        {% endif %}
+        {% if object %}
+        {% if perms.customers.view_customer %}
+        <a href="{% url 'customers:detail' object.pk %}" class="btn btn-outline-primary ms-2">
+            <i class="bi bi-eye me-1"></i>View Details
+        </a>
+        {% endif %}
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-10">
+        <div class="card border-0 shadow-sm">
+            <div class="card-body p-4">
+                <form method="post" class="needs-validation" novalidate id="customerForm">
+                    {% csrf_token %}
+
+                    <!-- Customer Type Selection -->
+                    <div class="form-section p-3 rounded mb-4">
+                        <h5 class="mb-3">
+                            <i class="bi bi-person-badge me-2"></i>Customer Type
+                            <span class="required-field"></span>
+                        </h5>
+                        <div class="customer-type-options">
+                            {% for value, label in form.customer_type.field.choices %}
+                            <div class="customer-type-option">
+                                <label class="form-check-card" for="id_customer_type_{{ forloop.counter0 }}">
+                                    <input type="radio" name="customer_type" value="{{ value }}"
+                                           id="id_customer_type_{{ forloop.counter0 }}"
+                                           {% if form.customer_type.value == value %}checked{% endif %}
+                                           required>
+                                    <div class="form-check-icon">
+                                        {% if value == 'INDIVIDUAL' %}
+                                            <i class="bi bi-person"></i>
+                                        {% elif value == 'BUSINESS' %}
+                                            <i class="bi bi-building"></i>
+                                        {% elif value == 'GOVERNMENT' %}
+                                            <i class="bi bi-bank"></i>
+                                        {% elif value == 'NGO' %}
+                                            <i class="bi bi-heart"></i>
+                                        {% endif %}
+                                    </div>
+                                    <div class="fw-medium">{{ label }}</div>
+                                </label>
+                            </div>
+                            {% endfor %}
+                        </div>
+                        {% if form.customer_type.errors %}
+                            <div class="validation-feedback">{{ form.customer_type.errors.0 }}</div>
+                        {% endif %}
+                    </div>
+
+                    <!-- Basic Information -->
+                    <div class="form-section p-3 rounded mb-4">
+                        <h5 class="mb-3">
+                            <i class="bi bi-info-circle me-2"></i>Basic Information
+                        </h5>
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label for="{{ form.name.id_for_label }}" class="form-label required-field">
+                                    Customer Name
+                                </label>
+                                {{ form.name }}
+                                {% if form.name.errors %}
+                                    <div class="validation-feedback">{{ form.name.errors.0 }}</div>
+                                {% endif %}
+                                <div class="field-help">Enter the full name of the customer</div>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label for="{{ form.store.id_for_label }}" class="form-label">
+                                    Store
+                                </label>
+                                {{ form.store }}
+                                {% if form.store.errors %}
+                                    <div class="validation-feedback">{{ form.store.errors.0 }}</div>
+                                {% endif %}
+                                <div class="field-help">Select the primary store for this customer</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Contact Information -->
+                    <div class="form-section p-3 rounded mb-4">
+                        <h5 class="mb-3">
+                            <i class="bi bi-telephone me-2"></i>Contact Information
+                        </h5>
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label for="{{ form.phone.id_for_label }}" class="form-label required-field">
+                                    Phone Number
+                                </label>
+                                <div class="input-group">
+                                    <span class="input-group-text">+256</span>
+                                    {{ form.phone }}
+                                </div>
+                                {% if form.phone.errors %}
+                                    <div class="validation-feedback">{{ form.phone.errors.0 }}</div>
+                                {% endif %}
+                                <div class="field-help">Primary contact number</div>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label for="{{ form.email.id_for_label }}" class="form-label">
+                                    Email Address
+                                </label>
+                                {{ form.email }}
+                                {% if form.email.errors %}
+                                    <div class="validation-feedback">{{ form.email.errors.0 }}</div>
+                                {% endif %}
+                                <div class="field-help">Email for invoices and communications</div>
+                            </div>
+                        </div>
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label for="{{ form.confirm_email.id_for_label }}" class="form-label">
+                                    Confirm Email
+                                </label>
+                                {{ form.confirm_email }}
+                                {% if form.confirm_email.errors %}
+                                    <div class="validation-feedback">{{ form.confirm_email.errors.0 }}</div>
+                                {% endif %}
+                                <div class="field-help">Re-enter email to confirm</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Tax Information -->
+                    <div class="form-section p-3 rounded mb-4" id="taxSection">
+                        <h5 class="mb-3">
+                            <i class="bi bi-receipt me-2"></i>Tax Information
+                        </h5>
+                        <div class="alert alert-info">
+                            <i class="bi bi-info-circle me-2"></i>
+                            Tax information is required for compliance and proper invoicing
+                        </div>
+                        <div class="row">
+                            <div class="col-md-4 mb-3">
+                                <label for="{{ form.tin.id_for_label }}" class="form-label" id="tinLabel">
+                                    TIN (Tax Identification Number)
+                                </label>
+                                {{ form.tin }}
+                                {% if form.tin.errors %}
+                                    <div class="validation-feedback">{{ form.tin.errors.0 }}</div>
+                                {% endif %}
+                                <div class="field-help">10-digit tax identification number</div>
+                            </div>
+                            <div class="col-md-4 mb-3">
+                                <label for="{{ form.nin.id_for_label }}" class="form-label" id="ninLabel">
+                                    NIN (National ID Number)
+                                </label>
+                                {{ form.nin }}
+                                {% if form.nin.errors %}
+                                    <div class="validation-feedback">{{ form.nin.errors.0 }}</div>
+                                {% endif %}
+                                <div class="field-help">National identification number</div>
+                            </div>
+                            <div class="col-md-4 mb-3" id="brnField">
+                                <label for="{{ form.brn.id_for_label }}" class="form-label" id="brnLabel">
+                                    BRN (Business Registration Number)
+                                </label>
+                                {{ form.brn }}
+                                {% if form.brn.errors %}
+                                    <div class="validation-feedback">{{ form.brn.errors.0 }}</div>
+                                {% endif %}
+                                <div class="field-help">Business registration certificate number</div>
+                            </div>
+                        </div>
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <div class="form-check">
+                                    {{ form.is_vat_registered }}
+                                    <label class="form-check-label" for="{{ form.is_vat_registered.id_for_label }}">
+                                        VAT Registered Customer
+                                    </label>
+                                    {% if form.is_vat_registered.errors %}
+                                        <div class="validation-feedback">{{ form.is_vat_registered.errors.0 }}</div>
+                                    {% endif %}
+                                </div>
+                                <div class="field-help">Check if customer is registered for VAT</div>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label for="{{ form.credit_limit.id_for_label }}" class="form-label">
+                                    Credit Limit
+                                </label>
+                                <div class="input-group">
+                                    <span class="input-group-text">UGX</span>
+                                    {{ form.credit_limit }}
+                                </div>
+                                {% if form.credit_limit.errors %}
+                                    <div class="validation-feedback">{{ form.credit_limit.errors.0 }}</div>
+                                {% endif %}
+                                <div class="field-help">Maximum credit amount allowed</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Address Information -->
+                    <div class="form-section p-3 rounded mb-4">
+                        <h5 class="mb-3">
+                            <i class="bi bi-geo-alt me-2"></i>Address Information
+                        </h5>
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label for="{{ form.physical_address.id_for_label }}" class="form-label">
+                                    Physical Address
+                                </label>
+                                {{ form.physical_address }}
+                                {% if form.physical_address.errors %}
+                                    <div class="validation-feedback">{{ form.physical_address.errors.0 }}</div>
+                                {% endif %}
+                                <div class="field-help">Street address or location description</div>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label for="{{ form.postal_address.id_for_label }}" class="form-label">
+                                    Postal Address
+                                </label>
+                                {{ form.postal_address }}
+                                {% if form.postal_address.errors %}
+                                    <div class="validation-feedback">{{ form.postal_address.errors.0 }}</div>
+                                {% endif %}
+                                <div class="field-help">P.O. Box or mailing address</div>
+                            </div>
+                        </div>
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label for="{{ form.district.id_for_label }}" class="form-label">
+                                    District
+                                </label>
+                                {{ form.district }}
+                                {% if form.district.errors %}
+                                    <div class="validation-feedback">{{ form.district.errors.0 }}</div>
+                                {% endif %}
+                                <div class="field-help">District or region</div>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label for="{{ form.country.id_for_label }}" class="form-label">
+                                    Country
+                                </label>
+                                {{ form.country }}
+                                {% if form.country.errors %}
+                                    <div class="validation-feedback">{{ form.country.errors.0 }}</div>
+                                {% endif %}
+                                <div class="field-help">Country of residence</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Status -->
+                    <div class="form-section p-3 rounded mb-4">
+                        <h5 class="mb-3">
+                            <i class="bi bi-toggle-on me-2"></i>Customer Status
+                        </h5>
+                        <div class="form-check form-switch">
+                            {{ form.is_active }}
+                            <label class="form-check-label" for="{{ form.is_active.id_for_label }}">
+                                Active Customer
+                            </label>
+                            {% if form.is_active.errors %}
+                                <div class="validation-feedback">{{ form.is_active.errors.0 }}</div>
+                            {% endif %}
+                            <div class="field-help">Inactive customers cannot make new transactions</div>
+                        </div>
+                    </div>
+
+                    <!-- Form Actions -->
+                    <div class="text-center pt-4 border-top">
+                        <button type="submit" class="btn btn-primary btn-lg px-4 me-3">
+                            <i class="bi bi-check-lg me-2"></i>
+                            {% if object %}Update Customer{% else %}Save Customer{% endif %}
+                        </button>
+                        <button type="reset" class="btn btn-outline-secondary btn-lg px-4 me-3">
+                            <i class="bi bi-arrow-clockwise me-2"></i>Reset Form
+                        </button>
+                        {% if perms.customers.view_customer %}
+                        <a href="{% url 'customers:list' %}" class="btn btn-outline-danger btn-lg px-4">
+                            <i class="bi bi-x-lg me-2"></i>Cancel
+                        </a>
+                        {% endif %}
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const customerTypeRadios = document.querySelectorAll('input[name="customer_type"]');
+    const tinLabel = document.getElementById('tinLabel');
+    const ninLabel = document.getElementById('ninLabel');
+    const brnLabel = document.getElementById('brnLabel');
+    const brnField = document.getElementById('brnField');
+
+    // Handle customer type change
+    customerTypeRadios.forEach(radio => {
+        radio.addEventListener('change', function() {
+            updateFormFields(this.value);
+            updateCardSelection();
+        });
+    });
+
+    // Initialize form based on current selection
+    const selectedType = document.querySelector('input[name="customer_type"]:checked');
+    if (selectedType) {
+        updateFormFields(selectedType.value);
+        updateCardSelection();
+    }
+
+    function updateFormFields(customerType) {
+        // Reset all field requirements
+        const tinField = document.getElementById('{{ form.tin.id_for_label }}');
+        const ninField = document.getElementById('{{ form.nin.id_for_label }}');
+        const brnFieldInput = document.getElementById('{{ form.brn.id_for_label }}');
+
+        // Remove required attributes
+        tinField.removeAttribute('required');
+        ninField.removeAttribute('required');
+        brnFieldInput.removeAttribute('required');
+
+        // Remove required indicators
+        tinLabel.classList.remove('required-field');
+        ninLabel.classList.remove('required-field');
+        brnLabel.classList.remove('required-field');
+
+        switch(customerType) {
+            case 'INDIVIDUAL':
+                ninField.setAttribute('required', 'required');
+                ninLabel.classList.add('required-field');
+                brnField.style.display = 'none';
+                break;
+
+            case 'BUSINESS':
+                tinField.setAttribute('required', 'required');
+                brnFieldInput.setAttribute('required', 'required');
+                tinLabel.classList.add('required-field');
+                brnLabel.classList.add('required-field');
+                brnField.style.display = 'block';
+                break;
+
+            case 'GOVERNMENT':
+            case 'NGO':
+                tinField.setAttribute('required', 'required');
+                tinLabel.classList.add('required-field');
+                brnField.style.display = 'block';
+                break;
+        }
+    }
+
+    function updateCardSelection() {
+        document.querySelectorAll('.form-check-card').forEach(card => {
+            card.classList.remove('checked');
+        });
+
+        const checkedRadio = document.querySelector('input[name="customer_type"]:checked');
+        if (checkedRadio) {
+            checkedRadio.closest('.form-check-card').classList.add('checked');
+        }
+    }
+
+    // Email confirmation validation
+    const emailField = document.getElementById('{{ form.email.id_for_label }}');
+    const confirmEmailField = document.getElementById('{{ form.confirm_email.id_for_label }}');
+
+    if (emailField && confirmEmailField) {
+        function validateEmailMatch() {
+            if (emailField.value && confirmEmailField.value) {
+                if (emailField.value !== confirmEmailField.value) {
+                    confirmEmailField.setCustomValidity('Email addresses do not match');
+                    confirmEmailField.classList.add('is-invalid');
+                } else {
+                    confirmEmailField.setCustomValidity('');
+                    confirmEmailField.classList.remove('is-invalid');
+                    confirmEmailField.classList.add('is-valid');
+                }
+            } else {
+                confirmEmailField.setCustomValidity('');
+                confirmEmailField.classList.remove('is-invalid', 'is-valid');
+            }
+        }
+
+        emailField.addEventListener('input', validateEmailMatch);
+        confirmEmailField.addEventListener('input', validateEmailMatch);
+
+        // Make confirm email required if email is filled
+        emailField.addEventListener('input', function() {
+            if (this.value) {
+                confirmEmailField.setAttribute('required', 'required');
+            } else {
+                confirmEmailField.removeAttribute('required');
+            }
+        });
+    }
+
+    // Form validation
+    const form = document.getElementById('customerForm');
+    form.addEventListener('submit', function(e) {
+        if (!form.checkValidity()) {
+            e.preventDefault();
+            e.stopPropagation();
+
+            // Focus on first invalid field
+            const firstInvalidField = form.querySelector(':invalid');
+            if (firstInvalidField) {
+                firstInvalidField.focus();
+                firstInvalidField.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+        }
+        form.classList.add('was-validated');
+    });
+
+    // Real-time field validation
+    const requiredFields = form.querySelectorAll('[required]');
+    requiredFields.forEach(field => {
+        field.addEventListener('blur', function() {
+            if (this.checkValidity()) {
+                this.classList.remove('is-invalid');
+                this.classList.add('is-valid');
+            } else {
+                this.classList.remove('is-valid');
+                this.classList.add('is-invalid');
+            }
+        });
+    });
+});
+</script>
+{% endblock %}

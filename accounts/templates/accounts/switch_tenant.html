@@ -1,0 +1,487 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Switch Company View{% endblock %}
+
+{% block extra_css %}
+<style>
+    .company-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+        gap: 24px;
+        margin-top: 32px;
+    }
+
+    .company-card {
+        background: white;
+        border-radius: 16px;
+        padding: 24px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+        transition: all 0.3s;
+        cursor: pointer;
+        border: 2px solid transparent;
+        position: relative;
+        overflow: hidden;
+    }
+
+    .company-card:hover {
+        transform: translateY(-4px);
+        box-shadow: 0 8px 24px rgba(0,0,0,0.12);
+        border-color: #667eea;
+    }
+
+    .company-card.active {
+        border-color: #667eea;
+        background: linear-gradient(135deg, rgba(102, 126, 234, 0.05) 0%, rgba(118, 75, 162, 0.05) 100%);
+    }
+
+    .company-card.active::before {
+        content: 'Currently Viewing';
+        position: absolute;
+        top: 12px;
+        right: 12px;
+        background: #667eea;
+        color: white;
+        padding: 4px 12px;
+        border-radius: 12px;
+        font-size: 11px;
+        font-weight: 600;
+    }
+
+    .company-icon {
+        width: 56px;
+        height: 56px;
+        border-radius: 12px;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: white;
+        font-size: 24px;
+        font-weight: 700;
+        margin-bottom: 16px;
+    }
+
+    .company-name {
+        font-size: 18px;
+        font-weight: 700;
+        color: #1f2937;
+        margin-bottom: 8px;
+    }
+
+    .company-meta {
+        display: flex;
+        gap: 12px;
+        flex-wrap: wrap;
+        margin-top: 12px;
+    }
+
+    .meta-item {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        font-size: 13px;
+        color: #6b7280;
+    }
+
+    .status-badge {
+        display: inline-block;
+        padding: 4px 12px;
+        border-radius: 12px;
+        font-size: 12px;
+        font-weight: 600;
+    }
+
+    .status-active {
+        background: #d1fae5;
+        color: #059669;
+    }
+
+    .status-trial {
+        background: #fef3c7;
+        color: #d97706;
+    }
+
+    .status-expired {
+        background: #fee2e2;
+        color: #dc2626;
+    }
+
+    .search-section {
+        background: white;
+        border-radius: 16px;
+        padding: 24px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+        margin-bottom: 32px;
+    }
+
+    .search-box {
+        position: relative;
+    }
+
+    .search-box input {
+        width: 100%;
+        padding: 12px 48px 12px 48px;
+        border: 2px solid #e5e7eb;
+        border-radius: 12px;
+        font-size: 16px;
+        transition: all 0.2s;
+    }
+
+    .search-box input:focus {
+        border-color: #667eea;
+        outline: none;
+        box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+    }
+
+    .search-icon {
+        position: absolute;
+        left: 16px;
+        top: 50%;
+        transform: translateY(-50%);
+        color: #6b7280;
+    }
+
+    .clear-icon {
+        position: absolute;
+        right: 16px;
+        top: 50%;
+        transform: translateY(-50%);
+        color: #6b7280;
+        cursor: pointer;
+        display: none;
+    }
+
+    .clear-icon.active {
+        display: block;
+    }
+
+    .filter-pills {
+        display: flex;
+        gap: 12px;
+        margin-top: 16px;
+        flex-wrap: wrap;
+    }
+
+    .filter-pill {
+        padding: 8px 16px;
+        border-radius: 20px;
+        border: 2px solid #e5e7eb;
+        background: white;
+        cursor: pointer;
+        font-size: 14px;
+        font-weight: 500;
+        transition: all 0.2s;
+    }
+
+    .filter-pill:hover {
+        border-color: #667eea;
+        background: #f8f9ff;
+    }
+
+    .filter-pill.active {
+        border-color: #667eea;
+        background: #667eea;
+        color: white;
+    }
+
+    .header-actions {
+        display: flex;
+        gap: 12px;
+        align-items: center;
+    }
+
+    .global-view-btn {
+        background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+        color: white;
+        border: none;
+        padding: 12px 24px;
+        border-radius: 12px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+
+    .global-view-btn:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+    }
+
+    .empty-state {
+        text-align: center;
+        padding: 64px 32px;
+        color: #6b7280;
+    }
+
+    .empty-state i {
+        font-size: 64px;
+        color: #d1d5db;
+        margin-bottom: 16px;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <!-- Header -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h1 class="mb-2">🏢 Switch Company View</h1>
+            <p class="text-muted mb-0">Select a company to manage or view their data</p>
+        </div>
+        <div class="header-actions">
+            {% if current_company_id %}
+            <button class="global-view-btn" onclick="clearTenantView()">
+                <i class="bi bi-globe me-2"></i>Return to Global View
+            </button>
+            {% endif %}
+            <a href="{% url 'saas_admin_dashboard' %}" class="btn btn-outline-secondary">
+                <i class="bi bi-arrow-left me-2"></i>Back to Dashboard
+            </a>
+        </div>
+    </div>
+
+    <!-- Search and Filter Section -->
+    <div class="search-section">
+        <div class="search-box">
+            <i class="bi bi-search search-icon"></i>
+            <input type="text" id="searchInput" placeholder="Search companies by name, ID, or email..." />
+            <i class="bi bi-x-circle-fill clear-icon" id="clearSearch"></i>
+        </div>
+
+        <div class="filter-pills">
+            <div class="filter-pill active" data-filter="all">
+                <i class="bi bi-grid-3x3-gap me-1"></i>All Companies
+            </div>
+            <div class="filter-pill" data-filter="active">
+                <i class="bi bi-check-circle me-1"></i>Active
+            </div>
+            <div class="filter-pill" data-filter="trial">
+                <i class="bi bi-hourglass-split me-1"></i>Trial
+            </div>
+            <div class="filter-pill" data-filter="expired">
+                <i class="bi bi-x-circle me-1"></i>Expired
+            </div>
+        </div>
+    </div>
+
+    <!-- Companies Grid -->
+    <div class="company-grid" id="companiesGrid">
+        {% for company in companies %}
+        <div class="company-card {% if company.id == current_company_id %}active{% endif %}"
+             data-company-id="{{ company.id }}"
+             data-status="{% if company.status == 'ACTIVE' %}active{% elif company.is_trial %}trial{% else %}expired{% endif %}"
+             data-name="{{ company.name|lower }}"
+             onclick="switchToCompany({{ company.id }})">
+
+            <div class="company-icon">
+                {{ company.name|slice:":2"|upper }}
+            </div>
+
+            <div class="company-name">{{ company.name }}</div>
+
+            <div class="d-flex align-items-center gap-2 mb-2">
+                {% if company.status == 'ACTIVE' %}
+                    <span class="status-badge status-active">Active</span>
+                {% elif company.is_trial %}
+                    <span class="status-badge status-trial">Trial</span>
+                {% else %}
+                    <span class="status-badge status-expired">{{ company.status }}</span>
+                {% endif %}
+
+                {% if company.plan_name %}
+                    <span class="badge bg-light text-dark">{{ company.plan_name }}</span>
+                {% endif %}
+            </div>
+
+            <div class="company-meta">
+                <div class="meta-item">
+                    <i class="bi bi-people-fill"></i>
+                    <span>{{ company.user_count }} users</span>
+                </div>
+
+                {% if company.company_id %}
+                <div class="meta-item">
+                    <i class="bi bi-hash"></i>
+                    <span>{{ company.company_id }}</span>
+                </div>
+                {% endif %}
+
+                {% if company.schema_name %}
+                <div class="meta-item">
+                    <i class="bi bi-server"></i>
+                    <span>{{ company.schema_name }}</span>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+        {% empty %}
+        <div class="col-12">
+            <div class="empty-state">
+                <i class="bi bi-building"></i>
+                <h3>No Companies Found</h3>
+                <p>There are no companies to display</p>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+
+    <div id="noResults" class="empty-state" style="display: none;">
+        <i class="bi bi-search"></i>
+        <h3>No Results Found</h3>
+        <p>Try adjusting your search or filter criteria</p>
+    </div>
+</div>
+
+<!-- Loading Overlay -->
+<div id="loadingOverlay" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.5); z-index: 9999; align-items: center; justify-content: center;">
+    <div style="background: white; padding: 32px; border-radius: 16px; text-align: center;">
+        <div class="spinner-border text-primary mb-3" role="status">
+            <span class="visually-hidden">Loading...</span>
+        </div>
+        <p class="mb-0">Switching company view...</p>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const searchInput = document.getElementById('searchInput');
+const clearSearch = document.getElementById('clearSearch');
+const companiesGrid = document.getElementById('companiesGrid');
+const noResults = document.getElementById('noResults');
+const filterPills = document.querySelectorAll('.filter-pill');
+const loadingOverlay = document.getElementById('loadingOverlay');
+
+let currentFilter = 'all';
+
+// Search functionality
+searchInput.addEventListener('input', function() {
+    const searchTerm = this.value.toLowerCase();
+    clearSearch.classList.toggle('active', searchTerm.length > 0);
+    filterCompanies();
+});
+
+clearSearch.addEventListener('click', function() {
+    searchInput.value = '';
+    this.classList.remove('active');
+    filterCompanies();
+});
+
+// Filter pills
+filterPills.forEach(pill => {
+    pill.addEventListener('click', function() {
+        filterPills.forEach(p => p.classList.remove('active'));
+        this.classList.add('active');
+        currentFilter = this.dataset.filter;
+        filterCompanies();
+    });
+});
+
+function filterCompanies() {
+    const searchTerm = searchInput.value.toLowerCase();
+    const cards = companiesGrid.querySelectorAll('.company-card');
+    let visibleCount = 0;
+
+    cards.forEach(card => {
+        const name = card.dataset.name;
+        const status = card.dataset.status;
+
+        const matchesSearch = name.includes(searchTerm);
+        const matchesFilter = currentFilter === 'all' || status === currentFilter;
+
+        if (matchesSearch && matchesFilter) {
+            card.style.display = 'block';
+            visibleCount++;
+        } else {
+            card.style.display = 'none';
+        }
+    });
+
+    noResults.style.display = visibleCount === 0 ? 'block' : 'none';
+    companiesGrid.style.display = visibleCount === 0 ? 'none' : 'grid';
+}
+
+// Switch to company
+function switchToCompany(companyId) {
+    loadingOverlay.style.display = 'flex';
+
+    fetch("{% url 'switch_tenant_view' %}?tenant_id=" + companyId, {
+        headers: {
+            'X-Requested-With': 'XMLHttpRequest'
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            // Show success message
+            const toast = document.createElement('div');
+            toast.className = 'alert alert-success position-fixed top-0 start-50 translate-middle-x mt-3';
+            toast.style.zIndex = '10000';
+            toast.innerHTML = `<i class="bi bi-check-circle me-2"></i>${data.message}`;
+            document.body.appendChild(toast);
+
+            // Redirect after a short delay
+            setTimeout(() => {
+                if (data.redirect_url) {
+                    window.location.href = data.redirect_url;
+                } else {
+                    window.location.reload();
+                }
+            }, 500);
+        } else {
+            loadingOverlay.style.display = 'none';
+            alert('Error: ' + (data.error || 'Failed to switch company'));
+        }
+    })
+    .catch(error => {
+        loadingOverlay.style.display = 'none';
+        console.error('Error:', error);
+        alert('An error occurred while switching companies');
+    });
+}
+
+// Clear tenant view
+function clearTenantView() {
+    loadingOverlay.style.display = 'flex';
+
+    fetch("{% url 'clear_tenant_view' %}", {
+        method: 'POST',
+        headers: {
+            'X-CSRFToken': '{{ csrf_token }}',
+            'X-Requested-With': 'XMLHttpRequest'
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            window.location.href = "{% url 'saas_admin_dashboard' %}";
+        } else {
+            loadingOverlay.style.display = 'none';
+            alert('Error clearing tenant view');
+        }
+    })
+    .catch(error => {
+        loadingOverlay.style.display = 'none';
+        console.error('Error:', error);
+        alert('An error occurred');
+    });
+}
+
+// Keyboard shortcuts
+document.addEventListener('keydown', function(e) {
+    // Ctrl/Cmd + K to focus search
+    if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+        e.preventDefault();
+        searchInput.focus();
+    }
+
+    // Escape to clear search
+    if (e.key === 'Escape' && searchInput.value) {
+        searchInput.value = '';
+        clearSearch.classList.remove('active');
+        filterCompanies();
+    }
+});
+</script>
+{% endblock %}

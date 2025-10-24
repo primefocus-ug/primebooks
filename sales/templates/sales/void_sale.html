@@ -1,0 +1,621 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Void Sale - Sale #{{ sale.invoice_number }} | {{ block.super }}{% endblock %}
+
+{% block extra_css %}
+<style>
+.void-warning {
+    background: linear-gradient(135deg, #fef3c7 0%, #fbbf24 20%, #f59e0b 100%);
+    border: 2px solid #d97706;
+    border-radius: 12px;
+    color: #92400e;
+}
+
+.impact-card {
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    transition: all 0.3s ease;
+}
+
+.impact-card:hover {
+    border-color: var(--danger-color);
+    box-shadow: 0 4px 12px rgba(220, 38, 38, 0.15);
+}
+
+.void-reason-card {
+    border: 2px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 1rem;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    text-align: center;
+}
+
+.void-reason-card:hover {
+    border-color: var(--danger-color);
+    background-color: rgba(220, 38, 38, 0.05);
+}
+
+.void-reason-card.selected {
+    border-color: var(--danger-color);
+    background-color: rgba(220, 38, 38, 0.1);
+    color: var(--danger-color);
+}
+
+.void-reason-card i {
+    font-size: 2rem;
+    margin-bottom: 0.5rem;
+    opacity: 0.7;
+}
+
+.void-reason-card.selected i {
+    opacity: 1;
+}
+
+.danger-zone {
+    background: linear-gradient(135deg, #fef2f2 0%, #fee2e2 100%);
+    border: 2px dashed #ef4444;
+    border-radius: 12px;
+}
+
+.confirmation-checklist {
+    background: #f8fafc;
+    border-radius: 8px;
+    border: 1px solid #e2e8f0;
+}
+
+.checklist-item {
+    padding: 0.75rem;
+    border-bottom: 1px solid #e2e8f0;
+    transition: all 0.3s ease;
+}
+
+.checklist-item:last-child {
+    border-bottom: none;
+}
+
+.checklist-item.checked {
+    background-color: rgba(34, 197, 94, 0.1);
+    border-color: #22c55e;
+}
+
+.impact-stat {
+    text-align: center;
+    padding: 1.5rem;
+    background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+    border-radius: 8px;
+    border: 1px solid #e2e8f0;
+}
+
+.impact-stat .number {
+    font-size: 2rem;
+    font-weight: 700;
+    color: var(--danger-color);
+}
+
+.impact-stat .label {
+    color: #6b7280;
+    font-size: 0.875rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.btn-void {
+    background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%);
+    border: none;
+    color: white;
+    font-weight: 600;
+    box-shadow: 0 4px 6px rgba(220, 38, 38, 0.3);
+    transition: all 0.3s ease;
+}
+
+.btn-void:hover {
+    background: linear-gradient(135deg, #b91c1c 0%, #991b1b 100%);
+    transform: translateY(-1px);
+    box-shadow: 0 6px 12px rgba(220, 38, 38, 0.4);
+    color: white;
+}
+
+.btn-void:disabled {
+    background: #9ca3af;
+    box-shadow: none;
+    transform: none;
+    cursor: not-allowed;
+}
+
+.sale-summary {
+    background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
+    border: 1px solid #3b82f6;
+    border-radius: 8px;
+}
+
+.alert-danger {
+    background: linear-gradient(135deg, #fef2f2 0%, #fee2e2 100%);
+    border: 1px solid #ef4444;
+    color: #991b1b;
+}
+
+.notes-required {
+    display: none;
+    background: #fffbeb;
+    border: 1px solid #f59e0b;
+    border-radius: 6px;
+    padding: 1rem;
+    margin-top: 1rem;
+}
+
+:root {
+    --danger-color: #dc2626;
+}
+</style>
+{% endblock %}
+
+{% block page_header %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h2 class="mb-1 text-danger">
+            <i class="bi bi-x-octagon me-2"></i>
+            Void Sale
+        </h2>
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb mb-0">
+                <li class="breadcrumb-item"><a href="{% url 'user_dashboard' %}">Dashboard</a></li>
+                <li class="breadcrumb-item"><a href="{% url 'sales:sales_list' %}">Sales</a></li>
+                <li class="breadcrumb-item"><a href="{% url 'sales:sale_detail' sale.pk %}">Sale #{{ sale.invoice_number }}</a></li>
+                <li class="breadcrumb-item active">Void Sale</li>
+            </ol>
+        </nav>
+    </div>
+    <div>
+        <a href="{% url 'sales:sale_detail' sale.pk %}" class="btn btn-outline-secondary">
+            <i class="bi bi-arrow-left me-1"></i>Back to Sale
+        </a>
+    </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-lg-8">
+        <!-- Warning Alert -->
+        <div class="alert void-warning mb-4">
+            <div class="d-flex">
+                <div class="me-3">
+                    <i class="bi bi-exclamation-triangle-fill" style="font-size: 2rem;"></i>
+                </div>
+                <div>
+                    <h4 class="alert-heading mb-2">
+                        <strong>Warning: Irreversible Action</strong>
+                    </h4>
+                    <p class="mb-2">
+                        Voiding this sale will permanently cancel the transaction and restore all items to inventory.
+                        This action cannot be undone and will affect your sales reports and inventory levels.
+                    </p>
+                    <ul class="mb-0">
+                        <li>All sale items will be returned to stock</li>
+                        <li>All payments will be marked as voided</li>
+                        <li>The sale will be permanently marked as void</li>
+                        <li>This action will appear in audit logs</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <!-- Sale Information -->
+        <div class="card mb-4">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0">
+                    <i class="bi bi-receipt me-2"></i>
+                    Sale Details
+                </h5>
+            </div>
+            <div class="card-body sale-summary">
+                <div class="row">
+                    <div class="col-md-6">
+                        <dl class="row">
+                            <dt class="col-sm-5">Invoice Number:</dt>
+                            <dd class="col-sm-7"><strong>{{ sale.invoice_number }}</strong></dd>
+                            <dt class="col-sm-5">Transaction ID:</dt>
+                            <dd class="col-sm-7">{{ sale.transaction_id }}</dd>
+                            <dt class="col-sm-5">Date & Time:</dt>
+                            <dd class="col-sm-7">{{ sale.created_at|date:"M d, Y H:i" }}</dd>
+                            <dt class="col-sm-5">Customer:</dt>
+                            <dd class="col-sm-7">
+                                {% if sale.customer %}
+                                    {{ sale.customer.name }}
+                                    {% if sale.customer.phone %}
+                                        <br><small class="text-muted">{{ sale.customer.phone }}</small>
+                                    {% endif %}
+                                {% else %}
+                                    <span class="text-muted">Walk-in Customer</span>
+                                {% endif %}
+                            </dd>
+                        </dl>
+                    </div>
+                    <div class="col-md-6">
+                        <dl class="row">
+                            <dt class="col-sm-5">Store:</dt>
+                            <dd class="col-sm-7">{{ sale.store.name }}</dd>
+                            <dt class="col-sm-5">Created By:</dt>
+                            <dd class="col-sm-7">{{ sale.created_by.get_full_name|default:sale.created_by.username }}</dd>
+                            <dt class="col-sm-5">Payment Method:</dt>
+                            <dd class="col-sm-7">{{ sale.get_payment_method_display }}</dd>
+                            <dt class="col-sm-5">Total Amount:</dt>
+                            <dd class="col-sm-7">
+                                <strong class="text-danger h5">{{ sale.currency }} {{ sale.total_amount|floatformat:2 }}</strong>
+                            </dd>
+                        </dl>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Impact Assessment -->
+        <div class="card mb-4">
+            <div class="card-header bg-warning text-white">
+                <h5 class="mb-0">
+                    <i class="bi bi-graph-down me-2"></i>
+                    Void Impact Assessment
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="row g-4">
+                    <div class="col-md-3">
+                        <div class="impact-stat">
+                            <div class="number">{{ items_count }}</div>
+                            <div class="label">Items Affected</div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="impact-stat">
+                            <div class="number">{{ sale.currency }} {{ total_payments|floatformat:2 }}</div>
+                            <div class="label">Payments to Void</div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="impact-stat">
+                            <div class="number">{{ sale.currency }} {{ sale.total_amount|floatformat:2 }}</div>
+                            <div class="label">Revenue Impact</div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="impact-stat">
+                            <div class="number">{{ sale.created_at|timesince }}</div>
+                            <div class="label">Sale Age</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="mt-4">
+                    <h6 class="text-danger">Items to be Returned to Stock:</h6>
+                    <div class="table-responsive">
+                        <table class="table table-sm">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Product</th>
+                                    <th>SKU</th>
+                                    <th class="text-end">Quantity</th>
+                                    <th class="text-end">Unit Price</th>
+                                    <th class="text-end">Line Total</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for item in sale.items.all %}
+                                <tr>
+                                    <td>{{ item.product.name }}</td>
+                                    <td><small class="text-muted">{{ item.product.sku|default:"N/A" }}</small></td>
+                                    <td class="text-end">{{ item.quantity }}</td>
+                                    <td class="text-end">{{ sale.currency }} {{ item.unit_price|floatformat:2 }}</td>
+                                    <td class="text-end">{{ sale.currency }} {{ item.line_total|floatformat:2 }}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Void Form -->
+        <form method="post" id="voidForm" class="danger-zone p-4">
+            {% csrf_token %}
+
+            <h5 class="text-danger mb-3">
+                <i class="bi bi-shield-exclamation me-2"></i>
+                Void Authorization Required
+            </h5>
+
+            <!-- Void Reason Selection -->
+            <div class="mb-4">
+                <label class="form-label fw-bold">Select Void Reason <span class="text-danger">*</span></label>
+                <div class="row g-3 mt-2">
+                    {% for value, label in void_reasons %}
+                    <div class="col-md-4">
+                        <div class="void-reason-card" onclick="selectVoidReason('{{ value }}', this)">
+                            <input type="radio" name="void_reason" value="{{ value }}" id="reason_{{ value }}" class="d-none" required>
+                            <div>
+                                <i class="bi
+                                    {% if value == 'CUSTOMER_REQUEST' %}bi-person-exclamation
+                                    {% elif value == 'PRICING_ERROR' %}bi-currency-dollar
+                                    {% elif value == 'DUPLICATE_TRANSACTION' %}bi-files
+                                    {% elif value == 'SYSTEM_ERROR' %}bi-bug
+                                    {% elif value == 'FRAUD_PREVENTION' %}bi-shield-x
+                                    {% elif value == 'INVENTORY_ISSUE' %}bi-box-seam
+                                    {% else %}bi-question-circle
+                                    {% endif %}"></i>
+                                <div class="fw-bold">{{ label }}</div>
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+
+            <!-- Additional Notes -->
+            <div class="mb-4">
+                <label for="void_notes" class="form-label fw-bold">
+                    Detailed Explanation
+                    <span class="text-danger">*</span>
+                    <small class="text-muted">(Required for audit purposes)</small>
+                </label>
+                <textarea class="form-control" id="void_notes" name="void_notes" rows="4"
+                          placeholder="Please provide a detailed explanation for voiding this sale. This information will be recorded in the audit log and may be required for compliance reporting."
+                          required></textarea>
+
+                <div id="notesRequiredAlert" class="notes-required">
+                    <i class="bi bi-info-circle me-2"></i>
+                    <strong>Additional details required:</strong> When selecting "Other" as the void reason, you must provide comprehensive details about why this sale is being voided.
+                </div>
+            </div>
+
+            <!-- Confirmation Checklist -->
+            <div class="confirmation-checklist p-3 mb-4">
+                <h6 class="text-danger mb-3">
+                    <i class="bi bi-check2-square me-2"></i>
+                    Confirmation Checklist
+                </h6>
+
+                <div class="checklist-item">
+                    <div class="form-check">
+                        <input class="form-check-input checklist-checkbox" type="checkbox" id="confirm_understand" required>
+                        <label class="form-check-label" for="confirm_understand">
+                            <strong>I understand that this action is irreversible</strong><br>
+                            <small class="text-muted">Voiding this sale will permanently cancel the transaction and cannot be undone.</small>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="checklist-item">
+                    <div class="form-check">
+                        <input class="form-check-input checklist-checkbox" type="checkbox" id="confirm_inventory" required>
+                        <label class="form-check-label" for="confirm_inventory">
+                            <strong>I acknowledge the inventory impact</strong><br>
+                            <small class="text-muted">All {{ items_count }} item(s) will be returned to stock, affecting current inventory levels.</small>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="checklist-item">
+                    <div class="form-check">
+                        <input class="form-check-input checklist-checkbox" type="checkbox" id="confirm_payments" required>
+                        <label class="form-check-label" for="confirm_payments">
+                            <strong>I confirm payment voiding</strong><br>
+                            <small class="text-muted">All payments totaling {{ sale.currency }} {{ total_payments|floatformat:2 }} will be marked as voided.</small>
+                        </label>
+                    </div>
+                </div>
+
+                <div class="checklist-item">
+                    <div class="form-check">
+                        <input class="form-check-input checklist-checkbox" type="checkbox" id="confirm_authority" required>
+                        <label class="form-check-label" for="confirm_authority">
+                            <strong>I have the authority to void this sale</strong><br>
+                            <small class="text-muted">I confirm that I am authorized to perform this action and take responsibility for its consequences.</small>
+                        </label>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Final Confirmation -->
+            <div class="alert alert-danger mb-4">
+                <div class="d-flex">
+                    <i class="bi bi-exclamation-triangle-fill me-3 mt-1"></i>
+                    <div>
+                        <h6 class="alert-heading">Final Confirmation Required</h6>
+                        <p class="mb-2">
+                            By proceeding with this void, you acknowledge that:
+                        </p>
+                        <ul class="mb-2">
+                            <li>This action will be logged and audited</li>
+                            <li>The sale will be permanently marked as voided</li>
+                            <li>Inventory and financial reports will be affected</li>
+                            <li>You may be required to provide additional documentation</li>
+                        </ul>
+                        <div class="form-check mt-3">
+                            <input class="form-check-input" type="checkbox" id="final_confirmation" required>
+                            <label class="form-check-label fw-bold" for="final_confirmation">
+                                I have read and understood all warnings and consequences of voiding this sale.
+                            </label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Action Buttons -->
+            <div class="d-flex justify-content-end gap-3">
+                <a href="{% url 'sales:sale_detail' sale.pk %}" class="btn btn-outline-secondary btn-lg">
+                    <i class="bi bi-x-circle me-2"></i>Cancel
+                </a>
+                <button type="submit" class="btn btn-void btn-lg" id="voidButton" disabled>
+                    <i class="bi bi-x-octagon me-2"></i>
+                    <span class="spinner-border spinner-border-sm me-2 d-none" id="voidSpinner"></span>
+                    Void Sale
+                </button>
+            </div>
+        </form>
+    </div>
+
+    <!-- Sidebar with Additional Information -->
+    <div class="col-lg-4">
+        <div class="card mb-4">
+            <div class="card-header bg-info text-white">
+                <h6 class="mb-0">
+                    <i class="bi bi-info-circle me-2"></i>
+                    Void Guidelines
+                </h6>
+            </div>
+            <div class="card-body">
+                <div class="small">
+                    <h6 class="text-info">When to Void a Sale:</h6>
+                    <ul class="mb-3">
+                        <li>Customer requests cancellation immediately</li>
+                        <li>Pricing errors discovered before fulfillment</li>
+                        <li>Duplicate transactions identified</li>
+                        <li>System errors affecting transaction accuracy</li>
+                        <li>Fraud prevention measures</li>
+                    </ul>
+
+                    <h6 class="text-warning">Important Reminders:</h6>
+                    <ul class="mb-3">
+                        <li>Voids are different from refunds</li>
+                        <li>Sales with existing refunds cannot be voided</li>
+                        <li>All void actions are permanently logged</li>
+                        <li>Consider using refunds for completed transactions</li>
+                    </ul>
+
+                    <h6 class="text-danger">Restrictions:</h6>
+                    <ul>
+                        <li>Sales older than 7 days cannot be voided</li>
+                        <li>Only regular sales can be voided</li>
+                        <li>Refunded sales cannot be voided</li>
+                        <li>Already voided sales cannot be re-voided</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header bg-secondary text-white">
+                <h6 class="mb-0">
+                    <i class="bi bi-clock-history me-2"></i>
+                    Audit Trail
+                </h6>
+            </div>
+            <div class="card-body">
+                <div class="small">
+                    <p><strong>What gets recorded:</strong></p>
+                    <ul class="mb-3">
+                        <li>User who performed the void</li>
+                        <li>Date and time of void action</li>
+                        <li>Void reason and detailed notes</li>
+                        <li>Original sale details</li>
+                        <li>Items and quantities affected</li>
+                        <li>Payment information</li>
+                    </ul>
+
+                    <p><strong>Access Requirements:</strong></p>
+                    <ul>
+                        <li>Proper user permissions</li>
+                        <li>Access to the sale's store</li>
+                        <li>Detailed reason documentation</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const form = document.getElementById('voidForm');
+    const voidButton = document.getElementById('voidButton');
+    const checkboxes = document.querySelectorAll('.checklist-checkbox, #final_confirmation');
+    const reasonCards = document.querySelectorAll('.void-reason-card');
+    const voidNotes = document.getElementById('void_notes');
+    const notesAlert = document.getElementById('notesRequiredAlert');
+    const voidSpinner = document.getElementById('voidSpinner');
+
+    // Check form validity and enable/disable button
+    function checkFormValidity() {
+        const allChecked = Array.from(checkboxes).every(cb => cb.checked);
+        const reasonSelected = document.querySelector('input[name="void_reason"]:checked');
+        const notesProvided = voidNotes.value.trim().length > 0;
+
+        voidButton.disabled = !(allChecked && reasonSelected && notesProvided);
+    }
+
+    // Add event listeners to all form controls
+    checkboxes.forEach(cb => {
+        cb.addEventListener('change', function() {
+            const item = this.closest('.checklist-item');
+            if (item) {
+                item.classList.toggle('checked', this.checked);
+            }
+            checkFormValidity();
+        });
+    });
+
+    voidNotes.addEventListener('input', checkFormValidity);
+
+    // Handle form submission
+    form.addEventListener('submit', function(e) {
+        // Show loading state
+        voidButton.disabled = true;
+        voidSpinner.classList.remove('d-none');
+        voidButton.innerHTML = '<i class="bi bi-x-octagon me-2"></i><span class="spinner-border spinner-border-sm me-2"></span>Processing Void...';
+
+        // Add confirmation dialog
+        if (!confirm('Are you absolutely sure you want to void this sale? This action cannot be undone and will permanently affect your records.')) {
+            e.preventDefault();
+            // Reset button state
+            voidButton.disabled = false;
+            voidSpinner.classList.add('d-none');
+            voidButton.innerHTML = '<i class="bi bi-x-octagon me-2"></i>Void Sale';
+            checkFormValidity();
+        }
+    });
+});
+
+// Function to handle void reason selection
+function selectVoidReason(value, element) {
+    // Remove selected class from all cards
+    document.querySelectorAll('.void-reason-card').forEach(card => {
+        card.classList.remove('selected');
+    });
+
+    // Add selected class to clicked card
+    element.classList.add('selected');
+
+    // Check the corresponding radio button
+    document.getElementById('reason_' + value).checked = true;
+
+    // Show/hide notes requirement alert
+    const notesAlert = document.getElementById('notesRequiredAlert');
+    if (value === 'OTHER') {
+        notesAlert.style.display = 'block';
+    } else {
+        notesAlert.style.display = 'none';
+    }
+
+    // Recheck form validity
+    document.dispatchEvent(new Event('checkFormValidity'));
+}
+
+// Custom event for form validity check
+document.addEventListener('checkFormValidity', function() {
+    const form = document.getElementById('voidForm');
+    const voidButton = document.getElementById('voidButton');
+    const checkboxes = document.querySelectorAll('.checklist-checkbox, #final_confirmation');
+    const reasonSelected = document.querySelector('input[name="void_reason"]:checked');
+    const voidNotes = document.getElementById('void_notes');
+
+    const allChecked = Array.from(checkboxes).every(cb => cb.checked);
+    const notesProvided = voidNotes.value.trim().length > 0;
+
+    voidButton.disabled = !(allChecked && reasonSelected && notesProvided);
+});
+</script>
+{% endblock %}

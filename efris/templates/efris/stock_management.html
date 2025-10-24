@@ -1,0 +1,224 @@
+{% extends 'base.html' %}
+{% load static %}
+{% load i18n %}
+
+{% block title %}{% trans "Stock Management" %} - EFRIS{% endblock %}
+
+{% block breadcrumb_items %}
+<li class="breadcrumb-item"><a href="{% url 'efris:dashboard' %}">{% trans "EFRIS" %}</a></li>
+<li class="breadcrumb-item active">{% trans "Stock Management" %}</li>
+{% endblock %}
+
+{% block page_header %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h1 class="h3 mb-1">{% trans "Stock Management" %}</h1>
+        <p class="text-muted mb-0">{% trans "Manage and sync product stock with EFRIS" %}</p>
+    </div>
+    <div>
+        <button class="btn btn-outline-primary" onclick="location.reload()">
+            <i class="bi bi-arrow-clockwise me-2"></i>{% trans "Refresh" %}
+        </button>
+    </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header bg-white">
+                <div class="row align-items-center">
+                    <div class="col-md-6">
+                        <h5 class="mb-0">
+                            <i class="bi bi-box-seam text-primary me-2"></i>
+                            {% trans "Products with Stock" %}
+                        </h5>
+                    </div>
+                    <div class="col-md-6 text-end">
+                        <span class="badge bg-info">
+                            {{ products|length }} {% trans "Products" %}
+                        </span>
+                    </div>
+                </div>
+            </div>
+            <div class="card-body">
+                {% if products %}
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle">
+                        <thead class="table-light">
+                            <tr>
+                                <th>{% trans "Product" %}</th>
+                                <th>{% trans "SKU" %}</th>
+                                <th>{% trans "Stock Locations" %}</th>
+                                <th class="text-end">{% trans "Total Quantity" %}</th>
+                                <th>{% trans "Last Sync" %}</th>
+                                <th>{% trans "Status" %}</th>
+                                <th class="text-center">{% trans "Actions" %}</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for product in products %}
+                            <tr>
+                                <td>
+                                    <div class="d-flex align-items-center">
+                                        <div class="bg-primary bg-opacity-10 rounded p-2 me-2">
+                                            <i class="bi bi-box text-primary"></i>
+                                        </div>
+                                        <div>
+                                            <strong>{{ product.name }}</strong>
+                                        </div>
+                                    </div>
+                                </td>
+                                <td>
+                                    <code class="text-muted">{{ product.sku|default:"-" }}</code>
+                                </td>
+                                <td>
+                                    <span class="badge bg-secondary">
+                                        {{ product.stocks.count }} {% trans "Location(s)" %}
+                                    </span>
+                                </td>
+                                <td class="text-end">
+                                    <strong class="text-primary">
+                                        {% widthratio product.stocks.count 1 1 %} {% trans "units" %}
+                                    </strong>
+                                </td>
+                                <td>
+                                    {% if product.efris_last_sync %}
+                                        <small class="text-muted">
+                                            {{ product.efris_last_sync|date:"Y-m-d H:i" }}
+                                        </small>
+                                    {% else %}
+                                        <span class="text-warning">{% trans "Never synced" %}</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if product.efris_is_uploaded %}
+                                        <span class="badge bg-success">
+                                            <i class="bi bi-check-circle me-1"></i>{% trans "Uploaded" %}
+                                        </span>
+                                    {% else %}
+                                        <span class="badge bg-warning">
+                                            <i class="bi bi-exclamation-triangle me-1"></i>{% trans "Not Uploaded" %}
+                                        </span>
+                                    {% endif %}
+                                </td>
+                                <td class="text-center">
+                                    <form method="post" action="{% url 'efris:stock_sync' product.id %}" class="d-inline">
+                                        {% csrf_token %}
+                                        <button type="submit"
+                                                class="btn btn-sm btn-primary"
+                                                {% if not product.efris_is_uploaded %}disabled{% endif %}
+                                                title="{% trans 'Sync stock to EFRIS' %}">
+                                            <i class="bi bi-cloud-upload"></i>
+                                        </button>
+                                    </form>
+                                    <button type="button"
+                                            class="btn btn-sm btn-outline-secondary ms-1"
+                                            onclick="viewStockDetails({{ product.id }})"
+                                            title="{% trans 'View details' %}">
+                                        <i class="bi bi-eye"></i>
+                                    </button>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <div class="text-center py-5">
+                    <i class="bi bi-inbox display-1 text-muted"></i>
+                    <p class="mt-3 text-muted">{% trans "No products with stock found" %}</p>
+                    <a href="{% url 'efris:product_list' %}" class="btn btn-primary mt-2">
+                        {% trans "Manage Products" %}
+                    </a>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Stock Details Modal -->
+<div class="modal fade" id="stockDetailsModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">{% trans "Stock Details" %}</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="stockDetailsContent">
+                <div class="text-center py-4">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">{% trans "Loading..." %}</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function viewStockDetails(productId) {
+    const modal = new bootstrap.Modal(document.getElementById('stockDetailsModal'));
+    const content = document.getElementById('stockDetailsContent');
+
+    content.innerHTML = `
+        <div class="text-center py-4">
+            <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">{% trans "Loading..." %}</span>
+            </div>
+        </div>
+    `;
+
+    modal.show();
+
+    // Fetch stock details (you'll need to implement this endpoint)
+    fetch(`/efris/ajax/product/${productId}/stock-details/`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                content.innerHTML = `
+                    <h6>${data.product.name}</h6>
+                    <p class="text-muted">SKU: ${data.product.sku || 'N/A'}</p>
+                    <div class="table-responsive">
+                        <table class="table table-sm">
+                            <thead>
+                                <tr>
+                                    <th>{% trans "Location" %}</th>
+                                    <th class="text-end">{% trans "Quantity" %}</th>
+                                    <th>{% trans "Last Updated" %}</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${data.stocks.map(stock => `
+                                    <tr>
+                                        <td>${stock.location}</td>
+                                        <td class="text-end">${stock.quantity}</td>
+                                        <td>${stock.updated_at}</td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                `;
+            } else {
+                content.innerHTML = `
+                    <div class="alert alert-danger">
+                        {% trans "Failed to load stock details" %}
+                    </div>
+                `;
+            }
+        })
+        .catch(error => {
+            content.innerHTML = `
+                <div class="alert alert-danger">
+                    {% trans "Error loading stock details" %}
+                </div>
+            `;
+        });
+}
+</script>
+{% endblock %}

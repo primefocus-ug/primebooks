@@ -1,0 +1,951 @@
+{% extends 'base.html' %}
+{% load widget_tweaks %}
+
+{% block title %}Categories - {{ company.trading_name|default:company.name }}{% endblock %}
+{% block page_title %}Category Management{% endblock %}
+
+{% block extra_css %}
+<link href="https://cdnjs.cloudflare.com/ajax/libs/datatables/1.13.6/css/dataTables.bootstrap5.min.css" rel="stylesheet">
+<link href="https://cdnjs.cloudflare.com/ajax/libs/select2/4.1.0-rc.0/css/select2.min.css" rel="stylesheet">
+<style>
+    .stats-card {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        border-radius: 15px;
+        padding: 1.5rem;
+        margin-bottom: 2rem;
+    }
+    
+    .action-buttons {
+        display: flex;
+        gap: 0.5rem;
+        flex-wrap: wrap;
+    }
+    
+    .bulk-actions {
+        background: white;
+        border-radius: 12px;
+        padding: 1rem;
+        margin-bottom: 1rem;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        display: none;
+    }
+    
+    .bulk-actions.show {
+        display: block;
+        animation: slideDown 0.3s ease;
+    }
+    
+    @keyframes slideDown {
+        from { opacity: 0; transform: translateY(-10px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+    
+    .category-card {
+        transition: all 0.3s ease;
+        border-left: 4px solid #3b82f6;
+    }
+    
+    .category-card:hover {
+        border-left-color: #1d4ed8;
+        box-shadow: 0 8px 25px rgba(0,0,0,0.15);
+    }
+    
+    .search-advanced {
+        background: #f8fafc;
+        border-radius: 8px;
+        padding: 1rem;
+        margin-top: 1rem;
+        display: none;
+    }
+    
+    .search-advanced.show {
+        display: block;
+        animation: fadeIn 0.3s ease;
+    }
+    
+    .table-actions {
+        white-space: nowrap;
+    }
+    
+    .status-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.25rem;
+    }
+    
+    .status-indicator {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+    }
+    
+    .status-active .status-indicator {
+        background-color: #10b981;
+    }
+    
+    .status-inactive .status-indicator {
+        background-color: #ef4444;
+    }
+    
+    .export-dropdown {
+        position: relative;
+    }
+    
+    .quick-stats {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 1rem;
+        margin-bottom: 2rem;
+    }
+    
+    .stat-card {
+        background: white;
+        border-radius: 12px;
+        padding: 1.5rem;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        text-align: center;
+        transition: transform 0.3s ease;
+    }
+    
+    .stat-card:hover {
+        transform: translateY(-5px);
+    }
+    
+    .stat-number {
+        font-size: 2rem;
+        font-weight: 700;
+        color: #3b82f6;
+    }
+    
+    .stat-label {
+        color: #64748b;
+        font-size: 0.875rem;
+        margin-top: 0.5rem;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- Quick Stats -->
+<div class="quick-stats">
+    <div class="stat-card">
+        <div class="stat-number">{{ categories.count }}</div>
+        <div class="stat-label">Total Categories</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-number">{{ categories|length }}</div>
+        <div class="stat-label">Active Categories</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-number">0</div>
+        <div class="stat-label">Inactive Categories</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-number">{{ categories.count }}</div>
+        <div class="stat-label">This Month</div>
+    </div>
+</div>
+
+<!-- Main Actions -->
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div class="d-flex align-items-center gap-3">
+        <h2 class="h4 mb-0">Categories</h2>
+        <span class="badge bg-primary">{{ categories.count }} total</span>
+    </div>
+    
+    <div class="d-flex gap-2">
+        <button class="btn btn-outline-secondary" id="advancedSearchToggle">
+            <i class="fas fa-search-plus me-2"></i>Advanced Search
+        </button>
+        
+        <div class="dropdown export-dropdown">
+            <button class="btn btn-outline-success dropdown-toggle" data-bs-toggle="dropdown">
+                <i class="fas fa-download me-2"></i>Export
+            </button>
+            <ul class="dropdown-menu">
+                <li><a class="dropdown-item" href="#" onclick="exportData('excel')">
+                    <i class="fas fa-file-excel me-2"></i>Excel
+                </a></li>
+                <li><a class="dropdown-item" href="#" onclick="exportData('csv')">
+                    <i class="fas fa-file-csv me-2"></i>CSV
+                </a></li>
+                <li><a class="dropdown-item" href="#" onclick="exportData('pdf')">
+                    <i class="fas fa-file-pdf me-2"></i>PDF
+                </a></li>
+            </ul>
+        </div>
+        {% if perms.inventory.add_category %}
+        <a href="{% url 'inventory:category_create' %}" class="btn btn-primary">
+            <i class="fas fa-plus me-2"></i>Add Category
+        </a>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Bulk Actions Bar -->
+<div class="bulk-actions" id="bulkActions">
+    <div class="d-flex justify-content-between align-items-center">
+        <div class="d-flex align-items-center gap-3">
+            <span class="fw-bold">
+                <span id="selectedCount">0</span> items selected
+            </span>
+            <button class="btn btn-sm btn-outline-primary" onclick="selectAll()">
+                <i class="fas fa-check-square me-1"></i>Select All
+            </button>
+            <button class="btn btn-sm btn-outline-secondary" onclick="clearSelection()">
+                <i class="fas fa-times me-1"></i>Clear Selection
+            </button>
+        </div>
+        
+        <div class="d-flex gap-2">
+            <button class="btn btn-sm btn-success" onclick="bulkAction('activate')">
+                <i class="fas fa-check me-1"></i>Activate
+            </button>
+            <button class="btn btn-sm btn-warning" onclick="bulkAction('deactivate')">
+                <i class="fas fa-pause me-1"></i>Deactivate
+            </button>
+            <button class="btn btn-sm btn-danger" onclick="bulkAction('delete')">
+                <i class="fas fa-trash me-1"></i>Delete
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Search and Filters -->
+<div class="card mb-4">
+    <div class="card-body">
+        <form method="GET" id="searchForm" class="row g-3">
+            <div class="col-md-6">
+                <div class="input-group">
+                    <span class="input-group-text">
+                        <i class="fas fa-search"></i>
+                    </span>
+                    <input type="text" 
+                           class="form-control" 
+                           name="search" 
+                           value="{{ search_query }}" 
+                           placeholder="Search categories, codes, descriptions..."
+                           id="searchInput">
+                </div>
+            </div>
+            
+            <div class="col-md-3">
+                <select class="form-select" name="status" id="statusFilter">
+                    <option value="">All Status</option>
+                    <option value="active">Active</option>
+                    <option value="inactive">Inactive</option>
+                </select>
+            </div>
+            
+            <div class="col-md-3">
+                <div class="d-flex gap-2">
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fas fa-search me-1"></i>Search
+                    </button>
+                    <button type="button" class="btn btn-outline-secondary" onclick="clearFilters()">
+                        <i class="fas fa-undo me-1"></i>Clear
+                    </button>
+                </div>
+            </div>
+        </form>
+        
+        <!-- Advanced Search -->
+        <div class="search-advanced" id="advancedSearch">
+            <div class="row g-3">
+                <div class="col-md-4">
+                    <label class="form-label">Date Range</label>
+                    <div class="input-group">
+                        <input type="date" class="form-control" name="date_from" placeholder="From">
+                        <input type="date" class="form-control" name="date_to" placeholder="To">
+                    </div>
+                </div>
+                
+                <div class="col-md-4">
+                    <label class="form-label">Product Count</label>
+                    <div class="input-group">
+                        <input type="number" class="form-control" name="min_products" placeholder="Min">
+                        <input type="number" class="form-control" name="max_products" placeholder="Max">
+                    </div>
+                </div>
+                
+                <div class="col-md-4">
+                    <label class="form-label">Sort By</label>
+                    <select class="form-select" name="sort">
+                        <option value="name">Name</option>
+                        <option value="-name">Name (Desc)</option>
+                        <option value="created_at">Date Created</option>
+                        <option value="-created_at">Date Created (Desc)</option>
+                        <option value="product_count">Product Count</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Categories Table -->
+<div class="card">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <h5 class="mb-0">Categories List</h5>
+        <div class="d-flex align-items-center gap-3">
+            <div class="d-flex align-items-center gap-2">
+                <label class="form-label mb-0">Show:</label>
+                <select class="form-select form-select-sm" style="width: auto;" onchange="changePageSize(this.value)">
+                    <option value="10">10</option>
+                    <option value="25" selected>25</option>
+                    <option value="50">50</option>
+                    <option value="100">100</option>
+                </select>
+                <span class="text-muted">entries</span>
+            </div>
+            
+            <div class="d-flex align-items-center gap-2">
+                <button class="btn btn-sm btn-outline-secondary" onclick="toggleView('table')" id="tableViewBtn">
+                    <i class="fas fa-table"></i>
+                </button>
+                <button class="btn btn-sm btn-outline-secondary" onclick="toggleView('grid')" id="gridViewBtn">
+                    <i class="fas fa-th-large"></i>
+                </button>
+            </div>
+        </div>
+    </div>
+    
+    <div class="card-body p-0">
+        <!-- Table View -->
+        <div id="tableView">
+            <div class="table-responsive">
+                <table class="table table-hover mb-0" id="categoriesTable">
+                    <thead>
+                        <tr>
+                            <th width="40">
+                                <input type="checkbox" class="form-check-input" id="selectAllCheckbox" onchange="toggleSelectAll()">
+                            </th>
+                            <th>
+                                <a href="?{% if request.GET.search %}search={{ request.GET.search }}&{% endif %}sort={% if request.GET.sort == 'name' %}-name{% else %}name{% endif %}" 
+                                   class="text-decoration-none text-dark">
+                                    Name
+                                    {% if request.GET.sort == 'name' %}
+                                        <i class="fas fa-sort-up ms-1"></i>
+                                    {% elif request.GET.sort == '-name' %}
+                                        <i class="fas fa-sort-down ms-1"></i>
+                                    {% else %}
+                                        <i class="fas fa-sort ms-1 text-muted"></i>
+                                    {% endif %}
+                                </a>
+                            </th>
+                            <th>Code</th>
+                            <th>Description</th>
+                            <th>Products</th>
+                            <th>Status</th>
+                            <th>
+                                <a href="?{% if request.GET.search %}search={{ request.GET.search }}&{% endif %}sort={% if request.GET.sort == 'created_at' %}-created_at{% else %}created_at{% endif %}" 
+                                   class="text-decoration-none text-dark">
+                                    Created
+                                    {% if request.GET.sort == 'created_at' %}
+                                        <i class="fas fa-sort-up ms-1"></i>
+                                    {% elif request.GET.sort == '-created_at' %}
+                                        <i class="fas fa-sort-down ms-1"></i>
+                                    {% else %}
+                                        <i class="fas fa-sort ms-1 text-muted"></i>
+                                    {% endif %}
+                                </a>
+                            </th>
+                            <th width="120">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for category in categories %}
+                        <tr class="category-row" data-id="{{ category.id }}">
+                            <td>
+                                <input type="checkbox" class="form-check-input row-checkbox" value="{{ category.id }}" onchange="updateBulkActions()">
+                            </td>
+                            <td>
+                                <div class="d-flex align-items-center">
+                                    <div class="category-avatar bg-primary text-white rounded-circle d-flex align-items-center justify-content-center me-3" 
+                                         style="width: 40px; height: 40px; font-size: 0.875rem;">
+                                        {{ category.name|slice:":2"|upper }}
+                                    </div>
+                                    <div>
+                                        <div class="fw-semibold">{{ category.name }}</div>
+                                        {% if category.parent %}
+                                            <small class="text-muted">
+                                                <i class="fas fa-arrow-up me-1"></i>{{ category.parent.name }}
+                                            </small>
+                                        {% endif %}
+                                    </div>
+                                </div>
+                            </td>
+                            <td>
+                                {% if category.code %}
+                                    <code class="bg-light px-2 py-1 rounded">{{ category.code }}</code>
+                                {% else %}
+                                    <span class="text-muted">—</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if category.description %}
+                                    <span title="{{ category.description }}" data-bs-toggle="tooltip">
+                                        {{ category.description|truncatewords:8 }}
+                                    </span>
+                                {% else %}
+                                    <span class="text-muted">No description</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <span class="badge bg-info">
+                                    {{ category.products.count }} products
+                                </span>
+                            </td>
+                            <td>
+                                {% if category.is_active %}
+                                    <span class="badge bg-success status-badge status-active">
+                                        <span class="status-indicator"></span>
+                                        Active
+                                    </span>
+                                {% else %}
+                                    <span class="badge bg-danger status-badge status-inactive">
+                                        <span class="status-indicator"></span>
+                                        Inactive
+                                    </span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <small class="text-muted">
+                                    {{ category.created_at|date:"M d, Y" }}
+                                    <br>
+                                    {{ category.created_at|time:"H:i" }}
+                                </small>
+                            </td>
+                            <td>
+                                <div class="action-buttons">
+                                    {% if perms.inventory.change_category %}
+                                    <a href="{% url 'inventory:category_update' category.pk %}" 
+                                       class="btn btn-sm btn-outline-primary" 
+                                       data-bs-toggle="tooltip" 
+                                       title="Edit Category">
+                                        <i class="fas fa-edit"></i>
+                                    </a>
+                                    {% endif %}
+                                    {% if perms.inventory.view_category %}
+                                    <a href="{% url 'inventory:category_detail' category.id %}">
+                                    <button class="btn btn-sm btn-outline-info" 
+                                            onclick="viewCategory({{ category.id }})"
+                                            data-bs-toggle="tooltip" 
+                                            title="View Details">
+                                        <i class="fas fa-eye"></i>
+                                    </button>
+                                    </a>
+                                    {% endif %}
+                                    <div class="dropdown">
+                                        <button class="btn btn-sm btn-outline-secondary dropdown-toggle" 
+                                                data-bs-toggle="dropdown">
+                                            <i class="fas fa-ellipsis-v"></i>
+                                        </button>
+                                        <ul class="dropdown-menu">
+                                            <li>
+                                                {% if perms.inventory.change_product %}
+                                                <a class="dropdown-item" href="{% url 'inventory:category_update' category.pk %}">
+                                                    <i class="fas fa-edit me-2"></i>Edit
+                                                </a>
+                                                {% endif %}
+                                            </li>
+                                            <li>
+                                                <a class="dropdown-item" href="#" onclick="duplicateCategory({{ category.id }})">
+                                                    <i class="fas fa-copy me-2"></i>Duplicate
+                                                </a>
+                                            </li>
+                                            <li>
+                                                <a class="dropdown-item" href="#" onclick="toggleStatus({{ category.id }}, {{ category.is_active|yesno:'false,true' }})">
+                                                    {% if category.is_active %}
+                                                        <i class="fas fa-pause me-2"></i>Deactivate
+                                                    {% else %}
+                                                        <i class="fas fa-play me-2"></i>Activate
+                                                    {% endif %}
+                                                </a>
+                                            </li>
+                                            <li><hr class="dropdown-divider"></li>
+                                            <li>
+                                                <a class="dropdown-item text-danger" 
+                                                   href="#" 
+                                                   onclick="deleteCategory({{ category.id }}, '{{ category.name }}')">
+                                                    <i class="fas fa-trash me-2"></i>Delete
+                                                </a>
+                                            </li>
+                                        </ul>
+                                    </div>
+                                </div>
+                            </td>
+                        </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="8" class="text-center py-5">
+                                <div class="text-muted">
+                                    <i class="fas fa-inbox fa-3x mb-3"></i>
+                                    <h5>No categories found</h5>
+                                    <p>{% if search_query %}No categories match your search criteria.{% else %}Get started by creating your first category.{% endif %}</p>
+                                    {% if perms.inventory.add_category %}
+                                    <a href="{% url 'inventory:category_create' %}" class="btn btn-primary">
+                                        <i class="fas fa-plus me-2"></i>Add Category
+                                    </a>
+                                    {% endif %}
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        
+        <!-- Grid View -->
+        <div id="gridView" style="display: none;">
+            <div class="row g-3 p-3">
+                {% for category in categories %}
+                <div class="col-md-6 col-lg-4">
+                    <div class="card category-card h-100">
+                        <div class="card-body">
+                            <div class="d-flex justify-content-between align-items-start mb-3">
+                                <div class="category-avatar bg-primary text-white rounded-circle d-flex align-items-center justify-content-center" 
+                                     style="width: 50px; height: 50px;">
+                                    {{ category.name|slice:":2"|upper }}
+                                </div>
+                                <div class="form-check">
+                                    <input type="checkbox" class="form-check-input row-checkbox" value="{{ category.id }}" onchange="updateBulkActions()">
+                                </div>
+                            </div>
+                            
+                            <h6 class="card-title">{{ category.name }}</h6>
+                            
+                            {% if category.code %}
+                                <p class="text-muted mb-2">
+                                    <small><code class="bg-light px-2 py-1 rounded">{{ category.code }}</code></small>
+                                </p>
+                            {% endif %}
+                            
+                            {% if category.description %}
+                                <p class="card-text text-muted small">{{ category.description|truncatewords:10 }}</p>
+                            {% endif %}
+                            
+                            <div class="d-flex justify-content-between align-items-center mb-3">
+                                <span class="badge bg-info">{{ category.products.count }} products</span>
+                                {% if category.is_active %}
+                                    <span class="badge bg-success status-badge status-active">
+                                        <span class="status-indicator"></span>
+                                        Active
+                                    </span>
+                                {% else %}
+                                    <span class="badge bg-danger status-badge status-inactive">
+                                        <span class="status-indicator"></span>
+                                        Inactive
+                                    </span>
+                                {% endif %}
+                            </div>
+                            
+                            <div class="d-flex gap-2">
+                                {% if perms.inventory.change_category %}
+                                <a href="{% url 'inventory:category_update' category.pk %}" 
+                                   class="btn btn-sm btn-outline-primary flex-fill">
+                                    <i class="fas fa-edit me-1"></i>Edit
+                                </a>
+                                {% endif %}
+                                {% if perms.inventory.view_category %}
+                                <a href="{% url 'inventory:category_detail' category.id %}">
+                                <button class="btn btn-sm btn-outline-info" onclick="viewCategory({{ category.id }})">
+                                    <i class="fas fa-eye"></i>
+                                </button>
+                                </a>
+                                {% endif %}
+                                <div class="dropdown">
+                                    <button class="btn btn-sm btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown">
+                                        <i class="fas fa-ellipsis-v"></i>
+                                    </button>
+                                    <ul class="dropdown-menu">
+                                        <li><a class="dropdown-item" href="#" onclick="duplicateCategory({{ category.id }})"><i class="fas fa-copy me-2"></i>Duplicate</a></li>
+                                        <li><a class="dropdown-item text-danger" href="#" onclick="deleteCategory({{ category.id }}, '{{ category.name }}')"><i class="fas fa-trash me-2"></i>Delete</a></li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="card-footer bg-transparent">
+                            <small class="text-muted">
+                                Created {{ category.created_at|date:"M d, Y" }}
+                            </small>
+                        </div>
+                    </div>
+                </div>
+                {% empty %}
+                <div class="col-12">
+                    <div class="text-center py-5">
+                        <div class="text-muted">
+                            <i class="fas fa-inbox fa-3x mb-3"></i>
+                            <h5>No categories found</h5>
+                            <p>{% if search_query %}No categories match your search criteria.{% else %}Get started by creating your first category.{% endif %}</p>
+                            {% if perms.inventory.add_category %}
+                            <a href="{% url 'inventory:category_create' %}" class="btn btn-primary">
+                                <i class="fas fa-plus me-2"></i>Add Category
+                            </a>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+    
+    <!-- Pagination -->
+    {% if is_paginated %}
+    <div class="card-footer">
+        <div class="d-flex justify-content-between align-items-center">
+            <div class="text-muted">
+                Showing {{ page_obj.start_index }} to {{ page_obj.end_index }} of {{ page_obj.paginator.count }} entries
+            </div>
+            
+            <nav aria-label="Page navigation">
+                <ul class="pagination pagination-sm mb-0">
+                    {% if page_obj.has_previous %}
+                        <li class="page-item">
+                            <a class="page-link" href="?{% if search_query %}search={{ search_query }}&{% endif %}page=1">
+                                <i class="fas fa-angle-double-left"></i>
+                            </a>
+                        </li>
+                        <li class="page-item">
+                            <a class="page-link" href="?{% if search_query %}search={{ search_query }}&{% endif %}page={{ page_obj.previous_page_number }}">
+                                <i class="fas fa-angle-left"></i>
+                            </a>
+                        </li>
+                    {% endif %}
+                    
+                    {% for num in page_obj.paginator.page_range %}
+                        {% if page_obj.number == num %}
+                            <li class="page-item active">
+                                <span class="page-link">{{ num }}</span>
+                            </li>
+                        {% elif num > page_obj.number|add:'-3' and num < page_obj.number|add:'3' %}
+                            <li class="page-item">
+                                <a class="page-link" href="?{% if search_query %}search={{ search_query }}&{% endif %}page={{ num }}">{{ num }}</a>
+                            </li>
+                        {% endif %}
+                    {% endfor %}
+                    
+                    {% if page_obj.has_next %}
+                        <li class="page-item">
+                            <a class="page-link" href="?{% if search_query %}search={{ search_query }}&{% endif %}page={{ page_obj.next_page_number }}">
+                                <i class="fas fa-angle-right"></i>
+                            </a>
+                        </li>
+                        <li class="page-item">
+                            <a class="page-link" href="?{% if search_query %}search={{ search_query }}&{% endif %}page={{ page_obj.paginator.num_pages }}">
+                                <i class="fas fa-angle-double-right"></i>
+                            </a>
+                        </li>
+                    {% endif %}
+                </ul>
+            </nav>
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+<!-- Category Details Modal -->
+<div class="modal fade" id="categoryModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Category Details</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="categoryModalBody">
+                <!-- Content loaded via AJAX -->
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Delete Confirmation Modal -->
+<div class="modal fade" id="deleteModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Confirm Delete</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p>Are you sure you want to delete the category <strong id="deleteItemName"></strong>?</p>
+                <div class="alert alert-warning">
+                    <i class="fas fa-exclamation-triangle me-2"></i>
+                    This action cannot be undone. All products in this category will be moved to "Uncategorized".
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-danger" id="confirmDelete">Delete Category</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/datatables/1.13.6/js/jquery.dataTables.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/datatables/1.13.6/js/dataTables.bootstrap5.min.js"></script>
+
+<script>
+$(document).ready(function() {
+    // Initialize DataTable
+    $('#categoriesTable').DataTable({
+        pageLength: 25,
+        responsive: true,
+        order: [[1, 'asc']],
+        columnDefs: [
+            { orderable: false, targets: [0, 7] }
+        ],
+        language: {
+            search: '',
+            searchPlaceholder: 'Search in table...'
+        }
+    });
+    
+    // Advanced search toggle
+    $('#advancedSearchToggle').click(function() {
+        $('#advancedSearch').toggleClass('show');
+        $(this).toggleClass('active');
+    });
+    
+    // Auto-submit search form
+    $('#searchInput').on('input', debounce(function() {
+        $('#searchForm').submit();
+    }, 500));
+    
+    // Status filter change
+    $('#statusFilter').change(function() {
+        $('#searchForm').submit();
+    });
+});
+
+// Utility functions
+function debounce(func, wait) {
+    let timeout;
+    return function executedFunction(...args) {
+        const later = () => {
+            clearTimeout(timeout);
+            func(...args);
+        };
+        clearTimeout(timeout);
+        timeout = setTimeout(later, wait);
+    };
+}
+
+function toggleView(view) {
+    if (view === 'table') {
+        $('#tableView').show();
+        $('#gridView').hide();
+        $('#tableViewBtn').addClass('active');
+        $('#gridViewBtn').removeClass('active');
+    } else {
+        $('#tableView').hide();
+        $('#gridView').show();
+        $('#gridViewBtn').addClass('active');
+        $('#tableViewBtn').removeClass('active');
+    }
+    localStorage.setItem('categoryViewMode', view);
+}
+
+function changePageSize(size) {
+    const url = new URL(window.location);
+    url.searchParams.set('page_size', size);
+    window.location.href = url.toString();
+}
+
+function clearFilters() {
+    window.location.href = '{% url "inventory:category_list" %}';
+}
+
+// Selection functions
+function toggleSelectAll() {
+    const selectAll = document.getElementById('selectAllCheckbox');
+    const checkboxes = document.querySelectorAll('.row-checkbox');
+    
+    checkboxes.forEach(checkbox => {
+        checkbox.checked = selectAll.checked;
+    });
+    
+    updateBulkActions();
+}
+
+function updateBulkActions() {
+    const checkboxes = document.querySelectorAll('.row-checkbox:checked');
+    const bulkActions = document.getElementById('bulkActions');
+    const selectedCount = document.getElementById('selectedCount');
+    
+    selectedCount.textContent = checkboxes.length;
+    
+    if (checkboxes.length > 0) {
+        bulkActions.classList.add('show');
+    } else {
+        bulkActions.classList.remove('show');
+    }
+}
+
+function selectAll() {
+    document.getElementById('selectAllCheckbox').checked = true;
+    toggleSelectAll();
+}
+
+function clearSelection() {
+    document.getElementById('selectAllCheckbox').checked = false;
+    toggleSelectAll();
+}
+
+function duplicateCategory(categoryId) {
+    showLoading();
+    
+    fetch(`/api/categories/${categoryId}/duplicate/`, {
+        method: 'POST',
+        headers: {
+            'X-CSRFToken': getCookie('csrftoken'),
+            'Content-Type': 'application/json'
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showNotification('Category duplicated successfully', 'success');
+            location.reload();
+        } else {
+            showNotification(data.error || 'Error duplicating category', 'error');
+        }
+        hideLoading();
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        showNotification('Error duplicating category', 'error');
+        hideLoading();
+    });
+}
+
+function toggleStatus(categoryId, newStatus) {
+    showLoading();
+    
+    fetch(`/api/categories/${categoryId}/toggle-status/`, {
+        method: 'POST',
+        headers: {
+            'X-CSRFToken': getCookie('csrftoken'),
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ is_active: newStatus })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            const action = newStatus ? 'activated' : 'deactivated';
+            showNotification(`Category ${action} successfully`, 'success');
+            location.reload();
+        } else {
+            showNotification(data.error || 'Error updating category', 'error');
+        }
+        hideLoading();
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        showNotification('Error updating category status', 'error');
+        hideLoading();
+    });
+}
+
+function deleteCategory(categoryId, categoryName) {
+    document.getElementById('deleteItemName').textContent = categoryName;
+    
+    const modal = new bootstrap.Modal(document.getElementById('deleteModal'));
+    modal.show();
+    
+    document.getElementById('confirmDelete').onclick = function() {
+        showLoading();
+        
+        fetch(`{% url 'inventory:category_delete' 0 %}`.replace('0', categoryId), {
+            method: 'DELETE',
+            headers: {
+                'X-CSRFToken': getCookie('csrftoken')
+            }
+        })
+        .then(response => {
+            if (response.ok) {
+                showNotification('Category deleted successfully', 'success');
+                location.reload();
+            } else {
+                showNotification('Error deleting category', 'error');
+            }
+            hideLoading();
+            modal.hide();
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            showNotification('Error deleting category', 'error');
+            hideLoading();
+            modal.hide();
+        });
+    };
+}
+
+function bulkAction(action) {
+    const selected = Array.from(document.querySelectorAll('.row-checkbox:checked')).map(cb => cb.value);
+    
+    if (selected.length === 0) {
+        showNotification('Please select at least one category', 'warning');
+        return;
+    }
+    
+    if (confirm(`Are you sure you want to ${action} ${selected.length} categories?`)) {
+        showLoading();
+        
+        fetch('{% url "inventory:bulk_actions" %}', {
+            method: 'POST',
+            headers: {
+                'X-CSRFToken': getCookie('csrftoken'),
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                action: action,
+                selected_items: selected
+            })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                showNotification(data.message, 'success');
+                location.reload();
+            } else {
+                showNotification(data.error || 'Error performing bulk action', 'error');
+            }
+            hideLoading();
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            showNotification('Error performing bulk action', 'error');
+            hideLoading();
+        });
+    }
+}
+
+function exportData(format) {
+    const selected = Array.from(document.querySelectorAll('.row-checkbox:checked')).map(cb => cb.value);
+    const params = new URLSearchParams({
+        format: format,
+        search: '{{ search_query }}',
+        ...(selected.length > 0 && { selected: selected.join(',') })
+    });
+    
+    window.open(`${params}`, '_blank');
+}
+
+// Load saved view mode
+document.addEventListener('DOMContentLoaded', function() {
+    const savedView = localStorage.getItem('categoryViewMode');
+    if (savedView) {
+        toggleView(savedView);
+    }
+});
+</script>
+{% endblock %}

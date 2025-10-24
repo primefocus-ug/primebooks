@@ -1,0 +1,411 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Manage Users - {{ role.group.name }}{% endblock %}
+
+{% block extra_css %}
+<style>
+    .user-card {
+        transition: all 0.3s ease;
+        cursor: pointer;
+        border: 2px solid #e0e0e0;
+    }
+    .user-card:hover {
+        transform: translateY(-4px);
+        box-shadow: 0 8px 16px rgba(0,0,0,0.1);
+        border-color: {{ role.color_code }};
+    }
+    .user-card.selected {
+        border-color: {{ role.color_code }};
+        background: linear-gradient(135deg, {{ role.color_code }}15 0%, {{ role.color_code }}05 100%);
+    }
+    .user-avatar {
+        width: 60px;
+        height: 60px;
+        border-radius: 50%;
+        object-fit: cover;
+        border: 3px solid white;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+    .user-avatar-placeholder {
+        width: 60px;
+        height: 60px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.5rem;
+        font-weight: bold;
+        color: white;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        border: 3px solid white;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+    .transfer-container {
+        position: relative;
+        min-height: 500px;
+    }
+    .transfer-controls {
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        gap: 16px;
+        padding: 20px;
+    }
+    .search-box {
+        position: sticky;
+        top: 0;
+        background: white;
+        z-index: 10;
+        padding: 16px;
+        border-bottom: 2px solid #f0f0f0;
+    }
+    .user-list-container {
+        max-height: 600px;
+        overflow-y: auto;
+    }
+    .capacity-alert {
+        animation: pulse 2s infinite;
+    }
+    @keyframes pulse {
+        0%, 100% {
+            opacity: 1;
+        }
+        50% {
+            opacity: 0.7;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <!-- Header -->
+    <div class="row mb-4">
+        <div class="col-md-8">
+            <nav aria-label="breadcrumb">
+                <ol class="breadcrumb">
+                    <li class="breadcrumb-item"><a href="{% url 'role_list' %}">Roles</a></li>
+                    <li class="breadcrumb-item"><a href="{% url 'role_detail' role.pk %}">{{ role.group.name }}</a></li>
+                    <li class="breadcrumb-item active">Manage Users</li>
+                </ol>
+            </nav>
+            <h2 class="mb-2">
+                <i class="fas fa-users me-2" style="color: {{ role.color_code }}"></i>
+                Manage Users in {{ role.group.name }}
+            </h2>
+            <p class="text-muted">Add or remove users from this role</p>
+        </div>
+        <div class="col-md-4 text-end">
+            <div class="card shadow-sm">
+                <div class="card-body py-2">
+                    <div class="h4 mb-0">{{ current_users.count }}</div>
+                    <small class="text-muted">
+                        Users in Role
+                        {% if role.max_users %}
+                        / {{ role.max_users }} max
+                        {% endif %}
+                    </small>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Capacity Warning -->
+    {% if role.max_users and role.is_at_capacity %}
+    <div class="alert alert-warning capacity-alert mb-4">
+        <i class="fas fa-exclamation-triangle me-2"></i>
+        <strong>Role at capacity!</strong> This role has reached its maximum of {{ role.max_users }} users.
+        Remove users before adding new ones.
+    </div>
+    {% elif role.max_users and role.capacity_percentage > 80 %}
+    <div class="alert alert-info mb-4">
+        <i class="fas fa-info-circle me-2"></i>
+        This role is {{ role.capacity_percentage|floatformat:0 }}% full ({{ current_users.count }}/{{ role.max_users }} users).
+    </div>
+    {% endif %}
+
+    <!-- Transfer Interface -->
+    <div class="row transfer-container">
+        <!-- Available Users -->
+        <div class="col-lg-5">
+            <div class="card shadow-sm h-100">
+                <div class="search-box">
+                    <h5 class="mb-3">
+                        <i class="fas fa-user-plus me-2"></i>
+                        Available Users
+                        <span class="badge bg-secondary ms-2">{{ available_users.count }}</span>
+                    </h5>
+                    <input type="text"
+                           class="form-control"
+                           id="searchAvailable"
+                           placeholder="Search users...">
+                </div>
+
+                <form method="post" id="addUsersForm">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="add">
+
+                    <div class="user-list-container p-3">
+                        {% for user in available_users %}
+                        <div class="user-card card mb-3" data-user-name="{{ user.get_full_name|lower }} {{ user.email|lower }}">
+                            <div class="card-body">
+                                <div class="d-flex align-items-center">
+                                    <input type="checkbox"
+                                           name="users"
+                                           value="{{ user.pk }}"
+                                           class="form-check-input me-3"
+                                           id="available_{{ user.pk }}">
+
+                                    {% if user.avatar %}
+                                    <img src="{{ user.avatar.url }}" class="user-avatar me-3" alt="{{ user.get_full_name }}">
+                                    {% else %}
+                                    <div class="user-avatar-placeholder me-3">
+                                        {{ user.first_name|first|upper }}{{ user.last_name|first|upper }}
+                                    </div>
+                                    {% endif %}
+
+                                    <div class="flex-grow-1">
+                                        <h6 class="mb-1">{{ user.get_full_name }}</h6>
+                                        <small class="text-muted">
+                                            <i class="fas fa-envelope me-1"></i>
+                                            {{ user.email }}
+                                        </small>
+                                        <br>
+                                        <span class="badge bg-light text-dark mt-1">
+                                            {{ user.user_type }}
+                                        </span>
+                                    </div>
+
+                                    <label for="available_{{ user.pk }}" class="btn btn-sm btn-outline-primary">
+                                        <i class="fas fa-plus"></i>
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+                        {% empty %}
+                        <div class="text-center py-5">
+                            <i class="fas fa-users-slash fa-3x text-muted mb-3"></i>
+                            <p class="text-muted">All users are already in this role</p>
+                        </div>
+                        {% endfor %}
+                    </div>
+
+                    {% if available_users and can_add %}
+                    <div class="card-footer">
+                        <button type="submit" class="btn btn-primary w-100" id="addButton" disabled>
+                            <i class="fas fa-arrow-right me-2"></i>
+                            Add Selected Users (<span id="addCount">0</span>)
+                        </button>
+                    </div>
+                    {% endif %}
+                </form>
+            </div>
+        </div>
+
+        <!-- Transfer Controls -->
+        <div class="col-lg-2">
+            <div class="transfer-controls">
+                <div class="text-center">
+                    <i class="fas fa-exchange-alt fa-3x text-muted"></i>
+                    <p class="text-muted small mt-2">Select users and click buttons to transfer</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Current Users -->
+        <div class="col-lg-5">
+            <div class="card shadow-sm h-100">
+                <div class="search-box">
+                    <h5 class="mb-3">
+                        <i class="fas fa-user-check me-2"></i>
+                        Users in Role
+                        <span class="badge bg-primary ms-2">{{ current_users.count }}</span>
+                    </h5>
+                    <input type="text"
+                           class="form-control"
+                           id="searchCurrent"
+                           placeholder="Search users...">
+                </div>
+
+                <form method="post" id="removeUsersForm">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="remove">
+
+                    <div class="user-list-container p-3">
+                        {% for user in current_users %}
+                        <div class="user-card card mb-3" data-user-name="{{ user.get_full_name|lower }} {{ user.email|lower }}">
+                            <div class="card-body">
+                                <div class="d-flex align-items-center">
+                                    <input type="checkbox"
+                                           name="users"
+                                           value="{{ user.pk }}"
+                                           class="form-check-input me-3"
+                                           id="current_{{ user.pk }}">
+
+                                    {% if user.avatar %}
+                                    <img src="{{ user.avatar.url }}" class="user-avatar me-3" alt="{{ user.get_full_name }}">
+                                    {% else %}
+                                    <div class="user-avatar-placeholder me-3">
+                                        {{ user.first_name|first|upper }}{{ user.last_name|first|upper }}
+                                    </div>
+                                    {% endif %}
+
+                                    <div class="flex-grow-1">
+                                        <h6 class="mb-1">{{ user.get_full_name }}</h6>
+                                        <small class="text-muted">
+                                            <i class="fas fa-envelope me-1"></i>
+                                            {{ user.email }}
+                                        </small>
+                                        <br>
+                                        <span class="badge bg-success text-white mt-1">
+                                            <i class="fas fa-check me-1"></i>
+                                            In Role
+                                        </span>
+                                    </div>
+
+                                    <label for="current_{{ user.pk }}" class="btn btn-sm btn-outline-danger">
+                                        <i class="fas fa-minus"></i>
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+                        {% empty %}
+                        <div class="text-center py-5">
+                            <i class="fas fa-user-slash fa-3x text-muted mb-3"></i>
+                            <p class="text-muted">No users in this role yet</p>
+                        </div>
+                        {% endfor %}
+                    </div>
+
+                    {% if current_users %}
+                    <div class="card-footer">
+                        <button type="submit" class="btn btn-danger w-100" id="removeButton" disabled>
+                            <i class="fas fa-arrow-left me-2"></i>
+                            Remove Selected Users (<span id="removeCount">0</span>)
+                        </button>
+                    </div>
+                    {% endif %}
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Back Button -->
+    <div class="row mt-4">
+        <div class="col-12">
+            <a href="{% url 'role_detail' role.pk %}" class="btn btn-outline-secondary">
+                <i class="fas fa-arrow-left me-2"></i>
+                Back to Role Details
+            </a>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // Search functionality
+    function setupSearch(inputId, containerId) {
+        const searchInput = document.getElementById(inputId);
+        const container = document.querySelector(`#${inputId}`).closest('.card').querySelector('.user-list-container');
+
+        searchInput.addEventListener('input', function() {
+            const searchTerm = this.value.toLowerCase();
+            const userCards = container.querySelectorAll('.user-card');
+
+            userCards.forEach(card => {
+                const userName = card.dataset.userName;
+                if (userName.includes(searchTerm)) {
+                    card.style.display = '';
+                } else {
+                    card.style.display = 'none';
+                }
+            });
+        });
+    }
+
+    setupSearch('searchAvailable', 'availableUsers');
+    setupSearch('searchCurrent', 'currentUsers');
+
+    // Handle checkbox selection for add users
+    const addForm = document.getElementById('addUsersForm');
+    if (addForm) {
+        const addCheckboxes = addForm.querySelectorAll('input[type="checkbox"]');
+        const addButton = document.getElementById('addButton');
+        const addCount = document.getElementById('addCount');
+
+        addCheckboxes.forEach(checkbox => {
+            checkbox.addEventListener('change', function() {
+                const checkedCount = addForm.querySelectorAll('input[type="checkbox"]:checked').length;
+                addCount.textContent = checkedCount;
+                addButton.disabled = checkedCount === 0;
+
+                // Update visual feedback
+                const card = this.closest('.user-card');
+                if (this.checked) {
+                    card.classList.add('selected');
+                } else {
+                    card.classList.remove('selected');
+                }
+            });
+        });
+
+        // Click card to toggle checkbox
+        addForm.querySelectorAll('.user-card').forEach(card => {
+            card.addEventListener('click', function(e) {
+                if (e.target.type !== 'checkbox' && e.target.tagName !== 'LABEL') {
+                    const checkbox = this.querySelector('input[type="checkbox"]');
+                    checkbox.checked = !checkbox.checked;
+                    checkbox.dispatchEvent(new Event('change'));
+                }
+            });
+        });
+    }
+
+    // Handle checkbox selection for remove users
+    const removeForm = document.getElementById('removeUsersForm');
+    if (removeForm) {
+        const removeCheckboxes = removeForm.querySelectorAll('input[type="checkbox"]');
+        const removeButton = document.getElementById('removeButton');
+        const removeCount = document.getElementById('removeCount');
+
+        removeCheckboxes.forEach(checkbox => {
+            checkbox.addEventListener('change', function() {
+                const checkedCount = removeForm.querySelectorAll('input[type="checkbox"]:checked').length;
+                removeCount.textContent = checkedCount;
+                removeButton.disabled = checkedCount === 0;
+
+                // Update visual feedback
+                const card = this.closest('.user-card');
+                if (this.checked) {
+                    card.classList.add('selected');
+                } else {
+                    card.classList.remove('selected');
+                }
+            });
+        });
+
+        // Click card to toggle checkbox
+        removeForm.querySelectorAll('.user-card').forEach(card => {
+            card.addEventListener('click', function(e) {
+                if (e.target.type !== 'checkbox' && e.target.tagName !== 'LABEL') {
+                    const checkbox = this.querySelector('input[type="checkbox"]');
+                    checkbox.checked = !checkbox.checked;
+                    checkbox.dispatchEvent(new Event('change'));
+                }
+            });
+        });
+    }
+
+    // Confirm before removing users
+    if (removeForm) {
+        removeForm.addEventListener('submit', function(e) {
+            const checkedCount = this.querySelectorAll('input[type="checkbox"]:checked').length;
+            if (!confirm(`Are you sure you want to remove ${checkedCount} user(s) from this role?`)) {
+                e.preventDefault();
+            }
+        });
+    }
+</script>
+{% endblock %}

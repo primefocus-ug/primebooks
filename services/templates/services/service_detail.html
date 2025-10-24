@@ -1,0 +1,207 @@
+{% extends "services/base.html" %}
+
+{% block title %}{{ service.name }}{% endblock %}
+{% block page_title %}Service Details{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-lg-8">
+        <!-- Service Info Card -->
+        <div class="card mb-4">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">{{ service.name }}</h5>
+                <div>
+                    <a href="{% url 'services:service_update' service.pk %}" class="btn btn-primary btn-sm">
+                        <i class="fas fa-edit"></i> Edit
+                    </a>
+                    <a href="{% url 'services:appointment_create' %}?service={{ service.pk }}"
+                       class="btn btn-success btn-sm">
+                        <i class="fas fa-calendar-plus"></i> Book Now
+                    </a>
+                </div>
+            </div>
+            <div class="card-body">
+                {% if service.image %}
+                <img src="{{ service.image.url }}" class="img-fluid mb-3 rounded" alt="{{ service.name }}">
+                {% endif %}
+
+                <div class="row mb-3">
+                    <div class="col-md-6">
+                        <p><strong>Code:</strong> {{ service.code }}</p>
+                        <p><strong>Category:</strong> {{ service.category.name|default:"Uncategorized" }}</p>
+                        <p><strong>Type:</strong> {{ service.service_type.name }}</p>
+                        <p><strong>Pricing Type:</strong> {{ service.service_type.get_pricing_type_display }}</p>
+                    </div>
+                    <div class="col-md-6">
+                        <p><strong>Base Price:</strong> ${{ service.base_price }}</p>
+                        {% if service.hourly_rate %}
+                        <p><strong>Hourly Rate:</strong> ${{ service.hourly_rate }}/hr</p>
+                        {% endif %}
+                        <p><strong>Tax Rate:</strong> {{ service.tax_rate }}%</p>
+                        <p><strong>Duration:</strong> {{ service.default_duration|default:"Variable" }} min</p>
+                    </div>
+                </div>
+
+                <div class="mb-3">
+                    <strong>Description:</strong>
+                    <p>{{ service.description|default:"No description available" }}</p>
+                </div>
+
+                <div class="mb-3">
+                    {% if service.requires_appointment %}
+                    <span class="badge bg-info">Requires Appointment</span>
+                    {% endif %}
+                    {% if service.is_recurring %}
+                    <span class="badge bg-warning">Recurring</span>
+                    {% endif %}
+                    {% if service.requires_staff %}
+                    <span class="badge bg-primary">Requires Staff</span>
+                    {% endif %}
+                    {% if service.consumes_inventory %}
+                    <span class="badge bg-secondary">Consumes Inventory</span>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Pricing Tiers -->
+        {% if pricing_tiers %}
+        <div class="card mb-4">
+            <div class="card-header">
+                <h6 class="mb-0"><i class="fas fa-layer-group"></i> Pricing Tiers</h6>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th>Tier</th>
+                                <th>Description</th>
+                                <th>Price</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for tier in pricing_tiers %}
+                            <tr>
+                                <td><strong>{{ tier.tier_name }}</strong></td>
+                                <td>{{ tier.description }}</td>
+                                <td>${{ tier.price }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Resources -->
+        {% if resources %}
+        <div class="card mb-4">
+            <div class="card-header">
+                <h6 class="mb-0"><i class="fas fa-box"></i> Required Resources</h6>
+            </div>
+            <div class="card-body">
+                <ul class="list-group list-group-flush">
+                    {% for resource in resources %}
+                    <li class="list-group-item d-flex justify-content-between">
+                        <span>{{ resource.product_name }}</span>
+                        <span class="badge bg-secondary">{{ resource.quantity }} {{ resource.unit }}</span>
+                    </li>
+                    {% endfor %}
+                </ul>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Reviews -->
+        {% if reviews %}
+        <div class="card mb-4">
+            <div class="card-header">
+                <h6 class="mb-0"><i class="fas fa-star"></i> Customer Reviews ({{ avg_rating|floatformat:1 }}/5.0)</h6>
+            </div>
+            <div class="card-body">
+                {% for review in reviews %}
+                <div class="mb-3 pb-3 border-bottom">
+                    <div class="d-flex justify-content-between">
+                        <strong>{{ review.customer_name }}</strong>
+                        <span>
+                            {% for i in "12345" %}
+                                {% if forloop.counter <= review.rating %}
+                                <i class="fas fa-star text-warning"></i>
+                                {% else %}
+                                <i class="far fa-star text-warning"></i>
+                                {% endif %}
+                            {% endfor %}
+                        </span>
+                    </div>
+                    <small class="text-muted">{{ review.created_at|date:"M d, Y" }}</small>
+                    <p class="mt-2">{{ review.review_text }}</p>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+    </div>
+
+    <div class="col-lg-4">
+        <!-- Quick Actions -->
+        <div class="card mb-3">
+            <div class="card-header">
+                <h6 class="mb-0">Quick Actions</h6>
+            </div>
+            <div class="card-body">
+                <a href="{% url 'services:appointment_create' %}?service={{ service.pk }}"
+                   class="btn btn-success w-100 mb-2">
+                    <i class="fas fa-calendar-plus"></i> Book Appointment
+                </a>
+                <a href="{% url 'services:service_update' service.pk %}"
+                   class="btn btn-primary w-100 mb-2">
+                    <i class="fas fa-edit"></i> Edit Service
+                </a>
+                <a href="{% url 'services:service_list' %}" class="btn btn-secondary w-100">
+                    <i class="fas fa-arrow-left"></i> Back to List
+                </a>
+            </div>
+        </div>
+
+        <!-- Skilled Staff -->
+        {% if skilled_staff %}
+        <div class="card mb-3">
+            <div class="card-header">
+                <h6 class="mb-0"><i class="fas fa-users"></i> Qualified Staff</h6>
+            </div>
+            <div class="card-body">
+                {% for skill in skilled_staff %}
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <div>
+                        <strong>{{ skill.staff.get_full_name }}</strong><br>
+                        <small class="text-muted">{{ skill.get_proficiency_level_display }}</small>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Upcoming Appointments -->
+        {% if upcoming_appointments %}
+        <div class="card">
+            <div class="card-header">
+                <h6 class="mb-0"><i class="fas fa-clock"></i> Upcoming Appointments</h6>
+            </div>
+            <div class="card-body">
+                {% for appointment in upcoming_appointments %}
+                <div class="mb-2 pb-2 border-bottom">
+                    <div>{{ appointment.customer_name }}</div>
+                    <small class="text-muted">
+                        {{ appointment.scheduled_date|date:"M d" }} at {{ appointment.scheduled_time|time:"g:i A" }}
+                    </small>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,924 @@
+{% extends 'base.html' %}
+
+{% block title %}Create Company Users - PrimeBooks{% endblock %}
+
+{% block extra_css %}
+    <style>
+        /* Light Theme (Default) */
+        :root {
+            --bg-primary: #f8f9fa;
+            --bg-secondary: #ffffff;
+            --bg-card: #ffffff;
+            --text-primary: #212529;
+            --text-secondary: #6c757d;
+            --border-color: #dee2e6;
+            --accent-primary: #007bff;
+            --accent-secondary: #6610f2;
+            --success: #28a745;
+            --danger: #dc3545;
+            --shadow: 0 4px 20px rgba(0,0,0,0.1);
+        }
+
+        /* Dark Theme */
+        [data-theme="dark"] {
+            --bg-primary: #121212;
+            --bg-secondary: #1e1e1e;
+            --bg-card: #2d2d2d;
+            --text-primary: #e9ecef;
+            --text-secondary: #adb5bd;
+            --border-color: #444;
+            --accent-primary: #0d6efd;
+            --accent-secondary: #6f42c1;
+            --success: #198754;
+            --danger: #dc3545;
+            --shadow: 0 4px 20px rgba(0,0,0,0.3);
+        }
+
+        /* Base Styles */
+        .bg-light-custom {
+            background-color: var(--bg-primary) !important;
+            min-height: 100vh;
+        }
+
+        body {
+            background-color: var(--bg-primary);
+            color: var(--text-primary);
+            transition: all 0.3s ease;
+        }
+
+        .form-card {
+            border: none;
+            border-radius: 12px;
+            box-shadow: var(--shadow);
+            background-color: var(--bg-card);
+            transition: all 0.3s ease;
+            margin: 1rem 0;
+        }
+
+        .form-header {
+            background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+            border-radius: 12px 12px 0 0;
+            color: white;
+            padding: 1.5rem;
+        }
+
+        /* Extra small devices (phones, 320px and up) */
+        @media (min-width: 320px) {
+            .form-header {
+                padding: 1rem;
+            }
+            .form-header i {
+                font-size: 2rem !important;
+            }
+            .form-header h2 {
+                font-size: 1.5rem;
+            }
+        }
+
+        /* Small devices (landscape phones, 576px and up) */
+        @media (min-width: 576px) {
+            .form-header {
+                padding: 1.25rem;
+            }
+            .form-header i {
+                font-size: 2.5rem !important;
+            }
+            .form-header h2 {
+                font-size: 1.75rem;
+            }
+        }
+
+        /* Medium devices (tablets, 768px and up) */
+        @media (min-width: 768px) {
+            .form-header {
+                padding: 1.5rem;
+            }
+            .form-header i {
+                font-size: 3rem !important;
+            }
+        }
+
+        .form-control, .form-select {
+            border-radius: 8px;
+            border: 2px solid var(--border-color);
+            padding: 0.75rem 1rem;
+            transition: all 0.3s ease;
+            background-color: var(--bg-secondary);
+            color: var(--text-primary);
+            font-size: 1rem;
+        }
+
+        /* Extra small devices adjustments */
+        @media (max-width: 575.98px) {
+            .form-control, .form-select {
+                padding: 0.625rem 0.875rem;
+                font-size: 0.9rem;
+            }
+        }
+
+        .form-control:focus, .form-select:focus {
+            border-color: var(--accent-primary);
+            box-shadow: 0 0 0 0.2rem rgba(0,123,255,0.25);
+            background-color: var(--bg-secondary);
+            color: var(--text-primary);
+        }
+
+        .form-label {
+            font-weight: 600;
+            color: var(--text-secondary);
+            margin-bottom: 0.5rem;
+            font-size: 0.95rem;
+        }
+
+        /* Small screen label adjustments */
+        @media (max-width: 767.98px) {
+            .form-label {
+                font-size: 0.9rem;
+            }
+        }
+
+        .btn-create {
+            background: linear-gradient(135deg, var(--success), #20c997);
+            border: none;
+            border-radius: 8px;
+            padding: 0.75rem 2rem;
+            font-weight: 600;
+            transition: all 0.3s ease;
+            font-size: 1rem;
+        }
+
+        /* Button responsiveness */
+        @media (max-width: 767.98px) {
+            .btn-create {
+                padding: 0.625rem 1.5rem;
+                font-size: 0.9rem;
+                width: 100%;
+                margin-top: 0.5rem;
+            }
+
+            .btn-outline-secondary {
+                width: 100%;
+            }
+
+            .d-flex.justify-content-between {
+                flex-direction: column;
+                gap: 0.5rem;
+            }
+        }
+
+        /* Extra large screens */
+        @media (min-width: 1400px) {
+            .btn-create {
+                padding: 0.875rem 2.5rem;
+                font-size: 1.1rem;
+            }
+        }
+
+        .btn-create:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 15px rgba(40,167,69,0.4);
+        }
+
+        .section-divider {
+            border-top: 2px solid var(--border-color);
+            margin: 1.5rem 0;
+            position: relative;
+        }
+
+        /* Section divider adjustments for small screens */
+        @media (max-width: 767.98px) {
+            .section-divider {
+                margin: 1rem 0;
+            }
+
+            .section-divider::after {
+                font-size: 0.8rem;
+                left: 0.5rem;
+                padding: 0 0.5rem;
+            }
+        }
+
+        .section-divider::after {
+            content: attr(data-title);
+            position: absolute;
+            top: -12px;
+            left: 1rem;
+            background: var(--bg-card);
+            padding: 0 1rem;
+            color: var(--text-secondary);
+            font-weight: 600;
+            font-size: 0.9rem;
+        }
+
+        .availability-check {
+            font-size: 0.875rem;
+            margin-top: 0.25rem;
+        }
+
+        /* Smaller availability text on mobile */
+        @media (max-width: 575.98px) {
+            .availability-check {
+                font-size: 0.8rem;
+            }
+        }
+
+        .availability-check.available {
+            color: var(--success);
+        }
+
+        .availability-check.unavailable {
+            color: var(--danger);
+        }
+
+        .form-section {
+            margin-bottom: 1.5rem;
+        }
+
+        /* Reduce spacing on small screens */
+        @media (max-width: 767.98px) {
+            .form-section {
+                margin-bottom: 1rem;
+            }
+
+            .form-section h5 {
+                font-size: 1.1rem;
+            }
+        }
+
+        .required {
+            color: var(--danger);
+        }
+
+        .breadcrumb {
+            background-color: var(--bg-secondary);
+            transition: all 0.3s ease;
+            padding: 0.75rem 1rem;
+            flex-wrap: nowrap;
+            overflow-x: auto;
+        }
+
+        /* Breadcrumb responsiveness */
+        @media (max-width: 767.98px) {
+            .breadcrumb {
+                padding: 0.5rem;
+                font-size: 0.9rem;
+            }
+
+            .breadcrumb-item {
+                white-space: nowrap;
+            }
+        }
+
+        /* Extra small breadcrumb */
+        @media (max-width: 375px) {
+            .breadcrumb {
+                font-size: 0.8rem;
+            }
+        }
+
+        .breadcrumb-item a {
+            color: var(--accent-primary);
+        }
+
+        .breadcrumb-item.active {
+            color: var(--text-secondary);
+        }
+
+        .form-text {
+            color: var(--text-secondary);
+            font-size: 0.875rem;
+        }
+
+        /* Smaller form text on mobile */
+        @media (max-width: 575.98px) {
+            .form-text {
+                font-size: 0.8rem;
+            }
+        }
+
+        .alert {
+            background-color: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            color: var(--text-primary);
+            transition: all 0.3s ease;
+            font-size: 0.95rem;
+        }
+
+        /* Alert responsiveness */
+        @media (max-width: 767.98px) {
+            .alert {
+                margin: 0.5rem;
+                font-size: 0.9rem;
+            }
+
+            .position-fixed.top-0.end-0 {
+                width: calc(100% - 1rem);
+                max-width: none;
+            }
+        }
+
+        .alert-success {
+            border-color: var(--success);
+        }
+
+        .alert-danger {
+            border-color: var(--danger);
+        }
+
+        .btn-outline-secondary {
+            border-color: var(--border-color);
+            color: var(--text-secondary);
+            font-size: 1rem;
+        }
+
+        @media (max-width: 767.98px) {
+            .btn-outline-secondary {
+                font-size: 0.9rem;
+            order: 2;
+            margin-top: 0.5rem;
+            width: 100%;
+            text-align: center;
+            display: block;
+            padding: 0.625rem 1.5rem;
+            font-size: 0.9rem;
+            width: 100%;
+            margin-top: 0.5rem;
+            order: 2;
+        }
+
+        .btn-create {
+            order: 1;
+        }
+        }
+
+        .btn-outline-secondary:hover {
+            background-color: var(--border-color);
+            color: var(--text-primary);
+        }
+
+        .form-check-input {
+            background-color: var(--bg-secondary);
+            border-color: var(--border-color);
+            transform: scale(1.1);
+        }
+
+        /* Checkbox sizing for different screens */
+        @media (max-width: 575.98px) {
+            .form-check-input {
+                transform: scale(1);
+            }
+        }
+
+        .form-check-input:checked {
+            background-color: var(--accent-primary);
+            border-color: var(--accent-primary);
+        }
+
+        .form-check-label {
+            color: var(--text-secondary);
+            font-size: 0.95rem;
+        }
+
+        /* Checkbox label sizing */
+        @media (max-width: 767.98px) {
+            .form-check-label {
+                font-size: 0.9rem;
+            }
+        }
+
+        /* Fix for textarea in Additional Information section */
+        textarea.form-control {
+            min-height: 100px;
+            resize: vertical;
+        }
+
+        /* Textarea height adjustment for mobile */
+        @media (max-width: 767.98px) {
+            textarea.form-control {
+                min-height: 80px;
+            }
+        }
+
+        /* Fix for file input in Additional Information section */
+        .form-control[type="file"] {
+            padding: 0.5rem;
+        }
+
+        /* Fix for select dropdown options */
+        .form-select option {
+            background-color: var(--bg-secondary);
+            color: var(--text-primary);
+        }
+
+        /* Ensure proper contrast for all text */
+        .text-primary {
+            color: var(--text-primary) !important;
+        }
+
+        .text-secondary {
+            color: var(--text-secondary) !important;
+        }
+
+        /* Container responsiveness */
+        .container {
+            padding-left: 1rem;
+            padding-right: 1rem;
+        }
+
+        /* Extra small container padding */
+        @media (max-width: 320px) {
+            .container {
+                padding-left: 0.75rem;
+                padding-right: 0.75rem;
+            }
+
+            .card-body {
+                padding: 1rem !important;
+            }
+        }
+
+        /* Card body padding adjustments */
+        @media (max-width: 767.98px) {
+            .card-body {
+                padding: 1.25rem !important;
+            }
+        }
+
+        /* Large screens adjustments */
+        @media (min-width: 1200px) {
+            .container {
+                max-width: 1140px;
+            }
+        }
+
+        /* Extra large screens */
+        @media (min-width: 1400px) {
+            .container {
+                max-width: 1320px;
+            }
+
+            .form-control, .form-select {
+                padding: 0.875rem 1.125rem;
+                font-size: 1.05rem;
+            }
+
+            .form-label {
+                font-size: 1rem;
+            }
+        }
+
+        /* Ultra-wide screens */
+        @media (min-width: 1920px) {
+            .container {
+                max-width: 1600px;
+            }
+
+            .col-lg-8 {
+                max-width: 1000px;
+            }
+        }
+
+        /* Grid system adjustments for better responsiveness */
+        .row {
+            margin-left: -0.5rem;
+            margin-right: -0.5rem;
+        }
+
+        .col-md-6, .col-md-4 {
+            padding-left: 0.5rem;
+            padding-right: 0.5rem;
+        }
+
+        /* Stack columns on extra small screens */
+        @media (max-width: 575.98px) {
+            .row .col-md-6,
+            .row .col-md-4 {
+                flex: 0 0 100%;
+                max-width: 100%;
+                margin-bottom: 0.75rem;
+            }
+
+            /* Permission checkboxes stack vertically on mobile */
+            .form-section .row .col-md-4 {
+                flex: 0 0 100%;
+                max-width: 100%;
+                margin-bottom: 0.5rem;
+            }
+        }
+
+        /* Medium screens - 2 columns for permissions */
+        @media (min-width: 576px) and (max-width: 991.98px) {
+            .form-section .row .col-md-4 {
+                flex: 0 0 50%;
+                max-width: 50%;
+            }
+        }
+    </style>
+{% endblock %}
+
+{% block content %}
+<div class="bg-light-custom">
+    <div class="container py-3 py-sm-4 py-md-5">
+        <div class="row justify-content-center">
+            <div class="col-12 col-sm-10 col-md-8 col-lg-8 col-xl-8 col-xxl-7">
+                <!-- Header -->
+                <div class="text-center mb-3 mb-sm-4">
+                    <nav aria-label="breadcrumb">
+                        <ol class="breadcrumb justify-content-center">
+                            <li class="breadcrumb-item"><a href="{% url 'user_list' %}">Users</a></li>
+                            <li class="breadcrumb-item active">Create New User</li>
+                        </ol>
+                    </nav>
+                </div>
+
+                <!-- Form Card -->
+                <div class="card form-card">
+                    <div class="form-header text-center">
+                        <i class="fas fa-user-plus fa-3x mb-2 mb-sm-3"></i>
+                        <h2 class="mb-0">Create New User</h2>
+                        <p class="mb-0 opacity-75 mt-1">Add a new user to the system</p>
+                    </div>
+
+                    <div class="card-body p-3 p-sm-4">
+                        <form method="post" enctype="multipart/form-data" id="userCreateForm">
+                            {% csrf_token %}
+
+                            <!-- Basic Information Section -->
+                            <div class="form-section">
+                                <h5 class="text-primary mb-3">
+                                    <i class="fas fa-user me-2"></i>Basic Information
+                                </h5>
+
+                                <div class="row">
+                                    <div class="col-12 col-md-6 mb-3">
+                                        <label for="{{ form.first_name.id_for_label }}" class="form-label">
+                                            First Name <span class="required">*</span>
+                                        </label>
+                                        <input type="text"
+                                               name="{{ form.first_name.name }}"
+                                               id="{{ form.first_name.id_for_label }}"
+                                               class="form-control {% if form.first_name.errors %}is-invalid{% endif %}"
+                                               value="{{ form.first_name.value|default:'' }}"
+                                               required>
+                                        {% if form.first_name.errors %}
+                                            <div class="text-danger small mt-1">{{ form.first_name.errors.0 }}</div>
+                                        {% endif %}
+                                    </div>
+
+                                    <div class="col-12 col-md-6 mb-3">
+                                        <label for="{{ form.last_name.id_for_label }}" class="form-label">
+                                            Last Name <span class="required">*</span>
+                                        </label>
+                                        <input type="text"
+                                               name="{{ form.last_name.name }}"
+                                               id="{{ form.last_name.id_for_label }}"
+                                               class="form-control {% if form.last_name.errors %}is-invalid{% endif %}"
+                                               value="{{ form.last_name.value|default:'' }}"
+                                               required>
+                                        {% if form.last_name.errors %}
+                                            <div class="text-danger small mt-1">{{ form.last_name.errors.0 }}</div>
+                                        {% endif %}
+                                    </div>
+                                </div>
+
+                                <div class="row">
+                                    <div class="col-12 col-md-6 mb-3">
+                                        <label for="{{ form.middle_name.id_for_label }}" class="form-label">
+                                            Middle Name
+                                        </label>
+                                        <input type="text"
+                                               name="{{ form.middle_name.name }}"
+                                               id="{{ form.middle_name.id_for_label }}"
+                                               class="form-control"
+                                               value="{{ form.middle_name.value|default:'' }}">
+                                    </div>
+
+                                    <div class="col-12 col-md-6 mb-3">
+                                        <label for="{{ form.phone_number.id_for_label }}" class="form-label">
+                                            Phone Number
+                                        </label>
+                                        <input type="text"
+                                               name="{{ form.phone_number.name }}"
+                                               id="{{ form.phone_number.id_for_label }}"
+                                               class="form-control {% if form.phone_number.errors %}is-invalid{% endif %}"
+                                               value="{{ form.phone_number.value|default:'' }}">
+                                        <div class="form-text">Include country code (e.g., +256)</div>
+                                        {% if form.phone_number.errors %}
+                                            <div class="text-danger small mt-1">{{ form.phone_number.errors.0 }}</div>
+                                        {% endif %}
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="section-divider" data-title="Account Details"></div>
+
+                            <!-- Account Information Section -->
+                            <div class="form-section">
+                                <div class="row">
+                                    <div class="col-12 col-md-6 mb-3">
+                                        <label for="{{ form.email.id_for_label }}" class="form-label">
+                                            Email Address <span class="required">*</span>
+                                        </label>
+                                        <input type="email"
+                                               name="{{ form.email.name }}"
+                                               id="{{ form.email.id_for_label }}"
+                                               class="form-control {% if form.email.errors %}is-invalid{% endif %}"
+                                               value="{{ form.email.value|default:'' }}"
+                                               required>
+                                        <div id="emailAvailability" class="availability-check"></div>
+                                        {% if form.email.errors %}
+                                            <div class="text-danger small mt-1">{{ form.email.errors.0 }}</div>
+                                        {% endif %}
+                                    </div>
+
+                                    <div class="col-12 col-md-6 mb-3">
+                                        <label for="{{ form.username.id_for_label }}" class="form-label">
+                                            Username <span class="required">*</span>
+                                        </label>
+                                        <input type="text"
+                                               name="{{ form.username.name }}"
+                                               id="{{ form.username.id_for_label }}"
+                                               class="form-control {% if form.username.errors %}is-invalid{% endif %}"
+                                               value="{{ form.username.value|default:'' }}"
+                                               required>
+                                        <div id="usernameAvailability" class="availability-check"></div>
+                                        {% if form.username.errors %}
+                                            <div class="text-danger small mt-1">{{ form.username.errors.0 }}</div>
+                                        {% endif %}
+                                    </div>
+                                </div>
+
+                                <div class="row">
+                                    <div class="col-12 col-md-6 mb-3">
+                                        <label for="{{ form.password1.id_for_label }}" class="form-label">
+                                            Password <span class="required">*</span>
+                                        </label>
+                                        <input type="password"
+                                               name="{{ form.password1.name }}"
+                                               id="{{ form.password1.id_for_label }}"
+                                               class="form-control {% if form.password1.errors %}is-invalid{% endif %}"
+                                               required>
+                                        {% if form.password1.errors %}
+                                            <div class="text-danger small mt-1">{{ form.password1.errors.0 }}</div>
+                                        {% endif %}
+                                    </div>
+
+                                    <div class="col-12 col-md-6 mb-3">
+                                        <label for="{{ form.password2.id_for_label }}" class="form-label">
+                                            Confirm Password <span class="required">*</span>
+                                        </label>
+                                        <input type="password"
+                                               name="{{ form.password2.name }}"
+                                               id="{{ form.password2.id_for_label }}"
+                                               class="form-control {% if form.password2.errors %}is-invalid{% endif %}"
+                                               required>
+                                        {% if form.password2.errors %}
+                                            <div class="text-danger small mt-1">{{ form.password2.errors.0 }}</div>
+                                        {% endif %}
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="section-divider" data-title="Role & Permissions"></div>
+
+                            <!-- Role Information Section -->
+                            <div class="form-section">
+                                <div class="row">
+                                    <div class="col-12 col-md-6 mb-3">
+                                        <label for="{{ form.user_type.id_for_label }}" class="form-label">
+                                            User Type <span class="required">*</span>
+                                        </label>
+                                        <select name="{{ form.user_type.name }}"
+                                                id="{{ form.user_type.id_for_label }}"
+                                                class="form-select {% if form.user_type.errors %}is-invalid{% endif %}"
+                                                required>
+                                            <option value="">Select User Type</option>
+                                            {% for value, label in form.user_type.field.choices %}
+                                                <option value="{{ value }}" {% if form.user_type.value == value %}selected{% endif %}>{{ label }}</option>
+                                            {% endfor %}
+                                        </select>
+                                        {% if form.user_type.errors %}
+                                            <div class="text-danger small mt-1">{{ form.user_type.errors.0 }}</div>
+                                        {% endif %}
+                                    </div>
+
+                                    <div class="col-12 col-md-6 mb-3">
+                                        <label for="{{ form.language.id_for_label }}" class="form-label">
+                                            Preferred Language
+                                        </label>
+                                        <select name="{{ form.language.name }}"
+                                                id="{{ form.language.id_for_label }}"
+                                                class="form-select">
+                                            <option value="">Select Language</option>
+                                            {% for value, label in form.language.field.choices %}
+                                                <option value="{{ value }}" {% if form.language.value == value %}selected{% endif %}>{{ label }}</option>
+                                            {% endfor %}
+                                        </select>
+                                    </div>
+                                </div>
+
+                                <!-- Permission Checkboxes -->
+                                <div class="row">
+                                    <div class="col-12 col-sm-6 col-md-4 mb-3">
+                                        <div class="form-check">
+                                            <input type="checkbox"
+                                                   name="{{ form.is_active.name }}"
+                                                   id="{{ form.is_active.id_for_label }}"
+                                                   class="form-check-input"
+                                                   {% if form.is_active.value %}checked{% endif %}>
+                                            <label class="form-check-label" for="{{ form.is_active.id_for_label }}">
+                                                Active Account
+                                            </label>
+                                        </div>
+                                    </div>
+
+                                    <div class="col-12 col-sm-6 col-md-4 mb-3">
+                                        <div class="form-check">
+                                            <input type="checkbox"
+                                                   name="{{ form.is_staff.name }}"
+                                                   id="{{ form.is_staff.id_for_label }}"
+                                                   class="form-check-input"
+                                                   {% if form.is_staff.value %}checked{% endif %}>
+                                            <label class="form-check-label" for="{{ form.is_staff.id_for_label }}">
+                                                Staff Member
+                                            </label>
+                                        </div>
+                                    </div>
+
+                                    <div class="col-12 col-sm-6 col-md-4 mb-3">
+                                        <div class="form-check">
+                                            <input type="checkbox"
+                                                   name="{{ form.company_admin.name }}"
+                                                   id="{{ form.company_admin.id_for_label }}"
+                                                   class="form-check-input"
+                                                   {% if form.company_admin.value %}checked{% endif %}>
+                                            <label class="form-check-label" for="{{ form.company_admin.id_for_label }}">
+                                                Company Admin
+                                            </label>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="section-divider" data-title="Additional Information"></div>
+
+                            <!-- Additional Information -->
+                            <div class="form-section">
+                                <div class="mb-3">
+                                    <label for="{{ form.bio.id_for_label }}" class="form-label">
+                                        Bio/Description
+                                    </label>
+                                    <textarea name="{{ form.bio.name }}"
+                                              id="{{ form.bio.id_for_label }}"
+                                              class="form-control"
+                                              rows="4">{{ form.bio.value|default:'' }}</textarea>
+                                    <div class="form-text">Brief description about the user (max 500 characters)</div>
+                                </div>
+
+                                {% if form.avatar %}
+                                <div class="mb-3">
+                                    <label for="{{ form.avatar.id_for_label }}" class="form-label">
+                                        Profile Picture
+                                    </label>
+                                    <input type="file"
+                                           name="{{ form.avatar.name }}"
+                                           id="{{ form.avatar.id_for_label }}"
+                                           class="form-control"
+                                           accept="image/*">
+                                    <div class="form-text">Upload a profile picture (optional)</div>
+                                </div>
+                                {% endif %}
+                            </div>
+
+                            <!-- Action Buttons -->
+                            <div class="d-flex flex-column flex-sm-row justify-content-between pt-3 border-top">
+                                <a href="{% url 'user_list' %}" class="btn btn-outline-secondary order-2 order-sm-1 mt-2 mt-sm-0">
+                                    <i class="fas fa-arrow-left me-1"></i> Cancel
+                                </a>
+
+                                <button type="submit" class="btn btn-create text-white order-1 order-sm-2">
+                                    <i class="fas fa-user-plus me-1"></i> Create User
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Messages -->
+    {% if messages %}
+    <div class="position-fixed top-0 end-0 p-2 p-sm-3" style="z-index: 1050;">
+        {% for message in messages %}
+        <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
+            {{ message }}
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block extra_js %}
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.0/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // Real-time availability checking
+        function checkAvailability(field, endpoint, resultElement) {
+            const value = field.value.trim();
+            if (value.length < 3) {
+                resultElement.textContent = '';
+                return;
+            }
+
+            fetch(`${endpoint}?${field.name}=${encodeURIComponent(value)}`)
+                .then(response => response.json())
+                .then(data => {
+                    resultElement.textContent = data.message;
+                    resultElement.className = `availability-check ${data.available ? 'available' : 'unavailable'}`;
+                })
+                .catch(error => {
+                    console.error('Error checking availability:', error);
+                });
+        }
+
+        // Set up availability checking
+        document.addEventListener('DOMContentLoaded', function() {
+            const emailField = document.querySelector('#{{ form.email.id_for_label }}');
+            const usernameField = document.querySelector('#{{ form.username.id_for_label }}');
+            const emailResult = document.querySelector('#emailAvailability');
+            const usernameResult = document.querySelector('#usernameAvailability');
+
+            if (emailField && emailResult) {
+                let emailTimeout;
+                emailField.addEventListener('input', function() {
+                    clearTimeout(emailTimeout);
+                    emailTimeout = setTimeout(() => {
+                        checkAvailability(emailField, '#', emailResult);
+                    }, 500);
+                });
+            }
+
+            if (usernameField && usernameResult) {
+                let usernameTimeout;
+                usernameField.addEventListener('input', function() {
+                    clearTimeout(usernameTimeout);
+                    usernameTimeout = setTimeout(() => {
+                        checkAvailability(usernameField, '#', usernameResult);
+                    }, 500);
+                });
+            }
+
+            // Form validation
+            const form = document.getElementById('userCreateForm');
+            form.addEventListener('submit', function(e) {
+                const requiredFields = form.querySelectorAll('[required]');
+                let isValid = true;
+
+                requiredFields.forEach(field => {
+                    if (!field.value.trim()) {
+                        isValid = false;
+                        field.classList.add('is-invalid');
+                    } else {
+                        field.classList.remove('is-invalid');
+                    }
+                });
+
+                if (!isValid) {
+                    e.preventDefault();
+                    alert('Please fill in all required fields.');
+                }
+            });
+
+            // Theme compatibility - listen for theme changes
+            const observer = new MutationObserver(function(mutations) {
+                mutations.forEach(function(mutation) {
+                    if (mutation.attributeName === 'data-theme') {
+                        // Update any theme-specific elements if needed
+                        document.querySelectorAll('.form-control, .form-select').forEach(el => {
+                            el.style.backgroundColor = getComputedStyle(document.documentElement)
+                                .getPropertyValue('--bg-secondary');
+                            el.style.color = getComputedStyle(document.documentElement)
+                                .getPropertyValue('--text-primary');
+                        });
+                    }
+                });
+            });
+
+            observer.observe(document.documentElement, {
+                attributes: true,
+                attributeFilter: ['data-theme']
+            });
+        });
+
+        // Auto-dismiss alerts after 5 seconds
+        setTimeout(function() {
+            var alerts = document.querySelectorAll('.alert');
+            alerts.forEach(function(alert) {
+                var bsAlert = new bootstrap.Alert(alert);
+                bsAlert.close();
+            });
+        }, 5000);
+    </script>
+{% endblock %}

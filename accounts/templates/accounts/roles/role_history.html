@@ -1,0 +1,309 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}{{ title }}{% endblock %}
+
+{% block extra_css %}
+<style>
+    .history-timeline {
+        position: relative;
+        padding-left: 30px;
+    }
+    .history-timeline::before {
+        content: '';
+        position: absolute;
+        left: 8px;
+        top: 0;
+        bottom: 0;
+        width: 2px;
+        background: #e0e0e0;
+    }
+    .history-item {
+        position: relative;
+        padding: 20px;
+        background: white;
+        border-radius: 12px;
+        margin-bottom: 20px;
+        border: 1px solid #e0e0e0;
+        transition: all 0.3s ease;
+    }
+    .history-item:hover {
+        box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        transform: translateX(4px);
+    }
+    .history-item::before {
+        content: '';
+        position: absolute;
+        left: -22px;
+        top: 24px;
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        background: white;
+        border: 3px solid #0d6efd;
+        z-index: 1;
+    }
+    .history-item.created::before { border-color: #198754; }
+    .history-item.updated::before { border-color: #0d6efd; }
+    .history-item.deleted::before { border-color: #dc3545; }
+    .history-item.activated::before { border-color: #198754; }
+    .history-item.deactivated::before { border-color: #ffc107; }
+    .history-item.permissions_changed::before { border-color: #6f42c1; }
+
+    .action-badge {
+        font-size: 0.85rem;
+        padding: 6px 12px;
+        border-radius: 20px;
+    }
+    .filter-card {
+        position: sticky;
+        top: 20px;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <!-- Breadcrumb -->
+    <nav aria-label="breadcrumb" class="mb-4">
+        <ol class="breadcrumb">
+            <li class="breadcrumb-item"><a href="{% url 'role_list' %}">Roles</a></li>
+            {% if role %}
+            <li class="breadcrumb-item"><a href="{% url 'role_detail' role.pk %}">{{ role.group.name }}</a></li>
+            {% endif %}
+            <li class="breadcrumb-item active">{{ breadcrumb_title }}</li>
+        </ol>
+    </nav>
+
+    <!-- Header -->
+    <div class="row mb-4">
+        <div class="col-md-8">
+            <h2 class="mb-2">
+                <i class="fas fa-history me-2"></i>
+                {{ title }}
+            </h2>
+            <p class="text-muted">Track all changes and modifications</p>
+        </div>
+        <div class="col-md-4 text-end">
+            {% if role %}
+            <a href="{% url 'role_detail' role.pk %}" class="btn btn-outline-secondary">
+                <i class="fas fa-arrow-left me-1"></i>
+                Back to Role
+            </a>
+            {% else %}
+            <a href="{% url 'role_list' %}" class="btn btn-outline-secondary">
+                <i class="fas fa-arrow-left me-1"></i>
+                Back to Roles
+            </a>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="row">
+        <!-- Filters -->
+        <div class="col-lg-3 mb-4">
+            <div class="card filter-card shadow-sm">
+                <div class="card-header bg-white">
+                    <h5 class="mb-0">
+                        <i class="fas fa-filter me-2"></i>
+                        Filters
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <form method="get" id="filterForm">
+                        <!-- Action Filter -->
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">Action Type</label>
+                            <select name="action" class="form-select" onchange="this.form.submit()">
+                                <option value="">All Actions</option>
+                                {% for value, label in available_actions %}
+                                <option value="{{ value }}" {% if current_action == value %}selected{% endif %}>
+                                    {{ label }}
+                                </option>
+                                {% endfor %}
+                            </select>
+                        </div>
+
+                        <!-- Date Range Filter -->
+                        <div class="mb-3">
+                            <label class="form-label fw-bold">Time Period</label>
+                            <select name="days" class="form-select" onchange="this.form.submit()">
+                                <option value="7" {% if current_days == '7' %}selected{% endif %}>Last 7 days</option>
+                                <option value="30" {% if current_days == '30' %}selected{% endif %}>Last 30 days</option>
+                                <option value="90" {% if current_days == '90' %}selected{% endif %}>Last 90 days</option>
+                                <option value="all" {% if current_days == 'all' %}selected{% endif %}>All time</option>
+                            </select>
+                        </div>
+
+                        <button type="button" class="btn btn-outline-secondary w-100" onclick="clearFilters()">
+                            <i class="fas fa-times me-1"></i>
+                            Clear Filters
+                        </button>
+                    </form>
+                </div>
+
+                <!-- Statistics -->
+                <div class="card-footer bg-light">
+                    <h6 class="mb-2">Statistics</h6>
+                    <div class="d-flex justify-content-between mb-2">
+                        <span class="text-muted">Total Entries:</span>
+                        <strong>{{ page_obj.paginator.count }}</strong>
+                    </div>
+                    <div class="d-flex justify-content-between">
+                        <span class="text-muted">Showing:</span>
+                        <strong>{{ history_entries|length }}</strong>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- History Timeline -->
+        <div class="col-lg-9">
+            {% if history_entries %}
+            <div class="history-timeline">
+                {% for entry in history_entries %}
+                <div class="history-item {{ entry.action }}">
+                    <div class="row">
+                        <div class="col-md-8">
+                            <div class="d-flex align-items-start mb-2">
+                                <div class="flex-grow-1">
+                                    <h5 class="mb-1">
+                                        {% if entry.action == 'created' %}
+                                        <i class="fas fa-plus-circle text-success me-2"></i>
+                                        {% elif entry.action == 'updated' %}
+                                        <i class="fas fa-edit text-primary me-2"></i>
+                                        {% elif entry.action == 'deleted' %}
+                                        <i class="fas fa-trash text-danger me-2"></i>
+                                        {% elif entry.action == 'activated' %}
+                                        <i class="fas fa-check-circle text-success me-2"></i>
+                                        {% elif entry.action == 'deactivated' %}
+                                        <i class="fas fa-times-circle text-warning me-2"></i>
+                                        {% elif entry.action == 'permissions_changed' %}
+                                        <i class="fas fa-key text-purple me-2"></i>
+                                        {% else %}
+                                        <i class="fas fa-info-circle text-info me-2"></i>
+                                        {% endif %}
+                                        {{ entry.get_action_display }}
+                                    </h5>
+
+                                    {% if not role %}
+                                    <p class="text-muted mb-1">
+                                        <i class="fas fa-user-shield me-1"></i>
+                                        Role: <a href="{% url 'role_detail' entry.role.pk %}">{{ entry.role.group.name }}</a>
+                                    </p>
+                                    {% endif %}
+
+                                    <p class="text-muted mb-2">
+                                        <i class="fas fa-user me-1"></i>
+                                        By: {{ entry.user.get_full_name|default:"System" }}
+                                    </p>
+
+                                    {% if entry.notes %}
+                                    <p class="mb-2">{{ entry.notes }}</p>
+                                    {% endif %}
+
+                                    {% if entry.changes %}
+                                    <div class="mt-2">
+                                        <button class="btn btn-sm btn-outline-secondary" type="button"
+                                                data-bs-toggle="collapse"
+                                                data-bs-target="#changes-{{ entry.pk }}">
+                                            <i class="fas fa-code me-1"></i>
+                                            View Changes
+                                        </button>
+                                        <div class="collapse mt-2" id="changes-{{ entry.pk }}">
+                                            <pre class="bg-light p-3 rounded"><code>{{ entry.changes|safe }}</code></pre>
+                                        </div>
+                                    </div>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="col-md-4 text-end">
+                            <span class="action-badge {% if entry.action == 'created' %}bg-success{% elif entry.action == 'updated' %}bg-primary{% elif entry.action == 'deleted' %}bg-danger{% elif entry.action == 'activated' %}bg-success{% elif entry.action == 'deactivated' %}bg-warning{% else %}bg-info{% endif %} text-white">
+                                {{ entry.get_action_display }}
+                            </span>
+                            <div class="text-muted small mt-2">
+                                <i class="fas fa-clock me-1"></i>
+                                {{ entry.timestamp|date:"M d, Y H:i" }}
+                            </div>
+                            <div class="text-muted small">
+                                {{ entry.timestamp|timesince }} ago
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+
+            <!-- Pagination -->
+            {% if page_obj.has_other_pages %}
+            <nav aria-label="History pagination">
+                <ul class="pagination justify-content-center">
+                    {% if page_obj.has_previous %}
+                    <li class="page-item">
+                        <a class="page-link" href="?page=1{% if current_action %}&action={{ current_action }}{% endif %}{% if current_days != '30' %}&days={{ current_days }}{% endif %}">
+                            <i class="fas fa-angle-double-left"></i>
+                        </a>
+                    </li>
+                    <li class="page-item">
+                        <a class="page-link" href="?page={{ page_obj.previous_page_number }}{% if current_action %}&action={{ current_action }}{% endif %}{% if current_days != '30' %}&days={{ current_days }}{% endif %}">
+                            <i class="fas fa-angle-left"></i>
+                        </a>
+                    </li>
+                    {% endif %}
+
+                    <li class="page-item active">
+                        <span class="page-link">
+                            Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}
+                        </span>
+                    </li>
+
+                    {% if page_obj.has_next %}
+                    <li class="page-item">
+                        <a class="page-link" href="?page={{ page_obj.next_page_number }}{% if current_action %}&action={{ current_action }}{% endif %}{% if current_days != '30' %}&days={{ current_days }}{% endif %}">
+                            <i class="fas fa-angle-right"></i>
+                        </a>
+                    </li>
+                    <li class="page-item">
+                        <a class="page-link" href="?page={{ page_obj.paginator.num_pages }}{% if current_action %}&action={{ current_action }}{% endif %}{% if current_days != '30' %}&days={{ current_days }}{% endif %}">
+                            <i class="fas fa-angle-double-right"></i>
+                        </a>
+                    </li>
+                    {% endif %}
+                </ul>
+            </nav>
+            {% endif %}
+
+            {% else %}
+            <div class="card shadow-sm">
+                <div class="card-body text-center py-5">
+                    <i class="fas fa-inbox fa-4x text-muted mb-3"></i>
+                    <h4>No History Found</h4>
+                    <p class="text-muted">
+                        {% if current_action or current_days != '30' %}
+                        No changes match your filters. Try adjusting the filters.
+                        {% else %}
+                        No changes have been recorded yet.
+                        {% endif %}
+                    </p>
+                    {% if current_action or current_days != '30' %}
+                    <button class="btn btn-primary" onclick="clearFilters()">
+                        Clear Filters
+                    </button>
+                    {% endif %}
+                </div>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    function clearFilters() {
+        window.location.href = window.location.pathname;
+    }
+</script>
+{% endblock %}

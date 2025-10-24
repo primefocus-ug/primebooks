@@ -1,0 +1,340 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}{{ title }} | {{ company.trading_name|default:company.name }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <div class="row justify-content-center">
+        <div class="col-lg-10">
+            <!-- Header -->
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <div>
+                    <h2 class="mb-1">{{ title }}</h2>
+                    <p class="text-muted mb-0">Set up automated report delivery</p>
+                </div>
+                <a href="{% url 'reports:schedules' %}" class="btn btn-outline-secondary">
+                    <i class="fas fa-arrow-left me-2"></i>Back to Schedules
+                </a>
+            </div>
+
+            <!-- Form Card -->
+            <div class="card shadow-sm">
+                <div class="card-header bg-primary text-white">
+                    <h5 class="mb-0">
+                        <i class="fas fa-calendar-alt me-2"></i>Schedule Configuration
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <form method="post" id="scheduleForm">
+                        {% csrf_token %}
+
+                        <!-- Error Messages -->
+                        {% if messages %}
+                        <div class="mb-3">
+                            {% for message in messages %}
+                            <div class="alert alert-{{ message.tags }} alert-dismissible fade show">
+                                {{ message }}
+                                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                            </div>
+                            {% endfor %}
+                        </div>
+                        {% endif %}
+
+                        {% if form.non_field_errors %}
+                        <div class="alert alert-danger alert-dismissible fade show">
+                            {% for error in form.non_field_errors %}
+                                {{ error }}
+                            {% endfor %}
+                            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                        </div>
+                        {% endif %}
+
+                        <!-- Report Selection & Frequency -->
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label for="{{ form.report.id_for_label }}" class="form-label">
+                                    Report to Schedule <span class="text-danger">*</span>
+                                </label>
+                                {{ form.report }}
+                                {% if form.report.errors %}
+                                <div class="invalid-feedback d-block">{{ form.report.errors.0 }}</div>
+                                {% endif %}
+                                <small class="text-muted">Select which report to generate automatically</small>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label for="{{ form.frequency.id_for_label }}" class="form-label">
+                                    Frequency <span class="text-danger">*</span>
+                                </label>
+                                {{ form.frequency }}
+                                {% if form.frequency.errors %}
+                                <div class="invalid-feedback d-block">{{ form.frequency.errors.0 }}</div>
+                                {% endif %}
+                                <small class="text-muted">How often to generate the report</small>
+                            </div>
+                        </div>
+
+                        <!-- Schedule Details -->
+                        <div class="row" id="schedule-details">
+                            <div class="col-md-4 mb-3" id="day-of-week-field" style="display: none;">
+                                <label for="{{ form.day_of_week.id_for_label }}" class="form-label">
+                                    Day of Week <span class="text-danger">*</span>
+                                </label>
+                                {{ form.day_of_week }}
+                                {% if form.day_of_week.errors %}
+                                <div class="invalid-feedback d-block">{{ form.day_of_week.errors.0 }}</div>
+                                {% endif %}
+                            </div>
+                            <div class="col-md-4 mb-3" id="day-of-month-field" style="display: none;">
+                                <label for="{{ form.day_of_month.id_for_label }}" class="form-label">
+                                    Day of Month <span class="text-danger">*</span>
+                                </label>
+                                {{ form.day_of_month }}
+                                {% if form.day_of_month.errors %}
+                                <div class="invalid-feedback d-block">{{ form.day_of_month.errors.0 }}</div>
+                                {% endif %}
+                                <small class="text-muted">1-31</small>
+                            </div>
+                            <div class="col-md-4 mb-3">
+                                <label for="{{ form.time_of_day.id_for_label }}" class="form-label">
+                                    Time of Day
+                                </label>
+                                {{ form.time_of_day }}
+                                {% if form.time_of_day.errors %}
+                                <div class="invalid-feedback d-block">{{ form.time_of_day.errors.0 }}</div>
+                                {% endif %}
+                                <small class="text-muted">HH:MM format</small>
+                            </div>
+                        </div>
+
+                        <!-- Format Selection -->
+                        <div class="mb-3">
+                            <label for="{{ form.format.id_for_label }}" class="form-label">
+                                Export Format <span class="text-danger">*</span>
+                            </label>
+                            {{ form.format }}
+                            {% if form.format.errors %}
+                            <div class="invalid-feedback d-block">{{ form.format.errors.0 }}</div>
+                            {% endif %}
+                            <small class="text-muted">Format for the generated report file</small>
+                        </div>
+
+                        <!-- Recipients -->
+                        <div class="mb-3">
+                            <label for="{{ form.recipients.id_for_label }}" class="form-label">
+                                Email Recipients <span class="text-danger">*</span>
+                            </label>
+                            {{ form.recipients }}
+                            <div class="form-text">
+                                <i class="fas fa-info-circle"></i>
+                                Enter email addresses separated by commas (e.g., user1@example.com, user2@example.com)
+                            </div>
+                            {% if form.recipients.errors %}
+                            <div class="invalid-feedback d-block">{{ form.recipients.errors.0 }}</div>
+                            {% endif %}
+                        </div>
+
+                        <!-- CC Recipients -->
+                        <div class="mb-3">
+                            <label for="{{ form.cc_recipients.id_for_label }}" class="form-label">
+                                CC Recipients (Optional)
+                            </label>
+                            {{ form.cc_recipients }}
+                            <div class="form-text">Additional recipients to CC on the email</div>
+                            {% if form.cc_recipients.errors %}
+                            <div class="invalid-feedback d-block">{{ form.cc_recipients.errors.0 }}</div>
+                            {% endif %}
+                        </div>
+
+                        <!-- Status Options -->
+                        <div class="card bg-light mb-3">
+                            <div class="card-body">
+                                <h6 class="card-title">Schedule Options</h6>
+                                <div class="row">
+                                    <div class="col-md-6">
+                                        <div class="form-check form-switch">
+                                            {{ form.is_active }}
+                                            <label for="{{ form.is_active.id_for_label }}" class="form-check-label">
+                                                <strong>Active</strong>
+                                            </label>
+                                            <div class="form-text">Enable or disable this schedule</div>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <div class="form-check form-switch">
+                                            {{ form.include_efris }}
+                                            <label for="{{ form.include_efris.id_for_label }}" class="form-check-label">
+                                                <strong>Include EFRIS Data</strong>
+                                            </label>
+                                            <div class="form-text">Include EFRIS verification data</div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- EFRIS Format (conditional) -->
+                        <div class="mb-3" id="efris-format-field" style="display: none;">
+                            <label for="{{ form.efris_report_format.id_for_label }}" class="form-label">
+                                EFRIS Report Format
+                            </label>
+                            {{ form.efris_report_format }}
+                            <div class="form-text">Specify the EFRIS format required by URA</div>
+                            {% if form.efris_report_format.errors %}
+                            <div class="invalid-feedback d-block">{{ form.efris_report_format.errors.0 }}</div>
+                            {% endif %}
+                        </div>
+
+                        <!-- Summary Preview (if editing) -->
+                        {% if schedule %}
+                        <div class="alert alert-info">
+                            <h6 class="alert-heading"><i class="fas fa-info-circle me-2"></i>Current Schedule</h6>
+                            <p class="mb-1"><strong>Last Sent:</strong> {{ schedule.last_sent|date:"Y-m-d H:i"|default:"Never" }}</p>
+                            <p class="mb-0"><strong>Next Scheduled:</strong> {{ schedule.next_scheduled|date:"Y-m-d H:i"|default:"Not calculated" }}</p>
+                        </div>
+                        {% endif %}
+
+                        <!-- Submit Buttons -->
+                        <div class="d-flex justify-content-between border-top pt-3">
+                            <a href="{% url 'reports:schedules' %}" class="btn btn-secondary">
+                                <i class="fas fa-times me-2"></i>Cancel
+                            </a>
+                            <button type="submit" class="btn btn-primary" id="submitBtn">
+                                <i class="fas fa-check-circle me-2"></i>
+                                <span id="btnText">{% if schedule %}Update Schedule{% else %}Create Schedule{% endif %}</span>
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Help Card -->
+            <div class="card mt-3">
+                <div class="card-body">
+                    <h6 class="card-title"><i class="fas fa-question-circle text-primary me-2"></i>Schedule Help</h6>
+                    <ul class="mb-0">
+                        <li><strong>Hourly:</strong> Report generated every hour</li>
+                        <li><strong>Daily:</strong> Report generated once per day at specified time</li>
+                        <li><strong>Weekly:</strong> Report generated on specified day of week</li>
+                        <li><strong>Monthly:</strong> Report generated on specified day of month</li>
+                        <li><strong>Quarterly:</strong> Report generated every 3 months</li>
+                        <li><strong>Yearly:</strong> Report generated once per year</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const form = document.getElementById('scheduleForm');
+    const frequency = document.getElementById('{{ form.frequency.id_for_label }}');
+    const dayOfWeekField = document.getElementById('day-of-week-field');
+    const dayOfMonthField = document.getElementById('day-of-month-field');
+    const includeEfris = document.getElementById('{{ form.include_efris.id_for_label }}');
+    const efrisFormatField = document.getElementById('efris-format-field');
+    const submitBtn = document.getElementById('submitBtn');
+    const btnText = document.getElementById('btnText');
+
+    // Show/hide fields based on frequency
+    function toggleScheduleFields() {
+        const value = frequency.value.toUpperCase();
+
+        dayOfWeekField.style.display = 'none';
+        dayOfMonthField.style.display = 'none';
+
+        if (value === 'WEEKLY') {
+            dayOfWeekField.style.display = 'block';
+        } else if (value === 'MONTHLY') {
+            dayOfMonthField.style.display = 'block';
+        }
+    }
+
+    // Show/hide EFRIS format field
+    function toggleEfrisFormatField() {
+        efrisFormatField.style.display = includeEfris.checked ? 'block' : 'none';
+    }
+
+    // Event listeners
+    frequency.addEventListener('change', toggleScheduleFields);
+    includeEfris.addEventListener('change', toggleEfrisFormatField);
+
+    // Initial state
+    toggleScheduleFields();
+    toggleEfrisFormatField();
+
+    // Form validation
+    form.addEventListener('submit', function(e) {
+        let isValid = true;
+
+        // Check required fields
+        const reportSelect = document.getElementById('{{ form.report.id_for_label }}');
+        const recipientsField = document.getElementById('{{ form.recipients.id_for_label }}');
+
+        if (!reportSelect.value) {
+            reportSelect.classList.add('is-invalid');
+            isValid = false;
+        } else {
+            reportSelect.classList.remove('is-invalid');
+        }
+
+        if (!frequency.value) {
+            frequency.classList.add('is-invalid');
+            isValid = false;
+        } else {
+            frequency.classList.remove('is-invalid');
+        }
+
+        if (!recipientsField.value.trim()) {
+            recipientsField.classList.add('is-invalid');
+            isValid = false;
+        } else {
+            recipientsField.classList.remove('is-invalid');
+        }
+
+        // Check conditional fields
+        const freqValue = frequency.value.toUpperCase();
+        if (freqValue === 'WEEKLY') {
+            const dayOfWeek = document.getElementById('{{ form.day_of_week.id_for_label }}');
+            if (!dayOfWeek.value && dayOfWeek.value !== '0') {
+                dayOfWeek.classList.add('is-invalid');
+                isValid = false;
+            } else {
+                dayOfWeek.classList.remove('is-invalid');
+            }
+        }
+
+        if (freqValue === 'MONTHLY') {
+            const dayOfMonth = document.getElementById('{{ form.day_of_month.id_for_label }}');
+            if (!dayOfMonth.value) {
+                dayOfMonth.classList.add('is-invalid');
+                isValid = false;
+            } else {
+                dayOfMonth.classList.remove('is-invalid');
+            }
+        }
+
+        if (!isValid) {
+            e.preventDefault();
+            alert('Please fill in all required fields');
+            return false;
+        }
+
+        // Show loading state
+        submitBtn.disabled = true;
+        btnText.textContent = 'Saving...';
+    });
+
+    // Add Bootstrap classes to form elements
+    const formInputs = form.querySelectorAll('input:not([type="checkbox"]), select, textarea');
+    formInputs.forEach(input => {
+        if (!input.classList.contains('form-check-input')) {
+            input.classList.add('form-control');
+        }
+    });
+});
+</script>
+{% endblock %}

@@ -1,0 +1,260 @@
+{% extends "efris/base.html" %}
+{% load static %}
+
+{% block efris_content %}
+<div class="search-box">
+    <h5><i class="fas fa-search"></i> Search Invoice</h5>
+
+    <form method="post" class="mt-3">
+        {% csrf_token %}
+        <div class="input-group">
+            <input type="text" class="form-control" name="invoice_no"
+                   placeholder="Enter invoice number" required>
+            <button type="submit" class="btn btn-primary">
+                <i class="fas fa-search"></i> Search
+            </button>
+        </div>
+    </form>
+</div>
+
+{% if invoice_details %}
+<div class="efris-card">
+    <div class="card-body">
+        <h5 class="card-title">
+            <i class="fas fa-file-invoice"></i> Invoice Details
+            <code>{{ invoice_details.invoice_no }}</code>
+        </h5>
+
+        <!-- Basic Information -->
+        <div class="row mt-4">
+            <div class="col-md-6">
+                <h6 class="text-muted">Seller Information</h6>
+                <dl class="row">
+                    <dt class="col-sm-4">TIN:</dt>
+                    <dd class="col-sm-8"><code>{{ invoice_details.seller_details.tin }}</code></dd>
+
+                    <dt class="col-sm-4">Legal Name:</dt>
+                    <dd class="col-sm-8">{{ invoice_details.seller_details.legalName }}</dd>
+
+                    <dt class="col-sm-4">Business Name:</dt>
+                    <dd class="col-sm-8">{{ invoice_details.seller_details.businessName }}</dd>
+
+                    <dt class="col-sm-4">Address:</dt>
+                    <dd class="col-sm-8">{{ invoice_details.seller_details.address }}</dd>
+                </dl>
+            </div>
+
+            <div class="col-md-6">
+                <h6 class="text-muted">Buyer Information</h6>
+                <dl class="row">
+                    <dt class="col-sm-4">TIN:</dt>
+                    <dd class="col-sm-8"><code>{{ invoice_details.buyer_details.buyerTin|default:"-" }}</code></dd>
+
+                    <dt class="col-sm-4">Legal Name:</dt>
+                    <dd class="col-sm-8">{{ invoice_details.buyer_details.buyerLegalName }}</dd>
+
+                    <dt class="col-sm-4">Business Name:</dt>
+                    <dd class="col-sm-8">{{ invoice_details.buyer_details.buyerBusinessName|default:"-" }}</dd>
+
+                    <dt class="col-sm-4">Type:</dt>
+                    <dd class="col-sm-8">
+                        {% if invoice_details.buyer_details.buyerType == '0' %}
+                            <span class="badge bg-primary">B2B</span>
+                        {% elif invoice_details.buyer_details.buyerType == '1' %}
+                            <span class="badge bg-success">B2C</span>
+                        {% elif invoice_details.buyer_details.buyerType == '2' %}
+                            <span class="badge bg-info">Foreigner</span>
+                        {% elif invoice_details.buyer_details.buyerType == '3' %}
+                            <span class="badge bg-warning">B2G</span>
+                        {% endif %}
+                    </dd>
+                </dl>
+            </div>
+        </div>
+
+        <hr>
+
+        <!-- Invoice Basic Info -->
+        <div class="row">
+            <div class="col-md-6">
+                <h6 class="text-muted">Invoice Information</h6>
+                <dl class="row">
+                    <dt class="col-sm-4">Invoice ID:</dt>
+                    <dd class="col-sm-8"><code>{{ invoice_details.basic_information.invoiceId }}</code></dd>
+
+                    <dt class="col-sm-4">Invoice No:</dt>
+                    <dd class="col-sm-8"><strong>{{ invoice_details.basic_information.invoiceNo }}</strong></dd>
+
+                    <dt class="col-sm-4">Device No:</dt>
+                    <dd class="col-sm-8"><code>{{ invoice_details.basic_information.deviceNo }}</code></dd>
+
+                    <dt class="col-sm-4">Issued Date:</dt>
+                    <dd class="col-sm-8">{{ invoice_details.basic_information.issuedDate }}</dd>
+
+                    <dt class="col-sm-4">Currency:</dt>
+                    <dd class="col-sm-8">{{ invoice_details.basic_information.currency }}</dd>
+                </dl>
+            </div>
+
+            <div class="col-md-6">
+                <h6 class="text-muted">Summary</h6>
+                <dl class="row">
+                    <dt class="col-sm-4">Net Amount:</dt>
+                    <dd class="col-sm-8">{{ invoice_details.summary.netAmount|floatformat:2 }}</dd>
+
+                    <dt class="col-sm-4">Tax Amount:</dt>
+                    <dd class="col-sm-8">{{ invoice_details.summary.taxAmount|floatformat:2 }}</dd>
+
+                    <dt class="col-sm-4">Gross Amount:</dt>
+                    <dd class="col-sm-8"><strong class="text-success">{{ invoice_details.summary.grossAmount|floatformat:2 }}</strong></dd>
+
+                    <dt class="col-sm-4">Item Count:</dt>
+                    <dd class="col-sm-8">{{ invoice_details.summary.itemCount }}</dd>
+                </dl>
+            </div>
+        </div>
+
+        <hr>
+
+        <!-- Goods Details with Remain Quantities -->
+        <h6 class="text-muted">Goods Details</h6>
+        <div class="table-responsive">
+            <table class="table table-sm table-hover">
+                <thead>
+                    <tr>
+                        <th>#</th>
+                        <th>Item</th>
+                        <th>Qty</th>
+                        <th>Remain Qty</th>
+                        <th>Unit Price</th>
+                        <th>Total</th>
+                        <th>Remain Amount</th>
+                        <th>Tax Rate</th>
+                        <th>Tax</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in invoice_details.goods_details %}
+                    <tr>
+                        <td>{{ item.orderNumber }}</td>
+                        <td>
+                            <strong>{{ item.item }}</strong><br>
+                            <small class="text-muted">{{ item.itemCode }}</small>
+                        </td>
+                        <td>{{ item.qty }}</td>
+                        <td>
+                            <span class="badge bg-info">{{ item.remainQty|default:item.qty }}</span>
+                        </td>
+                        <td>{{ item.unitPrice|floatformat:2 }}</td>
+                        <td>{{ item.total|floatformat:2 }}</td>
+                        <td>
+                            <span class="text-primary">{{ item.remainAmount|default:item.total|floatformat:2 }}</span>
+                        </td>
+                        <td>{{ item.taxRate|floatformat:4 }}</td>
+                        <td>{{ item.tax|floatformat:2 }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <hr>
+
+        <!-- Tax Details -->
+        <h6 class="text-muted">Tax Details</h6>
+        <div class="table-responsive">
+            <table class="table table-sm">
+                <thead>
+                    <tr>
+                        <th>Tax Category</th>
+                        <th>Net Amount</th>
+                        <th>Tax Rate</th>
+                        <th>Tax Amount</th>
+                        <th>Gross Amount</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for tax in invoice_details.tax_details %}
+                    <tr>
+                        <td>{{ tax.taxRateName|default:tax.taxCategory }}</td>
+                        <td>{{ tax.netAmount|floatformat:2 }}</td>
+                        <td>{{ tax.taxRate|floatformat:4 }}</td>
+                        <td>{{ tax.taxAmount|floatformat:2 }}</td>
+                        <td>{{ tax.grossAmount|floatformat:2 }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Payment Methods -->
+        {% if invoice_details.pay_way %}
+        <hr>
+        <h6 class="text-muted">Payment Methods</h6>
+        <div class="row">
+            {% for payment in invoice_details.pay_way %}
+            <div class="col-md-4">
+                <div class="card mb-2">
+                    <div class="card-body">
+                        <h6 class="card-subtitle mb-2 text-muted">
+                            Payment {{ payment.orderNumber|upper }}
+                        </h6>
+                        <p class="card-text">
+                            <strong>Mode:</strong> {{ payment.paymentMode }}<br>
+                            <strong>Amount:</strong> {{ payment.paymentAmount|floatformat:2 }}
+                        </p>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% endif %}
+
+        <!-- EDC Details (if applicable) -->
+        {% if invoice_details.edc_details %}
+        <hr>
+        <h6 class="text-muted">EDC Details</h6>
+        <dl class="row">
+            <dt class="col-sm-2">Tank No:</dt>
+            <dd class="col-sm-4">{{ invoice_details.edc_details.tankNo|default:"-" }}</dd>
+
+            <dt class="col-sm-2">Pump No:</dt>
+            <dd class="col-sm-4">{{ invoice_details.edc_details.pumpNo|default:"-" }}</dd>
+
+            <dt class="col-sm-2">Nozzle No:</dt>
+            <dd class="col-sm-4">{{ invoice_details.edc_details.nozzleNo|default:"-" }}</dd>
+
+            <dt class="col-sm-2">Controller No:</dt>
+            <dd class="col-sm-4">{{ invoice_details.edc_details.controllerNo|default:"-" }}</dd>
+        </dl>
+        {% endif %}
+
+        <!-- Actions -->
+        <div class="mt-4">
+            <a href="{% url 'efris:update_buyer_details' %}" class="btn btn-warning">
+                <i class="fas fa-user-edit"></i> Update Buyer Details
+            </a>
+            <button type="button" class="btn btn-info" onclick="window.print()">
+                <i class="fas fa-print"></i> Print
+            </button>
+            <button type="button" class="btn btn-secondary" onclick="exportToJSON()">
+                <i class="fas fa-download"></i> Export JSON
+            </button>
+        </div>
+    </div>
+</div>
+
+<script>
+function exportToJSON() {
+    const data = {{ invoice_details.raw_data|safe }};
+    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(data, null, 2));
+    const downloadAnchor = document.createElement('a');
+    downloadAnchor.setAttribute("href", dataStr);
+    downloadAnchor.setAttribute("download", "invoice_{{ invoice_details.invoice_no }}.json");
+    document.body.appendChild(downloadAnchor);
+    downloadAnchor.click();
+    downloadAnchor.remove();
+}
+</script>
+{% endif %}
+{% endblock %}

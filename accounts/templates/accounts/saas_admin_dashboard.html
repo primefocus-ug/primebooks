@@ -1,0 +1,313 @@
+{% extends "base.html" %}
+{% load i18n %}
+{% load saas_admin_tags %}
+
+{% block title %}SaaS Administration Dashboard{% endblock %}
+
+{% block extra_css %}
+<style>
+.saas-admin-header {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    padding: 2rem 0;
+    margin-bottom: 2rem;
+    border-radius: 0.5rem;
+}
+
+.stat-card {
+    background: white;
+    border-radius: 0.5rem;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+    transition: transform 0.2s;
+}
+
+.stat-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 15px -3px rgba(0, 0, 0, 0.1);
+}
+
+.saas-admin-badge {
+    background: linear-gradient(45deg, #ff6b6b, #ee5a52);
+    color: white;
+    padding: 0.25rem 0.75rem;
+    border-radius: 1rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+}
+
+.company-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 1rem;
+}
+
+.company-card {
+    border: 1px solid #e5e7eb;
+    border-radius: 0.5rem;
+    padding: 1rem;
+    background: white;
+}
+
+.company-card:hover {
+    border-color: #667eea;
+    box-shadow: 0 4px 6px -1px rgba(102, 126, 234, 0.1);
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="saas-admin-header text-center">
+    <h1><i class="fas fa-crown"></i> {% trans "SaaS Administration Dashboard" %}</h1>
+    <p class="mb-0">Welcome, {{ user.get_full_name|default:user.email }}</p>
+    <span class="saas-admin-badge">{% trans "SaaS Administrator" %}</span>
+</div>
+
+<!-- SaaS Admin Tenant Switcher -->
+{% saas_admin_tenant_switcher %}
+
+<!-- Quick Stats -->
+<div class="row mb-4">
+    <div class="col-md-3 mb-3">
+        <div class="stat-card p-3 h-100">
+            <div class="d-flex align-items-center">
+                <div class="flex-grow-1">
+                    <h3 class="text-primary mb-1">{{ total_companies|default:0 }}</h3>
+                    <p class="text-muted mb-0">{% trans "Total Companie" %}</p>
+                </div>
+                <i class="fas fa-building fa-2x text-primary opacity-50"></i>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-3 mb-3">
+        <div class="stat-card p-3 h-100">
+            <div class="d-flex align-items-center">
+                <div class="flex-grow-1">
+                    <h3 class="text-success mb-1">{{ active_companies|default:0 }}</h3>
+                    <p class="text-muted mb-0">{% trans "Active Companies" %}</p>
+                </div>
+                <i class="fas fa-check-circle fa-2x text-success opacity-50"></i>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-3 mb-3">
+        <div class="stat-card p-3 h-100">
+            <div class="d-flex align-items-center">
+                <div class="flex-grow-1">
+                    <h3 class="text-info mb-1">{{ total_users|default:0 }}</h3>
+                    <p class="text-muted mb-0">{% trans "Total Users" %}</p>
+                </div>
+                <i class="fas fa-users fa-2x text-info opacity-50"></i>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-3 mb-3">
+        <div class="stat-card p-3 h-100">
+            <div class="d-flex align-items-center">
+                <div class="flex-grow-1">
+                    <h3 class="text-warning mb-1">{{ trial_companies|default:0 }}</h3>
+                    <p class="text-muted mb-0">{% trans "Trial Companies" %}</p>
+                </div>
+                <i class="fas fa-clock fa-2x text-warning opacity-50"></i>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Action Buttons -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">{% trans "Quick Actions" %}</h5>
+            </div>
+            <div class="card-body">
+                <div class="btn-group flex-wrap" role="group">
+                    <a href="{% url 'user_list' %}" class="btn btn-outline-primary">
+                        <i class="fas fa-users"></i> {% trans "Manage Users" %}
+                    </a>
+                    <a href="{% url 'system_companies_list' %}" class="btn btn-outline-success">
+                        <i class="fas fa-building"></i> {% trans " Manage Companies" %}
+                    </a>
+                    <a href="{% url 'user_analytics' %}" class="btn btn-outline-info">
+                        <i class="fas fa-chart-bar"></i> {% trans " View Analytics" %}
+                    </a>
+                    <a href="{% url 'saas_admin_system_settings' %}" class="btn btn-outline-warning">
+                        <i class="fas fa-cog"></i> {% trans "System Settings" %}
+                    </a>
+                    <a href="{% url 'saas_admin_audit_log' %}" class="btn btn-outline-danger">
+                        <i class="fas fa-clipboard-list"></i> {% trans "Audit Log" %}
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Recent Companies and Users -->
+<div class="row">
+    <div class="col-lg-6 mb-4">
+        <div class="card h-100">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">{% trans "Recent Companies" %}</h5>
+                <a href="{% url 'system_companies_list' %}" class="btn btn-sm btn-outline-primary">{% trans "View All" %}</a>
+            </div>
+            <div class="card-body">
+                {% for company in recent_companies %}
+                <div class="d-flex align-items-center mb-3">
+                    <div class="flex-grow-1">
+                        <h6 class="mb-1">{{ company.name }}</h6>
+                        <small class="text-muted">
+                            Created: {{ company.created_at|date:"M d, Y" }}
+                            {% if company.status %}
+                                | Status: <span class="badge badge-secondary">{{ company.get_status_display }}</span>
+                            {% endif %}
+                        </small>
+                    </div>
+                    <div>
+                        <a href="?switch_tenant={{ company.id }}" class="btn btn-sm btn-outline-primary">
+                            <i class="fas fa-sign-in-alt"></i> {% trans "Access" %}
+                        </a>
+                    </div>
+                </div>
+                {% empty %}
+                <p class="text-muted text-center">{% trans "No companies found" %}</p>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-6 mb-4">
+        <div class="card h-100">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">{% trans "Recent Users" %}</h5>
+                <a href="{% url 'user_list' %}" class="btn btn-sm btn-outline-primary">{% trans "View All" %}</a>
+            </div>
+            <div class="card-body">
+                {% for user in recent_users %}
+                <div class="d-flex align-items-center mb-3">
+                    <div class="me-2">
+                        {% if user.avatar %}
+                            <img src="{{ user.avatar.url }}" class="rounded-circle" width="32" height="32" alt="{{ user.get_full_name }}">
+                        {% else %}
+                            <div class="rounded-circle bg-secondary d-flex align-items-center justify-content-center" style="width: 32px; height: 32px;">
+                                <i class="fas fa-user text-white"></i>
+                            </div>
+                        {% endif %}
+                    </div>
+                    <div class="flex-grow-1">
+                        <h6 class="mb-1">{{ user.get_full_name|default:user.email }}</h6>
+                        <small class="text-muted">
+                            Joined: {{ user.date_joined|date:"M d, Y" }}
+                            {% if user.company %}
+                                | {{ user.company.name }}
+                            {% endif %}
+                        </small>
+                    </div>
+                    <div>
+                        <a href="{% url 'user_detail' user.pk %}" class="btn btn-sm btn-outline-primary">
+                            <i class="fas fa-eye"></i> {% trans "View" %}
+                        </a>
+                    </div>
+                </div>
+                {% empty %}
+                <p class="text-muted text-center">{% trans "No users found" %}</p>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Plan Distribution -->
+{% if plan_stats %}
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">{% trans "Subscription Plan Distribution" %}</h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    {% for plan in plan_stats %}
+                    <div class="col-md-3 mb-3">
+                        <div class="text-center">
+                            <h4 class="text-primary">{{ plan.count }}</h4>
+                            <p class="mb-0">{{ plan.plan__display_name|default:plan.plan__name }}</p>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<!-- Companies Expiring Soon -->
+{% if expiring_soon %}
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="card border-warning">
+            <div class="card-header bg-warning text-dark">
+                <h5 class="mb-0">
+                    <i class="fas fa-exclamation-triangle"></i> {% trans "Companies Expiring Soon" %}
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-sm">
+                        <thead>
+                            <tr>
+                                <th>{% trans "Company" %}</th>
+                                <th>{% trans "Plan" %}</th>
+                                <th>{% trans "Expires" %}</th>
+                                <th>{% trans "Days Left" %}</th>
+                                <th>{% trans "Actions" %}</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for company in expiring_soon %}
+                            <tr>
+                                <td>{{ company.name }}</td>
+                                <td>{{ company.plan.display_name|default:company.plan.name }}</td>
+                                <td>{{ company.subscription_ends_at|date:"M d, Y" }}</td>
+                                <td>
+                                    <span class="badge badge-warning">
+                                        {{ company.subscription_ends_at|timeuntil }}
+                                    </span>
+                                </td>
+                                <td>
+                                    <a href="?switch_tenant={{ company.id }}" class="btn btn-sm btn-outline-primary">
+                                        <i class="fas fa-sign-in-alt"></i>{% trans " Access" %}
+                                    </a>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// Auto-refresh stats every 30 seconds
+setInterval(function() {
+    fetch('{% url "user_quick_stats" %}')
+        .then(response => response.json())
+        .then(data => {
+            if (data.is_saas_admin) {
+                console.log('SaaS admin stats updated:', data);
+            }
+        })
+        .catch(error => console.error('Error updating stats:', error));
+}, 30000);
+</script>
+{% endblock %}
+

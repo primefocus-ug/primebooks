@@ -1,0 +1,174 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Receipt #{{ sale.invoice_number }}{% endblock %}
+
+{% block content %}
+<div class="receipt-container">
+    <div class="text-center mb-4">
+        {% if sale.store.logo %}
+        <img src="{{ sale.store.logo.url }}" alt="Store Logo" class="receipt-logo">
+        {% endif %}
+        <h4>{{ sale.store.name }}</h4>
+        <p class="mb-1">{{ sale.store.physical_address }}</p>
+        <p class="mb-1">TIN: {{ sale.store.company.tin }}</p>
+        <p class="mb-1">Tel: {{ sale.store.phone }}</p>
+        {% if sale.efris_invoice_number %}
+        <p class="mb-1">EFRIS Invoice: {{ sale.efris_invoice_number }}</p>
+        {% endif %}
+    </div>
+    
+    <div class="receipt-header">
+        <h5 class="text-center">RECEIPT</h5>
+        <div class="d-flex justify-content-between">
+            <span>Receipt #:</span>
+            <strong>{{ sale.invoice_number }}</strong>
+        </div>
+        <div class="d-flex justify-content-between">
+            <span>Date:</span>
+            <strong>{{ sale.created_at|date:"d/m/Y H:i" }}</strong>
+        </div>
+        <div class="d-flex justify-content-between">
+            <span>Cashier:</span>
+            <strong>{{ sale.created_by.get_full_name }}</strong>
+        </div>
+        {% if sale.customer %}
+        <div class="d-flex justify-content-between">
+            <span>Customer:</span>
+            <strong>{{ sale.customer.name }}</strong>
+        </div>
+        {% endif %}
+    </div>
+    
+    <hr>
+    
+    <div class="receipt-items">
+        <table class="table table-sm">
+            <thead>
+                <tr>
+                    <th>Item</th>
+                    <th class="text-end">Price</th>
+                    <th class="text-end">Qty</th>
+                    <th class="text-end">Total</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in sale.items.all %}
+                <tr>
+                    <td>{{ item.product.name }}</td>
+                    <td class="text-end">{{ item.unit_price }}</td>
+                    <td class="text-end">{{ item.quantity }}</td>
+                    <td class="text-end">{{ item.total_price }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    
+    <hr>
+    
+    <div class="receipt-totals">
+        <div class="d-flex justify-content-between">
+            <span>Subtotal:</span>
+            <span>{{ sale.subtotal }}</span>
+        </div>
+        <div class="d-flex justify-content-between">
+            <span>Tax:</span>
+            <span>{{ sale.tax_amount }}</span>
+        </div>
+        <div class="d-flex justify-content-between">
+            <span>Discount:</span>
+            <span>{{ sale.discount_amount }}</span>
+        </div>
+        <div class="d-flex justify-content-between fw-bold">
+            <span>Total:</span>
+            <span>{{ sale.total_amount }}</span>
+        </div>
+        <div class="d-flex justify-content-between mt-2">
+            <span>Payment Method:</span>
+            <span>{{ sale.get_payment_method_display }}</span>
+        </div>
+    </div>
+    
+    {% if sale.efris_invoice_number %}
+    <div class="text-center mt-4">
+        <img src="data:image/png;base64,{{ sale.qr_code }}" alt="QR Code" class="qr-code">
+        <p class="small mt-2">Verification Code: {{ sale.verification_code }}</p>
+    </div>
+    {% endif %}
+    
+    <div class="receipt-footer text-center mt-4">
+        <p class="mb-1">Thank you for your business!</p>
+        <p class="small text-muted">Powered by Prime Focus POS</p>
+    </div>
+</div>
+
+<div class="text-center mt-4 d-print-none">
+    <button onclick="window.print()" class="btn btn-primary me-2">
+        <i class="fas fa-print me-2"></i> Print Receipt
+    </button>
+    <a href="{% url 'sales:sale_detail' sale.id %}" class="btn btn-secondary">
+        <i class="fas fa-arrow-left me-2"></i> Back to Sale
+    </a>
+</div>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+@media print {
+    body * {
+        visibility: hidden;
+    }
+    .receipt-container, .receipt-container * {
+        visibility: visible;
+    }
+    .receipt-container {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 100%;
+    }
+    .d-print-none {
+        display: none !important;
+    }
+}
+
+.receipt-container {
+    max-width: 400px;
+    margin: 0 auto;
+    padding: 20px;
+    border: 1px solid #eee;
+    border-radius: 5px;
+}
+
+.receipt-logo {
+    max-height: 80px;
+    margin-bottom: 10px;
+}
+
+.receipt-header {
+    margin-bottom: 15px;
+}
+
+.receipt-items table {
+    width: 100%;
+    margin-bottom: 15px;
+}
+
+.receipt-totals {
+    margin-bottom: 20px;
+}
+
+.qr-code {
+    max-width: 150px;
+    margin: 0 auto;
+}
+
+@media (max-width: 576px) {
+    .receipt-container {
+        padding: 15px;
+        border: none;
+    }
+}
+</style>
+{% endblock %}

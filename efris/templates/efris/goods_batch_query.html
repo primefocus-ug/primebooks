@@ -1,0 +1,362 @@
+{% extends 'base.html' %}
+{% load i18n %}
+
+{% block title %}Batch Goods Query - EFRIS{% endblock %}
+
+{% block extra_css %}
+<style>
+    .code-input {
+        font-family: 'Courier New', monospace;
+        font-size: 1rem;
+    }
+    .results-table {
+        font-size: 0.95rem;
+    }
+    .stat-box {
+        padding: 20px;
+        border-radius: 8px;
+        text-align: center;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <h4><i class="fas fa-layer-group"></i> Batch Goods Query (T144)</h4>
+                            <p class="text-muted mb-0">Query multiple goods by their codes at once</p>
+                        </div>
+                        <a href="{% url 'efris:goods_inquiry' %}" class="btn btn-outline-primary">
+                            <i class="fas fa-search"></i> Back to Search
+                        </a>
+                    </div>
+                </div>
+
+                <div class="card-body">
+                    <!-- Instructions -->
+                    <div class="alert alert-info">
+                        <h5 class="alert-heading"><i class="fas fa-info-circle"></i> How to use</h5>
+                        <ul class="mb-0">
+                            <li>Enter multiple goods codes separated by <strong>commas</strong> or on <strong>new lines</strong></li>
+                            <li>Example: <code>PROD001, PROD002, PROD003</code></li>
+                            <li>Or one code per line:
+                                <pre class="mb-0 mt-2 bg-light p-2 border rounded">PROD001
+PROD002
+PROD003</pre>
+                            </li>
+                            <li>Maximum recommended: 50 codes per query</li>
+                            <li>Codes are case-sensitive</li>
+                        </ul>
+                    </div>
+
+                    <!-- Input Form -->
+                    <form method="post">
+                        {% csrf_token %}
+                        <div class="row">
+                            <div class="col-md-8">
+                                <div class="form-group">
+                                    <label for="goods_codes">
+                                        <i class="fas fa-barcode"></i> Goods Codes
+                                        <span class="badge badge-info ml-2">Required</span>
+                                    </label>
+                                    <textarea name="goods_codes" id="goods_codes"
+                                              class="form-control code-input" rows="12"
+                                              placeholder="Enter goods codes (comma or newline separated)&#10;&#10;Example:&#10;PROD001&#10;PROD002&#10;PROD003&#10;&#10;or&#10;&#10;PROD001, PROD002, PROD003"
+                                              required>{{ request.POST.goods_codes }}</textarea>
+                                    <small class="form-text text-muted">
+                                        <i class="fas fa-lightbulb"></i>
+                                        <strong>Tip:</strong> You can paste codes directly from Excel or CSV files
+                                    </small>
+                                </div>
+                            </div>
+
+                            <div class="col-md-4">
+                                <div class="form-group">
+                                    <label>Quick Actions</label>
+                                    <div class="card bg-light border-primary">
+                                        <div class="card-body">
+                                            <button type="submit" class="btn btn-primary btn-block btn-lg mb-2">
+                                                <i class="fas fa-search"></i> Query Goods
+                                            </button>
+
+                                            <button type="button" class="btn btn-secondary btn-block mb-3"
+                                                    onclick="document.getElementById('goods_codes').value=''">
+                                                <i class="fas fa-eraser"></i> Clear
+                                            </button>
+
+                                            <hr>
+
+                                            <h6><i class="fas fa-file-code"></i> Sample Data</h6>
+                                            <button type="button" class="btn btn-sm btn-outline-info btn-block"
+                                                    onclick="loadSampleCodes()">
+                                                Load Sample Codes
+                                            </button>
+
+                                            <hr>
+
+                                            <h6><i class="fas fa-info-circle"></i> Format Help</h6>
+                                            <ul class="small text-muted mb-0">
+                                                <li>Comma-separated</li>
+                                                <li>Line-separated</li>
+                                                <li>Mixed format OK</li>
+                                            </ul>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </form>
+
+                    <!-- Results Section -->
+                    {% if goods_results %}
+                    <div class="results-section mt-5">
+                        <div class="card border-success">
+                            <div class="card-header bg-success text-white">
+                                <h5 class="mb-0">
+                                    <i class="fas fa-check-circle"></i> Query Results
+                                    <span class="badge badge-light text-success float-right">
+                                        {{ goods_results|length }} goods found
+                                    </span>
+                                </h5>
+                            </div>
+
+                            <div class="card-body">
+                                <!-- Summary Stats -->
+                                <div class="row mb-4">
+                                    <div class="col-md-3">
+                                        <div class="card stat-box bg-primary text-white">
+                                            <h2 class="mb-2">{{ goods_results|length }}</h2>
+                                            <p class="mb-0">Goods Found</p>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <div class="card stat-box bg-success text-white">
+                                            <h2 class="mb-2" id="totalValue">
+                                                {% widthratio goods_results|length 1 1000 %}K
+                                            </h2>
+                                            <p class="mb-0">Est. Total Value</p>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <div class="card stat-box bg-info text-white">
+                                            <h2 class="mb-2" id="avgPrice">-</h2>
+                                            <p class="mb-0">Avg Price</p>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-3">
+                                        <div class="card stat-box bg-warning text-white">
+                                            <h2 class="mb-2" id="taxableCount">
+                                                {{ goods_results|length }}
+                                            </h2>
+                                            <p class="mb-0">Taxable Items</p>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Bulk Actions -->
+                                <div class="mb-3">
+                                    <div class="btn-group" role="group">
+                                        <button type="button" class="btn btn-success" onclick="alert('Feature coming soon!')">
+                                            <i class="fas fa-download"></i> Import All to Products
+                                        </button>
+                                        <button type="button" class="btn btn-outline-primary" onclick="exportToCSV()">
+                                            <i class="fas fa-file-csv"></i> Export to CSV
+                                        </button>
+                                        <button type="button" class="btn btn-outline-secondary" onclick="window.print()">
+                                            <i class="fas fa-print"></i> Print
+                                        </button>
+                                        <button type="button" class="btn btn-outline-info" onclick="copyToClipboard()">
+                                            <i class="fas fa-copy"></i> Copy Data
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <!-- Results Table -->
+                                <div class="table-responsive">
+                                    <table class="table table-bordered table-hover results-table" id="resultsTable">
+                                        <thead class="thead-dark">
+                                            <tr>
+                                                <th width="5%">
+                                                    <input type="checkbox" id="selectAll" onclick="toggleSelectAll()">
+                                                </th>
+                                                <th width="8%">#</th>
+                                                <th width="12%">Code</th>
+                                                <th width="25%">Name</th>
+                                                <th width="15%">Category</th>
+                                                <th width="8%">Unit</th>
+                                                <th width="10%" class="text-right">Price</th>
+                                                <th width="7%">Tax</th>
+                                                <th width="10%">Actions</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {% for goods in goods_results %}
+                                            <tr>
+                                                <td>
+                                                    <input type="checkbox" class="goods-checkbox" value="{{ goods.goodsCode }}">
+                                                </td>
+                                                <td>{{ forloop.counter }}</td>
+                                                <td><code>{{ goods.goodsCode }}</code></td>
+                                                <td><strong>{{ goods.goodsName|truncatewords:5 }}</strong></td>
+                                                <td><small>{{ goods.commodityCategoryName|default:"N/A"|truncatewords:3 }}</small></td>
+                                                <td><span class="badge badge-secondary">{{ goods.measureUnit }}</span></td>
+                                                <td class="text-right">
+                                                    <strong>{{ goods.unitPrice }}</strong>
+                                                    <small class="text-muted">UGX</small>
+                                                </td>
+                                                <td>
+                                                    {% if goods.isExempt == "101" %}
+                                                    <span class="badge badge-warning">Exempt</span>
+                                                    {% elif goods.isZeroRate == "101" %}
+                                                    <span class="badge badge-info">0%</span>
+                                                    {% else %}
+                                                    <span class="badge badge-success">{{ goods.taxRate|default:"18" }}%</span>
+                                                    {% endif %}
+                                                </td>
+                                                <td>
+                                                    <form method="post" action="{% url 'efris:goods_import' %}" class="d-inline">
+                                                        {% csrf_token %}
+                                                        <input type="hidden" name="goods_code" value="{{ goods.goodsCode }}">
+                                                        <button type="submit" class="btn btn-sm btn-primary" title="Import to Products">
+                                                            <i class="fas fa-download"></i>
+                                                        </button>
+                                                    </form>
+                                                </td>
+                                            </tr>
+                                            {% endfor %}
+                                        </tbody>
+                                    </table>
+                                </div>
+
+                                <!-- Selected Actions -->
+                                <div class="mt-3 p-3 bg-light border rounded" id="selectedActions" style="display: none;">
+                                    <strong><span id="selectedCount">0</span> items selected</strong>
+                                    <button type="button" class="btn btn-sm btn-primary ml-3" onclick="importSelected()">
+                                        <i class="fas fa-download"></i> Import Selected
+                                    </button>
+                                    <button type="button" class="btn btn-sm btn-secondary ml-2" onclick="clearSelection()">
+                                        <i class="fas fa-times"></i> Clear Selection
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// Load sample codes
+function loadSampleCodes() {
+    const sampleCodes = `PROD001
+PROD002
+PROD003
+ITEM001
+ITEM002`;
+    document.getElementById('goods_codes').value = sampleCodes;
+}
+
+// Toggle select all
+function toggleSelectAll() {
+    const selectAll = document.getElementById('selectAll');
+    const checkboxes = document.querySelectorAll('.goods-checkbox');
+    checkboxes.forEach(cb => cb.checked = selectAll.checked);
+    updateSelectedCount();
+}
+
+// Update selected count
+function updateSelectedCount() {
+    const checked = document.querySelectorAll('.goods-checkbox:checked').length;
+    document.getElementById('selectedCount').textContent = checked;
+    document.getElementById('selectedActions').style.display = checked > 0 ? 'block' : 'none';
+}
+
+// Listen to checkbox changes
+document.addEventListener('DOMContentLoaded', function() {
+    document.querySelectorAll('.goods-checkbox').forEach(cb => {
+        cb.addEventListener('change', updateSelectedCount);
+    });
+});
+
+// Clear selection
+function clearSelection() {
+    document.querySelectorAll('.goods-checkbox').forEach(cb => cb.checked = false);
+    document.getElementById('selectAll').checked = false;
+    updateSelectedCount();
+}
+
+// Import selected
+function importSelected() {
+    const selected = Array.from(document.querySelectorAll('.goods-checkbox:checked'))
+        .map(cb => cb.value);
+
+    if (selected.length === 0) {
+        alert('Please select goods to import');
+        return;
+    }
+
+    alert(`Importing ${selected.length} goods: ${selected.join(', ')}\n\nFeature coming soon!`);
+}
+
+// Export to CSV
+function exportToCSV() {
+    const table = document.getElementById('resultsTable');
+    let csv = [];
+
+    // Headers
+    const headers = [];
+    table.querySelectorAll('thead th').forEach((th, index) => {
+        if (index > 0) headers.push(th.textContent.trim()); // Skip checkbox column
+    });
+    csv.push(headers.join(','));
+
+    // Rows
+    table.querySelectorAll('tbody tr').forEach(tr => {
+        const row = [];
+        tr.querySelectorAll('td').forEach((td, index) => {
+            if (index > 0 && index < 8) { // Skip checkbox and actions columns
+                row.push('"' + td.textContent.trim().replace(/"/g, '""') + '"');
+            }
+        });
+        csv.push(row.join(','));
+    });
+
+    // Download
+    const csvContent = csv.join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'efris_goods_' + new Date().toISOString().split('T')[0] + '.csv';
+    a.click();
+}
+
+// Copy to clipboard
+function copyToClipboard() {
+    const table = document.getElementById('resultsTable');
+    let text = '';
+
+    table.querySelectorAll('tbody tr').forEach(tr => {
+        const cells = [];
+        tr.querySelectorAll('td').forEach((td, index) => {
+            if (index > 0 && index < 8) {
+                cells.push(td.textContent.trim());
+            }
+        });
+        text += cells.join('\t') + '\n';
+    });
+
+    navigator.clipboard.writeText(text).then(() => {
+        alert('Data copied to clipboard!');
+    });
+}
+</script>
+{% endblock %}

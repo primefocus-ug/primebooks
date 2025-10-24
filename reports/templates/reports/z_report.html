@@ -1,0 +1,198 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Z Report - Prime Book{% endblock %}
+
+{% block page_header %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h1 class="h3 mb-0">Z Report</h1>
+        <p class="text-muted">End-of-day sales summary and cash reconciliation</p>
+    </div>
+    <div class="btn-group" role="group">
+        <button type="button" class="btn btn-outline-primary" onclick="window.print()">
+            <i class="bi bi-printer me-2"></i>Print
+        </button>
+        <a href="{% url 'reports:dashboard' %}" class="btn btn-outline-secondary">
+            <i class="bi bi-arrow-left me-2"></i>Back to Dashboard
+        </a>
+    </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<!-- Filter Form -->
+<div class="card mb-4">
+    <div class="card-header">
+        <h5 class="card-title mb-0">
+            <i class="bi bi-funnel me-2"></i>Report Period
+        </h5>
+    </div>
+    <div class="card-body">
+        <form method="get" class="row g-3">
+            <div class="col-md-3">
+                {{ form.start_date.label_tag }}
+                {{ form.start_date }}
+            </div>
+            <div class="col-md-3">
+                {{ form.end_date.label_tag }}
+                {{ form.end_date }}
+            </div>
+            <div class="col-md-3">
+                {{ form.store.label_tag }}
+                {{ form.store }}
+            </div>
+            <div class="col-md-3 d-flex align-items-end">
+                <button type="submit" class="btn btn-primary">
+                    <i class="bi bi-search me-2"></i>Generate Report
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+{% if report_data %}
+<!-- Report Header -->
+<div class="card mb-4">
+    <div class="card-header bg-primary text-white">
+        <div class="row align-items-center">
+            <div class="col">
+                <h4 class="mb-0">Z REPORT</h4>
+                <p class="mb-0">{{ report_data.period_start }} to {{ report_data.period_end }}</p>
+            </div>
+            <div class="col-auto">
+                <div class="text-end">
+                    <div class="small">Report Generated</div>
+                    <div>{{ "now"|date:"M d, Y H:i" }}</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Sales Summary -->
+<div class="row mb-4">
+    <div class="col-md-3">
+        <div class="card text-center">
+            <div class="card-body">
+                <h3 class="text-primary">UGX {{ report_data.total_sales|floatformat:2 }}</h3>
+                <p class="mb-0">Total Sales</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card text-center">
+            <div class="card-body">
+                <h3 class="text-success">{{ report_data.total_transactions }}</h3>
+                <p class="mb-0">Total Transactions</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card text-center">
+            <div class="card-body">
+                <h3 class="text-info">UGX {{ report_data.total_tax|floatformat:2 }}</h3>
+                <p class="mb-0">Total Tax</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card text-center">
+            <div class="card-body">
+                <h3 class="text-warning">UGX {{ report_data.total_discount|floatformat:2 }}</h3>
+                <p class="mb-0">Total Discounts</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Payment Breakdown -->
+<div class="row mb-4">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h6 class="mb-0">Payment Methods</h6>
+            </div>
+            <div class="card-body">
+                <table class="table table-sm">
+                    <thead>
+                        <tr>
+                            <th>Method</th>
+                            <th>Count</th>
+                            <th>Amount</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for payment in report_data.payment_breakdown %}
+                        <tr>
+                            <td>{{ payment.payment_method }}</td>
+                            <td>{{ payment.count }}</td>
+                            <td>UGX {{ payment.amount|floatformat:2 }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h6 class="mb-0">Refunds & Voids</h6>
+            </div>
+            <div class="card-body">
+                <table class="table table-sm">
+                    <tbody>
+                        <tr>
+                            <td>Refunds Count:</td>
+                            <td class="text-end">{{ report_data.refunds.count|default:0 }}</td>
+                        </tr>
+                        <tr>
+                            <td>Refunds Amount:</td>
+                            <td class="text-end">UGX {{ report_data.refunds.amount|floatformat:2|default:"0.00" }}</td>
+                        </tr>
+                        <tr>
+                            <td>Voids Count:</td>
+                            <td class="text-end">{{ report_data.voids.count|default:0 }}</td>
+                        </tr>
+                        <tr>
+                            <td>Voids Amount:</td>
+                            <td class="text-end">UGX {{ report_data.voids.amount|floatformat:2|default:"0.00" }}</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Hourly Breakdown -->
+<div class="card mb-4">
+    <div class="card-header">
+        <h6 class="mb-0">Hourly Sales Breakdown</h6>
+    </div>
+    <div class="card-body">
+        <div class="row">
+            {% for hour in report_data.hourly_breakdown %}
+            <div class="col-md-2 col-sm-3 col-6 mb-2">
+                <div class="border rounded p-2 text-center">
+                    <small class="text-muted">{{ hour.hour }}:00</small>
+                    <div class="fw-bold">{{ hour.count }}</div>
+                    <small>UGX {{ hour.amount|floatformat:0 }}</small>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block extra_css %}
+<style>
+@media print {
+    .btn-group, .card-header .btn, nav { display: none !important; }
+    .card { border: 1px solid #000 !important; box-shadow: none !important; }
+}
+</style>
+{% endblock %}

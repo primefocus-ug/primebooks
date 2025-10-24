@@ -1,0 +1,316 @@
+
+{% extends 'base.html' %}
+{% load crispy_forms_tags %}
+
+{% block title %}Invoice {{ invoice.invoice_number }} | {{ company.trading_name|default:company.name }}{% endblock %}
+
+{% block content %}
+<div class="invoice-header">
+    <div class="row align-items-center">
+        <div class="col">
+            <div class="d-flex align-items-center">
+                <h1 class="me-3">{{ invoice.get_document_type_display }} #{{ invoice.invoice_number }}</h1>
+                <span class="badge fs-6 bg-{% if invoice.status == 'PAID' %}success{% elif invoice.status == 'SENT' %}primary{% elif invoice.status == 'PARTIALLY_PAID' %}warning{% elif invoice.status == 'DRAFT' %}secondary{% elif invoice.status == 'CANCELLED' %}dark{% else %}danger{% endif %}">
+                    {{ invoice.get_status_display }}
+                </span>
+                {% if invoice.is_fiscalized %}
+                    <span class="badge fs-6 bg-success ms-2">
+                        <i class="fas fa-stamp me-1"></i>Fiscalized
+                    </span>
+                {% endif %}
+                {% if invoice.is_overdue %}
+                    <span class="badge fs-6 bg-danger ms-2">
+                        <i class="fas fa-exclamation-triangle me-1"></i>{{ invoice.days_overdue }} days overdue
+                    </span>
+                {% endif %}
+            </div>
+            <p class="mb-0">Issue Date: {{ invoice.issue_date }} | Due Date: {{ invoice.due_date }}</p>
+        </div>
+        <div class="col-auto">
+            <div class="btn-group" role="group">
+                {% if not invoice.is_fiscalized %}
+                {% if perms.invoice.change_invoice %}
+                <a href="{% url 'invoices:edit' invoice.pk %}" class="btn btn-light">
+                    <i class="fas fa-edit me-2"></i>Edit
+                </a>
+                {% endif %}
+                {% endif %}
+                {% if perms.iinvoices.view_invoice %}
+                <a href="{% url 'invoices:print' invoice.pk %}" class="btn btn-outline-light" target="_blank">
+                    <i class="fas fa-print me-2"></i>Print
+                </a>
+                <a href="{% url 'invoices:duplicate' invoice.pk %}" class="btn btn-outline-light">
+                    <i class="fas fa-copy me-2"></i>Duplicate
+                </a>
+                {% endif %}
+                {% if can_fiscalize %}
+                <button type="button" class="btn btn-outline-light" data-bs-toggle="modal" data-bs-target="#fiscalizationModal">
+                    <i class="fas fa-stamp me-2"></i>Fiscalize
+                </button>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <!-- Main Invoice Details -->
+    <div class="col-xl-8">
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="mb-0">Invoice Details</h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <h6>Customer Information</h6>
+                        {% if invoice.sale.customer %}
+                            <p class="mb-1"><strong>{{ invoice.sale.customer.name }}</strong></p>
+                            <p class="mb-1">{{ invoice.sale.customer.email }}</p>
+                            <p class="mb-1">{{ invoice.sale.customer.phone }}</p>
+                            <p class="mb-0">{{ invoice.sale.customer.address }}</p>
+                        {% else %}
+                            <p class="text-muted">No customer information available</p>
+                        {% endif %}
+                    </div>
+                    <div class="col-md-6">
+                        <h6>Invoice Information</h6>
+                        <p class="mb-1"><strong>Sale Reference:</strong> {{ invoice.sale.reference_number|default:"N/A" }}</p>
+                        <p class="mb-1"><strong>Store:</strong> {{ invoice.store.name|default:"N/A" }}</p>
+                        <p class="mb-1"><strong>Created By:</strong> {{ invoice.created_by.get_full_name|default:invoice.created_by.username }}</p>
+                        <p class="mb-0"><strong>Created:</strong> {{ invoice.created_at }}</p>
+                    </div>
+                </div>
+                
+                {% if invoice.notes %}
+                <hr>
+                <h6>Notes</h6>
+                <p>{{ invoice.notes }}</p>
+                {% endif %}
+                
+                {% if invoice.terms %}
+                <hr>
+                <h6>Terms & Conditions</h6>
+                <p>{{ invoice.terms }}</p>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Invoice Line Items -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="mb-0">Line Items</h5>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Item</th>
+                                <th>Quantity</th>
+                                <th>Unit Price</th>
+                                <th>Total</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for item in invoice.sale.items.all %}
+                            <tr>
+                                <td>
+                                    <strong>{{ item.product.name }}</strong>
+                                    {% if item.product.description %}
+                                        <br><small class="text-muted">{{ item.product.description }}</small>
+                                    {% endif %}
+                                </td>
+                                <td>{{ item.quantity }}</td>
+                                <td>UGX {{ item.unit_price|floatformat:"2g" }}</td>
+                                <td>UGX {{ item.total_price|floatformat:"2g" }}</td>
+                            </tr>
+                            {% empty %}
+                            <tr>
+                                <td colspan="4" class="text-center text-muted">No line items available</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                        <tfoot class="table-light">
+                            <tr>
+                                <th colspan="3">Subtotal</th>
+                                <th>UGX {{ invoice.subtotal|floatformat:"2g" }}</th>
+                            </tr>
+                            {% if invoice.discount_amount > 0 %}
+                            <tr>
+                                <th colspan="3">Discount</th>
+                                <th class="text-danger">-UGX {{ invoice.discount_amount|floatformat:"2g" }}</th>
+                            </tr>
+                            {% endif %}
+                            <tr>
+                                <th colspan="3">Tax</th>
+                                <th>UGX {{ invoice.tax_amount|floatformat:"2g" }}</th>
+                            </tr>
+                            <tr class="table-primary">
+                                <th colspan="3">Total Amount</th>
+                                <th>UGX {{ invoice.total_amount|floatformat:"2g" }}</th>
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Payment History -->
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">Payment History</h5>
+                {% if invoice.amount_outstanding > 0 %}
+                <button type="button" class="btn btn-sm btn-success" data-bs-toggle="modal" data-bs-target="#paymentModal">
+                    <i class="fas fa-plus me-2"></i>Add Payment
+                </button>
+                {% endif %}
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Date</th>
+                                <th>Amount</th>
+                                <th>Method</th>
+                                <th>Reference</th>
+                                <th>Processed By</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for payment in invoice.payments.all %}
+                            <tr>
+                                <td>{{ payment.payment_date }}</td>
+                                <td>UGX {{ payment.amount|floatformat:"2g" }}</td>
+                                <td>{{ payment.get_payment_method_display }}</td>
+                                <td>{{ payment.transaction_reference|default:"-" }}</td>
+                                <td>{{ payment.processed_by.get_full_name|default:payment.processed_by.username }}</td>
+                            </tr>
+                            {% empty %}
+                            <tr>
+                                <td colspan="5" class="text-center text-muted">No payments recorded</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Sidebar -->
+    <div class="col-xl-4">
+        <!-- Financial Summary -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="mb-0">Financial Summary</h5>
+            </div>
+            <div class="card-body">
+                <div class="row text-center">
+                    <div class="col-12 mb-3">
+                        <h3 class="text-primary">UGX {{ invoice.total_amount|floatformat:"2g" }}</h3>
+                        <p class="text-muted mb-0">Total Amount</p>
+                    </div>
+                </div>
+                <hr>
+                <div class="row">
+                    <div class="col-6 text-center">
+                        <h5 class="text-success">{{ invoice.amount_paid|floatformat:"2g" }}</h5>
+                        <p class="text-muted mb-0">Paid</p>
+                    </div>
+                    <div class="col-6 text-center">
+                        <h5 class="{% if invoice.amount_outstanding > 0 %}text-warning{% else %}text-success{% endif %}">
+                            {{ invoice.amount_outstanding|floatformat:"2g" }}
+                        </h5>
+                        <p class="text-muted mb-0">Outstanding</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Fiscalization Status -->
+        {% if invoice.is_fiscalized %}
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="mb-0">Fiscalization Details</h5>
+            </div>
+            <div class="card-body">
+                <p><strong>Fiscal Number:</strong><br>{{ invoice.fiscal_number }}</p>
+                <p><strong>Verification Code:</strong><br>{{ invoice.verification_code }}</p>
+                {% if invoice.fiscalized_by %}
+                  <p><strong>Fiscalized By:</strong><br>
+                     {{ invoice.fiscalized_by.get_full_name|default:invoice.fiscalized_by.username }}
+                  </p>
+                {% else %}
+                  <p><strong>Fiscalized By:</strong><br>System</p>
+                {% endif %}
+
+                <p class="mb-0"><strong>Fiscalization Time:</strong><br>{{ invoice.fiscalization_time }}</p>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Recent Activity -->
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">Audit Trail</h5>
+            </div>
+            <div class="card-body">
+                {% for audit in invoice.fiscalization_audits.all %}
+                <div class="d-flex align-items-start mb-3">
+                    <div class="flex-shrink-0">
+                        <i class="fas fa-{% if audit.success %}check-circle text-success{% else %}times-circle text-danger{% endif %}"></i>
+                    </div>
+                    <div class="flex-grow-1 ms-3">
+                        <h6 class="mb-1">{{ audit.get_action_display }}</h6>
+                        <p class="text-muted mb-1">{{ audit.timestamp }}</p>
+                        {% if audit.error_message %}
+                        <small class="text-danger">{{ audit.error_message }}</small>
+                        {% endif %}
+                    </div>
+                </div>
+                {% empty %}
+                <p class="text-muted text-center">No audit records</p>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Payment Modal -->
+<div class="modal fade" id="paymentModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Record Payment</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="post" action="{% url 'invoices:add_payment' invoice.pk %}">
+                <div class="modal-body">
+                    {% crispy payment_form %}
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Fiscalization Modal -->
+{% if can_fiscalize %}
+<div class="modal fade" id="fiscalizationModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Fiscalize Invoice</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="post" action="{% url 'invoices:fiscalize' invoice.pk %}">
+                <div class="modal-body">
+                    {% crispy fiscalization_form %}
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endif %}
+{% endblock %}

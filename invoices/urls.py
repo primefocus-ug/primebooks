@@ -1,0 +1,48 @@
+from django.urls import path
+from . import views
+
+app_name = 'invoices'
+
+urlpatterns = [
+    # Dashboard and main views
+    path('', views.invoice_dashboard, name='dashboard'),
+    path('list/', views.InvoiceListView.as_view(), name='list'),
+    path('analytics/', views.invoice_analytics, name='analytics'),
+    path('bulk-fiscalize/', views.bulk_fiscalize_invoices, name='bulk_fiscalize'),
+    path('efris-dashboard/', views.efris_status_dashboard, name='efris_dashboard'),
+    path('api/revenue-trend/', views.api_revenue_trend, name='api_revenue_trend'),
+    path('api/payment-methods/', views.api_payment_methods, name='api_payment_methods'),
+    path('api/top-customers/', views.api_top_customers, name='api_top_customers'),
+    path('api/efris-status/', views.api_efris_status, name='api_efris_status'),
+    path('api/alerts/', views.api_alerts, name='api_alerts'),
+    path('api/metrics/', views.api_metrics, name='api_metrics'),
+    
+    # Invoice CRUD operations
+    path('create/', views.InvoiceCreateView.as_view(), name='create'),
+    path('<int:pk>/', views.InvoiceDetailView.as_view(), name='detail'),
+    path('<int:pk>/edit/', views.InvoiceUpdateView.as_view(), name='edit'),
+    path('<int:pk>/duplicate/', views.duplicate_invoice, name='duplicate'),
+    path('<int:pk>/print/', views.invoice_print_view, name='print'),
+    
+    # Payment operations
+    path('<int:pk>/add-payment/', views.add_payment, name='add_payment'),
+    path('payments/', views.PaymentListView.as_view(), name='payments'),
+    
+    # Fiscalization
+    path('<int:pk>/fiscalize/', views.fiscalize_invoice, name='fiscalize'),
+    path('fiscalization-audit/', views.FiscalizationAuditView.as_view(), name='fiscalization_audit'),
+    
+    # Bulk operations
+    path('bulk-actions/', views.bulk_actions, name='bulk_actions'),
+    
+    # Export functions
+    path('export/csv/', views.export_invoices_csv, name='export_csv'),
+    path('export/pdf/', views.export_invoices_pdf, name='export_pdf'),
+    
+    # Templates
+    path('templates/', views.InvoiceTemplateListView.as_view(), name='templates'),
+    path('templates/create/', views.InvoiceTemplateCreateView.as_view(), name='template_create'),
+    
+    # AJAX endpoints
+    path('ajax/status/', views.ajax_invoice_status, name='ajax_status'),
+]

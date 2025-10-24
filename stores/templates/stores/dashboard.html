@@ -1,0 +1,265 @@
+<!-- templates/stores/dashboard.html -->
+{% extends "base.html" %}
+{% load static %}
+{% load math_extras %}
+
+
+{% block title %}Store Dashboard | Prime Book{% endblock %}
+
+{% block page_header %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h1 class="h3 mb-1">Store Dashboard</h1>
+        <p class="text-muted mb-0">Monitor and manage your stores</p>
+    </div>
+    <div class="d-flex gap-2">
+        {% if perms.stores.add_store %}
+        <a href="{% url 'stores:store_create' %}" class="btn btn-primary">
+            <i class="bi bi-plus-circle me-1"></i>Add Store
+        </a>
+        {% endif %}
+        <a href="{% url 'stores:analytics' %}" class="btn btn-outline-primary">
+            <i class="bi bi-graph-up me-1"></i>Analytics
+        </a>
+    </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<!-- Stats Cards -->
+<div class="row mb-4">
+    <div class="col-md-3">
+        <div class="card bg-primary text-white">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <h6 class="card-title mb-1">Total Stores</h6>
+                        <h3 class="mb-0">{{ stats.total_stores }}</h3>
+                    </div>
+                    <i class="bi bi-shop fs-1 opacity-75"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card bg-success text-white">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <h6 class="card-title mb-1">Active Stores</h6>
+                        <h3 class="mb-0">{{ stats.active_stores }}</h3>
+                    </div>
+                    <i class="bi bi-check-circle fs-1 opacity-75"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card bg-info text-white">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <h6 class="card-title mb-1">Total Devices</h6>
+                        <h3 class="mb-0">{{ stats.total_devices }}</h3>
+                    </div>
+                    <i class="bi bi-phone fs-1 opacity-75"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card bg-warning text-white">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <h6 class="card-title mb-1">Low Stock Items</h6>
+                        <h3 class="mb-0">{{ low_stock_count }}</h3>
+                    </div>
+                    <i class="bi bi-exclamation-triangle fs-1 opacity-75"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <!-- Recent Stores -->
+    <div class="col-lg-6 mb-4">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="card-title mb-0">Recent Stores</h5>
+                <a href="{% url 'stores:store_list' %}" class="btn btn-sm btn-outline-primary">View All</a>
+            </div>
+            <div class="card-body p-0">
+                {% if recent_stores %}
+                    <div class="table-responsive">
+                        <table class="table table-hover mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Store</th>
+                                    <th>Region</th>
+                                    <th>Status</th>
+                                    <th>Created</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for store in recent_stores %}
+                                <tr>
+                                    <td>
+                                        <div>
+                                            <a href="{% url 'stores:store_detail' store.pk %}" class="text-decoration-none">
+                                            <strong>{{ store.name }}</strong>
+                                            </a>
+                                            <small class="text-muted d-block">{{ store.code }}</small>
+                                        </div>
+                                    </td>
+                                    <td>{{ store.region|default:"-" }}</td>
+                                    <td>
+                                        {% if store.is_active %}
+                                            <span class="badge bg-success">Active</span>
+                                        {% else %}
+                                            <span class="badge bg-secondary">Inactive</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>{{ store.created_at|date:"M d, Y" }}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                {% else %}
+                    <div class="text-center py-4">
+                        <i class="bi bi-shop fs-1 text-muted"></i>
+                        <p class="text-muted mt-2">No stores found</p>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Regional Distribution -->
+    <div class="col-lg-6 mb-4">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="card-title mb-0">Stores by Region</h5>
+            </div>
+            <div class="card-body">
+                {% if stores_by_region %}
+                    {% for region_data in stores_by_region %}
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <span>{{ region_data.region|default:"Not Specified" }}</span>
+                        <div class="d-flex align-items-center">
+                            <div class="progress me-2" style="width: 100px; height: 8px;">
+                                <div class="progress-bar bg-primary" style="width: {{ region_data.count|div:stats.total_stores|mul:100 }}%"></div>
+                            </div>
+                            <span class="badge bg-light text-dark">{{ region_data.count }}</span>
+                        </div>
+                    </div>
+                    {% endfor %}
+                {% else %}
+                    <div class="text-center py-3">
+                        <i class="bi bi-geo-alt fs-1 text-muted"></i>
+                        <p class="text-muted mt-2">No regional data available</p>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Recent Activity -->
+{% if recent_activity %}
+<div class="card">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <h5 class="card-title mb-0">Recent Activity</h5>
+        <a href="{% url 'stores:device_logs' %}" class="btn btn-sm btn-outline-primary">View All Logs</a>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>User</th>
+                        <th>Action</th>
+                        <th>Device</th>
+                        <th>Store</th>
+                        <th>Time</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for log in recent_activity %}
+                    <tr>
+                        <td>
+                            <div class="d-flex align-items-center">
+                                {% if log.user.avatar %}
+                                    <img src="{{ log.user.avatar.url }}" class="rounded-circle me-2" width="32" height="32" alt="Avatar">
+                                {% else %}
+                                    <i class="bi bi-person-circle fs-5 me-2 text-muted"></i>
+                                {% endif %}
+                                <span>{{ log.user.get_full_name|default:log.user.username }}</span>
+                            </div>
+                        </td>
+                        <td>
+                            <span class="badge bg-light text-dark">{{ log.action|title }}</span>
+                        </td>
+                        <td>{{ log.device.name }}</td>
+                        <td>{{ log.device.store.name }}</td>
+                        <td>
+                            <small class="text-muted">{{ log.timestamp|timesince }} ago</small>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<!-- Quick Actions -->
+<div class="row mt-4">
+    <div class="col-lg-12">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="card-title mb-0">Quick Actions</h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-3 mb-3">
+                        {% if perms.stores.add_store %}
+                        <a href="{% url 'stores:store_create' %}" class="btn btn-outline-primary w-100">
+                            <i class="bi bi-plus-circle d-block fs-1 mb-2"></i>
+                            Add New Store
+                        </a>
+                        {% endif %}
+                    </div>
+                    <div class="col-md-3 mb-3">
+                        {% if perms.stores.add_storedevice %}
+                        <a href="{% url 'stores:device_create' %}" class="btn btn-outline-info w-100">
+                            <i class="bi bi-phone-fill d-block fs-1 mb-2"></i>
+                            Register Device
+                        </a>
+                        {% endif %}
+                    </div>
+                    <div class="col-md-3 mb-3">
+                        {% if perms.stores.view_storeinventory %}
+                        <a href="{% url 'stores:low_stock_alert' %}" class="btn btn-outline-warning w-100">
+                            <i class="bi bi-exclamation-triangle d-block fs-1 mb-2"></i>
+                            Stock Alerts
+                        </a>
+                        {% endif %}
+                    </div>
+                    <div class="col-md-3 mb-3">
+                        {% if perms.stores.view_store %}
+                        <a href="{% url 'stores:generate_report' %}" class="btn btn-outline-success w-100">
+                            <i class="bi bi-file-earmark-text d-block fs-1 mb-2"></i>
+                            Generate Report
+                        </a>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

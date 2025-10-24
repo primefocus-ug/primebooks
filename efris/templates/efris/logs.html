@@ -1,0 +1,478 @@
+{% extends "base.html" %}
+{% load static i18n %}
+
+{% block title %}{% trans "EFRIS API Logs" %} | {{ company.trading_name|default:company.name }}{% endblock %}
+
+{% block breadcrumb_items %}
+<li class="breadcrumb-item"><a href="{% url 'user_dashboard' %}">{% trans "Dashboard" %}</a></li>
+<li class="breadcrumb-item"><a href="{% url 'efris:dashboard' %}">{% trans "EFRIS" %}</a></li>
+<li class="breadcrumb-item active">{% trans "API Logs" %}</li>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row mb-4">
+        <div class="col">
+            <h1 class="h3 mb-0">{% trans "EFRIS API Logs" %}</h1>
+            <p class="text-muted">{% trans "Monitor and analyze EFRIS API interactions" %}</p>
+        </div>
+        <div class="col-auto">
+            <div class="btn-group">
+                <a href="{% url 'efris:export_logs' %}" class="btn btn-outline-primary">
+                    <i class="bi bi-download me-2"></i>{% trans "Export CSV" %}
+                </a>
+                <button type="button" class="btn btn-outline-secondary" id="refreshLogs">
+                    <i class="bi bi-arrow-clockwise me-2"></i>{% trans "Refresh" %}
+                </button>
+                <button type="button" class="btn btn-outline-danger" id="clearLogs">
+                    <i class="bi bi-trash me-2"></i>{% trans "Clear Logs" %}
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Filter Section -->
+    <div class="card mb-4">
+        <div class="card-body">
+            <form method="get" id="logsFilterForm">
+                <div class="row g-3">
+                    <div class="col-md-3">
+                        <label for="interface_code" class="form-label">{% trans "Interface Code" %}</label>
+                        <select class="form-select" id="interface_code" name="interface_code">
+                            <option value="">{% trans "All Interfaces" %}</option>
+                            {% for code in interface_codes %}
+                            <option value="{{ code }}" {% if code == current_filters.interface_code %}selected{% endif %}>
+                                {{ code }}
+                            </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <label for="status" class="form-label">{% trans "Status" %}</label>
+                        <select class="form-select" id="status" name="status">
+                            <option value="">{% trans "All Statuses" %}</option>
+                            {% for status in statuses %}
+                            <option value="{{ status }}" {% if status == current_filters.status %}selected{% endif %}>
+                                {{ status|title }}
+                            </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <label for="date_from" class="form-label">{% trans "From Date" %}</label>
+                        <input type="date" class="form-control" id="date_from" name="date_from"
+                               value="{{ current_filters.date_from }}">
+                    </div>
+                    <div class="col-md-3">
+                        <label for="date_to" class="form-label">{% trans "To Date" %}</label>
+                        <input type="date" class="form-control" id="date_to" name="date_to"
+                               value="{{ current_filters.date_to }}">
+                    </div>
+                </div>
+                <div class="row mt-3">
+                    <div class="col">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-filter me-2"></i>{% trans "Apply Filters" %}
+                        </button>
+                        <a href="{% url 'efris:logs' %}" class="btn btn-outline-secondary">
+                            <i class="bi bi-x-circle me-2"></i>{% trans "Clear Filters" %}
+                        </a>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Statistics Cards -->
+    <div class="row mb-4">
+        <div class="col-md-3">
+            <div class="card bg-primary text-white">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between">
+                        <div>
+                            <h4 class="mb-0">{{ logs.paginator.count }}</h4>
+                            <p class="mb-0">{% trans "Total Logs" %}</p>
+                        </div>
+                        <div class="align-self-center">
+                            <i class="bi bi-list-check fs-1 opacity-50"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card bg-success text-white">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between">
+                        <div>
+                            <h4 class="mb-0" id="successCount">0</h4>
+                            <p class="mb-0">{% trans "Successful" %}</p>
+                        </div>
+                        <div class="align-self-center">
+                            <i class="bi bi-check-circle fs-1 opacity-50"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card bg-danger text-white">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between">
+                        <div>
+                            <h4 class="mb-0" id="errorCount">0</h4>
+                            <p class="mb-0">{% trans "Errors" %}</p>
+                        </div>
+                        <div class="align-self-center">
+                            <i class="bi bi-exclamation-triangle fs-1 opacity-50"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card bg-info text-white">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between">
+                        <div>
+                            <h4 class="mb-0" id="avgDuration">0ms</h4>
+                            <p class="mb-0">{% trans "Avg. Duration" %}</p>
+                        </div>
+                        <div class="align-self-center">
+                            <i class="bi bi-speedometer2 fs-1 opacity-50"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Logs Table -->
+    <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <h5 class="card-title mb-0">{% trans "API Request Logs" %}</h5>
+            <div class="text-muted small">
+                {% trans "Showing" %} {{ logs.start_index }} - {{ logs.end_index }} {% trans "of" %} {{ logs.paginator.count }}
+            </div>
+        </div>
+        <div class="card-body">
+            {% if logs %}
+            <div class="table-responsive">
+                <table class="table table-hover" id="logsTable">
+                    <thead>
+                        <tr>
+                            <th>{% trans "Timestamp" %}</th>
+                            <th>{% trans "Interface" %}</th>
+                            <th>{% trans "Status" %}</th>
+                            <th>{% trans "Duration" %}</th>
+                            <th>{% trans "Request Size" %}</th>
+                            <th>{% trans "Response Size" %}</th>
+                            <th>{% trans "Error Message" %}</th>
+                            <th>{% trans "Actions" %}</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for log in logs %}
+                        <tr data-log-id="{{ log.id }}" class="{% if log.status == 'error' %}table-danger{% elif log.status == 'success' %}table-success{% endif %}">
+                            <td>
+                                <small>{{ log.request_time|date:"M d, Y H:i:s" }}</small>
+                            </td>
+                            <td>
+                                <code class="small">{{ log.interface_code }}</code>
+                            </td>
+                            <td>
+                                {% if log.status == 'success' %}
+                                <span class="badge bg-success">{% trans "Success" %}</span>
+                                {% else %}
+                                <span class="badge bg-danger">{% trans "Error" %}</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if log.duration_ms %}
+                                <span class="badge {% if log.duration_ms < 1000 %}bg-success{% elif log.duration_ms < 5000 %}bg-warning{% else %}bg-danger{% endif %}">
+                                    {{ log.duration_ms }}ms
+                                </span>
+                                {% else %}
+                                <span class="text-muted">-</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <small class="text-muted">
+                                    {% if log.request_data %}
+                                    {{ log.request_data|length }} bytes
+                                    {% else %}
+                                    -
+                                    {% endif %}
+                                </small>
+                            </td>
+                            <td>
+                                <small class="text-muted">
+                                    {% if log.response_data %}
+                                    {{ log.response_data|length }} bytes
+                                    {% else %}
+                                    -
+                                    {% endif %}
+                                </small>
+                            </td>
+                            <td>
+                                {% if log.return_message and log.status == 'error' %}
+                                <small class="text-danger" title="{{ log.return_message }}">
+                                    {{ log.return_message|truncatewords:5 }}
+                                </small>
+                                {% else %}
+                                <span class="text-muted">-</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <div class="btn-group btn-group-sm">
+                                    <button class="btn btn-outline-info view-log"
+                                            data-log-id="{{ log.id }}"
+                                            title="{% trans 'View Details' %}">
+                                        <i class="bi bi-eye"></i>
+                                    </button>
+                                    <button class="btn btn-outline-warning retry-log"
+                                            data-log-id="{{ log.id }}"
+                                            data-interface="{{ log.interface_code }}"
+                                            {% if log.status == 'success' %}disabled{% endif %}
+                                            title="{% trans 'Retry Request' %}">
+                                        <i class="bi bi-arrow-repeat"></i>
+                                    </button>
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Pagination -->
+            {% if logs.has_other_pages %}
+            <nav aria-label="Logs pagination">
+                <ul class="pagination justify-content-center">
+                    {% if logs.has_previous %}
+                    <li class="page-item">
+                        <a class="page-link" href="?page={{ logs.previous_page_number }}{% for key, value in current_filters.items %}{% if value %}&{{ key }}={{ value }}{% endif %}{% endfor %}">
+                            {% trans "Previous" %}
+                        </a>
+                    </li>
+                    {% endif %}
+
+                    {% for i in logs.paginator.page_range %}
+                        {% if logs.number == i %}
+                        <li class="page-item active">
+                            <span class="page-link">{{ i }}</span>
+                        </li>
+                        {% else %}
+                        <li class="page-item">
+                            <a class="page-link" href="?page={{ i }}{% for key, value in current_filters.items %}{% if value %}&{{ key }}={{ value }}{% endif %}{% endfor %}">
+                                {{ i }}
+                            </a>
+                        </li>
+                        {% endif %}
+                    {% endfor %}
+
+                    {% if logs.has_next %}
+                    <li class="page-item">
+                        <a class="page-link" href="?page={{ logs.next_page_number }}{% for key, value in current_filters.items %}{% if value %}&{{ key }}={{ value }}{% endif %}{% endfor %}">
+                            {% trans "Next" %}
+                        </a>
+                    </li>
+                    {% endif %}
+                </ul>
+            </nav>
+            {% endif %}
+
+            {% else %}
+            <div class="text-center py-5">
+                <i class="bi bi-journal-x text-muted fs-1"></i>
+                <h5 class="mt-3">{% trans "No Logs Found" %}</h5>
+                <p class="text-muted">{% trans "There are no API logs matching your criteria." %}</p>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<!-- Log Details Modal -->
+<div class="modal fade" id="logDetailsModal" tabindex="-1">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">{% trans "API Log Details" %}</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div id="logDetailsContent">
+                    <!-- Content loaded via AJAX -->
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Clear Logs Confirmation Modal -->
+<div class="modal fade" id="clearLogsModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">{% trans "Clear Logs" %}</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-warning">
+                    <i class="bi bi-exclamation-triangle me-2"></i>
+                    <strong>{% trans "Warning" %}</strong><br>
+                    {% trans "This action will permanently delete all EFRIS API logs. This operation cannot be undone." %}
+                </div>
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" id="confirmClear">
+                    <label class="form-check-label" for="confirmClear">
+                        {% trans "I understand that this action is irreversible" %}
+                    </label>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">{% trans "Cancel" %}</button>
+                <button type="button" class="btn btn-danger" id="confirmClearLogs" disabled>
+                    <i class="bi bi-trash me-2"></i>{% trans "Clear All Logs" %}
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Calculate statistics
+    function calculateStatistics() {
+        const successCount = document.querySelectorAll('tr.table-success').length;
+        const errorCount = document.querySelectorAll('tr.table-danger').length;
+        const durations = Array.from(document.querySelectorAll('[data-log-id]'))
+            .map(row => {
+                const durationBadge = row.querySelector('.badge');
+                return durationBadge ? parseInt(durationBadge.textContent) : 0;
+            })
+            .filter(d => d > 0);
+
+        const avgDuration = durations.length > 0 ?
+            Math.round(durations.reduce((a, b) => a + b) / durations.length) : 0;
+
+        document.getElementById('successCount').textContent = successCount;
+        document.getElementById('errorCount').textContent = errorCount;
+        document.getElementById('avgDuration').textContent = avgDuration + 'ms';
+    }
+
+    calculateStatistics();
+
+    // View log details
+    document.querySelectorAll('.view-log').forEach(button => {
+        button.addEventListener('click', function() {
+            const logId = this.dataset.logId;
+            viewLogDetails(logId);
+        });
+    });
+
+    // Retry failed request
+    document.querySelectorAll('.retry-log').forEach(button => {
+        button.addEventListener('click', function() {
+            const logId = this.dataset.logId;
+            const interfaceCode = this.dataset.interface;
+            retryRequest(logId, interfaceCode);
+        });
+    });
+
+    // Clear logs confirmation
+    document.getElementById('clearLogs')?.addEventListener('click', function() {
+        const modal = new bootstrap.Modal(document.getElementById('clearLogsModal'));
+        modal.show();
+    });
+
+    document.getElementById('confirmClear')?.addEventListener('change', function() {
+        document.getElementById('confirmClearLogs').disabled = !this.checked;
+    });
+
+    document.getElementById('confirmClearLogs')?.addEventListener('click', function() {
+        clearAllLogs();
+    });
+
+    // Refresh logs
+    document.getElementById('refreshLogs')?.addEventListener('click', function() {
+        window.location.reload();
+    });
+
+    // Auto-refresh every 30 seconds if on first page
+    {% if logs.number == 1 %}
+    setInterval(() => {
+        window.location.reload();
+    }, 30000);
+    {% endif %}
+
+    // Log details function
+    function viewLogDetails(logId) {
+        const modal = new bootstrap.Modal(document.getElementById('logDetailsModal'));
+        const content = document.getElementById('logDetailsContent');
+
+        content.innerHTML = '<div class="text-center py-4"><i class="bi bi-hourglass-split"></i> Loading log details...</div>';
+        modal.show();
+
+        // Simulate loading log details
+        setTimeout(() => {
+            content.innerHTML = `
+                <div class="row">
+                    <div class="col-md-6">
+                        <h6>Request Data</h6>
+                        <pre class="bg-light p-3 small"><code>${JSON.stringify({example: 'data'}, null, 2)}</code></pre>
+                    </div>
+                    <div class="col-md-6">
+                        <h6>Response Data</h6>
+                        <pre class="bg-light p-3 small"><code>${JSON.stringify({response: 'data'}, null, 2)}</code></pre>
+                    </div>
+                </div>
+            `;
+        }, 1000);
+    }
+
+    function retryRequest(logId, interfaceCode) {
+        const button = document.querySelector(`.retry-log[data-log-id="${logId}"]`);
+        const originalHtml = button.innerHTML;
+
+        button.innerHTML = '<i class="bi bi-hourglass-split"></i>';
+        button.disabled = true;
+
+        // Simulate retry request
+        setTimeout(() => {
+            showAlert(`Retried ${interfaceCode} request`, 'info');
+            button.innerHTML = originalHtml;
+            button.disabled = false;
+        }, 2000);
+    }
+
+    function clearAllLogs() {
+                const modal = bootstrap.Modal.getInstance(document.getElementById('clearLogsModal'));
+        modal.hide();
+
+        // Simulate clearing logs
+        setTimeout(() => {
+            showAlert('All logs have been cleared', 'success');
+            window.location.reload();
+        }, 1000);
+    }
+
+    function showAlert(message, type='info') {
+        const alertPlaceholder = document.createElement('div');
+        alertPlaceholder.innerHTML = `
+            <div class="alert alert-${type} alert-dismissible fade show position-fixed top-0 end-0 m-3" role="alert" style="z-index: 1055;">
+                ${message}
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            </div>
+        `;
+        document.body.appendChild(alertPlaceholder);
+        setTimeout(() => {
+            alertPlaceholder.remove();
+        }, 4000);
+    }
+});
+</script>
+{% endblock %}

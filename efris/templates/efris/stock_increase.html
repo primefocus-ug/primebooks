@@ -1,0 +1,173 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Increase Stock - {{ product.name }}{% endblock %}
+
+{% block breadcrumb_items %}
+<li class="breadcrumb-item"><a href="{% url 'user_dashboard' %}">Home</a></li>
+<li class="breadcrumb-item"><a href="{% url 'efris:dashboard' %}">EFRIS</a></li>
+<li class="breadcrumb-item"><a href="{% url 'efris:stock_management_dashboard' %}">Stock Management</a></li>
+<li class="breadcrumb-item active">Increase Stock</li>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row justify-content-center">
+        <div class="col-md-8">
+            <!-- Page Header -->
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <div>
+                    <h1 class="h2 mb-1">Increase Stock</h1>
+                    <p class="text-muted mb-0">Add stock to EFRIS for {{ product.name }}</p>
+                </div>
+                <a href="{% url 'efris:stock_management_dashboard' %}" class="btn btn-outline-secondary">
+                    <i class="bi bi-arrow-left"></i> Back
+                </a>
+            </div>
+
+            <!-- Product Info Card -->
+            <div class="card mb-4">
+                <div class="card-header bg-primary text-white">
+                    <h5 class="mb-0"><i class="bi bi-box-seam me-2"></i>Product Information</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <p class="mb-2"><strong>Product Name:</strong> {{ product.name }}</p>
+                            <p class="mb-2"><strong>SKU:</strong> <code>{{ product.sku }}</code></p>
+                            <p class="mb-2"><strong>Unit:</strong> {{ product.unit_of_measure }}</p>
+                        </div>
+                        <div class="col-md-6">
+                            <p class="mb-2"><strong>Cost Price:</strong> UGX {{ product.cost_price|floatformat:2 }}</p>
+                            <p class="mb-2"><strong>EFRIS Goods ID:</strong> <code>{{ product.efris_goods_code }}</code></p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Increase Stock Form -->
+            <div class="card">
+                <div class="card-header bg-success text-white">
+                    <h5 class="mb-0"><i class="bi bi-plus-circle me-2"></i>Increase Stock Details</h5>
+                </div>
+                <div class="card-body">
+                    <form method="POST" action="{% url 'efris:stock_increase' product.id %}" id="increaseStockForm">
+                        {% csrf_token %}
+
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label for="quantity" class="form-label">Quantity <span class="text-danger">*</span></label>
+                                <input type="number" class="form-control" id="quantity" name="quantity"
+                                       min="0.01" step="0.01" required>
+                                <small class="form-text text-muted">Amount to add to stock</small>
+                            </div>
+
+                            <div class="col-md-6 mb-3">
+                                <label for="store_id" class="form-label">Store/Branch <span class="text-danger">*</span></label>
+                                <select class="form-select" id="store_id" name="store_id" required>
+                                    <option value="">Select store...</option>
+                                    {% for store in stores %}
+                                    <option value="{{ store.id }}">{{ store.name }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="stock_in_type" class="form-label">Stock In Type <span class="text-danger">*</span></label>
+                            <select class="form-select" id="stock_in_type" name="stock_in_type" required>
+                                {% for code, name in stock_in_types %}
+                                <option value="{{ code }}">{{ name }}</option>
+                                {% endfor %}
+                            </select>
+                            <small class="form-text text-muted">Reason for stock increase</small>
+                        </div>
+
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label for="supplier_name" class="form-label">Supplier Name</label>
+                                <input type="text" class="form-control" id="supplier_name" name="supplier_name"
+                                       value="{{ product.supplier.name|default:'' }}">
+                                <small class="form-text text-muted">Leave blank to use product's supplier</small>
+                            </div>
+
+                            <div class="col-md-6 mb-3">
+                                <label for="supplier_tin" class="form-label">Supplier TIN</label>
+                                <input type="text" class="form-control" id="supplier_tin" name="supplier_tin"
+                                       value="{{ product.supplier.tin|default:'' }}" maxlength="10">
+                                <small class="form-text text-muted">10-digit TIN number</small>
+                            </div>
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="invoice_no" class="form-label">Invoice/Reference Number</label>
+                            <input type="text" class="form-control" id="invoice_no" name="invoice_no" maxlength="20">
+                            <small class="form-text text-muted">Purchase invoice or reference (max 20 characters)</small>
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="remarks" class="form-label">Remarks</label>
+                            <textarea class="form-control" id="remarks" name="remarks" rows="3"></textarea>
+                            <small class="form-text text-muted">Additional notes (optional)</small>
+                        </div>
+
+                        <div class="alert alert-info">
+                            <i class="bi bi-info-circle me-2"></i>
+                            <strong>Note:</strong> This will increase stock in EFRIS and update your local inventory.
+                        </div>
+
+                        <div class="d-flex justify-content-between">
+                            <a href="{% url 'efris:stock_management_dashboard' %}" class="btn btn-secondary">
+                                <i class="bi bi-x-circle"></i> Cancel
+                            </a>
+                            <button type="submit" class="btn btn-success btn-lg">
+                                <i class="bi bi-plus-circle"></i> Increase Stock
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const form = document.getElementById('increaseStockForm');
+    const stockInType = document.getElementById('stock_in_type');
+    const supplierName = document.getElementById('supplier_name');
+    const supplierTin = document.getElementById('supplier_tin');
+
+    // Handle stock in type changes
+    stockInType.addEventListener('change', function() {
+        const value = this.value;
+
+        // For manufacture/assembling (103), supplier fields are not required
+        if (value === '103') {
+            supplierName.required = false;
+            supplierTin.required = false;
+            supplierName.parentElement.classList.add('d-none');
+            supplierTin.parentElement.classList.add('d-none');
+        } else {
+            supplierName.required = true;
+            supplierName.parentElement.classList.remove('d-none');
+            supplierTin.parentElement.classList.remove('d-none');
+        }
+    });
+
+    form.addEventListener('submit', function(e) {
+        const quantity = document.getElementById('quantity').value;
+
+        if (!confirm(`Increase stock by ${quantity} units in EFRIS?`)) {
+            e.preventDefault();
+            return false;
+        }
+
+        // Disable submit button to prevent double submission
+        const submitBtn = form.querySelector('button[type="submit"]');
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Processing...';
+    });
+});
+</script>
+{% endblock %}

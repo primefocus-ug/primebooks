@@ -1,0 +1,73 @@
+{% extends 'base.html' %}
+{% load crispy_forms_tags %}
+
+{% block title %}{% if object %}Edit Template{% else %}Create Template{% endif %} | {{ company.trading_name|default:company.name }}{% endblock %}
+
+{% block content %}
+<div class="invoice-header">
+    <div class="row align-items-center">
+        <div class="col">
+            <h1>
+                <i class="fas fa-{% if object %}edit{% else %}plus{% endif %} me-3"></i>
+                {% if object %}Edit Template: {{ object.name }}{% else %}Create New Template{% endif %}
+            </h1>
+            <p class="mb-0">
+                {% if object %}Update template settings and file{% else %}Create a new invoice template{% endif %}
+            </p>
+        </div>
+        <div class="col-auto">
+            {% if perms.invoices.view_invoicetemplate %}
+            <a href="{% url 'invoices:templates' %}" class="btn btn-outline-light">
+                <i class="fas fa-arrow-left me-2"></i>Back to Templates
+            </a>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<div class="row justify-content-center">
+    <div class="col-xl-8">
+        <div class="card">
+            <div class="card-body">
+                <form method="post" enctype="multipart/form-data">
+                    {% csrf_token %}
+                    {% crispy form %}
+                </form>
+            </div>
+        </div>
+        
+        {% if object %}
+        <div class="card mt-4">
+            <div class="card-header">
+                <h5 class="mb-0">Template Usage</h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <h6>Statistics</h6>
+                        <p><strong>Invoices using this template:</strong> 0</p>
+                        <p><strong>Last used:</strong> Never</p>
+                    </div>
+                    <div class="col-md-6">
+                        <h6>Actions</h6>
+                        <div class="btn-group-vertical w-100">
+                            <button type="button" class="btn btn-outline-primary">
+                                <i class="fas fa-eye me-2"></i>Preview Template
+                            </button>
+                            <button type="button" class="btn btn-outline-info">
+                                <i class="fas fa-download me-2"></i>Download Template
+                            </button>
+                            {% if not object.is_default %}
+                            <button type="button" class="btn btn-outline-danger">
+                                <i class="fas fa-trash me-2"></i>Delete Template
+                            </button>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,503 @@
+{% extends 'base.html' %}
+{% load i18n %}
+{% block title %} {% trans "User Dashboard" %}- {{ company.trading_name|default:company.name }}{% endblock %}
+
+{% block extra_css %}
+<style>
+    .welcome-card {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        border-radius: 16px;
+        padding: 2rem;
+        margin-bottom: 2rem;
+    }
+
+    .stats-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+        gap: 1.5rem;
+        margin-bottom: 2rem;
+    }
+
+    .stat-card {
+        background: white;
+        border-radius: 12px;
+        padding: 1.5rem;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        transition: transform 0.2s ease;
+    }
+
+    .stat-card:hover {
+        transform: translateY(-4px);
+    }
+
+    .stat-icon {
+        width: 48px;
+        height: 48px;
+        border-radius: 12px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.5rem;
+        margin-bottom: 1rem;
+    }
+
+    .stat-icon.primary { background: rgba(37, 99, 235, 0.1); color: #2563eb; }
+    .stat-icon.success { background: rgba(5, 150, 105, 0.1); color: #059669; }
+    .stat-icon.warning { background: rgba(217, 119, 6, 0.1); color: #d97706; }
+    .stat-icon.danger { background: rgba(220, 38, 38, 0.1); color: #dc2626; }
+
+    .stat-number {
+        font-size: 2rem;
+        font-weight: 700;
+        margin-bottom: 0.5rem;
+    }
+
+    .stat-label {
+        color: #6b7280;
+        font-size: 0.875rem;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+
+    .activity-card {
+        background: white;
+        border-radius: 12px;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+    }
+
+    .activity-header {
+        padding: 1.5rem 1.5rem 0;
+        border-bottom: 1px solid #e2e8f0;
+        margin-bottom: 1rem;
+    }
+
+    .activity-item {
+        padding: 1rem 1.5rem;
+        border-bottom: 1px solid #f1f5f9;
+        display: flex;
+        align-items: center;
+    }
+
+    .activity-item:last-child {
+        border-bottom: none;
+    }
+
+    .activity-icon {
+        width: 40px;
+        height: 40px;
+        border-radius: 8px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin-right: 1rem;
+    }
+
+    .quick-actions {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 1rem;
+        margin-top: 2rem;
+    }
+
+    .action-btn {
+        background: white;
+        border: 2px solid #e2e8f0;
+        border-radius: 12px;
+        padding: 1.5rem;
+        text-align: center;
+        text-decoration: none;
+        color: #1f2937;
+        transition: all 0.3s ease;
+        display: block;
+    }
+
+    .action-btn:hover {
+        border-color: #2563eb;
+        transform: translateY(-2px);
+        color: #2563eb;
+    }
+
+    .security-status {
+        background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+        color: white;
+        border-radius: 12px;
+        padding: 1.5rem;
+        margin-top: 2rem;
+    }
+
+    .security-item {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0.5rem 0;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+    }
+
+    .security-item:last-child {
+        border-bottom: none;
+    }
+
+    .status-badge {
+        padding: 4px 12px;
+        border-radius: 20px;
+        font-size: 0.75rem;
+        font-weight: 600;
+    }
+
+    .status-badge.verified {
+        background: rgba(5, 150, 105, 0.2);
+        color: #10b981;
+    }
+
+    .status-badge.unverified {
+        background: rgba(220, 38, 38, 0.2);
+        color: #ef4444;
+    }
+
+    @media (max-width: 768px) {
+        .stats-grid {
+            grid-template-columns: 1fr;
+        }
+
+        .quick-actions {
+            grid-template-columns: 1fr;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- Welcome Section -->
+<div class="welcome-card">
+    <div class="row align-items-center">
+        <div class="col-md-8">
+            <h1 class="mb-2">{% blocktrans %}Welcome back, {{ user.get_short_name }}! 👋{% endblocktrans %}</h1>
+            <p class="mb-0 opacity-75">
+                {% blocktrans %}Here's what's happening with your account today.{% endblocktrans %}
+
+                {% if user.last_login %}
+                    {% if user.last_login_ip %}
+                        {% blocktrans with last_login=user.last_login|date:"M d, Y \a\t g:i A" ip=user.last_login_ip %}
+                            Last login: {{ last_login }} from {{ ip }}
+                        {% endblocktrans %}
+                    {% else %}
+                        {% blocktrans with last_login=user.last_login|date:"M d, Y \a\t g:i A" %}
+                            Last login: {{ last_login }}
+                        {% endblocktrans %}
+                    {% endif %}
+                {% endif %}
+
+            </p>
+        </div>
+        <div class="col-md-4 text-end">
+            {% if user.avatar %}
+                <img src="{{ user.avatar.url }}" class="rounded-circle" width="80" height="80" alt="{% trans 'Avatar' %}">
+            {% else %}
+                <div class="rounded-circle bg-secondary d-inline-flex align-items-center justify-content-center" style="width: 80px; height: 80px;">
+                    <span class="text-white fs-2">{{ user.get_short_name|first|default:user.username|first }}</span>
+                </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<!-- Personal Statistics -->
+<div class="stats-grid">
+    <div class="stat-card">
+        <div class="stat-icon primary">
+            <i class="bi bi-calendar-check"></i>
+        </div>
+        <div class="stat-number">{{ account_age }}</div>
+        <div class="stat-label">{% trans "Days Active" %}</div>
+    </div>
+
+    <div class="stat-card">
+        <div class="stat-icon success">
+            <i class="bi bi-box-arrow-in-right"></i>
+        </div>
+        <div class="stat-number">{{ total_login_count }}</div>
+        <div class="stat-label">{% trans "Total Logins" %}</div>
+    </div>
+
+    <div class="stat-card">
+        <div class="stat-icon {% if is_locked %}danger{% else %}success{% endif %}">
+            <i class="bi {% if is_locked %}bi-lock{% else %}bi-unlock{% endif %}"></i>
+        </div>
+        <div class="stat-number">
+            {% if is_locked %}{% trans "Locked" %}{% else %}{% trans "Active" %}{% endif %}
+        </div>
+        <div class="stat-label">{% trans "Account Status" %}</div>
+    </div>
+
+    <div class="stat-card">
+        <div class="stat-icon {% if two_factor_enabled %}success{% else %}warning{% endif %}">
+            <i class="bi bi-shield-{% if two_factor_enabled %}check{% else %}exclamation{% endif %}"></i>
+        </div>
+        <div class="stat-number">
+            {% if two_factor_enabled %}{% trans "Enabled" %}{% else %}{% trans "Disabled" %}{% endif %}
+        </div>
+        <div class="stat-label">{% trans "Two Factor Auth" %}</div>
+    </div>
+</div>
+
+<!-- Admin Statistics (if user has permissions) -->
+{% if perms.accounts.can_manage_users or is_system_admin %}
+<div class="row mb-4">
+    <div class="col-12">
+        <h3 class="mb-3">{% trans "System Overview" %}</h3>
+    </div>
+</div>
+
+<div class="stats-grid">
+    <div class="stat-card">
+        <div class="stat-icon primary">
+            <i class="bi bi-people"></i>
+        </div>
+        <div class="stat-number">{{ user_stats.total|default:0 }}</div>
+        <div class="stat-label">{% trans "Total Users" %}</div>
+    </div>
+
+    <div class="stat-card">
+        <div class="stat-icon success">
+            <i class="bi bi-person-check"></i>
+        </div>
+        <div class="stat-number">{{ user_stats.active|default:0 }}</div>
+        <div class="stat-label">{% trans "Active Users" %}</div>
+    </div>
+
+    <div class="stat-card">
+        <div class="stat-icon warning">
+            <i class="bi bi-person-plus"></i>
+        </div>
+        <div class="stat-number">{{ user_stats.new_today|default:0 }}</div>
+        <div class="stat-label">{% trans "New Today" %}</div>
+    </div>
+
+    <div class="stat-card">
+        <div class="stat-icon danger">
+            <i class="bi bi-person-lock"></i>
+        </div>
+        <div class="stat-number">{{ user_stats.locked|default:0 }}</div>
+        <div class="stat-label">{% trans "Locked Accounts" %}</div>
+    </div>
+</div>
+{% endif %}
+
+
+<div class="row mt-4">
+    <!-- Security Status -->
+    <div class="col-md-6">
+        <div class="security-status">
+            <h4 class="mb-3">
+                <i class="bi bi-shield-lock me-2"></i>
+                {% trans "Security Status" %}
+            </h4>
+
+            <div class="security-item">
+                <span>
+                    <i class="bi bi-envelope me-2"></i>
+                    {% trans "Email Verification" %}
+                </span>
+                <span class="status-badge {% if email_verified %}verified{% else %}unverified{% endif %}">
+                    {% if email_verified %}{% trans "Verified" %}{% else %}{% trans "Unverified" %}{% endif %}
+                </span>
+            </div>
+
+            <div class="security-item">
+                <span>
+                    <i class="bi bi-phone me-2"></i>
+                    {% trans "Phone Verification" %}
+                </span>
+                <span class="status-badge {% if phone_verified %}verified{% else %}unverified{% endif %}">
+                    {% if phone_verified %}{% trans "Verified" %}{% else %}{% trans "Unverified" %}{% endif %}
+                </span>
+            </div>
+
+            <div class="security-item">
+                <span>
+                    <i class="bi bi-shield me-2"></i>
+                    {% trans "Two-Factor Auth" %}
+                </span>
+                <span class="status-badge {% if two_factor_enabled %}verified{% else %}unverified{% endif %}">
+                    {% if two_factor_enabled %}{% trans "Enabled" %}{% else %}{% trans "Disabled" %}{% endif %}
+                </span>
+            </div>
+
+            <div class="security-item">
+                <span>
+                    <i class="bi bi-key me-2"></i>
+                    {% trans "Account Security" %}
+                </span>
+                <span class="status-badge {% if not is_locked %}verified{% else %}unverified{% endif %}">
+                    {% if not is_locked %}{% trans "Secure" %}{% else %}{% trans "Locked" %}{% endif %}
+                </span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Recent Activity -->
+    <div class="col-md-6">
+        <div class="activity-card">
+            <div class="activity-header">
+                <h4 class="mb-0">
+                    <i class="bi bi-clock-history me-2"></i>
+                    {% trans "Recent Activity" %}
+                </h4>
+            </div>
+
+            <div class="activity-item">
+                <div class="activity-icon bg-primary text-white">
+                    <i class="bi bi-box-arrow-in-right"></i>
+                </div>
+                <div>
+                    <div class="fw-semibold">{% trans "Last Login" %}</div>
+                    <div class="text-muted small">
+                        {% if user.last_login %}
+                        {% if user.last_login_ip %}
+                            {% blocktrans with last_login=user.last_login|timesince ip=user.last_login_ip %}
+                                {{ last_login }} ago from {{ ip }}
+                            {% endblocktrans %}
+                        {% else %}
+                            {% blocktrans with last_login=user.last_login|timesince %}
+                                {{ last_login }} ago
+                            {% endblocktrans %}
+                        {% endif %}
+                    {% else %}
+                        {% trans "Never logged in" %}
+                    {% endif %}
+
+                    </div>
+                </div>
+            </div>
+
+            <div class="activity-item">
+                <div class="activity-icon bg-success text-white">
+                    <i class="bi bi-person"></i>
+                </div>
+                <div>
+                    <div class="fw-semibold">{% trans "Account Created" %}</div>
+                    <div class="text-muted small">{{ user.date_joined|date:"M d, Y" }}</div>
+                </div>
+            </div>
+
+            <div class="activity-item">
+                <div class="activity-icon bg-info text-white">
+                    <i class="bi bi-key"></i>
+                </div>
+                <div>
+                    <div class="fw-semibold">{% trans "Password Changed" %}</div>
+                    <div class="text-muted small">
+                        {% if user.password_changed_at %}
+                            {% blocktrans with changed=user.password_changed_at|timesince %}{{ changed }} ago{% endblocktrans %}
+                        {% else %}
+                            {% trans "Never changed" %}
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Quick Actions -->
+<div class="quick-actions">
+    <a href="{% url 'user_profile' %}" class="action-btn">
+        <i class="bi bi-person fs-2 mb-2 d-block"></i>
+        <div class="fw-semibold">{% trans "Edit Profile" %}</div>
+        <div class="text-muted small">{% trans "Update your information" %}</div>
+    </a>
+
+    <a href="{% url 'change_password' %}" class="action-btn">
+        <i class="bi bi-key fs-2 mb-2 d-block"></i>
+        <div class="fw-semibold">{% trans "Change Password" %}</div>
+        <div class="text-muted small">{% trans "Update your password" %}</div>
+    </a>
+
+    <a href="{% url 'user_signature' %}" class="action-btn">
+        <i class="bi bi-pen fs-2 mb-2 d-block"></i>
+        <div class="fw-semibold">{% trans "Manage Signature" %}</div>
+        <div class="text-muted small">{% trans "Digital signature setup" %}</div>
+    </a>
+
+    {% if not two_factor_enabled %}
+    <a href="{% url 'two_factor_setup' %}" class="action-btn">
+        <i class="bi bi-shield-plus fs-2 mb-2 d-block"></i>
+        <div class="fw-semibold">{% trans "Enable 2FA" %}</div>
+        <div class="text-muted small">{% trans "Enhance your security" %}</div>
+    </a>
+    {% endif %}
+
+    {% if perms.accounts.can_manage_users or is_system_admin %}
+    <a href="{% url 'user_list' %}" class="action-btn">
+        <i class="bi bi-people fs-2 mb-2 d-block"></i>
+        <div class="fw-semibold">{% trans "Manage Users" %}</div>
+        <div class="text-muted small">{% trans "View all users" %}</div>
+    </a>
+
+    <a href="{% url 'user_create' %}" class="action-btn">
+        <i class="bi bi-person-plus fs-2 mb-2 d-block"></i>
+        <div class="fw-semibold">{% trans "Add User" %}</div>
+        <div class="text-muted small">{% trans "Create new account" %}</div>
+    </a>
+    {% endif %}
+
+    {% if perms.accounts.can_view_reports or is_system_admin %}
+    <a href="{% url 'user_analytics' %}" class="action-btn">
+        <i class="bi bi-graph-up fs-2 mb-2 d-block"></i>
+        <div class="fw-semibold">{% trans "View Analytics" %}</div>
+        <div class="text-muted small">{% trans "System reports" %}</div>
+    </a>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Auto-refresh stats every 5 minutes (for admins)
+        {% if perms.accounts.can_manage_users or is_system_admin %}
+        setInterval(function() {
+            fetch('{% url "user_quick_stats" %}')
+                .then(response => response.json())
+                .then(data => {
+                    // Update system stats
+                    const statElements = document.querySelectorAll('.stat-number');
+                    if (statElements.length >= 8) { // Personal + System stats
+                        statElements[4].textContent = data.total_users;
+                        statElements[5].textContent = data.active_users;
+                        statElements[6].textContent = data.new_users_today;
+                        statElements[7].textContent = data.locked_users;
+                    }
+                })
+                .catch(error => console.log('Stats update failed:', error));
+        }, 300000); // 5 minutes
+        {% endif %}
+        
+        // Animate numbers on load
+        const statNumbers = document.querySelectorAll('.stat-number');
+        statNumbers.forEach(stat => {
+            const finalNumber = parseInt(stat.textContent) || 0;
+            if (finalNumber > 0) {
+                animateValue(stat, 0, finalNumber, 1000);
+            }
+        });
+        
+        function animateValue(element, start, end, duration) {
+            const range = end - start;
+            const increment = range / (duration / 16);
+            let current = start;
+            
+            const timer = setInterval(() => {
+                current += increment;
+                if (current >= end) {
+                    element.textContent = end;
+                    clearInterval(timer);
+                } else {
+                    element.textContent = Math.floor(current);
+                }
+            }, 16);
+        }
+    });
+</script>
+{% endblock %}

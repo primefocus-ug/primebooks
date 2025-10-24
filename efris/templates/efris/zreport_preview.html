@@ -1,0 +1,174 @@
+{% extends 'base.html' %}
+{% load i18n %}
+
+{% block title %}Z-Report Preview - {{ report_date|date:"Y-m-d" }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <h4><i class="fas fa-file-alt"></i> Z-Report Preview</h4>
+                    <p class="text-muted mb-0">Date: {{ report_date|date:"l, F d, Y" }}</p>
+                </div>
+
+                <div class="card-body">
+                    <!-- Summary Cards -->
+                    <div class="row mb-4">
+                        <div class="col-md-3">
+                            <div class="card bg-primary text-white">
+                                <div class="card-body">
+                                    <h6>Total Sales</h6>
+                                    <h3>{{ zreport_data.totalSales|default:"0" }}</h3>
+                                    <small>UGX</small>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="col-md-3">
+                            <div class="card bg-success text-white">
+                                <div class="card-body">
+                                    <h6>Total Tax</h6>
+                                    <h3>{{ zreport_data.totalTax|default:"0" }}</h3>
+                                    <small>UGX</small>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="col-md-3">
+                            <div class="card bg-info text-white">
+                                <div class="card-body">
+                                    <h6>Transactions</h6>
+                                    <h3>{{ zreport_data.totalTransactions|default:"0" }}</h3>
+                                    <small>Count</small>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="col-md-3">
+                            <div class="card bg-warning text-white">
+                                <div class="card-body">
+                                    <h6>Device</h6>
+                                    <h5>{{ zreport_data.deviceNo }}</h5>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Payment Methods Breakdown -->
+                    <div class="row mb-4">
+                        <div class="col-md-12">
+                            <h5 class="border-bottom pb-2">Payment Methods Breakdown</h5>
+                        </div>
+
+                        <div class="col-md-4">
+                            <div class="card">
+                                <div class="card-body">
+                                    <h6><i class="fas fa-money-bill"></i> Cash</h6>
+                                    <h4>{{ zreport_data.totalCash|default:"0" }} UGX</h4>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="col-md-4">
+                            <div class="card">
+                                <div class="card-body">
+                                    <h6><i class="fas fa-credit-card"></i> Card</h6>
+                                    <h4>{{ zreport_data.totalCard|default:"0" }} UGX</h4>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="col-md-4">
+                            <div class="card">
+                                <div class="card-body">
+                                    <h6><i class="fas fa-mobile-alt"></i> Mobile Money</h6>
+                                    <h4>{{ zreport_data.totalMobileMoney|default:"0" }} UGX</h4>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Full Report Data -->
+                    <div class="row">
+                        <div class="col-md-12">
+                            <h5 class="border-bottom pb-2">Complete Report Data</h5>
+                            <table class="table table-bordered">
+                                <tr>
+                                    <th width="30%">Report Date:</th>
+                                    <td>{{ zreport_data.reportDate }}</td>
+                                </tr>
+                                <tr>
+                                    <th>Device Number:</th>
+                                    <td>{{ zreport_data.deviceNo }}</td>
+                                </tr>
+                                <tr>
+                                    <th>Total Sales Amount:</th>
+                                    <td><strong>{{ zreport_data.totalSales }} UGX</strong></td>
+                                </tr>
+                                <tr>
+                                    <th>Total Tax Amount:</th>
+                                    <td>{{ zreport_data.totalTax }} UGX</td>
+                                </tr>
+                                <tr>
+                                    <th>Total Transactions:</th>
+                                    <td>{{ zreport_data.totalTransactions }}</td>
+                                </tr>
+                                <tr>
+                                    <th>Cash Payments:</th>
+                                    <td>{{ zreport_data.totalCash }} UGX</td>
+                                </tr>
+                                <tr>
+                                    <th>Card Payments:</th>
+                                    <td>{{ zreport_data.totalCard }} UGX</td>
+                                </tr>
+                                <tr>
+                                    <th>Mobile Money Payments:</th>
+                                    <td>{{ zreport_data.totalMobileMoney }} UGX</td>
+                                </tr>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- Actions -->
+                    <div class="row mt-4">
+                        <div class="col-md-12">
+                            <form method="post" action="{% url 'efris:zreport_upload' %}">
+                                {% csrf_token %}
+                                <input type="hidden" name="report_date" value="{{ report_date|date:'Y-m-d' }}">
+
+                                <button type="submit" class="btn btn-success btn-lg"
+                                        onclick="return confirm('Upload this Z-report to EFRIS?')">
+                                    <i class="fas fa-upload"></i> Upload to EFRIS
+                                </button>
+
+                                <a href="{% url 'efris:zreport_list' %}" class="btn btn-secondary btn-lg">
+                                    <i class="fas fa-arrow-left"></i> Back to List
+                                </a>
+
+                                <button type="button" class="btn btn-outline-primary btn-lg" onclick="window.print()">
+                                    <i class="fas fa-print"></i> Print
+                                </button>
+                            </form>
+                        </div>
+                    </div>
+
+                    <!-- Raw JSON -->
+                    <div class="row mt-4">
+                        <div class="col-md-12">
+                            <button class="btn btn-sm btn-outline-secondary" type="button"
+                                    data-toggle="collapse" data-target="#rawJson">
+                                <i class="fas fa-code"></i> Show Raw JSON
+                            </button>
+                            <div class="collapse mt-2" id="rawJson">
+                                <pre class="bg-light p-3 border">{{ zreport_data|pprint }}</pre>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

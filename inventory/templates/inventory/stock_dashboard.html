@@ -1,0 +1,1120 @@
+{% extends 'base.html' %}
+
+{% block title %}Stock Dashboard - {{ company.trading_name|default:company.name }}{% endblock %}
+
+{% block page_title %}Stock Dashboard{% endblock %}
+
+{% block extra_css %}
+<link href="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.css" rel="stylesheet">
+<link href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/4.1.1/animate.min.css" rel="stylesheet">
+
+<style>
+    :root {
+        --primary-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        --success-gradient: linear-gradient(135deg, #84fab0 0%, #8fd3f4 100%);
+        --warning-gradient: linear-gradient(135deg, #ffecd2 0%, #fcb69f 100%);
+        --danger-gradient: linear-gradient(135deg, #ff9a9e 0%, #fecfef 100%);
+        --info-gradient: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%);
+        --shadow-light: 0 2px 12px rgba(0,0,0,0.08);
+        --shadow-medium: 0 4px 20px rgba(0,0,0,0.12);
+        --shadow-heavy: 0 8px 32px rgba(0,0,0,0.16);
+        --border-radius: 16px;
+        --transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .dashboard-container {
+        padding: 0;
+    }
+
+    /* Stats Cards */
+    .stats-row {
+        margin-bottom: 2rem;
+    }
+
+    .stat-card {
+        background: white;
+        border-radius: var(--border-radius);
+        padding: 2rem;
+        box-shadow: var(--shadow-light);
+        border: 1px solid rgba(0,0,0,0.05);
+        transition: var(--transition);
+        position: relative;
+        overflow: hidden;
+        height: 100%;
+    }
+
+    .stat-card::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 4px;
+        height: 100%;
+        transition: var(--transition);
+    }
+
+    .stat-card:hover {
+        transform: translateY(-4px);
+        box-shadow: var(--shadow-medium);
+    }
+
+    .stat-card.primary::before { background: var(--primary-gradient); }
+    .stat-card.success::before { background: var(--success-gradient); }
+    .stat-card.warning::before { background: var(--warning-gradient); }
+    .stat-card.danger::before { background: var(--danger-gradient); }
+
+    .stat-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 1.5rem;
+    }
+
+    .stat-icon {
+        width: 60px;
+        height: 60px;
+        border-radius: 16px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.5rem;
+        color: white;
+        background: var(--primary-gradient);
+    }
+
+    .stat-icon.success { background: var(--success-gradient); }
+    .stat-icon.warning { background: var(--warning-gradient); }
+    .stat-icon.danger { background: var(--danger-gradient); }
+
+    .stat-value {
+        font-size: 2.5rem;
+        font-weight: 800;
+        color: #1a202c;
+        margin: 0;
+        line-height: 1;
+    }
+
+    .stat-label {
+        font-size: 0.875rem;
+        color: #64748b;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        font-weight: 600;
+        margin: 0.5rem 0 0 0;
+    }
+
+    .stat-change {
+        font-size: 0.875rem;
+        font-weight: 600;
+        margin-top: 0.75rem;
+        display: flex;
+        align-items: center;
+        gap: 0.25rem;
+    }
+
+    .stat-change.positive { color: #10b981; }
+    .stat-change.negative { color: #ef4444; }
+    .stat-change.neutral { color: #64748b; }
+
+    /* Chart Cards */
+    .chart-card {
+        background: white;
+        border-radius: var(--border-radius);
+        box-shadow: var(--shadow-light);
+        border: 1px solid rgba(0,0,0,0.05);
+        overflow: hidden;
+        height: 100%;
+    }
+
+    .chart-header {
+        padding: 1.5rem 2rem 0;
+        border-bottom: 1px solid #f1f5f9;
+        margin-bottom: 1rem;
+    }
+
+    .chart-title {
+        font-size: 1.25rem;
+        font-weight: 700;
+        color: #1a202c;
+        margin: 0;
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+    }
+
+    .chart-subtitle {
+        font-size: 0.875rem;
+        color: #64748b;
+        margin: 0.5rem 0 1.5rem 0;
+    }
+
+    .chart-body {
+        padding: 0 2rem 2rem;
+        position: relative;
+        height: 400px;
+    }
+
+    .chart-canvas {
+        max-height: 400px;
+    }
+
+    /* Activity Feed */
+    .activity-card {
+        background: white;
+        border-radius: var(--border-radius);
+        box-shadow: var(--shadow-light);
+        border: 1px solid rgba(0,0,0,0.05);
+        height: 100%;
+    }
+
+    .activity-header {
+        padding: 1.5rem 2rem;
+        border-bottom: 1px solid #f1f5f9;
+    }
+
+    .activity-title {
+        font-size: 1.25rem;
+        font-weight: 700;
+        color: #1a202c;
+        margin: 0;
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+    }
+
+    .activity-body {
+        padding: 1rem 0;
+        max-height: 500px;
+        overflow-y: auto;
+    }
+
+    .activity-item {
+        display: flex;
+        align-items: center;
+        padding: 1rem 2rem;
+        border-bottom: 1px solid #f8fafc;
+        transition: var(--transition);
+    }
+
+    .activity-item:hover {
+        background: #f8fafc;
+    }
+
+    .activity-item:last-child {
+        border-bottom: none;
+    }
+
+    .activity-icon {
+        width: 40px;
+        height: 40px;
+        border-radius: 10px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1rem;
+        margin-right: 1rem;
+        flex-shrink: 0;
+    }
+
+    .activity-icon.in {
+        background: rgba(16, 185, 129, 0.1);
+        color: #10b981;
+    }
+
+    .activity-icon.out {
+        background: rgba(239, 68, 68, 0.1);
+        color: #ef4444;
+    }
+
+    .activity-icon.adjustment {
+        background: rgba(59, 130, 246, 0.1);
+        color: #3b82f6;
+    }
+
+    .activity-content {
+        flex: 1;
+        min-width: 0;
+    }
+
+    .activity-title {
+        font-weight: 600;
+        color: #1a202c;
+        margin: 0 0 0.25rem 0;
+        font-size: 0.925rem;
+    }
+
+    .activity-meta {
+        font-size: 0.8rem;
+        color: #64748b;
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+    }
+
+    .activity-quantity {
+        font-weight: 700;
+        font-size: 0.875rem;
+        margin-left: auto;
+        padding: 0.25rem 0.75rem;
+        border-radius: 20px;
+        font-size: 0.8rem;
+    }
+
+    .activity-quantity.positive {
+        background: rgba(16, 185, 129, 0.1);
+        color: #10b981;
+    }
+
+    .activity-quantity.negative {
+        background: rgba(239, 68, 68, 0.1);
+        color: #ef4444;
+    }
+
+    .activity-quantity.neutral {
+        background: rgba(59, 130, 246, 0.1);
+        color: #3b82f6;
+    }
+
+    /* Alerts Card */
+    .alerts-card {
+        background: white;
+        border-radius: var(--border-radius);
+        box-shadow: var(--shadow-light);
+        border: 1px solid rgba(0,0,0,0.05);
+        height: 100%;
+    }
+
+    .alerts-header {
+        padding: 1.5rem 2rem;
+        border-bottom: 1px solid #f1f5f9;
+        background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+    }
+
+    .alerts-title {
+        font-size: 1.25rem;
+        font-weight: 700;
+        color: #92400e;
+        margin: 0;
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+    }
+
+    .alerts-body {
+        padding: 1rem 0;
+        max-height: 400px;
+        overflow-y: auto;
+    }
+
+    .alert-item {
+        display: flex;
+        align-items: center;
+        padding: 1rem 2rem;
+        border-bottom: 1px solid #f8fafc;
+        transition: var(--transition);
+    }
+
+    .alert-item:hover {
+        background: #fef3c7;
+    }
+
+    .alert-item:last-child {
+        border-bottom: none;
+    }
+
+    .alert-icon {
+        width: 36px;
+        height: 36px;
+        border-radius: 8px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 0.875rem;
+        margin-right: 1rem;
+        flex-shrink: 0;
+    }
+
+    .alert-icon.critical {
+        background: rgba(239, 68, 68, 0.1);
+        color: #ef4444;
+    }
+
+    .alert-icon.low {
+        background: rgba(245, 158, 11, 0.1);
+        color: #f59e0b;
+    }
+
+    .alert-content {
+        flex: 1;
+        min-width: 0;
+    }
+
+    .alert-product {
+        font-weight: 600;
+        color: #1a202c;
+        margin: 0 0 0.25rem 0;
+        font-size: 0.925rem;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .alert-details {
+        font-size: 0.8rem;
+        color: #64748b;
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+    }
+
+    .alert-status {
+        margin-left: auto;
+        padding: 0.25rem 0.75rem;
+        border-radius: 20px;
+        font-size: 0.75rem;
+        font-weight: 600;
+        text-transform: uppercase;
+    }
+
+    .alert-status.critical {
+        background: rgba(239, 68, 68, 0.1);
+        color: #ef4444;
+    }
+
+    .alert-status.low {
+        background: rgba(245, 158, 11, 0.1);
+        color: #f59e0b;
+    }
+
+    /* Loading States */
+    .loading-card {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        height: 200px;
+        background: white;
+        border-radius: var(--border-radius);
+        box-shadow: var(--shadow-light);
+    }
+
+    .loading-spinner {
+        width: 40px;
+        height: 40px;
+        border: 4px solid #e2e8f0;
+        border-top-color: #667eea;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+    }
+
+    @keyframes spin {
+        to {
+            transform: rotate(360deg);
+        }
+    }
+
+    .loading-text {
+        margin-left: 1rem;
+        color: #64748b;
+        font-weight: 500;
+    }
+
+    /* Empty States */
+    .empty-state {
+        text-align: center;
+        padding: 3rem 2rem;
+        color: #64748b;
+    }
+
+    .empty-state i {
+        font-size: 3rem;
+        margin-bottom: 1rem;
+        opacity: 0.5;
+    }
+
+    .empty-state h6 {
+        font-weight: 600;
+        margin-bottom: 0.5rem;
+    }
+
+    .empty-state p {
+        font-size: 0.875rem;
+        margin: 0;
+    }
+
+    /* Action Buttons */
+    .dashboard-actions {
+        display: flex;
+        gap: 1rem;
+        margin-bottom: 2rem;
+        flex-wrap: wrap;
+    }
+
+    .action-btn {
+        background: var(--primary-gradient);
+        border: none;
+        color: white;
+        padding: 0.75rem 1.5rem;
+        border-radius: 12px;
+        font-weight: 600;
+        text-decoration: none;
+        transition: var(--transition);
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
+    .action-btn:hover {
+        transform: translateY(-2px);
+        box-shadow: var(--shadow-medium);
+        color: white;
+    }
+
+    .action-btn.secondary {
+        background: white;
+        color: #667eea;
+        border: 2px solid #667eea;
+    }
+
+    .action-btn.secondary:hover {
+        background: #667eea;
+        color: white;
+    }
+
+    /* Responsive Design */
+    @media (max-width: 1200px) {
+        .chart-body {
+            height: 300px;
+        }
+
+        .activity-body,
+        .alerts-body {
+            max-height: 300px;
+        }
+    }
+
+    @media (max-width: 768px) {
+        .dashboard-container {
+            padding: 0 1rem;
+        }
+
+        .stat-card {
+            padding: 1.5rem;
+        }
+
+        .stat-value {
+            font-size: 2rem;
+        }
+
+        .stat-icon {
+            width: 50px;
+            height: 50px;
+            font-size: 1.25rem;
+        }
+
+        .chart-header,
+        .activity-header,
+        .alerts-header {
+            padding: 1rem 1.5rem;
+        }
+
+        .chart-body {
+            padding: 0 1.5rem 1.5rem;
+            height: 250px;
+        }
+
+        .activity-item,
+        .alert-item {
+            padding: 0.75rem 1.5rem;
+        }
+
+        .dashboard-actions {
+            flex-direction: column;
+        }
+
+        .action-btn {
+            justify-content: center;
+        }
+    }
+
+    @media (max-width: 576px) {
+        .stat-header {
+            flex-direction: column;
+            text-align: center;
+        }
+
+        .activity-meta,
+        .alert-details {
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 0.25rem;
+        }
+
+        .activity-quantity,
+        .alert-status {
+            margin-left: 0;
+            margin-top: 0.5rem;
+            align-self: flex-start;
+        }
+    }
+
+    /* Animation Classes */
+    .fade-in {
+        animation: fadeIn 0.5s ease-in;
+    }
+
+    @keyframes fadeIn {
+        from {
+            opacity: 0;
+            transform: translateY(20px);
+        }
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+
+    .pulse {
+        animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+        0%, 100% {
+            opacity: 1;
+        }
+        50% {
+            opacity: 0.7;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="dashboard-container">
+    <!-- Dashboard Actions -->
+    <div class="dashboard-actions">
+        {% if perms.inventory.add_stockmovement %}
+        <a href="{% url 'inventory:movement_create' %}" class="action-btn">
+            <i class="fas fa-plus"></i>
+            Record Movement
+        </a>
+        {% endif %}
+        {% if perms.inventory.view_product %}
+        <a href="{% url 'inventory:stock_list' %}" class="action-btn secondary">
+            <i class="fas fa-list"></i>
+            View Stock
+        </a>
+        {% endif %}
+        {% if perms.inventory.add_stock %}
+        <a href="{% url 'inventory:stock_import' %}" class="action-btn secondary">
+            <i class="fas fa-file-import"></i>
+            Import Data
+        </a>
+        {% endif %}
+        {% if perms.inventory.view_stock %}
+        <a href="{% url 'inventory:stock_export' %}?format=excel" class="action-btn secondary">
+            <i class="fas fa-file-export"></i>
+            Export Data
+        </a>
+        {% endif %}
+    </div>
+
+    <!-- Stats Cards Row -->
+    <div class="row stats-row">
+        <div class="col-xl-3 col-md-6 mb-4">
+            <div class="stat-card primary animate__animated animate__fadeInUp">
+                <div class="stat-header">
+                    <div>
+                        <h3 class="stat-value" id="totalProducts">{{ total_products|default:0 }}</h3>
+                        <p class="stat-label">Total Products</p>
+                    </div>
+                    <div class="stat-icon">
+                        <i class="fas fa-box"></i>
+                    </div>
+                </div>
+                <div class="stat-change neutral" id="productsChange">
+                    <i class="fas fa-equals"></i>
+                    No change
+                </div>
+            </div>
+        </div>
+
+        <div class="col-xl-3 col-md-6 mb-4">
+            <div class="stat-card success animate__animated animate__fadeInUp" style="animation-delay: 0.1s;">
+                <div class="stat-header">
+                    <div>
+                        <h3 class="stat-value" id="totalStores">{{ total_stores|default:0 }}</h3>
+                        <p class="stat-label">Active Stores</p>
+                    </div>
+                    <div class="stat-icon success">
+                        <i class="fas fa-store"></i>
+                    </div>
+                </div>
+                <div class="stat-change positive" id="storesChange">
+                    <i class="fas fa-arrow-up"></i>
+                    Active
+                </div>
+            </div>
+        </div>
+
+        <div class="col-xl-3 col-md-6 mb-4">
+            <div class="stat-card danger animate__animated animate__fadeInUp" style="animation-delay: 0.2s;">
+                <div class="stat-header">
+                    <div>
+                        <h3 class="stat-value" id="outOfStock">{{ out_of_stock|default:0 }}</h3>
+                        <p class="stat-label">Out of Stock</p>
+                    </div>
+                    <div class="stat-icon danger">
+                        <i class="fas fa-exclamation-triangle"></i>
+                    </div>
+                </div>
+                <div class="stat-change negative" id="outOfStockChange">
+                    <i class="fas fa-exclamation"></i>
+                    Needs attention
+                </div>
+            </div>
+        </div>
+
+        <div class="col-xl-3 col-md-6 mb-4">
+            <div class="stat-card warning animate__animated animate__fadeInUp" style="animation-delay: 0.3s;">
+                <div class="stat-header">
+                    <div>
+                        <h3 class="stat-value" id="lowStock">{{ low_stock|default:0 }}</h3>
+                        <p class="stat-label">Low Stock</p>
+                    </div>
+                    <div class="stat-icon warning">
+                        <i class="fas fa-arrow-down"></i>
+                    </div>
+                </div>
+                <div class="stat-change negative" id="lowStockChange">
+                    <i class="fas fa-warning"></i>
+                    Monitor closely
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Charts Row -->
+    <div class="row mb-4">
+        <div class="col-lg-8 mb-4">
+            <div class="chart-card animate__animated animate__fadeInUp" style="animation-delay: 0.4s;">
+                <div class="chart-header">
+                    <h5 class="chart-title">
+                        <i class="fas fa-chart-line"></i>
+                        Stock Movements Trend
+                    </h5>
+                    <p class="chart-subtitle">Daily stock movements over the last 7 days</p>
+                </div>
+                <div class="chart-body">
+                    <canvas id="movementsTrendChart" class="chart-canvas"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-lg-4 mb-4">
+            <div class="chart-card animate__animated animate__fadeInUp" style="animation-delay: 0.5s;">
+                <div class="chart-header">
+                    <h5 class="chart-title">
+                        <i class="fas fa-chart-pie"></i>
+                        Stock Status
+                    </h5>
+                    <p class="chart-subtitle">Current stock level distribution</p>
+                </div>
+                <div class="chart-body">
+                    <canvas id="stockStatusChart" class="chart-canvas"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Activity and Alerts Row -->
+    <div class="row">
+        <div class="col-lg-7 mb-4">
+            <div class="activity-card animate__animated animate__fadeInUp" style="animation-delay: 0.6s;">
+                <div class="activity-header">
+                    <h5 class="activity-title">
+                        <i class="fas fa-clock"></i>
+                        Recent Activity
+                    </h5>
+                </div>
+                <div class="activity-body" id="recentActivity">
+                    <!-- Loading state -->
+                    <div class="loading-card">
+                        <div class="loading-spinner"></div>
+                        <div class="loading-text">Loading recent activity...</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-lg-5 mb-4">
+            <div class="alerts-card animate__animated animate__fadeInUp" style="animation-delay: 0.7s;">
+                <div class="alerts-header">
+                    <h5 class="alerts-title">
+                        <i class="fas fa-bell"></i>
+                        Stock Alerts
+                    </h5>
+                </div>
+                <div class="alerts-body" id="stockAlerts">
+                    <!-- Loading state -->
+                    <div class="loading-card">
+                        <div class="loading-spinner"></div>
+                        <div class="loading-text">Loading alerts...</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+
+<script>
+    let movementsTrendChart;
+    let stockStatusChart;
+
+    document.addEventListener('DOMContentLoaded', function() {
+        // Initialize dashboard
+        loadDashboardData();
+
+        // Set up periodic refresh
+        setInterval(loadDashboardData, 300000); // Refresh every 5 minutes
+    });
+
+    async function loadDashboardData() {
+        try {
+            const response = await fetch('{% url "inventory:stock_dashboard_data" %}');
+            const data = await response.json();
+
+            if (data.error) {
+                console.error('Dashboard data error:', data.error);
+                return;
+            }
+
+            // Update stats
+            updateStats(data);
+
+            // Update charts
+            updateCharts(data);
+
+            // Update activity feed
+            updateRecentActivity(data);
+
+            // Update alerts
+            updateStockAlerts(data);
+
+        } catch (error) {
+            console.error('Error loading dashboard data:', error);
+        }
+    }
+
+    function updateStats(data) {
+        const stats = data.stock_stats;
+        const movement = data.movement_stats;
+
+        // Update values with animation
+        animateValue('totalProducts', 0, stats.total_products || 0, 1000);
+        animateValue('outOfStock', 0, stats.out_of_stock || 0, 1000);
+        animateValue('lowStock', 0, stats.low_stock || 0, 1000);
+    }
+
+    function animateValue(elementId, start, end, duration) {
+        const element = document.getElementById(elementId);
+        if (!element) return;
+
+        const range = end - start;
+        const startTime = performance.now();
+
+        function update(currentTime) {
+            const elapsed = currentTime - startTime;
+            const progress = Math.min(elapsed / duration, 1);
+            const value = Math.floor(start + (range * progress));
+
+            element.textContent = value.toLocaleString();
+
+            if (progress < 1) {
+                requestAnimationFrame(update);
+            }
+        }
+
+        requestAnimationFrame(update);
+    }
+
+    function updateCharts(data) {
+        // Movements trend chart
+        updateMovementsTrendChart(data.movements_by_day);
+
+        // Stock status chart
+        updateStockStatusChart(data.stock_by_status);
+    }
+
+    function updateMovementsTrendChart(movementData) {
+        const ctx = document.getElementById('movementsTrendChart').getContext('2d');
+
+        if (movementsTrendChart) {
+            movementsTrendChart.destroy();
+        }
+
+        const labels = movementData.map(item => {
+            const date = new Date(item.date);
+            return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        });
+
+        const values = movementData.map(item => item.count);
+
+        movementsTrendChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: 'Stock Movements',
+                    data: values,
+                    borderColor: '#667eea',
+                    backgroundColor: 'rgba(102, 126, 234, 0.1)',
+                    borderWidth: 3,
+                    fill: true,
+                    tension: 0.4,
+                    pointBackgroundColor: '#667eea',
+                    pointBorderColor: '#fff',
+                    pointBorderWidth: 2,
+                    pointRadius: 6,
+                    pointHoverRadius: 8
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        display: false
+                    },
+                    tooltip: {
+                        backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                        titleColor: '#fff',
+                        bodyColor: '#fff',
+                        cornerRadius: 8
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        grid: {
+                            color: 'rgba(0, 0, 0, 0.05)'
+                        }
+                    },
+                    x: {
+                        grid: {
+                            display: false
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    function updateStockStatusChart(statusData) {
+        const ctx = document.getElementById('stockStatusChart').getContext('2d');
+
+        if (stockStatusChart) {
+            stockStatusChart.destroy();
+        }
+
+        const data = [
+            statusData.critical || 0,
+            statusData.low || 0,
+            statusData.medium || 0,
+            statusData.good || 0
+        ];
+
+        const colors = ['#ef4444', '#f59e0b', '#06b6d4', '#10b981'];
+
+        stockStatusChart = new Chart(ctx, {
+            type: 'doughnut',
+            data: {
+                labels: ['Critical', 'Low', 'Medium', 'Good'],
+                datasets: [{
+                    data: data,
+                    backgroundColor: colors,
+                    borderWidth: 0,
+                    hoverOffset: 10
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        position: 'bottom',
+                        labels: {
+                            padding: 20,
+                            usePointStyle: true
+                        }
+                    },
+                    tooltip: {
+                        backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                        titleColor: '#fff',
+                        bodyColor: '#fff',
+                        cornerRadius: 8
+                    }
+                },
+                cutout: '60%'
+            }
+        });
+    }
+
+    function updateRecentActivity(data) {
+        const container = document.getElementById('recentActivity');
+
+        if (!data.recent_movements || data.recent_movements.length === 0) {
+            container.innerHTML = `
+                <div class="empty-state">
+                    <i class="fas fa-inbox"></i>
+                    <h6>No Recent Activity</h6>
+                    <p>No stock movements recorded recently</p>
+                </div>
+            `;
+            return;
+        }
+
+        let html = '';
+        data.recent_movements.forEach(movement => {
+            const iconClass = getMovementIconClass(movement.movement_type);
+            const quantityClass = getMovementQuantityClass(movement.movement_type);
+            const quantityPrefix = getMovementQuantityPrefix(movement.movement_type);
+
+            html += `
+                <div class="activity-item fade-in">
+                    <div class="activity-icon ${iconClass}">
+                        <i class="fas ${getMovementIcon(movement.movement_type)}"></i>
+                    </div>
+                    <div class="activity-content">
+                        <div class="activity-title">${movement.product__name}</div>
+                        <div class="activity-meta">
+                            <span>${movement.store__name}</span>
+                            <span>•</span>
+                            <span>${formatTimeAgo(movement.created_at)}</span>
+                            <span>•</span>
+                            <span>by ${movement.created_by__username}</span>
+                        </div>
+                    </div>
+                    <div class="activity-quantity ${quantityClass}">
+                        ${quantityPrefix}${movement.quantity}
+                    </div>
+                </div>
+            `;
+        });
+
+        container.innerHTML = html;
+    }
+
+    function updateStockAlerts(data) {
+        const container = document.getElementById('stockAlerts');
+
+        if (!data.stock_alerts || data.stock_alerts.length === 0) {
+            container.innerHTML = `
+                <div class="empty-state">
+                    <i class="fas fa-check-circle"></i>
+                    <h6>No Stock Alerts</h6>
+                    <p>All stock levels are within normal ranges</p>
+                </div>
+            `;
+            return;
+        }
+
+        let html = '';
+        data.stock_alerts.forEach(alert => {
+            const statusClass = alert.status === 'critical' ? 'critical' : 'low';
+            const statusText = alert.status === 'critical' ? 'OUT OF STOCK' : 'LOW STOCK';
+
+            html += `
+                <div class="alert-item fade-in">
+                    <div class="alert-icon ${statusClass}">
+                        <i class="fas ${alert.status === 'critical' ? 'fa-times' : 'fa-exclamation'}"></i>
+                    </div>
+                    <div class="alert-content">
+                        <div class="alert-product">${alert.product_name}</div>
+                        <div class="alert-details">
+                            <span>${alert.store_name}</span>
+                            <span>•</span>
+                            <span>${alert.current_stock} / ${alert.reorder_level}</span>
+                        </div>
+                    </div>
+                    <div class="alert-status ${statusClass}">
+                        ${statusText}
+                    </div>
+                </div>
+            `;
+        });
+
+        container.innerHTML = html;
+    }
+
+    function getMovementIconClass(movementType) {
+        switch(movementType) {
+            case 'PURCHASE':
+            case 'RETURN':
+            case 'TRANSFER_IN':
+                return 'in';
+            case 'SALE':
+            case 'TRANSFER_OUT':
+                return 'out';
+            default:
+                return 'adjustment';
+        }
+    }
+
+    function getMovementQuantityClass(movementType) {
+        switch(movementType) {
+            case 'PURCHASE':
+            case 'RETURN':
+            case 'TRANSFER_IN':
+                return 'positive';
+            case 'SALE':
+            case 'TRANSFER_OUT':
+                return 'negative';
+            default:
+                return 'neutral';
+        }
+    }
+
+    function getMovementQuantityPrefix(movementType) {
+        switch(movementType) {
+            case 'PURCHASE':
+            case 'RETURN':
+            case 'TRANSFER_IN':
+                return '+';
+            case 'SALE':
+            case 'TRANSFER_OUT':
+                return '-';
+            default:
+                return '';
+        }
+    }
+
+    function getMovementIcon(movementType) {
+        switch(movementType) {
+            case 'PURCHASE':
+            case 'RETURN':
+            case 'TRANSFER_IN':
+                return 'fa-plus';
+            case 'SALE':
+            case 'TRANSFER_OUT':
+                return 'fa-minus';
+            default:
+                return 'fa-balance-scale';
+        }
+    }
+
+    function formatTimeAgo(dateString) {
+        const date = new Date(dateString);
+        const now = new Date();
+        const diffInSeconds = Math.floor((now - date) / 1000);
+
+        if (diffInSeconds < 60) return 'Just now';
+        if (diffInSeconds < 3600) return `${Math.floor(diffInSeconds / 60)}m ago`;
+        if (diffInSeconds < 86400) return `${Math.floor(diffInSeconds / 3600)}h ago`;
+        return `${Math.floor(diffInSeconds / 86400)}d ago`;
+    }
+</script>
+{% endblock %}

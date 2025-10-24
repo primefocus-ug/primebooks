@@ -1,0 +1,731 @@
+{% extends "base.html" %}
+{% load static %}
+{% load custom_filters %}
+
+{% block title %}SaaS Admin Dashboard{% endblock %}
+
+{% block extra_css %}
+<style>
+    .stat-card {
+        background: white;
+        border-radius: 12px;
+        padding: 24px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.08);
+        transition: transform 0.2s, box-shadow 0.2s;
+    }
+
+    .stat-card:hover {
+        transform: translateY(-4px);
+        box-shadow: 0 8px 16px rgba(0,0,0,0.12);
+    }
+
+    .stat-card .icon {
+        width: 48px;
+        height: 48px;
+        border-radius: 12px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 24px;
+        margin-bottom: 16px;
+    }
+
+    .stat-card.primary .icon {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+    }
+
+    .stat-card.success .icon {
+        background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+        color: white;
+    }
+
+    .stat-card.warning .icon {
+        background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+        color: white;
+    }
+
+    .stat-card.danger .icon {
+        background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+        color: white;
+    }
+
+    .stat-card.info .icon {
+        background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+        color: white;
+    }
+
+    .stat-value {
+        font-size: 32px;
+        font-weight: 700;
+        color: #1f2937;
+        margin-bottom: 4px;
+    }
+
+    .stat-label {
+        font-size: 14px;
+        color: #6b7280;
+        font-weight: 500;
+    }
+
+    .stat-change {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        font-size: 12px;
+        font-weight: 600;
+        margin-top: 8px;
+        padding: 4px 8px;
+        border-radius: 6px;
+    }
+
+    .stat-change.positive {
+        color: #059669;
+        background: #d1fae5;
+    }
+
+    .stat-change.negative {
+        color: #dc2626;
+        background: #fee2e2;
+    }
+
+    .dashboard-header {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 32px;
+        border-radius: 16px;
+        margin-bottom: 32px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    }
+
+    .tenant-switcher {
+        background: rgba(255,255,255,0.15);
+        backdrop-filter: blur(10px);
+        border-radius: 12px;
+        padding: 16px;
+        display: inline-flex;
+        align-items: center;
+        gap: 12px;
+    }
+
+    .tenant-switcher select {
+        background: white;
+        border: none;
+        border-radius: 8px;
+        padding: 8px 16px;
+        font-weight: 500;
+        color: #1f2937;
+    }
+
+    .chart-card {
+        background: white;
+        border-radius: 12px;
+        padding: 24px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.08);
+        margin-bottom: 24px;
+    }
+
+    .chart-card h3 {
+        font-size: 18px;
+        font-weight: 600;
+        color: #1f2937;
+        margin-bottom: 20px;
+    }
+
+    .table-card {
+        background: white;
+        border-radius: 12px;
+        overflow: hidden;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.08);
+    }
+
+    .table-card-header {
+        padding: 20px 24px;
+        border-bottom: 1px solid #e5e7eb;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+    .table-card-header h3 {
+        font-size: 18px;
+        font-weight: 600;
+        color: #1f2937;
+        margin: 0;
+    }
+
+    .badge {
+        padding: 4px 12px;
+        border-radius: 12px;
+        font-size: 12px;
+        font-weight: 600;
+    }
+
+    .badge-success {
+        background: #d1fae5;
+        color: #059669;
+    }
+
+    .badge-warning {
+        background: #fef3c7;
+        color: #d97706;
+    }
+
+    .badge-danger {
+        background: #fee2e2;
+        color: #dc2626;
+    }
+
+    .badge-info {
+        background: #dbeafe;
+        color: #2563eb;
+    }
+
+    .quick-actions {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 16px;
+        margin-bottom: 32px;
+    }
+
+    .quick-action-btn {
+        background: white;
+        border: 2px solid #e5e7eb;
+        border-radius: 12px;
+        padding: 16px;
+        text-align: center;
+        transition: all 0.2s;
+        cursor: pointer;
+        text-decoration: none;
+        color: #1f2937;
+    }
+
+    .quick-action-btn:hover {
+        border-color: #667eea;
+        background: #f8f9ff;
+        transform: translateY(-2px);
+    }
+
+    .quick-action-btn i {
+        font-size: 24px;
+        margin-bottom: 8px;
+        color: #667eea;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <!-- Header -->
+    <div class="dashboard-header">
+        <div class="d-flex justify-content-between align-items-start">
+            <div>
+                <h1 class="mb-2">🎯 SaaS Admin Dashboard</h1>
+                <p class="mb-0 opacity-90">Comprehensive system overview and management</p>
+            </div>
+
+            {% if is_saas_admin %}
+            <div class="tenant-switcher">
+                <i class="bi bi-building"></i>
+                <select id="tenantSwitcher" class="form-select">
+                    <option value="">Global View (All Companies)</option>
+                    {% for company in accessible_companies %}
+                    <option value="{{ company.id }}" {% if company.id == request.session.saas_admin_viewing_company %}selected{% endif %}>
+                        {{ company.name }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Quick Actions -->
+    <div class="quick-actions">
+        <a href="{% url 'user_list' %}" class="quick-action-btn">
+            <i class="bi bi-people-fill"></i>
+            <div>Manage Users</div>
+        </a>
+        <a href="{% url 'system_companies_list' %}" class="quick-action-btn">
+            <i class="bi bi-building"></i>
+            <div>Manage Companies</div>
+        </a>
+        <a href="{% url 'saas_admin_system_settings' %}" class="quick-action-btn">
+            <i class="bi bi-gear-fill"></i>
+            <div>System Settings</div>
+        </a>
+        <a href="{% url 'saas_admin_audit_log' %}" class="quick-action-btn">
+            <i class="bi bi-file-text-fill"></i>
+            <div>Audit Logs</div>
+        </a>
+    </div>
+
+    <!-- Statistics Cards -->
+    <div class="row mb-4">
+        <!-- Companies Stats -->
+        <div class="col-xl-3 col-md-6 mb-4">
+            <div class="stat-card primary">
+                <div class="icon">
+                    <i class="bi bi-building"></i>
+                </div>
+                <div class="stat-value">{{ company_stats.total|default:0 }}</div>
+                <div class="stat-label">Total Companies</div>
+                {% if company_stats.growth_rate != 0 %}
+                <div class="stat-change {% if company_stats.growth_rate > 0 %}positive{% else %}negative{% endif %}">
+                    <i class="bi bi-arrow-{% if company_stats.growth_rate > 0 %}up{% else %}down{% endif %}"></i>
+                    {{ company_stats.growth_rate|absolute }}% vs last month
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <div class="col-xl-3 col-md-6 mb-4">
+            <div class="stat-card warning">
+                <div class="icon">
+                    <i class="bi bi-currency-dollar"></i>
+                </div>
+                <div class="stat-value">${{ revenue_stats.mrr|floatformat:0|default:0 }}</div>
+                <div class="stat-label">Monthly Recurring Revenue</div>
+                <div class="stat-change positive">
+                    ${{ revenue_stats.arr|floatformat:0|default:0 }} ARR
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Secondary Stats -->
+    <div class="row mb-4">
+        <div class="col-xl-3 col-md-6 mb-4">
+            <div class="stat-card">
+                <div class="d-flex justify-content-between align-items-start">
+                    <div>
+                        <div class="stat-value text-success">{{ user_stats.active|default:0 }}</div>
+                        <div class="stat-label">Active Users</div>
+                    </div>
+                    <i class="bi bi-person-check-fill text-success" style="font-size: 32px;"></i>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-xl-3 col-md-6 mb-4">
+            <div class="stat-card">
+                <div class="d-flex justify-content-between align-items-start">
+                    <div>
+                        <div class="stat-value text-danger">{{ company_stats.expired|default:0 }}</div>
+                        <div class="stat-label">Expired Subscriptions</div>
+                    </div>
+                    <i class="bi bi-exclamation-triangle-fill text-danger" style="font-size: 32px;"></i>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-xl-3 col-md-6 mb-4">
+            <div class="stat-card">
+                <div class="d-flex justify-content-between align-items-start">
+                    <div>
+                        <div class="stat-value text-warning">{{ health_metrics.security_alerts|default:0 }}</div>
+                        <div class="stat-label">Security Alerts</div>
+                    </div>
+                    <i class="bi bi-shield-exclamation text-warning" style="font-size: 32px;"></i>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-xl-3 col-md-6 mb-4">
+            <div class="stat-card">
+                <div class="d-flex justify-content-between align-items-start">
+                    <div>
+                        <div class="stat-value text-info">{{ health_metrics.avg_users_per_company|floatformat:1|default:0 }}</div>
+                        <div class="stat-label">Avg Users/Company</div>
+                    </div>
+                    <i class="bi bi-graph-up text-info" style="font-size: 32px;"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Charts Row -->
+    <div class="row mb-4">
+        <!-- Activity Trend Chart -->
+        <div class="col-xl-8 mb-4">
+            <div class="chart-card">
+                <h3><i class="bi bi-graph-up me-2"></i>Activity Trends (Last 30 Days)</h3>
+                <canvas id="activityChart" height="80"></canvas>
+            </div>
+        </div>
+
+        <!-- Plan Distribution -->
+        <div class="col-xl-4 mb-4">
+            <div class="chart-card">
+                <h3><i class="bi bi-pie-chart me-2"></i>Plan Distribution</h3>
+                <canvas id="planChart" height="200"></canvas>
+                <div class="mt-3">
+                    {% for plan in plan_stats %}
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <span class="text-muted">{{ plan.name }}</span>
+                        <strong>{{ plan.total_companies }} companies</strong>
+                    </div>
+                    {% empty %}
+                    <p class="text-muted text-center">No plan data available</p>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Tables Row -->
+    <div class="row">
+        <!-- Recent Companies -->
+        <div class="col-xl-6 mb-4">
+            <div class="table-card">
+                <div class="table-card-header">
+                    <h3><i class="bi bi-building me-2"></i>Recent Companies</h3>
+                    <a href="{% url 'system_companies_list' %}" class="btn btn-sm btn-outline-primary">View All</a>
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0">
+                        <thead>
+                            <tr>
+                                <th>Company</th>
+                                <th>Plan</th>
+                                <th>Status</th>
+                                <th>Users</th>
+                                <th>Joined</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for company in recent_companies %}
+                            <tr>
+                                <td>
+                                    <a href="{% url 'companies:company_detail' company_id=company.company_id %}" class="text-decoration-none">
+                                        <strong>{{ company.name }}</strong>
+                                    </a>
+                                </td>
+                                <td>
+                                    {% if company.plan %}
+                                        <span class="badge badge-info">{{ company.plan.display_name }}</span>
+                                    {% else %}
+                                        <span class="text-muted">No Plan</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if company.status == 'ACTIVE' %}
+                                        <span class="badge badge-success">Active</span>
+                                    {% elif company.is_trial %}
+                                        <span class="badge badge-warning">Trial</span>
+                                    {% else %}
+                                        <span class="badge badge-danger">{{ company.status }}</span>
+                                    {% endif %}
+                                </td>
+                                <td>{{ company.customuser_set.count }}</td>
+                                <td class="text-muted">{{ company.created_at|date:"M d, Y" }}</td>
+                            </tr>
+                            {% empty %}
+                            <tr>
+                                <td colspan="5" class="text-center text-muted py-4">No recent companies</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Recent Users -->
+        <div class="col-xl-6 mb-4">
+            <div class="table-card">
+                <div class="table-card-header">
+                    <h3><i class="bi bi-people me-2"></i>Recent Users</h3>
+                    <a href="{% url 'user_list' %}" class="btn btn-sm btn-outline-primary">View All</a>
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0">
+                        <thead>
+                            <tr>
+                                <th>User</th>
+                                <th>Company</th>
+                                <th>Type</th>
+                                <th>Status</th>
+                                <th>Joined</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for user in recent_users %}
+                            <tr>
+                                <td>
+                                    <a href="{% url 'user_detail' pk=user.id %}" class="text-decoration-none">
+                                        <strong>{{ user.get_full_name|default:user.email }}</strong>
+                                    </a>
+                                </td>
+                                <td class="text-muted">{{ user.company.name|default:"N/A" }}</td>
+                                <td><span class="badge badge-info">{{ user.get_user_type_display }}</span></td>
+                                <td>
+                                    {% if user.is_active %}
+                                        <span class="badge badge-success">Active</span>
+                                    {% else %}
+                                        <span class="badge badge-danger">Inactive</span>
+                                    {% endif %}
+                                </td>
+                                <td class="text-muted">{{ user.date_joined|date:"M d, Y" }}</td>
+                            </tr>
+                            {% empty %}
+                            <tr>
+                                <td colspan="5" class="text-center text-muted py-4">No recent users</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Alerts Row -->
+    <div class="row">
+        <!-- Expiring Subscriptions -->
+        {% if expiring_soon %}
+        <div class="col-xl-6 mb-4">
+            <div class="table-card">
+                <div class="table-card-header">
+                    <h3><i class="bi bi-clock-history me-2 text-warning"></i>Expiring Soon</h3>
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0">
+                        <thead>
+                            <tr>
+                                <th>Company</th>
+                                <th>Plan</th>
+                                <th>Expires</th>
+                                <th>Action</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for company in expiring_soon %}
+                            <tr>
+                                <td><strong>{{ company.name }}</strong></td>
+                                <td>{{ company.plan.display_name|default:"N/A" }}</td>
+                                <td class="text-warning">{{ company.subscription_ends_at|date:"M d, Y" }}</td>
+                                <td>
+                                    <a href="{% url 'companies:company_detail' company_id=company.company_id %}" class="btn btn-sm btn-outline-primary">
+                                        View
+                                    </a>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Trials Ending Soon -->
+        {% if trials_ending_soon %}
+        <div class="col-xl-6 mb-4">
+            <div class="table-card">
+                <div class="table-card-header">
+                    <h3><i class="bi bi-hourglass-split me-2 text-info"></i>Trials Ending Soon</h3>
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0">
+                        <thead>
+                            <tr>
+                                <th>Company</th>
+                                <th>Users</th>
+                                <th>Trial Ends</th>
+                                <th>Action</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for company in trials_ending_soon %}
+                            <tr>
+                                <td><strong>{{ company.name }}</strong></td>
+                                <td>{{ company.customuser_set.count }}</td>
+                                <td class="text-info">{{ company.trial_ends_at|date:"M d, Y" }}</td>
+                                <td>
+                                    <a href="{% url 'companies:company_detail' company_id=company.company_id %}" class="btn btn-sm btn-outline-primary">
+                                        View
+                                    </a>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Security Alerts -->
+        {% if recently_locked %}
+        <div class="col-xl-6 mb-4">
+            <div class="table-card">
+                <div class="table-card-header">
+                    <h3><i class="bi bi-shield-exclamation me-2 text-danger"></i>Recently Locked Accounts</h3>
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0">
+                        <thead>
+                            <tr>
+                                <th>User</th>
+                                <th>Company</th>
+                                <th>Locked Until</th>
+                                <th>Action</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for user in recently_locked %}
+                            <tr>
+                                <td><strong>{{ user.get_full_name|default:user.email }}</strong></td>
+                                <td>{{ user.company.name|default:"N/A" }}</td>
+                                <td class="text-danger">{{ user.locked_until|date:"M d, Y H:i" }}</td>
+                                <td>
+                                    <a href="{% url 'unlock_user' pk=user.id %}" class="btn btn-sm btn-outline-success">
+                                        Unlock
+                                    </a>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+// Tenant Switcher
+document.getElementById('tenantSwitcher')?.addEventListener('change', function() {
+    const tenantId = this.value;
+
+    if (!tenantId) {
+        // Clear tenant view
+        fetch("{% url 'clear_tenant_view' %}", {
+            method: 'POST',
+            headers: {
+                'X-CSRFToken': '{{ csrf_token }}',
+                'X-Requested-With': 'XMLHttpRequest'
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                window.location.reload();
+            }
+        });
+    } else {
+        // Switch to tenant
+        fetch("{% url 'switch_tenant_view' %}?tenant_id=" + tenantId, {
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest'
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success && data.redirect_url) {
+                window.location.href = data.redirect_url;
+            }
+        });
+    }
+});
+
+// Activity Chart
+const activityData = {{ activity_data|safe }};
+const activityCtx = document.getElementById('activityChart');
+if (activityCtx) {
+    new Chart(activityCtx, {
+        type: 'line',
+        data: {
+            labels: activityData.map(d => new Date(d.date).toLocaleDateString('en-US', {month: 'short', day: 'numeric'})),
+            datasets: [
+                {
+                    label: 'New Companies',
+                    data: activityData.map(d => d.new_companies),
+                    borderColor: '#667eea',
+                    backgroundColor: 'rgba(102, 126, 234, 0.1)',
+                    tension: 0.4,
+                    fill: true
+                },
+                {
+                    label: 'New Users',
+                    data: activityData.map(d => d.new_users),
+                    borderColor: '#10b981',
+                    backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                    tension: 0.4,
+                    fill: true
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: true,
+            plugins: {
+                legend: {
+                    position: 'top',
+                },
+                tooltip: {
+                    mode: 'index',
+                    intersect: false,
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    ticks: {
+                        precision: 0
+                    }
+                }
+            }
+        }
+    });
+}
+
+// Plan Distribution Chart
+const planData = {{ plan_stats|safe }};
+const planCtx = document.getElementById('planChart');
+if (planCtx && planData.length > 0) {
+    new Chart(planCtx, {
+        type: 'doughnut',
+        data: {
+            labels: planData.map(p => p.name),
+            datasets: [{
+                data: planData.map(p => p.total_companies),
+                backgroundColor: [
+                    '#667eea',
+                    '#10b981',
+                    '#f59e0b',
+                    '#ef4444',
+                    '#3b82f6',
+                    '#8b5cf6'
+                ]
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    position: 'bottom',
+                }
+            }
+        }
+    });
+}
+
+// Auto-refresh stats every 60 seconds
+setInterval(() => {
+    fetch("{% url 'admin_quick_stats_api' %}")
+        .then(response => response.json())
+        .then(data => {
+            // Update stat cards dynamically
+            console.log('Stats refreshed:', data);
+        })
+        .catch(error => console.error('Error refreshing stats:', error));
+}, 60000);
+</script>
+{% endblock %}

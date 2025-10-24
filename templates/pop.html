@@ -1,0 +1,191 @@
+{% load widget_tweaks %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block modal_title %}{{ model_name }}{% endblock %}</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
+    <link href="https://cdn.jsdelivr.net/npm/select2-bootstrap-5-theme@1.3.0/dist/select2-bootstrap-5-theme.min.css" rel="stylesheet" />
+    {% block extra_css %}
+    <style>
+        body {
+            padding: 0;
+            margin: 0;
+            background: #fff;
+        }
+        .modal-content-wrapper {
+            padding: 20px;
+        }
+        .required-asterisk {
+            color: #dc3545;
+        }
+        #loadingOverlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            z-index: 9999;
+            justify-content: center;
+            align-items: center;
+        }
+        .form-section {
+            margin-bottom: 20px;
+        }
+    </style>
+    {% endblock %}
+</head>
+<body>
+    <div id="loadingOverlay">
+        <div class="spinner-border text-light" role="status">
+            <span class="visually-hidden">Loading...</span>
+        </div>
+    </div>
+
+    <div class="modal-content-wrapper">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h4 class="mb-0">
+                {% block header_icon %}<i class="fas fa-plus-circle me-2"></i>{% endblock %}
+                {% block header_title %}
+                    {% if is_update %}Edit{% else %}Add New{% endif %} {{ model_name }}
+                {% endblock %}
+            </h4>
+            <button type="button" class="btn-close" onclick="closeModal()"></button>
+        </div>
+
+        <form id="modalForm" method="post" enctype="multipart/form-data">
+            {% csrf_token %}
+
+            <div id="formErrors" class="alert alert-danger d-none"></div>
+
+            {% block form_content %}
+            <div class="row g-3">
+                {% for field in form %}
+                    {% if not field.is_hidden %}
+                    <div class="col-md-{% if field.field.widget.input_type == 'checkbox' %}12{% else %}6{% endif %}">
+                        <label for="{{ field.id_for_label }}" class="form-label">
+                            {{ field.label }}
+                            {% if field.field.required %}<span class="required-asterisk">*</span>{% endif %}
+                        </label>
+
+                        {% if field.field.widget.input_type == 'checkbox' %}
+                            <div class="form-check form-switch">
+                                {% render_field field class="form-check-input" %}
+                            </div>
+                        {% elif field.field.widget.input_type == 'select' %}
+                            {% render_field field class="form-select" %}
+                        {% elif field.field.widget.input_type == 'textarea' %}
+                            {% render_field field class="form-control" rows="3" %}
+                        {% else %}
+                            {% render_field field class="form-control" %}
+                        {% endif %}
+
+                        {% if field.help_text %}
+                            <small class="text-muted">{{ field.help_text }}</small>
+                        {% endif %}
+
+                        {% if field.errors %}
+                            <div class="invalid-feedback d-block">
+                                {% for error in field.errors %}{{ error }}{% endfor %}
+                            </div>
+                        {% endif %}
+                    </div>
+                    {% else %}
+                        {{ field }}
+                    {% endif %}
+                {% endfor %}
+            </div>
+            {% endblock %}
+
+            <!-- Form Actions -->
+            <div class="d-flex justify-content-end gap-2 mt-4">
+                <button type="button" class="btn btn-secondary" onclick="closeModal()">
+                    <i class="fas fa-times me-2"></i>Cancel
+                </button>
+                <button type="submit" class="btn btn-primary">
+                    <i class="fas fa-save me-2"></i>{% if is_update %}Update{% else %}Save{% endif %}
+                </button>
+            </div>
+        </form>
+    </div>
+
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+
+    {% block extra_js %}
+    <script>
+        $(document).ready(function() {
+            // Initialize Select2 for all selects
+            $('.form-select').select2({
+                theme: 'bootstrap-5',
+                width: '100%',
+                dropdownParent: $('body')
+            });
+
+            // Handle form submission
+            $('#modalForm').on('submit', function(e) {
+                e.preventDefault();
+
+                const formData = new FormData(this);
+                $('#loadingOverlay').css('display', 'flex');
+                $('#formErrors').addClass('d-none').html('');
+
+                $.ajax({
+                    url: window.location.href.replace('/modal/', '/ajax/'),
+                    type: 'POST',
+                    data: formData,
+                    processData: false,
+                    contentType: false,
+                    headers: {
+                        'X-Requested-With': 'XMLHttpRequest'
+                    },
+                    success: function(response) {
+                        $('#loadingOverlay').hide();
+                        if (response.success) {
+                            // Send data back to parent window
+                            const messageType = '{{ model_name_lower }}Created';
+                            const dataKey = '{{ model_name_lower }}';
+
+                            const message = {
+                                type: messageType
+                            };
+                            message[dataKey] = response[dataKey];
+
+                            if (window.opener && !window.opener.closed) {
+                                window.opener.postMessage(message, '*');
+                            }
+                            window.close();
+                        } else {
+                            showErrors(response.errors);
+                        }
+                    },
+                    error: function(xhr) {
+                        $('#loadingOverlay').hide();
+                        let errors = 'An error occurred. Please try again.';
+                        if (xhr.responseJSON && xhr.responseJSON.errors) {
+                            errors = xhr.responseJSON.errors;
+                        }
+                        showErrors(errors);
+                    }
+                }
+            } else {
+                errorHtml += `<li>${errors}</li>`;
+            }
+            errorHtml += '</ul>';
+            $('#formErrors').removeClass('d-none').html(errorHtml);
+            $('html, body').scrollTop(0);
+        }
+
+        function closeModal() {
+            window.close();
+        }
+    </script>
+    {% endblock %}
+</body>
+</html>);

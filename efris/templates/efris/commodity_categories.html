@@ -1,0 +1,215 @@
+{% extends "base.html" %}
+{% load static %}
+{% load i18n %}
+
+{% block title %}{% trans "Commodity Categories" %} | {{ block.super }}{% endblock %}
+
+{% block breadcrumb_items %}
+<li class="breadcrumb-item"><a href="{% url 'efris:dashboard' %}">{% trans "EFRIS" %}</a></li>
+<li class="breadcrumb-item active">{% trans "Commodity Categories" %}</li>
+{% endblock %}
+
+{% block page_header %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h2 class="mb-2">{% trans "Commodity Categories" %}</h2>
+        <p class="text-muted mb-0">{% trans "Browse and manage EFRIS commodity categories" %}</p>
+    </div>
+    <div>
+        <form action="{% url 'efris:sync_categories' %}" method="post" style="display:inline;">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-primary">
+                <i class="bi bi-arrow-repeat me-2"></i>{% trans "Sync Categories" %}
+            </button>
+        </form>
+
+    </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<!-- Search and Filter -->
+<div class="card shadow-sm mb-4">
+    <div class="card-body">
+        <form method="get" class="row g-3">
+            <div class="col-md-10">
+                <div class="input-group">
+                    <span class="input-group-text">
+                        <i class="bi bi-search"></i>
+                    </span>
+                    <input
+                        type="text"
+                        class="form-control"
+                        name="search"
+                        placeholder="{% trans 'Search by code or name...' %}"
+                        value="{{ search }}"
+                    >
+                </div>
+            </div>
+            <div class="col-md-2">
+                <button type="submit" class="btn btn-primary w-100">
+                    <i class="bi bi-search me-2"></i>{% trans "Search" %}
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Categories Table -->
+<div class="card shadow-sm">
+    <div class="card-header">
+        <h5 class="mb-0">
+            <i class="bi bi-tag me-2"></i>{% trans "Categories" %}
+            <span class="badge bg-secondary ms-2">{{ categories.paginator.count }}</span>
+        </h5>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th style="width: 20%;">{% trans "Code" %}</th>
+                        <th style="width: 45%;">{% trans "Category Name" %}</th>
+                        <th style="width: 25%;">{% trans "Parent Category" %}</th>
+                        <th style="width: 10%;" class="text-center">{% trans "Status" %}</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for category in categories %}
+                    <tr>
+                        <td>
+                            <code class="text-primary">{{ category.commodity_category_code }}</code>
+                        </td>
+                        <td>
+                            <strong>{{ category.commodity_category_name }}</strong>
+                            {% if category.commodity_category_name_cn %}
+                            <br>
+                            <small class="text-muted">{{ category.commodity_category_name_cn }}</small>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if category.parent_code %}
+                            <span class="badge bg-light text-dark">{{ category.parent_code }}</span>
+                            {% else %}
+                            <span class="text-muted">{% trans "Root Category" %}</span>
+                            {% endif %}
+                        </td>
+                        <td class="text-center">
+                            <span class="badge bg-{% if category.is_active %}success{% else %}secondary{% endif %}">
+                                {% if category.is_active %}
+                                    <i class="bi bi-check-circle me-1"></i>{% trans "Active" %}
+                                {% else %}
+                                    {% trans "Inactive" %}
+                                {% endif %}
+                            </span>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="4" class="text-center text-muted py-5">
+                            <i class="bi bi-inbox display-4 d-block mb-3"></i>
+                            {% if search %}
+                                <p>{% trans "No categories found matching your search" %}</p>
+                                <a href="{% url 'efris:commodity_categories' %}" class="btn btn-sm btn-outline-primary">
+                                    {% trans "Clear Search" %}
+                                </a>
+                            {% else %}
+                                <p>{% trans "No categories available" %}</p>
+                                <form action="{% url 'efris:sync_categories' %}" method="post" style="display:inline;">
+                                    {% csrf_token %}
+                                    <button type="submit" class="btn btn-primary">
+                                        <i class="bi bi-arrow-repeat me-2"></i>{% trans "Sync Categories" %}
+                                    </button>
+                                </form>
+
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    {% if categories.has_other_pages %}
+    <div class="card-footer">
+        <nav aria-label="{% trans 'Page navigation' %}">
+            <ul class="pagination justify-content-center mb-0">
+                {% if categories.has_previous %}
+                <li class="page-item">
+                    <a class="page-link" href="?page=1{% if search %}&search={{ search }}{% endif %}">
+                        <i class="bi bi-chevron-double-left"></i>
+                    </a>
+                </li>
+                <li class="page-item">
+                    <a class="page-link" href="?page={{ categories.previous_page_number }}{% if search %}&search={{ search }}{% endif %}">
+                        <i class="bi bi-chevron-left"></i>
+                    </a>
+                </li>
+                {% else %}
+                <li class="page-item disabled">
+                    <span class="page-link"><i class="bi bi-chevron-double-left"></i></span>
+                </li>
+                <li class="page-item disabled">
+                    <span class="page-link"><i class="bi bi-chevron-left"></i></span>
+                </li>
+                {% endif %}
+
+                {% for num in categories.paginator.page_range %}
+                    {% if categories.number == num %}
+                    <li class="page-item active">
+                        <span class="page-link">{{ num }}</span>
+                    </li>
+                    {% elif num > categories.number|add:'-3' and num < categories.number|add:'3' %}
+                    <li class="page-item">
+                        <a class="page-link" href="?page={{ num }}{% if search %}&search={{ search }}{% endif %}">{{ num }}</a>
+                    </li>
+                    {% endif %}
+                {% endfor %}
+
+                {% if categories.has_next %}
+                <li class="page-item">
+                    <a class="page-link" href="?page={{ categories.next_page_number }}{% if search %}&search={{ search }}{% endif %}">
+                        <i class="bi bi-chevron-right"></i>
+                    </a>
+                </li>
+                <li class="page-item">
+                    <a class="page-link" href="?page={{ categories.paginator.num_pages }}{% if search %}&search={{ search }}{% endif %}">
+                        <i class="bi bi-chevron-double-right"></i>
+                    </a>
+                </li>
+                {% else %}
+                <li class="page-item disabled">
+                    <span class="page-link"><i class="bi bi-chevron-right"></i></span>
+                </li>
+                <li class="page-item disabled">
+                    <span class="page-link"><i class="bi bi-chevron-double-right"></i></span>
+                </li>
+                {% endif %}
+            </ul>
+        </nav>
+
+        <div class="text-center mt-2">
+            <small class="text-muted">
+                {% trans "Showing" %} {{ categories.start_index }} - {{ categories.end_index }} {% trans "of" %} {{ categories.paginator.count }} {% trans "categories" %}
+            </small>
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+<!-- Info Card -->
+<div class="card border-info shadow-sm mt-4">
+    <div class="card-body">
+        <h6 class="text-info mb-3">
+            <i class="bi bi-info-circle me-2"></i>{% trans "About Commodity Categories" %}
+        </h6>
+        <p class="mb-2">{% trans "Commodity categories are standardized classifications used by URA EFRIS to categorize products and services. Each product must be assigned to a specific category for proper tax classification." %}</p>
+        <ul class="mb-0">
+            <li>{% trans "Categories are hierarchical with parent-child relationships" %}</li>
+            <li>{% trans "Use the sync function to update categories from EFRIS" %}</li>
+            <li>{% trans "Search by code or name to find specific categories" %}</li>
+        </ul>
+    </div>
+</div>
+{% endblock %}

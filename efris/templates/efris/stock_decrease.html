@@ -1,0 +1,140 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Decrease Stock - {{ product.name }}{% endblock %}
+
+{% block breadcrumb_items %}
+<li class="breadcrumb-item"><a href="{% url 'user_dashboard' %}">Home</a></li>
+<li class="breadcrumb-item"><a href="{% url 'efris:dashboard' %}">EFRIS</a></li>
+<li class="breadcrumb-item"><a href="{% url 'efris:stock_management_dashboard' %}">Stock Management</a></li>
+<li class="breadcrumb-item active">Decrease Stock</li>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row justify-content-center">
+        <div class="col-md-8">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <div>
+                    <h1 class="h2 mb-1">Decrease Stock</h1>
+                    <p class="text-muted mb-0">Remove stock from EFRIS for {{ product.name }}</p>
+                </div>
+                <a href="{% url 'efris:stock_management_dashboard' %}" class="btn btn-outline-secondary">
+                    <i class="bi bi-arrow-left"></i> Back
+                </a>
+            </div>
+
+            <!-- Product Info -->
+            <div class="card mb-4">
+                <div class="card-header bg-primary text-white">
+                    <h5 class="mb-0"><i class="bi bi-box-seam me-2"></i>Product Information</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <p class="mb-2"><strong>Product:</strong> {{ product.name }}</p>
+                            <p class="mb-2"><strong>SKU:</strong> <code>{{ product.sku }}</code></p>
+                        </div>
+                        <div class="col-md-6">
+                            <p class="mb-2"><strong>Unit:</strong> {{ product.unit_of_measure }}</p>
+                            <p class="mb-2"><strong>EFRIS ID:</strong> <code>{{ product.efris_goods_id }}</code></p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Decrease Form -->
+            <div class="card">
+                <div class="card-header bg-danger text-white">
+                    <h5 class="mb-0"><i class="bi bi-dash-circle me-2"></i>Decrease Stock Details</h5>
+                </div>
+                <div class="card-body">
+                    <form method="POST" action="{% url 'efris:stock_decrease' product.id %}" id="decreaseStockForm">
+                        {% csrf_token %}
+
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label for="quantity" class="form-label">Quantity <span class="text-danger">*</span></label>
+                                <input type="number" class="form-control" id="quantity" name="quantity"
+                                       min="0.01" step="0.01" required>
+                            </div>
+
+                            <div class="col-md-6 mb-3">
+                                <label for="store_id" class="form-label">Store <span class="text-danger">*</span></label>
+                                <select class="form-select" id="store_id" name="store_id" required>
+                                    <option value="">Select store...</option>
+                                    {% for store in stores %}
+                                    <option value="{{ store.id }}">{{ store.name }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="adjust_type" class="form-label">Adjustment Type <span class="text-danger">*</span></label>
+                            <select class="form-select" id="adjust_type" name="adjust_type" required>
+                                {% for code, name in adjust_types %}
+                                <option value="{{ code }}">{{ name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+
+                        <div class="mb-3" id="remarksGroup">
+                            <label for="remarks" class="form-label">Remarks <span class="text-danger" id="remarksRequired">*</span></label>
+                            <textarea class="form-control" id="remarks" name="remarks" rows="3"></textarea>
+                            <small class="form-text text-muted" id="remarksHelp">Required for "Others" adjust type</small>
+                        </div>
+
+                        <div class="alert alert-warning">
+                            <i class="bi bi-exclamation-triangle me-2"></i>
+                            <strong>Warning:</strong> This will decrease stock in EFRIS. Make sure you have sufficient stock.
+                        </div>
+
+                        <div class="d-flex justify-content-between">
+                            <a href="{% url 'efris:stock_management_dashboard' %}" class="btn btn-secondary">
+                                <i class="bi bi-x-circle"></i> Cancel
+                            </a>
+                            <button type="submit" class="btn btn-danger btn-lg">
+                                <i class="bi bi-dash-circle"></i> Decrease Stock
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const form = document.getElementById('decreaseStockForm');
+    const adjustType = document.getElementById('adjust_type');
+    const remarks = document.getElementById('remarks');
+    const remarksRequired = document.getElementById('remarksRequired');
+
+    adjustType.addEventListener('change', function() {
+        // Remarks required only for "Others" (104)
+        if (this.value === '104') {
+            remarks.required = true;
+            remarksRequired.style.display = 'inline';
+        } else {
+            remarks.required = false;
+            remarksRequired.style.display = 'none';
+        }
+    });
+
+    form.addEventListener('submit', function(e) {
+        const quantity = document.getElementById('quantity').value;
+
+        if (!confirm(`Decrease stock by ${quantity} units in EFRIS? This action cannot be undone.`)) {
+            e.preventDefault();
+            return false;
+        }
+
+        const submitBtn = form.querySelector('button[type="submit"]');
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Processing...';
+    });
+});
+</script>
+{% endblock %}

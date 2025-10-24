@@ -1,0 +1,293 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Generated Reports History{% endblock %}
+
+{% block extra_css %}
+<style>
+    .status-badge {
+        padding: 6px 12px;
+        border-radius: 20px;
+        font-size: 0.85rem;
+        font-weight: 600;
+    }
+    .report-item {
+        border: 1px solid #e5e7eb;
+        border-radius: 10px;
+        padding: 20px;
+        transition: all 0.3s;
+        margin-bottom: 15px;
+    }
+    .report-item:hover {
+        box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        border-color: #3b82f6;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h2 class="mb-1">Generated Reports History</h2>
+            <p class="text-muted mb-0">View and download previously generated reports</p>
+        </div>
+        <a href="{% url 'reports:dashboard' %}" class="btn btn-outline-secondary">
+            <i class="fas fa-arrow-left"></i> Back to Dashboard
+        </a>
+    </div>
+
+    <!-- Filters -->
+    <div class="card shadow-sm mb-4">
+        <div class="card-body">
+            <form method="get" class="row g-3">
+                <div class="col-md-3">
+                    <label class="form-label">Report Type</label>
+                    <select class="form-select" name="type">
+                        <option value="">All Types</option>
+                        {% for value, label in report_types %}
+                        <option value="{{ value }}" {% if value == selected_type %}selected{% endif %}>
+                            {{ label }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">Status</label>
+                    <select class="form-select" name="status">
+                        <option value="">All Status</option>
+                        <option value="COMPLETED" {% if selected_status == 'COMPLETED' %}selected{% endif %}>Completed</option>
+                        <option value="PROCESSING" {% if selected_status == 'PROCESSING' %}selected{% endif %}>Processing</option>
+                        <option value="FAILED" {% if selected_status == 'FAILED' %}selected{% endif %}>Failed</option>
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">Format</label>
+                    <select class="form-select" name="format">
+                        <option value="">All Formats</option>
+                        <option value="PDF" {% if selected_format == 'PDF' %}selected{% endif %}>PDF</option>
+                        <option value="XLSX" {% if selected_format == 'XLSX' %}selected{% endif %}>Excel</option>
+                        <option value="CSV" {% if selected_format == 'CSV' %}selected{% endif %}>CSV</option>
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">&nbsp;</label>
+                    <button type="submit" class="btn btn-primary w-100">
+                        <i class="fas fa-filter"></i> Apply Filters
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Reports List -->
+    {% if page_obj %}
+    <div class="row">
+        {% for report in page_obj %}
+        <div class="col-12">
+            <div class="report-item">
+                <div class="row align-items-center">
+                    <div class="col-md-4">
+                        <h5 class="mb-1">{{ report.report.name }}</h5>
+                        <small class="text-muted">
+                            <i class="far fa-user"></i> {{ report.generated_by.get_full_name }}
+                        </small>
+                    </div>
+                    <div class="col-md-2 text-center">
+                        <span class="badge bg-primary">{{ report.file_format }}</span>
+                    </div>
+                    <div class="col-md-2 text-center">
+                        {% if report.status == 'COMPLETED' %}
+                            <span class="status-badge bg-success text-white">
+                                <i class="fas fa-check-circle"></i> Completed
+                            </span>
+                        {% elif report.status == 'PROCESSING' %}
+                            <span class="status-badge bg-warning text-dark">
+                                <i class="fas fa-spinner fa-spin"></i> Processing
+                            </span>
+                        {% elif report.status == 'FAILED' %}
+                            <span class="status-badge bg-danger text-white">
+                                <i class="fas fa-times-circle"></i> Failed
+                            </span>
+                        {% else %}
+                            <span class="status-badge bg-secondary text-white">{{ report.status }}</span>
+                        {% endif %}
+                    </div>
+                    <div class="col-md-2 text-center">
+                        <small class="text-muted d-block">{{ report.generated_at|date:"Y-m-d H:i" }}</small>
+                        <small class="text-muted">{{ report.generated_at|timesince }} ago</small>
+                    </div>
+                    <div class="col-md-2 text-end">
+                        {% if report.status == 'COMPLETED' %}
+                            <a href="{% url 'reports:download_report' report.id %}"
+                               class="btn btn-sm btn-success me-1" title="Download">
+                                <i class="fas fa-download"></i>
+                            </a>
+                            <button class="btn btn-sm btn-outline-danger"
+                                    onclick="deleteReport({{ report.id }}, '{{ report.report.name }}')"
+                                    title="Delete">
+                                <i class="fas fa-trash"></i>
+                            </button>
+                        {% elif report.status == 'PROCESSING' %}
+                            <button class="btn btn-sm btn-warning"
+                                    onclick="viewProgress({{ report.id }})" title="View Progress">
+                                <i class="fas fa-eye"></i> Progress
+                            </button>
+                        {% elif report.status == 'FAILED' %}
+                            <button class="btn btn-sm btn-outline-info"
+                                    onclick="showError('{{ report.error_message }}')" title="View Error">
+                                <i class="fas fa-info-circle"></i>
+                            </button>
+                        {% endif %}
+                    </div>
+                </div>
+
+                {% if report.status == 'COMPLETED' %}
+                <div class="row mt-3 pt-3 border-top">
+                    <div class="col-md-3">
+                        <small class="text-muted">File Size:</small>
+                        <strong>{{ report.file_size|filesizeformat }}</strong>
+                    </div>
+                    <div class="col-md-3">
+                        <small class="text-muted">Rows:</small>
+                        <strong>{{ report.row_count|floatformat:0 }}</strong>
+                    </div>
+                    <div class="col-md-3">
+                        <small class="text-muted">Downloads:</small>
+                        <strong>{{ report.download_count }}</strong>
+                    </div>
+                    <div class="col-md-3">
+                        <small class="text-muted">Generation Time:</small>
+                        <strong>{{ report.generation_time|floatformat:2 }}s</strong>
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+
+    <!-- Pagination -->
+    {% if page_obj.paginator.num_pages > 1 %}
+    <div class="d-flex justify-content-center mt-4">
+        <nav>
+            <ul class="pagination">
+                {% if page_obj.has_previous %}
+                <li class="page-item">
+                    <a class="page-link" href="?page={{ page_obj.previous_page_number }}{% if selected_type %}&type={{ selected_type }}{% endif %}{% if selected_status %}&status={{ selected_status }}{% endif %}">
+                        Previous
+                    </a>
+                </li>
+                {% endif %}
+
+                <li class="page-item active">
+                    <span class="page-link">{{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
+                </li>
+
+                {% if page_obj.has_next %}
+                <li class="page-item">
+                    <a class="page-link" href="?page={{ page_obj.next_page_number }}{% if selected_type %}&type={{ selected_type }}{% endif %}{% if selected_status %}&status={{ selected_status }}{% endif %}">
+                        Next
+                    </a>
+                </li>
+                {% endif %}
+            </ul>
+        </nav>
+    </div>
+    {% endif %}
+    {% else %}
+    <div class="text-center py-5">
+        <i class="fas fa-file-invoice fa-5x text-muted mb-4"></i>
+        <h4 class="text-muted">No Generated Reports Found</h4>
+        <p class="text-muted">Generated reports will appear here once you create them.</p>
+        <a href="{% url 'reports:saved_reports' %}" class="btn btn-primary">
+            <i class="fas fa-plus"></i> Create New Report
+        </a>
+    </div>
+    {% endif %}
+</div>
+
+<!-- Progress Modal -->
+<div class="modal fade" id="progressModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Report Generation Progress</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="progress mb-3">
+                    <div class="progress-bar progress-bar-striped progress-bar-animated"
+                         id="progressBar" role="progressbar" style="width: 0%">0%</div>
+                </div>
+                <p id="progressMessage" class="text-center">Loading...</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Error Modal -->
+<div class="modal fade" id="errorModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-danger text-white">
+                <h5 class="modal-title">Generation Error</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p id="errorMessage"></p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    function deleteReport(reportId, reportName) {
+        if (confirm(`Are you sure you want to delete "${reportName}"?`)) {
+            fetch(`/reports/history/${reportId}/delete/`, {
+                method: 'POST',
+                headers: {
+                    'X-CSRFToken': '{{ csrf_token }}'
+                }
+            })
+            .then(response => {
+                if (response.ok) {
+                    location.reload();
+                } else {
+                    alert('Failed to delete report');
+                }
+            });
+        }
+    }
+
+    function viewProgress(reportId) {
+        const modal = new bootstrap.Modal(document.getElementById('progressModal'));
+        modal.show();
+
+        // Fetch progress
+        fetch(`/reports/ajax/progress/${reportId}/`)
+            .then(response => response.json())
+            .then(data => {
+                updateProgressBar(data.progress, data.status);
+            });
+    }
+
+    function updateProgressBar(progress, message) {
+        const progressBar = document.getElementById('progressBar');
+        progressBar.style.width = progress + '%';
+        progressBar.textContent = progress + '%';
+        document.getElementById('progressMessage').textContent = message;
+    }
+
+    function showError(message) {
+        document.getElementById('errorMessage').textContent = message;
+        const modal = new bootstrap.Modal(document.getElementById('errorModal'));
+        modal.show();
+    }
+</script>
+{% endblock %}

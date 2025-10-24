@@ -1,0 +1,73 @@
+{% extends "efris/base.html" %}
+{% load static %}
+
+{% block efris_content %}
+<div class="efris-card">
+    <div class="card-body">
+        <h5 class="card-title">
+            <i class="fas fa-barcode"></i> HS Code List
+            <span class="badge bg-primary">{{ hs_codes|length }}</span>
+        </h5>
+
+        <div class="mb-3">
+            <input type="text" id="hsCodeSearch" class="form-control"
+                   placeholder="Search by HS Code or Description...">
+        </div>
+
+        {% if hs_codes %}
+        <div class="table-responsive">
+            <table class="table table-hover" id="hsCodeTable">
+                <thead>
+                    <tr>
+                        <th>HS Code</th>
+                        <th>Description</th>
+                        <th>Is Leaf</th>
+                        <th>Parent Class</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for hs in hs_codes %}
+                    <tr>
+                        <td><code>{{ hs.hsCode }}</code></td>
+                        <td>{{ hs.description }}</td>
+                        <td>
+                            {% if hs.isLeaf == '0' %}
+                                <span class="badge bg-success">Yes</span>
+                            {% else %}
+                                <span class="badge bg-secondary">No</span>
+                            {% endif %}
+                        </td>
+                        <td><small>{{ hs.parentClass|default:"-" }}</small></td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="alert alert-info">
+            <i class="fas fa-info-circle"></i> No HS codes available.
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<script>
+// Simple table search
+document.getElementById('hsCodeSearch').addEventListener('keyup', function() {
+    const searchValue = this.value.toLowerCase();
+    const table = document.getElementById('hsCodeTable');
+    const rows = table.getElementsByTagName('tbody')[0].getElementsByTagName('tr');
+
+    for (let i = 0; i < rows.length; i++) {
+        const hsCode = rows[i].cells[0].textContent.toLowerCase();
+        const description = rows[i].cells[1].textContent.toLowerCase();
+
+        if (hsCode.includes(searchValue) || description.includes(searchValue)) {
+            rows[i].style.display = '';
+        } else {
+            rows[i].style.display = 'none';
+        }
+    }
+});
+</script>
+{% endblock %}

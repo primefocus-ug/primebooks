@@ -1,0 +1,1142 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Quick Sale{% endblock %}
+
+{% block extra_css %}
+<link href="{% static 'css/pos.css' %}" rel="stylesheet">
+<style>
+    .pos-search {
+        padding: 10px;
+        background: #f8f9fa;
+        margin-bottom: 15px;
+    }
+
+    .pos-search input {
+        width: 100%;
+        padding: 8px 15px;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+    }
+
+    .product-results {
+        max-height: 300px;
+        overflow-y: auto;
+        border: 1px solid #eee;
+        margin-bottom: 15px;
+        display: none;
+        background: white;
+        z-index: 1000;
+        position: relative;
+    }
+
+    .product-item {
+        padding: 10px;
+        border-bottom: 1px solid #eee;
+        cursor: pointer;
+    }
+
+    .product-item:hover {
+        background-color: #f8f9fa;
+    }
+
+    .no-results {
+        padding: 15px;
+        text-align: center;
+        color: #6c757d;
+    }
+
+    .product-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+        gap: 15px;
+        padding: 15px;
+        max-height: 500px;
+        overflow-y: auto;
+    }
+
+    .product-card {
+        border: 1px solid #dee2e6;
+        border-radius: 5px;
+        padding: 10px;
+        cursor: pointer;
+        transition: all 0.2s;
+        background: white;
+        text-align: center;
+    }
+
+    .product-card:hover {
+        border-color: #0d6efd;
+        box-shadow: 0 0 5px rgba(13, 110, 253, 0.3);
+        transform: translateY(-2px);
+    }
+
+    .product-card.out-of-stock {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
+
+    .cart-section {
+        background: #fff;
+        border: 1px solid #dee2e6;
+        border-radius: 5px;
+        padding: 15px;
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+        max-height: 800px;
+    }
+
+    #cart-items {
+        flex-grow: 1;
+        overflow-y: auto;
+        margin-bottom: 15px;
+        max-height: 300px;
+    }
+
+    .cart-item {
+        padding: 10px 0;
+        border-bottom: 1px solid #eee;
+    }
+
+    .total-section {
+        background: #f8f9fa;
+        padding: 15px;
+        border-radius: 5px;
+        border: 1px solid #dee2e6;
+    }
+
+    .action-buttons {
+        display: grid;
+        grid-template-columns: 1fr 2fr;
+        gap: 10px;
+        margin-top: 15px;
+    }
+
+    .quick-amounts {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 5px;
+        margin-top: 10px;
+    }
+
+    .store-required {
+        background-color: #fff3cd;
+        border: 1px solid #ffeaa7;
+        padding: 15px;
+        border-radius: 5px;
+        margin-bottom: 15px;
+    }
+
+    .loading {
+        text-align: center;
+        padding: 20px;
+        color: #6c757d;
+    }
+
+    @media (max-width: 768px) {
+        .container-fluid {
+            padding: 10px;
+        }
+
+        .product-grid {
+            grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+        }
+
+        .action-buttons {
+            grid-template-columns: 1fr;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- Quick Product Search -->
+<div class="pos-search">
+    <input type="text" id="product-search-input" placeholder="Search product by name, SKU, or barcode...">
+</div>
+
+<div id="product-results" class="product-results"></div>
+
+<div class="container-fluid">
+    <!-- CSRF Token -->
+    {% csrf_token %}
+
+    <!-- Header with Store Selector -->
+    <div class="row mb-4">
+        <div class="col-12 d-flex justify-content-between align-items-center">
+            <h2><i class="fas fa-cash-register"></i> Quick Sale</h2>
+            <select id="store-select" class="form-select" style="width: 250px;">
+                <option value="">Select Store</option>
+                {% for store in stores %}
+                <option value="{{ store.id }}">{{ store.name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+    </div>
+
+    <!-- Store Selection Warning -->
+    <div id="store-warning" class="store-required" style="display: none;">
+        <i class="fas fa-exclamation-triangle"></i>
+        <strong>Please select a store to start selling</strong>
+    </div>
+
+    <div class="row">
+        <!-- Products Section -->
+        <div class="col-lg-8 mb-4">
+            <div class="card">
+                <div class="card-header">
+                    <h5><i class="fas fa-box"></i> Products</h5>
+                    <div class="input-group mt-2">
+                        <input type="text" id="product-search" class="form-control" placeholder="Search products...">
+                        <button class="btn btn-outline-secondary" type="button" id="search-btn">
+                            <i class="fas fa-search"></i>
+                        </button>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <div id="product-grid" class="product-grid">
+                        <div class="text-center text-muted py-4">
+                            <i class="fas fa-store fa-3x mb-3"></i>
+                            <p>Select a store to view products</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Cart Section -->
+        <div class="col-lg-4">
+            <div class="cart-section">
+                <h5><i class="fas fa-shopping-cart"></i> Cart Items</h5>
+
+                <div id="cart-items">
+                    <div class="text-center text-muted py-4">
+                        <i class="fas fa-shopping-cart fa-3x mb-3"></i>
+                        <p>Cart is empty</p>
+                    </div>
+                </div>
+
+                <!-- Totals -->
+                <div class="total-section">
+                    <div class="d-flex justify-content-between mb-2">
+                        <strong>Subtotal:</strong>
+                        <span id="subtotal">UGX 0</span>
+                    </div>
+                    <div class="d-flex justify-content-between mb-2">
+                        <strong>Tax:</strong>
+                        <span id="tax-amount">UGX 0</span>
+                    </div>
+                    <hr>
+                    <div class="d-flex justify-content-between">
+                        <h5><strong>Total:</strong></h5>
+                        <h5 id="total-amount"><strong>UGX 0</strong></h5>
+                    </div>
+                </div>
+
+                <!-- Customer Selection -->
+                <div class="mt-3">
+                    <label class="form-label">Customer (Optional)</label>
+                    <select id="customer-select" class="form-select">
+                        <option value="">Walk-in Customer</option>
+                        {% for customer in customers %}
+                        <option value="{{ customer.id }}">{{ customer.name }} - {{ customer.phone|default:"No phone" }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <!-- Payment Method -->
+                <div class="mt-3">
+                    <label class="form-label">Payment Method</label>
+                    <select id="payment-method" class="form-select">
+                        <option value="CASH">Cash</option>
+                        <option value="CARD">Credit Card</option>
+                        <option value="MOBILE_MONEY">Mobile Money</option>
+                        <option value="BANK_TRANSFER">Bank Transfer</option>
+                    </select>
+                </div>
+
+                <!-- Cash Received Section -->
+                <div id="cash-section" class="mt-3">
+                    <label class="form-label">Cash Received</label>
+                    <input type="number" id="cash-received" class="form-control" placeholder="0.00" step="0.01" min="0">
+                    <small class="form-text">Change: <span id="change-amount" class="fw-bold">UGX 0</span></small>
+
+                    <!-- Quick Cash Buttons -->
+                    <div class="quick-amounts" id="quick-amounts">
+                        <button type="button" class="btn btn-sm btn-outline-primary quick-cash" data-amount="1000">1K</button>
+                        <button type="button" class="btn btn-sm btn-outline-primary quick-cash" data-amount="5000">5K</button>
+                        <button type="button" class="btn btn-sm btn-outline-primary quick-cash" data-amount="10000">10K</button>
+                        <button type="button" class="btn btn-sm btn-outline-primary quick-cash" data-amount="20000">20K</button>
+                    </div>
+                </div>
+
+                <!-- Notes -->
+                <div class="mt-3">
+                    <label class="form-label">Notes (Optional)</label>
+                    <textarea id="sale-notes" class="form-control" rows="2" placeholder="Sale notes..."></textarea>
+                </div>
+
+                <!-- Action Buttons -->
+                <div class="action-buttons">
+                    <button type="button" id="clear-cart" class="btn btn-outline-danger">
+                        <i class="fas fa-trash"></i> Clear
+                    </button>
+                    <button type="button" id="process-sale" class="btn btn-success" disabled>
+                        <i class="fas fa-shopping-cart"></i> Complete Sale
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Quantity Modal -->
+<div class="modal fade" id="quantity-modal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Add to Cart</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label class="form-label">Product:</label>
+                    <p class="fw-bold" id="modal-product-name"></p>
+                </div>
+                <div class="mb-3">
+                    <label for="modal-quantity" class="form-label">Quantity</label>
+                    <input type="number" class="form-control" id="modal-quantity" value="1" min="1" step="1">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Price:</label>
+                    <p id="modal-product-price" class="fw-bold text-success"></p>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Stock Available:</label>
+                    <p id="modal-product-stock" class="fw-bold"></p>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" id="add-to-cart">
+                    <i class="fas fa-plus"></i> Add to Cart
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Success Modal -->
+<div class="modal fade" id="success-modal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-success text-white">
+                <h5 class="modal-title">
+                    <i class="fas fa-check-circle"></i> Sale Completed Successfully
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body text-center">
+                <i class="fas fa-receipt fa-5x text-success mb-3"></i>
+                <h4>Thank you for your purchase!</h4>
+                <div class="mt-4">
+                    <p><strong>Invoice:</strong> <span id="success-invoice" class="text-primary"></span></p>
+                    <p><strong>Total:</strong> <span id="success-total" class="text-success fs-5"></span></p>
+                    <p><strong>Change:</strong> <span id="success-change" class="text-info fs-5"></span></p>
+                </div>
+            </div>
+            <div class="modal-footer justify-content-center">
+                <button type="button" class="btn btn-outline-secondary" id="new-sale">
+                    <i class="fas fa-plus"></i> New Sale
+                </button>
+                <button type="button" class="btn btn-primary" id="print-receipt">
+                    <i class="fas fa-print"></i> Print Receipt
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Loading Overlay -->
+<div id="loading-overlay" class="position-fixed top-0 start-0 w-100 h-100 d-flex justify-content-center align-items-center" style="background: rgba(0,0,0,0.5); z-index: 9999; display: none !important;">
+    <div class="text-center text-white">
+        <div class="spinner-border text-light" role="status">
+            <span class="visually-hidden">Loading...</span>
+        </div>
+        <p class="mt-2">Processing sale...</p>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    $(document).ready(function() {
+    // Global variables
+    let cart = [];
+    let currentStore = null;
+    let selectedProduct = null;
+    let isProcessing = false;
+
+    // Get CSRF token
+    function getCsrfToken() {
+        return $('[name=csrfmiddlewaretoken]').val() ||
+               document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') ||
+               $('input[name="csrfmiddlewaretoken"]').val();
+    }
+
+    // Get base URL for AJAX requests
+    function getBaseUrl() {
+        return window.location.origin;
+    }
+
+    // DOM elements cache
+    const elements = {
+        storeSelect: $('#store-select'),
+        storeWarning: $('#store-warning'),
+        productSearch: $('#product-search'),
+        searchBtn: $('#search-btn'),
+        productGrid: $('#product-grid'),
+        cartItems: $('#cart-items'),
+        subtotal: $('#subtotal'),
+        taxAmount: $('#tax-amount'),
+        totalAmount: $('#total-amount'),
+        customerSelect: $('#customer-select'),
+        paymentMethod: $('#payment-method'),
+        cashSection: $('#cash-section'),
+        cashReceived: $('#cash-received'),
+        changeAmount: $('#change-amount'),
+        quickAmounts: $('.quick-cash'),
+        saleNotes: $('#sale-notes'),
+        clearCart: $('#clear-cart'),
+        processSale: $('#process-sale'),
+        quantityModal: $('#quantity-modal'),
+        modalProductName: $('#modal-product-name'),
+        modalProductPrice: $('#modal-product-price'),
+        modalProductStock: $('#modal-product-stock'),
+        modalQuantity: $('#modal-quantity'),
+        addToCart: $('#add-to-cart'),
+        successModal: $('#success-modal'),
+        successInvoice: $('#success-invoice'),
+        successTotal: $('#success-total'),
+        successChange: $('#success-change'),
+        newSale: $('#new-sale'),
+        printReceipt: $('#print-receipt'),
+        productSearchInput: $('#product-search-input'),
+        productResults: $('#product-results'),
+        loadingOverlay: $('#loading-overlay')
+    };
+
+    // Event Listeners
+    elements.storeSelect.on('change', handleStoreChange);
+    elements.searchBtn.on('click', handleProductSearch);
+    elements.productSearch.on('keypress', function(e) {
+        if (e.which === 13) { // Enter key
+            handleProductSearch();
+        }
+    });
+    elements.paymentMethod.on('change', toggleCashSection);
+    elements.cashReceived.on('input', updateChange);
+    elements.quickAmounts.on('click', handleQuickAmount);
+    elements.clearCart.on('click', clearCart);
+    elements.processSale.on('click', processSale);
+    elements.addToCart.on('click', addProductToCart);
+    elements.newSale.on('click', resetAfterSale);
+    elements.printReceipt.on('click', printReceipt);
+    elements.productSearchInput.on('input', handleQuickSearch);
+
+    // Modal quantity input validation
+    elements.modalQuantity.on('input', function() {
+        const qty = parseInt($(this).val());
+        const maxStock = parseInt(elements.modalProductStock.text()) || 999;
+
+        if (qty > maxStock) {
+            $(this).val(maxStock);
+        } else if (qty < 1) {
+            $(this).val(1);
+        }
+    });
+
+    // Hide product results when clicking outside
+    $(document).on('click', function(e) {
+        if (!$(e.target).closest('#product-search-input, #product-results').length) {
+            elements.productResults.hide().empty();
+        }
+    });
+
+    // Initial setup
+    toggleCashSection();
+    updateCartDisplay();
+    showStoreWarning();
+
+    // --- Functions ---
+
+    function showStoreWarning() {
+        if (!currentStore) {
+            elements.storeWarning.show();
+            elements.productGrid.html(`
+                <div class="text-center text-muted py-4">
+                    <i class="fas fa-store fa-3x mb-3"></i>
+                    <p>Select a store to view products</p>
+                </div>
+            `);
+        } else {
+            elements.storeWarning.hide();
+        }
+    }
+
+    function handleStoreChange() {
+        const storeId = elements.storeSelect.val();
+        currentStore = storeId || null;
+
+        if (currentStore) {
+            elements.storeWarning.hide();
+            loadProducts();
+            loadCustomers();
+        } else {
+            showStoreWarning();
+            elements.customerSelect.find('option:not(:first)').remove();
+        }
+
+        toggleProcessButton();
+    }
+
+    function handleProductSearch() {
+        if (!currentStore) {
+            showNotification('Please select a store first', 'error');
+            elements.storeSelect.focus();
+            return;
+        }
+
+        const query = elements.productSearch.val().trim();
+        loadProducts(query);
+    }
+
+    function handleQuickSearch() {
+        const query = elements.productSearchInput.val().trim();
+
+        if (!query) {
+            elements.productResults.hide().empty();
+            return;
+        }
+
+        if (query.length < 2) {
+            return; // Wait for at least 2 characters
+        }
+
+        // Debounce search
+        clearTimeout(window.searchTimeout);
+        window.searchTimeout = setTimeout(() => {
+            performQuickSearch(query);
+        }, 300);
+    }
+
+    function performQuickSearch(query) {
+        // Build the URL
+        let url = `${getBaseUrl()}/sales/product-search/?q=${encodeURIComponent(query)}`;
+        if (currentStore) {
+            url += `&store_id=${currentStore}`;
+        }
+
+        console.log('Searching with URL:', url); // Debug log
+
+        $.ajax({
+            url: url,
+            method: 'GET',
+            headers: {
+                'X-CSRFToken': getCsrfToken()
+            },
+            timeout: 10000
+        })
+        .done(function(data) {
+            console.log('Search response:', data); // Debug log
+            if (data.success) {
+                renderQuickSearchResults(data.products || []);
+            } else {
+                elements.productResults.html(`<div class="no-results text-danger">${data.error || 'Search failed'}</div>`).show();
+            }
+        })
+        .fail(function(xhr, status, error) {
+            console.error('Search error:', xhr.responseText, status, error);
+            let errorMsg = 'Search failed. Please try again.';
+
+            if (xhr.responseJSON && xhr.responseJSON.error) {
+                errorMsg = xhr.responseJSON.error;
+            } else if (status === 'timeout') {
+                errorMsg = 'Search timed out. Please try again.';
+            }
+
+            elements.productResults.html(`<div class="no-results text-danger">${errorMsg}</div>`).show();
+        });
+    }
+
+    function renderQuickSearchResults(products) {
+        elements.productResults.empty();
+
+        if (!products.length) {
+            elements.productResults.html('<div class="no-results">No products found</div>').show();
+            return;
+        }
+
+        products.forEach(function(product) {
+            const stockInfo = product.stock > 0 ? `${product.stock} in stock` : 'Out of stock';
+            const stockClass = product.stock > 0 ? 'text-success' : 'text-danger';
+
+            const item = $(`
+                <div class="product-item ${product.stock <= 0 ? 'text-muted' : ''}">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <strong>${escapeHtml(product.name)}</strong>
+                            <br>
+                            <small class="text-muted">${escapeHtml(product.sku || 'No SKU')}</small>
+                        </div>
+                        <div class="text-end">
+                            <strong class="text-success">UGX ${formatCurrency(product.price)}</strong>
+                            <br>
+                            <small class="${stockClass}">${stockInfo}</small>
+                        </div>
+                    </div>
+                </div>
+            `);
+
+            if (product.stock > 0) {
+                item.on('click', function() {
+                    selectProductForCart(product);
+                    elements.productResults.hide().empty();
+                    elements.productSearchInput.val('');
+                });
+            }
+
+            elements.productResults.append(item);
+        });
+
+        elements.productResults.show();
+    }
+
+    function loadProducts(query = '') {
+        if (!currentStore) {
+            showStoreWarning();
+            return;
+        }
+
+        // Build the URL
+        let url = `${getBaseUrl()}/sales/product-search/?store_id=${currentStore}`;
+        if (query) {
+            url += `&q=${encodeURIComponent(query)}`;
+        }
+
+        console.log('Loading products with URL:', url); // Debug log
+
+        elements.productGrid.html('<div class="loading"><i class="fas fa-spinner fa-spin"></i> Loading products...</div>');
+
+        $.ajax({
+            url: url,
+            method: 'GET',
+            headers: {
+                'X-CSRFToken': getCsrfToken()
+            },
+            timeout: 15000
+        })
+        .done(function(data) {
+            console.log('Products response:', data); // Debug log
+            if (data.success) {
+                displayProducts(data.products || []);
+            } else {
+                elements.productGrid.html(`<div class="text-center text-danger py-4"><i class="fas fa-exclamation-triangle fa-3x mb-3"></i><p>${data.error || 'Failed to load products'}</p></div>`);
+            }
+        })
+        .fail(function(xhr, status, error) {
+            console.error('Products load error:', xhr.responseText, status, error);
+            let errorMsg = 'Failed to load products';
+
+            if (xhr.responseJSON && xhr.responseJSON.error) {
+                errorMsg = xhr.responseJSON.error;
+            } else if (status === 'timeout') {
+                errorMsg = 'Request timed out. Please try again.';
+            }
+
+            elements.productGrid.html(`<div class="text-center text-danger py-4"><i class="fas fa-exclamation-triangle fa-3x mb-3"></i><p>${errorMsg}</p></div>`);
+        });
+    }
+
+    function displayProducts(products) {
+        elements.productGrid.empty();
+
+        if (products.length === 0) {
+            elements.productGrid.html(`
+                <div class="text-center text-muted py-4">
+                    <i class="fas fa-search fa-3x mb-3"></i>
+                    <p>No products found</p>
+                </div>
+            `);
+            return;
+        }
+
+        products.forEach(function(product) {
+            const isOutOfStock = product.stock <= 0;
+            const stockClass = isOutOfStock ? 'text-danger' : 'text-success';
+
+            const card = $(`
+                <div class="product-card ${isOutOfStock ? 'out-of-stock' : ''}">
+                    <h6 class="mb-2">${escapeHtml(product.name)}</h6>
+                    <p class="small text-muted mb-1">${escapeHtml(product.sku || 'No SKU')}</p>
+                    <p class="fw-bold text-success mb-2">UGX ${formatCurrency(product.price)}</p>
+                    <small class="${stockClass}">
+                        <i class="fas fa-box"></i> ${product.stock || 0} in stock
+                    </small>
+                </div>
+            `);
+
+            if (!isOutOfStock) {
+                card.on('click', function() {
+                    selectProductForCart(product);
+                });
+            } else {
+                card.on('click', function() {
+                    showNotification('This product is out of stock', 'error');
+                });
+            }
+
+            elements.productGrid.append(card);
+        });
+    }
+
+    function selectProductForCart(product) {
+        selectedProduct = {
+            id: product.id,
+            name: product.name,
+            selling_price: product.price,
+            stock_level: product.stock,
+            tax_rate: product.tax_rate || 18
+        };
+
+        elements.modalProductName.text(product.name);
+        elements.modalProductPrice.text(`UGX ${formatCurrency(product.price)}`);
+        elements.modalProductStock.text(product.stock || 0);
+        elements.modalQuantity.val('1').attr('max', product.stock || 999);
+        elements.quantityModal.modal('show');
+    }
+
+    function loadCustomers() {
+        if (!currentStore) return;
+
+        const url = `${getBaseUrl()}/sales/customer-search/?store_id=${currentStore}&limit=100`;
+
+        $.ajax({
+            url: url,
+            method: 'GET',
+            headers: {
+                'X-CSRFToken': getCsrfToken()
+            }
+        })
+        .done(function(data) {
+            if (data.success) {
+                const select = elements.customerSelect;
+                select.find('option:not(:first)').remove();
+
+                const customers = data.customers || [];
+                customers.forEach(function(customer) {
+                    select.append(`
+                        <option value="${customer.id}">
+                            ${escapeHtml(customer.name)} - ${escapeHtml(customer.phone || 'No phone')}
+                        </option>
+                    `);
+                });
+            }
+        })
+        .fail(function(xhr, status, error) {
+            console.error("Failed to load customers:", xhr.responseText, status, error);
+        });
+    }
+
+    function addProductToCart() {
+        if (!selectedProduct || isProcessing) return;
+
+        const qty = parseInt(elements.modalQuantity.val());
+
+        if (qty < 1) {
+            showNotification('Please enter a valid quantity', 'error');
+            return;
+        }
+
+        if (selectedProduct.stock_level !== null && qty > selectedProduct.stock_level) {
+            showNotification(`Only ${selectedProduct.stock_level} items available in stock`, 'error');
+            return;
+        }
+
+        // Check if product already exists in cart
+        const existingItemIndex = cart.findIndex(item => item.product_id === selectedProduct.id);
+
+        if (existingItemIndex >= 0) {
+            // Update existing item
+            const existingItem = cart[existingItemIndex];
+            const newQuantity = existingItem.quantity + qty;
+
+            if (selectedProduct.stock_level !== null && newQuantity > selectedProduct.stock_level) {
+                showNotification(`Only ${selectedProduct.stock_level} items available in stock`, 'error');
+                return;
+            }
+
+            existingItem.quantity = newQuantity;
+        } else {
+            // Add new item
+            cart.push({
+                product_id: selectedProduct.id,
+                name: selectedProduct.name,
+                quantity: qty,
+                unit_price: parseFloat(selectedProduct.selling_price),
+                tax_rate: selectedProduct.tax_rate || 18
+            });
+        }
+
+        updateCartDisplay();
+        elements.quantityModal.modal('hide');
+        showNotification('Product added to cart!', 'success');
+    }
+
+    function updateCartDisplay() {
+        elements.cartItems.empty();
+
+        if (cart.length === 0) {
+            elements.cartItems.html(`
+                <div class="text-center text-muted py-4">
+                    <i class="fas fa-shopping-cart fa-3x mb-3"></i>
+                    <p>Cart is empty</p>
+                </div>
+            `);
+            updateTotals();
+            toggleProcessButton();
+            return;
+        }
+
+        cart.forEach(function(item, index) {
+            const lineTotal = item.quantity * item.unit_price;
+            const itemElement = $(`
+                <div class="cart-item">
+                    <div class="d-flex justify-content-between align-items-start">
+                        <div class="flex-grow-1">
+                            <h6 class="mb-1">${escapeHtml(item.name)}</h6>
+                            <div class="d-flex align-items-center gap-2">
+                                <button class="btn btn-sm btn-outline-secondary decrease-qty" data-index="${index}">
+                                    <i class="fas fa-minus"></i>
+                                </button>
+                                <span class="fw-bold">${item.quantity}</span>
+                                <button class="btn btn-sm btn-outline-secondary increase-qty" data-index="${index}">
+                                    <i class="fas fa-plus"></i>
+                                </button>
+                                <small class="text-muted">× UGX ${formatCurrency(item.unit_price)}</small>
+                            </div>
+                        </div>
+                        <div class="text-end">
+                            <div class="fw-bold text-success">UGX ${formatCurrency(lineTotal)}</div>
+                            <button class="btn btn-sm btn-outline-danger remove-item" data-index="${index}">
+                                <i class="fas fa-trash"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `);
+
+            // Event handlers for cart item actions
+            itemElement.find('.increase-qty').on('click', function() {
+                increaseQuantity(index);
+            });
+
+            itemElement.find('.decrease-qty').on('click', function() {
+                decreaseQuantity(index);
+            });
+
+            itemElement.find('.remove-item').on('click', function() {
+                removeFromCart(index);
+            });
+
+            elements.cartItems.append(itemElement);
+        });
+
+        updateTotals();
+        toggleProcessButton();
+    }
+
+    function increaseQuantity(index) {
+        if (cart[index]) {
+            cart[index].quantity += 1;
+            updateCartDisplay();
+        }
+    }
+
+    function decreaseQuantity(index) {
+        if (cart[index] && cart[index].quantity > 1) {
+            cart[index].quantity -= 1;
+            updateCartDisplay();
+        }
+    }
+
+    function removeFromCart(index) {
+        if (cart[index]) {
+            cart.splice(index, 1);
+            updateCartDisplay();
+            showNotification('Item removed from cart', 'info');
+        }
+    }
+
+    function updateTotals() {
+        let subtotal = 0;
+        let tax = 0;
+
+        cart.forEach(function(item) {
+            const qty = parseFloat(item.quantity) || 0;
+            const price = parseFloat(item.unit_price) || 0;
+            const taxRate = parseFloat(item.tax_rate) || 18;
+
+            const itemSubtotal = qty * price;
+            const itemTax = itemSubtotal * taxRate / 100;
+
+            subtotal += itemSubtotal;
+            tax += itemTax;
+        });
+
+        const total = subtotal + tax;
+
+        elements.subtotal.text(`UGX ${formatCurrency(subtotal)}`);
+        elements.taxAmount.text(`UGX ${formatCurrency(tax)}`);
+        elements.totalAmount.text(`UGX ${formatCurrency(total)}`);
+
+        updateChange();
+    }
+
+    function toggleCashSection() {
+        const isCash = elements.paymentMethod.val() === 'CASH';
+        elements.cashSection.toggle(isCash);
+
+        if (!isCash) {
+            elements.cashReceived.val('');
+            updateChange();
+        }
+    }
+
+    function updateChange() {
+        const totalText = elements.totalAmount.text().replace(/[^\d.-]/g, '');
+        const total = parseFloat(totalText) || 0;
+        const cash = parseFloat(elements.cashReceived.val()) || 0;
+        const change = cash - total;
+
+        elements.changeAmount.text(`UGX ${formatCurrency(change)}`);
+        elements.changeAmount.removeClass('text-danger text-success text-warning');
+
+        if (change < 0) {
+            elements.changeAmount.addClass('text-danger');
+        } else if (change > 0) {
+            elements.changeAmount.addClass('text-success');
+        } else {
+            elements.changeAmount.addClass('text-warning');
+        }
+    }
+
+    function handleQuickAmount() {
+        const amount = $(this).data('amount');
+        elements.cashReceived.val(amount);
+        updateChange();
+    }
+
+    function clearCart() {
+        if (cart.length === 0) return;
+
+        if (confirm('Are you sure you want to clear the cart?')) {
+            cart = [];
+            updateCartDisplay();
+            showNotification('Cart cleared', 'info');
+        }
+    }
+
+    function toggleProcessButton() {
+        const canProcess = cart.length > 0 && currentStore && !isProcessing;
+        elements.processSale.prop('disabled', !canProcess);
+    }
+
+    function processSale() {
+        if (cart.length === 0 || !currentStore || isProcessing) {
+            if (!currentStore) {
+                showNotification('Please select a store first', 'error');
+                elements.storeSelect.focus();
+            } else if (cart.length === 0) {
+                showNotification('Please add products to cart', 'error');
+            }
+            return;
+        }
+
+        const paymentMethod = elements.paymentMethod.val();
+        let cashReceived = 0;
+
+        // Validate cash payment
+        if (paymentMethod === 'CASH') {
+            cashReceived = parseFloat(elements.cashReceived.val()) || 0;
+            const totalText = elements.totalAmount.text().replace(/[^\d.-]/g, '');
+            const total = parseFloat(totalText) || 0;
+
+            if (cashReceived < total) {
+                showNotification('Cash received is less than the total amount', 'error');
+                elements.cashReceived.focus();
+                return;
+            }
+        }
+
+        // Prepare sale data
+        const saleData = {
+            store_id: currentStore,
+            products_data: cart,
+            customer_id: elements.customerSelect.val() || null,
+            payment_method: paymentMethod,
+            cash_received: cashReceived,
+            notes: elements.saleNotes.val().trim()
+        };
+
+        // Start processing
+        isProcessing = true;
+        elements.processSale.prop('disabled', true).html('<i class="fas fa-spinner fa-spin"></i> Processing...');
+        elements.loadingOverlay.show();
+
+        // Send request
+        $.ajax({
+            url: window.location.pathname,
+            method: 'POST',
+            contentType: 'application/json',
+            headers: {
+                'X-CSRFToken': getCsrfToken(),
+                'Content-Type': 'application/json'
+            },
+            data: JSON.stringify(saleData),
+            timeout: 30000,
+            success: function(response) {
+                if (response.success) {
+                    handleSaleSuccess(response);
+                } else {
+                    handleSaleError(response.error || 'Failed to process sale');
+                }
+            },
+            error: function(xhr, status, error) {
+                let errorMsg = 'Error processing sale';
+
+                if (xhr.responseJSON && xhr.responseJSON.error) {
+                    errorMsg += ': ' + xhr.responseJSON.error;
+                } else if (status === 'timeout') {
+                    errorMsg += ': Request timed out. Please try again.';
+                } else {
+                    errorMsg += ': ' + (error || xhr.statusText || 'Unknown error');
+                }
+
+                handleSaleError(errorMsg);
+            },
+            complete: function() {
+                isProcessing = false;
+                elements.processSale.prop('disabled', false).html('<i class="fas fa-shopping-cart"></i> Complete Sale');
+                elements.loadingOverlay.hide();
+            }
+        });
+    }
+
+    function handleSaleSuccess(response) {
+        // Update success modal
+        elements.successInvoice.text(response.invoice_number);
+        elements.successTotal.text('UGX ' + formatCurrency(response.total_amount));
+        elements.successChange.text('UGX ' + formatCurrency(response.change_due));
+        elements.printReceipt.data('sale-id', response.sale_id);
+
+        // Show success modal
+        elements.successModal.modal('show');
+
+        // Reset cart and form
+        cart = [];
+        updateCartDisplay();
+        elements.cashReceived.val('');
+        elements.saleNotes.val('');
+        elements.customerSelect.val('');
+
+        showNotification('Sale completed successfully!', 'success');
+    }
+
+    function handleSaleError(errorMessage) {
+        showNotification(errorMessage, 'error');
+        console.error('Sale error:', errorMessage);
+    }
+
+    function resetAfterSale() {
+        cart = [];
+        elements.saleNotes.val('');
+        elements.cashReceived.val('');
+        elements.customerSelect.val('');
+        updateCartDisplay();
+        elements.successModal.modal('hide');
+        elements.productSearchInput.focus();
+    }
+
+    function printReceipt() {
+        const saleId = elements.printReceipt.data('sale-id');
+        if (saleId) {
+            const printUrl = `${getBaseUrl()}/sales/print-receipt/${saleId}/`;
+            window.open(printUrl, '_blank', 'width=800,height=600');
+        }
+    }
+
+    // Utility functions
+    function formatCurrency(amount) {
+        return parseFloat(amount || 0).toLocaleString('en-UG', {
+            minimumFractionDigits: 0,
+            maximumFractionDigits: 2
+        });
+    }
+
+    function escapeHtml(text) {
+        if (!text) return '';
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+
+    function showNotification(message, type = 'info') {
+        const alertClass = type === 'success' ? 'alert-success' :
+                          type === 'error' ? 'alert-danger' : 'alert-info';
+
+        const iconClass = type === 'success' ? 'check' :
+                         type === 'error' ? 'exclamation-triangle' : 'info';
+
+        const notification = $(`
+            <div class="alert ${alertClass} alert-dismissible fade show position-fixed"
+                 style="top: 20px; right: 20px; z-index: 9999; min-width: 300px;">
+                <i class="fas fa-${iconClass}-circle"></i>
+                ${escapeHtml(message)}
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            </div>
+        `);
+
+        $('body').append(notification);
+
+        // Auto-dismiss after 4 seconds
+        setTimeout(() => {
+            notification.alert('close');
+        }, 4000);
+    }
+
+    // Keyboard shortcuts
+    $(document).on('keydown', function(e) {
+        // Ctrl/Cmd + Enter to process sale
+        if ((e.ctrlKey || e.metaKey) && e.which === 13) {
+            if (!elements.processSale.prop('disabled')) {
+                processSale();
+            }
+        }
+
+        // Escape to close modals or clear search
+        if (e.which === 27) {
+            elements.productResults.hide().empty();
+            elements.productSearchInput.val('');
+        }
+    });
+
+    // Initialize focus
+    elements.storeSelect.focus();
+
+    // Debug: Log when script loads
+    console.log('Quick Sale script loaded successfully');
+});
+</script>
+{% endblock %}

@@ -1,0 +1,216 @@
+<!-- templates/stores/device_list.html -->
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Device Management | Prime Book{% endblock %}
+
+{% block page_header %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h1 class="h3 mb-1"><i class="bi bi-device-ssd me-2"></i>Device Management</h1>
+        <p class="text-muted mb-0">Manage all store devices and equipment</p>
+    </div>
+    <div>
+        {% if perms.stores.add_deviceoperatorlog %}
+        <a href="{% url 'stores:device_create' %}" class="btn btn-primary">
+            <i class="bi bi-plus-circle me-1"></i>Add New Device
+        </a>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<!-- Statistics Cards -->
+<div class="row mb-4">
+    <div class="col-md-3">
+        <div class="card bg-primary text-white">
+            <div class="card-body">
+                <div class="d-flex align-items-center">
+                    <div class="flex-grow-1">
+                        <h5 class="card-title">{{ stats.total_devices }}</h5>
+                        <p class="card-text mb-0">Total Devices</p>
+                    </div>
+                    <i class="bi bi-device-ssd display-6 opacity-50"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card bg-success text-white">
+            <div class="card-body">
+                <div class="d-flex align-items-center">
+                    <div class="flex-grow-1">
+                        <h5 class="card-title">{{ stats.active_devices }}</h5>
+                        <p class="card-text mb-0">Active Devices</p>
+                    </div>
+                    <i class="bi bi-check-circle display-6 opacity-50"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card bg-info text-white">
+            <div class="card-body">
+                <div class="d-flex align-items-center">
+                    <div class="flex-grow-1">
+                        <h5 class="card-title">{{ stats.pos_devices }}</h5>
+                        <p class="card-text mb-0">POS Devices</p>
+                    </div>
+                    <i class="bi bi-cash-coin display-6 opacity-50"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card bg-warning text-white">
+            <div class="card-body">
+                <div class="d-flex align-items-center">
+                    <div class="flex-grow-1">
+                        <h5 class="card-title">{{ stats.needs_maintenance }}</h5>
+                        <p class="card-text mb-0">Need Maintenance</p>
+                    </div>
+                    <i class="bi bi-tools display-6 opacity-50"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <h5 class="mb-0">All Devices</h5>
+    </div>
+    <div class="card-body">
+        {% if devices %}
+        <div class="table-responsive">
+            <table class="table table-hover">
+                <thead>
+                    <tr>
+                        <th>Device Name</th>
+                        <th>Device Number</th>
+                        <th>Type</th>
+                        <th>Store</th>
+                        <th>Serial Number</th>
+                        <th>Status</th>
+                        <th>Last Maintenance</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for device in devices %}
+                    <tr>
+                        <td>
+                            <strong>{{ device.name }}</strong>
+                            {% if device.notes %}
+                            <i class="bi bi-info-circle text-muted" title="{{ device.notes }}"></i>
+                            {% endif %}
+                        </td>
+                        <td>{{ device.device_number|default:"-" }}</td>
+                        <td>
+                            <span class="badge bg-secondary">{{ device.get_device_type_display }}</span>
+                        </td>
+                        <td>
+                            <a href="{% url 'stores:store_detail' device.store.pk %}">
+                                {{ device.store.name }}
+                            </a>
+                        </td>
+                        <td>{{ device.serial_number|default:"-" }}</td>
+                        <td>
+                            <span class="badge bg-{% if device.is_active %}success{% else %}secondary{% endif %}">
+                                {% if device.is_active %}Active{% else %}Inactive{% endif %}
+                            </span>
+                        </td>
+                        <td>
+                            {% if device.last_maintenance %}
+                            {{ device.last_maintenance|date:"M d, Y" }}
+                            {% else %}
+                            <span class="text-muted">Never</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <div class="btn-group">
+                                {% if perms.stores.change_deviceoperatorlog %}
+                                <a href="{% url 'stores:device_edit' device.pk %}" class="btn btn-sm btn-outline-secondary">
+                                    <i class="bi bi-pencil"></i>
+                                </a>
+                                {% endif %}
+                                <button class="btn btn-sm btn-outline-primary"
+                                        onclick="updateMaintenance({{ device.id }})"
+                                        title="Update Maintenance">
+                                    <i class="bi bi-tools"></i>
+                                </button>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Pagination -->
+        {% if is_paginated %}
+        <nav aria-label="Device pagination">
+            <ul class="pagination justify-content-center">
+                {% if page_obj.has_previous %}
+                <li class="page-item">
+                    <a class="page-link" href="?page={{ page_obj.previous_page_number }}">Previous</a>
+                </li>
+                {% endif %}
+
+                {% for num in page_obj.paginator.page_range %}
+                <li class="page-item {% if page_obj.number == num %}active{% endif %}">
+                    <a class="page-link" href="?page={{ num }}">{{ num }}</a>
+                </li>
+                {% endfor %}
+
+                {% if page_obj.has_next %}
+                <li class="page-item">
+                    <a class="page-link" href="?page={{ page_obj.next_page_number }}">Next</a>
+                </li>
+                {% endif %}
+            </ul>
+        </nav>
+        {% endif %}
+
+        {% else %}
+        <div class="text-center py-5">
+            <i class="bi bi-device-ssd display-1 text-muted"></i>
+            <h4 class="mt-3">No devices found</h4>
+            <p class="text-muted">Get started by adding your first device.</p>
+            <a href="{% url 'stores:device_create' %}" class="btn btn-primary">
+                <i class="bi bi-plus-circle me-1"></i>Add First Device
+            </a>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function updateMaintenance(deviceId) {
+    if (confirm('Update maintenance date to today?')) {
+        fetch(`/stores/devices/${deviceId}/maintenance/`, {
+            method: 'POST',
+            headers: {
+                'X-CSRFToken': '{{ csrf_token }}',
+                'Content-Type': 'application/json',
+            },
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === 'success') {
+                location.reload();
+            } else {
+                alert('Error updating maintenance date.');
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('Error updating maintenance date.');
+        });
+    }
+}
+</script>
+{% endblock %}

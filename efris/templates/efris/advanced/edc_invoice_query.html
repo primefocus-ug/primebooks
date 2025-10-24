@@ -1,0 +1,175 @@
+{% extends "efris/base.html" %}
+{% load static %}
+
+{% block efris_content %}
+<div class="search-box">
+    <h5><i class="fas fa-search"></i> Search EDC Invoices</h5>
+
+    <form method="get" class="mt-3">
+        <input type="hidden" name="search" value="1">
+
+        <div class="row">
+            <div class="col-md-4">
+                <div class="mb-3">
+                    <label for="fuel_type" class="form-label">Fuel Type</label>
+                    <input type="text" class="form-control" id="fuel_type"
+                           name="fuel_type" value="{{ request.GET.fuel_type }}">
+                </div>
+            </div>
+
+            <div class="col-md-4">
+                <div class="mb-3">
+                    <label for="invoice_no" class="form-label">Invoice Number</label>
+                    <input type="text" class="form-control" id="invoice_no"
+                           name="invoice_no" value="{{ request.GET.invoice_no }}">
+                </div>
+            </div>
+
+            <div class="col-md-4">
+                <div class="mb-3">
+                    <label for="buyer_name" class="form-label">Buyer Name</label>
+                    <input type="text" class="form-control" id="buyer_name"
+                           name="buyer_name" value="{{ request.GET.buyer_name }}">
+                </div>
+            </div>
+        </div>
+
+        <div class="row">
+            <div class="col-md-4">
+                <div class="mb-3">
+                    <label for="start_date" class="form-label">Start Date</label>
+                    <input type="date" class="form-control" id="start_date"
+                           name="start_date" value="{{ request.GET.start_date }}">
+                </div>
+            </div>
+
+            <div class="col-md-4">
+                <div class="mb-3">
+                    <label for="end_date" class="form-label">End Date</label>
+                    <input type="date" class="form-control" id="end_date"
+                           name="end_date" value="{{ request.GET.end_date }}">
+                </div>
+            </div>
+
+            <div class="col-md-4">
+                <div class="mb-3">
+                    <label for="query_type" class="form-label">Query Type</label>
+                    <select class="form-select" id="query_type" name="query_type">
+                        <option value="1" {% if request.GET.query_type == '1' %}selected{% endif %}>
+                            All Unmodified
+                        </option>
+                        <option value="2" {% if request.GET.query_type == '2' %}selected{% endif %}>
+                            Modified Successfully
+                        </option>
+                        <option value="3" {% if request.GET.query_type == '3' %}selected{% endif %}>
+                            All Invoices
+                        </option>
+                    </select>
+                </div>
+            </div>
+        </div>
+
+        <button type="submit" class="btn btn-primary">
+            <i class="fas fa-search"></i> Search
+        </button>
+        <button type="button" class="btn btn-secondary" onclick="window.location.href='{% url 'efris:edc_invoice_inquiry' %}'">
+            <i class="fas fa-redo"></i> Clear
+        </button>
+    </form>
+</div>
+
+{% if invoices %}
+<div class="efris-card">
+    <div class="card-body">
+        <h5 class="card-title">
+            <i class="fas fa-file-invoice"></i> EDC Invoices
+            <span class="badge bg-primary">{{ pagination.total_size }} total</span>
+        </h5>
+
+        <div class="table-responsive mt-3">
+            <table class="table table-hover">
+                <thead>
+                    <tr>
+                        <th>Invoice No</th>
+                        <th>Fuel Type</th>
+                        <th>Buyer</th>
+                        <th>Amount</th>
+                        <th>Date</th>
+                        <th>Pump/Nozzle</th>
+                        <th>Status</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for invoice in invoices %}
+                    <tr>
+                        <td>
+                            <code>{{ invoice.invoiceNo }}</code>
+                        </td>
+                        <td>{{ invoice.fuelType|default:"-" }}</td>
+                        <td>
+                            <small>{{ invoice.buyerLegalName|truncatewords:3 }}</small>
+                        </td>
+                        <td>
+                            <strong>{{ invoice.currency }} {{ invoice.grossAmount|floatformat:2 }}</strong>
+                        </td>
+                        <td>
+                            <small>{{ invoice.issuedDate }}</small>
+                        </td>
+                        <td>
+                            <small>
+                                Pump: {{ invoice.pumpNo|default:"-" }}<br>
+                                Nozzle: {{ invoice.nozzleNo|default:"-" }}
+                            </small>
+                        </td>
+                        <td>
+                            {% if invoice.isInvalid == '1' %}
+                                <span class="badge bg-danger">Obsolete</span>
+                            {% else %}
+                                <span class="badge bg-success">Valid</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <a href="{% url 'efris:invoice_remain_details' invoice.invoiceNo %}"
+                               class="btn btn-sm btn-info" title="View Details">
+                                <i class="fas fa-eye"></i>
+                            </a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Pagination -->
+        {% if pagination.page_count > 1 %}
+        <nav aria-label="Invoice pagination">
+            <ul class="pagination justify-content-center">
+                {% if pagination.page_no > 1 %}
+                <li class="page-item">
+                    <a class="page-link" href="?search=1&page={{ pagination.page_no|add:"-1" }}&{{ request.GET.urlencode }}">
+                        Previous
+                    </a>
+                </li>
+                {% endif %}
+
+                <li class="page-item active">
+                    <span class="page-link">
+                        Page {{ pagination.page_no }} of {{ pagination.page_count }}
+                    </span>
+                </li>
+
+                {% if pagination.page_no < pagination.page_count %}
+                <li class="page-item">
+                    <a class="page-link" href="?search=1&page={{ pagination.page_no|add:"1" }}&{{ request.GET.urlencode }}">
+                        Next
+                    </a>
+                </li>
+                {% endif %}
+            </ul>
+        </nav>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
+{% endblock %}

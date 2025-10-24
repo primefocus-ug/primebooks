@@ -1,0 +1,478 @@
+{% extends "base.html" %}
+{% load static i18n %}
+
+{% block title %}{% trans "EFRIS Product Operations" %} | {{ company.trading_name|default:company.name }}{% endblock %}
+
+{% block breadcrumb_items %}
+<li class="breadcrumb-item"><a href="{% url 'user_dashboard' %}">{% trans "Dashboard" %}</a></li>
+<li class="breadcrumb-item"><a href="{% url 'efris:dashboard' %}">{% trans "EFRIS" %}</a></li>
+<li class="breadcrumb-item active">{% trans "Product Operations" %}</li>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row mb-4">
+        <div class="col">
+            <h1 class="h3 mb-0">{% trans "EFRIS Product Operations" %}</h1>
+            <p class="text-muted">{% trans "Manage product upload and synchronization with EFRIS" %}</p>
+        </div>
+        <div class="col-auto">
+            <div class="btn-group">
+                <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#bulkUploadModal">
+                    <i class="bi bi-cloud-upload me-2"></i>{% trans "Bulk Upload" %}
+                </button>
+                <button type="button" class="btn btn-outline-primary" id="refreshProducts">
+                    <i class="bi bi-arrow-clockwise me-2"></i>{% trans "Refresh" %}
+                </button>
+                <button type="button" class="btn btn-outline-info" id="goodsInquiryBtn">
+                    <i class="bi bi-search me-2"></i>{% trans "Goods Inquiry" %}
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Statistics Cards -->
+    <div class="row mb-4">
+        <div class="col-md-3">
+            <div class="card bg-warning text-white">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between">
+                        <div>
+                            <h4 class="mb-0" id="pendingCount">{{ pending_products|length }}</h4>
+                            <p class="mb-0">{% trans "Pending Upload" %}</p>
+                        </div>
+                        <div class="align-self-center">
+                            <i class="bi bi-box-seam fs-1 opacity-50"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card bg-success text-white">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between">
+                        <div>
+                            <h4 class="mb-0" id="uploadedCount">0</h4>
+                            <p class="mb-0">{% trans "Uploaded Today" %}</p>
+                        </div>
+                        <div class="align-self-center">
+                            <i class="bi bi-cloud-check fs-1 opacity-50"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card bg-info text-white">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between">
+                        <div>
+                            <h4 class="mb-0" id="totalCount">0</h4>
+                            <p class="mb-0">{% trans "Total Products" %}</p>
+                        </div>
+                        <div class="align-self-center">
+                            <i class="bi bi-collection fs-1 opacity-50"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card bg-danger text-white">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between">
+                        <div>
+                            <h4 class="mb-0" id="errorCount">0</h4>
+                            <p class="mb-0">{% trans "Upload Errors" %}</p>
+                        </div>
+                        <div class="align-self-center">
+                            <i class="bi bi-exclamation-octagon fs-1 opacity-50"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Pending Products Table -->
+    <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <h5 class="card-title mb-0">{% trans "Products Pending EFRIS Upload" %}</h5>
+            <div class="form-check form-switch">
+                <input class="form-check-input" type="checkbox" id="showInactiveProducts">
+                <label class="form-check-label" for="showInactiveProducts">{% trans "Show Inactive" %}</label>
+            </div>
+        </div>
+        <div class="card-body">
+            {% if pending_products %}
+            <div class="table-responsive">
+                <table class="table table-hover" id="pendingProductsTable">
+                    <thead>
+                        <tr>
+                            <th width="50">
+                                <input type="checkbox" id="selectAllProducts" class="form-check-input">
+                            </th>
+                            <th>{% trans "Product Code" %}</th>
+                            <th>{% trans "Product Name" %}</th>
+                            <th>{% trans "Category" %}</th>
+                            <th>{% trans "Price" %}</th>
+                            <th>{% trans "Stock" %}</th>
+                            <th>{% trans "Status" %}</th>
+                            <th>{% trans "Last Updated" %}</th>
+                            <th>{% trans "Actions" %}</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for product in pending_products %}
+                        <tr data-product-id="{{ product.id }}" class="{% if not product.is_active %}table-secondary{% endif %}">
+                            <td>
+                                <input type="checkbox" class="form-check-input product-checkbox"
+                                       value="{{ product.id }}" {% if not product.is_active %}disabled{% endif %}>
+                            </td>
+                            <td>
+                                <code>{{ product.sku|default:product.id }}</code>
+                            </td>
+                            <td>
+                                <strong>{{ product.name }}</strong>
+                                {% if product.description %}
+                                <br><small class="text-muted">{{ product.description|truncatewords:5 }}</small>
+                                {% endif %}
+                            </td>
+                            <td>{{ product.category.name|default:"-" }}</td>
+                            <td>
+                                <span class="fw-bold">{{ product.selling_price|floatformat:2 }}</span>
+                            </td>
+                            <td>
+                                {% with stock=product.get_stock_count %}
+                                <span class="badge {% if stock > 10 %}bg-success{% elif stock > 0 %}bg-warning{% else %}bg-danger{% endif %}">
+                                    {{ stock|default:0 }}
+                                </span>
+                                {% endwith %}
+                            </td>
+                            <td>
+                                {% if product.is_active %}
+                                <span class="badge bg-success">{% trans "Active" %}</span>
+                                {% else %}
+                                <span class="badge bg-secondary">{% trans "Inactive" %}</span>
+                                {% endif %}
+                            </td>
+                            <td>{{ product.updated_at|date:"M d, Y" }}</td>
+                            <td>
+                                <div class="btn-group btn-group-sm">
+                                    <button class="btn btn-outline-primary upload-single"
+                                            data-product-id="{{ product.id }}"
+                                            {% if not product.is_active %}disabled{% endif %}
+                                            title="{% trans 'Upload to EFRIS' %}">
+                                        <i class="bi bi-cloud-upload"></i>
+                                    </button>
+                                    <button class="btn btn-outline-info view-product"
+                                            data-product-id="{{ product.id }}"
+                                            title="{% trans 'View Details' %}">
+                                        <i class="bi bi-eye"></i>
+                                    </button>
+                                    <button class="btn btn-outline-warning edit-product"
+                                            data-product-id="{{ product.id }}"
+                                            title="{% trans 'Edit Product' %}">
+                                        <i class="bi bi-pencil"></i>
+                                    </button>
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="text-center py-5">
+                <i class="bi bi-check-circle text-success fs-1"></i>
+                <h5 class="mt-3">{% trans "All Products Synced" %}</h5>
+                <p class="text-muted">{% trans "All active products have been uploaded to EFRIS." %}</p>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Quick Actions -->
+    <div class="row mt-4">
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header">
+                    <h6 class="card-title mb-0">{% trans "Quick Upload" %}</h6>
+                </div>
+                <div class="card-body">
+                    <p class="text-muted small">{% trans "Upload products by category or batch" %}</p>
+                    <div class="d-grid gap-2">
+                        <button class="btn btn-outline-primary" id="uploadActiveProducts">
+                            <i class="bi bi-play-circle me-2"></i>{% trans "Upload All Active Products" %}
+                        </button>
+                        <button class="btn btn-outline-secondary" id="uploadLowStock">
+                            <i class="bi bi-arrow-up-circle me-2"></i>{% trans "Upload Low Stock Items" %}
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header">
+                    <h6 class="card-title mb-0">{% trans "EFRIS Goods Inquiry" %}</h6>
+                </div>
+                <div class="card-body">
+                    <form id="goodsInquiryForm">
+                        <div class="mb-3">
+                            <label for="goodsName" class="form-label">{% trans "Goods Name" %}</label>
+                            <input type="text" class="form-control" id="goodsName" placeholder="{% trans 'Enter product name' %}">
+                        </div>
+                        <div class="mb-3">
+                            <label for="goodsCode" class="form-label">{% trans "Goods Code" %}</label>
+                            <input type="text" class="form-control" id="goodsCode" placeholder="{% trans 'Enter EFRIS code' %}">
+                        </div>
+                        <button type="submit" class="btn btn-primary w-100">
+                            <i class="bi bi-search me-2"></i>{% trans "Search EFRIS" %}
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Bulk Upload Modal -->
+<div class="modal fade" id="bulkUploadModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">{% trans "Bulk Upload Products" %}</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p>{% trans "You are about to upload" %} <span id="selectedProductsCount">0</span> {% trans "products to EFRIS." %}</p>
+                <div class="alert alert-info">
+                    <i class="bi bi-info-circle me-2"></i>
+                    {% trans "This will synchronize product information with the EFRIS system." %}
+                </div>
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" id="includePricing">
+                    <label class="form-check-label" for="includePricing">
+                        {% trans "Include pricing information" %}
+                    </label>
+                </div>
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" id="includeStock" checked>
+                    <label class="form-check-label" for="includeStock">
+                        {% trans "Include stock levels" %}
+                    </label>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">{% trans "Cancel" %}</button>
+                <button type="button" class="btn btn-primary" id="confirmBulkUpload">
+                    <i class="bi bi-cloud-upload me-2"></i>{% trans "Start Upload" %}
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Goods Inquiry Results Modal -->
+<div class="modal fade" id="goodsInquiryModal" tabindex="-1">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">{% trans "EFRIS Goods Inquiry Results" %}</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div id="goodsInquiryResults">
+                    <!-- Results will be loaded here -->
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Select all functionality
+    const selectAll = document.getElementById('selectAllProducts');
+    const checkboxes = document.querySelectorAll('.product-checkbox:not(:disabled)');
+
+    selectAll?.addEventListener('change', function() {
+        checkboxes.forEach(checkbox => {
+            checkbox.checked = selectAll.checked;
+        });
+        updateSelectedCount();
+    });
+
+    // Update selected count
+    function updateSelectedCount() {
+        const selected = document.querySelectorAll('.product-checkbox:checked');
+        document.getElementById('selectedProductsCount').textContent = selected.length;
+    }
+
+    checkboxes.forEach(checkbox => {
+        checkbox.addEventListener('change', updateSelectedCount);
+    });
+
+    // Show/hide inactive products
+    document.getElementById('showInactiveProducts')?.addEventListener('change', function() {
+        const inactiveRows = document.querySelectorAll('tr.table-secondary');
+        inactiveRows.forEach(row => {
+            row.style.display = this.checked ? '' : 'none';
+        });
+    });
+
+    // Single product upload
+    document.querySelectorAll('.upload-single').forEach(button => {
+        button.addEventListener('click', function() {
+            const productId = this.dataset.productId;
+            uploadProduct(productId);
+        });
+    });
+
+    // Bulk upload
+    document.getElementById('confirmBulkUpload')?.addEventListener('click', function() {
+        const selectedProducts = Array.from(document.querySelectorAll('.product-checkbox:checked'))
+            .map(checkbox => checkbox.value);
+
+        if (selectedProducts.length === 0) {
+            showAlert('Please select at least one product', 'warning');
+            return;
+        }
+
+        const includePricing = document.getElementById('includePricing').checked;
+        const includeStock = document.getElementById('includeStock').checked;
+
+        bulkUploadProducts(selectedProducts, includePricing, includeStock);
+    });
+
+    // Quick upload actions
+    document.getElementById('uploadActiveProducts')?.addEventListener('click', function() {
+        const activeProducts = Array.from(document.querySelectorAll('.product-checkbox:not(:disabled)'))
+            .map(checkbox => checkbox.value);
+
+        if (activeProducts.length === 0) {
+            showAlert('No active products found', 'warning');
+            return;
+        }
+
+        bulkUploadProducts(activeProducts, true, true);
+    });
+
+    // Goods inquiry
+    document.getElementById('goodsInquiryBtn')?.addEventListener('click', function() {
+        document.getElementById('goodsInquiryForm').dispatchEvent(new Event('submit'));
+    });
+
+    document.getElementById('goodsInquiryForm')?.addEventListener('submit', function(e) {
+        e.preventDefault();
+
+        const goodsName = document.getElementById('goodsName').value;
+        const goodsCode = document.getElementById('goodsCode').value;
+
+        searchGoodsInquiry(goodsName, goodsCode);
+    });
+
+    // Product upload functions
+    function uploadProduct(productId) {
+        const button = document.querySelector(`.upload-single[data-product-id="${productId}"]`);
+        const originalHtml = button.innerHTML;
+
+        button.innerHTML = '<i class="bi bi-hourglass-split"></i>';
+        button.disabled = true;
+
+        fetch('{% url "efris:upload_products" %}', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+                'X-CSRFToken': window.csrfToken
+            },
+            body: `product_ids[]=${productId}`
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                showAlert(data.message, 'success');
+                // Remove the row from table or update status
+                const row = document.querySelector(`tr[data-product-id="${productId}"]`);
+                if (row) {
+                    row.classList.add('table-success');
+                    button.remove();
+                }
+            } else {
+                showAlert(data.message, 'error');
+                button.innerHTML = originalHtml;
+                button.disabled = false;
+            }
+        })
+        .catch(error => {
+            showAlert('Upload failed: ' + error, 'error');
+            button.innerHTML = originalHtml;
+            button.disabled = false;
+        });
+    }
+
+    function bulkUploadProducts(productIds, includePricing, includeStock) {
+        const modal = bootstrap.Modal.getInstance(document.getElementById('bulkUploadModal'));
+        const button = document.getElementById('confirmBulkUpload');
+        const originalHtml = button.innerHTML;
+
+        button.innerHTML = '<i class="bi bi-hourglass-split me-2"></i>Uploading...';
+        button.disabled = true;
+
+        const formData = new FormData();
+        productIds.forEach(id => formData.append('product_ids[]', id));
+        formData.append('include_pricing', includePricing);
+        formData.append('include_stock', includeStock);
+
+        fetch('{% url "efris:upload_products" %}', {
+            method: 'POST',
+            headers: {
+                'X-CSRFToken': window.csrfToken
+            },
+            body: formData
+        })
+        .then(response => response.json())
+        .then(data => {
+            modal.hide();
+            if (data.success) {
+                showAlert(data.message, 'success');
+                setTimeout(() => window.location.reload(), 2000);
+            } else {
+                showAlert(data.message, 'warning');
+                button.innerHTML = originalHtml;
+                button.disabled = false;
+            }
+        })
+        .catch(error => {
+            modal.hide();
+            showAlert('Bulk upload failed: ' + error, 'error');
+            button.innerHTML = originalHtml;
+            button.disabled = false;
+        });
+    }
+
+    function searchGoodsInquiry(goodsName, goodsCode) {
+        const modal = new bootstrap.Modal(document.getElementById('goodsInquiryModal'));
+        const results = document.getElementById('goodsInquiryResults');
+
+        results.innerHTML = '<div class="text-center py-4"><i class="bi bi-hourglass-split"></i> Searching EFRIS...</div>';
+        modal.show();
+
+        // Simulate API call
+        setTimeout(() => {
+            results.innerHTML = `
+                <div class="alert alert-info">
+                    <i class="bi bi-info-circle me-2"></i>
+                    Search results for: ${goodsName || goodsCode || 'All goods'}
+                </div>
+                <p class="text-muted">Goods inquiry functionality would be implemented here.</p>
+            `;
+        }, 1500);
+    }
+});
+</script>
+{% endblock %}

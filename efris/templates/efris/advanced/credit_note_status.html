@@ -1,0 +1,97 @@
+{% extends "efris/base.html" %}
+{% load static %}
+
+{% block efris_content %}
+<div class="efris-card">
+    <div class="card-body">
+        <h5 class="card-title">
+            <i class="fas fa-info-circle"></i> Credit Note Application Status
+        </h5>
+
+        {% if application %}
+        <div class="row mt-4">
+            <div class="col-md-6">
+                <h6 class="text-muted">Application Information</h6>
+                <dl class="row">
+                    <dt class="col-sm-5">Reference No:</dt>
+                    <dd class="col-sm-7"><code>{{ application.referenceNo }}</code></dd>
+
+                    <dt class="col-sm-5">Original Invoice:</dt>
+                    <dd class="col-sm-7">
+                        <a href="{% url 'efris:invoice_remain_details' application.oriInvoiceNo %}">
+                            {{ application.oriInvoiceNo }}
+                        </a>
+                    </dd>
+
+                    <dt class="col-sm-5">Application Date:</dt>
+                    <dd class="col-sm-7">{{ application.applicationTime }}</dd>
+
+                    <dt class="col-sm-5">Status:</dt>
+                    <dd class="col-sm-7">
+                        {% if application.approveStatus == '101' %}
+                            <span class="badge bg-success">Approved</span>
+                        {% elif application.approveStatus == '102' %}
+                            <span class="badge bg-warning">Pending</span>
+                        {% elif application.approveStatus == '103' %}
+                            <span class="badge bg-danger">Rejected</span>
+                        {% elif application.approveStatus == '104' %}
+                            <span class="badge bg-secondary">Voided</span>
+                        {% else %}
+                            <span class="badge bg-secondary">{{ application.approveStatus }}</span>
+                        {% endif %}
+                    </dd>
+                </dl>
+            </div>
+
+            <div class="col-md-6">
+                <h6 class="text-muted">Financial Details</h6>
+                <dl class="row">
+                    <dt class="col-sm-5">Currency:</dt>
+                    <dd class="col-sm-7">{{ application.currency }}</dd>
+
+                    <dt class="col-sm-5">Net Amount:</dt>
+                    <dd class="col-sm-7">{{ application.netAmount }}</dd>
+
+                    <dt class="col-sm-5">Tax Amount:</dt>
+                    <dd class="col-sm-7">{{ application.taxAmount }}</dd>
+
+                    <dt class="col-sm-5">Gross Amount:</dt>
+                    <dd class="col-sm-7">
+                        <strong class="text-danger">{{ application.grossAmount }}</strong>
+                    </dd>
+                </dl>
+            </div>
+        </div>
+
+        {% if application.reason %}
+        <div class="alert alert-info mt-3">
+            <strong>Reason:</strong> {{ application.reason }}
+        </div>
+        {% endif %}
+
+        {% if application.approveStatus == '103' and application.rejectReason %}
+        <div class="alert alert-danger mt-3">
+            <strong>Rejection Reason:</strong> {{ application.rejectReason }}
+        </div>
+        {% endif %}
+
+        <div class="mt-4">
+            <a href="{% url 'efris:credit_note_applications' %}" class="btn btn-primary">
+                <i class="fas fa-arrow-left"></i> Back to Applications
+            </a>
+
+            {% if application.approveStatus == '102' %}
+            <a href="{% url 'efris:credit_note_applications' %}" class="btn btn-danger">
+                <i class="fas fa-ban"></i> Void Application
+            </a>
+            {% endif %}
+        </div>
+
+        {% else %}
+        <div class="alert alert-warning">
+            <i class="fas fa-exclamation-triangle"></i> Application not found.
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

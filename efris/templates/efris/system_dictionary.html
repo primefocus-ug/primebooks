@@ -1,0 +1,542 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}EFRIS System Dictionary{% endblock %}
+
+{% block breadcrumb_items %}
+<li class="breadcrumb-item"><a href="{% url 'user_dashboard' %}">Home</a></li>
+<li class="breadcrumb-item"><a href="{% url 'efris:dashboard' %}">EFRIS</a></li>
+<li class="breadcrumb-item active">System Dictionary</li>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- Page Header -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h1 class="h2 mb-1">EFRIS System Dictionary</h1>
+            <p class="text-muted mb-0">System parameters from EFRIS (T115)</p>
+        </div>
+        <div class="d-flex gap-2">
+            <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#updateModal">
+                <i class="bi bi-arrow-repeat"></i> Update Dictionary
+            </button>
+            <a href="{% url 'efris:system_dictionary_export' %}" class="btn btn-outline-secondary">
+                <i class="bi bi-download"></i> Export JSON
+            </a>
+            <a href="{% url 'efris:dashboard' %}" class="btn btn-outline-secondary">
+                <i class="bi bi-arrow-left"></i> Back
+            </a>
+        </div>
+    </div>
+
+    <!-- Statistics Cards -->
+    <div class="row mb-4">
+        <div class="col-md-3">
+            <div class="card text-center">
+                <div class="card-body">
+                    <i class="bi bi-list-ul text-primary" style="font-size: 2.5rem;"></i>
+                    <h3 class="mt-3 mb-1">{{ stats.total_categories }}</h3>
+                    <p class="text-muted mb-0">Total Categories</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card text-center">
+                <div class="card-body">
+                    <i class="bi bi-database text-success" style="font-size: 2.5rem;"></i>
+                    <h3 class="mt-3 mb-1">
+                        {% if stats.is_cached %}
+                        <i class="bi bi-check-circle text-success"></i>
+                        {% else %}
+                        <i class="bi bi-x-circle text-danger"></i>
+                        {% endif %}
+                    </h3>
+                    <p class="text-muted mb-0">Cache Status</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card text-center">
+                <div class="card-body">
+                    <i class="bi bi-tag text-info" style="font-size: 2.5rem;"></i>
+                    <h3 class="mt-3 mb-1">{{ stats.version|default:"N/A" }}</h3>
+                    <p class="text-muted mb-0">Dictionary Version</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card text-center">
+                <div class="card-body">
+                    <i class="bi bi-clock-history text-warning" style="font-size: 2.5rem;"></i>
+                    <h3 class="mt-3 mb-1">
+                        {% if stats.last_updated %}
+                        {{ stats.last_updated|date:"M d" }}
+                        {% else %}
+                        Never
+                        {% endif %}
+                    </h3>
+                    <p class="text-muted mb-0">Last Updated</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Search Bar -->
+    <div class="card mb-4">
+        <div class="card-body">
+            <form method="GET" action="{% url 'efris:system_dictionary' %}" class="row g-3">
+                <div class="col-md-10">
+                    <input type="text" class="form-control" name="search"
+                           placeholder="Search dictionary (name, code, value)..."
+                           value="{{ search_term }}">
+                </div>
+                <div class="col-md-2">
+                    <button type="submit" class="btn btn-primary w-100">
+                        <i class="bi bi-search"></i> Search
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Search Results -->
+    {% if search_results %}
+    <div class="card mb-4">
+        <div class="card-header bg-success text-white">
+            <h5 class="mb-0"><i class="bi bi-search me-2"></i>Search Results for "{{ search_term }}"</h5>
+        </div>
+        <div class="card-body">
+            {% for category, items in search_results.items %}
+            <h6 class="text-primary">{{ category }}</h6>
+            <div class="table-responsive mb-3">
+                <table class="table table-sm table-hover">
+                    <thead>
+                        <tr>
+                            <th>Code/Value</th>
+                            <th>Name</th>
+                            <th>Details</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for item in items %}
+                        <tr>
+                            <td><code>{{ item.value|default:item.code }}</code></td>
+                            <td>{{ item.name }}</td>
+                            <td>
+                                {% if item.description %}
+                                <small class="text-muted">{{ item.description|truncatewords:10 }}</small>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% elif search_term %}
+    <div class="alert alert-info">
+        <i class="bi bi-info-circle me-2"></i>
+        No results found for "{{ search_term }}"
+    </div>
+    {% endif %}
+
+    <!-- Dictionary Categories Tabs -->
+    <ul class="nav nav-tabs mb-4" id="dictionaryTab" role="tablist">
+        <li class="nav-item" role="presentation">
+            <button class="nav-link active" data-bs-toggle="tab" data-bs-target="#payment" type="button">
+                <i class="bi bi-credit-card me-1"></i> Payment
+            </button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" data-bs-toggle="tab" data-bs-target="#currency" type="button">
+                <i class="bi bi-currency-exchange me-1"></i> Currency
+            </button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" data-bs-toggle="tab" data-bs-target="#units" type="button">
+                <i class="bi bi-rulers me-1"></i> Units
+            </button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" data-bs-toggle="tab" data-bs-target="#sectors" type="button">
+                <i class="bi bi-building me-1"></i> Sectors
+            </button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" data-bs-toggle="tab" data-bs-target="#settings" type="button">
+                <i class="bi bi-gear me-1"></i> Settings
+            </button>
+        </li>
+    </ul>
+
+    <!-- Tab Content -->
+    <div class="tab-content" id="dictionaryTabContent">
+        <!-- Payment Methods Tab -->
+        <div class="tab-pane fade show active" id="payment" role="tabpanel">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="bi bi-credit-card me-2"></i>Payment Methods (payWay)</h5>
+                </div>
+                <div class="card-body">
+                    {% if payment_methods %}
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Code</th>
+                                    <th>Name</th>
+                                    <th>Description</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for method in payment_methods %}
+                                <tr>
+                                    <td><code>{{ method.value }}</code></td>
+                                    <td><strong>{{ method.name }}</strong></td>
+                                    <td>{{ method.description|default:"-" }}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% else %}
+                    <p class="text-muted">No payment methods found. Please update the dictionary.</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Currency Tab -->
+        <div class="tab-pane fade" id="currency" role="tabpanel">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="bi bi-currency-exchange me-2"></i>Currency Types</h5>
+                </div>
+                <div class="card-body">
+                    {% if currencies %}
+                    <div class="row">
+                        {% for currency in currencies %}
+                        <div class="col-md-4 mb-3">
+                            <div class="card border">
+                                <div class="card-body">
+                                    <h5 class="card-title">{{ currency.name }}</h5>
+                                    <p class="card-text">
+                                        <strong>Code:</strong> <code>{{ currency.value }}</code>
+                                    </p>
+                                    {% if currency.description %}
+                                    <small class="text-muted">{{ currency.description }}</small>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    {% else %}
+                    <p class="text-muted">No currencies found.</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Units Tab -->
+        <div class="tab-pane fade" id="units" role="tabpanel">
+            <div class="row">
+                <!-- Rate Units -->
+                <div class="col-md-6 mb-4">
+                    <div class="card h-100">
+                        <div class="card-header">
+                            <h5 class="mb-0">Rate Units</h5>
+                        </div>
+                        <div class="card-body">
+                            {% if rate_units %}
+                            <ul class="list-group">
+                                {% for unit in rate_units %}
+                                <li class="list-group-item d-flex justify-content-between align-items-center">
+                                    {{ unit.name }}
+                                    <span class="badge bg-primary"><code>{{ unit.value }}</code></span>
+                                </li>
+                                {% endfor %}
+                            </ul>
+                            {% else %}
+                            <p class="text-muted">No rate units found.</p>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Export Rate Units -->
+                <div class="col-md-6 mb-4">
+                    <div class="card h-100">
+                        <div class="card-header">
+                            <h5 class="mb-0">Export Rate Units</h5>
+                        </div>
+                        <div class="card-body">
+                            {% if export_rate_units %}
+                            <div class="table-responsive">
+                                <table class="table table-sm">
+                                    <thead>
+                                        <tr>
+                                            <th>Name</th>
+                                            <th>Period</th>
+                                            <th>Status</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% for unit in export_rate_units %}
+                                        <tr>
+                                            <td>{{ unit.name }}</td>
+                                            <td>
+                                                <small>{{ unit.validPeriodFrom|default:"-" }} to {{ unit.periodTo|default:"-" }}</small>
+                                            </td>
+                                            <td>
+                                                {% if unit.status == '101' %}
+                                                <span class="badge bg-success">Active</span>
+                                                {% else %}
+                                                <span class="badge bg-secondary">Inactive</span>
+                                                {% endif %}
+                                            </td>
+                                        </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
+                            {% else %}
+                            <p class="text-muted">No export rate units found.</p>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Delivery Terms -->
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0">Delivery Terms (Incoterms)</h5>
+                </div>
+                <div class="card-body">
+                    {% if delivery_terms %}
+                    <div class="row">
+                        {% for term in delivery_terms %}
+                        <div class="col-md-3 mb-3">
+                            <div class="card border">
+                                <div class="card-body text-center">
+                                    <h6><code>{{ term.value }}</code></h6>
+                                    <p class="mb-0 small">{{ term.name }}</p>
+                                </div>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    {% else %}
+                    <p class="text-muted">No delivery terms found.</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Sectors Tab -->
+        <div class="tab-pane fade" id="sectors" role="tabpanel">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0"><i class="bi bi-building me-2"></i>Business Sectors</h5>
+                    <span class="badge bg-primary">{{ sectors|length }} sectors</span>
+                </div>
+                <div class="card-body">
+                    {% if sectors %}
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Code</th>
+                                    <th>Name</th>
+                                    <th>Parent Class</th>
+                                    <th>Required Fill</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for sector in sectors %}
+                                <tr>
+                                    <td><code>{{ sector.code }}</code></td>
+                                    <td>{{ sector.name }}</td>
+                                    <td>{{ sector.parentClass|default:"-" }}</td>
+                                    <td>
+                                        {% if sector.requiredFill == '1' %}
+                                        <span class="badge bg-warning">Yes</span>
+                                        {% else %}
+                                        <span class="badge bg-secondary">No</span>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% else %}
+                    <p class="text-muted">No sectors found.</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Settings Tab -->
+        <div class="tab-pane fade" id="settings" role="tabpanel">
+            <div class="row">
+                <!-- System Formats -->
+                <div class="col-md-6 mb-4">
+                    <div class="card h-100">
+                        <div class="card-header bg-info text-white">
+                            <h5 class="mb-0"><i class="bi bi-calendar3 me-2"></i>System Formats</h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="mb-3">
+                                <label class="fw-bold text-muted d-block mb-1">Date Format</label>
+                                <p class="mb-0"><code class="fs-5">{{ date_format }}</code></p>
+                                <small class="text-muted">Example: 31/12/2025</small>
+                            </div>
+                            <hr>
+                            <div class="mb-3">
+                                <label class="fw-bold text-muted d-block mb-1">Time Format</label>
+                                <p class="mb-0"><code class="fs-5">{{ time_format }}</code></p>
+                                <small class="text-muted">Example: 31/12/2025 23:59:59</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Credit Note Limits -->
+                <div class="col-md-6 mb-4">
+                    <div class="card h-100">
+                        <div class="card-header bg-warning text-dark">
+                            <h5 class="mb-0"><i class="bi bi-exclamation-triangle me-2"></i>Credit Note Limits</h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="mb-3">
+                                <label class="fw-bold text-muted d-block mb-1">Maximum Days</label>
+                                <h3 class="mb-0 text-primary">{{ credit_note_limits.maximum_days }} days</h3>
+                                <small class="text-muted">Maximum days for credit note invoicing</small>
+                            </div>
+                            <hr>
+                            <div class="mb-3">
+                                <label class="fw-bold text-muted d-block mb-1">Value Percent Limit</label>
+                                <h3 class="mb-0 text-warning">{{ credit_note_limits.percent_limit|floatformat:1 }}%</h3>
+                                <small class="text-muted">Maximum percentage of original invoice value</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Country Codes -->
+                <div class="col-md-12">
+                    <div class="card">
+                        <div class="card-header">
+                            <h5 class="mb-0"><i class="bi bi-globe me-2"></i>Country Codes</h5>
+                        </div>
+                        <div class="card-body">
+                            {% if country_codes %}
+                            <div class="table-responsive">
+                                <table class="table table-hover">
+                                    <thead>
+                                        <tr>
+                                            <th>Code</th>
+                                            <th>Name</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% for country in country_codes %}
+                                        <tr>
+                                            <td><code>{{ country.value }}</code></td>
+                                            <td>{{ country.name }}</td>
+                                        </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
+                            {% else %}
+                            <p class="text-muted">No country codes found.</p>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Update Dictionary Modal -->
+<div class="modal fade" id="updateModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title"><i class="bi bi-arrow-repeat me-2"></i>Update System Dictionary</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="POST" action="{% url 'efris:system_dictionary' %}" id="updateForm">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="update">
+
+                <div class="modal-body">
+                    <p>This will fetch the latest system dictionary from EFRIS.</p>
+
+                    <div class="alert alert-info">
+                        <i class="bi bi-info-circle me-2"></i>
+                        <strong>Current Version:</strong> {{ stats.version|default:"Unknown" }}<br>
+                        <strong>Last Updated:</strong>
+                        {% if stats.last_updated %}
+                        {{ stats.last_updated|date:"M d, Y H:i" }}
+                        {% else %}
+                        Never
+                        {% endif %}
+                    </div>
+
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" id="force_update" name="force_update">
+                        <label class="form-check-label" for="force_update">
+                            Force update even if current version is cached
+                        </label>
+                    </div>
+                </div>
+
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary" id="updateBtn">
+                        <i class="bi bi-arrow-repeat"></i> Update Dictionary
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const updateForm = document.getElementById('updateForm');
+    const updateBtn = document.getElementById('updateBtn');
+
+    updateForm.addEventListener('submit', function() {
+        updateBtn.disabled = true;
+        updateBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Updating...';
+    });
+});
+</script>
+
+<style>
+.nav-tabs .nav-link {
+    color: var(--text-secondary);
+}
+
+.nav-tabs .nav-link.active {
+    font-weight: 600;
+}
+
+.card {
+    transition: all 0.3s ease;
+}
+
+.card:hover {
+    transform: translateY(-2px);
+}
+</style>
+{% endblock %}

@@ -1,0 +1,337 @@
+{% load widget_tweaks %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Add Product</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
+    <link href="https://cdn.jsdelivr.net/npm/select2-bootstrap-5-theme@1.3.0/dist/select2-bootstrap-5-theme.min.css" rel="stylesheet" />
+    <style>
+        body {
+            padding: 0;
+            margin: 0;
+            background: #fff;
+        }
+        .modal-content-wrapper {
+            padding: 20px;
+        }
+        .form-section {
+            margin-bottom: 20px;
+            padding: 15px;
+            border: 1px solid #e9ecef;
+            border-radius: 8px;
+        }
+        .form-section h6 {
+            margin-bottom: 15px;
+            color: #495057;
+            font-weight: 600;
+        }
+        .required-asterisk {
+            color: #dc3545;
+        }
+        #loadingOverlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            z-index: 9999;
+            justify-content: center;
+            align-items: center;
+        }
+    </style>
+</head>
+<body>
+    <div id="loadingOverlay">
+        <div class="spinner-border text-light" role="status">
+            <span class="visually-hidden">Loading...</span>
+        </div>
+    </div>
+
+    <div class="modal-content-wrapper">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h4 class="mb-0"><i class="fas fa-box me-2"></i>Add New Product</h4>
+            <button type="button" class="btn-close" onclick="closeModal()"></button>
+        </div>
+
+        <form id="productForm" enctype="multipart/form-data">
+            {% csrf_token %}
+
+            <div id="formErrors" class="alert alert-danger d-none"></div>
+
+            <!-- Basic Information -->
+            <div class="form-section">
+                <h6><i class="fas fa-info-circle me-2"></i>Basic Information</h6>
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <label for="{{ form.name.id_for_label }}" class="form-label">
+                            Product Name <span class="required-asterisk">*</span>
+                        </label>
+                        {% render_field form.name class="form-control" %}
+                    </div>
+
+                    <div class="col-md-6">
+                        <label for="{{ form.category.id_for_label }}" class="form-label">
+                            Category <span class="required-asterisk">*</span>
+                        </label>
+                        {% render_field form.category class="form-select category-select" %}
+                        <button type="button" class="btn btn-sm btn-outline-primary mt-2" onclick="openCategoryModal()">
+                            <i class="fas fa-plus me-1"></i>Add Category
+                        </button>
+                    </div>
+
+                    <div class="col-md-4">
+                        <label for="{{ form.sku.id_for_label }}" class="form-label">SKU</label>
+                        {% render_field form.sku class="form-control" %}
+                        <button type="button" class="btn btn-sm btn-outline-secondary mt-1" onclick="generateSKU()">
+                            <i class="fas fa-sync me-1"></i>Generate
+                        </button>
+                    </div>
+
+                    <div class="col-md-4">
+                        <label for="{{ form.barcode.id_for_label }}" class="form-label">Barcode</label>
+                        {% render_field form.barcode class="form-control" %}
+                        <button type="button" class="btn btn-sm btn-outline-secondary mt-1" onclick="generateBarcode()">
+                            <i class="fas fa-sync me-1"></i>Generate
+                        </button>
+                    </div>
+
+                    <div class="col-md-4">
+                        <label for="{{ form.unit_of_measure.id_for_label }}" class="form-label">
+                            Unit of Measure <span class="required-asterisk">*</span>
+                        </label>
+                        {% render_field form.unit_of_measure class="form-select" %}
+                    </div>
+
+                    <div class="col-12">
+                        <label for="{{ form.description.id_for_label }}" class="form-label">Description</label>
+                        {% render_field form.description class="form-control" %}
+                    </div>
+                </div>
+            </div>
+
+            <!-- Pricing Information -->
+            <div class="form-section">
+                <h6><i class="fas fa-dollar-sign me-2"></i>Pricing & Tax</h6>
+                <div class="row g-3">
+                    <div class="col-md-4">
+                        <label for="{{ form.cost_price.id_for_label }}" class="form-label">
+                            Cost Price <span class="required-asterisk">*</span>
+                        </label>
+                        {% render_field form.cost_price class="form-control" %}
+                    </div>
+
+                    <div class="col-md-4">
+                        <label for="{{ form.selling_price.id_for_label }}" class="form-label">
+                            Selling Price <span class="required-asterisk">*</span>
+                        </label>
+                        {% render_field form.selling_price class="form-control" %}
+                    </div>
+
+                    <div class="col-md-4">
+                        <label for="{{ form.discount_percentage.id_for_label }}" class="form-label">Discount %</label>
+                        {% render_field form.discount_percentage class="form-control" %}
+                    </div>
+
+                    <div class="col-md-6">
+                        <label for="{{ form.tax_rate.id_for_label }}" class="form-label">
+                            Tax Rate <span class="required-asterisk">*</span>
+                        </label>
+                        {% render_field form.tax_rate class="form-select" %}
+                    </div>
+
+                    <div class="col-md-6">
+                        <label for="{{ form.excise_duty_rate.id_for_label }}" class="form-label">Excise Duty Rate %</label>
+                        {% render_field form.excise_duty_rate class="form-control" %}
+                    </div>
+                </div>
+            </div>
+
+            <!-- Inventory & Supplier -->
+            <div class="form-section">
+                <h6><i class="fas fa-warehouse me-2"></i>Inventory & Supplier</h6>
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <label for="{{ form.supplier.id_for_label }}" class="form-label">Supplier</label>
+                        {% render_field form.supplier class="form-select supplier-select" %}
+                    </div>
+
+                    <div class="col-md-6">
+                        <label for="{{ form.min_stock_level.id_for_label }}" class="form-label">Minimum Stock Level</label>
+                        {% render_field form.min_stock_level class="form-control" %}
+                    </div>
+                </div>
+            </div>
+
+            <!-- EFRIS Configuration -->
+            <div class="form-section">
+                <h6><i class="fas fa-sync me-2 text-primary"></i>EFRIS Configuration</h6>
+                <div class="row g-3">
+                    <div class="col-md-8">
+                        <label for="{{ form.efris_excise_duty_code.id_for_label }}" class="form-label">EFRIS Excise Duty Code</label>
+                        {% render_field form.efris_excise_duty_code class="form-control" %}
+                        <small class="text-muted">Optional - Only for products subject to excise duty</small>
+                    </div>
+
+                    <div class="col-md-4">
+                        <label class="form-label d-block">&nbsp;</label>
+                        <div class="form-check form-switch">
+                            {% render_field form.efris_auto_sync_enabled class="form-check-input" %}
+                            <label class="form-check-label" for="{{ form.efris_auto_sync_enabled.id_for_label }}">
+                                Auto Sync to EFRIS
+                            </label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Additional Options -->
+            <div class="form-section">
+                <h6><i class="fas fa-cog me-2"></i>Additional Options</h6>
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <label for="{{ form.image.id_for_label }}" class="form-label">Product Image</label>
+                        {% render_field form.image class="form-control" %}
+                    </div>
+
+                    <div class="col-md-6">
+                        <label class="form-label d-block">&nbsp;</label>
+                        <div class="form-check form-switch">
+                            {% render_field form.is_active class="form-check-input" %}
+                            <label class="form-check-label" for="{{ form.is_active.id_for_label }}">
+                                Active
+                            </label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Form Actions -->
+            <div class="d-flex justify-content-end gap-2 mt-4">
+                <button type="button" class="btn btn-secondary" onclick="closeModal()">
+                    <i class="fas fa-times me-2"></i>Cancel
+                </button>
+                <button type="submit" class="btn btn-primary">
+                    <i class="fas fa-save me-2"></i>Save Product
+                </button>
+            </div>
+        </form>
+    </div>
+
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+    <script>
+        $(document).ready(function() {
+            // Initialize Select2 for dropdowns
+            $('.category-select, .supplier-select').select2({
+                theme: 'bootstrap-5',
+                width: '100%',
+                dropdownParent: $('body')
+            });
+
+            // Handle form submission
+            $('#productForm').on('submit', function(e) {
+                e.preventDefault();
+
+                const formData = new FormData(this);
+                $('#loadingOverlay').css('display', 'flex');
+                $('#formErrors').addClass('d-none').html('');
+
+                $.ajax({
+                    url: '{% url "inventory:product_create_ajax" %}',
+                    type: 'POST',
+                    data: formData,
+                    processData: false,
+                    contentType: false,
+                    success: function(response) {
+                        $('#loadingOverlay').hide();
+                        if (response.success) {
+                            // Send data back to parent window
+                            if (window.opener && !window.opener.closed) {
+                                window.opener.postMessage({
+                                    type: 'productCreated',
+                                    product: response.product
+                                }, '*');
+                            }
+                            window.close();
+                        } else {
+                            showErrors(response.errors);
+                        }
+                    },
+                    error: function(xhr) {
+                        $('#loadingOverlay').hide();
+                        let errors = 'An error occurred. Please try again.';
+                        if (xhr.responseJSON && xhr.responseJSON.errors) {
+                            errors = formatErrors(xhr.responseJSON.errors);
+                        }
+                        showErrors(errors);
+                    }
+                });
+            });
+        });
+
+        function showErrors(errors) {
+            let errorHtml = '<ul class="mb-0">';
+            if (typeof errors === 'object') {
+                for (let field in errors) {
+                    if (Array.isArray(errors[field])) {
+                        errors[field].forEach(err => {
+                            errorHtml += `<li><strong>${field}:</strong> ${err}</li>`;
+                        });
+                    } else {
+                        errorHtml += `<li><strong>${field}:</strong> ${errors[field]}</li>`;
+                    }
+                }
+            } else {
+                errorHtml += `<li>${errors}</li>`;
+            }
+            errorHtml += '</ul>';
+            $('#formErrors').removeClass('d-none').html(errorHtml);
+            $('html, body').scrollTop(0);
+        }
+
+        function formatErrors(errors) {
+            return errors;
+        }
+
+        function closeModal() {
+            window.close();
+        }
+
+        function generateSKU() {
+            const sku = 'SKU-' + Date.now();
+            $('input[name="sku"]').val(sku);
+        }
+
+        function generateBarcode() {
+            const barcode = Math.floor(1000000000000 + Math.random() * 9000000000000);
+            $('input[name="barcode"]').val(barcode);
+        }
+
+        function openCategoryModal() {
+            // Open category creation in a nested popup
+            const categoryWindow = window.open(
+                '{% url "inventory:category_create_ajax" %}',
+                'AddCategory',
+                'width=800,height=600,scrollbars=yes,resizable=yes'
+            );
+        }
+
+        // Listen for category creation from nested popup
+        window.addEventListener('message', function(event) {
+            if (event.data.type === 'categoryCreated') {
+                const category = event.data.category;
+                // Add new option to category select
+                const newOption = new Option(category.name, category.id, true, true);
+                $('.category-select').append(newOption).trigger('change');
+            }
+        });
+    </script>
+</body>
+</html>

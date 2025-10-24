@@ -1,0 +1,876 @@
+{% extends 'base.html' %}
+{% load static %}
+{% load crispy_forms_tags %}
+{% load i18n %}
+
+{% block title %}EFRIS Dashboard - {{ block.super }}{% endblock %}
+
+{% block breadcrumb_items %}
+<li class="breadcrumb-item"><a href="{% url 'user_dashboard' %}">{% trans "Home" %}</a></li>
+<li class="breadcrumb-item active">{% trans "EFRIS Dashboard" %}</li>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+    .status-indicator {
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        display: inline-block;
+        margin-right: 8px;
+    }
+    .status-online { background-color: var(--green-500); }
+    .status-offline { background-color: var(--red-500); }
+    .status-warning { background-color: var(--amber-500); }
+
+    .metric-card {
+        background: linear-gradient(135deg, var(--primary-50) 0%, var(--primary-100) 100%);
+        border-left: 4px solid var(--primary-500);
+        transition: all 0.3s ease;
+    }
+
+    .metric-card:hover {
+        transform: translateY(-2px);
+        box-shadow: var(--shadow-lg);
+    }
+
+    .metric-value {
+        font-size: 2rem;
+        font-weight: 700;
+        color: var(--primary-600);
+    }
+
+    .chart-container {
+        position: relative;
+        height: 300px;
+        width: 100%;
+    }
+
+    .loading-spinner {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        height: 200px;
+    }
+
+    .health-status {
+        padding: 1rem;
+        border-radius: var(--border-radius);
+        margin-bottom: 1rem;
+    }
+
+    .health-good { background-color: var(--green-50); border-left: 4px solid var(--green-500); }
+    .health-warning { background-color: var(--amber-50); border-left: 4px solid var(--amber-500); }
+    .health-error { background-color: var(--red-50); border-left: 4px solid var(--red-500); }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- Page Header -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h1 class="h3 mb-1">{% trans "EFRIS Dashboard" %}</h1>
+            <p class="text-muted mb-0">{% trans "Electronic Fiscal Receipting and Invoicing Solution" %}</p>
+        </div>
+        <div class="d-flex gap-2">
+            {% if has_config %}
+                <button class="btn btn-outline-primary" id="refreshDashboard">
+                    <i class="bi bi-arrow-clockwise me-1"></i>{% trans "Refresh" %}
+                </button>
+                <button class="btn btn-success" data-bs-toggle="modal" data-bs-target="#testConnectionModal">
+                    <i class="bi bi-wifi me-1"></i>{% trans "Test Connection" %}
+                </button>
+            {% else %}
+                <a href="{% url 'efris:setup_wizard' %}" class="btn btn-primary">
+                    <i class="bi bi-gear me-1"></i>{% trans "Setup EFRIS" %}
+                </a>
+            {% endif %}
+        </div>
+    </div>
+
+    {% if error %}
+    <div class="alert alert-danger">
+        <i class="bi bi-exclamation-triangle me-2"></i>{{ error }}
+    </div>
+    {% elif not has_config %}
+    <!-- Setup Required -->
+    <div class="row">
+        <div class="col-12">
+            <div class="card border-warning">
+                <div class="card-body text-center py-5">
+                    <div class="mb-4">
+                        <i class="bi bi-exclamation-triangle text-warning" style="font-size: 4rem;"></i>
+                    </div>
+                    <h4 class="text-warning mb-3">{% trans "EFRIS Configuration Required" %}</h4>
+                    <p class="text-muted mb-4">{% trans "To use EFRIS features, you need to complete the initial setup process." %}</p>
+
+                    {% if setup_checklist %}
+                    <div class="row justify-content-center">
+                        <div class="col-md-6">
+                            <div class="list-group text-start">
+                                {% for item in setup_checklist %}
+                                <div class="list-group-item d-flex align-items-center">
+                                    {% if item.completed %}
+                                        <i class="bi bi-check-circle-fill text-success me-3"></i>
+                                    {% else %}
+                                        <i class="bi bi-circle text-muted me-3"></i>
+                                    {% endif %}
+                                    <div>
+                                        <strong>{{ item.title }}</strong>
+                                        <div class="text-muted small">{{ item.description }}</div>
+                                    </div>
+                                </div>
+                                {% endfor %}
+                            </div>
+                        </div>
+                    </div>
+                    {% endif %}
+
+                    <div class="mt-4">
+                        <a href="{% url 'efris:setup_wizard' %}" class="btn btn-primary btn-lg">
+                            <i class="bi bi-rocket me-2"></i>{% trans "Start Setup" %}
+                        </a>
+                        <a href="{% url 'efris:configuration' %}" class="btn btn-outline-secondary btn-lg ms-2">
+                            <i class="bi bi-gear me-2"></i>{% trans "Manual Configuration" %}
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% else %}
+    <!-- Main Dashboard Content -->
+
+    <!-- System Health Status -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="health-status" id="healthStatus">
+                <div class="d-flex align-items-center">
+                    <div class="status-indicator" id="healthIndicator"></div>
+                    <div>
+                        <h6 class="mb-1" id="healthTitle">{% trans "Checking system health..." %}</h6>
+                        <small class="text-muted" id="healthDescription">{% trans "Please wait while we verify EFRIS connectivity and configuration." %}</small>
+                    </div>
+                    <div class="ms-auto">
+                        <small class="text-muted" id="lastCheck">{% trans "Last check:" %} {% now "H:i" %}</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Key Metrics -->
+    <div class="row mb-4">
+        <div class="col-lg-3 col-md-6 mb-3">
+            <div class="card metric-card h-100">
+                <div class="card-body">
+                    <div class="d-flex align-items-center">
+                        <div class="flex-grow-1">
+                            <h6 class="card-title text-muted mb-1">{% trans "API Calls Today" %}</h6>
+                            <div class="metric-value" id="apiCallsToday">--</div>
+                        </div>
+                        <div class="text-primary">
+                            <i class="bi bi-graph-up fs-2"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-lg-3 col-md-6 mb-3">
+            <div class="card metric-card h-100">
+                <div class="card-body">
+                    <div class="d-flex align-items-center">
+                        <div class="flex-grow-1">
+                            <h6 class="card-title text-muted mb-1">{% trans "Success Rate" %}</h6>
+                            <div class="metric-value text-success" id="successRate">--%</div>
+                        </div>
+                        <div class="text-success">
+                            <i class="bi bi-check-circle fs-2"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-lg-3 col-md-6 mb-3">
+            <div class="card metric-card h-100">
+                <div class="card-body">
+                    <div class="d-flex align-items-center">
+                        <div class="flex-grow-1">
+                            <h6 class="card-title text-muted mb-1">{% trans "Fiscalized Today" %}</h6>
+                            <div class="metric-value text-info" id="fiscalizedToday">--</div>
+                        </div>
+                        <div class="text-info">
+                            <i class="bi bi-receipt fs-2"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-lg-3 col-md-6 mb-3">
+            <div class="card metric-card h-100">
+                <div class="card-body">
+                    <div class="d-flex align-items-center">
+                        <div class="flex-grow-1">
+                            <h6 class="card-title text-muted mb-1">{% trans "Avg Response Time" %}</h6>
+                            <div class="metric-value text-warning" id="avgResponseTime">-- ms</div>
+                        </div>
+                        <div class="text-warning">
+                            <i class="bi bi-stopwatch fs-2"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Charts and Activity -->
+    <div class="row">
+        <div class="col-lg-8 mb-4">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="card-title mb-0">{% trans "API Activity (Last 24 Hours)" %}</h5>
+                    <div class="btn-group btn-group-sm" role="group">
+                        <button type="button" class="btn btn-outline-primary active" data-period="24h">24h</button>
+                        <button type="button" class="btn btn-outline-primary" data-period="7d">7d</button>
+                        <button type="button" class="btn btn-outline-primary" data-period="30d">30d</button>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <div class="chart-container">
+                        <canvas id="activityChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-lg-4 mb-4">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">{% trans "Recent Activity" %}</h5>
+                </div>
+                <div class="card-body p-0" style="max-height: 400px; overflow-y: auto;">
+                    <div id="recentActivity" class="list-group list-group-flush">
+                        <div class="loading-spinner">
+                            <div class="spinner-border text-primary" role="status">
+                                <span class="visually-hidden">{% trans "Loading..." %}</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="card-footer text-center">
+                    <a href="{% url 'efris:logs' %}" class="btn btn-sm btn-outline-primary">
+                        {% trans "View All Logs" %}
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Quick Actions -->
+    <div class="row">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">{% trans "Quick Actions" %}</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-lg-2 col-md-4 col-6 mb-3">
+                            <a href="{% url 'efris:invoice_operations' %}" class="btn btn-outline-primary w-100 h-100 d-flex flex-column align-items-center justify-content-center py-3">
+                                <i class="bi bi-receipt-cutoff fs-2 mb-2"></i>
+                                <span>{% trans "Manage Invoices" %}</span>
+                            </a>
+                        </div>
+
+                        <div class="col-lg-2 col-md-4 col-6 mb-3">
+                            <a href="{% url 'efris:product_operations' %}" class="btn btn-outline-success w-100 h-100 d-flex flex-column align-items-center justify-content-center py-3">
+                                <i class="bi bi-box-seam fs-2 mb-2"></i>
+                                <span>{% trans "Manage Products" %}</span>
+                            </a>
+                        </div>
+
+                        <div class="col-lg-2 col-md-4 col-6 mb-3">
+                            <a href="{% url 'efris:customer_operations' %}" class="btn btn-outline-info w-100 h-100 d-flex flex-column align-items-center justify-content-center py-3">
+                                <i class="bi bi-people fs-2 mb-2"></i>
+                                <span>{% trans "Manage Customers" %}</span>
+                            </a>
+                        </div>
+
+                        <div class="col-lg-2 col-md-4 col-6 mb-3">
+                            <a href="{% url 'efris:metrics' %}" class="btn btn-outline-warning w-100 h-100 d-flex flex-column align-items-center justify-content-center py-3">
+                                <i class="bi bi-bar-chart-line fs-2 mb-2"></i>
+                                <span>{% trans "View Metrics" %}</span>
+                            </a>
+                        </div>
+
+                        <div class="col-lg-2 col-md-4 col-6 mb-3">
+                            <a href="{% url 'efris:configuration' %}" class="btn btn-outline-secondary w-100 h-100 d-flex flex-column align-items-center justify-content-center py-3">
+                                <i class="bi bi-gear fs-2 mb-2"></i>
+                                <span>{% trans "Settings" %}</span>
+                            </a>
+                        </div>
+
+                        <div class="col-lg-2 col-md-4 col-6 mb-3">
+                            <button class="btn btn-outline-danger w-100 h-100 d-flex flex-column align-items-center justify-content-center py-3"
+                                    data-bs-toggle="modal" data-bs-target="#healthCheckModal">
+                                <i class="bi bi-heart-pulse fs-2 mb-2"></i>
+                                <span>{% trans "Health Check" %}</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+<!-- Test Connection Modal -->
+<div class="modal fade" id="testConnectionModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">{% trans "Test EFRIS Connection" %}</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div id="connectionTestResult">
+                    <div class="text-center py-3">
+                        <div class="spinner-border text-primary" role="status">
+                            <span class="visually-hidden">{% trans "Testing..." %}</span>
+                        </div>
+                        <div class="mt-2">{% trans "Testing connection to EFRIS servers..." %}</div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">{% trans "Close" %}</button>
+                <button type="button" class="btn btn-primary" id="retryConnection">{% trans "Retry" %}</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Health Check Modal -->
+<div class="modal fade" id="healthCheckModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">{% trans "System Health Check" %}</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div id="detailedHealthCheck">
+                    <div class="text-center py-3">
+                        <div class="spinner-border text-primary" role="status">
+                            <span class="visually-hidden">{% trans "Checking..." %}</span>
+                        </div>
+                        <div class="mt-2">{% trans "Running comprehensive health check..." %}</div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">{% trans "Close" %}</button>
+                <button type="button" class="btn btn-primary" id="runHealthCheck">{% trans "Run Check Again" %}</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+class EFRISDashboard {
+    constructor() {
+        this.chart = null;
+        this.websocket = null;
+        this.init();
+    }
+
+    init() {
+        this.loadInitialData();
+        this.setupWebSocket();
+        this.setupEventHandlers();
+        this.setupChart();
+        this.startPeriodicUpdates();
+    }
+
+    setupWebSocket() {
+        // WebSocket setup for real-time updates
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const wsUrl = `${protocol}//${window.location.host}/ws/efris/dashboard/`;
+
+        this.websocket = new WebSocket(wsUrl);
+
+        this.websocket.onopen = () => {
+            console.log('EFRIS WebSocket connected');
+        };
+
+        this.websocket.onmessage = (event) => {
+            const data = JSON.parse(event.data);
+            this.handleWebSocketMessage(data);
+        };
+
+        this.websocket.onclose = () => {
+            console.log('EFRIS WebSocket disconnected');
+            // Reconnect after 5 seconds
+            setTimeout(() => this.setupWebSocket(), 5000);
+        };
+    }
+
+    handleWebSocketMessage(data) {
+        switch(data.type) {
+            case 'metrics_update':
+                this.updateMetrics(data.metrics);
+                break;
+            case 'health_update':
+                this.updateHealthStatus(data.health);
+                break;
+            case 'activity_update':
+                this.addActivityItem(data.activity);
+                break;
+        }
+    }
+
+    setupEventHandlers() {
+        // Refresh dashboard
+        document.getElementById('refreshDashboard')?.addEventListener('click', () => {
+            this.loadInitialData();
+        });
+
+        // Test connection modal
+        document.getElementById('testConnectionModal')?.addEventListener('show.bs.modal', () => {
+            this.testConnection();
+        });
+
+        document.getElementById('retryConnection')?.addEventListener('click', () => {
+            this.testConnection();
+        });
+
+        // Health check modal
+        document.getElementById('healthCheckModal')?.addEventListener('show.bs.modal', () => {
+            this.runHealthCheck();
+        });
+
+        document.getElementById('runHealthCheck')?.addEventListener('click', () => {
+            this.runHealthCheck();
+        });
+
+        // Chart period buttons
+        document.querySelectorAll('[data-period]').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                document.querySelectorAll('[data-period]').forEach(b => b.classList.remove('active'));
+                e.target.classList.add('active');
+                this.updateChart(e.target.dataset.period);
+            });
+        });
+    }
+
+    async loadInitialData() {
+        try {
+            // Load health status
+            await this.checkHealthStatus();
+
+            // Load metrics
+            await this.loadMetrics();
+
+            // Load recent activity
+            await this.loadRecentActivity();
+
+        } catch (error) {
+            console.error('Failed to load dashboard data:', error);
+            this.showError('Failed to load dashboard data');
+        }
+    }
+
+    async checkHealthStatus() {
+        try {
+            const response = await fetch('{% url "efris:health_check" %}');
+            const data = await response.json();
+
+            if (data.success) {
+                this.updateHealthStatus(data.health_status);
+            } else {
+                this.updateHealthStatus({ status: 'error', message: data.message });
+            }
+        } catch (error) {
+            this.updateHealthStatus({
+                status: 'error',
+                message: 'Failed to check system health'
+            });
+        }
+    }
+
+    updateHealthStatus(health) {
+        const indicator = document.getElementById('healthIndicator');
+        const title = document.getElementById('healthTitle');
+        const description = document.getElementById('healthDescription');
+        const container = document.getElementById('healthStatus');
+        const lastCheck = document.getElementById('lastCheck');
+
+        if (indicator && title && description && container) {
+            // Update indicator
+            indicator.className = 'status-indicator';
+            container.className = 'health-status';
+
+            switch (health.status) {
+                case 'healthy':
+                    indicator.classList.add('status-online');
+                    container.classList.add('health-good');
+                    title.textContent = 'System Healthy';
+                    break;
+                case 'warning':
+                    indicator.classList.add('status-warning');
+                    container.classList.add('health-warning');
+                    title.textContent = 'System Warning';
+                    break;
+                case 'error':
+                    indicator.classList.add('status-offline');
+                    container.classList.add('health-error');
+                    title.textContent = 'System Error';
+                    break;
+            }
+
+            description.textContent = health.message || health.description || '';
+            lastCheck.textContent = `Last check: ${new Date().toLocaleTimeString()}`;
+        }
+    }
+
+    async loadMetrics() {
+        try {
+            const response = await fetch('{% url "efris:api_health_check" %}');
+            const data = await response.json();
+
+            if (data.success) {
+                this.updateMetrics(data.metrics || {});
+            }
+        } catch (error) {
+            console.error('Failed to load metrics:', error);
+        }
+    }
+
+    updateMetrics(metrics) {
+        const elements = {
+            'apiCallsToday': metrics.api_calls_today || '--',
+            'successRate': metrics.success_rate ? `${metrics.success_rate}%` : '--%',
+            'fiscalizedToday': metrics.fiscalized_today || '--',
+            'avgResponseTime': metrics.avg_response_time ? `${metrics.avg_response_time} ms` : '-- ms'
+        };
+
+        Object.entries(elements).forEach(([id, value]) => {
+            const element = document.getElementById(id);
+            if (element) {
+                element.textContent = value;
+            }
+        });
+    }
+
+    async loadRecentActivity() {
+        try {
+            const response = await fetch('{% url "efris:logs" %}?limit=10&format=json');
+            const data = await response.json();
+
+            this.updateRecentActivity(data.logs || []);
+        } catch (error) {
+            console.error('Failed to load recent activity:', error);
+        }
+    }
+
+    updateRecentActivity(logs) {
+        const container = document.getElementById('recentActivity');
+        if (!container) return;
+
+        container.innerHTML = '';
+
+        if (logs.length === 0) {
+            container.innerHTML = `
+                <div class="text-center py-4 text-muted">
+                    <i class="bi bi-inbox fs-2 mb-2"></i>
+                    <div>No recent activity</div>
+                </div>
+            `;
+            return;
+        }
+
+        logs.forEach(log => {
+            const item = document.createElement('div');
+            item.className = 'list-group-item border-0';
+
+            const statusIcon = log.status === 'success' ? 'bi-check-circle text-success' :
+                              log.status === 'failed' ? 'bi-x-circle text-danger' :
+                              'bi-clock text-warning';
+
+            item.innerHTML = `
+                <div class="d-flex align-items-start">
+                    <i class="bi ${statusIcon} me-2 mt-1"></i>
+                    <div class="flex-grow-1">
+                        <div class="fw-medium">${log.interface_code}</div>
+                        <small class="text-muted">${log.created_at} • ${log.duration_ms || 0}ms</small>
+                        ${log.error_message ? `<div class="text-danger small mt-1">${log.error_message}</div>` : ''}
+                    </div>
+                </div>
+            `;
+
+            container.appendChild(item);
+        });
+    }
+
+    addActivityItem(activity) {
+        const container = document.getElementById('recentActivity');
+        if (!container) return;
+
+        // Remove loading spinner if present
+        const spinner = container.querySelector('.loading-spinner');
+        if (spinner) {
+            spinner.remove();
+        }
+
+        const item = document.createElement('div');
+        item.className = 'list-group-item border-0 flash';
+
+        const statusIcon = activity.status === 'success' ? 'bi-check-circle text-success' :
+                          activity.status === 'failed' ? 'bi-x-circle text-danger' :
+                          'bi-clock text-warning';
+
+        item.innerHTML = `
+            <div class="d-flex align-items-start">
+                <i class="bi ${statusIcon} me-2 mt-1"></i>
+                <div class="flex-grow-1">
+                    <div class="fw-medium">${activity.interface_code}</div>
+                    <small class="text-muted">Just now • ${activity.duration_ms || 0}ms</small>
+                    ${activity.error_message ? `<div class="text-danger small mt-1">${activity.error_message}</div>` : ''}
+                </div>
+            </div>
+        `;
+
+        container.prepend(item);
+
+        // Remove old items if more than 10
+        const items = container.querySelectorAll('.list-group-item');
+        if (items.length > 10) {
+            items[items.length - 1].remove();
+        }
+    }
+
+    setupChart() {
+        const ctx = document.getElementById('activityChart');
+        if (!ctx) return;
+
+        this.chart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [{
+                    label: 'Success',
+                    data: [],
+                    borderColor: 'rgb(34, 197, 94)',
+                    backgroundColor: 'rgba(34, 197, 94, 0.1)',
+                    tension: 0.4
+                }, {
+                    label: 'Failed',
+                    data: [],
+                    borderColor: 'rgb(239, 68, 68)',
+                    backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                    tension: 0.4
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        ticks: {
+                            stepSize: 1
+                        }
+                    }
+                },
+                plugins: {
+                    legend: {
+                        position: 'top',
+                    },
+                    title: {
+                        display: false
+                    }
+                }
+            }
+        });
+
+        this.updateChart('24h');
+    }
+
+    async updateChart(period) {
+        if (!this.chart) return;
+
+        try {
+            const response = await fetch(`{% url "efris:metrics" %}?period=${period}&format=json`);
+            const data = await response.json();
+
+            if (data.success && data.chart_data) {
+                this.chart.data.labels = data.chart_data.labels;
+                this.chart.data.datasets[0].data = data.chart_data.success;
+                this.chart.data.datasets[1].data = data.chart_data.failed;
+                this.chart.update();
+            }
+        } catch (error) {
+            console.error('Failed to update chart:', error);
+        }
+    }
+
+    async testConnection() {
+        const result = document.getElementById('connectionTestResult');
+        if (!result) return;
+
+        result.innerHTML = `
+            <div class="text-center py-3">
+                <div class="spinner-border text-primary" role="status">
+                    <span class="visually-hidden">Testing...</span>
+                </div>
+                <div class="mt-2">Testing connection to EFRIS servers...</div>
+            </div>
+        `;
+
+        try {
+            const response = await fetch('{% url "efris:test_connection" %}', {
+                method: 'POST',
+                headers: {
+                    'X-CSRFToken': window.csrfToken,
+                    'Content-Type': 'application/json'
+                }
+            });
+
+            const data = await response.json();
+
+            if (data.success) {
+                result.innerHTML = `
+                    <div class="alert alert-success mb-0">
+                        <i class="bi bi-check-circle me-2"></i>
+                        <strong>Connection Successful!</strong>
+                        <div class="mt-2">
+                            <small>Server Time: ${data.data?.serverTime || 'Unknown'}</small><br>
+                            <small>Response Time: ${data.duration_ms}ms</small>
+                        </div>
+                    </div>
+                `;
+            } else {
+                result.innerHTML = `
+                    <div class="alert alert-danger mb-0">
+                        <i class="bi bi-x-circle me-2"></i>
+                        <strong>Connection Failed!</strong>
+                        <div class="mt-2">
+                            <small>${data.message}</small>
+                            ${data.error_code ? `<br><small>Error Code: ${data.error_code}</small>` : ''}
+                        </div>
+                    </div>
+                `;
+            }
+        } catch (error) {
+            result.innerHTML = `
+                <div class="alert alert-danger mb-0">
+                    <i class="bi bi-x-circle me-2"></i>
+                    <strong>Connection Error!</strong>
+                    <div class="mt-2">
+                        <small>${error.message}</small>
+                    </div>
+                </div>
+            `;
+        }
+    }
+
+    async runHealthCheck() {
+        const result = document.getElementById('detailedHealthCheck');
+        if (!result) return;
+
+        result.innerHTML = `
+            <div class="text-center py-3">
+                <div class="spinner-border text-primary" role="status">
+                    <span class="visually-hidden">Checking...</span>
+                </div>
+                <div class="mt-2">Running comprehensive health check...</div>
+            </div>
+        `;
+
+        try {
+            const response = await fetch('{% url "efris:health_check" %}');
+            const data = await response.json();
+
+            if (data.success) {
+                const health = data.health_status;
+                let html = '';
+
+                if (health.checks) {
+                    health.checks.forEach(check => {
+                        const statusClass = check.status === 'pass' ? 'success' :
+                                          check.status === 'warn' ? 'warning' : 'danger';
+                        const icon = check.status === 'pass' ? 'check-circle' :
+                                   check.status === 'warn' ? 'exclamation-triangle' : 'x-circle';
+
+                        html += `
+                            <div class="alert alert-${statusClass} d-flex align-items-start">
+                                <i class="bi bi-${icon} me-2 mt-1"></i>
+                                <div>
+                                    <strong>${check.name}</strong>
+                                    <div>${check.message}</div>
+                                    ${check.details ? `<small class="text-muted">${check.details}</small>` : ''}
+                                </div>
+                            </div>
+                        `;
+                    });
+                }
+
+                result.innerHTML = html || `
+                    <div class="alert alert-info">
+                        <i class="bi bi-info-circle me-2"></i>
+                        System health check completed successfully.
+                    </div>
+                `;
+            } else {
+                result.innerHTML = `
+                    <div class="alert alert-danger">
+                        <i class="bi bi-x-circle me-2"></i>
+                        <strong>Health Check Failed!</strong>
+                        <div class="mt-2">${data.message}</div>
+                    </div>
+                `;
+            }
+        } catch (error) {
+            result.innerHTML = `
+                <div class="alert alert-danger">
+                    <i class="bi bi-x-circle me-2"></i>
+                    <strong>Health Check Error!</strong>
+                    <div class="mt-2">${error.message}</div>
+                </div>
+            `;
+        }
+    }
+
+    startPeriodicUpdates() {
+        // Update health status every 30 seconds
+        setInterval(() => {
+            this.checkHealthStatus();
+        }, 30000);
+
+        // Update metrics every 60 seconds
+        setInterval(() => {
+            this.loadMetrics();
+        }, 60000);
+    }
+
+    showError(message) {
+        window.showAlert(message, 'danger', 5000);
+    }
+}
+
+// Initialize dashboard when DOM is ready
+document.addEventListener('DOMContentLoaded', () => {
+    {% if has_config %}
+    new EFRISDashboard();
+    {% endif %}
+});
+</script>
+{% endblock %}

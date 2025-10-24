@@ -1,0 +1,904 @@
+{% extends 'base.html' %}
+{% load i18n %}
+{% load widget_tweaks %}
+
+{% block title %}{{ form_title }} - {{ company.trading_name|default:company.name }}{% endblock %}
+
+{% block breadcrumb %}
+{{ block.super }}
+<li class="breadcrumb-item"><a href="{% url 'companies:company_detail' company_id=company_id %}">{{ company.trading_name|default:company.name }}</a></li>
+<li class="breadcrumb-item"><a href="{% url 'companies:employee_list' company_id=company_id %}">{% trans 'Employees' %}</a></li>
+<li class="breadcrumb-item active">{{ form_title }}</li>
+{% endblock %}
+
+{% block page_header %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h1 class="h3 mb-1">{{ form_title }}</h1>
+        <p class="text-muted mb-0">
+            {% if object %}
+                {% trans 'Update employee information and permissions' %}
+            {% else %}
+                {% trans 'Add a new employee to your company' %}
+            {% endif %}
+        </p>
+    </div>
+    <div class="d-flex gap-2">
+        <!-- Dark Mode Toggle -->
+        <button class="btn btn-outline-secondary" onclick="toggleDarkMode()" id="darkModeToggle">
+            <i class="bi bi-moon"></i>
+        </button>
+        <a href="{% url 'companies:employee_list' company_id=company_id %}" class="btn btn-outline-secondary">
+            <i class="bi bi-arrow-left me-2"></i>{% trans 'Back to List' %}
+        </a>
+    </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-8">
+        <div class="card form-card border-0 shadow-sm">
+            <div class="card-header bg-transparent border-0">
+                <div class="d-flex align-items-center">
+                    <div class="form-icon me-3">
+                        <i class="bi bi-person-plus fs-4 text-primary"></i>
+                    </div>
+                    <div>
+                        <h5 class="card-title mb-0">{{ form_title }}</h5>
+                        <small class="text-muted">{% trans 'All fields marked with * are required' %}</small>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card-body">
+                <!-- Form Errors -->
+                {% if form.non_field_errors %}
+                <div class="alert alert-danger alert-dismissible fade show" role="alert">
+                    <i class="bi bi-exclamation-triangle me-2"></i>
+                    <strong>{% trans 'Please correct the following errors:' %}</strong>
+                    <ul class="mb-0 mt-2">
+                        {% for error in form.non_field_errors %}
+                        <li>{{ error }}</li>
+                        {% endfor %}
+                    </ul>
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>
+                {% endif %}
+
+                <form method="post" novalidate class="needs-validation" id="employeeForm">
+                    {% csrf_token %}
+
+                    <!-- Personal Information Section -->
+                    <div class="form-section mb-4">
+                        <div class="section-header mb-3">
+                            <h6 class="section-title text-primary">
+                                <i class="bi bi-person me-2"></i>{% trans 'Personal Information' %}
+                            </h6>
+                            <hr class="section-divider">
+                        </div>
+
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label for="{{ form.first_name.id_for_label }}" class="form-label fw-bold">
+                                    {{ form.first_name.label }}
+                                    {% if form.first_name.field.required %}<span class="text-danger">*</span>{% endif %}
+                                </label>
+                                {% render_field form.first_name class="form-control" placeholder="Enter first name" %}
+                                {% if form.first_name.errors %}
+                                    <div class="invalid-feedback d-block">
+                                        {% for error in form.first_name.errors %}{{ error }}{% endfor %}
+                                    </div>
+                                {% endif %}
+                            </div>
+
+                            <div class="col-md-6">
+                                <label for="{{ form.last_name.id_for_label }}" class="form-label fw-bold">
+                                    {{ form.last_name.label }}
+                                    {% if form.last_name.field.required %}<span class="text-danger">*</span>{% endif %}
+                                </label>
+                                {% render_field form.last_name class="form-control" placeholder="Enter last name" %}
+                                {% if form.last_name.errors %}
+                                    <div class="invalid-feedback d-block">
+                                        {% for error in form.last_name.errors %}{{ error }}{% endfor %}
+                                    </div>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Account Information Section -->
+                    <div class="form-section mb-4">
+                        <div class="section-header mb-3">
+                            <h6 class="section-title text-primary">
+                                <i class="bi bi-key me-2"></i>{% trans 'Account Information' %}
+                            </h6>
+                            <hr class="section-divider">
+                        </div>
+
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label for="{{ form.username.id_for_label }}" class="form-label fw-bold">
+                                    {{ form.username.label }}
+                                    {% if form.username.field.required %}<span class="text-danger">*</span>{% endif %}
+                                </label>
+                                {% render_field form.username class="form-control" placeholder="Choose a username" %}
+                                {% if form.username.help_text %}
+                                    <div class="form-text">{{ form.username.help_text }}</div>
+                                {% endif %}
+                                {% if form.username.errors %}
+                                    <div class="invalid-feedback d-block">
+                                        {% for error in form.username.errors %}{{ error }}{% endfor %}
+                                    </div>
+                                {% endif %}
+                            </div>
+
+                            <div class="col-md-6">
+                                <label for="{{ form.email.id_for_label }}" class="form-label fw-bold">
+                                    {{ form.email.label }}
+                                    {% if form.email.field.required %}<span class="text-danger">*</span>{% endif %}
+                                </label>
+                                {% render_field form.email class="form-control" placeholder="employee@company.com" %}
+                                {% if form.email.errors %}
+                                    <div class="invalid-feedback d-block">
+                                        {% for error in form.email.errors %}{{ error }}{% endfor %}
+                                    </div>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Contact Information Section -->
+                    <div class="form-section mb-4">
+                        <div class="section-header mb-3">
+                            <h6 class="section-title text-primary">
+                                <i class="bi bi-telephone me-2"></i>{% trans 'Contact Information' %}
+                            </h6>
+                            <hr class="section-divider">
+                        </div>
+
+                        <div class="row g-3">
+                            {% if form.phone %}
+                            <div class="col-md-6">
+                                <label for="{{ form.phone.id_for_label }}" class="form-label fw-bold">
+                                    {{ form.phone.label }}
+                                    {% if form.phone.field.required %}<span class="text-danger">*</span>{% endif %}
+                                </label>
+                                {% render_field form.phone class="form-control" placeholder="+256 XXX XXX XXX" %}
+                                {% if form.phone.errors %}
+                                    <div class="invalid-feedback d-block">
+                                        {% for error in form.phone.errors %}{{ error }}{% endfor %}
+                                    </div>
+                                {% endif %}
+                            </div>
+                            {% endif %}
+
+                            {% if form.address %}
+                            <div class="col-12">
+                                <label for="{{ form.address.id_for_label }}" class="form-label fw-bold">
+                                    {{ form.address.label }}
+                                    {% if form.address.field.required %}<span class="text-danger">*</span>{% endif %}
+                                </label>
+                                {% render_field form.address class="form-control" rows="3" placeholder="Enter employee address" %}
+                                {% if form.address.errors %}
+                                    <div class="invalid-feedback d-block">
+                                        {% for error in form.address.errors %}{{ error }}{% endfor %}
+                                    </div>
+                                {% endif %}
+                            </div>
+                            {% endif %}
+                        </div>
+                    </div>
+
+                    <!-- Permissions Section -->
+                    <div class="form-section mb-4">
+                        <div class="section-header mb-3">
+                            <h6 class="section-title text-primary">
+                                <i class="bi bi-shield-check me-2"></i>{% trans 'Permissions & Access' %}
+                            </h6>
+                            <hr class="section-divider">
+                        </div>
+
+                        <div class="row g-3">
+                            <div class="col-12">
+                                <div class="permission-card p-3 border rounded">
+                                    <div class="form-check form-switch">
+                                        {% render_field form.is_company_admin class="form-check-input" %}
+                                        <label class="form-check-label fw-bold" for="{{ form.is_company_admin.id_for_label }}">
+                                            {{ form.is_company_admin.label }}
+                                        </label>
+                                        {% if form.is_company_admin.help_text %}
+                                            <div class="form-text">{{ form.is_company_admin.help_text }}</div>
+                                        {% endif %}
+                                        <small class="text-muted d-block mt-1">
+                                            {% trans 'Company admins can manage employees, branches, and company settings' %}
+                                        </small>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="col-12">
+                                <div class="permission-card p-3 border rounded">
+                                    <div class="form-check form-switch">
+                                        {% render_field form.is_active class="form-check-input" %}
+                                        <label class="form-check-label fw-bold" for="{{ form.is_active.id_for_label }}">
+                                            {{ form.is_active.label }}
+                                        </label>
+                                        <small class="text-muted d-block mt-1">
+                                            {% trans 'Active employees can log in and access the system' %}
+                                        </small>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Additional Information Section -->
+                    {% if form.notes or form.department %}
+                    <div class="form-section mb-4">
+                        <div class="section-header mb-3">
+                            <h6 class="section-title text-primary">
+                                <i class="bi bi-info-circle me-2"></i>{% trans 'Additional Information' %}
+                            </h6>
+                            <hr class="section-divider">
+                        </div>
+
+                        <div class="row g-3">
+                            {% if form.department %}
+                            <div class="col-md-6">
+                                <label for="{{ form.department.id_for_label }}" class="form-label fw-bold">
+                                    {{ form.department.label }}
+                                </label>
+                                {% render_field form.department class="form-control" placeholder="e.g., Finance, Marketing, IT" %}
+                                {% if form.department.errors %}
+                                    <div class="invalid-feedback d-block">
+                                        {% for error in form.department.errors %}{{ error }}{% endfor %}
+                                    </div>
+                                {% endif %}
+                            </div>
+                            {% endif %}
+
+                            {% if form.notes %}
+                            <div class="col-12">
+                                <label for="{{ form.notes.id_for_label }}" class="form-label fw-bold">
+                                    {{ form.notes.label }}
+                                </label>
+                                {% render_field form.notes class="form-control" rows="3" placeholder="Any additional notes about this employee" %}
+                                {% if form.notes.errors %}
+                                    <div class="invalid-feedback d-block">
+                                        {% for error in form.notes.errors %}{{ error }}{% endfor %}
+                                    </div>
+                                {% endif %}
+                            </div>
+                            {% endif %}
+                        </div>
+                    </div>
+                    {% endif %}
+
+                    <!-- Form Actions -->
+                    <div class="form-actions pt-3 border-top">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div class="form-help">
+                                <small class="text-muted">
+                                    <i class="bi bi-info-circle me-1"></i>
+                                    {% if object %}
+                                        {% trans 'Changes will be saved immediately' %}
+                                    {% else %}
+                                        {% trans 'A temporary password will be generated and sent via email' %}
+                                    {% endif %}
+                                </small>
+                            </div>
+                            <div class="d-flex gap-2">
+                                <a href="{% url 'companies:employee_list' company_id=company_id %}" class="btn btn-outline-secondary">
+                                    {% trans 'Cancel' %}
+                                </a>
+                                <button type="submit" class="btn btn-primary" id="submitBtn">
+                                    <i class="bi bi-check-circle me-2"></i>
+                                    {% if object %}
+                                        {% trans 'Update Employee' %}
+                                    {% else %}
+                                        {% trans 'Add Employee' %}
+                                    {% endif %}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- Help Card -->
+        <div class="card help-card border-0 shadow-sm mt-4">
+            <div class="card-header bg-transparent border-0">
+                <h6 class="card-title mb-0">
+                    <i class="bi bi-lightbulb text-warning me-2"></i>{% trans 'Tips & Guidelines' %}
+                </h6>
+            </div>
+            <div class="card-body">
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <div class="tip-item">
+                            <h6 class="tip-title">{% trans 'Username Guidelines' %}</h6>
+                            <ul class="tip-list small text-muted">
+                                <li>{% trans 'Use lowercase letters and numbers only' %}</li>
+                                <li>{% trans 'Must be unique within your company' %}</li>
+                                <li>{% trans 'Cannot be changed after creation' %}</li>
+                            </ul>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="tip-item">
+                            <h6 class="tip-title">{% trans 'Admin Permissions' %}</h6>
+                            <ul class="tip-list small text-muted">
+                                <li>{% trans 'Can manage other employees' %}</li>
+                                <li>{% trans 'Access to company settings' %}</li>
+                                <li>{% trans 'Can view financial reports' %}</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Success Modal -->
+<div class="modal fade" id="successModal" tabindex="-1" aria-labelledby="successModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header border-0">
+                <h5 class="modal-title text-success" id="successModalLabel">
+                    <i class="bi bi-check-circle me-2"></i>{% trans 'Employee Created Successfully!' %}
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p class="mb-3">{% trans 'The employee has been added to your company successfully.' %}</p>
+                <div class="alert alert-info">
+                    <i class="bi bi-info-circle me-2"></i>
+                    {% trans 'A temporary password has been generated and will be sent to their email address.' %}
+                </div>
+            </div>
+            <div class="modal-footer border-0">
+                <a href="{% url 'companies:employee_list' company_id=company_id %}" class="btn btn-primary">
+                    {% trans 'View All Employees' %}
+                </a>
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">
+                    {% trans 'Add Another' %}
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+    :root {
+        --primary-color: #007bff;
+        --success-color: #28a745;
+        --info-color: #17a2b8;
+        --warning-color: #ffc107;
+        --danger-color: #dc3545;
+        --light-color: #f8f9fa;
+        --dark-color: #343a40;
+        --secondary-color: #6c757d;
+    }
+
+    /* Light Theme (Default) */
+    :root {
+        --bg-primary: #ffffff;
+        --bg-secondary: #f8f9fa;
+        --text-primary: #212529;
+        --text-secondary: #6c757d;
+        --border-color: #dee2e6;
+        --card-bg: #ffffff;
+        --input-bg: #ffffff;
+        --input-border: #ced4da;
+    }
+
+    /* Dark Theme */
+    [data-theme="dark"] {
+        --bg-primary: #1a1a1a;
+        --bg-secondary: #2d2d2d;
+        --text-primary: #ffffff;
+        --text-secondary: #adb5bd;
+        --border-color: #495057;
+        --card-bg: #2d2d2d;
+        --input-bg: #343a40;
+        --input-border: #495057;
+    }
+
+    body {
+        background-color: var(--bg-primary);
+        color: var(--text-primary);
+        transition: background-color 0.3s ease, color 0.3s ease;
+    }
+
+    .form-card,
+    .help-card {
+        background-color: var(--card-bg);
+        border-color: var(--border-color);
+        transition: all 0.3s ease;
+    }
+
+    .form-card:hover,
+    .help-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 25px rgba(0,0,0,0.1) !important;
+    }
+
+    .form-icon {
+        width: 60px;
+        height: 60px;
+        background: linear-gradient(135deg, var(--primary-color), var(--info-color));
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: white;
+    }
+
+    .form-section {
+        position: relative;
+    }
+
+    .section-header {
+        margin-bottom: 1.5rem;
+    }
+
+    .section-title {
+        margin-bottom: 0.5rem;
+        font-weight: 600;
+    }
+
+    .section-divider {
+        margin: 0;
+        border-color: var(--border-color);
+    }
+
+    .form-control,
+    .form-select {
+        background-color: var(--input-bg);
+        border-color: var(--input-border);
+        color: var(--text-primary);
+        transition: all 0.3s ease;
+    }
+
+    .form-control:focus,
+    .form-select:focus {
+        background-color: var(--input-bg);
+        border-color: var(--primary-color);
+        color: var(--text-primary);
+        box-shadow: 0 0 0 0.2rem rgba(0, 123, 255, 0.25);
+    }
+
+    .form-check-input {
+        background-color: var(--input-bg);
+        border-color: var(--input-border);
+    }
+
+    .form-check-input:checked {
+        background-color: var(--primary-color);
+        border-color: var(--primary-color);
+    }
+
+    .form-check-input:focus {
+        box-shadow: 0 0 0 0.2rem rgba(0, 123, 255, 0.25);
+    }
+
+    .permission-card {
+        background-color: var(--bg-secondary);
+        border-color: var(--border-color) !important;
+        transition: all 0.3s ease;
+    }
+
+    .permission-card:hover {
+        background-color: rgba(0, 123, 255, 0.05);
+        border-color: var(--primary-color) !important;
+    }
+
+    .form-actions {
+        border-color: var(--border-color) !important;
+    }
+
+    .tip-item {
+        padding: 1rem;
+        background-color: var(--bg-secondary);
+        border-radius: 0.5rem;
+        border: 1px solid var(--border-color);
+        transition: all 0.3s ease;
+    }
+
+    .tip-item:hover {
+        border-color: var(--primary-color);
+        transform: translateY(-1px);
+    }
+
+    .tip-title {
+        color: var(--primary-color);
+        font-size: 0.9rem;
+        margin-bottom: 0.5rem;
+    }
+
+    .tip-list {
+        list-style: none;
+        padding-left: 0;
+        margin-bottom: 0;
+    }
+
+    .tip-list li {
+        padding: 0.25rem 0;
+        border-left: 2px solid var(--primary-color);
+        padding-left: 0.75rem;
+        margin-bottom: 0.25rem;
+    }
+
+    .text-muted {
+        color: var(--text-secondary) !important;
+    }
+
+    .invalid-feedback {
+        color: var(--danger-color);
+    }
+
+    .modal-content {
+        background-color: var(--card-bg);
+        border-color: var(--border-color);
+    }
+
+    .modal-header,
+    .modal-footer {
+        border-color: var(--border-color);
+    }
+
+    /* Loading state for submit button */
+    .btn-loading {
+        position: relative;
+        color: transparent !important;
+    }
+
+    .btn-loading::after {
+        content: '';
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        width: 1rem;
+        height: 1rem;
+        margin: -0.5rem 0 0 -0.5rem;
+        border: 2px solid transparent;
+        border-top-color: currentColor;
+        border-radius: 50%;
+        animation: btn-loading-spin 1s linear infinite;
+    }
+
+    @keyframes btn-loading-spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+    }
+
+    /* Dark mode toggle button */
+    #darkModeToggle {
+        position: relative;
+        overflow: hidden;
+    }
+
+    /* Form validation styles */
+    .was-validated .form-control:valid,
+    .was-validated .form-select:valid,
+    .was-validated .form-check-input:valid {
+        border-color: var(--success-color);
+    }
+
+    .was-validated .form-control:invalid,
+    .was-validated .form-select:invalid,
+    .was-validated .form-check-input:invalid {
+        border-color: var(--danger-color);
+    }
+
+    /* Responsive adjustments */
+    @media (max-width: 768px) {
+        .form-icon {
+            width: 48px;
+            height: 48px;
+        }
+
+        .d-flex.justify-content-between.align-items-center {
+            flex-direction: column;
+            gap: 1rem;
+            align-items: stretch !important;
+        }
+
+        .form-actions .d-flex {
+            flex-direction: column;
+            gap: 1rem;
+        }
+
+        .tip-item {
+            padding: 0.75rem;
+        }
+    }
+
+    /* Print styles */
+    @media print {
+        .btn, #darkModeToggle, .modal, .help-card {
+            display: none !important;
+        }
+
+        .form-card {
+            break-inside: avoid;
+            box-shadow: none !important;
+            border: 1px solid #ddd !important;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    initializeDarkMode();
+    initializeFormValidation();
+    initializeFormInteractions();
+});
+
+function initializeDarkMode() {
+    const darkModeToggle = document.getElementById('darkModeToggle');
+    const savedTheme = localStorage.getItem('theme') || 'light';
+
+    // Apply saved theme
+    document.documentElement.setAttribute('data-theme', savedTheme);
+    updateDarkModeButton(savedTheme === 'dark');
+
+    // Toggle event listener
+    darkModeToggle.addEventListener('click', function() {
+        const currentTheme = document.documentElement.getAttribute('data-theme');
+        const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+
+        document.documentElement.setAttribute('data-theme', newTheme);
+        localStorage.setItem('theme', newTheme);
+        updateDarkModeButton(newTheme === 'dark');
+    });
+}
+
+function updateDarkModeButton(isDark) {
+    const darkModeToggle = document.getElementById('darkModeToggle');
+    const icon = darkModeToggle.querySelector('i');
+
+    if (isDark) {
+        icon.className = 'bi bi-sun';
+        darkModeToggle.title = '{% trans "Switch to light mode" %}';
+    } else {
+        icon.className = 'bi bi-moon';
+        darkModeToggle.title = '{% trans "Switch to dark mode" %}';
+    }
+}
+
+function toggleDarkMode() {
+    document.getElementById('darkModeToggle').click();
+}
+
+function initializeFormValidation() {
+    const form = document.getElementById('employeeForm');
+
+    // Real-time validation
+    const inputs = form.querySelectorAll('.form-control, .form-select');
+    inputs.forEach(input => {
+        input.addEventListener('blur', validateField);
+        input.addEventListener('input', clearValidation);
+    });
+
+    function validateField(e) {
+        const field = e.target;
+        const isValid = field.checkValidity();
+
+        field.classList.remove('is-valid', 'is-invalid');
+        field.classList.add(isValid ? 'is-valid' : 'is-invalid');
+
+        // Custom validation messages
+        const feedback = field.parentNode.querySelector('.invalid-feedback');
+        if (feedback && !isValid) {
+            feedback.style.display = 'block';
+        }
+    }
+
+    function clearValidation(e) {
+        const field = e.target;
+        field.classList.remove('is-valid', 'is-invalid');
+
+        const feedback = field.parentNode.querySelector('.invalid-feedback');
+        if (feedback) {
+            feedback.style.display = 'none';
+        }
+    }
+
+    // Form submission
+    form.addEventListener('submit', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+
+        if (form.checkValidity()) {
+            submitForm();
+        } else {
+            form.classList.add('was-validated');
+
+            // Focus on first invalid field
+            const firstInvalid = form.querySelector(':invalid');
+            if (firstInvalid) {
+                firstInvalid.focus();
+            }
+        }
+    });
+}
+
+function initializeFormInteractions() {
+    // Username generation from name
+    const firstNameField = document.getElementById('{{ form.first_name.id_for_label }}');
+    const lastNameField = document.getElementById('{{ form.last_name.id_for_label }}');
+    const usernameField = document.getElementById('{{ form.username.id_for_label }}');
+
+    if (firstNameField && lastNameField && usernameField && !usernameField.value) {
+        function generateUsername() {
+            const firstName = firstNameField.value.trim().toLowerCase();
+            const lastName = lastNameField.value.trim().toLowerCase();
+
+            if (firstName && lastName) {
+                const username = (firstName.charAt(0) + lastName).replace(/[^a-z0-9]/g, '');
+                if (username.length >= 3) {
+                    usernameField.value = username;
+                    usernameField.dispatchEvent(new Event('input'));
+                }
+            }
+        }
+
+        firstNameField.addEventListener('blur', generateUsername);
+        lastNameField.addEventListener('blur', generateUsername);
+    }
+
+    // Email validation with company domain suggestion
+    const emailField = document.getElementById('{{ form.email.id_for_label }}');
+    if (emailField) {
+        emailField.addEventListener('blur', function() {
+            const email = this.value.trim();
+            if (email && !email.includes('@')) {
+                // Suggest adding company domain
+                const companyDomain = '{{ company.email|cut:"admin@"|cut:"info@"|cut:"contact@" }}';
+                if (companyDomain && companyDomain.includes('.')) {
+                    this.value = email + '@' + companyDomain;
+                }
+            }
+        });
+    }
+
+    // Admin permission warning
+    const adminCheckbox = document.getElementById('{{ form.is_company_admin.id_for_label }}');
+    if (adminCheckbox) {
+        adminCheckbox.addEventListener('change', function() {
+            if (this.checked) {
+                showToast('{% trans "This user will have administrative privileges" %}', 'warning');
+            }
+        });
+    }
+}
+
+function submitForm() {
+    const submitBtn = document.getElementById('submitBtn');
+    const form = document.getElementById('employeeForm');
+
+    // Show loading state
+    submitBtn.classList.add('btn-loading');
+    submitBtn.disabled = true;
+
+    // Create FormData and submit
+    const formData = new FormData(form);
+
+    fetch(form.action || window.location.href, {
+        method: 'POST',
+        body: formData,
+        headers: {
+            'X-Requested-With': 'XMLHttpRequest',
+        },
+    })
+    .then(response => {
+        if (response.ok) {
+            return response.json().catch(() => ({ success: true }));
+        }
+        throw new Error('Network response was not ok');
+    })
+    .then(data => {
+        if (data.success !== false) {
+            {% if not object %}
+                // Show success modal for new employees
+                const successModal = new bootstrap.Modal(document.getElementById('successModal'));
+                successModal.show();
+            {% else %}
+                // Redirect for updates
+                showToast('{% trans "Employee updated successfully" %}', 'success');
+                setTimeout(() => {
+                    window.location.href = '{% url "companies:employee_list" company_id=company_id %}';
+                }, 1500);
+            {% endif %}
+        } else {
+            throw new Error(data.message || 'Form submission failed');
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        showToast('{% trans "An error occurred. Please try again." %}', 'danger');
+
+        // Reset button
+        submitBtn.classList.remove('btn-loading');
+        submitBtn.disabled = false;
+    });
+}
+
+function showToast(message, type = 'success') {
+    const toast = document.createElement('div');
+    toast.className = `toast align-items-center text-white bg-${type} border-0`;
+    toast.setAttribute('role', 'alert');
+    toast.setAttribute('aria-live', 'assertive');
+    toast.setAttribute('aria-atomic', 'true');
+
+    toast.innerHTML = `
+        <div class="d-flex">
+            <div class="toast-body">${message}</div>
+            <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+        </div>
+    `;
+
+    const toastContainer = document.getElementById('toast-container') || (() => {
+        const container = document.createElement('div');
+        container.id = 'toast-container';
+        container.className = 'toast-container position-fixed bottom-0 end-0 p-3';
+        document.body.appendChild(container);
+        return container;
+    })();
+
+    toastContainer.appendChild(toast);
+    const bsToast = new bootstrap.Toast(toast);
+    bsToast.show();
+
+    toast.addEventListener('hidden.bs.toast', () => {
+        toast.remove();
+    });
+}
+
+// Auto-save draft functionality
+let autoSaveTimeout;
+function autoSave() {
+    clearTimeout(autoSaveTimeout);
+    autoSaveTimeout = setTimeout(() => {
+        const form = document.getElementById('employeeForm');
+        const formData = new FormData(form);
+        formData.append('auto_save', 'true');
+
+        fetch(window.location.href, {
+            method: 'POST',
+            body: formData,
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest',
+            },
+        }).catch(() => {
+            // Silently fail auto-save
+        });
+    }, 2000);
+}
+
+// Enable auto-save on form changes
+document.getElementById('employeeForm').addEventListener('input', autoSave);
+
+// Keyboard shortcuts
+document.addEventListener('keydown', function(e) {
+    // Ctrl/Cmd + S to save
+    if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+        e.preventDefault();
+        document.getElementById('submitBtn').click();
+    }
+
+    // Escape to cancel
+    if (e.key === 'Escape') {
+        window.location.href = '{% url "companies:employee_list" company_id=company_id %}';
+    }
+});
+</script>
+{% endblock %}

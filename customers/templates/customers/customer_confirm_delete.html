@@ -1,0 +1,177 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %} {{ company.trading_name|default:company.name }} Delete Customer | {{ block.super }}{% endblock %}
+
+{% block page_header %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h1 class="h3 mb-0 text-danger">
+            <i class="bi bi-exclamation-triangle me-2"></i>Delete Customer
+        </h1>
+        <p class="text-muted mb-0">Confirm customer deletion</p>
+    </div>
+    <div>
+        {% if perms.customer.view_customer %}
+        <a href="{% url 'customers:detail' customer.pk %}" class="btn btn-outline-secondary">
+            <i class="bi bi-arrow-left me-1"></i>Back to Customer
+        </a>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-6">
+        <div class="card border-danger shadow-sm">
+            <div class="card-header bg-danger text-white">
+                <h5 class="card-title mb-0">
+                    <i class="bi bi-exclamation-triangle me-2"></i>Confirm Deletion
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="alert alert-danger" role="alert">
+                    <h6 class="alert-heading">
+                        <i class="bi bi-exclamation-circle me-2"></i>Warning: This action cannot be undone!
+                    </h6>
+                    <p class="mb-0">
+                        Deleting this customer will permanently remove all their information from the system.
+                        This includes their contact details, tax information, and transaction history.
+                    </p>
+                </div>
+
+                <!-- Customer Information Summary -->
+                <div class="customer-summary bg-light p-3 rounded mb-4">
+                    <div class="d-flex align-items-center mb-3">
+                        <div class="avatar bg-danger text-white rounded-circle d-flex align-items-center justify-content-center me-3"
+                             style="width: 50px; height: 50px; font-size: 1.25rem; font-weight: bold;">
+                            {{ customer.name|first|upper }}
+                        </div>
+                        <div>
+                            <h5 class="mb-1">{{ customer.name }}</h5>
+                            <small class="text-muted">Customer ID: {{ customer.customer_id }}</small>
+                        </div>
+                    </div>
+
+                    <div class="row">
+                        <div class="col-6">
+                            <strong>Type:</strong> {{ customer.get_customer_type_display }}
+                        </div>
+                        <div class="col-6">
+                            <strong>Status:</strong>
+                            {% if customer.is_active %}
+                                <span class="badge bg-success">Active</span>
+                            {% else %}
+                                <span class="badge bg-secondary">Inactive</span>
+                            {% endif %}
+                        </div>
+                    </div>
+
+                    {% if customer.phone %}
+                    <div class="mt-2">
+                        <strong>Phone:</strong> {{ customer.phone }}
+                    </div>
+                    {% endif %}
+
+                    {% if customer.email %}
+                    <div class="mt-1">
+                        <strong>Email:</strong> {{ customer.email }}
+                    </div>
+                    {% endif %}
+
+                    <div class="mt-2">
+                        <strong>Created:</strong> {{ customer.created_at|date:"F d, Y" }}
+                    </div>
+                </div>
+
+                <!-- Impact Warning -->
+                <div class="impact-warning mb-4">
+                    <h6 class="text-warning">
+                        <i class="bi bi-exclamation-triangle-fill me-2"></i>What will be deleted:
+                    </h6>
+                    <ul class="list-unstyled mb-0 ps-3">
+                        <li><i class="bi bi-check text-danger me-2"></i>Customer profile and contact information</li>
+                        <li><i class="bi bi-check text-danger me-2"></i>Tax identification details (TIN, NIN, BRN)</li>
+                        <li><i class="bi bi-check text-danger me-2"></i>Address information</li>
+                        <li><i class="bi bi-check text-danger me-2"></i>Customer notes and history</li>
+                        <li><i class="bi bi-check text-danger me-2"></i>Group memberships</li>
+                        <li class="text-warning"><i class="bi bi-exclamation-triangle-fill me-2"></i>All associated transaction records</li>
+                    </ul>
+                </div>
+
+                <!-- Confirmation Form -->
+                <form method="post">
+                    {% csrf_token %}
+
+                    <div class="form-check mb-4">
+                        <input class="form-check-input" type="checkbox" id="confirmDelete" required>
+                        <label class="form-check-label text-danger fw-medium" for="confirmDelete">
+                            I understand that this action cannot be undone and all customer data will be permanently lost.
+                        </label>
+                    </div>
+
+                    <div class="d-grid gap-2 d-md-flex justify-content-md-end">
+                        {% if perms.customers.view_customer %}
+                        <a href="{% url 'customers:detail' customer.pk %}" class="btn btn-outline-secondary btn-lg me-md-2">
+                            <i class="bi bi-x-circle me-2"></i>Cancel
+                        </a>
+                        {% endif %}
+                        <button type="submit" class="btn btn-danger btn-lg" id="deleteButton" disabled>
+                            <i class="bi bi-trash me-2"></i>Delete Customer
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- Alternative Actions -->
+        <div class="card border-0 shadow-sm mt-4">
+            <div class="card-body">
+                <h6 class="card-title">
+                    <i class="bi bi-lightbulb me-2"></i>Alternative Actions
+                </h6>
+                <p class="card-text text-muted">
+                    Instead of deleting, you might want to consider:
+                </p>
+                <div class="d-grid gap-2 d-md-flex">
+                    {% if perms.customers.change_customer %}
+                    <a href="{% url 'customers:update' customer.pk %}" class="btn btn-outline-warning">
+                        <i class="bi bi-person-x me-2"></i>Deactivate Customer
+                    </a>
+                    <a href="{% url 'customers:update' customer.pk %}" class="btn btn-outline-primary">
+                        <i class="bi bi-pencil me-2"></i>Edit Information
+                    </a>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const confirmCheckbox = document.getElementById('confirmDelete');
+    const deleteButton = document.getElementById('deleteButton');
+
+    confirmCheckbox.addEventListener('change', function() {
+        deleteButton.disabled = !this.checked;
+
+        if (this.checked) {
+            deleteButton.classList.remove('btn-secondary');
+            deleteButton.classList.add('btn-danger');
+        } else {
+            deleteButton.classList.remove('btn-danger');
+            deleteButton.classList.add('btn-secondary');
+        }
+    });
+
+    // Final confirmation before submission
+    deleteButton.addEventListener('click', function(e) {
+        if (!confirm('Are you absolutely sure you want to delete this customer? This action cannot be undone.')) {
+            e.preventDefault();
+        }
+    });
+});
+</script>
+{% endblock %}

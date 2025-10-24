@@ -1,0 +1,1409 @@
+{% extends 'base.html' %}
+{% load static %}
+{% load i18n %}
+
+{% block title %}{% trans "Stock Management Dashboard" %} - {{ company.trading_name|default:company.name }}{% endblock %}
+
+{% block breadcrumb_items %}
+<li class="breadcrumb-item"><a href="{% url 'user_dashboard' %}">{% trans "Home" %}</a></li>
+<li class="breadcrumb-item active">{% trans "Stock Dashboard" %}</li>
+{% endblock %}
+
+{% block extra_css %}
+<link href="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.css" rel="stylesheet">
+<link href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/4.1.1/animate.min.css" rel="stylesheet">
+
+<style>
+    :root {
+        --primary-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        --success-gradient: linear-gradient(135deg, #84fab0 0%, #8fd3f4 100%);
+        --warning-gradient: linear-gradient(135deg, #ffecd2 0%, #fcb69f 100%);
+        --danger-gradient: linear-gradient(135deg, #ff9a9e 0%, #fecfef 100%);
+        --info-gradient: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%);
+        --shadow-light: 0 2px 12px rgba(0,0,0,0.08);
+        --shadow-medium: 0 4px 20px rgba(0,0,0,0.12);
+        --shadow-heavy: 0 8px 32px rgba(0,0,0,0.16);
+        --border-radius: 16px;
+        --transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    /* Dark Theme Variables */
+    [data-bs-theme="dark"] {
+        --bg-primary: #1a1d2e;
+        --bg-secondary: #22273b;
+        --bg-tertiary: #2a2f45;
+        --text-primary: #e2e8f0;
+        --text-secondary: #94a3b8;
+        --text-muted: #64748b;
+        --border-color: rgba(255, 255, 255, 0.1);
+        --shadow-light: 0 2px 12px rgba(0,0,0,0.3);
+        --shadow-medium: 0 4px 20px rgba(0,0,0,0.4);
+        --shadow-heavy: 0 8px 32px rgba(0,0,0,0.5);
+    }
+
+    [data-bs-theme="light"] {
+        --bg-primary: #ffffff;
+        --bg-secondary: #f8fafc;
+        --bg-tertiary: #f1f5f9;
+        --text-primary: #1a202c;
+        --text-secondary: #64748b;
+        --text-muted: #94a3b8;
+        --border-color: rgba(0,0,0,0.05);
+    }
+
+    body {
+        background-color: var(--bg-secondary);
+        color: var(--text-primary);
+    }
+
+    .dashboard-container {
+        padding: 1.5rem;
+    }
+
+    /* Theme Toggle */
+    .theme-toggle {
+        position: fixed;
+        bottom: 2rem;
+        right: 2rem;
+        z-index: 1000;
+    }
+
+    .theme-toggle-btn {
+        width: 56px;
+        height: 56px;
+        border-radius: 50%;
+        background: var(--primary-gradient);
+        border: none;
+        color: white;
+        font-size: 1.5rem;
+        box-shadow: var(--shadow-heavy);
+        cursor: pointer;
+        transition: var(--transition);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .theme-toggle-btn:hover {
+        transform: scale(1.1) rotate(15deg);
+    }
+
+    /* Stats Cards */
+    .stat-card {
+        background: var(--bg-primary);
+        border-radius: var(--border-radius);
+        padding: 1.75rem;
+        box-shadow: var(--shadow-light);
+        border: 1px solid var(--border-color);
+        transition: var(--transition);
+        position: relative;
+        overflow: hidden;
+        height: 100%;
+    }
+
+    .stat-card::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 4px;
+        height: 100%;
+        transition: var(--transition);
+    }
+
+    .stat-card:hover {
+        transform: translateY(-4px);
+        box-shadow: var(--shadow-medium);
+    }
+
+    .stat-card.primary::before { background: var(--primary-gradient); }
+    .stat-card.success::before { background: var(--success-gradient); }
+    .stat-card.warning::before { background: var(--warning-gradient); }
+    .stat-card.danger::before { background: var(--danger-gradient); }
+    .stat-card.info::before { background: var(--info-gradient); }
+
+    .stat-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 1.25rem;
+    }
+
+    .stat-icon {
+        width: 60px;
+        height: 60px;
+        border-radius: 16px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.5rem;
+        color: white;
+        background: var(--primary-gradient);
+    }
+
+    .stat-icon.success { background: var(--success-gradient); }
+    .stat-icon.warning { background: var(--warning-gradient); }
+    .stat-icon.danger { background: var(--danger-gradient); }
+    .stat-icon.info { background: var(--info-gradient); }
+
+    .stat-value {
+        font-size: 2.5rem;
+        font-weight: 800;
+        color: var(--text-primary);
+        margin: 0;
+        line-height: 1;
+    }
+
+    .stat-label {
+        font-size: 0.875rem;
+        color: var(--text-secondary);
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        font-weight: 600;
+        margin: 0.5rem 0 0 0;
+    }
+
+    .stat-change {
+        font-size: 0.875rem;
+        font-weight: 600;
+        margin-top: 0.75rem;
+        display: flex;
+        align-items: center;
+        gap: 0.25rem;
+    }
+
+    .stat-change.positive { color: #10b981; }
+    .stat-change.negative { color: #ef4444; }
+    .stat-change.neutral { color: var(--text-secondary); }
+
+    /* Chart Cards */
+    .chart-card {
+        background: var(--bg-primary);
+        border-radius: var(--border-radius);
+        box-shadow: var(--shadow-light);
+        border: 1px solid var(--border-color);
+        overflow: hidden;
+        height: 100%;
+    }
+
+    .chart-header {
+        padding: 1.5rem 2rem 0;
+        border-bottom: 1px solid var(--border-color);
+        margin-bottom: 1rem;
+    }
+
+    .chart-title {
+        font-size: 1.25rem;
+        font-weight: 700;
+        color: var(--text-primary);
+        margin: 0;
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+    }
+
+    .chart-subtitle {
+        font-size: 0.875rem;
+        color: var(--text-secondary);
+        margin: 0.5rem 0 1.5rem 0;
+    }
+
+    .chart-body {
+        padding: 0 2rem 2rem;
+        position: relative;
+        height: 400px;
+    }
+
+    /* Activity Feed */
+    .activity-card {
+        background: var(--bg-primary);
+        border-radius: var(--border-radius);
+        box-shadow: var(--shadow-light);
+        border: 1px solid var(--border-color);
+        height: 100%;
+    }
+
+    .activity-header {
+        padding: 1.5rem 2rem;
+        border-bottom: 1px solid var(--border-color);
+    }
+
+    .activity-title {
+        font-size: 1.25rem;
+        font-weight: 700;
+        color: var(--text-primary);
+        margin: 0;
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+    }
+
+    .activity-body {
+        padding: 1rem 0;
+        max-height: 500px;
+        overflow-y: auto;
+    }
+
+    .activity-item {
+        display: flex;
+        align-items: center;
+        padding: 1rem 2rem;
+        border-bottom: 1px solid var(--border-color);
+        transition: var(--transition);
+    }
+
+    .activity-item:hover {
+        background: var(--bg-tertiary);
+    }
+
+    .activity-icon {
+        width: 40px;
+        height: 40px;
+        border-radius: 10px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1rem;
+        margin-right: 1rem;
+        flex-shrink: 0;
+    }
+
+    .activity-icon.in {
+        background: rgba(16, 185, 129, 0.15);
+        color: #10b981;
+    }
+
+    .activity-icon.out {
+        background: rgba(239, 68, 68, 0.15);
+        color: #ef4444;
+    }
+
+    .activity-icon.adjustment {
+        background: rgba(59, 130, 246, 0.15);
+        color: #3b82f6;
+    }
+
+    .activity-content {
+        flex: 1;
+        min-width: 0;
+    }
+
+    .activity-product {
+        font-weight: 600;
+        color: var(--text-primary);
+        margin: 0 0 0.25rem 0;
+        font-size: 0.925rem;
+    }
+
+    .activity-meta {
+        font-size: 0.8rem;
+        color: var(--text-secondary);
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+    }
+
+    .activity-quantity {
+        font-weight: 700;
+        font-size: 0.875rem;
+        margin-left: auto;
+        padding: 0.25rem 0.75rem;
+        border-radius: 20px;
+        font-size: 0.8rem;
+    }
+
+    .activity-quantity.positive {
+        background: rgba(16, 185, 129, 0.15);
+        color: #10b981;
+    }
+
+    .activity-quantity.negative {
+        background: rgba(239, 68, 68, 0.15);
+        color: #ef4444;
+    }
+
+    /* Action Buttons */
+    .dashboard-actions {
+        display: flex;
+        gap: 1rem;
+        margin-bottom: 2rem;
+        flex-wrap: wrap;
+    }
+
+    .action-btn {
+        background: var(--primary-gradient);
+        border: none;
+        color: white;
+        padding: 0.75rem 1.5rem;
+        border-radius: 12px;
+        font-weight: 600;
+        text-decoration: none;
+        transition: var(--transition);
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
+    .action-btn:hover {
+        transform: translateY(-2px);
+        box-shadow: var(--shadow-medium);
+        color: white;
+    }
+
+    .action-btn.secondary {
+        background: var(--bg-tertiary);
+        color: var(--text-primary);
+        border: 2px solid var(--border-color);
+    }
+
+    .action-btn.secondary:hover {
+        background: var(--bg-primary);
+        border-color: #667eea;
+    }
+
+    /* Modal Styling */
+    .modal-content {
+        background: var(--bg-primary);
+        border: 1px solid var(--border-color);
+        border-radius: var(--border-radius);
+    }
+
+    .modal-header {
+        border-bottom: 1px solid var(--border-color);
+    }
+
+    .modal-body {
+        color: var(--text-primary);
+    }
+
+    .form-select, .form-control {
+        background-color: var(--bg-tertiary);
+        border-color: var(--border-color);
+        color: var(--text-primary);
+    }
+
+    .form-select:focus, .form-control:focus {
+        background-color: var(--bg-tertiary);
+        border-color: #667eea;
+        color: var(--text-primary);
+    }
+
+    .form-label {
+        color: var(--text-secondary);
+        font-weight: 600;
+    }
+
+    /* Alerts Card */
+    .alerts-card {
+        background: var(--bg-primary);
+        border-radius: var(--border-radius);
+        box-shadow: var(--shadow-light);
+        border: 1px solid var(--border-color);
+        height: 100%;
+    }
+
+    .alerts-header {
+        padding: 1.5rem 2rem;
+        border-bottom: 1px solid var(--border-color);
+        background: linear-gradient(135deg, rgba(254, 243, 199, 0.2) 0%, rgba(253, 230, 138, 0.2) 100%);
+    }
+
+    .alerts-title {
+        font-size: 1.25rem;
+        font-weight: 700;
+        color: var(--text-primary);
+        margin: 0;
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+    }
+
+    .alerts-body {
+        padding: 1rem 0;
+        max-height: 400px;
+        overflow-y: auto;
+    }
+
+    .alert-item {
+        display: flex;
+        align-items: center;
+        padding: 1rem 2rem;
+        border-bottom: 1px solid var(--border-color);
+        transition: var(--transition);
+    }
+
+    .alert-item:hover {
+        background: var(--bg-tertiary);
+    }
+
+    .alert-icon {
+        width: 36px;
+        height: 36px;
+        border-radius: 8px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 0.875rem;
+        margin-right: 1rem;
+        flex-shrink: 0;
+    }
+
+    .alert-icon.critical {
+        background: rgba(239, 68, 68, 0.15);
+        color: #ef4444;
+    }
+
+    .alert-icon.low {
+        background: rgba(245, 158, 11, 0.15);
+        color: #f59e0b;
+    }
+
+    .alert-content {
+        flex: 1;
+        min-width: 0;
+    }
+
+    .alert-product {
+        font-weight: 600;
+        color: var(--text-primary);
+        margin: 0 0 0.25rem 0;
+        font-size: 0.925rem;
+    }
+
+    .alert-details {
+        font-size: 0.8rem;
+        color: var(--text-secondary);
+    }
+
+    .alert-status {
+        margin-left: auto;
+        padding: 0.25rem 0.75rem;
+        border-radius: 20px;
+        font-size: 0.75rem;
+        font-weight: 600;
+        text-transform: uppercase;
+    }
+
+    .alert-status.critical {
+        background: rgba(239, 68, 68, 0.15);
+        color: #ef4444;
+    }
+
+    .alert-status.low {
+        background: rgba(245, 158, 11, 0.15);
+        color: #f59e0b;
+    }
+
+    /* Empty State */
+    .empty-state {
+        text-align: center;
+        padding: 3rem 2rem;
+        color: var(--text-secondary);
+    }
+
+    .empty-state i {
+        font-size: 3rem;
+        margin-bottom: 1rem;
+        opacity: 0.5;
+    }
+
+    /* Loading State */
+    .loading-card {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        height: 200px;
+    }
+
+    .loading-spinner {
+        width: 40px;
+        height: 40px;
+        border: 4px solid var(--border-color);
+        border-top-color: #667eea;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+    }
+
+    @keyframes spin {
+        to { transform: rotate(360deg); }
+    }
+
+    /* Responsive Design */
+    @media (max-width: 768px) {
+        .dashboard-container {
+            padding: 1rem;
+        }
+
+        .stat-card {
+            padding: 1.25rem;
+        }
+
+        .stat-value {
+            font-size: 2rem;
+        }
+
+        .chart-body {
+            height: 250px;
+        }
+
+        .theme-toggle {
+            bottom: 1rem;
+            right: 1rem;
+        }
+
+        .theme-toggle-btn {
+            width: 48px;
+            height: 48px;
+            font-size: 1.25rem;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="dashboard-container">
+    <!-- Dashboard Actions -->
+    <div class="dashboard-actions">
+        {% if perms.inventory.add_stockmovement %}
+        <a href="{% url 'inventory:movement_create' %}" class="action-btn">
+            <i class="bi bi-plus-circle"></i>
+            {% trans "Record Movement" %}
+        </a>
+        {% endif %}
+
+        {% if perms.inventory.view_product %}
+        <a href="{% url 'inventory:stock_list' %}" class="action-btn secondary">
+            <i class="bi bi-list-ul"></i>
+            {% trans "View Stock" %}
+        </a>
+        {% endif %}
+        {% if perms.inventory.add_stock %}
+        <a href="{% url 'inventory:stock_import' %}" class="action-btn secondary">
+            <i class="fas fa-file-import"></i>
+            Import Data
+        </a>
+        {% endif %}
+        {% if perms.inventory.view_stock %}
+        <a href="{% url 'inventory:stock_export' %}?format=excel" class="action-btn secondary">
+            <i class="fas fa-file-export"></i>
+            Export Data
+        </a>
+        {% endif %}
+
+        <a href="{% url 'efris:stock_transfer' %}" class="action-btn secondary">
+            <i class="bi bi-arrow-left-right"></i>
+            {% trans "Transfer Stock" %}
+        </a>
+
+        <a href="{% url 'efris:bulk_stock_sync' %}" class="action-btn secondary">
+            <i class="bi bi-arrow-repeat"></i>
+            {% trans "EFRIS Sync" %}
+        </a>
+
+        <a href="{% url 'efris:stock_records_query' %}" class="action-btn secondary">
+            <i class="bi bi-search"></i>
+            {% trans "Query Records" %}
+        </a>
+    </div>
+
+    <!-- Stats Cards Row -->
+    <div class="row mb-4">
+        <div class="col-xl-3 col-md-6 mb-4">
+            <div class="stat-card primary animate__animated animate__fadeInUp">
+                <div class="stat-header">
+                    <div>
+                        <h3 class="stat-value" id="totalProducts">{{ total_products|default:0 }}</h3>
+                        <p class="stat-label">{% trans "Total Products with stock" %}</p>
+                    </div>
+                    <div class="stat-icon">
+                        <i class="bi bi-box-seam"></i>
+                    </div>
+                </div>
+                <div class="stat-change neutral">
+                    <i class="bi bi-graph-up"></i>
+                    {% trans "In inventory" %}
+                </div>
+            </div>
+        </div>
+
+        <div class="col-xl-3 col-md-6 mb-4">
+            <div class="stat-card success animate__animated animate__fadeInUp" style="animation-delay: 0.1s;">
+                <div class="stat-header">
+                    <div>
+                        <h3 class="stat-value" id="totalStores">{{ total_stores }}</h3>
+                        <p class="stat-label">{% trans "Active Stores" %}</p>
+                    </div>
+                    <div class="stat-icon success">
+                        <i class="bi bi-shop"></i>
+                    </div>
+                </div>
+                <div class="stat-change positive">
+                    <i class="bi bi-check-circle"></i>
+                    {% trans "Operational" %}
+                </div>
+            </div>
+        </div>
+
+        <div class="col-xl-3 col-md-6 mb-4">
+            <div class="stat-card danger animate__animated animate__fadeInUp" style="animation-delay: 0.2s;">
+                <div class="stat-header">
+                    <div>
+                        <h3 class="stat-value" id="outOfStock">{{ out_of_stock|default:0 }}</h3>
+                        <p class="stat-label">{% trans "Out of Stock" %}</p>
+                    </div>
+                    <div class="stat-icon danger">
+                        <i class="bi bi-exclamation-triangle"></i>
+                    </div>
+                </div>
+                <div class="stat-change negative">
+                    <i class="bi bi-exclamation-circle"></i>
+                    {% trans "Needs attention" %}
+                </div>
+            </div>
+        </div>
+
+        <div class="col-xl-3 col-md-6 mb-4">
+            <div class="stat-card warning animate__animated animate__fadeInUp" style="animation-delay: 0.3s;">
+                <div class="stat-header">
+                    <div>
+                        <h3 class="stat-value" id="lowStock">{{ low_stock|default:0 }}</h3>
+                        <p class="stat-label">{% trans "Low Stock" %}</p>
+                    </div>
+                    <div class="stat-icon warning">
+                        <i class="bi bi-arrow-down-circle"></i>
+                    </div>
+                </div>
+                <div class="stat-change negative">
+                    <i class="bi bi-eye"></i>
+                    {% trans "Monitor closely" %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- EFRIS Stats Row -->
+    <div class="row mb-4">
+        <div class="col-md-6 mb-4">
+            <div class="stat-card info animate__animated animate__fadeInUp" style="animation-delay: 0.4s;">
+                <div class="stat-header">
+                    <div>
+                        <h3 class="stat-value" id="efrisProducts">{{ efris_products|default:0 }}</h3>
+                        <p class="stat-label">{% trans "EFRIS Products" %}</p>
+                    </div>
+                    <div class="stat-icon info">
+                        <i class="bi bi-cloud-check"></i>
+                    </div>
+                </div>
+                <div class="stat-change positive">
+                    <i class="bi bi-cloud-upload"></i>
+                    {% trans "Uploaded to EFRIS" %}
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-6 mb-4">
+            <div class="stat-card warning animate__animated animate__fadeInUp" style="animation-delay: 0.5s;">
+                <div class="stat-header">
+                    <div>
+                        <h3 class="stat-value" id="stocksNeedingSync">{{ stocks_needing_sync|default:0 }}</h3>
+                        <p class="stat-label">{% trans "Needs EFRIS Sync" %}</p>
+                    </div>
+                    <div class="stat-icon warning">
+                        <i class="bi bi-arrow-repeat"></i>
+                    </div>
+                </div>
+                <div class="stat-change {% if stocks_needing_sync > 0 %}negative{% else %}positive{% endif %}">
+                    <i class="bi bi-{% if stocks_needing_sync > 0 %}exclamation{% else %}check{% endif %}-circle"></i>
+                    {% if stocks_needing_sync > 0 %}
+                        <a href="{% url 'efris:bulk_stock_sync' %}" class="text-warning">{% trans "Sync now" %}</a>
+                    {% else %}
+                        {% trans "All synced" %}
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Quick Actions Card -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="chart-card animate__animated animate__fadeInUp" style="animation-delay: 0.6s;">
+                <div class="chart-header">
+                    <h5 class="chart-title">
+                        <i class="bi bi-lightning-charge"></i>
+                        {% trans "Quick Actions" %}
+                    </h5>
+                </div>
+                <div class="chart-body" style="height: auto; padding: 1.5rem 2rem;">
+                    <div class="row g-3">
+                        <div class="col-md-3">
+                            <button type="button" class="btn btn-outline-success w-100" data-bs-toggle="modal" data-bs-target="#increaseStockModal">
+                                <i class="bi bi-plus-circle"></i> {% trans "Increase Stock" %}
+                            </button>
+                        </div>
+                        <div class="col-md-3">
+                            <button type="button" class="btn btn-outline-danger w-100" data-bs-toggle="modal" data-bs-target="#decreaseStockModal">
+                                <i class="bi bi-dash-circle"></i> {% trans "Decrease Stock" %}
+                            </button>
+                        </div>
+                        <div class="col-md-3">
+                            <button type="button" class="btn btn-outline-info w-100" data-bs-toggle="modal" data-bs-target="#queryStockModal">
+                                <i class="bi bi-search"></i> {% trans "Query Stock" %}
+                            </button>
+                        </div>
+                        <div class="col-md-3">
+                            <a href="{% url 'efris:stock_transfer' %}" class="btn btn-outline-primary w-100">
+                                <i class="bi bi-arrow-left-right"></i> {% trans "Transfer" %}
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Charts Row -->
+    <div class="row mb-4">
+        <div class="col-lg-8 mb-4">
+            <div class="chart-card animate__animated animate__fadeInUp" style="animation-delay: 0.7s;">
+                <div class="chart-header">
+                    <h5 class="chart-title">
+                        <i class="bi bi-graph-up"></i>
+                        {% trans "Stock Movements Trend" %}
+                    </h5>
+                    <p class="chart-subtitle">{% trans "Daily stock movements over the last 7 days" %}</p>
+                </div>
+                <div class="chart-body">
+                    <canvas id="movementsTrendChart"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-lg-4 mb-4">
+            <div class="chart-card animate__animated animate__fadeInUp" style="animation-delay: 0.8s;">
+                <div class="chart-header">
+                    <h5 class="chart-title">
+                        <i class="bi bi-pie-chart"></i>
+                        {% trans "Stock Status" %}
+                    </h5>
+                    <p class="chart-subtitle">{% trans "Current stock level distribution" %}</p>
+                </div>
+                <div class="chart-body">
+                    <canvas id="stockStatusChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Activity and Alerts Row -->
+    <div class="row">
+        <div class="col-lg-7 mb-4">
+    <div class="card animate__animated animate__fadeInUp" style="animation-delay: 0.9s;">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <h5 class="mb-0">
+                <i class="bi bi-clock-history me-2"></i>
+                {% trans "Recent Stock Movements" %}
+            </h5>
+            <a href="{% url 'inventory:movement_list' %}" class="btn btn-sm btn-outline-primary">
+                {% trans "View All" %}
+            </a>
+        </div>
+        <div class="card-body">
+            {% if recent_movements %}
+            <div class="table-responsive">
+                <table class="table table-hover align-middle">
+                    <thead>
+                        <tr>
+                            <th>{% trans "Date" %}</th>
+                            <th>{% trans "Product" %}</th>
+                            <th>{% trans "Store" %}</th>
+                            <th>{% trans "Type" %}</th>
+                            <th>{% trans "Quantity" %}</th>
+                            <th>{% trans "Reference" %}</th>
+                            <th>{% trans "Actions" %}</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for movement in recent_movements %}
+                        <tr>
+                            <td>{{ movement.created_at|date:"M d, Y H:i" }}</td>
+                            <td>{{ movement.product.name }}</td>
+                            <td>{{ movement.store.name }}</td>
+                            <td>
+                                {% if movement.movement_type == 'PURCHASE' %}
+                                <span class="badge bg-success">Purchase</span>
+                                {% elif movement.movement_type == 'SALE' %}
+                                <span class="badge bg-primary">Sale</span>
+                                {% elif movement.movement_type == 'TRANSFER_IN' %}
+                                <span class="badge bg-info">Transfer In</span>
+                                {% elif movement.movement_type == 'TRANSFER_OUT' %}
+                                <span class="badge bg-warning">Transfer Out</span>
+                                {% else %}
+                                <span class="badge bg-secondary">{{ movement.get_movement_type_display }}</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <span class="{% if movement.quantity < 0 %}text-danger{% else %}text-success{% endif %}">
+                                    {{ movement.quantity }}
+                                </span>
+                            </td>
+                            <td>{{ movement.reference|default:"-" }}</td>
+                            <td>
+                                <a href="{% url 'efris:stock_query' movement.product.id %}" class="btn btn-sm btn-outline-info" title="View in EFRIS">
+                                    <i class="bi bi-eye"></i>
+                                </a>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="text-center py-4">
+                <i class="bi bi-inbox text-muted" style="font-size: 3rem;"></i>
+                <p class="text-muted mt-3">{% trans "No recent stock movements" %}</p>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<div class="col-lg-5 mb-4">
+    <div class="alerts-card animate__animated animate__fadeInUp" style="animation-delay: 1s;">
+        <div class="alerts-header">
+            <h5 class="alerts-title">
+                <i class="bi bi-bell"></i>
+                {% trans "Stock Alerts" %}
+            </h5>
+        </div>
+        <div class="alerts-body" id="stockAlerts">
+            {% if low_stock_items %}
+                <ul class="list-group list-group-flush">
+                    {% for stock in low_stock_items %}
+                        <li class="list-group-item d-flex justify-content-between align-items-center">
+                            <span>{{ stock.product.name }}</span>
+                            <span class="badge bg-warning text-dark">
+                                {{ stock.quantity }} left
+                            </span>
+                        </li>
+                    {% endfor %}
+                </ul>
+            {% else %}
+                <div class="text-center py-4">
+                    <i class="bi bi-check-circle text-success" style="font-size: 2rem;"></i>
+                    <p class="text-muted mt-2 mb-0">{% trans "All stock levels are healthy!" %}</p>
+                </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+
+    </div>
+</div>
+
+<!-- Theme Toggle -->
+<div class="theme-toggle">
+    <button class="theme-toggle-btn" id="themeToggle" title="{% trans 'Toggle theme' %}">
+        <i class="bi bi-moon-stars" id="themeIcon"></i>
+    </button>
+</div>
+
+<!-- Increase Stock Modal -->
+<div class="modal fade" id="increaseStockModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-success text-white">
+                <h5 class="modal-title">
+                    <i class="bi bi-plus-circle me-2"></i>{% trans "Increase Stock" %}
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p class="text-muted">{% trans "Select a product to increase its stock in EFRIS" %}</p>
+                <div class="mb-3">
+                    <label class="form-label">{% trans "Product" %}</label>
+                    <select class="form-select" id="increaseProductSelect">
+                        <option value="">{% trans "Select a product..." %}</option>
+                        {% for product in products %}
+                        <option value="{{ product.id }}">{{ product.name }} ({{ product.sku }})</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <button type="button" class="btn btn-success w-100" onclick="goToIncrease()">
+                    <i class="bi bi-arrow-right"></i> {% trans "Continue" %}
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Decrease Stock Modal -->
+<div class="modal fade" id="decreaseStockModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-danger text-white">
+                <h5 class="modal-title">
+                    <i class="bi bi-dash-circle me-2"></i>{% trans "Decrease Stock" %}
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p class="text-muted">{% trans "Select a product to decrease its stock in EFRIS" %}</p>
+                <div class="mb-3">
+                    <label class="form-label">{% trans "Product" %}</label>
+                    <select class="form-select" id="decreaseProductSelect">
+                        <option value="">{% trans "Select a product..." %}</option>
+                        {% for product in products %}
+                        <option value="{{ product.id }}">{{ product.name }} ({{ product.sku }})</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <button type="button" class="btn btn-danger w-100" onclick="goToDecrease()">
+                    <i class="bi bi-arrow-right"></i> {% trans "Continue" %}
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Query Stock Modal -->
+<div class="modal fade" id="queryStockModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-info text-white">
+                <h5 class="modal-title">
+                    <i class="bi bi-search me-2"></i>{% trans "Query Stock" %}
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p class="text-muted">{% trans "Select a product to view its stock in EFRIS" %}</p>
+                <div class="mb-3">
+                    <label class="form-label">{% trans "Product" %}</label>
+                    <select class="form-select" id="queryProductSelect">
+                        <option value="">{% trans "Select a product..." %}</option>
+                        {% for product in products %}
+                        <option value="{{ product.id }}">{{ product.name }} ({{ product.sku }})</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <button type="button" class="btn btn-info w-100" onclick="goToQuery()">
+                    <i class="bi bi-arrow-right"></i> {% trans "Continue" %}
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+
+<script>
+    let movementsTrendChart;
+    let stockStatusChart;
+    let currentTheme = localStorage.getItem('theme') || 'light';
+
+    document.addEventListener('DOMContentLoaded', function() {
+        // Initialize theme
+        applyTheme(currentTheme);
+
+        // Theme toggle
+        document.getElementById('themeToggle').addEventListener('click', toggleTheme);
+
+        // Initialize dashboard
+        loadDashboardData();
+
+        // Set up periodic refresh
+        setInterval(loadDashboardData, 300000); // Refresh every 5 minutes
+    });
+
+    function toggleTheme() {
+        currentTheme = currentTheme === 'light' ? 'dark' : 'light';
+        localStorage.setItem('theme', currentTheme);
+        applyTheme(currentTheme);
+
+        // Reload charts with new theme
+        if (movementsTrendChart) {
+            loadDashboardData();
+        }
+    }
+
+    function applyTheme(theme) {
+        document.documentElement.setAttribute('data-bs-theme', theme);
+        const icon = document.getElementById('themeIcon');
+        if (theme === 'dark') {
+            icon.className = 'bi bi-sun-fill';
+        } else {
+            icon.className = 'bi bi-moon-stars';
+        }
+    }
+
+    async function loadDashboardData() {
+        try {
+            const response = await fetch('{% url "efris:stock_dashboard_data" %}');
+            const data = await response.json();
+
+            if (data.error) {
+                console.error('Dashboard data error:', data.error);
+                return;
+            }
+
+            // Update stats
+            updateStats(data);
+
+            // Update charts
+            updateCharts(data);
+
+            // Update activity feed
+            updateRecentActivity(data);
+
+            // Update alerts
+            updateStockAlerts(data);
+
+        } catch (error) {
+            console.error('Error loading dashboard data:', error);
+        }
+    }
+
+    function updateStats(data) {
+        const stats = data.stock_stats;
+
+        // Update values with animation
+        animateValue('totalProducts', 0, stats.total_products || 0, 1000);
+        animateValue('totalStores', 0, stats.total_stores || 0, 1000);
+        animateValue('outOfStock', 0, stats.out_of_stock || 0, 1000);
+        animateValue('lowStock', 0, stats.low_stock || 0, 1000);
+        animateValue('efrisProducts', 0, stats.efris_products || 0, 1000);
+    }
+
+    function animateValue(elementId, start, end, duration) {
+        const element = document.getElementById(elementId);
+        if (!element) return;
+
+        const range = end - start;
+        const startTime = performance.now();
+
+        function update(currentTime) {
+            const elapsed = currentTime - startTime;
+            const progress = Math.min(elapsed / duration, 1);
+            const value = Math.floor(start + (range * progress));
+
+            element.textContent = value.toLocaleString();
+
+            if (progress < 1) {
+                requestAnimationFrame(update);
+            }
+        }
+
+        requestAnimationFrame(update);
+    }
+
+    function updateCharts(data) {
+        updateMovementsTrendChart(data.movements_by_day);
+        updateStockStatusChart(data.stock_by_status);
+    }
+
+    function getChartColors() {
+        const isDark = currentTheme === 'dark';
+        return {
+            textColor: isDark ? '#e2e8f0' : '#1a202c',
+            gridColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.05)',
+            tooltipBg: isDark ? 'rgba(42, 47, 69, 0.95)' : 'rgba(0, 0, 0, 0.8)'
+        };
+    }
+
+    function updateMovementsTrendChart(movementData) {
+        const ctx = document.getElementById('movementsTrendChart').getContext('2d');
+        const colors = getChartColors();
+
+        if (movementsTrendChart) {
+            movementsTrendChart.destroy();
+        }
+
+        const labels = movementData.map(item => {
+            const date = new Date(item.date);
+            return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        });
+
+        const values = movementData.map(item => item.count);
+
+        movementsTrendChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: '{% trans "Stock Movements" %}',
+                    data: values,
+                    borderColor: '#667eea',
+                    backgroundColor: 'rgba(102, 126, 234, 0.1)',
+                    borderWidth: 3,
+                    fill: true,
+                    tension: 0.4,
+                    pointBackgroundColor: '#667eea',
+                    pointBorderColor: '#fff',
+                    pointBorderWidth: 2,
+                    pointRadius: 6,
+                    pointHoverRadius: 8
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        display: false
+                    },
+                    tooltip: {
+                        backgroundColor: colors.tooltipBg,
+                        titleColor: '#fff',
+                        bodyColor: '#fff',
+                        cornerRadius: 8,
+                        padding: 12
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        grid: {
+                            color: colors.gridColor
+                        },
+                        ticks: {
+                            color: colors.textColor
+                        }
+                    },
+                    x: {
+                        grid: {
+                            display: false
+                        },
+                        ticks: {
+                            color: colors.textColor
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    function updateStockStatusChart(statusData) {
+        const ctx = document.getElementById('stockStatusChart').getContext('2d');
+        const colors = getChartColors();
+
+        if (stockStatusChart) {
+            stockStatusChart.destroy();
+        }
+
+        const data = [
+            statusData.critical || 0,
+            statusData.low || 0,
+            statusData.medium || 0,
+            statusData.good || 0
+        ];
+
+        const chartColors = ['#ef4444', '#f59e0b', '#06b6d4', '#10b981'];
+
+        stockStatusChart = new Chart(ctx, {
+            type: 'doughnut',
+            data: {
+                labels: [
+                    '{% trans "Critical" %}',
+                    '{% trans "Low" %}',
+                    '{% trans "Medium" %}',
+                    '{% trans "Good" %}'
+                ],
+                datasets: [{
+                    data: data,
+                    backgroundColor: chartColors,
+                    borderWidth: 0,
+                    hoverOffset: 10
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        position: 'bottom',
+                        labels: {
+                            padding: 20,
+                            usePointStyle: true,
+                            color: colors.textColor
+                        }
+                    },
+                    tooltip: {
+                        backgroundColor: colors.tooltipBg,
+                        titleColor: '#fff',
+                        bodyColor: '#fff',
+                        cornerRadius: 8,
+                        padding: 12
+                    }
+                },
+                cutout: '60%'
+            }
+        });
+    }
+
+    function updateRecentActivity(data) {
+        const container = document.getElementById('recentActivity');
+
+        if (!data.recent_movements || data.recent_movements.length === 0) {
+            container.innerHTML = `
+                <div class="empty-state">
+                    <i class="bi bi-inbox"></i>
+                    <h6>{% trans "No Recent Activity" %}</h6>
+                    <p>{% trans "No stock movements recorded recently" %}</p>
+                </div>
+            `;
+            return;
+        }
+
+        let html = '';
+        data.recent_movements.forEach(movement => {
+            const iconClass = getMovementIconClass(movement.movement_type);
+            const quantityClass = getMovementQuantityClass(movement.movement_type);
+            const quantityPrefix = getMovementQuantityPrefix(movement.movement_type);
+
+            html += `
+                <div class="activity-item">
+                    <div class="activity-icon ${iconClass}">
+                        <i class="bi ${getMovementIcon(movement.movement_type)}"></i>
+                    </div>
+                    <div class="activity-content">
+                        <div class="activity-product">${movement.product__name}</div>
+                        <div class="activity-meta">
+                            <span>${movement.store__name}</span>
+                            <span>•</span>
+                            <span>${formatTimeAgo(movement.created_at)}</span>
+                            <span>•</span>
+                            <span>${movement.created_by__username}</span>
+                        </div>
+                    </div>
+                    <div class="activity-quantity ${quantityClass}">
+                        ${quantityPrefix}${Math.abs(movement.quantity)}
+                    </div>
+                </div>
+            `;
+        });
+
+        container.innerHTML = html;
+    }
+
+    function updateStockAlerts(data) {
+        const container = document.getElementById('stockAlerts');
+
+        if (!data.stock_alerts || data.stock_alerts.length === 0) {
+            container.innerHTML = `
+                <div class="empty-state">
+                    <i class="bi bi-check-circle"></i>
+                    <h6>{% trans "No Stock Alerts" %}</h6>
+                    <p>{% trans "All stock levels are within normal ranges" %}</p>
+                </div>
+            `;
+            return;
+        }
+
+        let html = '';
+        data.stock_alerts.forEach(alert => {
+            const statusClass = alert.status === 'critical' ? 'critical' : 'low';
+            const statusText = alert.status === 'critical' ? '{% trans "OUT OF STOCK" %}' : '{% trans "LOW STOCK" %}';
+
+            html += `
+                <div class="alert-item">
+                    <div class="alert-icon ${statusClass}">
+                        <i class="bi ${alert.status === 'critical' ? 'bi-x-circle' : 'bi-exclamation-circle'}"></i>
+                    </div>
+                    <div class="alert-content">
+                        <div class="alert-product">${alert.product_name}</div>
+                        <div class="alert-details">
+                            <span>${alert.store_name}</span>
+                            <span>•</span>
+                            <span>${alert.current_stock} / ${alert.reorder_level}</span>
+                        </div>
+                    </div>
+                    <div class="alert-status ${statusClass}">
+                        ${statusText}
+                    </div>
+                </div>
+            `;
+        });
+
+        container.innerHTML = html;
+    }
+
+    function getMovementIconClass(movementType) {
+        const inTypes = ['PURCHASE', 'RETURN', 'TRANSFER_IN'];
+        const outTypes = ['SALE', 'TRANSFER_OUT'];
+
+        if (inTypes.includes(movementType)) return 'in';
+        if (outTypes.includes(movementType)) return 'out';
+        return 'adjustment';
+    }
+
+    function getMovementQuantityClass(movementType) {
+        const inTypes = ['PURCHASE', 'RETURN', 'TRANSFER_IN'];
+        const outTypes = ['SALE', 'TRANSFER_OUT'];
+
+        if (inTypes.includes(movementType)) return 'positive';
+        if (outTypes.includes(movementType)) return 'negative';
+        return 'neutral';
+    }
+
+    function getMovementQuantityPrefix(movementType) {
+        const inTypes = ['PURCHASE', 'RETURN', 'TRANSFER_IN'];
+        const outTypes = ['SALE', 'TRANSFER_OUT'];
+
+        if (inTypes.includes(movementType)) return '+';
+        if (outTypes.includes(movementType)) return '-';
+        return '';
+    }
+
+    function getMovementIcon(movementType) {
+        const inTypes = ['PURCHASE', 'RETURN', 'TRANSFER_IN'];
+        const outTypes = ['SALE', 'TRANSFER_OUT'];
+
+        if (inTypes.includes(movementType)) return 'bi-plus-circle';
+        if (outTypes.includes(movementType)) return 'bi-dash-circle';
+        return 'bi-arrow-left-right';
+    }
+
+    function formatTimeAgo(dateString) {
+        const date = new Date(dateString);
+        const now = new Date();
+        const diffInSeconds = Math.floor((now - date) / 1000);
+
+        if (diffInSeconds < 60) return '{% trans "Just now" %}';
+        if (diffInSeconds < 3600) return `${Math.floor(diffInSeconds / 60)}{% trans "m ago" %}`;
+        if (diffInSeconds < 86400) return `${Math.floor(diffInSeconds / 3600)}{% trans "h ago" %}`;
+        return `${Math.floor(diffInSeconds / 86400)}{% trans "d ago" %}`;
+    }
+
+    // Modal navigation functions
+    function goToIncrease() {
+        const productId = document.getElementById('increaseProductSelect').value;
+        if (productId) {
+            window.location.href = `/efris/stock/increase/${productId}/`;
+        } else {
+            alert('{% trans "Please select a product" %}');
+        }
+    }
+
+    function goToDecrease() {
+        const productId = document.getElementById('decreaseProductSelect').value;
+        if (productId) {
+            window.location.href = `/efris/stock/decrease/${productId}/`;
+        } else {
+            alert('{% trans "Please select a product" %}');
+        }
+    }
+
+    function goToQuery() {
+        const productId = document.getElementById('queryProductSelect').value;
+        if (productId) {
+            window.location.href = `/efris/stock/query/${productId}/`;
+        } else {
+            alert('{% trans "Please select a product" %}');
+        }
+    }
+</script>
+{% endblock %}

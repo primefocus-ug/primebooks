@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Invite User - {{ company.display_name }}</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.0/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <style>
+        .header-section {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 2rem 0;
+            margin-bottom: 2rem;
+        }
+        .invite-card {
+            border: none;
+            border-radius: 15px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+            margin-bottom: 2rem;
+        }
+        .form-floating {
+            margin-bottom: 1rem;
+        }
+        .user-type-card {
+            border: 2px solid #e9ecef;
+            border-radius: 12px;
+            padding: 1rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            margin-bottom: 1rem;
+        }
+        .user-type-card:hover {
+            border-color: #007bff;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 15px rgba(0,123,255,0.2);
+        }
+        .user-type-card.selected {
+            border-color: #007bff;
+            background-color: rgba(0,123,255,0.1);
+        }
+        .user-type-icon {
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.25rem;
+            margin-bottom: 1rem;
+        }
+        .step-indicator {
+            display: flex;
+            justify-content: center;
+            margin-bottom: 2rem;
+        }
+        .step {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 10px;
+            background-color: #e9ecef;
+            color: #6c757d;
+            font-weight: bold;
+            position: relative;
+        }
+        .step.active {
+            background-color: #007bff;
+            color: white;
+        }
+        .step.completed {
+            background-color: #28a745;
+            color: white;
+        }
+        .step:not(:last-child)::after {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 100%;
+            width: 20px;
+            height: 2px;
+            background-color: #e9ecef;
+            transform: translateY(-50%);
+        }
+        .step.completed:not(:last-child)::after {
+            background-color: #28a745;
+        }
+        .preview-card {
+            background: linear-gradient(45deg, #667eea, #764ba2);
+            color: white;
+            border-radius: 12px;
+            padding: 2rem;
+        }
+        .email-template {
+            background-color: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            padding: 1.5rem;
+            font-family: Arial, sans-serif;
+        }
+        .bulk-invite {
+            border: 2px dashed #dee2e6;
+            border-radius: 8px;
+            padding: 2rem;
+            text-align: center;
+            transition: all 0.3s ease;
+        }
+        .bulk-invite:hover {
+            border-color: #007bff;
+            background-color: rgba(0,123,255,0.05);
+        }
+    </style>
+</head>
+<body class="bg-light">
+    <div class="header-section">
+        <div class="container">
+            <div class="row align-items-center">
+                <div class="col-md-8">
+                    <h1 class="mb-1">
+                        <i class="fas fa-envelope me-2"></i>
+                        Invite User
+                    </h1>
+                    <p class="mb-0 opacity-75">{{ company.display_name }}</p>
+                </div>
+                <div class="col-md-4 text-end">
+                    <div class="d-flex gap-2 justify-content-end">
+                        <a href="{% url 'company_user_list' company.company_id %}" class="btn btn-outline-light">
+                            <i class="fas fa-arrow-left me-1"></i> Back to Users
+                        </a>
+                        <a href="{% url 'assign_user_to_company' company.company_id %}" class="btn btn-light">
+                            <i class="fas fa-user-plus me-1"></i> Add Existing
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="container">
+        <!-- Progress Steps -->
+        <div class="step-indicator">
+            <div class="step active" id="step1">1</div>
+            <div class="step" id="step2">2</div>
+            <div class="step" id="step3">3</div>
+        </div>
+
+        <!-- Invitation Form -->
+        <div class="invite-card">
+            <div class="card-body">
+                <form method="post" id="inviteForm">
+                    {% csrf_token %}
+                    
+                    <!-- Step 1: Basic Information -->
+                    <div class="step-content" id="stepContent1">
+                        <h4 class="mb-4">
+                            <i class="fas fa-user-plus text-primary me-2"></i>
+                            Basic Information
+                        </h4>
+                        
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="form-floating">
+                                    <input type="email" class="form-control" id="email" name="email" 
+                                           placeholder="user@example.com" required>
+                                    <label for="email">Email Address</label>
+                                </div>
+                                <div class="form-text mb-3">
+                                    <i class="fas fa-info-circle me-1"></i>
+                                    An invitation will be sent to this email address
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="form-floating">
+                                    <input type="text" class="form-control" id="firstName" name="first_name" 
+                                           placeholder="John">
+                                    <label for="firstName">First Name (Optional)</label>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="form-floating">
+                                    <input type="text" class="form-control" id="lastName" name="last_name" 
+                                           placeholder="Doe">
+                                    <label for="lastName">Last Name (Optional)</label>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="form-floating">
+                                    <input type="tel" class="form-control" id="phone" name="phone_number" 
+                                           placeholder="+256700000000">
+                                    <label for="phone">Phone Number (Optional)</label>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Step 2: Role Selection -->
+                    <div class="step-content d-none" id="stepContent2">
+                        <h4 class="mb-4">
+                            <i class="fas fa-user-tag text-primary me-2"></i>
+                            Select Role & Permissions
+                        </h4>
+
+                        <div class="row">
+                            {% for user_type_code, user_type_name in user_types %}
+                                <div class="col-md-6 col-lg-4">
+                                    <div class="user-type-card" data-user-type="{{ user_type_code }}">
+                                        <div class="text-center">
+                                            <div class="user-type-icon bg-primary bg-opacity-10 text-primary mx-auto">
+                                                {% if user_type_code == 'MANAGER' %}
+                                                    <i class="fas fa-user-tie"></i>
+                                                {% elif user_type_code == 'CASHIER' %}
+                                                    <i class="fas fa-cash-register"></i>
+                                                {% elif user_type_code == 'EMPLOYEE' %}
+                                                    <i class="fas fa-user"></i>
+                                                {% elif user_type_code == 'COMPANY_ADMIN' %}
+                                                    <i class="fas fa-user-shield"></i>
+                                                {% else %}
+                                                    <i class="fas fa-user"></i>
+                                                {% endif %}
+                                            </div>
+                                            <h6 class="mb-2">{{ user_type_name }}</h6>
+                                            <small class="text-muted">
+                                                {% if user_type_code == 'MANAGER' %}
+                                                    Can manage team and operations
+                                                {% elif user_type_code == 'CASHIER' %}
+                                                    Can process transactions and sales
+                                                {% elif user_type_code == 'EMPLOYEE' %}
+                                                    Basic access to assigned tasks
+                                                {% elif user_type_code == 'COMPANY_ADMIN' %}
+                                                    Full company administration access
+                                                {% else %}
+                                                    Standard user permissions
+                                                {% endif %}
+                                            </small>
+                                        </div>
+                                    </div>
+                                </div>
+                            {% endfor %}
+                        </div>
+
+                        <div class="mt-4">
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" id="isAdmin" name="is_admin">
+                                <label class="form-check-label" for="isAdmin">
+                                    <i class="fas fa-user-shield text-warning me-1"></i>
+                                    <strong>Company Administrator</strong>
+                                    <div class="form-text">Grant this user administrative privileges for company management</div>
+                                </label>
+                            </div>
+                        </div>
+
+                        <input type="hidden" name="user_type" id="selectedUserType" value="EMPLOYEE">
+                    </div>
+
+                    <!-- Step 3: Review & Send -->
+                    <div class="step-content d-none" id="stepContent3">
+                        <h4 class="mb-4">
+                            <i class="fas fa-check-circle text-primary me-2"></i>
+                            Review & Send Invitation
+                        </h4>
+
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="preview-card">
+                                    <h5 class="mb-3">
+                                        <i class="fas fa-eye me-2"></i>
+                                        Invitation Preview
+                                    </h5>
+                                    <div id="invitationPreview">
+                                        <div class="mb-2">
+                                            <strong>Email:</strong> <span id="previewEmail">-</span>
+                                        </div>
+                                        <div class="mb-2">
+                                            <strong>Name:</strong> <span id="previewName">-</span>
+                                        </div>
+                                        <div class="mb-2">
+                                            <strong>Role:</strong> <span id="previewRole">-</span>
+                                        </div>
+                                        <div class="mb-2">
+                                            <strong>Admin:</strong> <span id="previewAdmin">No</span>
+                                        </div>
+                                        <div class="mb-2">
+                                            <strong>Company:</strong> {{ company.display_name }}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <h6 class="mb-3">Email Template Preview</h6>
+                                <div class="email-template">
+                                    <div class="mb-3">
+                                        <strong>Subject:</strong> Invitation to join {{ company.display_name }}
+                                    </div>
+                                    <hr>
+                                                                        <p>
+                                        Hello <span id="templateName">User</span>,
+                                    </p>
+                                    <p>
+                                        You have been invited to join <strong>{{ company.display_name }}</strong> as a
+                                        <span id="templateRole">Role</span>. Please click the button below to set up your
+                                        account and get started.
+                                    </p>
+                                    <p>
+                                        <a href="{{ invitation_link }}" class="btn btn-primary">
+                                            Accept Invitation
+                                        </a>
+                                    </p>
+                                    <p class="small text-muted mt-3">
+                                        If you did not expect this invitation, you can safely ignore this email.
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Navigation Buttons -->
+                    <div class="d-flex justify-content-between mt-4">
+                        <button type="button" class="btn btn-outline-secondary d-none" id="prevBtn">
+                            <i class="fas fa-arrow-left me-1"></i> Previous
+                        </button>
+                        <button type="button" class="btn btn-primary" id="nextBtn">
+                            Next <i class="fas fa-arrow-right ms-1"></i>
+                        </button>
+                        <button type="submit" class="btn btn-success d-none" id="submitBtn">
+                            <i class="fas fa-paper-plane me-1"></i> Send Invitation
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- Bulk Invite Section -->
+        <div class="bulk-invite mt-4">
+            <i class="fas fa-users me-2 text-primary"></i>
+            <strong>Need to invite multiple users?</strong> 
+            <p class="mb-2">Upload a CSV file with user details to send multiple invitations at once.</p>
+            <a href="{% url 'bulk_invite_users' company.company_id %}" class="btn btn-outline-primary btn-sm">
+                <i class="fas fa-file-upload me-1"></i> Bulk Invite
+            </a>
+        </div>
+    </div>
+
+    <script>
+        // Step navigation logic
+        const steps = document.querySelectorAll('.step');
+        const stepContents = document.querySelectorAll('.step-content');
+        const nextBtn = document.getElementById('nextBtn');
+        const prevBtn = document.getElementById('prevBtn');
+        const submitBtn = document.getElementById('submitBtn');
+        let currentStep = 1;
+
+        function showStep(step) {
+            stepContents.forEach((content, index) => {
+                content.classList.toggle('d-none', index + 1 !== step);
+            });
+            steps.forEach((stepElem, index) => {
+                stepElem.classList.toggle('active', index + 1 === step);
+                stepElem.classList.toggle('completed', index + 1 < step);
+            });
+            prevBtn.classList.toggle('d-none', step === 1);
+            nextBtn.classList.toggle('d-none', step === 3);
+            submitBtn.classList.toggle('d-none', step !== 3);
+        }
+
+        nextBtn.addEventListener('click', () => {
+            if (currentStep < 3) {
+                currentStep++;
+                showStep(currentStep);
+                updatePreview();
+            }
+        });
+
+        prevBtn.addEventListener('click', () => {
+            if (currentStep > 1) {
+                currentStep--;
+                showStep(currentStep);
+                updatePreview();
+            }
+        });
+
+        // Role selection
+        const userTypeCards = document.querySelectorAll('.user-type-card');
+        const selectedUserTypeInput = document.getElementById('selectedUserType');
+
+        userTypeCards.forEach(card => {
+            card.addEventListener('click', () => {
+                userTypeCards.forEach(c => c.classList.remove('selected'));
+                card.classList.add('selected');
+                selectedUserTypeInput.value = card.dataset.userType;
+                updatePreview();
+            });
+        });
+
+        // Preview updater
+        function updatePreview() {
+            document.getElementById('previewEmail').textContent = document.getElementById('email').value || '-';
+            document.getElementById('previewName').textContent =
+                (document.getElementById('firstName').value + ' ' + document.getElementById('lastName').value).trim() || '-';
+            document.getElementById('previewRole').textContent =
+                document.querySelector('.user-type-card.selected h6')?.textContent || 'EMPLOYEE';
+            document.getElementById('previewAdmin').textContent =
+                document.getElementById('isAdmin').checked ? 'Yes' : 'No';
+
+            document.getElementById('templateName').textContent =
+                document.getElementById('firstName').value || 'User';
+            document.getElementById('templateRole').textContent =
+                document.querySelector('.user-type-card.selected h6')?.textContent || 'EMPLOYEE';
+        }
+
+        // Update preview in real-time
+        document.querySelectorAll('#email, #firstName, #lastName, #isAdmin').forEach(input => {
+            input.addEventListener('input', updatePreview);
+            input.addEventListener('change', updatePreview);
+        });
+
+        // Initialize
+        showStep(currentStep);
+        updatePreview();
+    </script>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.0/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

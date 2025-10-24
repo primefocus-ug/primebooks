@@ -1,0 +1,534 @@
+{% extends 'base.html' %}
+{% load i18n %}
+
+{% block title %}{% trans "Update User" %} - {{ form.instance.get_full_name|default:form.instance.username }}{% endblock %}
+
+{% block extra_css %}
+    <style>
+        .form-card {
+            border: none;
+            border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+        }
+        .form-header {
+            background: linear-gradient(135deg, #6f42c1, #e83e8c);
+            border-radius: 12px 12px 0 0;
+            color: white;
+            padding: 2rem;
+        }
+        .current-avatar {
+            width: 100px;
+            height: 100px;
+            object-fit: cover;
+            border-radius: 50%;
+            border: 3px solid #fff;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .form-control, .form-select {
+            border-radius: 8px;
+            border: 2px solid #e9ecef;
+            padding: 0.75rem 1rem;
+            transition: all 0.3s ease;
+        }
+        .form-control:focus, .form-select:focus {
+            border-color: #6f42c1;
+            box-shadow: 0 0 0 0.2rem rgba(111,66,193,0.25);
+        }
+        .form-label {
+            font-weight: 600;
+            color: #495057;
+            margin-bottom: 0.5rem;
+        }
+        .btn-update {
+            background: linear-gradient(135deg, #6f42c1, #e83e8c);
+            border: none;
+            border-radius: 8px;
+            padding: 0.75rem 2rem;
+            font-weight: 600;
+            color: white;
+            transition: all 0.3s ease;
+        }
+        .btn-update:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 15px rgba(111,66,193,0.4);
+            color: white;
+        }
+        .section-divider {
+            border-top: 2px solid #e9ecef;
+            margin: 2rem 0;
+            position: relative;
+        }
+        .section-divider::after {
+            content: attr(data-title);
+            position: absolute;
+            top: -12px;
+            left: 1rem;
+            background: white;
+            padding: 0 1rem;
+            color: #6c757d;
+            font-weight: 600;
+            font-size: 0.9rem;
+        }
+        .availability-check {
+            font-size: 0.875rem;
+            margin-top: 0.25rem;
+        }
+        .availability-check.available {
+            color: #28a745;
+        }
+        .availability-check.unavailable {
+            color: #dc3545;
+        }
+        .form-section {
+            margin-bottom: 2rem;
+        }
+        .required {
+            color: #dc3545;
+        }
+        .user-info-banner {
+            background: linear-gradient(135deg, rgba(111,66,193,0.1), rgba(232,62,140,0.1));
+            border-radius: 8px;
+            padding: 1rem;
+            margin-bottom: 2rem;
+            border-left: 4px solid #6f42c1;
+        }
+        .change-indicator {
+            background: #fff3cd;
+            border: 1px solid #ffeaa7;
+            border-radius: 4px;
+            padding: 0.25rem 0.5rem;
+            font-size: 0.75rem;
+            color: #856404;
+        }
+    </style>
+    {% endblock %}
+{% block content %}
+<div class="bg-light">
+    <div class="container py-5">
+        <div class="row justify-content-center">
+            <div class="col-lg-8">
+                <!-- Header -->
+                <div class="text-center mb-4">
+                    <nav aria-label="breadcrumb">
+                        <ol class="breadcrumb justify-content-center">
+                            <li class="breadcrumb-item"><a href="{% url 'user_list' %}">{% trans "Users" %}</a></li>
+                            <li class="breadcrumb-item"><a href="{% url 'user_detail' form.instance.pk %}">{{ form.instance.get_full_name|default:form.instance.username }}</a></li>
+                            <li class="breadcrumb-item active">{% trans "Edit" %}</li>
+                        </ol>
+                    </nav>
+                </div>
+
+                <!-- Current User Info Banner -->
+                <div class="user-info-banner">
+                    <div class="d-flex align-items-center">
+                        {% if form.instance.avatar %}
+                            <img src="{{ form.instance.avatar.url }}" alt="{% trans 'Current Avatar' %}" class="current-avatar me-3">
+                        {% else %}
+                            <div class="current-avatar bg-secondary d-flex align-items-center justify-content-center me-3">
+                                <i class="fas fa-user fa-2x text-white"></i>
+                            </div>
+                        {% endif %}
+                        <div>
+                            <h5 class="mb-1">{{ form.instance.get_full_name|default:form.instance.username }}</h5>
+                            <p class="text-muted mb-1">{{ form.instance.email }}</p>
+                            <span class="badge bg-primary">{{ form.instance.get_user_type_display }}</span>
+                            {% if form.instance.is_active %}
+                                <span class="badge bg-success ms-1">{% trans "Active" %}</span>
+                            {% else %}
+                                <span class="badge bg-danger ms-1">{% trans "Inactive" %}</span>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Form Card -->
+                <div class="card form-card">
+                    <div class="form-header text-center">
+                        <i class="fas fa-user-edit fa-3x mb-3"></i>
+                        <h2 class="mb-0">{% trans "Update User" %}</h2>
+                        <p class="mb-0 opacity-75">{% trans "Modify user information and settings" %}</p>
+                    </div>
+
+                    <div class="card-body p-4">
+                        <form method="post" enctype="multipart/form-data" id="userUpdateForm">
+                            {% csrf_token %}
+
+                            <!-- Basic Information Section -->
+                            <div class="form-section">
+                                <h5 class="text-primary mb-3">
+                                    <i class="fas fa-user me-2"></i>{% trans "Basic Information" %}
+                                </h5>
+
+                                <div class="row">
+                                    <div class="col-md-6 mb-3">
+                                        <label for="{{ form.first_name.id_for_label }}" class="form-label">
+                                            {% trans "First Name" %} <span class="required">*</span>
+                                        </label>
+                                        {{ form.first_name }}
+                                        {% if form.first_name.errors %}
+                                            <div class="text-danger small mt-1">{{ form.first_name.errors.0 }}</div>
+                                        {% endif %}
+                                    </div>
+
+                                    <div class="col-md-6 mb-3">
+                                        <label for="{{ form.last_name.id_for_label }}" class="form-label">
+                                            {% trans "Last Name" %} <span class="required">*</span>
+                                        </label>
+                                        {{ form.last_name }}
+                                        {% if form.last_name.errors %}
+                                            <div class="text-danger small mt-1">{{ form.last_name.errors.0 }}</div>
+                                        {% endif %}
+                                    </div>
+                                </div>
+
+                                <div class="row">
+                                    <div class="col-md-6 mb-3">
+                                        <label for="{{ form.middle_name.id_for_label }}" class="form-label">
+                                            {% trans "Middle Name" %}
+                                        </label>
+                                        {{ form.middle_name }}
+                                    </div>
+
+                                    <div class="col-md-6 mb-3">
+                                        <label for="{{ form.phone_number.id_for_label }}" class="form-label">
+                                            {% trans "Phone Number" %}
+                                        </label>
+                                        {{ form.phone_number }}
+                                        <div class="form-text">{% trans "Include country code (e.g., +256)" %}</div>
+                                        {% if form.phone_number.errors %}
+                                            <div class="text-danger small mt-1">{{ form.phone_number.errors.0 }}</div>
+                                        {% endif %}
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="section-divider" data-title="{% trans 'Account Details' %}"></div>
+
+                            <!-- Account Information Section -->
+                            <div class="form-section">
+                                <div class="row">
+                                    <div class="col-md-6 mb-3">
+                                        <label for="{{ form.email.id_for_label }}" class="form-label">
+                                            {% trans "Email Address" %} <span class="required">*</span>
+                                        </label>
+                                        {{ form.email }}
+                                        <div id="emailAvailability" class="availability-check"></div>
+                                        {% if form.email.errors %}
+                                            <div class="text-danger small mt-1">{{ form.email.errors.0 }}</div>
+                                        {% endif %}
+                                    </div>
+
+                                    <div class="col-md-6 mb-3">
+                                        <label for="{{ form.username.id_for_label }}" class="form-label">
+                                            {% trans "Username" %} <span class="required">*</span>
+                                        </label>
+                                        {{ form.username }}
+                                        <div id="usernameAvailability" class="availability-check"></div>
+                                        {% if form.username.errors %}
+                                            <div class="text-danger small mt-1">{{ form.username.errors.0 }}</div>
+                                        {% endif %}
+                                    </div>
+                                </div>
+
+                                <div class="row">
+                                    <div class="col-md-6 mb-3">
+                                        <label for="{{ form.language.id_for_label }}" class="form-label">
+                                            {% trans "Preferred Language" %}
+                                        </label>
+                                        {{ form.language }}
+                                    </div>
+
+                                    <div class="col-md-6 mb-3">
+                                        <label for="{{ form.timezone.id_for_label }}" class="form-label">
+                                            {% trans "Timezone" %}
+                                        </label>
+                                        {{ form.timezone }}
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="section-divider" data-title="{% trans 'Role & Permissions' %}"></div>
+
+                            <!-- Role Information Section -->
+                            <div class="form-section">
+                                <div class="row">
+                                    <div class="col-md-6 mb-3">
+                                        <label for="{{ form.user_type.id_for_label }}" class="form-label">
+                                            {% trans "User Type" %} <span class="required">*</span>
+                                        </label>
+                                        {{ form.user_type }}
+                                        {% if form.user_type.errors %}
+                                            <div class="text-danger small mt-1">{{ form.user_type.errors.0 }}</div>
+                                        {% endif %}
+                                    </div>
+                                </div>
+
+                                <!-- Permission Checkboxes -->
+                                <div class="row">
+                                    <div class="col-md-4 mb-3">
+                                        <div class="form-check">
+                                            {{ form.is_active }}
+                                            <label class="form-check-label" for="{{ form.is_active.id_for_label }}">
+                                                <i class="fas fa-check-circle text-success me-1"></i>
+                                                {% trans "Active Account" %}
+                                            </label>
+                                        </div>
+                                    </div>
+
+                                    <div class="col-md-4 mb-3">
+                                        <div class="form-check">
+                                            {{ form.is_staff }}
+                                            <label class="form-check-label" for="{{ form.is_staff.id_for_label }}">
+                                                <i class="fas fa-user-tie text-primary me-1"></i>
+                                                {% trans "Staff Member" %}
+                                            </label>
+                                        </div>
+                                    </div>
+
+                                    <div class="col-md-4 mb-3">
+                                        <div class="form-check">
+                                            {{ form.company_admin }}
+                                            <label class="form-check-label" for="{{ form.company_admin.id_for_label }}">
+                                                <i class="fas fa-building text-info me-1"></i>
+                                                {% trans "Company Admin" %}
+                                            </label>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="row">
+                                    <div class="col-md-4 mb-3">
+                                        <div class="form-check">
+                                            {{ form.email_verified }}
+                                            <label class="form-check-label" for="{{ form.email_verified.id_for_label }}">
+                                                <i class="fas fa-envelope-check text-success me-1"></i>
+                                                {% trans "Email Verified" %}
+                                            </label>
+                                        </div>
+                                    </div>
+
+                                    <div class="col-md-4 mb-3">
+                                        <div class="form-check">
+                                            {{ form.phone_verified }}
+                                            <label class="form-check-label" for="{{ form.phone_verified.id_for_label }}">
+                                                <i class="fas fa-phone-check text-success me-1"></i>
+                                                {% trans "Phone Verified" %}
+                                            </label>
+                                        </div>
+                                    </div>
+
+                                    <div class="col-md-4 mb-3">
+                                        <div class="form-check">
+                                            {{ form.two_factor_enabled }}
+                                            <label class="form-check-label" for="{{ form.two_factor_enabled.id_for_label }}">
+                                                <i class="fas fa-shield-alt text-warning me-1"></i>
+                                                {% trans "Two-Factor Auth" %}
+                                            </label>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="section-divider" data-title="{% trans 'Profile Information' %}"></div>
+
+                            <!-- Profile Information -->
+                            <div class="form-section">
+                                <div class="mb-3">
+                                    <label for="{{ form.bio.id_for_label }}" class="form-label">
+                                        {% trans "Bio/Description" %}
+                                    </label>
+                                    {{ form.bio }}
+                                    <div class="form-text">{% trans "Brief description about the user (max 500 characters)" %}</div>
+                                </div>
+
+                                {% if form.avatar %}
+                                <div class="row">
+                                    <div class="col-md-6 mb-3">
+                                        <label for="{{ form.avatar.id_for_label }}" class="form-label">
+                                            {% trans "Profile Picture" %}
+                                        </label>
+                                        {{ form.avatar }}
+                                        <div class="form-text">{% trans "Upload a new profile picture (optional)" %}</div>
+                                    </div>
+
+                                    {% if form.instance.avatar %}
+                                    <div class="col-md-6 mb-3">
+                                        <label class="form-label">{% trans "Current Picture" %}</label>
+                                        <div>
+                                            <img src="{{ form.instance.avatar.url }}" alt="{% trans 'Current Avatar' %}" class="img-thumbnail" style="max-width: 150px;">
+                                        </div>
+                                    </div>
+                                    {% endif %}
+                                </div>
+                                {% endif %}
+                            </div>
+
+                            <div class="section-divider" data-title="{% trans 'Security Information' %}"></div>
+
+                            <!-- Security Information (Read-only) -->
+                            <div class="form-section">
+                                <div class="row">
+                                    <div class="col-md-6 mb-3">
+                                        <label class="form-label">{% trans "Last Login" %}</label>
+                                        <div class="form-control bg-light">
+                                            {{ form.instance.last_login|date:"M d, Y H:i"|default:_("Never") }}
+                                        </div>
+                                    </div>
+
+                                    <div class="col-md-6 mb-3">
+                                        <label class="form-label">{% trans "Date Joined" %}</label>
+                                        <div class="form-control bg-light">
+                                            {{ form.instance.date_joined|date:"M d, Y H:i" }}
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="row">
+                                    <div class="col-md-6 mb-3">
+                                        <label class="form-label">{% trans "Login Count" %}</label>
+                                        <div class="form-control bg-light">
+                                            {{ form.instance.login_count }}
+                                        </div>
+                                    </div>
+
+                                    <div class="col-md-6 mb-3">
+                                        <label class="form-label">{% trans "Failed Login Attempts" %}</label>
+                                        <div class="form-control bg-light">
+                                            {{ form.instance.failed_login_attempts }}
+                                            {% if form.instance.is_locked %}
+                                                <span class="badge bg-danger ms-2">{% trans "Account Locked" %}</span>
+                                            {% endif %}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Action Buttons -->
+                            <div class="d-flex justify-content-between pt-3 border-top">
+                                <div>
+                                    <a href="{% url 'user_detail' form.instance.pk %}" class="btn btn-outline-secondary me-2">
+                                        <i class="fas fa-arrow-left me-1"></i>{% trans "Back to Details" %}
+                                    </a>
+                                    <a href="{% url 'user_list' %}" class="btn btn-outline-secondary">
+                                        <i class="fas fa-list me-1"></i> {% trans "User List" %]
+                                    </a>
+                                </div>
+                                
+                                <div>
+                                    <button type="reset" class="btn btn-outline-warning me-2">
+                                        <i class="fas fa-undo me-1"></i> {% trans "Reset" %}
+                                    </button>
+                                    <button type="submit" class="btn btn-update">
+                                        <i class="fas fa-save me-1"></i> {% trans "Update User" %}
+                                    </button>
+                                </div>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Messages -->
+    {% if messages %}
+    <div class="position-fixed top-0 end-0 p-3" style="z-index: 1050;">
+        {% for message in messages %}
+        <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
+            {{ message }}
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block extra_js %}
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.0/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // Real-time availability checking
+        function checkAvailability(field, endpoint, resultElement, currentUserId) {
+            const value = field.value.trim();
+            if (value.length < 3) {
+                resultElement.textContent = '';
+                return;
+            }
+            
+            const url = `${endpoint}?${field.name}=${encodeURIComponent(value)}&user_id=${currentUserId}`;
+            fetch(url)
+                .then(response => response.json())
+                .then(data => {
+                    resultElement.textContent = data.message;
+                    resultElement.className = `availability-check ${data.available ? 'available' : 'unavailable'}`;
+                })
+                .catch(error => {
+                    console.error('Error checking availability:', error);
+                });
+        }
+
+        // Set up availability checking
+        document.addEventListener('DOMContentLoaded', function() {
+            const emailField = document.querySelector('#id_email');
+            const usernameField = document.querySelector('#id_username');
+            const emailResult = document.querySelector('#emailAvailability');
+            const usernameResult = document.querySelector('#usernameAvailability');
+            const currentUserId = {{ form.instance.pk }};
+
+            if (emailField && emailResult) {
+                let emailTimeout;
+                emailField.addEventListener('input', function() {
+                    clearTimeout(emailTimeout);
+                    emailTimeout = setTimeout(() => {
+                        checkAvailability(emailField, '#', emailResult, currentUserId);
+                    }, 500);
+                });
+            }
+
+            if (usernameField && usernameResult) {
+                let usernameTimeout;
+                usernameField.addEventListener('input', function() {
+                    clearTimeout(usernameTimeout);
+                    usernameTimeout = setTimeout(() => {
+                        checkAvailability(usernameField, '#', usernameResult, currentUserId);
+                    }, 500);
+                });
+            }
+
+            // Track form changes url "check_username_availability" 
+            const form = document.getElementById('userUpdateForm');
+            const originalData = new FormData(form);
+            let hasChanges = false;
+
+            form.addEventListener('input', function() {
+                hasChanges = true;
+            });
+
+            form.addEventListener('change', function() {
+                hasChanges = true;
+            });
+
+            // Warn before leaving if there are unsaved changes
+            window.addEventListener('beforeunload', function(e) {
+                if (hasChanges) {
+                    e.preventDefault();
+                    e.returnValue = '';
+                }
+            });
+
+            // Remove warning when form is submitted
+            form.addEventListener('submit', function() {
+                hasChanges = false;
+            });
+        });
+
+        // Auto-dismiss alerts after 5 seconds
+        setTimeout(function() {
+            var alerts = document.querySelectorAll('.alert');
+            alerts.forEach(function(alert) {
+                var bsAlert = new bootstrap.Alert(alert);
+                bsAlert.close();
+            });
+        }, 5000);
+    </script>
+{% endblock %}

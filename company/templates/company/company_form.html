@@ -1,0 +1,2069 @@
+{% extends 'base.html' %}
+{% load i18n crispy_forms_tags %}
+
+{% block title %}{{ form_title }} - {% trans "Company Management" %}{% endblock %}
+
+{% block breadcrumb %}
+{{ block.super }}
+{% if perms.company.view_company %}
+<li class="breadcrumb-item"><a href="{% url 'companies:company_list' %}">{% trans "Companies" %}</a></li>
+{% endif %}
+<li class="breadcrumb-item active">{{ form_title }}</li>
+{% endblock %}
+
+{% block page_header %}
+<div class="page-header-wrapper">
+    <div class="container-fluid">
+        <div class="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center mb-4">
+            <div class="page-title-section">
+                <h1 class="h2 page-title mb-2">{{ form_title }}</h1>
+                <p class="page-description text-muted mb-0">
+                    {% if object %}
+                        {% trans "Update company information and manage organizational structure" %}
+                    {% else %}
+                        {% trans "Create a new company with comprehensive business information" %}
+                    {% endif %}
+                </p>
+                {% if object %}
+                <div class="company-meta mt-2">
+                    <span class="badge badge-company-id me-2">{{ object.company_id }}</span>
+                    <span class="badge status-{{ object.status|lower }}">{{ object.get_status_display }}</span>
+                    {% if object.is_verified %}
+                        <span class="badge bg-success-subtle text-success border border-success-subtle ms-1">
+                            <i class="bi bi-shield-check me-1"></i>{% trans "Verified" %}
+                        </span>
+                    {% endif %}
+                </div>
+                {% endif %}
+            </div>
+            <div class="page-actions d-flex flex-column flex-sm-row gap-2 mt-3 mt-md-0">
+                {% if perms.company.view_company %}
+                <a href="{% url 'companies:company_list' %}" class="btn btn-outline-secondary">
+                    <i class="bi bi-arrow-left me-2"></i>{% trans "Back to List" %}
+                </a>
+                {% endif %}
+                {% if object %}
+                <a href="{% url 'companies:company_detail' object.company_id %}" class="btn btn-outline-info">
+                    <i class="bi bi-eye me-2"></i>{% trans "View Details" %}
+                </a>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- Auto-save indicator -->
+    <div id="autoSaveIndicator" class="auto-save-indicator" style="display: none;">
+        <div class="d-flex align-items-center">
+            <div class="spinner-border spinner-border-sm text-primary me-2" role="status"></div>
+            <span class="small">{% trans "Saving draft..." %}</span>
+        </div>
+    </div>
+
+    <form method="post" enctype="multipart/form-data" id="companyForm" class="needs-validation" novalidate>
+        {% csrf_token %}
+
+        <div class="row g-4">
+            <!-- Main Form Content -->
+            <div class="col-xl-8 col-lg-7">
+                <div class="card form-card border-0 shadow-sm">
+                    <div class="card-header bg-transparent border-0 pb-0">
+                        <div class="d-flex align-items-center">
+                            <div class="header-icon me-3">
+                                <i class="bi bi-building text-primary"></i>
+                            </div>
+                            <div>
+                                <h5 class="card-title mb-1">{% trans "Company Information" %}</h5>
+                                <p class="card-subtitle text-muted mb-0">{% trans "Complete all required fields to proceed" %}</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="card-body pt-3">
+                        <!-- Enhanced Tab Navigation -->
+                        <ul class="nav nav-pills nav-fill mb-4" id="companyTabs" role="tablist">
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link active" id="basic-tab" data-bs-toggle="pill"
+                                        data-bs-target="#basic" type="button" role="tab" aria-controls="basic" aria-selected="true">
+                                    <i class="bi bi-info-circle me-2"></i>
+                                    <span class="d-none d-sm-inline">{% trans "Basic Info" %}</span>
+                                    <span class="d-sm-none">{% trans "Basic" %}</span>
+                                </button>
+                            </li>
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link" id="contact-tab" data-bs-toggle="pill"
+                                        data-bs-target="#contact" type="button" role="tab" aria-controls="contact" aria-selected="false">
+                                    <i class="bi bi-telephone me-2"></i>
+                                    <span class="d-none d-sm-inline">{% trans "Contact" %}</span>
+                                    <span class="d-sm-none">{% trans "Contact" %}</span>
+                                </button>
+                            </li>
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link" id="registration-tab" data-bs-toggle="pill"
+                                        data-bs-target="#registration" type="button" role="tab" aria-controls="registration" aria-selected="false">
+                                    <i class="bi bi-file-text me-2"></i>
+                                    <span class="d-none d-sm-inline">{% trans "Registration" %}</span>
+                                    <span class="d-sm-none">{% trans "Reg" %}</span>
+                                </button>
+                            </li>
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link" id="efris-tab" data-bs-toggle="pill"
+                                        data-bs-target="#efris" type="button" role="tab" aria-controls="efris" aria-selected="false">
+                                    <i class="bi bi-cloud me-2"></i>
+                                    <span class="d-none d-sm-inline">{% trans "EFRIS" %}</span>
+                                    <span class="d-sm-none">{% trans "EFRIS" %}</span>
+                                </button>
+                            </li>
+                            {% if object %}
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link" id="advanced-tab" data-bs-toggle="pill"
+                                        data-bs-target="#advanced" type="button" role="tab" aria-controls="advanced" aria-selected="false">
+                                    <i class="bi bi-gear me-2"></i>
+                                    <span class="d-none d-sm-inline">{% trans "Advanced" %}</span>
+                                    <span class="d-sm-none">{% trans "Adv" %}</span>
+                                </button>
+                            </li>
+                            {% endif %}
+                        </ul>
+
+                        <!-- Tab Content -->
+                        <div class="tab-content" id="companyTabsContent">
+                            <!-- Basic Information Tab -->
+                            <div class="tab-pane fade show active" id="basic" role="tabpanel" aria-labelledby="basic-tab">
+                                <div class="form-section">
+                                    <div class="row g-3">
+                                        <div class="col-lg-6">
+                                            <div class="form-floating">
+                                                {{ form.name }}
+                                                <label for="{{ form.name.id_for_label }}" class="form-label">
+                                                    {{ form.name.label }} <span class="text-danger">*</span>
+                                                </label>
+                                                {% if form.name.errors %}
+                                                    <div class="invalid-feedback">{{ form.name.errors.0 }}</div>
+                                                {% endif %}
+                                                {% if form.name.help_text %}
+                                                    <div class="form-text">{{ form.name.help_text }}</div>
+                                                {% endif %}
+                                            </div>
+                                        </div>
+                                        <div class="col-lg-6">
+                                            <div class="form-floating">
+                                                {{ form.trading_name }}
+                                                <label for="{{ form.trading_name.id_for_label }}" class="form-label">{{ form.trading_name.label }}</label>
+                                                {% if form.trading_name.errors %}
+                                                    <div class="invalid-feedback">{{ form.trading_name.errors.0 }}</div>
+                                                {% endif %}
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div class="row g-3 mt-3">
+                                        <div class="col-lg-6">
+                                            <div class="form-floating">
+                                                {{ form.schema_name }}
+                                                <label for="{{ form.schema_name.id_for_label }}" class="form-label">
+                                                    {{ form.schema_name.label }} <span class="text-danger">*</span>
+                                                </label>
+                                                {% if form.schema_name.errors %}
+                                                    <div class="invalid-feedback">{{ form.schema_name.errors.0 }}</div>
+                                                {% endif %}
+                                                <div class="form-text">{% trans "Unique identifier for database schema (lowercase, no spaces)" %}</div>
+                                            </div>
+                                        </div>
+                                        <div class="col-lg-6">
+                                            <label class="form-label">{{ form.preferred_currency.label }}</label>
+                                            {{ form.preferred_currency }}
+                                            {% if form.preferred_currency.errors %}
+                                                <div class="invalid-feedback">{{ form.preferred_currency.errors.0 }}</div>
+                                            {% endif %}
+                                        </div>
+                                    </div>
+
+                                    <div class="row g-3 mt-3">
+                                        <div class="col-12">
+                                            <div class="form-floating">
+                                                {{ form.description }}
+                                                <label for="{{ form.description.id_for_label }}" class="form-label">{{ form.description.label }}</label>
+                                                {% if form.description.errors %}
+                                                    <div class="invalid-feedback">{{ form.description.errors.0 }}</div>
+                                                {% endif %}
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <!-- Logo Upload Section -->
+                                    <div class="row g-3 mt-3">
+                                        <div class="col-12">
+                                            <div class="upload-section">
+                                                <label class="form-label">{{ form.logo.label }}</label>
+                                                <div class="upload-wrapper">
+                                                    {% if object.logo %}
+                                                        <div class="current-logo mb-3">
+                                                            <img src="{{ object.logo.url }}" alt="{% trans 'Current logo' %}"
+                                                                 class="img-thumbnail logo-preview">
+                                                            <div class="logo-info">
+                                                                <small class="text-muted">{% trans "Current Logo" %}</small>
+                                                            </div>
+                                                        </div>
+                                                    {% endif %}
+                                                    <div class="upload-dropzone" id="logoDropzone">
+                                                        {{ form.logo }}
+                                                        <div class="upload-placeholder">
+                                                            <i class="bi bi-cloud-upload display-6 text-muted mb-3"></i>
+                                                            <p class="mb-0">{% trans "Drop your logo here or click to browse" %}</p>
+                                                            <small class="text-muted">{% trans "PNG, JPG up to 2MB" %}</small>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                {% if form.logo.errors %}
+                                                    <div class="invalid-feedback d-block">{{ form.logo.errors.0 }}</div>
+                                                {% endif %}
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Contact Information Tab -->
+                            <div class="tab-pane fade" id="contact" role="tabpanel" aria-labelledby="contact-tab">
+                                <div class="form-section">
+                                    <div class="row g-3">
+                                        <div class="col-12">
+                                            <div class="form-floating">
+                                                {{ form.physical_address }}
+                                                <label for="{{ form.physical_address.id_for_label }}" class="form-label">
+                                                    {{ form.physical_address.label }} <span class="text-danger">*</span>
+                                                </label>
+                                                {% if form.physical_address.errors %}
+                                                    <div class="invalid-feedback">{{ form.physical_address.errors.0 }}</div>
+                                                {% endif %}
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div class="row g-3 mt-3">
+                                        <div class="col-12">
+                                            <div class="form-floating">
+                                                {{ form.postal_address }}
+                                                <label for="{{ form.postal_address.id_for_label }}" class="form-label">{{ form.postal_address.label }}</label>
+                                                {% if form.postal_address.errors %}
+                                                    <div class="invalid-feedback">{{ form.postal_address.errors.0 }}</div>
+                                                {% endif %}
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div class="row g-3 mt-3">
+                                        <div class="col-lg-6">
+                                            <div class="form-floating">
+                                                {{ form.phone }}
+                                                <label for="{{ form.phone.id_for_label }}" class="form-label">{{ form.phone.label }}</label>
+                                                {% if form.phone.errors %}
+                                                    <div class="invalid-feedback">{{ form.phone.errors.0 }}</div>
+                                                {% endif %}
+                                            </div>
+                                        </div>
+                                        <div class="col-lg-6">
+                                            <div class="form-floating">
+                                                {{ form.email }}
+                                                <label for="{{ form.email.id_for_label }}" class="form-label">{{ form.email.label }}</label>
+                                                {% if form.email.errors %}
+                                                    <div class="invalid-feedback">{{ form.email.errors.0 }}</div>
+                                                {% endif %}
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div class="row g-3 mt-3">
+                                        <div class="col-12">
+                                            <div class="form-floating">
+                                                {{ form.website }}
+                                                <label for="{{ form.website.id_for_label }}" class="form-label">{{ form.website.label }}</label>
+                                                {% if form.website.errors %}
+                                                    <div class="invalid-feedback">{{ form.website.errors.0 }}</div>
+                                                {% endif %}
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Registration Details Tab -->
+                            <div class="tab-pane fade" id="registration" role="tabpanel" aria-labelledby="registration-tab">
+                                <div class="form-section">
+                                    <div class="row g-3">
+                                        <div class="col-lg-6">
+                                            <div class="form-floating">
+                                                {{ form.tin }}
+                                                <label for="{{ form.tin.id_for_label }}" class="form-label">{{ form.tin.label }}</label>
+                                                {% if form.tin.errors %}
+                                                    <div class="invalid-feedback">{{ form.tin.errors.0 }}</div>
+                                                {% endif %}
+                                            </div>
+                                        </div>
+                                        <div class="col-lg-6">
+                                            <div class="form-floating">
+                                                {{ form.brn }}
+                                                <label for="{{ form.brn.id_for_label }}" class="form-label">{{ form.brn.label }}</label>
+                                                {% if form.brn.errors %}
+                                                    <div class="invalid-feedback">{{ form.brn.errors.0 }}</div>
+                                                {% endif %}
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div class="row g-3 mt-3">
+                                        <div class="col-lg-6">
+                                            <div class="form-floating">
+                                                {{ form.nin }}
+                                                <label for="{{ form.nin.id_for_label }}" class="form-label">{{ form.nin.label }}</label>
+                                                {% if form.nin.errors %}
+                                                    <div class="invalid-feedback">{{ form.nin.errors.0 }}</div>
+                                                {% endif %}
+                                            </div>
+                                        </div>
+                                        <div class="col-lg-6">
+                                            <div class="form-floating">
+                                                {{ form.vat_registration_number }}
+                                                <label for="{{ form.vat_registration_number.id_for_label }}" class="form-label">{{ form.vat_registration_number.label }}</label>
+                                                {% if form.vat_registration_number.errors %}
+                                                    <div class="invalid-feedback">{{ form.vat_registration_number.errors.0 }}</div>
+                                                {% endif %}
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div class="row g-3 mt-3">
+                                        <div class="col-lg-6">
+                                            <label class="form-label">{{ form.vat_registration_date.label }}</label>
+                                            {{ form.vat_registration_date }}
+                                            {% if form.vat_registration_date.errors %}
+                                                <div class="invalid-feedback">{{ form.vat_registration_date.errors.0 }}</div>
+                                            {% endif %}
+                                        </div>
+                                        <div class="col-lg-6">
+                                            <label class="form-label">{{ form.plan.label }}</label>
+                                            {{ form.plan }}
+                                            {% if form.plan.errors %}
+                                                <div class="invalid-feedback">{{ form.plan.errors.0 }}</div>
+                                            {% endif %}
+                                        </div>
+                                    </div>
+
+                                    <!-- Localization Settings -->
+                                    <div class="settings-section mt-4">
+                                        <h6 class="section-title">{% trans "Localization Settings" %}</h6>
+                                        <div class="row g-3">
+                                            <div class="col-lg-6">
+                                                <label class="form-label">{{ form.time_zone.label }}</label>
+                                                {{ form.time_zone }}
+                                                {% if form.time_zone.errors %}
+                                                    <div class="invalid-feedback">{{ form.time_zone.errors.0 }}</div>
+                                                {% endif %}
+                                            </div>
+                                            <div class="col-lg-6">
+                                                <label class="form-label">{{ form.locale.label }}</label>
+                                                {{ form.locale }}
+                                                {% if form.locale.errors %}
+                                                    <div class="invalid-feedback">{{ form.locale.errors.0 }}</div>
+                                                {% endif %}
+                                            </div>
+                                        </div>
+
+                                        <div class="row g-3 mt-3">
+                                            <div class="col-lg-6">
+                                                <label class="form-label">{{ form.date_format.label }}</label>
+                                                {{ form.date_format }}
+                                                {% if form.date_format.errors %}
+                                                    <div class="invalid-feedback">{{ form.date_format.errors.0 }}</div>
+                                                {% endif %}
+                                            </div>
+                                            <div class="col-lg-6">
+                                                <label class="form-label">{{ form.time_format.label }}</label>
+                                                {{ form.time_format }}
+                                                {% if form.time_format.errors %}
+                                                    <div class="invalid-feedback">{{ form.time_format.errors.0 }}</div>
+                                                {% endif %}
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <!-- Notes Section -->
+                                    <div class="row g-3 mt-3">
+                                        <div class="col-12">
+                                            <div class="form-floating">
+                                                {{ form.notes }}
+                                                <label for="{{ form.notes.id_for_label }}" class="form-label">{{ form.notes.label }}</label>
+                                                {% if form.notes.errors %}
+                                                    <div class="invalid-feedback">{{ form.notes.errors.0 }}</div>
+                                                {% endif %}
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- EFRIS Integration Tab -->
+                            <div class="tab-pane fade" id="efris" role="tabpanel" aria-labelledby="efris-tab">
+                                <div class="form-section">
+                                    <div class="efris-header mb-4">
+                                        <div class="d-flex align-items-center mb-3">
+                                            <div class="efris-icon me-3">
+                                                <i class="bi bi-cloud-check text-primary display-6"></i>
+                                            </div>
+                                            <div>
+                                                <h5 class="mb-1">{% trans "EFRIS Integration" %}</h5>
+                                                <p class="text-muted mb-0">{% trans "Configure Electronic Fiscal Receipting and Invoicing Solution" %}</p>
+                                            </div>
+                                        </div>
+
+                                        <div class="form-check form-switch form-switch-lg">
+                                            {{ form.efris_enabled }}
+                                            <label class="form-check-label fw-medium" for="{{ form.efris_enabled.id_for_label }}">
+                                                {{ form.efris_enabled.label }}
+                                            </label>
+                                            {% if form.efris_enabled.errors %}
+                                                <div class="invalid-feedback d-block">{{ form.efris_enabled.errors.0 }}</div>
+                                            {% endif %}
+                                            {% if form.efris_enabled.help_text %}
+                                                <div class="form-text">{{ form.efris_enabled.help_text }}</div>
+                                            {% endif %}
+                                        </div>
+                                    </div>
+
+                                    <div id="efris-fields" class="efris-config-section" style="display: none;">
+                                        <div class="alert alert-info border-info">
+                                            <i class="bi bi-info-circle me-2"></i>
+                                            {% trans "Complete all EFRIS configuration fields to enable fiscal compliance features." %}
+                                        </div>
+
+                                        <div class="row g-3">
+                                            <div class="col-lg-6">
+                                                <div class="form-floating">
+                                                    {{ form.efris_client_id }}
+                                                    <label for="{{ form.efris_client_id.id_for_label }}" class="form-label">{{ form.efris_client_id.label }}</label>
+                                                    {% if form.efris_client_id.errors %}
+                                                        <div class="invalid-feedback">{{ form.efris_client_id.errors.0 }}</div>
+                                                    {% endif %}
+                                                </div>
+                                            </div>
+                                            <div class="col-lg-6">
+                                                <div class="form-floating">
+                                                    {{ form.efris_device_number }}
+                                                    <label for="{{ form.efris_device_number.id_for_label }}" class="form-label">{{ form.efris_device_number.label }}</label>
+                                                    {% if form.efris_device_number.errors %}
+                                                        <div class="invalid-feedback">{{ form.efris_device_number.errors.0 }}</div>
+                                                    {% endif %}
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {% if object and object.efris_enabled %}
+                                        <div class="efris-status-card mt-4 p-3 border rounded-3 bg-light-subtle">
+                                            <h6 class="mb-3">{% trans "EFRIS Status" %}</h6>
+                                            <div class="row g-3">
+                                                <div class="col-sm-6">
+                                                    <div class="status-item">
+                                                        <span class="status-label">{% trans "Configuration:" %}</span>
+                                                        {% if object.efris_configuration_complete %}
+                                                            <span class="badge bg-success">{% trans "Complete" %}</span>
+                                                        {% else %}
+                                                            <span class="badge bg-warning">{% trans "Incomplete" %}</span>
+                                                        {% endif %}
+                                                    </div>
+                                                </div>
+                                                <div class="col-sm-6">
+                                                    <div class="status-item">
+                                                        <span class="status-label">{% trans "Last Sync:" %}</span>
+                                                        {% if object.efris_last_sync %}
+                                                            <span class="text-muted">{{ object.efris_last_sync|timesince }} {% trans "ago" %}</span>
+                                                        {% else %}
+                                                            <span class="text-muted">{% trans "Never" %}</span>
+                                                        {% endif %}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        {% endif %}
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Advanced Settings Tab -->
+                            {% if object %}
+                            <div class="tab-pane fade" id="advanced" role="tabpanel" aria-labelledby="advanced-tab">
+                                <div class="form-section">
+                                    <div class="settings-group">
+                                        <h6 class="section-title">{% trans "Security Settings" %}</h6>
+                                        <div class="row g-3">
+                                            <div class="col-12">
+                                                <div class="form-check form-switch">
+                                                    {{ form.two_factor_required }}
+                                                    <label class="form-check-label" for="{{ form.two_factor_required.id_for_label }}">
+                                                        {{ form.two_factor_required.label }}
+                                                    </label>
+                                                    {% if form.two_factor_required.help_text %}
+                                                        <div class="form-text">{{ form.two_factor_required.help_text }}</div>
+                                                    {% endif %}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div class="settings-group mt-4">
+                                        <h6 class="section-title">{% trans "Branding" %}</h6>
+                                        <div class="row g-3">
+                                            <div class="col-12">
+                                                <label class="form-label">{{ form.favicon.label }}</label>
+                                                <div class="upload-section">
+                                                    {% if object.favicon %}
+                                                        <div class="current-favicon mb-2">
+                                                            <img src="{{ object.favicon.url }}" alt="{% trans 'Current favicon' %}"
+                                                                 class="favicon-preview me-2" width="16" height="16">
+                                                            <small class="text-muted">{% trans "Current Favicon" %}</small>
+                                                        </div>
+                                                    {% endif %}
+                                                    {{ form.favicon }}
+                                                </div>
+                                                {% if form.favicon.errors %}
+                                                    <div class="invalid-feedback d-block">{{ form.favicon.errors.0 }}</div>
+                                                {% endif %}
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Sidebar -->
+            <div class="col-xl-4 col-lg-5">
+                <div class="sidebar-sticky">
+                    <!-- Action Card -->
+                    <div class="card action-card border-0 shadow-sm mb-4">
+                        <div class="card-header bg-transparent border-0">
+                            <h6 class="card-title mb-0">
+                                <i class="bi bi-lightning text-primary me-2"></i>
+                                {% trans "Actions" %}
+                            </h6>
+                        </div>
+                        <div class="card-body">
+                            <div class="d-grid gap-3">
+                                <button type="submit" class="btn btn-primary btn-lg" id="submitBtn">
+                                    <i class="bi bi-check-lg me-2"></i>
+                                    {% if object %}{% trans "Update Company" %}{% else %}{% trans "Create Company" %}{% endif %}
+                                </button>
+
+                                {% if object %}
+                                    <a href="{% url 'companies:company_detail' object.company_id %}" class="btn btn-outline-info">
+                                        <i class="bi bi-eye me-2"></i>{% trans "View Details" %}
+                                    </a>
+                                {% endif %}
+
+                                <a href="{% url 'companies:company_list' %}" class="btn btn-outline-secondary">
+                                    <i class="bi bi-arrow-left me-2"></i>{% trans "Cancel" %}
+                                </a>
+                            </div>
+
+                            <!-- Form Progress -->
+                            <div class="form-progress mt-4">
+                                <h6 class="small text-muted mb-2">{% trans "Form Completion" %}</h6>
+                                <div class="progress mb-2" style="height: 8px;">
+                                    <div class="progress-bar" role="progressbar" style="width: 0%" id="formProgress"></div>
+                                </div>
+                                <small class="text-muted" id="progressText">0% {% trans "complete" %}</small>
+                            </div>
+                        </div>
+                    </div>
+
+                    {% if object %}
+                    <!-- Statistics Card -->
+                    <div class="card stats-card border-0 shadow-sm mb-4">
+                        <div class="card-header bg-transparent border-0">
+                            <h6 class="card-title mb-0">
+                                <i class="bi bi-bar-chart text-primary me-2"></i>
+                                {% trans "Quick Stats" %}
+                            </h6>
+                        </div>
+                        <div class="card-body">
+                            <div class="row g-3 text-center">
+                                <div class="col-6">
+                                    <div class="stat-box">
+                                        <div class="stat-number h5 mb-1 text-primary">{{ total_branches|default:0 }}</div>
+                                        <div class="stat-label small text-muted">{% trans "Branches" %}</div>
+                                    </div>
+                                </div>
+                                <div class="col-6">
+                                    <div class="stat-box">
+                                        <div class="stat-number h5 mb-1 text-success">{{ total_employees|default:0 }}</div>
+                                        <div class="stat-label small text-muted">{% trans "Employees" %}</div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {% if object.plan %}
+                            <div class="plan-info mt-3 pt-3 border-top">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <span class="small text-muted">{% trans "Current Plan" %}</span>
+                                    <span class="badge bg-info">{{ object.plan.display_name|default:object.plan.name }}</span>
+                                </div>
+                            </div>
+                            {% endif %}
+                        </div>
+                    </div>
+
+                    <!-- Quick Actions Card -->
+                    <div class="card quick-actions-card border-0 shadow-sm">
+                        <div class="card-header bg-transparent border-0">
+                            <h6 class="card-title mb-0">
+                                <i class="bi bi-plus-circle text-primary me-2"></i>
+                                {% trans "Quick Actions" %}
+                            </h6>
+                        </div>
+                        <div class="card-body">
+                            <div class="d-grid gap-2">
+                                <a href="{% url 'companies:employee_create' object.company_id %}" class="btn btn-outline-success btn-sm">
+                                    <i class="bi bi-person-plus me-2"></i>{% trans "Add Employee" %}
+                                </a>
+                                {% if perms.branches.add_companybranch %}
+                                <a href="{% url 'companies:branch_create' %}?company={{ object.company_id }}" class="btn btn-outline-primary btn-sm">
+                                    <i class="bi bi-diagram-3 me-2"></i>{% trans "Add Branch" %}
+                                </a>
+                                {% endif %}
+                                {% if perms.company.add_domain %}
+                                <a href="{% url 'companies:domain_create' %}?company={{ object.company_id }}" class="btn btn-outline-info btn-sm">
+                                    <i class="bi bi-globe me-2"></i>{% trans "Add Domain" %}
+                                </a>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Form Validation Summary -->
+        <div id="validationSummary" class="validation-summary" style="display: none;">
+            <div class="alert alert-danger">
+                <h6 class="alert-heading">
+                    <i class="bi bi-exclamation-triangle me-2"></i>
+                    {% trans "Please correct the following errors:" %}
+                </h6>
+                <ul id="validationList" class="mb-0"></ul>
+            </div>
+        </div>
+    </form>
+</div>
+
+<!-- Loading Modal -->
+<div class="modal fade" id="loadingModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1">
+    <div class="modal-dialog modal-sm modal-dialog-centered">
+        <div class="modal-content border-0 shadow">
+            <div class="modal-body text-center py-4">
+                <div class="spinner-border text-primary mb-3" role="status"></div>
+                <h6 class="mb-2">{% trans "Saving Company..." %}</h6>
+                <p class="text-muted mb-0 small">{% trans "Please wait while we process your request" %}</p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+    :root {
+        --primary-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        --success-gradient: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+        --info-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        --warning-gradient: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+        --card-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
+        --card-shadow-hover: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
+        --border-radius: 0.75rem;
+        --transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    /* Light Theme (Default) */
+    :root {
+        --bg-primary: #ffffff;
+        --bg-secondary: #f8f9fa;
+        --bg-tertiary: #e9ecef;
+        --text-primary: #212529;
+        --text-secondary: #6c757d;
+        --text-muted: #adb5bd;
+        --border-color: #dee2e6;
+        --input-bg: #ffffff;
+        --input-border: #ced4da;
+        --input-focus-border: #86b7fe;
+        --card-bg: #ffffff;
+        --sidebar-bg: #f8f9fa;
+        --nav-pill-bg: #e9ecef;
+        --nav-pill-active-bg: #0d6efd;
+    }
+
+    /* Dark Theme */
+    [data-bs-theme="dark"] {
+        --bg-primary: #0d1117;
+        --bg-secondary: #161b22;
+        --bg-tertiary: #21262d;
+        --text-primary: #f0f6fc;
+        --text-secondary: #8b949e;
+        --text-muted: #656d76;
+        --border-color: #30363d;
+        --input-bg: #21262d;
+        --input-border: #30363d;
+        --input-focus-border: #58a6ff;
+        --card-bg: #161b22;
+        --sidebar-bg: #0d1117;
+        --nav-pill-bg: #21262d;
+        --nav-pill-active-bg: #238636;
+    }
+
+    /* Apply theme variables */
+    body {
+        background-color: var(--bg-primary);
+        color: var(--text-primary);
+        transition: var(--transition);
+    }
+
+    /* Page Header */
+    .page-header-wrapper {
+        background: var(--primary-gradient);
+        margin: -1.5rem -1.5rem 1.5rem -1.5rem;
+        padding: 2rem 0;
+        border-radius: 0 0 var(--border-radius) var(--border-radius);
+        box-shadow: var(--card-shadow);
+    }
+
+    .page-title {
+        color: #ffffff;
+        font-weight: 600;
+        margin: 0;
+    }
+
+    .page-description {
+        color: rgba(255, 255, 255, 0.8);
+        font-size: 0.95rem;
+    }
+
+    .company-meta .badge {
+        font-size: 0.75rem;
+        padding: 0.375rem 0.75rem;
+        border-radius: 0.5rem;
+    }
+
+    .badge-company-id {
+        background-color: rgba(255, 255, 255, 0.2);
+        color: #ffffff;
+        border: 1px solid rgba(255, 255, 255, 0.3);
+    }
+
+    .page-actions .btn {
+        border-radius: 0.5rem;
+        font-weight: 500;
+        backdrop-filter: blur(10px);
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        color: #ffffff;
+    }
+
+    .page-actions .btn:hover {
+        background-color: rgba(255, 255, 255, 0.1);
+        transform: translateY(-1px);
+    }
+
+    /* Auto-save indicator */
+    .auto-save-indicator {
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        background: var(--card-bg);
+        border: 1px solid var(--border-color);
+        border-radius: 0.5rem;
+        padding: 0.75rem 1rem;
+        z-index: 1050;
+        box-shadow: var(--card-shadow-hover);
+    }
+
+    /* Cards */
+    .form-card,
+    .action-card,
+    .stats-card,
+    .quick-actions-card {
+        background-color: var(--card-bg);
+        border: 1px solid var(--border-color);
+        border-radius: var(--border-radius);
+        transition: var(--transition);
+    }
+
+    .form-card:hover,
+    .action-card:hover,
+    .stats-card:hover,
+    .quick-actions-card:hover {
+        box-shadow: var(--card-shadow-hover);
+    }
+
+    .card-header {
+        background-color: transparent;
+        border-bottom: 1px solid var(--border-color);
+    }
+
+    .header-icon {
+        width: 3rem;
+        height: 3rem;
+        background: var(--primary-gradient);
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #ffffff;
+        font-size: 1.25rem;
+    }
+
+    /* Enhanced Navigation Pills */
+    .nav-pills {
+        background-color: var(--nav-pill-bg);
+        border-radius: 0.75rem;
+        padding: 0.25rem;
+        margin-bottom: 1.5rem;
+    }
+
+    .nav-pills .nav-link {
+        border-radius: 0.625rem;
+        color: var(--text-secondary);
+        font-weight: 500;
+        padding: 0.75rem 1rem;
+        transition: var(--transition);
+        position: relative;
+        overflow: hidden;
+    }
+
+    .nav-pills .nav-link:hover {
+        color: var(--text-primary);
+        background-color: var(--bg-secondary);
+    }
+
+    .nav-pills .nav-link.active {
+        background: var(--nav-pill-active-bg);
+        color: #ffffff;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+    }
+
+    .nav-pills .nav-link.active::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: linear-gradient(135deg, rgba(255, 255, 255, 0.2), rgba(255, 255, 255, 0.05));
+        pointer-events: none;
+    }
+
+    /* Form Sections */
+    .form-section {
+        padding: 0.5rem 0;
+    }
+
+    .section-title {
+        color: var(--text-primary);
+        font-weight: 600;
+        margin-bottom: 1rem;
+        padding-bottom: 0.5rem;
+        border-bottom: 2px solid var(--border-color);
+    }
+
+    .settings-section,
+    .settings-group {
+        background-color: var(--bg-secondary);
+        border-radius: 0.75rem;
+        padding: 1.5rem;
+        margin-top: 1rem;
+        border: 1px solid var(--border-color);
+    }
+
+    /* Enhanced Form Controls */
+    .form-floating > .form-control,
+    .form-floating > .form-select {
+        background-color: var(--input-bg);
+        border: 2px solid var(--input-border);
+        border-radius: 0.75rem;
+        color: var(--text-primary);
+        font-size: 0.95rem;
+        transition: var(--transition);
+    }
+
+    .form-floating > .form-control:focus,
+    .form-floating > .form-select:focus {
+        border-color: var(--input-focus-border);
+        box-shadow: 0 0 0 0.2rem rgba(13, 110, 253, 0.25);
+        transform: translateY(-1px);
+    }
+
+    .form-floating > label {
+        color: var(--text-secondary);
+        font-weight: 500;
+    }
+
+    .form-control,
+    .form-select {
+        background-color: var(--input-bg);
+        border: 2px solid var(--input-border);
+        color: var(--text-primary);
+        border-radius: 0.5rem;
+        transition: var(--transition);
+    }
+
+    .form-control:focus,
+    .form-select:focus {
+        background-color: var(--input-bg);
+        border-color: var(--input-focus-border);
+        color: var(--text-primary);
+        box-shadow: 0 0 0 0.2rem rgba(13, 110, 253, 0.25);
+    }
+
+    /* Form Switches */
+    .form-switch .form-check-input {
+        width: 3rem;
+        height: 1.5rem;
+        border-radius: 3rem;
+        background-color: var(--input-border);
+        border: none;
+        transition: var(--transition);
+    }
+
+    .form-switch .form-check-input:checked {
+        background: var(--success-gradient);
+        border: none;
+    }
+
+    .form-switch-lg .form-check-input {
+        width: 4rem;
+        height: 2rem;
+    }
+
+    /* Upload Components */
+    .upload-section {
+        margin-top: 0.5rem;
+    }
+
+    .upload-dropzone {
+        border: 2px dashed var(--input-border);
+        border-radius: var(--border-radius);
+        padding: 2rem;
+        text-align: center;
+        transition: var(--transition);
+        background-color: var(--bg-secondary);
+        position: relative;
+        overflow: hidden;
+    }
+
+    .upload-dropzone:hover {
+        border-color: var(--input-focus-border);
+        background-color: var(--bg-tertiary);
+    }
+
+    .upload-dropzone.dragover {
+        border-color: #198754;
+        background-color: rgba(25, 135, 84, 0.1);
+    }
+
+    .upload-placeholder {
+        pointer-events: none;
+    }
+
+    .logo-preview {
+        max-width: 120px;
+        max-height: 120px;
+        border-radius: 0.75rem;
+        box-shadow: var(--card-shadow);
+    }
+
+    .favicon-preview {
+        border-radius: 0.25rem;
+    }
+
+    /* EFRIS Specific Styling */
+    .efris-header {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: #ffffff;
+        padding: 1.5rem;
+        border-radius: var(--border-radius);
+        margin: -0.5rem -0.5rem 1rem -0.5rem;
+    }
+
+    .efris-config-section {
+        animation: fadeInUp 0.3s ease-out;
+    }
+
+    .efris-status-card {
+        background: var(--bg-secondary);
+        border: 1px solid var(--border-color);
+    }
+
+    .status-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+    .status-label {
+        font-weight: 500;
+        color: var(--text-secondary);
+    }
+
+    /* Sidebar */
+    .sidebar-sticky {
+        position: sticky;
+        top: 2rem;
+        z-index: 10;
+    }
+
+    .stat-box {
+        padding: 1rem;
+        border-radius: 0.75rem;
+        background: var(--bg-secondary);
+        border: 1px solid var(--border-color);
+        transition: var(--transition);
+    }
+
+    .stat-box:hover {
+        transform: translateY(-2px);
+        box-shadow: var(--card-shadow);
+    }
+
+    .stat-number {
+        font-weight: 700;
+    }
+
+    /* Form Progress */
+    .form-progress .progress {
+        height: 8px;
+        border-radius: 4px;
+        background-color: var(--bg-tertiary);
+        overflow: hidden;
+    }
+
+    .form-progress .progress-bar {
+        background: var(--success-gradient);
+        transition: width 0.3s ease;
+    }
+
+    /* Validation */
+    .validation-summary {
+        position: fixed;
+        top: 20px;
+        left: 50%;
+        transform: translateX(-50%);
+        z-index: 1055;
+        max-width: 500px;
+        width: 90%;
+    }
+
+    .is-invalid {
+        border-color: #dc3545;
+        animation: shake 0.3s ease-in-out;
+    }
+
+    .invalid-feedback {
+        font-size: 0.875rem;
+        color: #dc3545;
+        font-weight: 500;
+    }
+
+    /* Status Badges */
+    .status-active { background-color: #198754; }
+    .status-trial { background-color: #0dcaf0; }
+    .status-expired { background-color: #dc3545; }
+    .status-suspended { background-color: #fd7e14; }
+    .status-archived { background-color: #6c757d; }
+
+    /* Button Enhancements */
+    .btn {
+        border-radius: 0.5rem;
+        font-weight: 500;
+        padding: 0.75rem 1.5rem;
+        transition: var(--transition);
+        position: relative;
+        overflow: hidden;
+    }
+
+    .btn:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    }
+
+    .btn-primary {
+        background: var(--primary-gradient);
+        border: none;
+        color: #ffffff;
+    }
+
+    .btn-primary:hover {
+        background: linear-gradient(135deg, #5a6fd8 0%, #6a4190 100%);
+    }
+
+    .btn-lg {
+        padding: 1rem 2rem;
+        font-size: 1.1rem;
+        border-radius: 0.75rem;
+    }
+
+    /* Animations */
+    @keyframes fadeInUp {
+        from {
+            opacity: 0;
+            transform: translateY(20px);
+        }
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+
+    @keyframes shake {
+        0%, 100% { transform: translateX(0); }
+        25% { transform: translateX(-5px); }
+        75% { transform: translateX(5px); }
+    }
+
+    @keyframes pulse {
+        0%, 100% { transform: scale(1); }
+        50% { transform: scale(1.05); }
+    }
+
+    .loading .spinner-border {
+        animation: spin 1s linear infinite;
+    }
+
+    /* Responsive Design */
+    @media (max-width: 1199.98px) {
+        .sidebar-sticky {
+            position: static;
+            margin-top: 2rem;
+        }
+    }
+
+    @media (max-width: 991.98px) {
+        .page-header-wrapper {
+            margin: -1rem -1rem 1rem -1rem;
+            padding: 1.5rem 0;
+        }
+
+        .header-icon {
+            width: 2.5rem;
+            height: 2.5rem;
+            font-size: 1rem;
+        }
+
+        .nav-pills .nav-link {
+            padding: 0.5rem 0.75rem;
+            font-size: 0.875rem;
+        }
+    }
+
+    @media (max-width: 767.98px) {
+        .page-actions {
+            width: 100%;
+        }
+
+        .page-actions .btn {
+            width: 100%;
+        }
+
+        .nav-pills .nav-link span.d-sm-none {
+            display: inline !important;
+        }
+
+        .nav-pills .nav-link span.d-none.d-sm-inline {
+            display: none !important;
+        }
+
+        .form-floating > .form-control,
+        .form-floating > .form-select {
+            font-size: 16px; /* Prevent zoom on iOS */
+        }
+
+        .upload-dropzone {
+            padding: 1.5rem;
+        }
+
+        .settings-section,
+        .settings-group {
+            padding: 1rem;
+        }
+
+        .auto-save-indicator {
+            top: 10px;
+            right: 10px;
+            left: 10px;
+            width: auto;
+        }
+
+        .validation-summary {
+            top: 10px;
+            left: 10px;
+            right: 10px;
+            transform: none;
+            width: auto;
+            max-width: none;
+        }
+    }
+
+    @media (max-width: 575.98px) {
+        .btn {
+            padding: 0.625rem 1.25rem;
+            font-size: 0.9rem;
+        }
+
+        .btn-lg {
+            padding: 0.875rem 1.75rem;
+            font-size: 1rem;
+        }
+
+        .card-body {
+            padding: 1rem;
+        }
+    }
+
+    /* Print Styles */
+    @media print {
+        .page-actions,
+        .sidebar-sticky,
+        .auto-save-indicator,
+        .validation-summary,
+        #loadingModal {
+            display: none !important;
+        }
+
+        .form-card {
+            box-shadow: none;
+            border: 1px solid #000;
+        }
+
+        .page-header-wrapper {
+            background: none;
+            color: #000;
+        }
+
+        .nav-pills {
+            display: none;
+        }
+
+        .tab-content .tab-pane {
+            display: block !important;
+            opacity: 1 !important;
+        }
+    }
+
+    /* High Contrast Mode */
+    @media (prefers-contrast: high) {
+        :root {
+            --border-color: #000000;
+            --input-border: #000000;
+            --text-primary: #000000;
+            --text-secondary: #333333;
+        }
+
+        [data-bs-theme="dark"] {
+            --border-color: #ffffff;
+            --input-border: #ffffff;
+            --text-primary: #ffffff;
+            --text-secondary: #cccccc;
+        }
+    }
+
+    /* Reduced Motion */
+    @media (prefers-reduced-motion: reduce) {
+        * {
+            animation-duration: 0.01ms !important;
+            animation-iteration-count: 1 !important;
+            transition-duration: 0.01ms !important;
+        }
+    }
+
+    /* Focus Styles for Accessibility */
+    .btn:focus,
+    .form-control:focus,
+    .form-select:focus,
+    .nav-link:focus {
+        outline: 2px solid var(--input-focus-border);
+        outline-offset: 2px;
+    }
+
+    /* Skip Link */
+    .skip-link {
+        position: absolute;
+        top: -40px;
+        left: 6px;
+        background: var(--card-bg);
+        color: var(--text-primary);
+        padding: 8px;
+        text-decoration: none;
+        border-radius: 0.25rem;
+        z-index: 9999;
+    }
+
+    .skip-link:focus {
+        top: 6px;
+    }
+</style>
+{% endblock %}
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Initialize form functionality
+    initializeForm();
+    initializeValidation();
+    initializeAutoSave();
+    initializeFileUploads();
+    initializeFormProgress();
+    initializeEfrisToggle();
+    initializeKeyboardShortcuts();
+});
+
+class CompanyFormManager {
+    constructor() {
+        this.form = document.getElementById('companyForm');
+        this.submitBtn = document.getElementById('submitBtn');
+        this.autoSaveTimer = null;
+        this.validationErrors = [];
+        this.formData = new FormData();
+
+        this.config = {
+            autoSaveDelay: 3000,
+            validationDelay: 500,
+            maxFileSize: 2 * 1024 * 1024, // 2MB
+            allowedImageTypes: ['image/jpeg', 'image/png', 'image/gif', 'image/webp']
+        };
+    }
+
+    // Initialize all form functionality
+    init() {
+        this.bindEvents();
+        this.loadSavedData();
+        this.updateFormProgress();
+        this.initializeTooltips();
+    }
+
+    bindEvents() {
+        // Form submission
+        this.form.addEventListener('submit', this.handleSubmit.bind(this));
+
+        // Auto-save on input changes
+        this.form.addEventListener('input', this.handleInput.bind(this));
+        this.form.addEventListener('change', this.handleChange.bind(this));
+
+        // Real-time validation
+        this.form.querySelectorAll('input, select, textarea').forEach(field => {
+            field.addEventListener('blur', this.validateField.bind(this, field));
+            field.addEventListener('input', this.clearFieldError.bind(this, field));
+        });
+
+        // Tab navigation validation
+        document.querySelectorAll('[data-bs-toggle="pill"]').forEach(tab => {
+            tab.addEventListener('shown.bs.tab', this.handleTabChange.bind(this));
+        });
+
+        // Prevent accidental navigation
+        window.addEventListener('beforeunload', this.handleBeforeUnload.bind(this));
+    }
+
+    handleSubmit(e) {
+        e.preventDefault();
+
+        if (!this.validateForm()) {
+            this.showValidationSummary();
+            return false;
+        }
+
+        this.showLoadingState();
+
+        // Add loading modal
+        const loadingModal = new bootstrap.Modal(document.getElementById('loadingModal'));
+        loadingModal.show();
+
+        // Simulate processing time for better UX
+        setTimeout(() => {
+            this.form.submit();
+        }, 500);
+    }
+
+    handleInput(e) {
+        this.scheduleAutoSave();
+        this.updateFormProgress();
+        this.clearFieldError(e.target);
+    }
+
+    handleChange(e) {
+        this.scheduleAutoSave();
+        this.updateFormProgress();
+    }
+
+    handleTabChange(e) {
+        const targetPane = document.querySelector(e.target.getAttribute('data-bs-target'));
+        if (targetPane) {
+            // Validate current tab before switching
+            this.validateTabFields(e.relatedTarget);
+
+            // Update tab indicators
+            this.updateTabIndicators();
+        }
+    }
+
+    handleBeforeUnload(e) {
+        if (this.hasUnsavedChanges()) {
+            e.preventDefault();
+            e.returnValue = '{% trans "You have unsaved changes. Are you sure you want to leave?" %}';
+            return e.returnValue;
+        }
+    }
+
+    // Validation Methods
+    validateForm() {
+        this.validationErrors = [];
+        const requiredFields = this.form.querySelectorAll('[required]');
+        let isValid = true;
+
+        requiredFields.forEach(field => {
+            if (!this.validateField(field)) {
+                isValid = false;
+            }
+        });
+
+        // Custom validation rules
+        isValid = this.validateCustomRules() && isValid;
+
+        return isValid;
+    }
+
+    validateField(field) {
+        const value = field.value.trim();
+        let isValid = true;
+        let errorMessage = '';
+
+        // Required field validation
+        if (field.hasAttribute('required') && !value) {
+            errorMessage = '{% trans "This field is required" %}';
+            isValid = false;
+        }
+
+        // Email validation
+        if (field.type === 'email' && value && !this.isValidEmail(value)) {
+            errorMessage = '{% trans "Please enter a valid email address" %}';
+            isValid = false;
+        }
+
+        // Phone validation
+        if (field.name === 'phone' && value && !this.isValidPhone(value)) {
+            errorMessage = '{% trans "Please enter a valid phone number" %}';
+            isValid = false;
+        }
+
+        // URL validation
+        if (field.type === 'url' && value && !this.isValidUrl(value)) {
+            errorMessage = '{% trans "Please enter a valid URL" %}';
+            isValid = false;
+        }
+
+        // Schema name validation
+        if (field.name === 'schema_name' && value && !this.isValidSchemaName(value)) {
+            errorMessage = '{% trans "Schema name must be lowercase letters, numbers, and underscores only" %}';
+            isValid = false;
+        }
+
+        // Update field state
+        if (isValid) {
+            this.markFieldValid(field);
+        } else {
+            this.markFieldInvalid(field, errorMessage);
+            this.validationErrors.push({
+                field: field.name,
+                message: errorMessage
+            });
+        }
+
+        return isValid;
+    }
+
+    validateCustomRules() {
+        let isValid = true;
+
+        // EFRIS validation
+        const efrisEnabled = document.getElementById('id_efris_enabled');
+        if (efrisEnabled && efrisEnabled.checked) {
+            const efrisFields = ['efris_client_id', 'efris_device_number'];
+            efrisFields.forEach(fieldName => {
+                const field = this.form.querySelector(`[name="${fieldName}"]`);
+                if (field && !field.value.trim()) {
+                    this.markFieldInvalid(field, '{% trans "This field is required when EFRIS is enabled" %}');
+                    isValid = false;
+                }
+            });
+        }
+
+        return isValid;
+    }
+
+    validateTabFields(tabButton) {
+        if (!tabButton) return;
+
+        const targetPane = document.querySelector(tabButton.getAttribute('data-bs-target'));
+        if (!targetPane) return;
+
+        const fields = targetPane.querySelectorAll('input, select, textarea');
+        let hasErrors = false;
+
+        fields.forEach(field => {
+            if (!this.validateField(field)) {
+                hasErrors = true;
+            }
+        });
+
+        // Update tab indicator
+        const tabIcon = tabButton.querySelector('i');
+        if (hasErrors) {
+            tabButton.classList.add('tab-has-errors');
+            if (tabIcon) tabIcon.style.color = '#dc3545';
+        } else {
+            tabButton.classList.remove('tab-has-errors');
+            if (tabIcon) tabIcon.style.color = '';
+        }
+    }
+
+    // Validation Helper Methods
+    isValidEmail(email) {
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        return emailRegex.test(email);
+    }
+
+    isValidPhone(phone) {
+        const phoneRegex = /^\+?[\d\s\-\(\)]{7,}$/;
+        return phoneRegex.test(phone);
+    }
+
+    isValidUrl(url) {
+        try {
+            new URL(url);
+            return true;
+        } catch {
+            return false;
+        }
+    }
+
+    isValidSchemaName(name) {
+        const schemaRegex = /^[a-z][a-z0-9_]*$/;
+        return schemaRegex.test(name);
+    }
+
+    markFieldValid(field) {
+        field.classList.remove('is-invalid');
+        field.classList.add('is-valid');
+        this.hideFieldError(field);
+    }
+
+    markFieldInvalid(field, message) {
+        field.classList.remove('is-valid');
+        field.classList.add('is-invalid');
+        this.showFieldError(field, message);
+    }
+
+    clearFieldError(field) {
+        field.classList.remove('is-invalid', 'is-valid');
+        this.hideFieldError(field);
+    }
+
+    showFieldError(field, message) {
+        this.hideFieldError(field);
+        const errorDiv = document.createElement('div');
+        errorDiv.className = 'invalid-feedback d-block';
+        errorDiv.textContent = message;
+        errorDiv.setAttribute('data-field-error', field.name);
+        field.parentNode.appendChild(errorDiv);
+    }
+
+    hideFieldError(field) {
+        const existingError = field.parentNode.querySelector(`[data-field-error="${field.name}"]`);
+        if (existingError) {
+            existingError.remove();
+        }
+    }
+
+    showValidationSummary() {
+        const summary = document.getElementById('validationSummary');
+        const list = document.getElementById('validationList');
+
+        if (!summary || !list || this.validationErrors.length === 0) return;
+
+        list.innerHTML = '';
+        this.validationErrors.forEach(error => {
+            const li = document.createElement('li');
+            li.textContent = error.message;
+            list.appendChild(li);
+        });
+
+        summary.style.display = 'block';
+        summary.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+
+        // Auto-hide after 10 seconds
+        setTimeout(() => {
+            summary.style.display = 'none';
+        }, 10000);
+    }
+
+    // Auto-save functionality
+    scheduleAutoSave() {
+        clearTimeout(this.autoSaveTimer);
+        this.showAutoSaveIndicator();
+
+        this.autoSaveTimer = setTimeout(() => {
+            this.performAutoSave();
+        }, this.config.autoSaveDelay);
+    }
+
+    async performAutoSave() {
+        try {
+            const formData = new FormData(this.form);
+            {% if object %}
+            formData.append('company_id', '{{ object.company_id }}');
+            {% endif %}
+
+            const response = await fetch('{% url "company:company_auto_save" %}', {
+                method: 'POST',
+                headers: {
+                    'X-CSRFToken': this.getCSRFToken(),
+                    'X-Requested-With': 'XMLHttpRequest'
+                },
+                body: formData
+            });
+
+            if (response.ok) {
+                const result = await response.json();
+                if (result.success) {
+                    this.showAutoSaveSuccess();
+                } else {
+                    console.warn('Auto-save validation errors:', result.errors);
+                }
+            }
+        } catch (error) {
+            console.error('Auto-save error:', error);
+        } finally {
+            this.hideAutoSaveIndicator();
+        }
+    }
+
+    showAutoSaveIndicator() {
+        const indicator = document.getElementById('autoSaveIndicator');
+        if (indicator) {
+            indicator.style.display = 'block';
+        }
+    }
+
+    hideAutoSaveIndicator() {
+        const indicator = document.getElementById('autoSaveIndicator');
+        if (indicator) {
+            indicator.style.display = 'none';
+        }
+    }
+
+    showAutoSaveSuccess() {
+        this.showToast('{% trans "Draft saved automatically" %}', 'success');
+    }
+
+    // File upload handling
+    initializeFileUploads() {
+        const logoDropzone = document.getElementById('logoDropzone');
+        const logoInput = logoDropzone?.querySelector('input[type="file"]');
+
+        if (logoInput) {
+            this.setupFileUpload(logoInput, logoDropzone);
+        }
+
+        // Setup favicon upload
+        const faviconInput = document.querySelector('input[name="favicon"]');
+        if (faviconInput) {
+            this.setupFileUpload(faviconInput);
+        }
+    }
+
+    setupFileUpload(input, dropzone = null) {
+        // File input change handler
+        input.addEventListener('change', (e) => {
+            this.handleFileSelect(e.target.files, input, dropzone);
+        });
+
+        if (dropzone) {
+            // Drag and drop handlers
+            ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+                dropzone.addEventListener(eventName, this.preventDefaults, false);
+            });
+
+            ['dragenter', 'dragover'].forEach(eventName => {
+                dropzone.addEventListener(eventName, () => dropzone.classList.add('dragover'), false);
+            });
+
+            ['dragleave', 'drop'].forEach(eventName => {
+                dropzone.addEventListener(eventName, () => dropzone.classList.remove('dragover'), false);
+            });
+
+            dropzone.addEventListener('drop', (e) => {
+                this.handleFileSelect(e.dataTransfer.files, input, dropzone);
+            });
+
+            // Click to browse
+            dropzone.addEventListener('click', () => input.click());
+        }
+    }
+
+    handleFileSelect(files, input, dropzone) {
+        if (files.length === 0) return;
+
+        const file = files[0];
+
+        // Validate file
+        if (!this.validateFile(file, input)) {
+            return;
+        }
+
+        // Update preview
+        this.updateFilePreview(file, input, dropzone);
+
+        // Trigger auto-save
+        this.scheduleAutoSave();
+    }
+
+    validateFile(file, input) {
+        // Check file size
+        if (file.size > this.config.maxFileSize) {
+            this.showToast(`{% trans "File size must be less than" %} ${this.formatFileSize(this.config.maxFileSize)}`, 'error');
+            return false;
+        }
+
+        // Check file type
+        if (!this.config.allowedImageTypes.includes(file.type)) {
+            this.showToast('{% trans "Please select a valid image file (PNG, JPG, GIF, or WebP)" %}', 'error');
+            return false;
+        }
+
+        return true;
+    }
+
+    updateFilePreview(file, input, dropzone) {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            if (input.name === 'logo' && dropzone) {
+                this.updateLogoPreview(e.target.result, dropzone);
+            } else if (input.name === 'favicon') {
+                this.updateFaviconPreview(e.target.result);
+            }
+        };
+        reader.readAsDataURL(file);
+    }
+
+    updateLogoPreview(src, dropzone) {
+        const existing = dropzone.querySelector('.preview-image');
+        if (existing) existing.remove();
+
+        const img = document.createElement('img');
+        img.className = 'preview-image img-thumbnail mt-2';
+        img.src = src;
+        img.style.maxWidth = '120px';
+        img.style.maxHeight = '120px';
+
+        dropzone.appendChild(img);
+    }
+
+    updateFaviconPreview(src) {
+        const container = document.querySelector('input[name="favicon"]').closest('.upload-section');
+        let preview = container.querySelector('.favicon-preview-new');
+
+        if (!preview) {
+            preview = document.createElement('img');
+            preview.className = 'favicon-preview-new mt-2';
+            preview.width = 16;
+            preview.height = 16;
+            container.appendChild(preview);
+        }
+
+        preview.src = src;
+    }
+
+    // Form progress tracking
+    updateFormProgress() {
+        const requiredFields = this.form.querySelectorAll('[required]');
+        const filledFields = Array.from(requiredFields).filter(field => {
+            if (field.type === 'checkbox') {
+                return field.checked;
+            }
+            return field.value.trim() !== '';
+        });
+
+        const progress = (filledFields.length / requiredFields.length) * 100;
+
+        const progressBar = document.getElementById('formProgress');
+        const progressText = document.getElementById('progressText');
+
+        if (progressBar) {
+            progressBar.style.width = `${progress}%`;
+            progressBar.setAttribute('aria-valuenow', progress);
+        }
+
+        if (progressText) {
+            progressText.textContent = `${Math.round(progress)}% {% trans "complete" %}`;
+        }
+
+        // Update submit button state
+        if (this.submitBtn) {
+            this.submitBtn.disabled = progress < 100;
+            if (progress === 100) {
+                this.submitBtn.classList.add('btn-success');
+                this.submitBtn.classList.remove('btn-primary');
+            } else {
+                this.submitBtn.classList.add('btn-primary');
+                this.submitBtn.classList.remove('btn-success');
+            }
+        }
+    }
+
+    updateTabIndicators() {
+        document.querySelectorAll('[data-bs-toggle="pill"]').forEach(tab => {
+            const targetPane = document.querySelector(tab.getAttribute('data-bs-target'));
+            if (targetPane) {
+                const invalidFields = targetPane.querySelectorAll('.is-invalid');
+                const validFields = targetPane.querySelectorAll('.is-valid');
+                const totalFields = targetPane.querySelectorAll('input, select, textarea').length;
+
+                const tabIcon = tab.querySelector('i');
+                if (invalidFields.length > 0) {
+                    tab.classList.add('tab-has-errors');
+                    if (tabIcon) tabIcon.style.color = '#dc3545';
+                } else if (validFields.length === totalFields && totalFields > 0) {
+                    tab.classList.add('tab-complete');
+                    if (tabIcon) tabIcon.style.color = '#198754';
+                } else {
+                    tab.classList.remove('tab-has-errors', 'tab-complete');
+                    if (tabIcon) tabIcon.style.color = '';
+                }
+            }
+        });
+    }
+
+    // EFRIS toggle functionality
+    initializeEfrisToggle() {
+        const efrisToggle = document.getElementById('id_efris_enabled');
+        const efrisFields = document.getElementById('efris-fields');
+
+        if (!efrisToggle || !efrisFields) return;
+
+        const toggleFields = () => {
+            if (efrisToggle.checked) {
+                efrisFields.style.display = 'block';
+                efrisFields.classList.add('show');
+
+                // Make EFRIS fields required
+                efrisFields.querySelectorAll('input, select').forEach(field => {
+                    field.setAttribute('required', '');
+                });
+            } else {
+                efrisFields.style.display = 'none';
+                efrisFields.classList.remove('show');
+
+                // Remove required attribute
+                efrisFields.querySelectorAll('input, select').forEach(field => {
+                    field.removeAttribute('required');
+                    this.clearFieldError(field);
+                });
+            }
+
+            this.updateFormProgress();
+        };
+
+        efrisToggle.addEventListener('change', toggleFields);
+        toggleFields(); // Initialize state
+    }
+
+    // Keyboard shortcuts
+    initializeKeyboardShortcuts() {
+        document.addEventListener('keydown', (e) => {
+            // Ctrl+S / Cmd+S to save
+            if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+                e.preventDefault();
+                if (this.validateForm()) {
+                    this.form.dispatchEvent(new Event('submit'));
+                } else {
+                    this.showValidationSummary();
+                }
+            }
+
+            // Escape to cancel
+            if (e.key === 'Escape') {
+                const activeModal = document.querySelector('.modal.show');
+                if (activeModal) {
+                    const modal = bootstrap.Modal.getInstance(activeModal);
+                    if (modal) modal.hide();
+                }
+            }
+
+            // Tab navigation with Ctrl+Tab
+            if (e.ctrlKey && e.key === 'Tab') {
+                e.preventDefault();
+                this.navigateTabs(e.shiftKey ? -1 : 1);
+            }
+        });
+    }
+
+    navigateTabs(direction) {
+        const tabs = document.querySelectorAll('[data-bs-toggle="pill"]');
+        const activeTab = document.querySelector('[data-bs-toggle="pill"].active');
+        const currentIndex = Array.from(tabs).indexOf(activeTab);
+
+        if (currentIndex === -1) return;
+
+        let nextIndex = currentIndex + direction;
+        if (nextIndex >= tabs.length) nextIndex = 0;
+        if (nextIndex < 0) nextIndex = tabs.length - 1;
+
+        tabs[nextIndex].click();
+    }
+
+    // Utility methods
+    showLoadingState() {
+        if (this.submitBtn) {
+            this.submitBtn.disabled = true;
+            this.submitBtn.innerHTML = '<div class="spinner-border spinner-border-sm me-2" role="status"></div>{% trans "Saving..." %}';
+        }
+    }
+
+    showToast(message, type = 'info') {
+        // Create toast container if it doesn't exist
+        let container = document.getElementById('toast-container');
+        if (!container) {
+            container = document.createElement('div');
+            container.id = 'toast-container';
+            container.className = 'toast-container position-fixed bottom-0 end-0 p-3';
+            container.style.zIndex = '9999';
+            document.body.appendChild(container);
+        }
+
+        // Create toast
+        const toast = document.createElement('div');
+        toast.className = `toast align-items-center text-white bg-${type === 'error' ? 'danger' : type} border-0`;
+        toast.setAttribute('role', 'alert');
+        toast.innerHTML = `
+            <div class="d-flex">
+                <div class="toast-body">${message}</div>
+                <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+            </div>
+        `;
+
+        container.appendChild(toast);
+        const bsToast = new bootstrap.Toast(toast, { delay: type === 'error' ? 5000 : 3000 });
+        bsToast.show();
+
+        // Remove toast after it's hidden
+        toast.addEventListener('hidden.bs.toast', () => {
+            toast.remove();
+        });
+    }
+
+    hasUnsavedChanges() {
+        // Simple check for form changes
+        return this.autoSaveTimer !== null;
+    }
+
+    loadSavedData() {
+        // Load any saved form data from sessionStorage
+        const savedData = sessionStorage.getItem('companyFormData');
+        if (savedData) {
+            try {
+                const data = JSON.parse(savedData);
+                Object.keys(data).forEach(key => {
+                    const field = this.form.querySelector(`[name="${key}"]`);
+                    if (field && !field.value) {
+                        field.value = data[key];
+                    }
+                });
+            } catch (e) {
+                console.warn('Failed to load saved form data:', e);
+            }
+        }
+    }
+
+    getCSRFToken() {
+        return document.querySelector('[name=csrfmiddlewaretoken]')?.value || '';
+    }
+
+    formatFileSize(bytes) {
+        if (bytes === 0) return '0 Bytes';
+        const k = 1024;
+        const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+        const i = Math.floor(Math.log(bytes) / Math.log(k));
+        return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+    }
+
+    preventDefaults(e) {
+        e.preventDefault();
+        e.stopPropagation();
+    }
+
+    initializeTooltips() {
+        // Initialize Bootstrap tooltips
+        const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+        tooltipTriggerList.map(function (tooltipTriggerEl) {
+            return new bootstrap.Tooltip(tooltipTriggerEl);
+        });
+    }
+}
+
+// Initialize form functionality
+function initializeForm() {
+    const formManager = new CompanyFormManager();
+    formManager.init();
+
+    // Make globally accessible for debugging
+    window.formManager = formManager;
+}
+
+// Legacy support functions
+function initializeValidation() {
+    // Already handled by CompanyFormManager
+}
+
+function initializeAutoSave() {
+    // Already handled by CompanyFormManager
+}
+
+function initializeFileUploads() {
+    // Already handled by CompanyFormManager
+}
+
+function initializeFormProgress() {
+    // Already handled by CompanyFormManager
+}
+
+function initializeEfrisToggle() {
+    // Already handled by CompanyFormManager
+}
+
+function initializeKeyboardShortcuts() {
+    // Already handled by CompanyFormManager
+}
+
+// Theme management
+function initializeTheme() {
+    const savedTheme = localStorage.getItem('theme') || 'light';
+    document.documentElement.setAttribute('data-bs-theme', savedTheme);
+}
+
+// Initialize theme on page load
+initializeTheme();
+
+// Export for external use
+window.CompanyFormManager = CompanyFormManager;
+</script>
+{% endblock %}

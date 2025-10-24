@@ -1,0 +1,102 @@
+{% extends 'base.html' %}
+{% load i18n %}
+
+{% block title %}Z-Reports - EFRIS{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <h4><i class="fas fa-file-alt"></i> Daily Z-Reports (T116)</h4>
+                    <p class="text-muted mb-0">Generate and upload daily sales reports to EFRIS</p>
+                </div>
+
+                <div class="card-body">
+                    <!-- Info Alert -->
+                    <div class="alert alert-info">
+                        <i class="fas fa-info-circle"></i>
+                        <strong>What is a Z-Report?</strong>
+                        A Z-report is a daily summary of all sales transactions. It must be uploaded to EFRIS at the end of each business day.
+                    </div>
+
+                    <!-- Date Filter -->
+                    <form method="get" class="mb-4">
+                        <div class="row">
+                            <div class="col-md-4">
+                                <label>From Date:</label>
+                                <input type="date" name="date_from" class="form-control" value="{{ date_from }}">
+                            </div>
+                            <div class="col-md-4">
+                                <label>To Date:</label>
+                                <input type="date" name="date_to" class="form-control" value="{{ date_to }}">
+                            </div>
+                            <div class="col-md-4">
+                                <label>&nbsp;</label>
+                                <button type="submit" class="btn btn-primary btn-block">
+                                    <i class="fas fa-filter"></i> Filter
+                                </button>
+                            </div>
+                        </div>
+                    </form>
+
+                    <!-- Z-Reports Table -->
+                    <div class="table-responsive">
+                        <table class="table table-bordered table-hover">
+                            <thead class="thead-light">
+                                <tr>
+                                    <th>Date</th>
+                                    <th>Status</th>
+                                    <th class="text-center">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for date_info in date_range %}
+                                <tr>
+                                    <td>
+                                        <strong>{{ date_info.date|date:"l, F d, Y" }}</strong>
+                                        <br>
+                                        <small class="text-muted">{{ date_info.date|date:"Y-m-d" }}</small>
+                                    </td>
+                                    <td>
+                                        {% if date_info.uploaded %}
+                                        <span class="badge badge-success">
+                                            <i class="fas fa-check-circle"></i> Uploaded
+                                        </span>
+                                        {% else %}
+                                        <span class="badge badge-warning">
+                                            <i class="fas fa-clock"></i> Pending
+                                        </span>
+                                        {% endif %}
+                                    </td>
+                                    <td class="text-center">
+                                        <a href="{% url 'efris:zreport_generate' date_info.date|date:'Y-m-d' %}"
+                                           class="btn btn-sm btn-primary">
+                                            <i class="fas fa-eye"></i> Preview
+                                        </a>
+
+                                        {% if not date_info.uploaded %}
+                                        <form method="post" action="{% url 'efris:zreport_upload' %}" class="d-inline">
+                                            {% csrf_token %}
+                                            <input type="hidden" name="report_date" value="{{ date_info.date|date:'Y-m-d' }}">
+                                            <button type="submit" class="btn btn-sm btn-success"
+                                                    onclick="return confirm('Upload Z-report for {{ date_info.date|date:"F d, Y" }}?')">
+                                                <i class="fas fa-upload"></i> Upload
+                                            </button>
+                                        </form>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+

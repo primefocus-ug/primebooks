@@ -1,0 +1,418 @@
+{% extends "base.html" %}
+{% load static i18n %}
+
+{% block title %}{% trans "EFRIS Invoice Operations" %} | {{ company.trading_name|default:company.name }}{% endblock %}
+
+{% block breadcrumb_items %}
+<li class="breadcrumb-item"><a href="{% url 'user_dashboard' %}">{% trans "Dashboard" %}</a></li>
+<li class="breadcrumb-item"><a href="{% url 'efris:dashboard' %}">{% trans "EFRIS" %}</a></li>
+<li class="breadcrumb-item active">{% trans "Invoice Operations" %}</li>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row mb-4">
+        <div class="col">
+            <h1 class="h3 mb-0">{% trans "EFRIS Invoice Operations" %}</h1>
+            <p class="text-muted">{% trans "Manage invoice fiscalization and related operations" %}</p>
+        </div>
+        <div class="col-auto">
+            <div class="btn-group">
+                <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#bulkFiscalizeModal">
+                    <i class="bi bi-lightning-charge me-2"></i>{% trans "Bulk Fiscalize" %}
+                </button>
+                <button type="button" class="btn btn-outline-primary" id="refreshInvoices">
+                    <i class="bi bi-arrow-clockwise me-2"></i>{% trans "Refresh" %}
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Statistics Cards -->
+    <div class="row mb-4">
+        <div class="col-md-3">
+            <div class="card bg-primary text-white">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between">
+                        <div>
+                            <h4 class="mb-0" id="pendingCount">{{ pending_invoices|length }}</h4>
+                            <p class="mb-0">{% trans "Pending Fiscalization" %}</p>
+                        </div>
+                        <div class="align-self-center">
+                            <i class="bi bi-clock-history fs-1 opacity-50"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card bg-success text-white">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between">
+                        <div>
+                            <h4 class="mb-0" id="successCount">{{ recent_audits|length }}</h4>
+                            <p class="mb-0">{% trans "Recent Success" %}</p>
+                        </div>
+                        <div class="align-self-center">
+                            <i class="bi bi-check-circle fs-1 opacity-50"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card bg-warning text-white">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between">
+                        <div>
+                            <h4 class="mb-0" id="todayCount">0</h4>
+                            <p class="mb-0">{% trans "Today's Invoices" %}</p>
+                        </div>
+                        <div class="align-self-center">
+                            <i class="bi bi-calendar-day fs-1 opacity-50"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card bg-info text-white">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between">
+                        <div>
+                            <h4 class="mb-0" id="errorCount">0</h4>
+                            <p class="mb-0">{% trans "Recent Errors" %}</p>
+                        </div>
+                        <div class="align-self-center">
+                            <i class="bi bi-exclamation-triangle fs-1 opacity-50"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Pending Invoices Table -->
+    <div class="card">
+        <div class="card-header">
+            <h5 class="card-title mb-0">{% trans "Pending Fiscalization" %}</h5>
+        </div>
+        <div class="card-body">
+            {% if pending_invoices %}
+            <div class="table-responsive">
+                <table class="table table-hover" id="pendingInvoicesTable">
+                    <thead>
+                        <tr>
+                            <th width="50">
+                                <input type="checkbox" id="selectAllInvoices" class="form-check-input">
+                            </th>
+                            <th>{% trans "Invoice No." %}</th>
+                            <th>{% trans "Customer" %}</th>
+                            <th>{% trans "Amount" %}</th>
+                            <th>{% trans "Date" %}</th>
+                            <th>{% trans "Store" %}</th>
+                            <th>{% trans "Status" %}</th>
+                            <th>{% trans "Actions" %}</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for invoice in pending_invoices %}
+                        <tr data-invoice-id="{{ invoice.id }}">
+                            <td>
+                                <input type="checkbox" class="form-check-input invoice-checkbox" value="{{ invoice.id }}">
+                            </td>
+                            <td>
+                                <strong>{{ invoice.invoice_number|default:invoice.id }}</strong>
+                            </td>
+                            <td>
+                                {{ invoice.sale.customer.name|default:"Walk-in Customer" }}
+                            </td>
+                            <td>
+                                <span class="fw-bold">{{ invoice.total_amount|floatformat:2 }}</span>
+                            </td>
+                            <td>{{ invoice.created_at|date:"M d, Y H:i" }}</td>
+                            <td>{{ invoice.sale.store.name }}</td>
+                            <td>
+                                <span class="badge bg-warning">{% trans "Pending" %}</span>
+                            </td>
+                            <td>
+                                <div class="btn-group btn-group-sm">
+                                    <button class="btn btn-outline-primary fiscalize-single"
+                                            data-invoice-id="{{ invoice.id }}"
+                                            title="{% trans 'Fiscalize Invoice' %}">
+                                        <i class="bi bi-send"></i>
+                                    </button>
+                                    <button class="btn btn-outline-info view-invoice"
+                                            data-invoice-id="{{ invoice.id }}"
+                                            title="{% trans 'View Details' %}">
+                                        <i class="bi bi-eye"></i>
+                                    </button>
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="text-center py-5">
+                <i class="bi bi-check-circle text-success fs-1"></i>
+                <h5 class="mt-3">{% trans "No Pending Invoices" %}</h5>
+                <p class="text-muted">{% trans "All invoices have been successfully fiscalized." %}</p>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Recent Fiscalization Audits -->
+    <div class="card mt-4">
+        <div class="card-header">
+            <h5 class="card-title mb-0">{% trans "Recent Fiscalization Activity" %}</h5>
+        </div>
+        <div class="card-body">
+            {% if recent_audits %}
+            <div class="table-responsive">
+                <table class="table table-sm">
+                    <thead>
+                        <tr>
+                            <th>{% trans "Invoice" %}</th>
+                            <th>{% trans "Action" %}</th>
+                            <th>{% trans "Status" %}</th>
+                            <th>{% trans "Fiscal No." %}</th>
+                            <th>{% trans "Timestamp" %}</th>
+                            <th>{% trans "User" %}</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for audit in recent_audits %}
+                        <tr>
+                            <td>{{ audit.invoice.invoice_number|default:audit.invoice.id }}</td>
+                            <td>
+                                <span class="badge bg-info">{{ audit.action }}</span>
+                            </td>
+                            <td>
+                                {% if audit.status == 'success' %}
+                                <span class="badge bg-success">{% trans "Success" %}</span>
+                                {% else %}
+                                <span class="badge bg-danger">{% trans "Failed" %}</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if audit.fiscal_number %}
+                                <code>{{ audit.fiscal_number }}</code>
+                                {% else %}
+                                <span class="text-muted">-</span>
+                                {% endif %}
+                            </td>
+                            <td>{{ audit.created_at|date:"M d, Y H:i" }}</td>
+                            <td>{{ audit.user.get_full_name|default:audit.user.username }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="text-center py-3">
+                <p class="text-muted">{% trans "No recent fiscalization activity" %}</p>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<!-- Bulk Fiscalize Modal -->
+<div class="modal fade" id="bulkFiscalizeModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">{% trans "Bulk Fiscalize Invoices" %}</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p>{% trans "You are about to fiscalize" %} <span id="selectedCount">0</span> {% trans "invoices." %}</p>
+                <div class="alert alert-warning">
+                    <i class="bi bi-exclamation-triangle me-2"></i>
+                    {% trans "This operation may take several minutes. Do not close the browser." %}
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">{% trans "Cancel" %}</button>
+                <button type="button" class="btn btn-primary" id="confirmBulkFiscalize">
+                    <i class="bi bi-send me-2"></i>{% trans "Start Fiscalization" %}
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Invoice Details Modal -->
+<div class="modal fade" id="invoiceDetailsModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">{% trans "Invoice Details" %}</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="invoiceDetailsContent">
+                <!-- Content loaded via AJAX -->
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Select all functionality
+    const selectAll = document.getElementById('selectAllInvoices');
+    const checkboxes = document.querySelectorAll('.invoice-checkbox');
+
+    selectAll?.addEventListener('change', function() {
+        checkboxes.forEach(checkbox => {
+            checkbox.checked = selectAll.checked;
+        });
+        updateSelectedCount();
+    });
+
+    // Update selected count
+    function updateSelectedCount() {
+        const selected = document.querySelectorAll('.invoice-checkbox:checked');
+        document.getElementById('selectedCount').textContent = selected.length;
+    }
+
+    checkboxes.forEach(checkbox => {
+        checkbox.addEventListener('change', updateSelectedCount);
+    });
+
+    // Single fiscalization
+    document.querySelectorAll('.fiscalize-single').forEach(button => {
+        button.addEventListener('click', function() {
+            const invoiceId = this.dataset.invoiceId;
+            fiscalizeInvoice(invoiceId);
+        });
+    });
+
+    // Bulk fiscalization
+    document.getElementById('confirmBulkFiscalize')?.addEventListener('click', function() {
+        const selectedInvoices = Array.from(document.querySelectorAll('.invoice-checkbox:checked'))
+            .map(checkbox => checkbox.value);
+
+        if (selectedInvoices.length === 0) {
+            showAlert('Please select at least one invoice', 'warning');
+            return;
+        }
+
+        bulkFiscalizeInvoices(selectedInvoices);
+    });
+
+    // View invoice details
+    document.querySelectorAll('.view-invoice').forEach(button => {
+        button.addEventListener('click', function() {
+            const invoiceId = this.dataset.invoiceId;
+            viewInvoiceDetails(invoiceId);
+        });
+    });
+
+    // Refresh functionality
+    document.getElementById('refreshInvoices')?.addEventListener('click', function() {
+        window.location.reload();
+    });
+
+    // Fiscalization functions
+    function fiscalizeInvoice(invoiceId) {
+        const button = document.querySelector(`.fiscalize-single[data-invoice-id="${invoiceId}"]`);
+        const originalHtml = button.innerHTML;
+
+        button.innerHTML = '<i class="bi bi-hourglass-split"></i>';
+        button.disabled = true;
+
+        fetch('{% url "efris:fiscalize_invoice" %}', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+                'X-CSRFToken': window.csrfToken
+            },
+            body: `invoice_id=${invoiceId}`
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                showAlert(data.message, 'success');
+                // Remove the row from table
+                document.querySelector(`tr[data-invoice-id="${invoiceId}"]`)?.remove();
+                updateCounts();
+            } else {
+                showAlert(data.message, 'error');
+                button.innerHTML = originalHtml;
+                button.disabled = false;
+            }
+        })
+        .catch(error => {
+            showAlert('Fiscalization failed: ' + error, 'error');
+            button.innerHTML = originalHtml;
+            button.disabled = false;
+        });
+    }
+
+    function bulkFiscalizeInvoices(invoiceIds) {
+        const modal = bootstrap.Modal.getInstance(document.getElementById('bulkFiscalizeModal'));
+        const button = document.getElementById('confirmBulkFiscalize');
+        const originalHtml = button.innerHTML;
+
+        button.innerHTML = '<i class="bi bi-hourglass-split me-2"></i>Processing...';
+        button.disabled = true;
+
+        fetch('{% url "efris:bulk_fiscalize" %}', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+                'X-CSRFToken': window.csrfToken
+            },
+            body: `invoice_ids=${JSON.stringify(invoiceIds)}`
+        })
+        .then(response => response.json())
+        .then(data => {
+            modal.hide();
+            if (data.success) {
+                showAlert(data.message, 'success');
+                // Reload page to reflect changes
+                setTimeout(() => window.location.reload(), 2000);
+            } else {
+                showAlert(data.message, 'warning');
+                button.innerHTML = originalHtml;
+                button.disabled = false;
+            }
+        })
+        .catch(error => {
+            modal.hide();
+            showAlert('Bulk fiscalization failed: ' + error, 'error');
+            button.innerHTML = originalHtml;
+            button.disabled = false;
+        });
+    }
+
+    function viewInvoiceDetails(invoiceId) {
+        // Implement AJAX call to load invoice details
+        const modal = new bootstrap.Modal(document.getElementById('invoiceDetailsModal'));
+        const content = document.getElementById('invoiceDetailsContent');
+
+        content.innerHTML = '<div class="text-center py-4"><i class="bi bi-hourglass-split"></i> Loading...</div>';
+        modal.show();
+
+        // Simulate loading details
+        setTimeout(() => {
+            content.innerHTML = `
+                <h6>Invoice #${invoiceId}</h6>
+                <p>Details would be loaded here via AJAX</p>
+            `;
+        }, 1000);
+    }
+
+    function updateCounts() {
+        const pendingCount = document.querySelectorAll('#pendingInvoicesTable tbody tr').length;
+        document.getElementById('pendingCount').textContent = pendingCount;
+    }
+});
+</script>
+{% endblock %}

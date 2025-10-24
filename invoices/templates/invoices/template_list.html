@@ -1,0 +1,108 @@
+{% extends 'base.html' %}
+
+{% block title %}Invoice Templates | {{ company.trading_name|default:company.name }}{% endblock %}
+
+{% block content %}
+<div class="invoice-header">
+    <div class="row align-items-center">
+        <div class="col">
+            <h1><i class="fas fa-file-alt me-3"></i>Invoice Templates</h1>
+            <p class="mb-0">Manage your invoice templates and layouts</p>
+        </div>
+        <div class="col-auto">
+            {% if perms.invoices.add_invoicetemplate %}
+            <a href="{% url 'invoices:template_create' %}" class="btn btn-light">
+                <i class="fas fa-plus me-2"></i>New Template
+            </a>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    {% for template in templates %}
+    <div class="col-md-6 col-lg-4 mb-4">
+        <div class="card">
+            {% if template.is_default %}
+            <div class="card-header bg-primary text-white">
+                <i class="fas fa-star me-2"></i>Default Template
+            </div>
+            {% endif %}
+            <div class="card-body">
+                <h5 class="card-title">{{ template.name }}</h5>
+                <p class="card-text">
+                    <small class="text-muted">Version {{ template.version }}</small><br>
+                    {% if template.is_efris_compliant %}
+                        <span class="badge bg-success">EFRIS Compliant</span>
+                    {% else %}
+                        <span class="badge bg-warning">Not EFRIS Compliant</span>
+                    {% endif %}
+                </p>
+                <p class="card-text">
+                    <small class="text-muted">
+                        Created by {{ template.created_by.get_full_name|default:template.created_by.username }}<br>
+                        {{ template.created_at|date:"M d, Y" }}
+                    </small>
+                </p>
+            </div>
+            <div class="card-footer">
+                <div class="btn-group w-100" role="group">
+                    <button type="button" class="btn btn-outline-primary" onclick="previewTemplate({{ template.id }})">
+                        <i class="fas fa-eye"></i> Preview
+                    </button>
+                    <a href="#" class="btn btn-outline-secondary">
+                        <i class="fas fa-edit"></i> Edit
+                    </a>
+                    {% if not template.is_default %}
+                    <button type="button" class="btn btn-outline-success" onclick="setDefault({{ template.id }})">
+                        <i class="fas fa-star"></i> Set Default
+                    </button>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+    {% empty %}
+    <div class="col-12">
+        <div class="text-center py-5">
+            <i class="fas fa-file-alt fa-3x text-muted mb-3"></i>
+            <h4>No Templates Found</h4>
+            <p class="text-muted">Create your first invoice template to get started.</p>
+            {% if perms.invoices.add_invoicetemplate %}
+            <a href="{% url 'invoices:template_create' %}" class="btn btn-primary">
+                <i class="fas fa-plus me-2"></i>Create Template
+            </a>
+            {% endif %}
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function previewTemplate(templateId) {
+    // Open template preview in new window
+    window.open(`/invoices/templates/${templateId}/preview/`, '_blank');
+}
+
+function setDefault(templateId) {
+    if (confirm('Are you sure you want to set this as the default template?')) {
+        fetch(`/invoices/templates/${templateId}/set-default/`, {
+            method: 'POST',
+            headers: {
+                'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                location.reload();
+            } else {
+                alert('Error setting default template');
+            }
+        });
+    }
+}
+</script>
+{% endblock %}

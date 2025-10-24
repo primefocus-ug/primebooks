@@ -1,0 +1,334 @@
+{% extends 'base.html' %}
+{% load static %}
+{% load i18n %}
+
+{% block title %}{% trans "API Logs" %} - EFRIS{% endblock %}
+
+{% block breadcrumb_items %}
+<li class="breadcrumb-item"><a href="{% url 'efris:dashboard' %}">{% trans "EFRIS" %}</a></li>
+<li class="breadcrumb-item active">{% trans "API Logs" %}</li>
+{% endblock %}
+
+{% block page_header %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h1 class="h3 mb-1">{% trans "EFRIS API Logs" %}</h1>
+        <p class="text-muted mb-0">{% trans "Monitor and review API communication with EFRIS" %}</p>
+    </div>
+    <div>
+        <button class="btn btn-outline-primary" onclick="location.reload()">
+            <i class="bi bi-arrow-clockwise me-2"></i>{% trans "Refresh" %}
+        </button>
+    </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<!-- Filter Section -->
+<div class="card shadow-sm mb-4">
+    <div class="card-body">
+        <form method="get" class="row g-3">
+            <div class="col-md-3">
+                <label for="interface" class="form-label">{% trans "Interface" %}</label>
+                <select class="form-select" id="interface" name="interface">
+                    <option value="">{% trans "All Interfaces" %}</option>
+                    {% for code in interface_codes %}
+                    <option value="{{ code }}" {% if code == selected_interface %}selected{% endif %}>
+                        {{ code }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label for="status" class="form-label">{% trans "Status" %}</label>
+                <select class="form-select" id="status" name="status">
+                    <option value="">{% trans "All Status" %}</option>
+                    <option value="success" {% if selected_status == 'success' %}selected{% endif %}>
+                        {% trans "Success" %}
+                    </option>
+                    <option value="error" {% if selected_status == 'error' %}selected{% endif %}>
+                        {% trans "Error" %}
+                    </option>
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label for="date_from" class="form-label">{% trans "Date From" %}</label>
+                <input type="date" class="form-control" id="date_from" name="date_from" value="{{ date_from }}">
+            </div>
+            <div class="col-md-3 d-flex align-items-end">
+                <button type="submit" class="btn btn-primary w-100">
+                    <i class="bi bi-funnel me-2"></i>{% trans "Filter" %}
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Logs Table -->
+<div class="card shadow-sm">
+    <div class="card-header bg-white">
+        <div class="row align-items-center">
+            <div class="col-md-6">
+                <h5 class="mb-0">
+                    <i class="bi bi-journal-text text-primary me-2"></i>
+                    {% trans "API Request Logs" %}
+                </h5>
+            </div>
+            <div class="col-md-6 text-end">
+                <span class="badge bg-primary">
+                    {{ logs.paginator.count }} {% trans "total logs" %}
+                </span>
+            </div>
+        </div>
+    </div>
+    <div class="card-body p-0">
+        {% if logs %}
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th style="width: 12%">{% trans "Timestamp" %}</th>
+                        <th style="width: 15%">{% trans "Interface" %}</th>
+                        <th style="width: 10%">{% trans "Status" %}</th>
+                        <th style="width: 10%">{% trans "Duration" %}</th>
+                        <th style="width: 10%">{% trans "Response Code" %}</th>
+                        <th style="width: 33%">{% trans "Message" %}</th>
+                        <th style="width: 10%" class="text-center">{% trans "Actions" %}</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for log in logs %}
+                    <tr>
+                        <td>
+                            <small class="text-muted">
+                                {{ log.request_time|date:"Y-m-d" }}<br>
+                                {{ log.request_time|date:"H:i:s" }}
+                            </small>
+                        </td>
+                        <td>
+                            <code class="text-primary small">{{ log.interface_code }}</code>
+                        </td>
+                        <td>
+                            {% if log.status == 'success' %}
+                                <span class="badge bg-success">
+                                    <i class="bi bi-check-circle me-1"></i>{% trans "Success" %}
+                                </span>
+                            {% else %}
+                                <span class="badge bg-danger">
+                                    <i class="bi bi-x-circle me-1"></i>{% trans "Error" %}
+                                </span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <span class="badge bg-info">
+                                {{ log.response_time_ms|default:"0" }} ms
+                            </span>
+                        </td>
+                        <td>
+                            {% if log.response_code %}
+                                <span class="badge {% if log.response_code >= 200 and log.response_code < 300 %}bg-success{% else %}bg-warning{% endif %}">
+                                    {{ log.response_code }}
+                                </span>
+                            {% else %}
+                                <span class="text-muted">-</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <small class="text-muted">
+                                {{ log.response_message|truncatewords:8|default:"-" }}
+                            </small>
+                        </td>
+                        <td class="text-center">
+                            <button type="button"
+                                    class="btn btn-sm btn-outline-primary"
+                                    onclick="viewLogDetails({{ log.id }})"
+                                    title="{% trans 'View details' %}">
+                                <i class="bi bi-eye"></i>
+                            </button>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Pagination -->
+        <div class="card-footer bg-white">
+            <nav aria-label="Logs pagination">
+                <ul class="pagination justify-content-center mb-0">
+                    {% if logs.has_previous %}
+                    <li class="page-item">
+                        <a class="page-link" href="?page={{ logs.previous_page_number }}&interface={{ selected_interface }}&status={{ selected_status }}&date_from={{ date_from }}">
+                            <i class="bi bi-chevron-left"></i>
+                        </a>
+                    </li>
+                    {% else %}
+                    <li class="page-item disabled">
+                        <span class="page-link"><i class="bi bi-chevron-left"></i></span>
+                    </li>
+                    {% endif %}
+
+                    <li class="page-item active">
+                        <span class="page-link">
+                            {% trans "Page" %} {{ logs.number }} {% trans "of" %} {{ logs.paginator.num_pages }}
+                        </span>
+                    </li>
+
+                    {% if logs.has_next %}
+                    <li class="page-item">
+                        <a class="page-link" href="?page={{ logs.next_page_number }}&interface={{ selected_interface }}&status={{ selected_status }}&date_from={{ date_from }}">
+                            <i class="bi bi-chevron-right"></i>
+                        </a>
+                    </li>
+                    {% else %}
+                    <li class="page-item disabled">
+                        <span class="page-link"><i class="bi bi-chevron-right"></i></span>
+                    </li>
+                    {% endif %}
+                </ul>
+            </nav>
+        </div>
+        {% else %}
+        <div class="text-center py-5">
+            <i class="bi bi-inbox display-1 text-muted"></i>
+            <h5 class="mt-3">{% trans "No logs found" %}</h5>
+            <p class="text-muted">{% trans "Try adjusting your filters" %}</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Log Details Modal -->
+<div class="modal fade" id="logDetailsModal" tabindex="-1">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title">
+                    <i class="bi bi-file-text me-2"></i>{% trans "API Log Details" %}
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="logDetailsContent">
+                <div class="text-center py-4">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">{% trans "Loading..." %}</span>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                    {% trans "Close" %}
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function viewLogDetails(logId) {
+    const modal = new bootstrap.Modal(document.getElementById('logDetailsModal'));
+    const content = document.getElementById('logDetailsContent');
+
+    content.innerHTML = `
+        <div class="text-center py-4">
+            <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">{% trans "Loading..." %}</span>
+            </div>
+        </div>
+    `;
+
+    modal.show();
+
+    // Fetch log details
+    fetch(`/efris/ajax/log/${logId}/details/`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                const log = data.log;
+                content.innerHTML = `
+                    <div class="row g-4">
+                        <!-- Basic Info -->
+                        <div class="col-12">
+                            <h6 class="text-primary border-bottom pb-2">
+                                <i class="bi bi-info-circle me-2"></i>{% trans "Request Information" %}
+                            </h6>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="text-muted small">{% trans "Timestamp" %}</label>
+                            <p class="mb-0">${log.request_time}</p>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="text-muted small">{% trans "Interface Code" %}</label>
+                            <p class="mb-0"><code>${log.interface_code}</code></p>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="text-muted small">{% trans "Status" %}</label>
+                            <p class="mb-0">
+                                <span class="badge bg-${log.status === 'success' ? 'success' : 'danger'}">
+                                    ${log.status}
+                                </span>
+                            </p>
+                        </div>
+
+                        <!-- Request Details -->
+                        <div class="col-12 mt-4">
+                            <h6 class="text-primary border-bottom pb-2">
+                                <i class="bi bi-arrow-up-circle me-2"></i>{% trans "Request Data" %}
+                            </h6>
+                        </div>
+                        <div class="col-12">
+                            <div class="bg-light p-3 rounded">
+                                <pre class="mb-0"><code>${JSON.stringify(log.request_data, null, 2)}</code></pre>
+                            </div>
+                        </div>
+
+                        <!-- Response Details -->
+                        <div class="col-12 mt-4">
+                            <h6 class="text-primary border-bottom pb-2">
+                                <i class="bi bi-arrow-down-circle me-2"></i>{% trans "Response Data" %}
+                            </h6>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="text-muted small">{% trans "Response Code" %}</label>
+                            <p class="mb-0">
+                                <span class="badge bg-info">${log.response_code || 'N/A'}</span>
+                            </p>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="text-muted small">{% trans "Duration" %}</label>
+                            <p class="mb-0">
+                                <span class="badge bg-secondary">${log.response_time_ms || 0} ms</span>
+                            </p>
+                        </div>
+                        <div class="col-12">
+                            <label class="text-muted small">{% trans "Response Message" %}</label>
+                            <p class="mb-0">${log.response_message || 'N/A'}</p>
+                        </div>
+                        <div class="col-12">
+                            <label class="text-muted small">{% trans "Response Data" %}</label>
+                            <div class="bg-light p-3 rounded">
+                                <pre class="mb-0"><code>${JSON.stringify(log.response_data, null, 2)}</code></pre>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            } else {
+                content.innerHTML = `
+                    <div class="alert alert-danger">
+                        {% trans "Failed to load log details" %}
+                    </div>
+                `;
+            }
+        })
+        .catch(error => {
+            content.innerHTML = `
+                <div class="alert alert-danger">
+                    {% trans "Error loading log details" %}
+                </div>
+            `;
+        });
+}
+</script>
+{% endblock %}

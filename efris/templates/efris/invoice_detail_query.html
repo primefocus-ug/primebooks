@@ -1,0 +1,224 @@
+{% extends 'base.html' %}
+{% load i18n %}
+
+{% block title %}Invoice Query - EFRIS{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <h4><i class="fas fa-search"></i> Query Invoice from EFRIS (T108)</h4>
+                    <p class="text-muted mb-0">Retrieve detailed invoice information from EFRIS server</p>
+                </div>
+
+                <div class="card-body">
+                    <!-- Search Form -->
+                    <form method="post" class="mb-4">
+                        {% csrf_token %}
+                        <div class="row">
+                            <div class="col-md-8">
+                                <div class="form-group">
+                                    <label for="invoice_no">Invoice Number</label>
+                                    <input
+                                        type="text"
+                                        class="form-control form-control-lg"
+                                        id="invoice_no"
+                                        name="invoice_no"
+                                        placeholder="Enter invoice number (e.g., INV-20250108-001)"
+                                        required
+                                    >
+                                    <small class="form-text text-muted">
+                                        Enter the full invoice number as it appears in EFRIS
+                                    </small>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <label>&nbsp;</label>
+                                <button type="submit" class="btn btn-primary btn-lg btn-block">
+                                    <i class="fas fa-search"></i> Query Invoice
+                                </button>
+                            </div>
+                        </div>
+                    </form>
+
+                    {% if invoice_data %}
+                    <!-- Invoice Details -->
+                    <div class="invoice-details">
+                        <h5 class="border-bottom pb-2 mb-3">
+                            <i class="fas fa-file-invoice"></i> Invoice Details
+                        </h5>
+
+                        <!-- Basic Information -->
+                        {% if invoice_data.basicInformation %}
+                        <div class="row mb-4">
+                            <div class="col-md-6">
+                                <h6 class="text-primary">Basic Information</h6>
+                                <table class="table table-sm table-bordered">
+                                    <tr>
+                                        <th width="40%">Invoice No:</th>
+                                        <td>{{ invoice_data.basicInformation.invoiceNo }}</td>
+                                    </tr>
+                                    <tr>
+                                        <th>Invoice Type:</th>
+                                        <td>{{ invoice_data.basicInformation.invoiceType }}</td>
+                                    </tr>
+                                    <tr>
+                                        <th>Issued Date:</th>
+                                        <td>{{ invoice_data.basicInformation.issuedDate }}</td>
+                                    </tr>
+                                    <tr>
+                                        <th>Currency:</th>
+                                        <td>{{ invoice_data.basicInformation.currency }}</td>
+                                    </tr>
+                                    <tr>
+                                        <th>Operator:</th>
+                                        <td>{{ invoice_data.basicInformation.operator }}</td>
+                                    </tr>
+                                </table>
+                            </div>
+
+                            <div class="col-md-6">
+                                <h6 class="text-primary">Seller Details</h6>
+                                <table class="table table-sm table-bordered">
+                                    {% if invoice_data.sellerDetails %}
+                                    <tr>
+                                        <th width="40%">Legal Name:</th>
+                                        <td>{{ invoice_data.sellerDetails.legalName }}</td>
+                                    </tr>
+                                    <tr>
+                                        <th>Business Name:</th>
+                                        <td>{{ invoice_data.sellerDetails.businessName }}</td>
+                                    </tr>
+                                    <tr>
+                                        <th>TIN:</th>
+                                        <td>{{ invoice_data.sellerDetails.tin }}</td>
+                                    </tr>
+                                    <tr>
+                                        <th>Address:</th>
+                                        <td>{{ invoice_data.sellerDetails.address }}</td>
+                                    </tr>
+                                    <tr>
+                                        <th>Phone:</th>
+                                        <td>{{ invoice_data.sellerDetails.mobilePhone }}</td>
+                                    </tr>
+                                    {% endif %}
+                                </table>
+                            </div>
+                        </div>
+                        {% endif %}
+
+                        <!-- Buyer Details -->
+                        {% if invoice_data.buyerDetails %}
+                        <div class="row mb-4">
+                            <div class="col-md-12">
+                                <h6 class="text-primary">Buyer Details</h6>
+                                <table class="table table-sm table-bordered">
+                                    <tr>
+                                        <th width="20%">Name:</th>
+                                        <td>{{ invoice_data.buyerDetails.buyerLegalName }}</td>
+                                    </tr>
+                                    <tr>
+                                        <th>TIN:</th>
+                                        <td>{{ invoice_data.buyerDetails.buyerTin|default:"N/A" }}</td>
+                                    </tr>
+                                    <tr>
+                                        <th>Type:</th>
+                                        <td>
+                                            {% if invoice_data.buyerDetails.buyerType == "0" %}
+                                            <span class="badge badge-info">B2B</span>
+                                            {% elif invoice_data.buyerDetails.buyerType == "1" %}
+                                            <span class="badge badge-secondary">B2C</span>
+                                            {% else %}
+                                            <span class="badge badge-warning">B2G</span>
+                                            {% endif %}
+                                        </td>
+                                    </tr>
+                                </table>
+                            </div>
+                        </div>
+                        {% endif %}
+
+                        <!-- Goods Details -->
+                        {% if invoice_data.goodsDetails %}
+                        <div class="row mb-4">
+                            <div class="col-md-12">
+                                <h6 class="text-primary">Line Items</h6>
+                                <div class="table-responsive">
+                                    <table class="table table-bordered table-hover">
+                                        <thead class="thead-light">
+                                            <tr>
+                                                <th>#</th>
+                                                <th>Item</th>
+                                                <th>Code</th>
+                                                <th>Qty</th>
+                                                <th>Unit</th>
+                                                <th class="text-right">Unit Price</th>
+                                                <th class="text-right">Total</th>
+                                                <th class="text-right">Tax</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {% for item in invoice_data.goodsDetails %}
+                                            <tr>
+                                                <td>{{ forloop.counter }}</td>
+                                                <td>{{ item.item }}</td>
+                                                <td>{{ item.itemCode }}</td>
+                                                <td>{{ item.qty }}</td>
+                                                <td>{{ item.unitOfMeasure }}</td>
+                                                <td class="text-right">{{ item.unitPrice }}</td>
+                                                <td class="text-right">{{ item.total }}</td>
+                                                <td class="text-right">{{ item.tax }}</td>
+                                            </tr>
+                                            {% endfor %}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                        {% endif %}
+
+                        <!-- Summary -->
+                        {% if invoice_data.summary %}
+                        <div class="row">
+                            <div class="col-md-6 offset-md-6">
+                                <table class="table table-bordered">
+                                    <tr>
+                                        <th>Net Amount:</th>
+                                        <td class="text-right">{{ invoice_data.summary.netAmount }}</td>
+                                    </tr>
+                                    <tr>
+                                        <th>Tax Amount:</th>
+                                        <td class="text-right">{{ invoice_data.summary.taxAmount }}</td>
+                                    </tr>
+                                    <tr class="table-success">
+                                        <th>Gross Amount:</th>
+                                        <td class="text-right"><strong>{{ invoice_data.summary.grossAmount }}</strong></td>
+                                    </tr>
+                                </table>
+                            </div>
+                        </div>
+                        {% endif %}
+
+                        <!-- Raw Data (Collapsible) -->
+                        <div class="mt-4">
+                            <button class="btn btn-sm btn-outline-secondary" type="button" data-toggle="collapse" data-target="#rawData">
+                                <i class="fas fa-code"></i> Show Raw JSON
+                            </button>
+                            <div class="collapse mt-2" id="rawData">
+                                <pre class="bg-light p-3 border">{{ invoice_data|pprint }}</pre>
+                            </div>
+                        </div>
+                    </div>
+                    {% else %}
+                    <div class="alert alert-info">
+                        <i class="fas fa-info-circle"></i> Enter an invoice number above to query its details from EFRIS
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

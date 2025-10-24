@@ -1,0 +1,209 @@
+{% extends 'base.html' %}
+{% load crispy_forms_tags %}
+
+{% block title %}{% if object %}Edit{% else %}Add{% endif %} Supplier - {{ company.trading_name|default:company.name }}{% endblock %}
+
+{% block breadcrumbs %}
+<li class="breadcrumb-item">
+    {% if perms.inventory.view_product %}
+    <a href="{% url 'inventory:dashboard' %}">
+        <i class="fas fa-home"></i> Dashboard
+    </a>
+    {% endif %}
+</li>
+<li class="breadcrumb-item">
+    {% if perms.inventory.view_supplier %}
+    <a href="{% url 'inventory:supplier_list' %}">
+        <i class="fas fa-truck"></i> Suppliers
+    </a>
+    {% endif %}
+</li>
+<li class="breadcrumb-item active">
+    <i class="fas fa-{% if object %}edit{% else %}plus{% endif %}"></i> {% if object %}Edit{% else %}Add{% endif %} Supplier
+</li>
+{% endblock %}
+
+{% block content %}
+<div class="supplier-form-container">
+    <div class="row">
+        <div class="col-lg-8">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">
+                        <i class="fas fa-{% if object %}edit{% else %}plus{% endif %}"></i> 
+                        {% if object %}Edit Supplier{% else %}Add New Supplier{% endif %}
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <form method="post" enctype="multipart/form-data">
+                        {% csrf_token %}
+                        <div class="row">
+                            <div class="col-md-6">
+                                {{ form.name|as_crispy_field }}
+                            </div>
+                            <div class="col-md-6">
+                                {{ form.tin|as_crispy_field }}
+                            </div>
+                        </div>
+                        
+                        <div class="row">
+                            <div class="col-md-6">
+                                {{ form.contact_person|as_crispy_field }}
+                            </div>
+                            <div class="col-md-6">
+                                {{ form.phone|as_crispy_field }}
+                            </div>
+                        </div>
+                        
+                        <div class="row">
+                            <div class="col-md-6">
+                                {{ form.email|as_crispy_field }}
+                            </div>
+                        </div>
+                        
+                        <div class="row">
+                            <div class="col-md-6">
+                                {{ form.address|as_crispy_field }}
+                            </div>
+                            <div class="row">
+    <div class="col-md-6">
+        {{ form.country|as_crispy_field }}
+    </div>
+</div>
+
+                        </div>
+                        
+                        <div class="mb-3">
+                            <div class="form-check form-switch">
+                                {{ form.is_active }}
+                                <label class="form-check-label" for="{{ form.is_active.id_for_label }}">
+                                    {{ form.is_active.label }}
+                                </label>
+                            </div>
+                        </div>
+                        
+                        <div class="form-actions">
+                            <button type="submit" class="btn btn-primary">
+                                <i class="fas fa-save"></i> {% if object %}Update{% else %}Create{% endif %} Supplier
+                            </button>
+                            {% if perms.inventory.view_supplier %}
+                            <a href="{% url 'inventory:supplier_list' %}" class="btn btn-outline-secondary">
+                                <i class="fas fa-times"></i> Cancel
+                            </a>
+                            {% endif %}
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-lg-4">
+            <div class="card sticky-top" style="top: 80px;">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">
+                        <i class="fas fa-info-circle"></i> Supplier Information
+                    </h5>
+                </div>
+                <div class="card-body">
+                    {% if object %}
+                    <div class="supplier-stats">
+                        <div class="stat-item">
+                            <div class="stat-label">Products Supplied</div>
+                            <div class="stat-value">{{ object.products.count }}</div>
+                        </div>
+                        <div class="stat-item">
+                            <div class="stat-label">Last Order</div>
+                            <div class="stat-value">
+                                {% if object.last_order_date %}
+                                    {{ object.last_order_date|date:"M d, Y" }}
+                                {% else %}
+                                    Never
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+                    <hr>
+                    {% endif %}
+                    
+                    <h6>Quick Actions</h6>
+                    <div class="d-grid gap-2">
+                        {% if perms.inventory.view_supplier %}
+                        <a href="{% url 'inventory:supplier_list' %}" class="btn btn-outline-secondary">
+                            <i class="fas fa-list"></i> View All Suppliers
+                        </a>
+                        {% if object %}
+
+                        <a href="{% url 'inventory:supplier_detail' object.pk %}" class="btn btn-outline-info">
+                            <i class="fas fa-eye"></i> View Details
+                        </a>
+                        {% endif %}
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+.supplier-form-container {
+    padding: 1.5rem;
+    max-width: 1400px;
+    margin: 0 auto;
+}
+
+.card {
+    border-radius: 0.75rem;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+}
+
+.card-header {
+    background-color: rgba(46, 89, 217, 0.1);
+    border-bottom: 1px solid rgba(46, 89, 217, 0.2);
+}
+
+.form-actions {
+    display: flex;
+    gap: 0.75rem;
+    margin-top: 1.5rem;
+}
+
+.supplier-stats {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+}
+
+.stat-item {
+    background-color: #f8f9fa;
+    border-radius: 0.5rem;
+    padding: 0.75rem;
+}
+
+.stat-label {
+    font-size: 0.875rem;
+    color: #6c757d;
+}
+
+.stat-value {
+    font-weight: 600;
+    font-size: 1.25rem;
+}
+
+.sticky-top {
+    z-index: 10;
+}
+
+/* Form switch styling */
+.form-check.form-switch {
+    padding-left: 3.5em;
+}
+
+.form-check-input {
+    width: 3em;
+    margin-left: -3.5em;
+}
+</style>
+{% endblock %}

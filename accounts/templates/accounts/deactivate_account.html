@@ -1,0 +1,183 @@
+{% extends 'base.html' %}
+{% load i18n %}
+{% block title %}Deactivate Account - {{ company.trading_name|default:company.name }}{% endblock %}
+
+{% block extra_css %}
+<style>
+    .deactivation-container {
+        max-width: 600px;
+        margin: 2rem auto;
+        padding: 2rem;
+    }
+
+    .warning-card {
+        background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+        border: 2px solid #f59e0b;
+        border-radius: 12px;
+        padding: 2rem;
+        margin-bottom: 2rem;
+    }
+
+    .warning-icon {
+        width: 60px;
+        height: 60px;
+        background: #f59e0b;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin: 0 auto 1rem;
+        color: white;
+        font-size: 1.8rem;
+    }
+
+    .deactivation-form {
+        background: white;
+        border-radius: 16px;
+        box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1);
+        padding: 2.5rem;
+        border: 1px solid #e2e8f0;
+    }
+
+    .form-group {
+        margin-bottom: 1.5rem;
+    }
+
+    .form-control {
+        border: 2px solid #e2e8f0;
+        border-radius: 8px;
+        padding: 0.75rem 1rem;
+        transition: all 0.3s ease;
+    }
+
+    .form-control:focus {
+        border-color: #ef4444;
+        box-shadow: 0 0 0 0.2rem rgba(239, 68, 68, 0.25);
+    }
+
+    .btn-danger-modern {
+        background: linear-gradient(135deg, #ef4444, #dc2626);
+        border: none;
+        color: white;
+        padding: 0.75rem 2rem;
+        border-radius: 8px;
+        font-weight: 600;
+        transition: all 0.3s ease;
+    }
+
+    .btn-danger-modern:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 15px rgba(239, 68, 68, 0.4);
+    }
+
+    .consequences-list {
+        background: #fef2f2;
+        border-left: 4px solid #ef4444;
+        padding: 1.5rem;
+        border-radius: 8px;
+        margin-bottom: 2rem;
+    }
+
+    .consequences-list ul {
+        margin: 0;
+        padding-left: 1.5rem;
+    }
+
+    .consequences-list li {
+        margin-bottom: 0.5rem;
+        color: #7f1d1d;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="deactivation-container">
+    <div class="warning-card text-center">
+        <div class="warning-icon">
+            <i class="bi bi-exclamation-triangle"></i>
+        </div>
+        <h2 class="mb-3">{% trans "Are you sure you want to deactivate your account?" %}</h2>
+        <p class="mb-0">{% trans "This action will temporarily disable your account. You can reactivate it later by contacting support." %}</p>
+    </div>
+
+    <div class="consequences-list">
+        <h5 class="mb-3"><i class="bi bi-info-circle me-2"></i>{% trans "What happens when you deactivate:" %}</h5>
+        <ul>
+            <li>{% trans "Your account will be immediately disabled" %}</li>
+            <li>{% trans "You will be logged out of all devices" %}</li>
+            <li>{% trans "Your data will be preserved for 90 days" %}</li>
+            <li>{% trans "Others won't be able to find or contact you" %}</li>
+            <li>{% trans "You can reactivate by contacting our support team" %}</li>
+        </ul>
+    </div>
+
+    <div class="deactivation-form">
+        <h4 class="mb-4">{% trans "Confirm Account Deactivation" %}</h4>
+
+        <form method="post" id="deactivationForm">
+            {% csrf_token %}
+
+            <div class="form-group">
+                <label for="password" class="form-label">{% trans "Confirm your password:" %}</label>
+                <input type="password" class="form-control" id="password" name="password" required>
+                <small class="text-muted">{% trans "Enter your current password to confirm this action" %}</small>
+            </div>
+
+            <div class="form-group">
+                <label for="reason" class="form-label">{% trans "Reason for deactivation (optional):" %}</label>
+                <select class="form-control" id="reason" name="reason">
+                    <option value="">{% trans "Select a reason" %}</option>
+                    <option value="too_busy">{% trans "Too busy to use the service" %}</option>
+                    <option value="privacy_concerns">{% trans "Privacy concerns" %}</option>
+                    <option value="found_alternative">{% trans "Found an alternative" %}</option>
+                    <option value="not_useful">{% trans "Service not useful" %}</option>
+                    <option value="technical_issues">{% trans "Technical issues" %}</option>
+                    <option value="other">{% trans "Other" %}</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label for="feedback" class="form-label">{% trans "Additional feedback (optional):" %}</label>
+                <textarea class="form-control" id="feedback" name="feedback" rows="3" placeholder="{% trans "Help us improve by sharing your feedback..." %}"></textarea>
+            </div>
+
+            <div class="form-check mb-4">
+                <input class="form-check-input" type="checkbox" id="confirmDeactivation" required>
+                <label class="form-check-label" for="confirmDeactivation">
+                    {% trans "I understand the consequences of deactivating my account" %}
+                </label>
+            </div>
+
+            <div class="d-flex justify-content-between align-items-center">
+                <a href="{% url 'user_profile' %}" class="btn btn-outline-secondary">
+                    <i class="bi bi-arrow-left me-2"></i>{% trans "Cancel" %}
+                </a>
+                <button type="submit" class="btn btn-danger-modern">
+                    <i class="bi bi-x-circle me-2"></i>{% trans "Deactivate Account" %}
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const form = document.getElementById('deactivationForm');
+    const submitBtn = form.querySelector('button[type="submit"]');
+
+    form.addEventListener('submit', function(e) {
+        e.preventDefault();
+
+        if (!confirm('Are you absolutely sure you want to deactivate your account? This action cannot be undone without contacting support.')) {
+            return;
+        }
+
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Processing...';
+
+        // Submit form
+        this.submit();
+    });
+});
+</script>
+{% endblock %}

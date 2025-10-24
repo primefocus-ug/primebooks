@@ -1,0 +1,226 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Stock Transfer - EFRIS{% endblock %}
+
+{% block breadcrumb_items %}
+<li class="breadcrumb-item"><a href="{% url 'user_dashboard' %}">Home</a></li>
+<li class="breadcrumb-item"><a href="{% url 'efris:dashboard' %}">EFRIS</a></li>
+<li class="breadcrumb-item"><a href="{% url 'efris:stock_management_dashboard' %}">Stock Management</a></li>
+<li class="breadcrumb-item active">Transfer Stock</li>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row justify-content-center">
+        <div class="col-md-10">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <div>
+                    <h1 class="h2 mb-1">Transfer Stock Between Branches</h1>
+                    <p class="text-muted mb-0">Move inventory from one store to another via EFRIS</p>
+                </div>
+                <a href="{% url 'efris:stock_management_dashboard' %}" class="btn btn-outline-secondary">
+                    <i class="bi bi-arrow-left"></i> Back
+                </a>
+            </div>
+
+            <div class="card">
+                <div class="card-header bg-primary text-white">
+                    <h5 class="mb-0"><i class="bi bi-arrow-left-right me-2"></i>Transfer Details</h5>
+                </div>
+                <div class="card-body">
+                    <form method="POST" action="{% url 'efris:stock_transfer' %}" id="transferForm">
+                        {% csrf_token %}
+
+                        <!-- Transfer Direction -->
+                        <div class="row mb-4">
+                            <div class="col-md-5">
+                                <label for="source_store_id" class="form-label">From Store (Source) <span class="text-danger">*</span></label>
+                                <select class="form-select form-select-lg" id="source_store_id" name="source_store_id" required>
+                                    <option value="">Select source store...</option>
+                                    {% for store in stores %}
+                                    <option value="{{ store.id }}" data-branch-id="{{ store.efris_branch_id|default:'' }}">
+                                        {{ store.name }}
+                                        {% if not store.efris_branch_id %}
+                                        <span class="text-danger">(No EFRIS Branch ID)</span>
+                                        {% endif %}
+                                    </option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+
+                            <div class="col-md-2 text-center d-flex align-items-end justify-content-center">
+                                <i class="bi bi-arrow-right text-primary" style="font-size: 2.5rem;"></i>
+                            </div>
+
+                            <div class="col-md-5">
+                                <label for="dest_store_id" class="form-label">To Store (Destination) <span class="text-danger">*</span></label>
+                                <select class="form-select form-select-lg" id="dest_store_id" name="dest_store_id" required>
+                                    <option value="">Select destination store...</option>
+                                    {% for store in stores %}
+                                    <option value="{{ store.id }}" data-branch-id="{{ store.efris_branch_id|default:'' }}">
+                                        {{ store.name }}
+                                        {% if not store.efris_branch_id %}
+                                        <span class="text-danger">(No EFRIS Branch ID)</span>
+                                        {% endif %}
+                                    </option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                        </div>
+
+                        <hr>
+
+                        <!-- Product and Quantity -->
+                        <div class="row mb-3">
+                            <div class="col-md-8">
+                                <label for="product_id" class="form-label">Product <span class="text-danger">*</span></label>
+                                <select class="form-select" id="product_id" name="product_id" required>
+                                    <option value="">Select product...</option>
+                                    {% for product in products %}
+                                    <option value="{{ product.id }}"
+                                            data-efris-id="{{ product.efris_goods_id|default:'' }}"
+                                            data-sku="{{ product.sku }}">
+                                        {{ product.name }} ({{ product.sku }})
+                                    </option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+
+                            <div class="col-md-4">
+                                <label for="quantity" class="form-label">Quantity <span class="text-danger">*</span></label>
+                                <input type="number" class="form-control" id="quantity" name="quantity"
+                                       min="0.01" step="0.01" required>
+                            </div>
+                        </div>
+
+                        <!-- Transfer Type -->
+                        <div class="mb-3">
+                            <label for="transfer_type" class="form-label">Transfer Reason <span class="text-danger">*</span></label>
+                            <select class="form-select" id="transfer_type" name="transfer_type" required>
+                                {% for code, name in transfer_types %}
+                                <option value="{{ code }}">{{ name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+
+                        <!-- Remarks -->
+                        <div class="mb-3">
+                            <label for="remarks" class="form-label">Remarks <span class="text-danger" id="remarksRequired">*</span></label>
+                            <textarea class="form-control" id="remarks" name="remarks" rows="3"></textarea>
+                            <small class="form-text text-muted">Required for "Others" transfer type</small>
+                        </div>
+
+                        <!-- Validation Messages -->
+                        <div class="alert alert-info" id="validationAlert" style="display: none;">
+                            <ul class="mb-0" id="validationMessages"></ul>
+                        </div>
+
+                        <div class="alert alert-warning">
+                            <i class="bi bi-exclamation-triangle me-2"></i>
+                            <strong>Important:</strong> Both stores must have EFRIS Branch IDs configured.
+                            The product will be removed from source and added to destination.
+                        </div>
+
+                        <div class="d-flex justify-content-between">
+                            <a href="{% url 'efris:stock_management_dashboard' %}" class="btn btn-secondary">
+                                <i class="bi bi-x-circle"></i> Cancel
+                            </a>
+                            <button type="submit" class="btn btn-primary btn-lg" id="submitBtn">
+                                <i class="bi bi-arrow-left-right"></i> Transfer Stock
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const form = document.getElementById('transferForm');
+    const sourceStore = document.getElementById('source_store_id');
+    const destStore = document.getElementById('dest_store_id');
+    const product = document.getElementById('product_id');
+    const transferType = document.getElementById('transfer_type');
+    const remarks = document.getElementById('remarks');
+    const remarksRequired = document.getElementById('remarksRequired');
+    const validationAlert = document.getElementById('validationAlert');
+    const validationMessages = document.getElementById('validationMessages');
+
+    // Validate transfer type and remarks requirement
+    transferType.addEventListener('change', function() {
+        if (this.value === '103') {
+            remarks.required = true;
+            remarksRequired.style.display = 'inline';
+        } else {
+            remarks.required = false;
+            remarksRequired.style.display = 'none';
+        }
+    });
+
+    // Validate stores are different
+    function validateStores() {
+        const messages = [];
+
+        if (sourceStore.value && destStore.value && sourceStore.value === destStore.value) {
+            messages.push('Source and destination stores must be different');
+        }
+
+        // Check EFRIS branch IDs
+        const sourceOption = sourceStore.options[sourceStore.selectedIndex];
+        const destOption = destStore.options[destStore.selectedIndex];
+
+        if (sourceOption && !sourceOption.dataset.branchId) {
+            messages.push('Source store has no EFRIS Branch ID configured');
+        }
+
+        if (destOption && !destOption.dataset.branchId) {
+            messages.push('Destination store has no EFRIS Branch ID configured');
+        }
+
+        // Check product EFRIS ID
+        const productOption = product.options[product.selectedIndex];
+        if (productOption && !productOption.dataset.efrisId) {
+            messages.push('Selected product has not been uploaded to EFRIS');
+        }
+
+        if (messages.length > 0) {
+            validationMessages.innerHTML = messages.map(m => `<li>${m}</li>`).join('');
+            validationAlert.style.display = 'block';
+            validationAlert.className = 'alert alert-danger';
+            return false;
+        } else {
+            validationAlert.style.display = 'none';
+            return true;
+        }
+    }
+
+    sourceStore.addEventListener('change', validateStores);
+    destStore.addEventListener('change', validateStores);
+    product.addEventListener('change', validateStores);
+
+    form.addEventListener('submit', function(e) {
+        if (!validateStores()) {
+            e.preventDefault();
+            return false;
+        }
+
+        const quantity = document.getElementById('quantity').value;
+        const sourceName = sourceStore.options[sourceStore.selectedIndex].text;
+        const destName = destStore.options[destStore.selectedIndex].text;
+        const productName = product.options[product.selectedIndex].text;
+
+        if (!confirm(`Transfer ${quantity} units of ${productName} from ${sourceName} to ${destName}?`)) {
+            e.preventDefault();
+            return false;
+        }
+
+        const submitBtn = document.getElementById('submitBtn');
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Processing...';
+    });
+});
+</script>
+{% endblock %}

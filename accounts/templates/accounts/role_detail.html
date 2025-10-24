@@ -1,0 +1,493 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}{{ role.group.name }} - Role Details{% endblock %}
+
+{% block extra_css %}
+<style>
+    .role-header {
+        background: linear-gradient(135deg, {{ role.color_code }}15 0%, {{ role.color_code }}05 100%);
+        border-left: 6px solid {{ role.color_code }};
+        border-radius: 12px;
+        padding: 30px;
+        margin-bottom: 30px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+    }
+    .stat-card {
+        border-radius: 12px;
+        transition: transform 0.3s ease, box-shadow 0.3s ease;
+        border: none;
+    }
+    .stat-card:hover {
+        transform: translateY(-4px);
+        box-shadow: 0 8px 20px rgba(0,0,0,0.1);
+    }
+    .stat-icon {
+        width: 60px;
+        height: 60px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.5rem;
+        margin: 0 auto 12px;
+    }
+    .permission-badge {
+        display: inline-block;
+        padding: 6px 12px;
+        border-radius: 20px;
+        font-size: 0.85rem;
+        margin: 4px;
+        border: 1px solid #e0e0e0;
+    }
+    .user-item {
+        transition: all 0.2s ease;
+        border-left: 3px solid transparent;
+        padding: 12px;
+    }
+    .user-item:hover {
+        border-left-color: {{ role.color_code }};
+        background-color: #f8f9fa;
+        transform: translateX(4px);
+    }
+    .user-avatar {
+        width: 45px;
+        height: 45px;
+        border-radius: 50%;
+        object-fit: cover;
+        border: 2px solid white;
+        box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+    }
+    .user-avatar-placeholder {
+        width: 45px;
+        height: 45px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: bold;
+        color: white;
+        font-size: 1rem;
+        background: linear-gradient(135deg, {{ role.color_code }} 0%, {{ role.color_code }}cc 100%);
+        border: 2px solid white;
+        box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+    }
+    .module-header {
+        padding: 12px;
+        background: #f8f9fa;
+        border-radius: 8px;
+        border-left: 4px solid {{ role.color_code }};
+        margin-bottom: 12px;
+    }
+    .capacity-bar {
+        height: 6px;
+        border-radius: 3px;
+        background: #e9ecef;
+        overflow: hidden;
+    }
+    .capacity-fill {
+        height: 100%;
+        transition: width 0.3s ease;
+        border-radius: 3px;
+    }
+    .action-btn {
+        transition: all 0.2s ease;
+    }
+    .action-btn:hover {
+        transform: scale(1.05);
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <!-- Breadcrumb -->
+    <nav aria-label="breadcrumb" class="mb-4">
+        <ol class="breadcrumb">
+            <li class="breadcrumb-item"><a href="{% url 'role_list' %}"><i class="fas fa-home me-1"></i>Roles</a></li>
+            <li class="breadcrumb-item active" aria-current="page">{{ role.group.name }}</li>
+        </ol>
+    </nav>
+
+    <!-- Role Header -->
+    <div class="role-header">
+        <div class="row align-items-center">
+            <div class="col-md-8">
+                <div class="d-flex align-items-center mb-3">
+                    <div class="rounded-circle p-3 me-3"
+                         style="background-color: {{ role.color_code }}; color: white; box-shadow: 0 4px 12px {{ role.color_code }}40;">
+                        <i class="fas fa-user-shield fa-2x"></i>
+                    </div>
+                    <div>
+                        <h2 class="mb-2">{{ role.group.name }}</h2>
+                        <div class="d-flex gap-2 flex-wrap">
+                            {% if role.is_system_role %}
+                            <span class="badge bg-primary px-3 py-2">
+                                <i class="fas fa-shield-alt me-1"></i>
+                                System Role
+                            </span>
+                            {% else %}
+                            <span class="badge bg-secondary px-3 py-2">
+                                <i class="fas fa-star me-1"></i>
+                                Custom Role
+                            </span>
+                            {% endif %}
+
+                            {% if role.is_active %}
+                            <span class="badge bg-success px-3 py-2">
+                                <i class="fas fa-check-circle me-1"></i>
+                                Active
+                            </span>
+                            {% else %}
+                            <span class="badge bg-danger px-3 py-2">
+                                <i class="fas fa-times-circle me-1"></i>
+                                Inactive
+                            </span>
+                            {% endif %}
+
+                            <span class="badge bg-info px-3 py-2">
+                                <i class="fas fa-layer-group me-1"></i>
+                                Priority: {{ role.priority }}
+                            </span>
+                        </div>
+                    </div>
+                </div>
+                <p class="mb-0 text-muted lead">
+                    <i class="fas fa-info-circle me-2"></i>
+                    {{ role.description|default:"No description provided" }}
+                </p>
+            </div>
+            <div class="col-md-4 text-end">
+                <div class="d-flex flex-column gap-2">
+                    {% if can_edit %}
+                    <a href="{% url 'role_edit' role.pk %}" class="btn btn-outline-primary action-btn">
+                        <i class="fas fa-edit me-2"></i>
+                        Edit Role Details
+                    </a>
+                    {% endif %}
+                    <a href="{% url 'role_permissions' role.pk %}" class="btn btn-primary action-btn">
+                        <i class="fas fa-key me-2"></i>
+                        Manage Permissions
+                    </a>
+                    <a href="{% url 'role_users' role.pk %}" class="btn btn-success action-btn">
+                        <i class="fas fa-users me-2"></i>
+                        Manage Users
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Statistics Cards -->
+    <div class="row mb-4">
+        <div class="col-lg-3 col-md-6 mb-4">
+            <div class="card stat-card shadow-sm h-100">
+                <div class="card-body text-center">
+                    <div class="stat-icon bg-primary bg-opacity-10 text-primary">
+                        <i class="fas fa-users"></i>
+                    </div>
+                    <h3 class="mb-1 fw-bold">{{ role.user_count }}</h3>
+                    <p class="text-muted mb-2">Users in Role</p>
+                    {% if role.max_users %}
+                    <div class="capacity-bar mb-2">
+                        <div class="capacity-fill {% if role.is_at_capacity %}bg-danger{% elif role.capacity_percentage > 80 %}bg-warning{% else %}bg-primary{% endif %}"
+                             style="width: {{ role.capacity_percentage }}%"></div>
+                    </div>
+                    <small class="text-muted">{{ role.user_count }} / {{ role.max_users }} capacity</small>
+                    {% else %}
+                    <small class="text-muted">Unlimited capacity</small>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <div class="col-lg-3 col-md-6 mb-4">
+            <div class="card stat-card shadow-sm h-100">
+                <div class="card-body text-center">
+                    <div class="stat-icon bg-success bg-opacity-10 text-success">
+                        <i class="fas fa-key"></i>
+                    </div>
+                    <h3 class="mb-1 fw-bold">{{ role.permission_count }}</h3>
+                    <p class="text-muted mb-0">Permissions</p>
+                    <small class="text-muted">Access rights assigned</small>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-lg-3 col-md-6 mb-4">
+            <div class="card stat-card shadow-sm h-100">
+                <div class="card-body text-center">
+                    <div class="stat-icon bg-info bg-opacity-10 text-info">
+                        <i class="fas fa-calendar"></i>
+                    </div>
+                    <h5 class="mb-1 fw-bold">{{ role.created_at|date:"M d, Y" }}</h5>
+                    <p class="text-muted mb-0">Created Date</p>
+                    <small class="text-muted">{{ role.created_at|timesince }} ago</small>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-lg-3 col-md-6 mb-4">
+            <div class="card stat-card shadow-sm h-100">
+                <div class="card-body text-center">
+                    <div class="stat-icon bg-warning bg-opacity-10 text-warning">
+                        <i class="fas fa-user-edit"></i>
+                    </div>
+                    <h5 class="mb-1 fw-bold">{{ role.created_by.get_short_name|default:"System" }}</h5>
+                    <p class="text-muted mb-0">Created By</p>
+                    {% if role.created_by %}
+                    <small class="text-muted">{{ role.created_by.email }}</small>
+                    {% else %}
+                    <small class="text-muted">System generated</small>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+        <!-- Users in Role -->
+        <div class="col-lg-6 mb-4">
+            <div class="card shadow-sm h-100">
+                <div class="card-header bg-white border-0 pt-4">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0">
+                            <i class="fas fa-users me-2" style="color: {{ role.color_code }};"></i>
+                            Users in Role
+                            <span class="badge bg-primary ms-2">{{ users.count }}</span>
+                        </h5>
+                        <a href="{% url 'role_users' role.pk %}" class="btn btn-sm btn-primary action-btn">
+                            <i class="fas fa-user-plus me-1"></i>
+                            Manage
+                        </a>
+                    </div>
+                </div>
+                <div class="card-body p-0" style="max-height: 500px; overflow-y: auto;">
+                    {% if users %}
+                    <div class="list-group list-group-flush">
+                        {% for user in users|slice:":15" %}
+                        <div class="list-group-item user-item border-0">
+                            <div class="d-flex align-items-center">
+                                {% if user.avatar %}
+                                <img src="{{ user.avatar.url }}"
+                                     class="user-avatar me-3"
+                                     alt="{{ user.get_full_name }}">
+                                {% else %}
+                                <div class="user-avatar-placeholder me-3">
+                                    {{ user.first_name|first|upper }}{{ user.last_name|first|upper }}
+                                </div>
+                                {% endif %}
+                                <div class="flex-grow-1">
+                                    <h6 class="mb-1">{{ user.get_full_name }}</h6>
+                                    <small class="text-muted">
+                                        <i class="fas fa-envelope me-1"></i>
+                                        {{ user.email }}
+                                    </small>
+                                </div>
+                                <div class="text-end">
+                                    <span class="badge bg-light text-dark">{{ user.user_type }}</span>
+                                    {% if user.is_active %}
+                                    <br><small class="text-success"><i class="fas fa-circle me-1"></i>Active</small>
+                                    {% else %}
+                                    <br><small class="text-muted"><i class="fas fa-circle me-1"></i>Inactive</small>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </div>
+                        {% endfor %}
+                        {% if users.count > 15 %}
+                        <div class="list-group-item text-center bg-light">
+                            <a href="{% url 'role_users' role.pk %}" class="text-decoration-none">
+                                <i class="fas fa-ellipsis-h me-2"></i>
+                                View all {{ users.count }} users
+                                <i class="fas fa-arrow-right ms-2"></i>
+                            </a>
+                        </div>
+                        {% endif %}
+                    </div>
+                    {% else %}
+                    <div class="text-center py-5">
+                        <i class="fas fa-user-slash fa-4x text-muted mb-3"></i>
+                        <h5 class="text-muted">No Users Assigned</h5>
+                        <p class="text-muted mb-4">This role doesn't have any users yet</p>
+                        <a href="{% url 'role_users' role.pk %}" class="btn btn-primary">
+                            <i class="fas fa-user-plus me-2"></i>
+                            Add Users Now
+                        </a>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Permissions by Module -->
+        <div class="col-lg-6 mb-4">
+            <div class="card shadow-sm h-100">
+                <div class="card-header bg-white border-0 pt-4">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0">
+                            <i class="fas fa-key me-2" style="color: {{ role.color_code }};"></i>
+                            Permissions by Module
+                            <span class="badge bg-success ms-2">{{ permission_groups|length }} modules</span>
+                        </h5>
+                        <a href="{% url 'role_permissions' role.pk %}" class="btn btn-sm btn-success action-btn">
+                            <i class="fas fa-edit me-1"></i>
+                            Edit
+                        </a>
+                    </div>
+                </div>
+                <div class="card-body" style="max-height: 500px; overflow-y: auto;">
+                    {% if permission_groups %}
+                    {% for app, perms in permission_groups.items %}
+                    <div class="module-header">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <h6 class="mb-0">
+                                <i class="fas fa-cube me-2"></i>
+                                {{ app|title }}
+                            </h6>
+                            <span class="badge bg-secondary">{{ perms|length }} permissions</span>
+                        </div>
+                    </div>
+                    <div class="mb-4">
+                        {% for perm in perms|slice:":10" %}
+                        <span class="permission-badge">
+                            {% if 'add' in perm.codename %}
+                            <i class="fas fa-plus-circle text-success me-1"></i>
+                            {% elif 'change' in perm.codename %}
+                            <i class="fas fa-edit text-primary me-1"></i>
+                            {% elif 'delete' in perm.codename %}
+                            <i class="fas fa-trash text-danger me-1"></i>
+                            {% elif 'view' in perm.codename %}
+                            <i class="fas fa-eye text-info me-1"></i>
+                            {% else %}
+                            <i class="fas fa-key text-warning me-1"></i>
+                            {% endif %}
+                            {{ perm.name|truncatewords:4 }}
+                        </span>
+                        {% endfor %}
+                        {% if perms|length > 10 %}
+                        <span class="permission-badge bg-secondary text-white">
+                            <i class="fas fa-plus me-1"></i>
+                            {{ perms|length|add:"-10" }} more
+                        </span>
+                        {% endif %}
+                    </div>
+                    {% endfor %}
+                    {% else %}
+                    <div class="text-center py-5">
+                        <i class="fas fa-key-slash fa-4x text-muted mb-3"></i>
+                        <h5 class="text-muted">No Permissions Set</h5>
+                        <p class="text-muted mb-4">This role doesn't have any permissions yet</p>
+                        <a href="{% url 'role_permissions' role.pk %}" class="btn btn-success">
+                            <i class="fas fa-key me-2"></i>
+                            Add Permissions Now
+                        </a>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Actions & Information -->
+    <div class="row">
+        <div class="col-12">
+            <div class="card shadow-sm">
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-8">
+                            <h5 class="mb-3">
+                                <i class="fas fa-cog me-2"></i>
+                                Actions
+                            </h5>
+                            <div class="d-flex gap-2 flex-wrap">
+                                <a href="{% url 'role_list' %}" class="btn btn-outline-secondary action-btn">
+                                    <i class="fas fa-arrow-left me-1"></i>
+                                    Back to Roles
+                                </a>
+                                {% if can_edit %}
+                                <a href="{% url 'role_edit' role.pk %}" class="btn btn-outline-primary action-btn">
+                                    <i class="fas fa-edit me-1"></i>
+                                    Edit Details
+                                </a>
+                                {% endif %}
+                                <a href="{% url 'role_permissions' role.pk %}" class="btn btn-outline-success action-btn">
+                                    <i class="fas fa-key me-1"></i>
+                                    Manage Permissions
+                                </a>
+                                <a href="{% url 'role_users' role.pk %}" class="btn btn-outline-info action-btn">
+                                    <i class="fas fa-users me-1"></i>
+                                    Manage Users
+                                </a>
+                                <a href="{% url 'role_analytics' role.pk %}" class="btn btn-outline-success action-btn">
+                                    <i class="fas fa-chart-line me-1"></i>
+                                    Analytics
+                                </a>
+                                <a href="{% url 'role_history' role.pk %}" class="btn btn-outline-secondary action-btn">
+                                    <i class="fas fa-history me-1"></i>
+                                    History
+                                </a>
+                                {% if can_delete %}
+                                <a href="{% url 'role_delete' role.pk %}" class="btn btn-outline-danger action-btn">
+                                    <i class="fas fa-trash me-1"></i>
+                                    Delete Role
+                                </a>
+                                {% endif %}
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <h6 class="mb-3">Role Information</h6>
+                            <table class="table table-sm table-borderless">
+                                <tr>
+                                    <td class="text-muted">Color:</td>
+                                    <td>
+                                        <div class="d-flex align-items-center">
+                                            <div style="width: 20px; height: 20px; background: {{ role.color_code }}; border-radius: 4px; margin-right: 8px;"></div>
+                                            <code>{{ role.color_code }}</code>
+                                        </div>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td class="text-muted">Status:</td>
+                                    <td>
+                                        {% if role.is_active %}
+                                        <span class="text-success"><i class="fas fa-check-circle me-1"></i>Active</span>
+                                        {% else %}
+                                        <span class="text-danger"><i class="fas fa-times-circle me-1"></i>Inactive</span>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td class="text-muted">Last Updated:</td>
+                                    <td>{{ role.updated_at|date:"M d, Y H:i" }}</td>
+                                </tr>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // Add smooth animations
+    document.addEventListener('DOMContentLoaded', function() {
+        // Animate stat cards on load
+        const statCards = document.querySelectorAll('.stat-card');
+        statCards.forEach((card, index) => {
+            setTimeout(() => {
+                card.style.opacity = '0';
+                card.style.transform = 'translateY(20px)';
+                setTimeout(() => {
+                    card.style.transition = 'all 0.5s ease';
+                    card.style.opacity = '1';
+                    card.style.transform = 'translateY(0)';
+                }, 50);
+            }, index * 100);
+        });
+    });
+</script>
+{% endblock %}

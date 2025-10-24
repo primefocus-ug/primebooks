@@ -1,0 +1,643 @@
+{% extends 'base.html' %}
+{% load static %}
+    {% block title %}Digital Signature Management{% endblock %}
+
+    {% block content %}
+    <style>
+        .signature-card {
+            border: none;
+            border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+        .signature-header {
+            background: linear-gradient(135deg, #17a2b8, #20c997);
+            color: white;
+            padding: 2rem;
+        }
+        .signature-canvas {
+            border: 2px dashed #dee2e6;
+            border-radius: 8px;
+            cursor: crosshair;
+            background: #f8f9fa;
+            transition: border-color 0.3s ease;
+        }
+        .signature-canvas:hover {
+            border-color: #17a2b8;
+        }
+        .signature-canvas.active {
+            border-color: #17a2b8;
+            border-style: solid;
+            background: white;
+        }
+        .signature-preview {
+            max-width: 100%;
+            height: auto;
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            background: white;
+        }
+        .signature-controls {
+            background: #f8f9fa;
+            border-radius: 8px;
+            padding: 1rem;
+            margin-bottom: 1rem;
+        }
+        .btn-signature {
+            border-radius: 8px;
+            padding: 0.5rem 1rem;
+            font-weight: 500;
+            transition: all 0.3s ease;
+        }
+        .btn-signature:hover {
+            transform: translateY(-1px);
+        }
+        .verification-badge {
+            font-size: 0.9rem;
+            padding: 0.5rem 1rem;
+            border-radius: 20px;
+        }
+        .signature-info {
+            background: linear-gradient(135deg, rgba(23,162,184,0.1), rgba(32,201,151,0.1));
+            border-radius: 8px;
+            padding: 1.5rem;
+            border-left: 4px solid #17a2b8;
+        }
+        .signature-hash {
+            font-family: 'Courier New', monospace;
+            font-size: 0.85rem;
+            background: #f1f3f4;
+            padding: 0.5rem;
+            border-radius: 4px;
+            word-break: break-all;
+        }
+        .upload-area {
+            border: 2px dashed #dee2e6;
+            border-radius: 8px;
+            padding: 2rem;
+            text-align: center;
+            background: #f8f9fa;
+            transition: all 0.3s ease;
+            cursor: pointer;
+        }
+        .upload-area:hover {
+            border-color: #17a2b8;
+            background: #e9ecef;
+        }
+        .upload-area.dragover {
+            border-color: #17a2b8;
+            background: rgba(23,162,184,0.1);
+        }
+    </style>
+</head>
+<body class="bg-light">
+    <div class="container py-5">
+        <div class="row justify-content-center">
+            <div class="col-lg-10">
+                <!-- Header -->
+                <div class="text-center mb-4">
+                    <nav aria-label="breadcrumb">
+                        <ol class="breadcrumb justify-content-center">
+                            <li class="breadcrumb-item"><a href="{% url 'user_profile' %}">Profile</a></li>
+                            <li class="breadcrumb-item active">Digital Signature</li>
+                        </ol>
+                    </nav>
+                </div>
+
+                <!-- Main Signature Card -->
+                <div class="card signature-card mb-4">
+                    <div class="signature-header text-center">
+                        <i class="fas fa-signature fa-3x mb-3"></i>
+                        <h2 class="mb-0">Digital Signature Management</h2>
+                        <p class="mb-0 opacity-75">Create and manage your digital signature for EFRIS compliance</p>
+                    </div>
+
+                    <div class="card-body p-4">
+                        <form method="post" enctype="multipart/form-data" id="signatureForm">
+                            {% csrf_token %}
+
+                            <!-- Current Signature Display -->
+                            {% if signature.signature_image or signature.signature_data %}
+                            <div class="signature-info mb-4">
+                                <div class="d-flex justify-content-between align-items-start mb-3">
+                                    <div>
+                                        <h5 class="mb-1">
+                                            <i class="fas fa-check-circle text-success me-2"></i>
+                                            Current Signature
+                                        </h5>
+                                        <p class="text-muted mb-0">Created: {{ signature.created_at|date:"M d, Y H:i" }}</p>
+                                    </div>
+                                    <div>
+                                        {% if signature.is_verified %}
+                                            <span class="badge bg-success verification-badge">
+                                                <i class="fas fa-shield-check me-1"></i>Verified
+                                            </span>
+                                        {% else %}
+                                            <span class="badge bg-warning verification-badge">
+                                                <i class="fas fa-clock me-1"></i>Pending Verification
+                                            </span>
+                                        {% endif %}
+                                    </div>
+                                </div>
+
+                                {% if signature.signature_image %}
+                                <div class="text-center mb-3">
+                                    <img src="{{ signature.signature_image.url }}" alt="Current Signature" class="signature-preview">
+                                </div>
+                                {% endif %}
+
+                                {% if signature.signature_hash %}
+                                <div class="mb-3">
+                                    <label class="form-label fw-semibold">Signature Hash (SHA-256):</label>
+                                    <div class="signature-hash">{{ signature.signature_hash }}</div>
+                                </div>
+                                {% endif %}
+
+                                {% if signature.verified_at and signature.verified_by %}
+                                <div class="row">
+                                    <div class="col-md-6">
+                                        <small class="text-muted">
+                                            <strong>Verified by:</strong> {{ signature.verified_by.get_full_name }}
+                                        </small>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <small class="text-muted">
+                                            <strong>Verified on:</strong> {{ signature.verified_at|date:"M d, Y H:i" }}
+                                        </small>
+                                    </div>
+                                </div>
+                                {% endif %}
+                            </div>
+                            {% endif %}
+
+                            <!-- Signature Creation Tabs -->
+                            <ul class="nav nav-tabs mb-4" id="signatureTabs" role="tablist">
+                                <li class="nav-item" role="presentation">
+                                    <button class="nav-link active" id="draw-tab" data-bs-toggle="tab" data-bs-target="#draw-pane" type="button" role="tab">
+                                        <i class="fas fa-pencil-alt me-2"></i>Draw Signature
+                                    </button>
+                                </li>
+                                <li class="nav-item" role="presentation">
+                                    <button class="nav-link" id="upload-tab" data-bs-toggle="tab" data-bs-target="#upload-pane" type="button" role="tab">
+                                        <i class="fas fa-upload me-2"></i>Upload Image
+                                    </button>
+                                </li>
+                                <li class="nav-item" role="presentation">
+                                    <button class="nav-link" id="type-tab" data-bs-toggle="tab" data-bs-target="#type-pane" type="button" role="tab">
+                                        <i class="fas fa-keyboard me-2"></i>Type Signature
+                                    </button>
+                                </li>
+                            </ul>
+
+                            <div class="tab-content" id="signatureTabContent">
+                                <!-- Draw Signature Tab -->
+                                <div class="tab-pane fade show active" id="draw-pane" role="tabpanel">
+                                    <div class="signature-controls">
+                                        <div class="d-flex justify-content-between align-items-center">
+                                            <div>
+                                                <label class="form-label mb-1">Pen Color:</label>
+                                                <input type="color" id="penColor" value="#000000" class="form-control form-control-color" style="width: 40px; height: 40px;">
+                                            </div>
+                                            <div>
+                                                <label class="form-label mb-1">Pen Size:</label>
+                                                <input type="range" id="penSize" min="1" max="10" value="2" class="form-range" style="width: 100px;">
+                                            </div>
+                                            <div>
+                                                <button type="button" id="clearCanvas" class="btn btn-outline-danger btn-signature">
+                                                    <i class="fas fa-eraser me-1"></i>Clear
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    
+                                    <div class="text-center">
+                                        <canvas id="signatureCanvas" width="600" height="200" class="signature-canvas"></canvas>
+                                        <div class="form-text mt-2">Draw your signature above using your mouse or touch screen</div>
+                                    </div>
+                                </div>
+
+                                <!-- Upload Image Tab -->
+                                <div class="tab-pane fade" id="upload-pane" role="tabpanel">
+                                    <div class="upload-area" id="uploadArea">
+                                        <i class="fas fa-cloud-upload-alt fa-3x text-muted mb-3"></i>
+                                        <h5>Upload Signature Image</h5>
+                                        <p class="text-muted">Drag and drop an image here, or click to select</p>
+                                        {{ form.signature_image }}
+                                    </div>
+                                    <div class="form-text text-center mt-2">
+                                        Supported formats: JPG, PNG, GIF (Max size: 5MB)
+                                    </div>
+                                </div>
+
+                                <!-- Type Signature Tab -->
+                                <div class="tab-pane fade" id="type-pane" role="tabpanel">
+                                    <div class="text-center">
+                                        <div class="mb-3">
+                                            <label for="typedSignature" class="form-label">Type your name:</label>
+                                            <input type="text" id="typedSignature" class="form-control text-center" style="font-size: 2rem; font-family: 'Brush Script MT', cursive;" placeholder="Your Name">
+                                        </div>
+                                        
+                                        <div class="mb-3">
+                                            <label class="form-label">Font Style:</label>
+                                            <select id="fontStyle" class="form-select">
+                                                <option value="'Brush Script MT', cursive">Brush Script</option>
+                                                <option value="'Lucida Handwriting', cursive">Lucida Handwriting</option>
+                                                <option value="'Dancing Script', cursive">Dancing Script</option>
+                                                <option value="'Great Vibes', cursive">Great Vibes</option>
+                                            </select>
+                                        </div>
+                                        
+                                        <div class="signature-preview-area p-4 border rounded" id="typedPreview" style="min-height: 100px; background: white;">
+                                            <span class="text-muted">Your typed signature will appear here</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Hidden field for signature data -->
+                            <input type="hidden" name="signature_data" id="signatureData">
+
+                            <!-- Action Buttons -->
+                            <div class="d-flex justify-content-between pt-4 border-top">
+                                <a href="{% url 'user_profile' %}" class="btn btn-outline-secondary btn-signature">
+                                    <i class="fas fa-arrow-left me-1"></i>Back to Profile
+                                </a>
+                                
+                                <div>
+                                    <button type="button" id="previewSignature" class="btn btn-outline-info btn-signature me-2">
+                                        <i class="fas fa-eye me-1"></i>Preview
+                                    </button>
+                                    <button type="submit" class="btn btn-success btn-signature">
+                                        <i class="fas fa-save me-1"></i>Save Signature
+                                    </button>
+                                </div>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+
+                <!-- Information Panel -->
+                <div class="row">
+                    <div class="col-md-6">
+                        <div class="card">
+                            <div class="card-header bg-info text-white">
+                                <h6 class="mb-0">
+                                    <i class="fas fa-info-circle me-2"></i>About Digital Signatures
+                                </h6>
+                            </div>
+                            <div class="card-body">
+                                <ul class="list-unstyled mb-0">
+                                    <li class="mb-2">
+                                        <i class="fas fa-check text-success me-2"></i>
+                                        Used for EFRIS invoice authentication
+                                    </li>
+                                    <li class="mb-2">
+                                        <i class="fas fa-check text-success me-2"></i>
+                                        Ensures document integrity and authenticity
+                                    </li>
+                                    <li class="mb-2">
+                                        <i class="fas fa-check text-success me-2"></i>
+                                        Legally binding when verified
+                                    </li>
+                                    <li class="mb-0">
+                                        <i class="fas fa-check text-success me-2"></i>
+                                        Encrypted with SHA-256 hash
+                                    </li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="col-md-6">
+                        <div class="card">
+                            <div class="card-header bg-warning text-dark">
+                                <h6 class="mb-0">
+                                    <i class="fas fa-exclamation-triangle me-2"></i>Important Notes
+                                </h6>
+                            </div>
+                            <div class="card-body">
+                                <ul class="list-unstyled mb-0">
+                                    <li class="mb-2">
+                                        <i class="fas fa-shield-alt text-warning me-2"></i>
+                                        Signature requires admin verification
+                                    </li>
+                                    <li class="mb-2">
+                                        <i class="fas fa-lock text-warning me-2"></i>
+                                        Cannot be changed once verified
+                                    </li>
+                                    <li class="mb-2">
+                                        <i class="fas fa-eye text-warning me-2"></i>
+                                        Preview before saving
+                                    </li>
+                                    <li class="mb-0">
+                                        <i class="fas fa-file-contract text-warning me-2"></i>
+                                        Keep your signature consistent
+                                    </li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Preview Modal -->
+    <div class="modal fade" id="previewModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        <i class="fas fa-eye me-2"></i>Signature Preview
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body text-center">
+                    <div id="previewContent" style="min-height: 200px; border: 1px solid #dee2e6; border-radius: 8px; background: white; display: flex; align-items: center; justify-content: center;">
+                        <span class="text-muted">No signature to preview</span>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                    <button type="button" class="btn btn-success" id="confirmSave">
+                        <i class="fas fa-save me-1"></i>Save This Signature
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Messages -->
+    {% if messages %}
+    <div class="position-fixed top-0 end-0 p-3" style="z-index: 1050;">
+        {% for message in messages %}
+        <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
+            {{ message }}
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    {% endblock %}
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.0/js/bootstrap.bundle.min.js"></script>
+    {% block extra_js %}
+    <script>
+        class SignatureManager {
+            constructor() {
+                this.canvas = document.getElementById('signatureCanvas');
+                this.ctx = this.canvas.getContext('2d');
+                this.isDrawing = false;
+                this.lastX = 0;
+                this.lastY = 0;
+                
+                this.initializeCanvas();
+                this.bindEvents();
+            }
+            
+            initializeCanvas() {
+                this.ctx.strokeStyle = '#000000';
+                this.ctx.lineWidth = 2;
+                this.ctx.lineCap = 'round';
+                this.ctx.lineJoin = 'round';
+                
+                // Set canvas background to white
+                this.ctx.fillStyle = 'white';
+                this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+            }
+            
+            bindEvents() {
+                // Canvas drawing events
+                this.canvas.addEventListener('mousedown', (e) => this.startDrawing(e));
+                this.canvas.addEventListener('mousemove', (e) => this.draw(e));
+                this.canvas.addEventListener('mouseup', () => this.stopDrawing());
+                this.canvas.addEventListener('mouseout', () => this.stopDrawing());
+                
+                // Touch events for mobile
+                this.canvas.addEventListener('touchstart', (e) => {
+                    e.preventDefault();
+                    const touch = e.touches[0];
+                    const mouseEvent = new MouseEvent('mousedown', {
+                        clientX: touch.clientX,
+                        clientY: touch.clientY
+                    });
+                    this.canvas.dispatchEvent(mouseEvent);
+                });
+                
+                this.canvas.addEventListener('touchmove', (e) => {
+                    e.preventDefault();
+                    const touch = e.touches[0];
+                    const mouseEvent = new MouseEvent('mousemove', {
+                        clientX: touch.clientX,
+                        clientY: touch.clientY
+                    });
+                    this.canvas.dispatchEvent(mouseEvent);
+                });
+                
+                this.canvas.addEventListener('touchend', (e) => {
+                    e.preventDefault();
+                    const mouseEvent = new MouseEvent('mouseup', {});
+                    this.canvas.dispatchEvent(mouseEvent);
+                });
+                
+                // Controls
+                document.getElementById('penColor').addEventListener('change', (e) => {
+                    this.ctx.strokeStyle = e.target.value;
+                });
+                
+                document.getElementById('penSize').addEventListener('input', (e) => {
+                    this.ctx.lineWidth = e.target.value;
+                });
+                
+                document.getElementById('clearCanvas').addEventListener('click', () => {
+                    this.clearCanvas();
+                });
+                
+                // Typed signature
+                document.getElementById('typedSignature').addEventListener('input', this.updateTypedPreview);
+                document.getElementById('fontStyle').addEventListener('change', this.updateTypedPreview);
+                
+                // File upload
+                const fileInput = document.querySelector('input[type="file"]');
+                const uploadArea = document.getElementById('uploadArea');
+                
+                uploadArea.addEventListener('click', () => fileInput.click());
+                uploadArea.addEventListener('dragover', this.handleDragOver);
+                uploadArea.addEventListener('drop', this.handleDrop);
+                
+                // Preview and save
+                document.getElementById('previewSignature').addEventListener('click', this.previewSignature);
+                document.getElementById('confirmSave').addEventListener('click', this.saveSignature);
+            }
+            
+            getMousePos(e) {
+                const rect = this.canvas.getBoundingClientRect();
+                return {
+                    x: (e.clientX - rect.left) * (this.canvas.width / rect.width),
+                    y: (e.clientY - rect.top) * (this.canvas.height / rect.height)
+                };
+            }
+            
+            startDrawing(e) {
+                this.isDrawing = true;
+                const pos = this.getMousePos(e);
+                this.lastX = pos.x;
+                this.lastY = pos.y;
+                this.canvas.classList.add('active');
+            }
+            
+            draw(e) {
+                if (!this.isDrawing) return;
+                
+                const pos = this.getMousePos(e);
+                
+                this.ctx.beginPath();
+                this.ctx.moveTo(this.lastX, this.lastY);
+                this.ctx.lineTo(pos.x, pos.y);
+                this.ctx.stroke();
+                
+                this.lastX = pos.x;
+                this.lastY = pos.y;
+            }
+            
+            stopDrawing() {
+                this.isDrawing = false;
+                this.canvas.classList.remove('active');
+            }
+            
+            clearCanvas() {
+                this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+                this.ctx.fillStyle = 'white';
+                this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+            }
+            
+            updateTypedPreview() {
+                const text = document.getElementById('typedSignature').value;
+                const font = document.getElementById('fontStyle').value;
+                const preview = document.getElementById('typedPreview');
+                
+                if (text) {
+                    preview.innerHTML = `<span style="font-family: ${font}; font-size: 3rem; color: #000;">${text}</span>`;
+                } else {
+                    preview.innerHTML = '<span class="text-muted">Your typed signature will appear here</span>';
+                }
+            }
+            
+            handleDragOver(e) {
+                e.preventDefault();
+                e.currentTarget.classList.add('dragover');
+            }
+            
+            handleDrop(e) {
+                e.preventDefault();
+                e.currentTarget.classList.remove('dragover');
+                const files = e.dataTransfer.files;
+                if (files.length > 0) {
+                    document.querySelector('input[type="file"]').files = files;
+                }
+            }
+            
+            previewSignature() {
+                const activeTab = document.querySelector('.nav-link.active').id;
+                const previewContent = document.getElementById('previewContent');
+                let hasSignature = false;
+                
+                if (activeTab === 'draw-tab') {
+                    const canvasData = this.canvas.toDataURL();
+                    if (this.isCanvasBlank()) {
+                        alert('Please draw a signature first.');
+                        return;
+                    }
+                    previewContent.innerHTML = `<img src="${canvasData}" style="max-width: 100%; height: auto;">`;
+                    hasSignature = true;
+                } else if (activeTab === 'upload-tab') {
+                    const fileInput = document.querySelector('input[type="file"]');
+                    if (fileInput.files.length === 0) {
+                        alert('Please select an image file first.');
+                        return;
+                    }
+                    const file = fileInput.files[0];
+                    const reader = new FileReader();
+                    reader.onload = function(e) {
+                        previewContent.innerHTML = `<img src="${e.target.result}" style="max-width: 100%; height: auto;">`;
+                    };
+                    reader.readAsDataURL(file);
+                    hasSignature = true;
+                } else if (activeTab === 'type-tab') {
+                    const text = document.getElementById('typedSignature').value;
+                    if (!text.trim()) {
+                        alert('Please type your signature first.');
+                        return;
+                    }
+                    const font = document.getElementById('fontStyle').value;
+                    previewContent.innerHTML = `<span style="font-family: ${font}; font-size: 3rem; color: #000;">${text}</span>`;
+                    hasSignature = true;
+                }
+                
+                if (hasSignature) {
+                    new bootstrap.Modal(document.getElementById('previewModal')).show();
+                }
+            }
+            
+            isCanvasBlank() {
+                const blank = document.createElement('canvas');
+                blank.width = this.canvas.width;
+                blank.height = this.canvas.height;
+                const blankCtx = blank.getContext('2d');
+                blankCtx.fillStyle = 'white';
+                blankCtx.fillRect(0, 0, blank.width, blank.height);
+                
+                return this.canvas.toDataURL() === blank.toDataURL();
+            }
+            
+            saveSignature() {
+                const activeTab = document.querySelector('.nav-link.active').id;
+                
+                if (activeTab === 'draw-tab') {
+                    if (this.isCanvasBlank()) {
+                        alert('Please draw a signature first.');
+                        return;
+                    }
+                    document.getElementById('signatureData').value = this.canvas.toDataURL();
+                } else if (activeTab === 'type-tab') {
+                    const text = document.getElementById('typedSignature').value;
+                    if (!text.trim()) {
+                        alert('Please type your signature first.');
+                        return;
+                    }
+                    // Create a canvas for typed signature
+                    const tempCanvas = document.createElement('canvas');
+                    tempCanvas.width = 600;
+                    tempCanvas.height = 200;
+                    const tempCtx = tempCanvas.getContext('2d');
+                    tempCtx.fillStyle = 'white';
+                    tempCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
+                    tempCtx.fillStyle = 'black';
+                    tempCtx.font = `48px ${document.getElementById('fontStyle').value}`;
+                    tempCtx.textAlign = 'center';
+                    tempCtx.fillText(text, tempCanvas.width/2, tempCanvas.height/2 + 16);
+                    document.getElementById('signatureData').value = tempCanvas.toDataURL();
+                }
+                
+                // Close modal and submit form
+                bootstrap.Modal.getInstance(document.getElementById('previewModal')).hide();
+                document.getElementById('signatureForm').submit();
+            }
+        }
+        
+        // Initialize signature manager when page loads
+        document.addEventListener('DOMContentLoaded', function() {
+            new SignatureManager();
+            
+            // Auto-dismiss alerts after 5 seconds
+            setTimeout(function() {
+                var alerts = document.querySelectorAll('.alert');
+                alerts.forEach(function(alert) {
+                    var bsAlert = new bootstrap.Alert(alert);
+                    bsAlert.close();
+                });
+            }, 5000);
+        });
+    </script>
+{% endblock %}

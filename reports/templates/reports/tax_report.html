@@ -1,0 +1,247 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Tax Report | {{company.trading_name|default:company.name}}{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="d-flex justify-content-between align-items-center">
+                <h1 class="h3 mb-0 text-gray-800">
+                    <i class="bi bi-building me-2"></i>Tax Report (EFRIS Compliance)
+                </h1>
+                <div class="btn-group">
+                    <button class="btn btn-outline-primary" onclick="window.print()">
+                        <i class="bi bi-printer me-1"></i>Print
+                    </button>
+                    {% if perms.reports.view_savedreport %}
+                    <a href="{% url 'reports:export_report' 'tax_report' %}" class="btn btn-outline-success">
+                        <i class="bi bi-download me-1"></i>Export CSV
+                    </a>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Filter Form -->
+    <div class="card shadow mb-4">
+        <div class="card-header py-3 d-flex justify-content-between align-items-center">
+            <h6 class="m-0 font-weight-bold text-primary">Report Filters</h6>
+            <button class="btn btn-sm btn-link" type="button" data-bs-toggle="collapse" data-bs-target="#filterCollapse">
+                <i class="bi bi-chevron-down"></i>
+            </button>
+        </div>
+        <div class="collapse show" id="filterCollapse">
+            <div class="card-body">
+                <form method="get" class="row g-3">
+                    <div class="col-md-3">
+                        <label for="start_date" class="form-label">Start Date</label>
+                        <input type="date" class="form-control" id="start_date" name="start_date"
+                               value="{{ request.GET.start_date|default:'' }}">
+                    </div>
+                    <div class="col-md-3">
+                        <label for="end_date" class="form-label">End Date</label>
+                        <input type="date" class="form-control" id="end_date" name="end_date"
+                               value="{{ request.GET.end_date|default:'' }}">
+                    </div>
+                    <div class="col-md-3">
+                        <label for="store" class="form-label">Store</label>
+                        <select class="form-select" id="store" name="store">
+                            <option value="">All Stores</option>
+                            {% for store in stores %}
+                            <option value="{{ store.id }}" {% if request.GET.store == store.id|stringformat:"s" %}selected{% endif %}>
+                                {{ store.name }}
+                            </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">&nbsp;</label>
+                        <div>
+                            <button type="submit" class="btn btn-primary">
+                                <i class="bi bi-filter me-1"></i>Apply Filters
+                            </button>
+                            {% if perms.reports.view_savedreport %}
+                            <a href="{% url 'reports:tax_report' %}" class="btn btn-outline-secondary">Clear</a>
+                            {% endif %}
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    {% if summary_stats %}
+    <!-- Summary Cards -->
+    <div class="row mb-4">
+        <div class="col-xl-3 col-md-6 mb-4">
+            <div class="card border-left-primary shadow h-100 py-2">
+                <div class="card-body">
+                    <div class="row no-gutters align-items-center">
+                        <div class="col mr-2">
+                            <div class="text-xs font-weight-bold text-primary text-uppercase mb-1">
+                                Total Sales Amount
+                            </div>
+                            <div class="h5 mb-0 font-weight-bold text-gray-800">
+                                UGX {{ summary_stats.total_sales_amount|floatformat:0 }}
+                            </div>
+                        </div>
+                        <div class="col-auto">
+                            <i class="bi bi-currency-exchange fa-2x text-gray-300"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-xl-3 col-md-6 mb-4">
+            <div class="card border-left-success shadow h-100 py-2">
+                <div class="card-body">
+                    <div class="row no-gutters align-items-center">
+                        <div class="col mr-2">
+                            <div class="text-xs font-weight-bold text-success text-uppercase mb-1">
+                                Total Tax Collected
+                            </div>
+                            <div class="h5 mb-0 font-weight-bold text-gray-800">
+                                UGX {{ summary_stats.total_tax_collected|floatformat:0 }}
+                            </div>
+                        </div>
+                        <div class="col-auto">
+                            <i class="bi bi-building fa-2x text-gray-300"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-xl-3 col-md-6 mb-4">
+            <div class="card border-left-info shadow h-100 py-2">
+                <div class="card-body">
+                    <div class="row no-gutters align-items-center">
+                        <div class="col mr-2">
+                            <div class="text-xs font-weight-bold text-info text-uppercase mb-1">
+                                EFRIS Compliance Rate
+                            </div>
+                            <div class="h5 mb-0 font-weight-bold text-gray-800">
+                                {{ summary_stats.efris_compliance_rate|floatformat:1 }}%
+                            </div>
+                        </div>
+                        <div class="col-auto">
+                            <i class="bi bi-check-circle fa-2x text-gray-300"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-xl-3 col-md-6 mb-4">
+            <div class="card border-left-warning shadow h-100 py-2">
+                <div class="card-body">
+                    <div class="row no-gutters align-items-center">
+                        <div class="col mr-2">
+                            <div class="text-xs font-weight-bold text-warning text-uppercase mb-1">
+                                Total Transactions
+                            </div>
+                            <div class="h5 mb-0 font-weight-bold text-gray-800">
+                                {{ summary_stats.total_transactions }}
+                            </div>
+                        </div>
+                        <div class="col-auto">
+                            <i class="bi bi-receipt fa-2x text-gray-300"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Tax Breakdown -->
+    <div class="card shadow mb-4">
+        <div class="card-header py-3">
+            <h6 class="m-0 font-weight-bold text-primary">Tax Rate Breakdown</h6>
+        </div>
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-bordered table-hover">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Tax Rate</th>
+                            <th>Tax Rate Code</th>
+                            <th>Total Sales</th>
+                            <th>Total Tax</th>
+                            <th>Transactions</th>
+                            <th>Items</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for tax in tax_data %}
+                        <tr>
+                            <td>{{ tax.tax_rate_display }}</td>
+                            <td class="text-center">{{ tax.tax_rate }}</td>
+                            <td>UGX {{ tax.total_sales|floatformat:0 }}</td>
+                            <td>UGX {{ tax.total_tax|floatformat:0 }}</td>
+                            <td>{{ tax.transaction_count }}</td>
+                            <td>{{ tax.item_count }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- EFRIS Compliance -->
+    <div class="row">
+        <div class="col-lg-6 mb-4">
+            <div class="card shadow">
+                <div class="card-header py-3">
+                    <h6 class="m-0 font-weight-bold text-primary">EFRIS Compliance Status</h6>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="d-flex align-items-center mb-3">
+                                <div class="bg-success rounded-circle p-2 me-3">
+                                    <i class="bi bi-check-lg text-white"></i>
+                                </div>
+                                <div>
+                                    <div class="text-sm font-weight-bold text-success">Fiscalized</div>
+                                    <div class="h5 mb-0">{{ summary_stats.efris_fiscalized }}</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="d-flex align-items-center mb-3">
+                                <div class="bg-warning rounded-circle p-2 me-3">
+                                    <i class="bi bi-clock text-white"></i>
+                                </div>
+                                <div>
+                                    <div class="text-sm font-weight-bold text-warning">Pending</div>
+                                    <div class="h5 mb-0">{{ summary_stats.efris_pending }}</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="progress mt-3" style="height: 20px;">
+                        <div class="progress-bar bg-success" role="progressbar"
+                             style="width: {{ summary_stats.efris_compliance_rate }}%"
+                             aria-valuenow="{{ summary_stats.efris_compliance_rate }}"
+                             aria-valuemin="0" aria-valuemax="100">
+                            {{ summary_stats.efris_compliance_rate|floatformat:1 }}%
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% else %}
+    <div class="text-center py-5">
+        <i class="bi bi-building display-1 text-muted"></i>
+        <h4 class="text-muted mt-3">No Tax Data Available</h4>
+        <p class="text-muted">Apply filters to generate tax report</p>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

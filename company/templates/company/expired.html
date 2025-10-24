@@ -1,0 +1,44 @@
+{% extends 'company/base_status.html' %}
+
+{% block title %}Subscription Expired{% endblock %}
+
+{% block container_class %}status-expired{% endblock %}
+
+{% block content %}
+<div class="status-icon">⏰</div>
+
+<h1 class="status-title">Subscription Expired</h1>
+
+<div class="company-info">
+    <div class="company-name">{{ company.display_name }}</div>
+    <div class="company-id">ID: {{ company.company_id }}</div>
+</div>
+
+<div class="status-message">
+    {% if company.is_trial %}
+        Your free trial expired {{ days_expired }} day{{ days_expired|pluralize }} ago.
+        Upgrade to a paid plan to continue using our services.
+    {% else %}
+        Your {{ company.plan.get_name_display }} subscription expired {{ days_expired }} day{{ days_expired|pluralize }} ago.
+        Please renew your subscription to restore access.
+    {% endif %}
+</div>
+
+<div class="actions">
+    <a href="{% url 'company:billing' %}" class="btn btn-primary">
+        {% if company.is_trial %}Upgrade Plan{% else %}Renew Subscription{% endif %}
+    </a>
+    <a href="{% url 'accounts:logout' %}" class="btn btn-secondary">Logout</a>
+</div>
+
+{% if company.plan %}
+<div style="margin-top: 2rem; padding-top: 2rem; border-top: 1px solid #eee;">
+    <h3>Your Plan Details</h3>
+    <p><strong>Plan:</strong> {{ company.plan.display_name|default:company.plan.get_name_display }}</p>
+    <p><strong>Max Users:</strong> {{ company.plan.max_users }}</p>
+    <p><strong>Max Branches:</strong> {{ company.plan.max_branches }}</p>
+    <p><strong>Storage:</strong> {{ company.plan.max_storage_gb }}GB</p>
+</div>
+{% endif %}
+{% endblock %}
+

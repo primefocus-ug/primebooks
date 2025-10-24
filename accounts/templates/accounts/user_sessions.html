@@ -1,0 +1,296 @@
+{% extends 'base.html' %}
+{% load static %}
+{% load i18n %}
+
+{% block title %}{% trans "My Active Sessions" %} - {{ block.super }}{% endblock %}
+
+{% block breadcrumb_items %}
+<li class="breadcrumb-item"><a href="{% url 'user_dashboard' %}">{% trans "Dashboard" %}</a></li>
+<li class="breadcrumb-item active">{% trans "My Sessions" %}</li>
+{% endblock %}
+
+{% block page_header %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h1 class="h3 mb-1">{% trans "Active Sessions" %}</h1>
+        <p class="text-muted mb-0">{% trans "Manage your logged-in devices and sessions" %}</p>
+    </div>
+    <div>
+        <span class="badge bg-primary fs-6">{{ active_count }}/3 {% trans "Active" %}</span>
+    </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="row">
+    <!-- Active Sessions -->
+    <div class="col-lg-8 mb-4">
+        <div class="card shadow-sm">
+            <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+                <h5 class="mb-0"><i class="bi bi-display me-2"></i>{% trans "Active Sessions" %}</h5>
+                <form method="post" action="{% url 'stores:terminate_all_sessions' %}" class="d-inline">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-sm btn-outline-light" onclick="return confirm('{% trans "Are you sure you want to terminate all other sessions?" %}')">
+                        <i class="bi bi-power me-1"></i>{% trans "End All Other Sessions" %}
+                    </button>
+                </form>
+            </div>
+            <div class="card-body">
+                {% if active_sessions %}
+                    <div class="list-group list-group-flush">
+                        {% for session in active_sessions %}
+                        <div class="list-group-item px-0">
+                            <div class="row align-items-center">
+                                <div class="col-auto">
+                                    <div class="text-center">
+                                        {% if session.os_name == "Windows" %}
+                                            <i class="bi bi-windows fs-1 text-primary"></i>
+                                        {% elif session.os_name == "Mac OS X" or session.os_name == "iOS" %}
+                                            <i class="bi bi-apple fs-1 text-secondary"></i>
+                                        {% elif session.os_name == "Android" %}
+                                            <i class="bi bi-android2 fs-1 text-success"></i>
+                                        {% elif session.os_name == "Linux" %}
+                                            <i class="bi bi-ubuntu fs-1 text-danger"></i>
+                                        {% else %}
+                                            <i class="bi bi-laptop fs-1 text-muted"></i>
+                                        {% endif %}
+                                    </div>
+                                </div>
+                                <div class="col">
+                                    <div class="d-flex justify-content-between align-items-start">
+                                        <div>
+                                            <h6 class="mb-1">
+                                                {{ session.browser_name }} {{ session.browser_version }} {% trans "on" %} {{ session.os_name }}
+                                                {% if session.id == request.session.device_session_id %}
+                                                    <span class="badge bg-success ms-2">{% trans "Current" %}</span>
+                                                {% endif %}
+                                                {% if session.is_suspicious %}
+                                                    <span class="badge bg-danger ms-2"><i class="bi bi-exclamation-triangle"></i> {% trans "Suspicious" %}</span>
+                                                {% endif %}
+                                                {% if session.is_new_device %}
+                                                    <span class="badge bg-info ms-2">{% trans "New Device" %}</span>
+                                                {% endif %}
+                                            </h6>
+                                            <div class="small text-muted">
+                                                <div><i class="bi bi-geo-alt me-1"></i>{{ session.ip_address }}{% if session.location_string %} ({{ session.location_string }}){% endif %}</div>
+                                                <div><i class="bi bi-shop me-1"></i>{{ session.store.name }}</div>
+                                                {% if session.store_device %}
+                                                    <div><i class="bi bi-pc-display me-1"></i>{{ session.store_device.name }}</div>
+                                                {% endif %}
+                                                <div><i class="bi bi-clock me-1"></i>{% trans "Logged in" %}: {{ session.created_at|timesince }} {% trans "ago" %}</div>
+                                                <div><i class="bi bi-activity me-1"></i>{% trans "Last activity" %}: {{ session.last_activity_at|timesince }} {% trans "ago" %}</div>
+                                                <div><i class="bi bi-hourglass-split me-1"></i>{% trans "Expires" %}: {{ session.expires_at|timeuntil }}</div>
+                                            </div>
+                                        </div>
+                                        <div>
+                                            {% if session.id != request.session.device_session_id %}
+                                            <form method="post" action="{% url 'stores:terminate_session' session.id %}" class="d-inline">
+                                                {% csrf_token %}
+                                                <button type="submit" class="btn btn-sm btn-outline-danger" onclick="return confirm('{% trans "Terminate this session?" %}')">
+                                                    <i class="bi bi-x-circle"></i> {% trans "End" %}
+                                                </button>
+                                            </form>
+                                            {% else %}
+                                            <span class="badge bg-success-subtle text-success">{% trans "This Device" %}</span>
+                                            {% endif %}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                {% else %}
+                    <div class="text-center py-4 text-muted">
+                        <i class="bi bi-info-circle fs-1 mb-3 d-block"></i>
+                        <p>{% trans "No active sessions found" %}</p>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Recent Sessions History -->
+        <div class="card shadow-sm mt-4">
+            <div class="card-header bg-light">
+                <h5 class="mb-0"><i class="bi bi-clock-history me-2"></i>{% trans "Recent Sessions" %}</h5>
+            </div>
+            <div class="card-body">
+                {% if all_sessions %}
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>{% trans "Device" %}</th>
+                                    <th>{% trans "Location" %}</th>
+                                    <th>{% trans "Login Time" %}</th>
+                                    <th>{% trans "Status" %}</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for session in all_sessions %}
+                                <tr>
+                                    <td>
+                                        <div>{{ session.browser_name }} {% trans "on" %} {{ session.os_name }}</div>
+                                        <small class="text-muted">{{ session.ip_address }}</small>
+                                    </td>
+                                    <td>
+                                        <div>{{ session.store.name }}</div>
+                                        {% if session.store_device %}
+                                            <small class="text-muted">{{ session.store_device.name }}</small>
+                                        {% endif %}
+                                    </td>
+                                    <td>{{ session.created_at|date:"Y-m-d H:i" }}</td>
+                                    <td>
+                                        {% if session.status == "ACTIVE" %}
+                                            <span class="badge bg-success">{% trans "Active" %}</span>
+                                        {% elif session.status == "LOGGED_OUT" %}
+                                            <span class="badge bg-secondary">{% trans "Logged Out" %}</span>
+                                        {% elif session.status == "EXPIRED" %}
+                                            <span class="badge bg-warning">{% trans "Expired" %}</span>
+                                        {% elif session.status == "FORCE_CLOSED" %}
+                                            <span class="badge bg-danger">{% trans "Force Closed" %}</span>
+                                        {% elif session.status == "SUSPICIOUS" %}
+                                            <span class="badge bg-danger">{% trans "Suspicious" %}</span>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                {% else %}
+                    <p class="text-muted text-center">{% trans "No session history available" %}</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Sidebar -->
+    <div class="col-lg-4">
+        <!-- Security Alerts -->
+        <div class="card shadow-sm mb-4">
+            <div class="card-header bg-warning text-dark">
+                <h5 class="mb-0"><i class="bi bi-shield-exclamation me-2"></i>{% trans "Security Alerts" %}</h5>
+            </div>
+            <div class="card-body">
+                {% if recent_alerts %}
+                    <div class="list-group list-group-flush">
+                        {% for alert in recent_alerts %}
+                        <div class="list-group-item px-0 border-0">
+                            <div class="d-flex align-items-start">
+                                <div class="me-2">
+                                    {% if alert.severity == "CRITICAL" %}
+                                        <i class="bi bi-exclamation-octagon text-danger fs-4"></i>
+                                    {% elif alert.severity == "HIGH" %}
+                                        <i class="bi bi-exclamation-triangle text-danger fs-4"></i>
+                                    {% elif alert.severity == "MEDIUM" %}
+                                        <i class="bi bi-exclamation-circle text-warning fs-4"></i>
+                                    {% else %}
+                                        <i class="bi bi-info-circle text-info fs-4"></i>
+                                    {% endif %}
+                                </div>
+                                <div class="flex-grow-1">
+                                    <h6 class="mb-1">{{ alert.get_alert_type_display }}</h6>
+                                    <p class="mb-1 small text-muted">{{ alert.description }}</p>
+                                    <small class="text-muted">{{ alert.created_at|timesince }} {% trans "ago" %}</small>
+                                </div>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                {% else %}
+                    <div class="text-center text-muted">
+                        <i class="bi bi-shield-check fs-1 text-success mb-2 d-block"></i>
+                        <p class="mb-0">{% trans "No security alerts" %}</p>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Known Devices -->
+        <div class="card shadow-sm">
+            <div class="card-header bg-light">
+                <h5 class="mb-0"><i class="bi bi-laptop me-2"></i>{% trans "Known Devices" %}</h5>
+            </div>
+            <div class="card-body">
+                {% if known_devices %}
+                    <div class="list-group list-group-flush">
+                        {% for device in known_devices %}
+                        <div class="list-group-item px-0">
+                            <div class="d-flex justify-content-between align-items-start">
+                                <div class="flex-grow-1">
+                                    <h6 class="mb-1">
+                                        {{ device.device_name }}
+                                        {% if device.is_trusted %}
+                                            <span class="badge bg-success ms-1"><i class="bi bi-shield-check"></i> {% trans "Trusted" %}</span>
+                                        {% endif %}
+                                    </h6>
+                                    <div class="small text-muted">
+                                        <div><i class="bi bi-fingerprint me-1"></i>{% trans "Trust Score" %}: {{ device.trust_score }}/100</div>
+                                        <div><i class="bi bi-key me-1"></i>{% trans "Logins" %}: {{ device.login_count }}</div>
+                                        <div><i class="bi bi-clock me-1"></i>{% trans "Last seen" %}: {{ device.last_seen_at|timesince }} {% trans "ago" %}</div>
+                                    </div>
+                                </div>
+                                <div class="btn-group-vertical btn-group-sm">
+                                    {% if not device.is_trusted %}
+                                    <form method="post" action="{% url 'stores:trust_device' device.id %}" class="d-inline">
+                                        {% csrf_token %}
+                                        <button type="submit" class="btn btn-outline-success btn-sm">
+                                            <i class="bi bi-shield-check"></i>
+                                        </button>
+                                    </form>
+                                    {% endif %}
+                                    <form method="post" action="{% url 'stores:remove_device' device.id %}" class="d-inline">
+                                        {% csrf_token %}
+                                        <button type="submit" class="btn btn-outline-danger btn-sm" onclick="return confirm('{% trans "Remove this device?" %}')">
+                                            <i class="bi bi-trash"></i>
+                                        </button>
+                                    </form>
+                                </div>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                {% else %}
+                    <p class="text-muted text-center mb-0">{% trans "No known devices" %}</p>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Session Info -->
+        <div class="card shadow-sm mt-4">
+            <div class="card-body">
+                <h6 class="card-title"><i class="bi bi-info-circle me-2"></i>{% trans "Session Security" %}</h6>
+                <p class="card-text small text-muted">
+                    {% trans "Sessions automatically expire after 24 hours for security. You can have up to 3 active sessions at a time. If you notice any suspicious activity, terminate those sessions immediately." %}
+                </p>
+                <div class="d-grid gap-2 mt-3">
+                    <a href="{% url 'change_password' %}" class="btn btn-outline-primary btn-sm">
+                        <i class="bi bi-key me-1"></i>{% trans "Change Password" %}
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Auto-refresh active sessions every 30 seconds
+    setInterval(function() {
+        fetch("{% url 'stores:api_active_sessions' %}")
+            .then(response => response.json())
+            .then(data => {
+                // Update badge
+                const badge = document.querySelector('.badge.bg-primary.fs-6');
+                if (badge) {
+                    badge.textContent = data.count + '/3 {% trans "Active" %}';
+                }
+            })
+            .catch(error => console.error('Error refreshing sessions:', error));
+    }, 30000);
+});
+</script>
+{% endblock %}

@@ -1,0 +1,111 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Delete Employee - Company System{% endblock %}
+{% block page_title %}Delete Employee{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-6">
+        <div class="card border-danger">
+            <div class="card-header bg-danger text-white">
+                <h5 class="card-title mb-0">
+                    <i class="fas fa-exclamation-triangle me-2"></i>
+                    Confirm Employee Removal
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="alert alert-warning">
+                    <i class="fas fa-exclamation-circle me-2"></i>
+                    <strong>Warning:</strong> This will remove the employee from the company. The user account will still exist in the system.
+                </div>
+
+                <div class="employee-info mb-4">
+                    <h6>Employee Details:</h6>
+                    <div class="card">
+                        <div class="card-body">
+                            <div class="d-flex align-items-center mb-3">
+                                {% if object.user.avatar %}
+                                <img src="{{ object.user.avatar.url }}"
+                                     alt="{{ object.user.get_full_name }}"
+                                     class="rounded-circle me-3"
+                                     width="60"
+                                     height="60">
+                                {% else %}
+                                <div class="rounded-circle bg-secondary text-white d-flex align-items-center justify-content-center me-3"
+                                     style="width: 60px; height: 60px;">
+                                    <i class="fas fa-user"></i>
+                                </div>
+                                {% endif %}
+                                <div>
+                                    <h6 class="mb-1">{{ object.user.get_full_name }}</h6>
+                                    <p class="text-muted mb-0">{{ object.user.email }}</p>
+                                </div>
+                            </div>
+
+                            <div class="row">
+                                <div class="col-6">
+                                    <strong>Username:</strong><br>
+                                    {{ object.user.username }}
+                                </div>
+                                <div class="col-6">
+                                    <strong>User Type:</strong><br>
+                                    {{ object.user.get_user_type_display }}
+                                </div>
+                            </div>
+
+                            <hr>
+
+                            <div class="row">
+                                <div class="col-6">
+                                    <strong>Company:</strong><br>
+                                    {{ object.company.name }}
+                                </div>
+                                <div class="col-6">
+                                    <strong>Company Admin:</strong><br>
+                                    {% if object.is_company_admin %}Yes{% else %}No{% endif %}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <form method="post">
+                    {% csrf_token %}
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">Confirm Action</label>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" required id="confirmDelete">
+                            <label class="form-check-label" for="confirmDelete">
+                                I understand that this action cannot be undone
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="d-flex gap-2">
+                        <button type="submit" class="btn btn-danger" id="deleteButton" disabled>
+                            <i class="fas fa-trash me-1"></i>Confirm Removal
+                        </button>
+                        <a href="{% url 'companies:employee_list' company_id=object.company.company_id %}" class="btn btn-secondary">
+                            <i class="fas fa-times me-1"></i>Cancel
+                        </a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const checkbox = document.getElementById('confirmDelete');
+    const button = document.getElementById('deleteButton');
+
+    checkbox.addEventListener('change', function() {
+        button.disabled = !this.checked;
+    });
+});
+</script>
+{% endblock %}

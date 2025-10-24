@@ -1,0 +1,505 @@
+{% extends 'base.html' %}
+{% load i18n %}
+
+{% block title %}Active Sessions {{ company.trading_name|default:company.name }}% endblock %}
+
+{% block extra_css %}
+<style>
+    .sessions-container {
+        max-width: 1000px;
+        margin: 2rem auto;
+        padding: 1rem;
+    }
+
+    .sessions-header {
+        background: linear-gradient(135deg, #059669, #10b981);
+        color: white;
+        border-radius: 16px;
+        padding: 2.5rem;
+        margin-bottom: 2rem;
+        position: relative;
+        overflow: hidden;
+    }
+
+    .sessions-header::before {
+        content: '';
+        position: absolute;
+        top: -30%;
+        right: -10%;
+        width: 150px;
+        height: 150px;
+        background: rgba(255, 255, 255, 0.15);
+        border-radius: 50%;
+        animation: pulse 4s ease-in-out infinite;
+    }
+
+    @keyframes pulse {
+        0%, 100% { transform: scale(1) rotate(0deg); opacity: 0.7; }
+        50% { transform: scale(1.1) rotate(180deg); opacity: 1; }
+    }
+
+    .sessions-grid {
+        display: grid;
+        gap: 1.5rem;
+    }
+
+    .session-card {
+        background: white;
+        border-radius: 16px;
+        box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1);
+        border: 1px solid #e2e8f0;
+        overflow: hidden;
+        transition: all 0.3s ease;
+        position: relative;
+    }
+
+    .session-card:hover {
+        transform: translateY(-4px);
+        box-shadow: 0 12px 35px rgba(0, 0, 0, 0.15);
+    }
+
+    .current-session {
+        border-left: 4px solid #10b981;
+    }
+
+    .current-session::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        right: 0;
+        width: 0;
+        height: 0;
+        border-style: solid;
+        border-width: 0 30px 30px 0;
+        border-color: transparent #10b981 transparent transparent;
+    }
+
+    .current-session::after {
+        content: '✓';
+        position: absolute;
+        top: 5px;
+        right: 5px;
+        color: white;
+        font-size: 0.75rem;
+        font-weight: bold;
+    }
+
+    .session-header {
+        padding: 1.5rem 2rem;
+        border-bottom: 1px solid #f1f5f9;
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+    }
+
+    .session-info h5 {
+        margin: 0 0 0.5rem;
+        font-weight: 600;
+        color: #1e293b;
+        display: flex;
+        align-items: center;
+    }
+
+    .session-badge {
+        background: #10b981;
+        color: white;
+        padding: 0.25rem 0.75rem;
+        border-radius: 12px;
+        font-size: 0.75rem;
+        font-weight: 600;
+        margin-left: 1rem;
+    }
+
+    .session-meta {
+        color: #64748b;
+        font-size: 0.9rem;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 1rem;
+    }
+
+    .session-body {
+        padding: 1.5rem 2rem;
+    }
+
+    .device-info {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 1.5rem;
+        margin-bottom: 1.5rem;
+    }
+
+    .info-item {
+        display: flex;
+        align-items: center;
+        padding: 1rem;
+        background: #f8fafc;
+        border-radius: 8px;
+        border: 1px solid #e2e8f0;
+    }
+
+    .info-icon {
+        width: 40px;
+        height: 40px;
+        background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+        color: white;
+        border-radius: 8px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin-right: 1rem;
+        font-size: 1.1rem;
+    }
+
+    .info-content h6 {
+        margin: 0 0 0.25rem;
+        font-size: 0.875rem;
+        color: #475569;
+        font-weight: 500;
+    }
+
+    .info-content p {
+        margin: 0;
+        font-weight: 600;
+        color: #1e293b;
+        font-size: 0.95rem;
+    }
+
+    .session-actions {
+        padding: 1rem 2rem;
+        background: #f8fafc;
+        border-top: 1px solid #e2e8f0;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+    .session-timing {
+        font-size: 0.875rem;
+        color: #64748b;
+    }
+
+    .btn-revoke {
+        background: linear-gradient(135deg, #ef4444, #dc2626);
+        border: none;
+        color: white;
+        padding: 0.5rem 1rem;
+        border-radius: 6px;
+        font-size: 0.875rem;
+        font-weight: 500;
+        transition: all 0.3s ease;
+    }
+
+    .btn-revoke:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 4px 8px rgba(239, 68, 68, 0.3);
+    }
+
+    .btn-revoke:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+        transform: none;
+    }
+
+    .security-tips {
+        background: #f0f9ff;
+        border: 2px solid #0ea5e9;
+        border-radius: 12px;
+        padding: 1.5rem;
+        margin-top: 2rem;
+    }
+
+    .security-tips h5 {
+        color: #0369a1;
+        margin-bottom: 1rem;
+    }
+
+    .security-tips ul {
+        margin: 0;
+        padding-left: 1.5rem;
+        color: #075985;
+    }
+
+    .security-tips li {
+        margin-bottom: 0.5rem;
+    }
+
+    .no-sessions {
+        text-align: center;
+        padding: 3rem;
+        color: #64748b;
+    }
+
+    .no-sessions i {
+        font-size: 3rem;
+        margin-bottom: 1rem;
+        opacity: 0.5;
+    }
+
+    .location-indicator {
+        display: inline-flex;
+        align-items: center;
+        background: #fef3c7;
+        color: #92400e;
+        padding: 0.25rem 0.75rem;
+        border-radius: 12px;
+        font-size: 0.75rem;
+        font-weight: 500;
+    }
+
+    .location-indicator i {
+        margin-right: 0.5rem;
+    }
+
+    @media (max-width: 768px) {
+        .sessions-container {
+            margin: 1rem;
+            padding: 0;
+        }
+
+        .sessions-header {
+            padding: 1.5rem;
+        }
+
+        .session-header {
+            padding: 1rem;
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 1rem;
+        }
+
+        .session-body {
+            padding: 1rem;
+        }
+
+        .device-info {
+            grid-template-columns: 1fr;
+        }
+
+        .session-actions {
+            padding: 1rem;
+            flex-direction: column;
+            gap: 1rem;
+            align-items: stretch;
+        }
+
+        .session-meta {
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="sessions-container">
+    <!-- Header -->
+    <div class="sessions-header">
+        <div class="row align-items-center">
+            <div class="col">
+                <h2 class="mb-2"><i class="bi bi-shield-check me-3"></i>{% trans "Active Sessions" %}</h2> {% trans "" %}
+                <p class="mb-0 opacity-90">{% trans "Manage and monitor your active login sessions across all devices" %}</p>
+            </div>
+            <div class="col-auto">
+                <div class="text-end">
+                    <div class="h4 mb-1">{{ user_sessions|length }}</div>
+                    <div class="small opacity-75">Active Sessions</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Sessions Grid -->
+    <div class="sessions-grid">
+        {% if user_sessions %}
+            {% for session in user_sessions %}
+            <div class="session-card {% if session.is_current_session %}current-session{% endif %}">
+                <div class="session-header">
+                    <div class="session-info">
+                        <h5>
+                            <i class="bi bi-{% if session.is_current_session %}laptop{% elif 'Mobile' in session.user_agent %}phone{% else %}display{% endif %} me-2"></i>
+                            {% if session.is_current_session %}
+                                {% trans "Current Session"%}
+                                <span class="session-badge">Active</span>
+                            {% else %}
+                                {% if 'Mobile' in session.user_agent %}Mobile Device{% elif 'Tablet' in session.user_agent %}Tablet{% else %}Desktop{% endif %}
+                            {% endif %}
+                        </h5>
+                        <div class="session-meta">
+                            <span><i class="bi bi-geo-alt me-1"></i>{{ session.ip_address }}</span>
+                            {% if session.location %}
+                                <span class="location-indicator">
+                                    <i class="bi bi-pin-map"></i>{{ session.location }}
+                                </span>
+                            {% endif %}
+                            <span><i class="bi bi-clock me-1"></i>{{ session.last_activity|timesince }} ago</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="session-body">
+                    <div class="device-info">
+                        <div class="info-item">
+                            <div class="info-icon">
+                                <i class="bi bi-browser-chrome"></i>
+                            </div>
+                            <div class="info-content">
+                                <h6>{% trans "Browser" %}</h6>
+                                <p>{{ session.user_agent|truncatechars:30 }}</p>
+                            </div>
+                        </div>
+
+                        <div class="info-item">
+                            <div class="info-icon">
+                                <i class="bi bi-calendar-event"></i>
+                            </div>
+                            <div class="info-content">
+                                <h6>{% trans "Started" %}</h6>
+                                <p>{{ session.created_at|date:"M d, Y H:i" }}</p>
+                            </div>
+                        </div>
+
+                        <div class="info-item">
+                            <div class="info-icon">
+                                <i class="bi bi-activity"></i>
+                            </div>
+                            <div class="info-content">
+                                <h6>{% trans "Last Activity" %}</h6>
+                                <p>{{ session.last_activity|date:"M d, Y H:i" }}</p>
+                            </div>
+                        </div>
+
+                        {% if session.device_info %}
+                        <div class="info-item">
+                            <div class="info-icon">
+                                <i class="bi bi-phone"></i>
+                            </div>
+                            <div class="info-content">
+                                <h6>{% trans "Device" %}</h6>
+                                <p>{{ session.device_info.device|default:"Unknown Device" }}</p>
+                            </div>
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <div class="session-actions">
+                    <div class="session-timing">
+                        <i class="bi bi-clock-history me-1"></i>
+                        Session duration: {{ session.created_at|timesince }}
+                    </div>
+                    {% if not session.is_current_session %}
+                    <button class="btn btn-revoke" onclick="revokeSession({{ session.id }}, '{{ session.ip_address }}')">
+                        <i class="bi bi-x-circle me-2"></i>Revoke Session
+                    </button>
+                    {% else %}
+                    <span class="text-muted small">
+                        <i class="bi bi-info-circle me-1"></i>{% trans "Current session cannot be revoked" %}
+                    </span>
+                    {% endif %}
+                </div>
+            </div>
+            {% endfor %}
+        {% else %}
+            <div class="session-card">
+                <div class="no-sessions">
+                    <i class="bi bi-shield-slash"></i>
+                    <h5>{% trans "No Active Sessions" %}</h5>
+                    <p>{% trans "There are no active sessions to display"%}</p>
+                </div>
+            </div>
+        {% endif %}
+    </div>
+
+    <!-- Security Tips -->
+    <div class="security-tips">
+        <h5><i class="bi bi-lightbulb me-2"></i>{% trans "Security Tips" %}</h5>
+        <ul>
+            <li><strong>{% trans "Review regularly:" %}</strong> {% trans "Check your active sessions periodically for any unauthorized access"%}</li>
+            <li><strong>{% trans "Revoke suspicious sessions:"%}</strong> {% trans "If you see a session you don't recognize, revoke it immediately"%}</li>
+            <li><strong>{% trans "Use strong passwords:"%}</strong> {% trans "Always use unique, strong passwords for your accounts"%}</li>
+            <li><strong>{% trans "Enable 2FA:"%}</strong>{% trans " Two-factor authentication adds an extra layer of security"%}</li>
+            <li><strong>{% trans "Log out properly:"%}</strong> {% trans "Always log out when using shared or public devices"%}</li>
+        </ul>
+    </div>
+</div>
+
+<script>
+function revokeSession(sessionId, ipAddress) {
+    if (!confirm(`Are you sure you want to revoke the session from ${ipAddress}? The user will be logged out immediately.`)) {
+        return;
+    }
+
+    const button = event.target.closest('button');
+    const originalContent = button.innerHTML;
+
+    // Show loading state
+    button.disabled = true;
+    button.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Revoking...';
+
+    fetch(`/accounts/profile/revoke-session/${sessionId}/`, {
+        method: 'POST',
+        headers: {
+            'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value,
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({})
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showNotification(data.message, 'success');
+
+            // Remove the session card with animation
+            const sessionCard = button.closest('.session-card');
+            sessionCard.style.transition = 'all 0.5s ease';
+            sessionCard.style.opacity = '0';
+            sessionCard.style.transform = 'scale(0.95)';
+
+            setTimeout(() => {
+                sessionCard.remove();
+
+                // Check if no sessions left
+                const remainingSessions = document.querySelectorAll('.session-card').length;
+                if (remainingSessions === 0) {
+                    location.reload(); // Reload to show "no sessions" message
+                }
+            }, 500);
+        } else {
+            showNotification('Error: ' + (data.error || 'Failed to revoke session'), 'danger');
+            button.disabled = false;
+            button.innerHTML = originalContent;
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        showNotification('Failed to revoke session', 'danger');
+        button.disabled = false;
+        button.innerHTML = originalContent;
+    });
+}
+
+function showNotification(message, type = 'info') {
+    const notification = document.createElement('div');
+    notification.className = `alert alert-${type} alert-dismissible fade show position-fixed`;
+    notification.style.cssText = 'top: 20px; right: 20px; z-index: 9999; min-width: 300px;';
+    notification.innerHTML = `
+        ${message}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    `;
+
+    document.body.appendChild(notification);
+
+    setTimeout(() => {
+        notification.remove();
+    }, 5000);
+}
+
+// Auto-refresh sessions every 5 minutes
+setInterval(() => {
+    if (document.visibilityState === 'visible') {
+        window.location.reload();
+    }
+}, 300000); // 5 minutes
+</script>
+{% endblock %}

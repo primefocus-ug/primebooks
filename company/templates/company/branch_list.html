@@ -1,0 +1,277 @@
+{% extends "base.html" %}
+{% load i18n %}
+{% load i18n static %}
+
+{% block title %}Branches | {{ company.trading_name|default:company.name }}{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+
+    <!-- Filters & Search -->
+    <div class="row mb-4">
+        <div class="col-lg-8">
+            <div class="card">
+                <div class="card-body">
+                    <form method="get" class="row g-3">
+                        <div class="col-md-4">
+                            <input type="text" class="form-control" name="q" placeholder="Search branches..." value="{{ current_filters.q }}">
+                        </div>
+                        <div class="col-md-3">
+                            <select name="is_active" class="form-select">
+                                <option value="">{% trans "All Status" %}</option>
+                                <option value="true" {% if current_filters.is_active == 'true' %}selected{% endif %}>{% trans "Active" %}</option>
+                                <option value="false" {% if current_filters.is_active == 'false' %}selected{% endif %}>{% trans "Inactive" %}</option>
+                            </select>
+                        </div>
+                        <div class="col-md-3">
+                            <select name="is_main_branch" class="form-select">
+                                <option value="">{% trans "All Branches" %}</option>
+                                <option value="true" {% if current_filters.is_main_branch == 'true' %}selected{% endif %}>{% trans "Main Branch" %}</option>
+                                <option value="false" {% if current_filters.is_main_branch == 'false' %}selected{% endif %}>{% trans "Secondary Branch" %}</option>
+                            </select>
+                        </div>
+                        <div class="col-md-2">
+                            <button type="submit" class="btn btn-primary w-100">
+                                <i class="bi bi-search"></i> {% trans "Search" %}
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-4">
+            <div class="card">
+                <div class="card-body">
+                    <div class="row g-3">
+                        <div class="col-6">
+                            <select name="sort" class="form-select" onchange="this.form.submit()">
+                                <option value="-created_at" {% if current_filters.sort == '-created_at' %}selected{% endif %}>Newest First</option>
+                                <option value="created_at" {% if current_filters.sort == 'created_at' %}selected{% endif %}>Oldest First</option>
+                                <option value="name" {% if current_filters.sort == 'name' %}selected{% endif %}>Name A-Z</option>
+                                <option value="-name" {% if current_filters.sort == '-name' %}selected{% endif %}>Name Z-A</option>
+                            </select>
+                        </div>
+                        <div class="col-6">
+                            {% if perms.branches.view_companybranch %}
+                            <a href="{% url 'companies:branch_list' %}" class="btn btn-outline-secondary w-100">
+                                <i class="bi bi-arrow-clockwise"></i> {% trans "Clear" %}
+                            </a>
+                            {% endif %}
+
+
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bulk Actions -->
+    <div class="bulk-actions mb-3" style="display: none;">
+        <div class="card bg-warning-subtle border-warning">
+            <div class="card-body py-2">
+                <form method="post" class="d-flex align-items-center">
+                    {% csrf_token %}
+                    <span class="me-3">
+                        <strong><span class="selected-count">0</span></strong> {% trans "branches selected" %}
+                    </span>
+                    <select name="action" class="form-select me-2" style="width: auto;">
+                        <option value="">{% trans "Select action..." %}</option>
+                        <option value="activate">{% trans "Activate selected" %}</option>
+                        <option value="deactivate">{% trans "Deactivate selected" %}</option>
+                        <option value="delete">{% trans "Delete selected" %}</option>
+                    </select>
+                    <input type="hidden" name="selected_items" id="id_selected_items">
+                    <button type="submit" class="btn btn-warning btn-sm me-2" onclick="return confirm('Are you sure?')">
+                        {% trans "Apply" %}
+                    </button>
+                    <button type="button" class="btn btn-outline-secondary btn-sm" onclick="clearSelection()">
+                        {% trans "Cancel" %}
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Branch Table/Card Toggle -->
+    <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <h5 class="card-title mb-0">
+                <i class="bi bi-diagram-3 text-primary me-2"></i>
+                Branches ({{ page_obj.paginator.count }})
+            </h5>
+            <div class="btn-group btn-group-sm">
+                <button class="btn btn-outline-secondary" onclick="toggleView('table')" id="tableViewBtn">
+                    <i class="bi bi-table"></i> Table
+                </button>
+                <button class="btn btn-outline-secondary" onclick="toggleView('cards')" id="cardsViewBtn">
+                    <i class="bi bi-grid-3x3-gap"></i> Cards
+                </button>
+            </div>
+        </div>
+
+        <!-- Table View -->
+        <div id="tableView" class="card-body p-0">
+            {% if branches %}
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0">
+                        <thead>
+                            <tr>
+                                <th style="width: 40px;"><input type="checkbox" id="selectAll" class="form-check-input"></th>
+                                <th>{% trans "Branch" %}</th>
+                                <th>{% trans "Company" %}</th>
+                                <th>{% trans "Contact" %}</th>
+                                <th>{% trans "Location" %}</th>
+                                <th>{% trans "Status" %}</th>
+                                <th style="width: 120px;">{% trans "Actions" %}</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for branch in branches %}
+                            <tr>
+                                <td><input type="checkbox" class="form-check-input select-row" value="{{ branch.id }}"></td>
+                                <td>
+                                    <h6 class="mb-0">
+                                        {% if perms.branches.companybranch %}
+                                        <a href="{% url 'companies:branch_detail' branch.pk %}" class="text-decoration-none">{{ branch.name }}</a>
+                                        {% endif %}
+                                    </h6>
+                                    <small class="text-muted">{{ branch.code }}</small>
+                                </td>
+                                <td>{{ branch.company.name }}</td>
+                                <td>
+                                    {% if branch.phone %}<div><i class="bi bi-telephone me-1"></i>{{ branch.phone }}</div>{% endif %}
+                                    {% if branch.email %}<div><i class="bi bi-envelope me-1"></i>{{ branch.email }}</div>{% endif %}
+                                </td>
+                                <td>{{ branch.location }}</td>
+                                <td>
+                                    {% if branch.is_main_branch %}
+                                        <span class="badge bg-info">{% trans "Main" %}</span>
+                                    {% endif %}
+                                    {% if branch.is_active %}
+                                        <span class="badge bg-success">{% trans "Active" %}</span>
+                                    {% else %}
+                                        <span class="badge bg-danger">{% trans "Inactive" %}</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    <div class="btn-group btn-group-sm">
+                                        {% if perms.branches.view_companybranch %}
+                                        <a href="{% url 'companies:branch_detail' branch.pk %}" class="btn btn-outline-primary"><i class="bi bi-eye"></i></a>
+                                        {% endif %}
+                                        {% if perms.branches.change_companybranch %}
+                                        <a href="{% url 'companies:branch_update' branch.pk %}" class="btn btn-outline-secondary"><i class="bi bi-pencil"></i></a>
+                                        {% endif %}
+                                        {% if perms.branches.delete_companybranch %}
+                                        <a href="{% url 'companies:branch_delete' branch.pk %}" class="btn btn-outline-danger" onclick="return confirmDelete()"><i class="bi bi-trash"></i></a>
+                                        {% endif %}
+                                    </div>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            {% else %}
+                <div class="text-center py-5">
+                    <i class="bi bi-diagram-3 fs-1 text-muted mb-3"></i>
+                    <h5 class="text-muted">{% trans "No branches found" %}</h5>
+                    <p class="text-muted mb-4">{% trans "No branches match your current filters." %}</p>
+                    {% if perms.branches.companybranch %}
+                    <a href="{% url 'companies:branch_create' %}" class="btn btn-primary">
+                        <i class="bi bi-plus-lg me-2"></i>{% trans "Create First Branch" %}
+                    </a>
+                    {% endif %}
+                </div>
+            {% endif %}
+        </div>
+
+        <!-- Cards View -->
+        <div id="cardsView" class="card-body" style="display: none;">
+            {% if branches %}
+                <div class="row">
+                    {% for branch in branches %}
+                    <div class="col-lg-4 col-md-6 mb-4">
+                        <div class="card h-100">
+                            <div class="card-body">
+                                <h6 class="card-title mb-1">
+                                    {% if perms.branches.view_companybranch %}
+                                    <a href="{% url 'companies:branch_detail' branch.pk %}" class="text-decoration-none">{{ branch.name }}</a>
+                                    {% endif %}
+                                </h6>
+                                <small class="text-muted">{{ branch.code }}</small>
+                                <p class="mt-2 mb-2">{{ branch.company.name }}</p>
+                                <p class="text-muted">{{ branch.location }}</p>
+                                {% if branch.is_main_branch %}<span class="badge bg-info me-1">{% trans "Main" %}</span>{% endif %}
+                                {% if branch.is_active %}<span class="badge bg-success">{% trans "Active" %}</span>{% else %}<span class="badge bg-danger">{% trans "Inactive" %}</span>{% endif %}
+                            </div>
+                            <div class="card-footer d-flex justify-content-between">
+                                <small>{{ branch.created_at|date:"M d, Y" }}</small>
+                                <div class="btn-group btn-group-sm">
+                                    {% if perms.branches.view_companybranch %}
+                                    <a href="{% url 'companies:branch_detail' branch.pk %}" class="btn btn-outline-primary"><i class="bi bi-eye"></i></a>
+                                    {% endif %}
+                                    {% if perms.branches.change_companybranch %}
+                                    <a href="{% url 'companies:branch_update' branch.pk %}" class="btn btn-outline-secondary"><i class="bi bi-pencil"></i></a>
+                                    {% endif %}
+                                    {% if perms.branches.companybranch %}
+                                    <a href="{% url 'companies:branch_delete' branch.pk %}" class="btn btn-outline-danger" onclick="return confirmDelete()"><i class="bi bi-trash"></i></a>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            {% else %}
+                <div class="text-center py-5">
+                    <i class="bi bi-diagram-3 fs-1 text-muted mb-3"></i>
+                    <h5 class="text-muted">{% trans "No branches found" %}</h5>
+                    <p class="text-muted mb-4">{% trans "No branches match your current filters." %}</p>
+                    {% if perms.branches.companybranch %}
+                    <a href="{% url 'companies:branch_create' %}" class="btn btn-primary">
+                        <i class="bi bi-plus-lg me-2"></i>{% trans "Create First Branch" %}
+                    </a>
+                    {% endif %}
+                </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Pagination -->
+    {% if is_paginated %}
+    <div class="card-footer">
+        <nav aria-label="Branches pagination">
+            <ul class="pagination justify-content-center mb-0">
+                {% if page_obj.has_previous %}
+                    <li class="page-item">
+                        <a class="page-link" href="?{% for key, value in request.GET.items %}{% if key != 'page' %}{{ key }}={{ value }}&{% endif %}{% endfor %}page=1">
+                            <i class="bi bi-chevron-double-left"></i>
+                        </a>
+                    </li>
+                    <li class="page-item">
+                        <a class="page-link" href="?{% for key, value in request.GET.items %}{% if key != 'page' %}{{ key }}={{ value }}&{% endif %}{% endfor %}page={{ page_obj.previous_page_number }}">
+                            <i class="bi bi-chevron-left"></i>
+                        </a>
+                    </li>
+                {% endif %}
+                <li class="page-item disabled"><span class="page-link">{{ page_obj.number }} / {{ page_obj.paginator.num_pages }}</span></li>
+                {% if page_obj.has_next %}
+                    <li class="page-item">
+                        <a class="page-link" href="?{% for key, value in request.GET.items %}{% if key != 'page' %}{{ key }}={{ value }}&{% endif %}{% endfor %}page={{ page_obj.next_page_number }}">
+                            <i class="bi bi-chevron-right"></i>
+                        </a>
+                    </li>
+                    <li class="page-item">
+                        <a class="page-link" href="?{% for key, value in request.GET.items %}{% if key != 'page' %}{{ key }}={{ value }}&{% endif %}{% endfor %}page={{ page_obj.paginator.num_pages }}">
+                            <i class="bi bi-chevron-double-right"></i>
+                        </a>
+                    </li>
+                {% endif %}
+            </ul>
+        </nav>
+    </div>
+    {% endif %}
+
+</div>
+{% endblock %}

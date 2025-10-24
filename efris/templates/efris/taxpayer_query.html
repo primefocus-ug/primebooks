@@ -1,0 +1,219 @@
+{% extends "base.html" %}
+{% load static %}
+{% load i18n %}
+
+{% block title %}{% trans "Taxpayer Query" %} | {{ block.super }}{% endblock %}
+
+{% block breadcrumb_items %}
+<li class="breadcrumb-item"><a href="{% url 'efris:dashboard' %}">{% trans "EFRIS" %}</a></li>
+<li class="breadcrumb-item active">{% trans "Taxpayer Query" %}</li>
+{% endblock %}
+
+{% block page_header %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h2 class="mb-2">{% trans "Taxpayer Query" %}</h2>
+        <p class="text-muted mb-0">{% trans "Search for taxpayer information from URA EFRIS" %}</p>
+    </div>
+    <a href="{% url 'efris:dashboard' %}" class="btn btn-outline-secondary">
+        <i class="bi bi-arrow-left me-2"></i>{% trans "Back to Dashboard" %}
+    </a>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-lg-8 col-xl-6 mx-auto">
+        <!-- Search Form -->
+        <div class="card shadow-sm mb-4">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0">
+                    <i class="bi bi-search me-2"></i>{% trans "Search Taxpayer" %}
+                </h5>
+            </div>
+            <div class="card-body">
+                <form method="post" id="taxpayerSearchForm">
+                    {% csrf_token %}
+
+                    <div class="mb-3">
+                        <label for="tin" class="form-label">
+                            {% trans "TIN (Tax Identification Number)" %} <span class="text-danger">*</span>
+                        </label>
+                        <input
+                            type="text"
+                            class="form-control"
+                            id="tin"
+                            name="tin"
+                            placeholder="{% trans 'Enter TIN' %}"
+                            required
+                            pattern="[0-9]{10}"
+                            title="{% trans 'TIN must be 10 digits' %}"
+                        >
+                        <small class="form-text text-muted">
+                            {% trans "Enter 10-digit TIN number" %}
+                        </small>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="nin_brn" class="form-label">
+                            {% trans "NIN/BRN (Optional)" %}
+                        </label>
+                        <input
+                            type="text"
+                            class="form-control"
+                            id="nin_brn"
+                            name="nin_brn"
+                            placeholder="{% trans 'Enter NIN or Business Registration Number' %}"
+                        >
+                        <small class="form-text text-muted">
+                            {% trans "National Identification Number or Business Registration Number" %}
+                        </small>
+                    </div>
+
+                    <div class="d-grid">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-search me-2"></i>{% trans "Search Taxpayer" %}
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- Results -->
+        {% if taxpayer_data %}
+        <div class="card shadow-sm">
+            <div class="card-header bg-success text-white">
+                <h5 class="mb-0">
+                    <i class="bi bi-check-circle me-2"></i>{% trans "Taxpayer Information" %}
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="row g-3">
+                    {% if taxpayer_data.legal_name %}
+                    <div class="col-md-6">
+                        <label class="form-label text-muted small">{% trans "Legal Name" %}</label>
+                        <p class="fw-bold mb-0">{{ taxpayer_data.legal_name }}</p>
+                    </div>
+                    {% endif %}
+
+                    {% if taxpayer_data.business_name %}
+                    <div class="col-md-6">
+                        <label class="form-label text-muted small">{% trans "Business Name" %}</label>
+                        <p class="fw-bold mb-0">{{ taxpayer_data.business_name }}</p>
+                    </div>
+                    {% endif %}
+
+                    {% if taxpayer_data.tin %}
+                    <div class="col-md-6">
+                        <label class="form-label text-muted small">{% trans "TIN" %}</label>
+                        <p class="fw-bold mb-0">{{ taxpayer_data.tin }}</p>
+                    </div>
+                    {% endif %}
+
+                    {% if taxpayer_data.nin_brn %}
+                    <div class="col-md-6">
+                        <label class="form-label text-muted small">{% trans "NIN/BRN" %}</label>
+                        <p class="fw-bold mb-0">{{ taxpayer_data.nin_brn }}</p>
+                    </div>
+                    {% endif %}
+
+                    {% if taxpayer_data.taxpayer_type %}
+                    <div class="col-md-6">
+                        <label class="form-label text-muted small">{% trans "Taxpayer Type" %}</label>
+                        <p class="fw-bold mb-0">{{ taxpayer_data.taxpayer_type }}</p>
+                    </div>
+                    {% endif %}
+
+                    {% if taxpayer_data.status %}
+                    <div class="col-md-6">
+                        <label class="form-label text-muted small">{% trans "Status" %}</label>
+                        <p class="mb-0">
+                            <span class="badge bg-{% if taxpayer_data.status == 'Active' %}success{% else %}secondary{% endif %}">
+                                {{ taxpayer_data.status }}
+                            </span>
+                        </p>
+                    </div>
+                    {% endif %}
+
+                    {% if taxpayer_data.address %}
+                    <div class="col-12">
+                        <label class="form-label text-muted small">{% trans "Address" %}</label>
+                        <p class="mb-0">{{ taxpayer_data.address }}</p>
+                    </div>
+                    {% endif %}
+
+                    {% if taxpayer_data.contactEmail %}
+                    <div class="col-md-6">
+                        <label class="form-label text-muted small">{% trans "Email" %}</label>
+                        <p class="mb-0">{{ taxpayer_data.contactEmail }}</p>
+                    </div>
+                    {% endif %}
+
+                    {% if taxpayer_data.contactNumber %}
+                    <div class="col-md-6">
+                        <label class="form-label text-muted small">{% trans "Phone" %}</label>
+                        <p class="mb-0">{{ taxpayer_data.contactNumber }}</p>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const form = document.getElementById('taxpayerSearchForm');
+    const tinInput = document.getElementById('tin');
+    const cardContainer = form.closest('.col-lg-8');
+
+    // Ensure TIN input is numeric
+    tinInput.addEventListener('input', function() {
+        this.value = this.value.replace(/\D/g, '');
+    });
+
+    form.addEventListener('submit', function(e) {
+        e.preventDefault();
+
+        const submitBtn = form.querySelector('button[type="submit"]');
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>{% trans "Searching..." %}';
+
+        const formData = new FormData(form);
+
+        fetch(form.action || window.location.href, {
+            method: 'POST',
+            body: formData,
+            headers: { 'X-Requested-With': 'XMLHttpRequest' },
+        })
+        .then(res => res.json())
+        .then(data => {
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = '<i class="bi bi-search me-2"></i>{% trans "Search Taxpayer" %}';
+
+            // Remove old results card if exists
+            const oldCard = cardContainer.querySelector('.card.shadow-sm:not(.mb-4)');
+            if (oldCard) oldCard.remove();
+
+            if (data.success && data.html) {
+                cardContainer.insertAdjacentHTML('beforeend', data.html);
+            } else if (data.error) {
+                const errorAlert = `<div class="alert alert-warning mt-3" role="alert">
+                                        <i class="bi bi-exclamation-triangle me-2"></i>${data.error}
+                                    </div>`;
+                cardContainer.insertAdjacentHTML('beforeend', errorAlert);
+            }
+        })
+        .catch(err => {
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = '<i class="bi bi-search me-2"></i>{% trans "Search Taxpayer" %}';
+            console.error('AJAX Error:', err);
+        });
+    });
+});
+</script>
+
+{% endblock %}

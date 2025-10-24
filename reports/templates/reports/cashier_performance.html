@@ -1,0 +1,381 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Cashier Performance Report - Prime Book{% endblock %}
+
+{% block page_header %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h1 class="h3 mb-0">Cashier Performance Report</h1>
+        <p class="text-muted">Individual cashier sales performance and metrics</p>
+    </div>
+    <a href="{% url 'reports:dashboard' %}" class="btn btn-outline-secondary">
+        <i class="bi bi-arrow-left me-2"></i>Back to Dashboard
+    </a>
+</div>
+{% endblock %}
+
+{% block content %}
+<!-- Filter Form -->
+<div class="card mb-4">
+    <div class="card-header">
+        <h5 class="card-title mb-0">
+            <i class="bi bi-funnel me-2"></i>Performance Period
+        </h5>
+    </div>
+    <div class="card-body">
+        <form method="get" class="row g-3">
+            <div class="col-md-3">
+                {{ form.start_date.label_tag }}
+                {{ form.start_date }}
+            </div>
+            <div class="col-md-3">
+                {{ form.end_date.label_tag }}
+                {{ form.end_date }}
+            </div>
+            <div class="col-md-3">
+                {{ form.store.label_tag }}
+                {{ form.store }}
+            </div>
+            <div class="col-md-3 d-flex align-items-end">
+                <button type="submit" class="btn btn-primary">
+                    <i class="bi bi-search me-2"></i>Generate Report
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+{% if performance_data %}
+<!-- Performance Table -->
+<div class="card">
+    <div class="card-header">
+        <h6 class="mb-0">Cashier Performance Details</h6>
+    </div>
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-striped table-hover">
+                <thead>
+                    <tr>
+                        <th>Cashier</th>
+                        <th>Store</th>
+                        <th>Total Sales</th>
+                        <th>Transactions</th>
+                        <th>Avg Transaction</th>
+                        <th>Total Items</th>
+                        <th>Performance</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for cashier in performance_data %}
+                    <tr>
+                        <td>
+                            <div class="d-flex align-items-center">
+                                <div class="bg-primary text-white rounded-circle d-flex align-items-center justify-content-center me-2" style="width: 40px; height: 40px;">
+                                    {{ cashier.created_by__first_name|first|default:cashier.created_by__username|first }}
+                                </div>
+                                <div>
+                                    <div class="fw-bold">
+                                        {% if cashier.created_by__first_name and cashier.created_by__last_name %}
+                                            {{ cashier.created_by__first_name }} {{ cashier.created_by__last_name }}
+                                        {% else %}
+                                            {{ cashier.created_by__username }}
+                                        {% endif %}
+                                    </div>
+                                    <small class="text-muted">{{ cashier.created_by__username }}</small>
+                                </div>
+                            </div>
+                        </td>
+                        <td>{{ cashier.store__name }}</td>
+                        <td class="fw-bold">UGX {{ cashier.total_sales|floatformat:2 }}</td>
+                        <td>{{ cashier.transaction_count }}</td>
+                        <td>UGX {{ cashier.avg_transaction|floatformat:2 }}</td>
+                        <td>{{ cashier.total_items|default:"-" }}</td>
+                        <td>
+                            {% with perf_score=cashier.total_sales|div:10000 %}
+                                {% if perf_score >= 100 %}
+                                    <span class="badge bg-success">Excellent</span>
+                                {% elif perf_score >= 50 %}
+                                    <span class="badge bg-primary">Good</span>
+                                {% elif perf_score >= 25 %}
+                                    <span class="badge bg-warning">Average</span>
+                                {% else %}
+                                    <span class="badge bg-secondary">Below Average</span>
+                                {% endif %}
+                            {% endwith %}
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="7" class="text-center text-muted py-4">
+                            <i class="bi bi-person-x fs-1 text-muted"></i>
+                            <p class="mt-2">No cashier performance data available for the selected period</p>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endif %}
+{% endblock %}
+
+<!-- Include some additional utility templates -->
+
+<!-- Modal for Export Options -->
+<div class="modal fade" id="exportModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Export Report</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="exportForm">
+                    <div class="mb-3">
+                        <label class="form-label">Export Format</label>
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="format" id="formatPdf" value="pdf" checked>
+                            <label class="form-check-label" for="formatPdf">
+                                <i class="bi bi-file-pdf text-danger me-2"></i>PDF
+                            </label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="format" id="formatExcel" value="excel">
+                            <label class="form-check-label" for="formatExcel">
+                                <i class="bi bi-file-excel text-success me-2"></i>Excel
+                            </label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="format" id="formatCsv" value="csv">
+                            <label class="form-check-label" for="formatCsv">
+                                <i class="bi bi-file-csv text-primary me-2"></i>CSV
+                            </label>
+                        </div>
+                    </div>
+                    <div class="mb-3 form-check">
+                        <input type="checkbox" class="form-check-input" id="includeCharts" checked>
+                        <label class="form-check-label" for="includeCharts">
+                            Include Charts
+                        </label>
+                    </div>
+                    <div class="mb-3 form-check">
+                        <input type="checkbox" class="form-check-input" id="emailReport">
+                        <label class="form-check-label" for="emailReport">
+                            Email Report
+                        </label>
+                    </div>
+                    <div class="mb-3" id="emailField" style="display: none;">
+                        <label for="emailRecipients" class="form-label">Email Recipients</label>
+                        <input type="email" class="form-control" id="emailRecipients" multiple placeholder="Enter email addresses">
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" onclick="executeExport()">Export Report</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Global JavaScript for Reports -->
+<script>
+// Export modal functionality
+document.addEventListener('DOMContentLoaded', function() {
+    const emailReportCheckbox = document.getElementById('emailReport');
+    const emailField = document.getElementById('emailField');
+
+    if (emailReportCheckbox) {
+        emailReportCheckbox.addEventListener('change', function() {
+            if (this.checked) {
+                emailField.style.display = 'block';
+            } else {
+                emailField.style.display = 'none';
+            }
+        });
+    }
+});
+
+function executeExport() {
+    const format = document.querySelector('input[name="format"]:checked').value;
+    const includeCharts = document.getElementById('includeCharts').checked;
+    const emailReport = document.getElementById('emailReport').checked;
+    const emailRecipients = document.getElementById('emailRecipients').value;
+
+    // Build export URL with parameters
+    const params = new URLSearchParams({
+        format: format,
+        include_charts: includeCharts,
+        email_report: emailReport,
+        email_recipients: emailRecipients
+    });
+
+    // Get current page URL parameters for filters
+    const currentParams = new URLSearchParams(window.location.search);
+    for (const [key, value] of currentParams) {
+        params.append(key, value);
+    }
+
+    // Redirect to export endpoint
+    window.location.href = window.location.pathname.replace(/\/$/, '') + '/export/?' + params.toString();
+
+    // Close modal
+    const modal = bootstrap.Modal.getInstance(document.getElementById('exportModal'));
+    modal.hide();
+}
+
+// Utility functions for reports
+function formatCurrency(amount) {
+    return new Intl.NumberFormat('en-UG', {
+        style: 'currency',
+        currency: 'UGX'
+    }).format(amount);
+}
+
+function formatPercentage(value, decimals = 1) {
+    return (value).toFixed(decimals) + '%';
+}
+
+// Common chart colors
+const chartColors = {
+    primary: 'rgb(37, 99, 235)',
+    success: 'rgb(34, 197, 94)',
+    warning: 'rgb(245, 158, 11)',
+    danger: 'rgb(239, 68, 68)',
+    info: 'rgb(14, 165, 233)',
+    secondary: 'rgb(107, 114, 128)'
+};
+
+// Auto-refresh functionality for real-time reports
+function startAutoRefresh(interval = 30000) {
+    setInterval(function() {
+        const refreshButton = document.querySelector('[data-auto-refresh]');
+        if (refreshButton && document.hasFocus()) {
+            refreshButton.click();
+        }
+    }, interval);
+}
+</script>
+
+<!-- Custom CSS for Reports -->
+<style>
+.report-card {
+    transition: all 0.3s ease;
+    border: none;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.report-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+}
+
+.stat-number {
+    font-size: 2rem;
+    font-weight: 700;
+    line-height: 1.2;
+}
+
+.trend-indicator {
+    font-size: 0.875rem;
+    font-weight: 500;
+}
+
+.trend-up {
+    color: #10b981;
+}
+
+.trend-down {
+    color: #ef4444;
+}
+
+.chart-container {
+    position: relative;
+    height: 300px;
+    margin: 1rem 0;
+}
+
+.table-hover tbody tr:hover {
+    background-color: rgba(37, 99, 235, 0.05);
+}
+
+.badge-outline {
+    background: transparent;
+    border: 1px solid currentColor;
+}
+
+@media print {
+    .no-print {
+        display: none !important;
+    }
+
+    .card {
+        border: 1px solid #dee2e6 !important;
+        box-shadow: none !important;
+    }
+
+    .page-break {
+        page-break-before: always;
+    }
+}
+
+/* Loading spinner for dynamic content */
+.loading-spinner {
+    display: inline-block;
+    width: 20px;
+    height: 20px;
+    border: 3px solid rgba(37, 99, 235, 0.3);
+    border-radius: 50%;
+    border-top-color: rgb(37, 99, 235);
+    animation: spin 1s ease-in-out infinite;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+</style>
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const frequencyField = document.getElementById('id_frequency');
+    const dayOfWeekField = document.getElementById('day-of-week-field');
+    const dayOfMonthField = document.getElementById('day-of-month-field');
+    const includeEfris = document.getElementById('id_include_efris');
+    const efrisFormatField = document.getElementById('efris-format-field');
+
+    function toggleScheduleFields() {
+        const frequency = frequencyField.value;
+
+        // Hide all fields first
+        dayOfWeekField.style.display = 'none';
+        dayOfMonthField.style.display = 'none';
+
+        // Show relevant fields based on frequency
+        if (frequency === 'WEEKLY') {
+            dayOfWeekField.style.display = 'block';
+        } else if (frequency === 'MONTHLY') {
+            dayOfMonthField.style.display = 'block';
+        }
+    }
+
+    function toggleEfrisField() {
+        if (includeEfris.checked) {
+            efrisFormatField.style.display = 'block';
+        } else {
+            efrisFormatField.style.display = 'none';
+        }
+    }
+
+    // Initial setup
+    toggleScheduleFields();
+    toggleEfrisField();
+
+    // Event listeners
+    frequencyField.addEventListener('change', toggleScheduleFields);
+    includeEfris.addEventListener('change', toggleEfrisField);
+});
+</script>
+{% endblock %}

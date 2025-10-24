@@ -1,0 +1,479 @@
+{% extends "efris/base.html" %}
+{% load static %}
+
+{% block extra_css %}
+<style>
+    .invoice-preview {
+        background: #f8f9fa;
+        border: 1px solid #dee2e6;
+        border-radius: 0.25rem;
+        padding: 1rem;
+        margin-bottom: 1rem;
+    }
+
+    .item-row {
+        background: #fff;
+        border: 1px solid #dee2e6;
+        padding: 0.75rem;
+        margin-bottom: 0.5rem;
+        border-radius: 0.25rem;
+    }
+
+    .credit-calculator {
+        background: #e7f3ff;
+        border: 2px solid #0d6efd;
+        border-radius: 0.25rem;
+        padding: 1rem;
+        margin-top: 1rem;
+    }
+</style>
+{% endblock %}
+
+{% block efris_content %}
+<div class="efris-card">
+    <div class="card-body">
+        <h5 class="card-title">
+            <i class="fas fa-undo"></i> Apply Credit Note
+        </h5>
+
+        <div class="alert alert-info">
+            <i class="fas fa-info-circle"></i>
+            <strong>Credit Note Application:</strong> This process allows you to issue a credit note for
+            an existing invoice. You can credit the entire invoice or specific items.
+        </div>
+
+        <form method="post" id="creditNoteForm">
+            {% csrf_token %}
+
+            <!-- Step 1: Select Original Invoice -->
+            <div class="mb-4">
+                <h6 class="text-primary">
+                    <i class="fas fa-file-invoice"></i> Step 1: Select Original Invoice
+                </h6>
+                <hr>
+
+                <div class="row">
+                    <div class="col-md-8">
+                        <div class="mb-3">
+                            <label for="original_invoice_no" class="form-label">
+                                Original Invoice Number *
+                            </label>
+                            <div class="input-group">
+                                <input type="text" class="form-control" id="original_invoice_no"
+                                       name="original_invoice_no" required
+                                       placeholder="Enter invoice number">
+                                <button type="button" class="btn btn-primary" id="fetchInvoiceBtn">
+                                    <i class="fas fa-search"></i> Fetch Invoice
+                                </button>
+                            </div>
+                            <small class="form-text text-muted">
+                                Leave empty for credit note without original FDN
+                            </small>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Invoice Preview (hidden until fetched) -->
+                <div id="invoicePreview" class="invoice-preview" style="display: none;">
+                    <h6><i class="fas fa-file-invoice-dollar"></i> Invoice Details</h6>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <p><strong>Invoice No:</strong> <span id="previewInvoiceNo"></span></p>
+                            <p><strong>Buyer:</strong> <span id="previewBuyer"></span></p>
+                        </div>
+                        <div class="col-md-6">
+                            <p><strong>Currency:</strong> <span id="previewCurrency"></span></p>
+                            <p><strong>Gross Amount:</strong> <span id="previewGrossAmount"></span></p>
+                        </div>
+                    </div>
+
+                    <div id="invoiceItems"></div>
+                </div>
+            </div>
+
+            <!-- Step 2: Select Credit Type -->
+            <div class="mb-4">
+                <h6 class="text-primary">
+                    <i class="fas fa-check-double"></i> Step 2: Select Credit Type
+                </h6>
+                <hr>
+
+                <div class="mb-3">
+                    <div class="form-check form-check-inline">
+                        <input class="form-check-input" type="radio" name="credit_type"
+                               id="creditTypeFull" value="full" checked>
+                        <label class="form-check-label" for="creditTypeFull">
+                            <strong>Full Credit</strong> - Credit entire invoice
+                        </label>
+                    </div>
+                    <div class="form-check form-check-inline">
+                        <input class="form-check-input" type="radio" name="credit_type"
+                               id="creditTypePartial" value="partial">
+                        <label class="form-check-label" for="creditTypePartial">
+                            <strong>Partial Credit</strong> - Credit specific items
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Partial Credit Items (hidden until selected) -->
+                <div id="partialCreditSection" style="display: none;">
+                    <div class="alert alert-warning">
+                        <i class="fas fa-exclamation-triangle"></i>
+                        Enter negative quantities for items you want to credit.
+                    </div>
+                    <div id="partialItemsList"></div>
+                </div>
+            </div>
+
+            <!-- Step 3: Reason for Credit Note -->
+            <div class="mb-4">
+                <h6 class="text-primary">
+                    <i class="fas fa-comment-alt"></i> Step 3: Reason for Credit Note
+                </h6>
+                <hr>
+
+                <div class="mb-3">
+                    <label for="reason_code" class="form-label">Reason Code *</label>
+                    <select class="form-select" id="reason_code" name="reason_code" required>
+                        <option value="">Select reason</option>
+                        {% for code, description in reason_codes %}
+                        <option value="{{ code }}">{{ code }} - {{ description }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div class="mb-3" id="reasonTextDiv" style="display: none;">
+                    <label for="reason" class="form-label">Reason Details *</label>
+                    <textarea class="form-control" id="reason" name="reason"
+                              rows="3" maxlength="1024"
+                              placeholder="Please specify the reason (required for 'Others')"></textarea>
+                    <small class="form-text text-muted">Maximum 1024 characters</small>
+                </div>
+            </div>
+
+            <!-- Step 4: Contact Information -->
+            <div class="mb-4">
+                <h6 class="text-primary">
+                    <i class="fas fa-address-card"></i> Step 4: Contact Information
+                </h6>
+                <hr>
+
+                <div class="row">
+                    <div class="col-md-4">
+                        <div class="mb-3">
+                            <label for="contact_name" class="form-label">Contact Name</label>
+                            <input type="text" class="form-control" id="contact_name"
+                                   name="contact_name" maxlength="200">
+                        </div>
+                    </div>
+
+                    <div class="col-md-4">
+                        <div class="mb-3">
+                            <label for="contact_mobile" class="form-label">Mobile Number</label>
+                            <input type="tel" class="form-control" id="contact_mobile"
+                                   name="contact_mobile" maxlength="30">
+                        </div>
+                    </div>
+
+                    <div class="col-md-4">
+                        <div class="mb-3">
+                            <label for="contact_email" class="form-label">Email</label>
+                            <input type="email" class="form-control" id="contact_email"
+                                   name="contact_email" maxlength="50">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Step 5: Additional Information -->
+            <div class="mb-4">
+                <h6 class="text-primary">
+                    <i class="fas fa-sticky-note"></i> Step 5: Additional Information
+                </h6>
+                <hr>
+
+                <div class="mb-3">
+                    <label for="remarks" class="form-label">Remarks</label>
+                    <textarea class="form-control" id="remarks" name="remarks"
+                              rows="3" maxlength="500"></textarea>
+                    <small class="form-text text-muted">Maximum 500 characters</small>
+                </div>
+            </div>
+
+            <!-- Credit Note Summary -->
+            <div class="credit-calculator" id="creditSummary" style="display: none;">
+                <h6><i class="fas fa-calculator"></i> Credit Note Summary</h6>
+                <div class="row">
+                    <div class="col-md-4">
+                        <p><strong>Net Amount:</strong> <span id="summaryNetAmount">0.00</span></p>
+                    </div>
+                    <div class="col-md-4">
+                        <p><strong>Tax Amount:</strong> <span id="summaryTaxAmount">0.00</span></p>
+                    </div>
+                    <div class="col-md-4">
+                        <p><strong>Gross Amount:</strong> <span id="summaryGrossAmount" class="text-danger fs-5">0.00</span></p>
+                    </div>
+                </div>
+                <small class="text-muted">
+                    <i class="fas fa-info-circle"></i> Amounts are negative for credit notes
+                </small>
+            </div>
+
+            <input type="hidden" name="item_count" id="item_count" value="0">
+
+            <!-- Submit Buttons -->
+            <div class="mt-4">
+                <button type="submit" class="btn btn-primary btn-lg" id="submitBtn" disabled>
+                    <i class="fas fa-paper-plane"></i> Submit Credit Note Application
+                </button>
+                <a href="{% url 'efris:credit_note_applications' %}" class="btn btn-secondary btn-lg">
+                    <i class="fas fa-times"></i> Cancel
+                </a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+let invoiceData = null;
+let itemsData = [];
+
+// Fetch invoice details
+document.getElementById('fetchInvoiceBtn').addEventListener('click', function() {
+    const invoiceNo = document.getElementById('original_invoice_no').value.trim();
+
+    if (!invoiceNo) {
+        alert('Please enter an invoice number');
+        return;
+    }
+
+    this.disabled = true;
+    this.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Fetching...';
+
+    fetch('{% url "efris:api_get_invoice_for_credit_note" %}', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': '{{ csrf_token }}'
+        },
+        body: JSON.stringify({ invoice_no: invoiceNo })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            invoiceData = data.invoice;
+            itemsData = data.invoice.items;
+            displayInvoicePreview(data.invoice);
+            document.getElementById('submitBtn').disabled = false;
+        } else {
+            alert('Failed to fetch invoice: ' + data.error);
+        }
+    })
+    .catch(error => {
+        alert('Error: ' + error);
+    })
+    .finally(() => {
+        this.disabled = false;
+        this.innerHTML = '<i class="fas fa-search"></i> Fetch Invoice';
+    });
+});
+
+function displayInvoicePreview(invoice) {
+    // Show preview section
+    document.getElementById('invoicePreview').style.display = 'block';
+
+    // Fill preview data
+    document.getElementById('previewInvoiceNo').textContent = invoice.invoiceNo;
+    document.getElementById('previewBuyer').textContent = invoice.buyer || 'N/A';
+    document.getElementById('previewCurrency').textContent = invoice.currency;
+    document.getElementById('previewGrossAmount').textContent = invoice.grossAmount;
+
+    // Display items
+    const itemsContainer = document.getElementById('invoiceItems');
+    itemsContainer.innerHTML = '<h6 class="mt-3">Invoice Items:</h6>';
+
+    invoice.items.forEach((item, index) => {
+        const itemDiv = document.createElement('div');
+        itemDiv.className = 'item-row';
+        itemDiv.innerHTML = `
+            <div class="row">
+                <div class="col-md-4">
+                    <strong>${item.item}</strong><br>
+                    <small class="text-muted">Code: ${item.itemCode}</small>
+                </div>
+                <div class="col-md-2">
+                    Qty: ${item.qty}<br>
+                    <small class="text-muted">Remain: ${item.remainQty || item.qty}</small>
+                </div>
+                <div class="col-md-2">
+                    Unit Price: ${item.unitPrice}
+                </div>
+                <div class="col-md-2">
+                    Total: ${item.total}
+                </div>
+                <div class="col-md-2">
+                    <small class="text-muted">Remain: ${item.remainAmount || item.total}</small>
+                </div>
+            </div>
+        `;
+        itemsContainer.appendChild(itemDiv);
+    });
+
+    // Build partial items list
+    buildPartialItemsList(invoice.items);
+
+    // Show credit summary
+    updateCreditSummary();
+}
+
+function buildPartialItemsList(items) {
+    const container = document.getElementById('partialItemsList');
+    container.innerHTML = '';
+
+    items.forEach((item, index) => {
+        const itemDiv = document.createElement('div');
+        itemDiv.className = 'item-row';
+        itemDiv.innerHTML = `
+            <div class="row align-items-center">
+                <div class="col-md-5">
+                    <strong>${item.item}</strong><br>
+                    <small class="text-muted">Available: ${item.remainQty || item.qty}</small>
+                    <input type="hidden" name="item_name_${index}" value="${item.item}">
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">Credit Quantity</label>
+                    <input type="number" step="0.01" class="form-control credit-qty-input"
+                           name="item_qty_${index}" data-index="${index}"
+                           placeholder="Enter negative qty" max="0">
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">Credit Amount</label>
+                    <input type="text" class="form-control" id="item_amount_${index}"
+                           readonly value="0.00">
+                </div>
+            </div>
+        `;
+        container.appendChild(itemDiv);
+    });
+
+    document.getElementById('item_count').value = items.length;
+
+    // Add event listeners for quantity inputs
+    document.querySelectorAll('.credit-qty-input').forEach(input => {
+        input.addEventListener('input', function() {
+            const index = this.dataset.index;
+            const qty = parseFloat(this.value) || 0;
+            const unitPrice = parseFloat(itemsData[index].unitPrice) || 0;
+            const amount = qty * unitPrice;
+
+            document.getElementById(`item_amount_${index}`).value = amount.toFixed(2);
+
+            updateCreditSummary();
+        });
+    });
+}
+
+function updateCreditSummary() {
+    const creditType = document.querySelector('input[name="credit_type"]:checked').value;
+
+    let totalNet = 0;
+    let totalTax = 0;
+    let totalGross = 0;
+
+    if (creditType === 'full' && invoiceData) {
+        // Full credit - negate entire invoice amount
+        totalGross = -Math.abs(parseFloat(invoiceData.grossAmount) || 0);
+        // Estimate tax as 18% of gross
+        totalTax = totalGross * 0.18 / 1.18;
+        totalNet = totalGross - totalTax;
+    } else if (creditType === 'partial') {
+        // Partial credit - sum up selected items
+        document.querySelectorAll('.credit-qty-input').forEach(input => {
+            const index = input.dataset.index;
+            const qty = parseFloat(input.value) || 0;
+            const unitPrice = parseFloat(itemsData[index].unitPrice) || 0;
+            const amount = qty * unitPrice;
+
+            totalGross += amount;
+        });
+
+        // Estimate tax
+        totalTax = totalGross * 0.18 / 1.18;
+        totalNet = totalGross - totalTax;
+    }
+
+    // Display summary
+    if (totalGross !== 0) {
+        document.getElementById('creditSummary').style.display = 'block';
+        document.getElementById('summaryNetAmount').textContent = totalNet.toFixed(2);
+        document.getElementById('summaryTaxAmount').textContent = totalTax.toFixed(2);
+        document.getElementById('summaryGrossAmount').textContent = totalGross.toFixed(2);
+    }
+}
+
+// Toggle credit type
+document.querySelectorAll('input[name="credit_type"]').forEach(radio => {
+    radio.addEventListener('change', function() {
+        if (this.value === 'partial') {
+            document.getElementById('partialCreditSection').style.display = 'block';
+        } else {
+            document.getElementById('partialCreditSection').style.display = 'none';
+        }
+        updateCreditSummary();
+    });
+});
+
+// Toggle reason text field
+document.getElementById('reason_code').addEventListener('change', function() {
+    const reasonTextDiv = document.getElementById('reasonTextDiv');
+    const reasonField = document.getElementById('reason');
+
+    if (this.value === '105') {
+        reasonTextDiv.style.display = 'block';
+        reasonField.required = true;
+    } else {
+        reasonTextDiv.style.display = 'none';
+        reasonField.required = false;
+        reasonField.value = '';
+    }
+});
+
+// Form validation before submit
+document.getElementById('creditNoteForm').addEventListener('submit', function(e) {
+    if (!invoiceData) {
+        e.preventDefault();
+        alert('Please fetch the original invoice first');
+        return false;
+    }
+
+    const creditType = document.querySelector('input[name="credit_type"]:checked').value;
+
+    if (creditType === 'partial') {
+        // Check if at least one item has a credit quantity
+        let hasItems = false;
+        document.querySelectorAll('.credit-qty-input').forEach(input => {
+            if (parseFloat(input.value) < 0) {
+                hasItems = true;
+            }
+        });
+
+        if (!hasItems) {
+            e.preventDefault();
+            alert('Please enter at least one negative quantity for partial credit');
+            return false;
+        }
+    }
+
+    // Confirm submission
+    const confirmMsg = `Are you sure you want to submit this credit note application?\n\n` +
+                      `Invoice: ${invoiceData.invoiceNo}\n` +
+                      `Type: ${creditType === 'full' ? 'Full Credit' : 'Partial Credit'}\n` +
+                      `Gross Amount: ${document.getElementById('summaryGrossAmount').textContent}`;
+
+    if (!confirm(confirmMsg)) {
+        e.preventDefault();
+        return false;
+    }
+});
+</script>
+{% endblock %}

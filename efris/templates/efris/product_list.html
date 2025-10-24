@@ -1,0 +1,244 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}EFRIS Products{% endblock %}
+
+{% block breadcrumb_items %}
+<li class="breadcrumb-item"><a href="{% url 'user_dashboard' %}">Home</a></li>
+<li class="breadcrumb-item"><a href="{% url 'efris:dashboard' %}">EFRIS</a></li>
+<li class="breadcrumb-item active">Products</li>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- Page Header -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h1 class="h2 mb-1">EFRIS Products</h1>
+            <p class="text-muted mb-0">Manage product uploads to EFRIS</p>
+        </div>
+        <div>
+            <a href="{% url 'efris:upload_products' %}" class="btn btn-primary">
+                <i class="bi bi-cloud-upload"></i> Bulk Upload
+            </a>
+        </div>
+    </div>
+
+    <!-- Filters -->
+    <div class="card mb-4">
+        <div class="card-body">
+            <form method="GET" action="{% url 'efris:product_list' %}" class="row g-3">
+                <div class="col-md-5">
+                    <input type="text" class="form-control" name="search"
+                           placeholder="Search by name or SKU..." value="{{ search }}">
+                </div>
+                <div class="col-md-3">
+                    <select name="status" class="form-select">
+                        <option value="all" {% if status == 'all' %}selected{% endif %}>All Products</option>
+                        <option value="uploaded" {% if status == 'uploaded' %}selected{% endif %}>Uploaded</option>
+                        <option value="pending" {% if status == 'pending' %}selected{% endif %}>Not Uploaded</option>
+                    </select>
+                </div>
+                <div class="col-md-4">
+                    <button type="submit" class="btn btn-primary me-2">
+                        <i class="bi bi-search"></i> Search
+                    </button>
+                    <a href="{% url 'efris:product_list' %}" class="btn btn-outline-secondary">
+                        <i class="bi bi-x-circle"></i> Clear
+                    </a>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Products Table -->
+    <div class="card">
+        <div class="card-header">
+            <h5 class="mb-0"><i class="bi bi-box-seam me-2"></i>Products ({{ products.paginator.count }})</h5>
+        </div>
+        <div class="card-body">
+            {% if products %}
+            <div class="table-responsive">
+                <table class="table table-hover">
+                    <thead>
+                        <tr>
+                            <th>Product</th>
+                            <th>SKU</th>
+                            <th>Category</th>
+                            <th>Price</th>
+                            <th>EFRIS Status</th>
+                            <th>Upload Date</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for product in products %}
+                        <tr>
+                            <td>
+                                <strong>{{ product.name }}</strong>
+                            </td>
+                            <td><code>{{ product.sku }}</code></td>
+                            <td>{{ product.category|default:"-" }}</td>
+                            <td>{{ product.price|floatformat:2 }}</td>
+                            <td>
+                                {% if product.efris_is_uploaded %}
+                                <span class="badge bg-success">
+                                    <i class="bi bi-check-circle"></i> Uploaded
+                                </span>
+                                {% else %}
+                                <span class="badge bg-warning">
+                                    <i class="bi bi-clock"></i> Pending
+                                </span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if product.efris_upload_date %}
+                                {{ product.efris_upload_date|date:"M d, Y" }}
+                                {% else %}
+                                -
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if not product.efris_is_uploaded %}
+                                <form method="POST" action="{% url 'efris:product_upload' product.id %}" class="d-inline">
+                                    {% csrf_token %}
+                                    <button type="submit" class="btn btn-sm btn-primary"
+                                            onclick="return confirm('Upload this product to EFRIS?')">
+                                        <i class="bi bi-cloud-upload"></i> Upload
+                                    </button>
+                                </form>
+                                {% else %}
+                                <button type="button" class="btn btn-sm btn-outline-info view-status-btn"
+                                        data-product-id="{{ product.id }}">
+                                    <i class="bi bi-info-circle"></i> View Status
+                                </button>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Pagination -->
+            {% if products.has_other_pages %}
+            <nav aria-label="Product pagination">
+                <ul class="pagination justify-content-center mt-3">
+                    {% if products.has_previous %}
+                    <li class="page-item">
+                        <a class="page-link" href="?page={{ products.previous_page_number }}{% if search %}&search={{ search }}{% endif %}{% if status %}&status={{ status }}{% endif %}">
+                            Previous
+                        </a>
+                    </li>
+                    {% endif %}
+
+                    {% for num in products.paginator.page_range %}
+                        {% if products.number == num %}
+                        <li class="page-item active"><span class="page-link">{{ num }}</span></li>
+                        {% elif num > products.number|add:'-3' and num < products.number|add:'3' %}
+                        <li class="page-item">
+                            <a class="page-link" href="?page={{ num }}{% if search %}&search={{ search }}{% endif %}{% if status %}&status={{ status }}{% endif %}">
+                                {{ num }}
+                            </a>
+                        </li>
+                        {% endif %}
+                    {% endfor %}
+
+                    {% if products.has_next %}
+                    <li class="page-item">
+                        <a class="page-link" href="?page={{ products.next_page_number }}{% if search %}&search={{ search }}{% endif %}{% if status %}&status={{ status }}{% endif %}">
+                            Next
+                        </a>
+                    </li>
+                    {% endif %}
+                </ul>
+            </nav>
+            {% endif %}
+
+            {% else %}
+            <div class="text-center py-5">
+                <i class="bi bi-inbox" style="font-size: 3rem; color: var(--gray-400);"></i>
+                <p class="text-muted mt-3">No products found</p>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<!-- Product Status Modal -->
+<div class="modal fade" id="productStatusModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Product EFRIS Status</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="productStatusContent">
+                <div class="text-center">
+                    <div class="spinner-border" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const statusBtns = document.querySelectorAll('.view-status-btn');
+
+    statusBtns.forEach(btn => {
+        btn.addEventListener('click', function() {
+            const productId = this.dataset.productId;
+            const modal = new bootstrap.Modal(document.getElementById('productStatusModal'));
+            const content = document.getElementById('productStatusContent');
+
+            modal.show();
+            content.innerHTML = '<div class="text-center"><div class="spinner-border"></div></div>';
+
+            fetch(`/efris/ajax/product/${productId}/status/`)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        const product = data.product;
+                        content.innerHTML = `
+                            <div class="mb-3">
+                                <label class="fw-bold">Product Name:</label>
+                                <p>${product.name}</p>
+                            </div>
+                            <div class="mb-3">
+                                <label class="fw-bold">SKU:</label>
+                                <p><code>${product.sku}</code></p>
+                            </div>
+                            <div class="mb-3">
+                                <label class="fw-bold">EFRIS Status:</label>
+                                <p>
+                                    ${product.efris_is_uploaded ?
+                                        '<span class="badge bg-success">Uploaded</span>' :
+                                        '<span class="badge bg-warning">Not Uploaded</span>'}
+                                </p>
+                            </div>
+                            ${product.efris_upload_date ? `
+                            <div class="mb-3">
+                                <label class="fw-bold">Upload Date:</label>
+                                <p>${new Date(product.efris_upload_date).toLocaleString()}</p>
+                            </div>` : ''}
+                            ${product.efris_goods_id ? `
+                            <div class="mb-3">
+                                <label class="fw-bold">EFRIS Goods ID:</label>
+                                <p><code>${product.efris_goods_id}</code></p>
+                            </div>` : ''}
+                        `;
+                    } else {
+                        content.innerHTML = '<div class="alert alert-danger">Failed to load product status</div>';
+                    }
+                })
+                .catch(error => {
+                    content.innerHTML = '<div class="alert alert-danger">Error: ' + error.message + '</div>';
+                });
+        });
+    });
+});
+</script>
+{% endblock %}

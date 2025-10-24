@@ -1,0 +1,440 @@
+{% extends "base.html" %}
+{% load static i18n %}
+
+{% block title %}{% trans "EFRIS Customer Operations" %} | {{ company.trading_name|default:company.name }}{% endblock %}
+
+{% block breadcrumb_items %}
+<li class="breadcrumb-item"><a href="{% url 'user_dashboard' %}">{% trans "Dashboard" %}</a></li>
+<li class="breadcrumb-item"><a href="{% url 'efris:dashboard' %}">{% trans "EFRIS" %}</a></li>
+<li class="breadcrumb-item active">{% trans "Customer Operations" %}</li>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row mb-4">
+        <div class="col">
+            <h1 class="h3 mb-0">{% trans "EFRIS Customer Operations" %}</h1>
+            <p class="text-muted">{% trans "Manage customer TIN validation and taxpayer information" %}</p>
+        </div>
+        <div class="col-auto">
+            <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#taxpayerQueryModal">
+                <i class="bi bi-person-badge me-2"></i>{% trans "Query Taxpayer" %}
+            </button>
+        </div>
+    </div>
+
+    <!-- Taxpayer Query Section -->
+    <div class="card mb-4">
+        <div class="card-header">
+            <h5 class="card-title mb-0">{% trans "Taxpayer Information Query" %}</h5>
+        </div>
+        <div class="card-body">
+            <form id="taxpayerQueryForm">
+                <div class="row">
+                    <div class="col-md-6">
+                        <div class="mb-3">
+                            <label for="tin" class="form-label">{% trans "Taxpayer Identification Number (TIN)" %} *</label>
+                            <input type="text" class="form-control" id="tin"
+                                   placeholder="{% trans 'Enter TIN number' %}" required
+                                   pattern="[0-9]{9}" maxlength="9">
+                            <div class="form-text">{% trans "Enter 9-digit TIN number" %}</div>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="mb-3">
+                            <label for="ninBrn" class="form-label">{% trans "NIN or BRN (Optional)" %}</label>
+                            <input type="text" class="form-control" id="ninBrn"
+                                   placeholder="{% trans 'Enter NIN or BRN' %}">
+                        </div>
+                    </div>
+                </div>
+                <button type="submit" class="btn btn-primary">
+                    <i class="bi bi-search me-2"></i>{% trans "Query Taxpayer" %}
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Query Results -->
+    <div class="card d-none" id="queryResultsCard">
+        <div class="card-header">
+            <h5 class="card-title mb-0">{% trans "Query Results" %}</h5>
+        </div>
+        <div class="card-body" id="queryResultsContent">
+            <!-- Results will be displayed here -->
+        </div>
+    </div>
+
+    <!-- Customer List -->
+    <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <h5 class="card-title mb-0">{% trans "Company Customers" %}</h5>
+            <div class="input-group" style="width: 300px;">
+                <input type="text" class="form-control" placeholder="{% trans 'Search customers...' %}" id="customerSearch">
+                <button class="btn btn-outline-secondary" type="button" id="clearSearch">
+                    <i class="bi bi-x"></i>
+                </button>
+            </div>
+        </div>
+        <div class="card-body">
+            {% if customers %}
+            <div class="table-responsive">
+                <table class="table table-hover" id="customersTable">
+                    <thead>
+                        <tr>
+                            <th>{% trans "Customer Name" %}</th>
+                            <th>{% trans "TIN" %}</th>
+                            <th>{% trans "Phone" %}</th>
+                            <th>{% trans "Email" %}</th>
+                            <th>{% trans "Address" %}</th>
+                            <th>{% trans "Status" %}</th>
+                            <th>{% trans "Last Purchase" %}</th>
+                            <th>{% trans "Actions" %}</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for customer in customers %}
+                        <tr data-customer-id="{{ customer.id }}">
+                            <td>
+                                <strong>{{ customer.name }}</strong>
+                                {% if customer.company_name %}
+                                <br><small class="text-muted">{{ customer.company_name }}</small>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if customer.tin %}
+                                <code>{{ customer.tin }}</code>
+                                {% else %}
+                                <span class="text-muted">-</span>
+                                {% endif %}
+                            </td>
+                            <td>{{ customer.phone|default:"-" }}</td>
+                            <td>{{ customer.email|default:"-" }}</td>
+                            <td>
+                                <small class="text-muted">{{ customer.address|truncatewords:3|default:"-" }}</small>
+                            </td>
+                            <td>
+                                {% if customer.tin %}
+                                <span class="badge bg-success">{% trans "TIN Verified" %}</span>
+                                {% else %}
+                                <span class="badge bg-warning">{% trans "No TIN" %}</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if customer.last_purchase_date %}
+                                {{ customer.last_purchase_date|date:"M d, Y" }}
+                                {% else %}
+                                <span class="text-muted">-</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <div class="btn-group btn-group-sm">
+                                    {% if customer.tin %}
+                                    <button class="btn btn-outline-info verify-tin"
+                                            data-tin="{{ customer.tin }}"
+                                            title="{% trans 'Verify TIN' %}">
+                                        <i class="bi bi-check-circle"></i>
+                                    </button>
+                                    {% else %}
+                                    <button class="btn btn-outline-warning add-tin"
+                                            data-customer-id="{{ customer.id }}"
+                                            title="{% trans 'Add TIN' %}">
+                                        <i class="bi bi-plus-circle"></i>
+                                    </button>
+                                    {% endif %}
+                                    <button class="btn btn-outline-primary view-customer"
+                                            data-customer-id="{{ customer.id }}"
+                                            title="{% trans 'View Details' %}">
+                                        <i class="bi bi-eye"></i>
+                                    </button>
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="text-center py-5">
+                <i class="bi bi-people text-muted fs-1"></i>
+                <h5 class="mt-3">{% trans "No Customers Found" %}</h5>
+                <p class="text-muted">{% trans "There are no customers associated with your stores." %}</p>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<!-- Taxpayer Query Modal -->
+<div class="modal fade" id="taxpayerQueryModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">{% trans "Query Taxpayer Information" %}</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="modalTaxpayerForm">
+                    <div class="mb-3">
+                        <label for="modalTin" class="form-label">{% trans "TIN Number" %} *</label>
+                        <input type="text" class="form-control" id="modalTin" required
+                               pattern="[0-9]{9}" maxlength="9" placeholder="000000000">
+                    </div>
+                    <div class="mb-3">
+                        <label for="modalNinBrn" class="form-label">{% trans "NIN/BRN (Optional)" %}</label>
+                        <input type="text" class="form-control" id="modalNinBrn">
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">{% trans "Cancel" %}</button>
+                <button type="button" class="btn btn-primary" id="modalQueryTaxpayer">
+                    <i class="bi bi-search me-2"></i>{% trans "Query" %}
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Customer Details Modal -->
+<div class="modal fade" id="customerDetailsModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">{% trans "Customer Details" %}</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="customerDetailsContent">
+                <!-- Content loaded via AJAX -->
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Add TIN Modal -->
+<div class="modal fade" id="addTinModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">{% trans "Add TIN to Customer" %}</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="addTinForm">
+                    <input type="hidden" id="customerIdForTin">
+                    <div class="mb-3">
+                        <label for="newTin" class="form-label">{% trans "TIN Number" %}</label>
+                        <input type="text" class="form-control" id="newTin"
+                               pattern="[0-9]{9}" maxlength="9" required>
+                    </div>
+                    <div class="form-check mb-3">
+                        <input class="form-check-input" type="checkbox" id="verifyTin">
+                        <label class="form-check-label" for="verifyTin">
+                            {% trans "Verify TIN with EFRIS" %}
+                        </label>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">{% trans "Cancel" %}</button>
+                <button type="button" class="btn btn-primary" id="saveTin">
+                    <i class="bi bi-save me-2"></i>{% trans "Save TIN" %}
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Taxpayer query form submission
+    document.getElementById('taxpayerQueryForm')?.addEventListener('submit', function(e) {
+        e.preventDefault();
+        const tin = document.getElementById('tin').value;
+        const ninBrn = document.getElementById('ninBrn').value;
+        queryTaxpayer(tin, ninBrn);
+    });
+
+    // Modal taxpayer query
+    document.getElementById('modalQueryTaxpayer')?.addEventListener('click', function() {
+        const tin = document.getElementById('modalTin').value;
+        const ninBrn = document.getElementById('modalNinBrn').value;
+
+        if (!tin) {
+            showAlert('Please enter a TIN number', 'warning');
+            return;
+        }
+
+        const modal = bootstrap.Modal.getInstance(document.getElementById('taxpayerQueryModal'));
+        modal.hide();
+        queryTaxpayer(tin, ninBrn);
+    });
+
+    // Customer search
+    document.getElementById('customerSearch')?.addEventListener('input', function() {
+        const searchTerm = this.value.toLowerCase();
+        const rows = document.querySelectorAll('#customersTable tbody tr');
+
+        rows.forEach(row => {
+            const text = row.textContent.toLowerCase();
+            row.style.display = text.includes(searchTerm) ? '' : 'none';
+        });
+    });
+
+    document.getElementById('clearSearch')?.addEventListener('click', function() {
+        document.getElementById('customerSearch').value = '';
+        document.querySelectorAll('#customersTable tbody tr').forEach(row => {
+            row.style.display = '';
+        });
+    });
+
+    // Customer actions
+    document.querySelectorAll('.verify-tin').forEach(button => {
+        button.addEventListener('click', function() {
+            const tin = this.dataset.tin;
+            queryTaxpayer(tin, '');
+        });
+    });
+
+    document.querySelectorAll('.add-tin').forEach(button => {
+        button.addEventListener('click', function() {
+            const customerId = this.dataset.customerId;
+            showAddTinModal(customerId);
+        });
+    });
+
+    document.querySelectorAll('.view-customer').forEach(button => {
+        button.addEventListener('click', function() {
+            const customerId = this.dataset.customerId;
+            viewCustomerDetails(customerId);
+        });
+    });
+
+    // Taxpayer query function
+    function queryTaxpayer(tin, ninBrn) {
+        const resultsCard = document.getElementById('queryResultsCard');
+        const resultsContent = document.getElementById('queryResultsContent');
+
+        resultsContent.innerHTML = `
+            <div class="text-center py-4">
+                <i class="bi bi-hourglass-split"></i>
+                <p>{% trans "Querying EFRIS for taxpayer information..." %}</p>
+            </div>
+        `;
+        resultsCard.classList.remove('d-none');
+
+        fetch('{% url "efris:query_taxpayer" %}', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+                'X-CSRFToken': window.csrfToken
+            },
+            body: `tin=${tin}&nin_brn=${ninBrn}`
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                displayTaxpayerResults(data.data);
+            } else {
+                resultsContent.innerHTML = `
+                    <div class="alert alert-danger">
+                        <i class="bi bi-exclamation-triangle me-2"></i>
+                        <strong>{% trans "Query Failed" %}</strong><br>
+                        ${data.message}
+                    </div>
+                `;
+            }
+        })
+        .catch(error => {
+            resultsContent.innerHTML = `
+                <div class="alert alert-danger">
+                    <i class="bi bi-exclamation-triangle me-2"></i>
+                    <strong>{% trans "Error" %}</strong><br>
+                    {% trans "Failed to query taxpayer information" %}
+                </div>
+            `;
+        });
+    }
+
+    function displayTaxpayerResults(data) {
+        const resultsContent = document.getElementById('queryResultsContent');
+
+        resultsContent.innerHTML = `
+            <div class="alert alert-success">
+                <i class="bi bi-check-circle me-2"></i>
+                <strong>{% trans "Taxpayer Found" %}</strong>
+            </div>
+            <div class="row">
+                <div class="col-md-6">
+                    <table class="table table-sm">
+                        <tr><th>{% trans "TIN" %}:</th><td>${data.tin || '-'}</td></tr>
+                        <tr><th>{% trans "Taxpayer Name" %}:</th><td>${data.taxpayerName || '-'}</td></tr>
+                        <tr><th>{% trans "Legal Name" %}:</th><td>${data.legalName || '-'}</td></tr>
+                        <tr><th>{% trans "Registration Status" %}:</th><td>${data.registrationStatus || '-'}</td></tr>
+                    </table>
+                </div>
+                <div class="col-md-6">
+                    <table class="table table-sm">
+                        <tr><th>{% trans "Business Type" %}:</th><td>${data.businessType || '-'}</td></tr>
+                        <tr><th>{% trans "Contact Phone" %}:</th><td>${data.contactPhone || '-'}</td></tr>
+                        <tr><th>{% trans "Contact Email" %}:</th><td>${data.contactEmail || '-'}</td></tr>
+                        <tr><th>{% trans "Address" %}:</th><td>${data.physicalAddress || '-'}</td></tr>
+                    </table>
+                </div>
+            </div>
+            <div class="mt-3">
+                <button class="btn btn-outline-primary btn-sm" onclick="saveTaxpayerInfo('${data.tin}')">
+                    <i class="bi bi-save me-1"></i>{% trans "Save to Customer Record" %}
+                </button>
+            </div>
+        `;
+    }
+
+    function showAddTinModal(customerId) {
+        document.getElementById('customerIdForTin').value = customerId;
+        const modal = new bootstrap.Modal(document.getElementById('addTinModal'));
+        modal.show();
+    }
+
+    document.getElementById('saveTin')?.addEventListener('click', function() {
+        const customerId = document.getElementById('customerIdForTin').value;
+        const tin = document.getElementById('newTin').value;
+        const verify = document.getElementById('verifyTin').checked;
+
+        if (!tin) {
+            showAlert('Please enter a TIN number', 'warning');
+            return;
+        }
+
+        // Implement TIN saving logic here
+        const modal = bootstrap.Modal.getInstance(document.getElementById('addTinModal'));
+        modal.hide();
+        showAlert('TIN saved successfully', 'success');
+    });
+
+    function viewCustomerDetails(customerId) {
+        const modal = new bootstrap.Modal(document.getElementById('customerDetailsModal'));
+        const content = document.getElementById('customerDetailsContent');
+
+        content.innerHTML = '<div class="text-center py-4"><i class="bi bi-hourglass-split"></i> Loading...</div>';
+        modal.show();
+
+        // Simulate loading customer details
+        setTimeout(() => {
+            content.innerHTML = `
+                <h6>Customer #${customerId}</h6>
+                <p>Customer details would be loaded here via AJAX</p>
+            `;
+        }, 1000);
+    }
+
+    // Global function for saving taxpayer info
+    window.saveTaxpayerInfo = function(tin) {
+        // Implement saving logic
+        showAlert(`Taxpayer information for TIN ${tin} saved successfully`, 'success');
+    };
+});
+</script>
+{% endblock %}

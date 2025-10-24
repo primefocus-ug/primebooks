@@ -1,0 +1,177 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Bulk Stock Sync{% endblock %}
+
+{% block breadcrumb_items %}
+<li class="breadcrumb-item"><a href="{% url 'user_dashboard' %}">Home</a></li>
+<li class="breadcrumb-item"><a href="{% url 'efris:dashboard' %}">EFRIS</a></li>
+<li class="breadcrumb-item"><a href="{% url 'efris:stock_management_dashboard' %}">Stock Management</a></li>
+<li class="breadcrumb-item active">Bulk Sync</li>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h1 class="h2 mb-1">Bulk Stock Synchronization</h1>
+            <p class="text-muted mb-0">Synchronize multiple stock records to EFRIS</p>
+        </div>
+        <a href="{% url 'efris:stock_management_dashboard' %}" class="btn btn-outline-secondary">
+            <i class="bi bi-arrow-left"></i> Back
+        </a>
+    </div>
+
+    {% if stocks_needing_sync %}
+    <!-- Filter Options -->
+    <div class="card mb-4">
+        <div class="card-header">
+            <h5 class="mb-0"><i class="bi bi-funnel me-2"></i>Filter Options</h5>
+        </div>
+        <div class="card-body">
+            <form method="POST" action="{% url 'efris:bulk_stock_sync' %}" id="bulkSyncForm">
+                {% csrf_token %}
+
+                <div class="row mb-3">
+                    <div class="col-md-6">
+                        <label for="store_id" class="form-label">Filter by Store (Optional)</label>
+                        <select class="form-select" id="store_id" name="store_id">
+                            <option value="">All Stores</option>
+                            {% for store in stores %}
+                            <option value="{{ store.id }}">{{ store.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-6 d-flex align-items-end">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="selectAllCheckbox">
+                            <label class="form-check-label" for="selectAllCheckbox">
+                                Select All Products
+                            </label>
+                        </div>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Stocks Table -->
+    <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <h5 class="mb-0">
+                <i class="bi bi-list-check me-2"></i>
+                Stocks Needing Sync (<span id="selectedCount">0</span> selected)
+            </h5>
+            <button type="button" class="btn btn-success" id="syncSelectedBtn" disabled>
+                <i class="bi bi-arrow-repeat"></i> Sync Selected
+            </button>
+        </div>
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-hover">
+                    <thead>
+                        <tr>
+                            <th width="50">
+                                <input type="checkbox" class="form-check-input" id="selectAllTable">
+                            </th>
+                            <th>Product</th>
+                            <th>SKU</th>
+                            <th>Store</th>
+                            <th>Current Qty</th>
+                            <th>Unit</th>
+                            <th>Last Updated</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for stock in stocks_needing_sync %}
+                        <tr>
+                            <td>
+                                <input type="checkbox" class="form-check-input stock-checkbox"
+                                       name="product_ids" value="{{ stock.product.id }}"
+                                       form="bulkSyncForm">
+                            </td>
+                            <td>{{ stock.product.name }}</td>
+                            <td><code>{{ stock.product.sku }}</code></td>
+                            <td>{{ stock.store.name }}</td>
+                            <td><strong>{{ stock.quantity }}</strong></td>
+                            <td>{{ stock.product.unit_of_measure }}</td>
+                            <td>{{ stock.updated_at|date:"M d, Y H:i" }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    {% else %}
+    <div class="card">
+        <div class="card-body text-center py-5">
+            <i class="bi bi-check-circle text-success" style="font-size: 4rem;"></i>
+            <h3 class="mt-3">All Stocks Synchronized!</h3>
+            <p class="text-muted">There are no stocks that need synchronization with EFRIS.</p>
+            <a href="{% url 'efris:stock_management_dashboard' %}" class="btn btn-primary mt-3">
+                <i class="bi bi-arrow-left"></i> Back to Dashboard
+            </a>
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const form = document.getElementById('bulkSyncForm');
+    const selectAllCheckbox = document.getElementById('selectAllCheckbox');
+    const selectAllTable = document.getElementById('selectAllTable');
+    const stockCheckboxes = document.querySelectorAll('.stock-checkbox');
+    const selectedCount = document.getElementById('selectedCount');
+    const syncBtn = document.getElementById('syncSelectedBtn');
+
+    function updateSelectedCount() {
+        const count = document.querySelectorAll('.stock-checkbox:checked').length;
+        selectedCount.textContent = count;
+        syncBtn.disabled = count === 0;
+    }
+
+    selectAllCheckbox.addEventListener('change', function() {
+        stockCheckboxes.forEach(cb => cb.checked = this.checked);
+        selectAllTable.checked = this.checked;
+        updateSelectedCount();
+    });
+
+    selectAllTable.addEventListener('change', function() {
+        stockCheckboxes.forEach(cb => cb.checked = this.checked);
+        selectAllCheckbox.checked = this.checked;
+        updateSelectedCount();
+    });
+
+    stockCheckboxes.forEach(cb => {
+        cb.addEventListener('change', function() {
+            const allChecked = Array.from(stockCheckboxes).every(cb => cb.checked);
+            selectAllCheckbox.checked = allChecked;
+            selectAllTable.checked = allChecked;
+            updateSelectedCount();
+        });
+    });
+
+    syncBtn.addEventListener('click', function() {
+        const count = document.querySelectorAll('.stock-checkbox:checked').length;
+
+        if (count === 0) {
+            alert('Please select at least one product to sync');
+            return;
+        }
+
+        if (!confirm(`Sync ${count} stock record(s) to EFRIS? This may take a few moments.`)) {
+            return;
+        }
+
+        syncBtn.disabled = true;
+        syncBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Syncing...';
+
+        form.submit();
+    });
+
+    updateSelectedCount();
+});
+</script>
+{% endblock %}

@@ -1,0 +1,1189 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Bulk Role Assignment - {{ block.super }} {{ company.trading_name|default:company.name }}{% endblock %}
+
+{% block breadcrumb %}
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb mb-0">
+        {% if perms.accounts.view_customuser %}
+        <li class="breadcrumb-item"><a href="{% url 'user_dashboard' %}">Dashboard</a></li>
+        {% endif %}
+        {% if perms.auth.view_group %}
+        <li class="breadcrumb-item"><a href="{% url 'role_list' %}">Roles</a></li>
+        {% endif %}
+        <li class="breadcrumb-item active">Bulk Assignment</li>
+    </ol>
+</nav>
+{% endblock %}
+
+{% block page_header %}
+<div class="page-header">
+    <div class="header-content">
+        <div class="header-text">
+            <h1>Bulk Role Assignment</h1>
+            <p class="header-subtitle">Assign or remove roles from multiple users efficiently</p>
+        </div>
+        <div class="header-actions">
+            {% if perms.auth.view_group %}
+            <a href="{% url 'role_list' %}" class="btn btn-outline-secondary">
+                <i class="bi bi-arrow-left me-2"></i>Back to Roles
+            </a>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<!-- Help Banner -->
+<div class="help-banner">
+    <div class="help-icon">
+        <i class="bi bi-info-circle"></i>
+    </div>
+    <div class="help-content">
+        <strong>Bulk Assignment Help:</strong> Select multiple users and choose an action to efficiently manage role assignments.
+        You can add roles, remove roles, or replace all existing roles with a new one.
+    </div>
+    <button type="button" class="help-close" onclick="this.parentElement.style.display='none'">
+        <i class="bi bi-x"></i>
+    </button>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="bulk-assignment-container">
+    <div class="main-content-area">
+        <!-- Main Form -->
+        <div class="assignment-form-card">
+            <div class="card-header">
+                <div class="card-title">
+                    <i class="bi bi-people-fill"></i>
+                    <span>Bulk Assignment Form</span>
+                </div>
+            </div>
+
+            <div class="card-body">
+                <form method="post" id="bulkAssignmentForm">
+                    {% csrf_token %}
+
+                    <!-- Step 1: Select Action -->
+                    <div class="step-section">
+                        <div class="step-header">
+                            <span class="step-number">1</span>
+                            <h3 class="step-title">Choose Action</h3>
+                        </div>
+
+                        <div class="action-cards-grid">
+                            {% for choice in form.action %}
+                            <div class="action-card" data-action="{{ choice.choice_value }}">
+                                {{ choice.tag }}
+                                <div class="action-content">
+                                    {% if choice.choice_value == 'add' %}
+                                    <div class="action-icon add">
+                                        <i class="bi bi-plus-circle"></i>
+                                    </div>
+                                    <h4 class="action-title">Add Role</h4>
+                                    <p class="action-description">Add selected role to users (keeps existing roles)</p>
+                                    {% elif choice.choice_value == 'remove' %}
+                                    <div class="action-icon remove">
+                                        <i class="bi bi-dash-circle"></i>
+                                    </div>
+                                    <h4 class="action-title">Remove Role</h4>
+                                    <p class="action-description">Remove selected role from users</p>
+                                    {% elif choice.choice_value == 'replace' %}
+                                    <div class="action-icon replace">
+                                        <i class="bi bi-arrow-repeat"></i>
+                                    </div>
+                                    <h4 class="action-title">Replace Roles</h4>
+                                    <p class="action-description">Remove all roles and assign only this role</p>
+                                    {% endif %}
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+
+                    <!-- Step 2: Select Role -->
+                    <div class="step-section">
+                        <div class="step-header">
+                            <span class="step-number">2</span>
+                            <h3 class="step-title">Select Role</h3>
+                        </div>
+
+                        <div class="role-selection-area">
+                            <div class="role-select-container">
+                                <label for="{{ form.role.id_for_label }}" class="form-label">{{ form.role.label }}</label>
+                                {{ form.role }}
+                                {% if form.role.help_text %}
+                                <div class="form-help">{{ form.role.help_text }}</div>
+                                {% endif %}
+                            </div>
+
+                            <div class="role-preview" id="rolePreview">
+                                <div class="preview-header">
+                                    <i class="bi bi-eye me-2"></i>
+                                    Role Preview
+                                </div>
+                                <div id="roleInfo" class="preview-content">
+                                    Select a role to see details
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Step 3: Select Users -->
+                    <div class="step-section">
+                        <div class="step-header">
+                            <span class="step-number">3</span>
+                            <h3 class="step-title">Select Users</h3>
+                        </div>
+
+                        <!-- User Selection Tools -->
+                        <div class="user-tools">
+                            <div class="search-container">
+                                <div class="search-input-group">
+                                    <i class="bi bi-search search-icon"></i>
+                                    <input type="text" class="search-input" id="userSearch" placeholder="Search users...">
+                                </div>
+                            </div>
+
+                            <div class="selection-buttons">
+                                <button type="button" class="btn btn-outline-primary btn-sm" id="selectAllUsers">
+                                    <i class="bi bi-check-all me-1"></i>Select All
+                                </button>
+                                <button type="button" class="btn btn-outline-secondary btn-sm" id="clearAllUsers">
+                                    <i class="bi bi-x me-1"></i>Clear All
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Users List -->
+                        <div class="users-container">
+                            <div class="users-list" id="usersList">
+                                {% for choice in form.users %}
+                                <div class="user-item">
+                                    <div class="user-checkbox-container">
+                                        {{ choice.tag }}
+                                        <label class="user-label" for="{{ choice.id_for_label }}">
+                                            <div class="user-avatar">
+                                                <i class="bi bi-person"></i>
+                                            </div>
+                                            <div class="user-info">
+                                                <div class="user-name">{{ choice.choice_label }}</div>
+                                                <div class="user-status">Active User</div>
+                                            </div>
+                                        </label>
+                                    </div>
+                                </div>
+                                {% endfor %}
+                            </div>
+                        </div>
+
+                        <div class="selection-counter">
+                            <i class="bi bi-people me-2"></i>
+                            <span id="selectedUserCount">0</span> users selected
+                        </div>
+                    </div>
+
+                    <!-- Form Actions -->
+                    <div class="form-actions">
+                        <button type="button" class="btn btn-outline-secondary" onclick="history.back()">
+                            <i class="bi bi-x-lg me-2"></i>Cancel
+                        </button>
+                        <button type="submit" class="btn btn-primary" id="submitBtn" disabled>
+                            <i class="bi bi-check-lg me-2"></i>Apply Changes
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="sidebar-area">
+        <!-- Summary Panel -->
+        <div class="summary-card">
+            <div class="card-header">
+                <div class="card-title">
+                    <i class="bi bi-clipboard-check"></i>
+                    <span>Assignment Summary</span>
+                </div>
+            </div>
+
+            <div class="card-body">
+                <div class="summary-stats">
+                    <div class="stat-item">
+                        <div class="stat-value" id="summaryUsers">0</div>
+                        <div class="stat-label">Users</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-value" id="summaryAction">-</div>
+                        <div class="stat-label">Action</div>
+                    </div>
+                </div>
+
+                <div class="summary-section">
+                    <h4 class="section-title">Selected Role</h4>
+                    <div id="summaryRole" class="section-content">No role selected</div>
+                </div>
+
+                <div class="summary-section">
+                    <h4 class="section-title">Impact Preview</h4>
+                    <div id="impactPreview" class="section-content">
+                        Select users and a role to see the impact
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tips Panel -->
+        <div class="tips-card">
+            <div class="card-header">
+                <div class="card-title">
+                    <i class="bi bi-lightbulb"></i>
+                    <span>Tips & Best Practices</span>
+                </div>
+            </div>
+
+            <div class="card-body">
+                <div class="tips-list">
+                    <div class="tip-item">
+                        <div class="tip-icon success">
+                            <i class="bi bi-check-circle"></i>
+                        </div>
+                        <div class="tip-content">
+                            <strong>Add Role:</strong> Best for granting additional permissions
+                        </div>
+                    </div>
+
+                    <div class="tip-item">
+                        <div class="tip-icon warning">
+                            <i class="bi bi-dash-circle"></i>
+                        </div>
+                        <div class="tip-content">
+                            <strong>Remove Role:</strong> Use to revoke specific permissions
+                        </div>
+                    </div>
+
+                    <div class="tip-item">
+                        <div class="tip-icon info">
+                            <i class="bi bi-arrow-repeat"></i>
+                        </div>
+                        <div class="tip-content">
+                            <strong>Replace Roles:</strong> Use with caution - removes ALL existing roles
+                        </div>
+                    </div>
+
+                    <div class="tip-item">
+                        <div class="tip-icon primary">
+                            <i class="bi bi-shield-check"></i>
+                        </div>
+                        <div class="tip-content">
+                            Test with a few users first before bulk operations
+                        </div>
+                    </div>
+
+                    <div class="tip-item">
+                        <div class="tip-icon secondary">
+                            <i class="bi bi-clock-history"></i>
+                        </div>
+                        <div class="tip-content">
+                            All changes are logged in the role history
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+    /* ===========================================
+       BULK ASSIGNMENT PROFESSIONAL STYLES
+       =========================================== */
+
+    .page-header {
+        margin-bottom: 2rem;
+    }
+
+    .header-content {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+    .header-text h1 {
+        font-size: 1.875rem;
+        font-weight: 700;
+        color: var(--text-primary);
+        margin-bottom: 0.5rem;
+    }
+
+    .header-subtitle {
+        color: var(--text-secondary);
+        font-size: 1rem;
+        margin: 0;
+    }
+
+    .header-actions .btn {
+        border-radius: var(--border-radius-sm);
+        font-weight: 500;
+    }
+
+    /* Help Banner */
+    .help-banner {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+        background: var(--primary-50);
+        border: 1px solid var(--primary-200);
+        border-radius: var(--border-radius);
+        padding: 1rem 1.5rem;
+        margin-bottom: 2rem;
+        position: relative;
+    }
+
+    .help-icon {
+        color: var(--primary-600);
+        font-size: 1.25rem;
+        flex-shrink: 0;
+    }
+
+    .help-content {
+        flex: 1;
+        color: var(--primary-700);
+        line-height: 1.5;
+    }
+
+    .help-close {
+        background: none;
+        border: none;
+        color: var(--primary-600);
+        font-size: 1.125rem;
+        cursor: pointer;
+        padding: 0.25rem;
+        border-radius: 50%;
+        transition: all 0.3s ease;
+        flex-shrink: 0;
+    }
+
+    .help-close:hover {
+        background: var(--primary-100);
+        color: var(--primary-700);
+    }
+
+    /* Layout Container */
+    .bulk-assignment-container {
+        display: grid;
+        grid-template-columns: 1fr 350px;
+        gap: 2rem;
+        max-width: 1400px;
+    }
+
+    /* Cards */
+    .assignment-form-card,
+    .summary-card,
+    .tips-card {
+        background: var(--bg-primary);
+        border: 1px solid var(--border-color);
+        border-radius: var(--border-radius);
+        box-shadow: var(--shadow-sm);
+        transition: all 0.3s ease;
+    }
+
+    .card-header {
+        padding: 1.5rem;
+        border-bottom: 1px solid var(--border-color);
+        background: var(--bg-tertiary);
+        border-radius: var(--border-radius) var(--border-radius) 0 0;
+    }
+
+    .card-title {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        font-size: 1.125rem;
+        font-weight: 600;
+        color: var(--text-primary);
+        margin: 0;
+    }
+
+    .card-body {
+        padding: 2rem;
+    }
+
+    /* Step Sections */
+    .step-section {
+        margin-bottom: 2.5rem;
+        padding-bottom: 2rem;
+        border-bottom: 1px solid var(--border-color-light);
+    }
+
+    .step-section:last-child {
+        border-bottom: none;
+        margin-bottom: 0;
+    }
+
+    .step-header {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+        margin-bottom: 1.5rem;
+    }
+
+    .step-number {
+        width: 32px;
+        height: 32px;
+        background: var(--primary-500);
+        color: white;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 600;
+        font-size: 0.875rem;
+    }
+
+    .step-title {
+        font-size: 1.25rem;
+        font-weight: 600;
+        color: var(--text-primary);
+        margin: 0;
+    }
+
+    /* Action Cards */
+    .action-cards-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+        gap: 1.5rem;
+    }
+
+    .action-card {
+        position: relative;
+        background: var(--bg-secondary);
+        border: 2px solid var(--border-color);
+        border-radius: var(--border-radius);
+        padding: 1.5rem;
+        cursor: pointer;
+        transition: all 0.3s ease;
+    }
+
+    .action-card:hover {
+        transform: translateY(-4px);
+        box-shadow: var(--shadow-lg);
+        border-color: var(--primary-300);
+    }
+
+    .action-card.selected {
+        border-color: var(--primary-500);
+        background: var(--primary-50);
+        transform: translateY(-2px);
+        box-shadow: var(--shadow-md);
+    }
+
+    .action-card input[type="radio"] {
+        position: absolute;
+        opacity: 0;
+        width: 0;
+        height: 0;
+    }
+
+    .action-content {
+        text-align: center;
+    }
+
+    .action-icon {
+        width: 64px;
+        height: 64px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin: 0 auto 1rem;
+        font-size: 1.75rem;
+    }
+
+    .action-icon.add {
+        background: rgba(16, 185, 129, 0.1);
+        color: var(--green-600);
+    }
+
+    .action-icon.remove {
+        background: rgba(245, 158, 11, 0.1);
+        color: var(--amber-600);
+    }
+
+    .action-icon.replace {
+        background: rgba(59, 130, 246, 0.1);
+        color: var(--primary-600);
+    }
+
+    .action-title {
+        font-size: 1.125rem;
+        font-weight: 600;
+        color: var(--text-primary);
+        margin-bottom: 0.5rem;
+    }
+
+    .action-description {
+        font-size: 0.875rem;
+        color: var(--text-secondary);
+        line-height: 1.4;
+        margin: 0;
+    }
+
+    /* Role Selection */
+    .role-selection-area {
+        display: grid;
+        grid-template-columns: 1fr 300px;
+        gap: 2rem;
+        align-items: start;
+    }
+
+    .role-select-container .form-label {
+        font-weight: 500;
+        color: var(--text-primary);
+        margin-bottom: 0.5rem;
+    }
+
+    .role-select-container select {
+        width: 100%;
+        padding: 0.75rem;
+        border: 1px solid var(--border-color);
+        border-radius: var(--border-radius-sm);
+        background: var(--bg-primary);
+        color: var(--text-primary);
+        font-size: 0.95rem;
+        transition: all 0.3s ease;
+    }
+
+    .role-select-container select:focus {
+        outline: none;
+        border-color: var(--primary-500);
+        box-shadow: 0 0 0 0.2rem rgba(59, 130, 246, 0.25);
+    }
+
+    .form-help {
+        font-size: 0.85rem;
+        color: var(--text-muted);
+        margin-top: 0.5rem;
+    }
+
+    .role-preview {
+        background: var(--bg-secondary);
+        border: 1px solid var(--border-color);
+        border-radius: var(--border-radius);
+        padding: 1rem;
+        min-height: 120px;
+    }
+
+    .preview-header {
+        font-weight: 600;
+        color: var(--text-primary);
+        margin-bottom: 0.75rem;
+        display: flex;
+        align-items: center;
+    }
+
+    .preview-content {
+        color: var(--text-secondary);
+        font-size: 0.9rem;
+        line-height: 1.5;
+    }
+
+    /* User Selection */
+    .user-tools {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 1.5rem;
+        gap: 1rem;
+    }
+
+    .search-container {
+        flex: 1;
+        max-width: 400px;
+    }
+
+    .search-input-group {
+        position: relative;
+    }
+
+    .search-icon {
+        position: absolute;
+        left: 1rem;
+        top: 50%;
+        transform: translateY(-50%);
+        color: var(--text-muted);
+        font-size: 0.875rem;
+    }
+
+    .search-input {
+        width: 100%;
+        padding: 0.75rem 0.75rem 0.75rem 2.5rem;
+        border: 1px solid var(--border-color);
+        border-radius: var(--border-radius-sm);
+        background: var(--bg-primary);
+        color: var(--text-primary);
+        font-size: 0.95rem;
+        transition: all 0.3s ease;
+    }
+
+    .search-input:focus {
+        outline: none;
+        border-color: var(--primary-500);
+        box-shadow: 0 0 0 0.2rem rgba(59, 130, 246, 0.25);
+    }
+
+    .search-input::placeholder {
+        color: var(--text-muted);
+    }
+
+    .selection-buttons {
+        display: flex;
+        gap: 0.5rem;
+    }
+
+    .users-container {
+        background: var(--bg-secondary);
+        border: 1px solid var(--border-color);
+        border-radius: var(--border-radius);
+        max-height: 400px;
+        overflow-y: auto;
+    }
+
+    .users-list {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    }
+
+    .user-item {
+        border-bottom: 1px solid var(--border-color-light);
+        transition: all 0.3s ease;
+    }
+
+    .user-item:hover {
+        background: var(--primary-50);
+    }
+
+    .user-checkbox-container {
+        padding: 1rem;
+    }
+
+    .user-checkbox-container input[type="checkbox"] {
+        margin-right: 0.75rem;
+        transform: scale(1.1);
+    }
+
+    .user-label {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        cursor: pointer;
+        margin: 0;
+        width: 100%;
+    }
+
+    .user-avatar {
+        width: 40px;
+        height: 40px;
+        background: var(--gray-300);
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: var(--text-secondary);
+        font-size: 1.125rem;
+    }
+
+    .user-info {
+        flex: 1;
+    }
+
+    .user-name {
+        font-weight: 500;
+        color: var(--text-primary);
+        font-size: 0.95rem;
+    }
+
+    .user-status {
+        font-size: 0.825rem;
+        color: var(--text-muted);
+        margin-top: 0.125rem;
+    }
+
+    .selection-counter {
+        padding: 1rem;
+        color: var(--text-muted);
+        font-size: 0.9rem;
+        display: flex;
+        align-items: center;
+        background: var(--bg-tertiary);
+        border-top: 1px solid var(--border-color-light);
+        border-radius: 0 0 var(--border-radius) var(--border-radius);
+    }
+
+    /* Form Actions */
+    .form-actions {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding-top: 2rem;
+        border-top: 1px solid var(--border-color-light);
+        gap: 1rem;
+    }
+
+    /* Sidebar Components */
+    .sidebar-area {
+        display: flex;
+        flex-direction: column;
+        gap: 1.5rem;
+    }
+
+    .summary-stats {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 1rem;
+        margin-bottom: 1.5rem;
+    }
+
+    .stat-item {
+        text-align: center;
+        padding: 1rem;
+        background: var(--bg-secondary);
+        border: 1px solid var(--border-color);
+        border-radius: var(--border-radius-sm);
+    }
+
+    .stat-value {
+        font-size: 1.75rem;
+        font-weight: 700;
+        color: var(--primary-600);
+        margin-bottom: 0.25rem;
+    }
+
+    .stat-label {
+        font-size: 0.85rem;
+        color: var(--text-muted);
+        text-transform: uppercase;
+        letter-spacing: 0.025em;
+    }
+
+    .summary-section {
+        margin-bottom: 1.5rem;
+    }
+
+    .summary-section:last-child {
+        margin-bottom: 0;
+    }
+
+    .section-title {
+        font-size: 0.95rem;
+        font-weight: 600;
+        color: var(--text-primary);
+        margin-bottom: 0.5rem;
+    }
+
+    .section-content {
+        color: var(--text-secondary);
+        font-size: 0.9rem;
+        line-height: 1.5;
+    }
+
+    /* Tips */
+    .tips-list {
+        display: flex;
+        flex-direction: column;
+        gap: 1rem;
+    }
+
+    .tip-item {
+        display: flex;
+        align-items: flex-start;
+        gap: 0.75rem;
+    }
+
+    .tip-icon {
+        width: 24px;
+        height: 24px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 0.875rem;
+        flex-shrink: 0;
+        margin-top: 0.125rem;
+    }
+
+    .tip-icon.success {
+        background: rgba(16, 185, 129, 0.1);
+        color: var(--green-600);
+    }
+
+    .tip-icon.warning {
+        background: rgba(245, 158, 11, 0.1);
+        color: var(--amber-600);
+    }
+
+    .tip-icon.info {
+        background: rgba(59, 130, 246, 0.1);
+        color: var(--primary-600);
+    }
+
+    .tip-icon.primary {
+        background: var(--primary-50);
+        color: var(--primary-600);
+    }
+
+    .tip-icon.secondary {
+        background: var(--gray-100);
+        color: var(--gray-600);
+    }
+
+    .tip-content {
+        flex: 1;
+        font-size: 0.875rem;
+        line-height: 1.5;
+        color: var(--text-secondary);
+    }
+
+    /* Dark Theme Specific Overrides */
+    [data-theme="dark"] .help-banner {
+        background: rgba(59, 130, 246, 0.1);
+        border-color: rgba(59, 130, 246, 0.2);
+    }
+
+    [data-theme="dark"] .help-content {
+        color: var(--primary-400);
+    }
+
+    [data-theme="dark"] .help-close:hover {
+        background: rgba(59, 130, 246, 0.15);
+    }
+
+    [data-theme="dark"] .action-card.selected {
+        background: rgba(59, 130, 246, 0.1);
+        border-color: var(--primary-500);
+    }
+
+    [data-theme="dark"] .user-item:hover {
+        background: rgba(59, 130, 246, 0.05);
+    }
+
+    [data-theme="dark"] .user-avatar {
+        background: var(--gray-700);
+        color: var(--text-muted);
+    }
+
+    [data-theme="dark"] .tip-icon.success {
+        background: rgba(16, 185, 129, 0.15);
+        color: var(--green-500);
+    }
+
+    [data-theme="dark"] .tip-icon.warning {
+        background: rgba(245, 158, 11, 0.15);
+        color: var(--amber-500);
+    }
+
+    [data-theme="dark"] .tip-icon.info {
+        background: rgba(59, 130, 246, 0.15);
+        color: var(--primary-500);
+    }
+
+    [data-theme="dark"] .tip-icon.primary {
+        background: rgba(59, 130, 246, 0.1);
+    }
+
+    [data-theme="dark"] .tip-icon.secondary {
+        background: var(--gray-800);
+        color: var(--gray-400);
+    }
+
+    /* Responsive Design */
+    @media (max-width: 1200px) {
+        .bulk-assignment-container {
+            grid-template-columns: 1fr;
+            gap: 1.5rem;
+        }
+
+        .sidebar-area {
+            order: -1;
+        }
+
+        .role-selection-area {
+            grid-template-columns: 1fr;
+            gap: 1rem;
+        }
+    }
+
+    @media (max-width: 768px) {        .header-content {
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 1rem;
+        }
+
+        .user-tools {
+            flex-direction: column;
+            align-items: stretch;
+        }
+
+        .selection-buttons {
+            justify-content: flex-end;
+        }
+
+        .users-list {
+            grid-template-columns: 1fr;
+        }
+    }
+
+    @media (max-width: 576px) {
+        .card-body {
+            padding: 1.25rem;
+        }
+
+        .step-header {
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 0.5rem;
+        }
+
+        .step-title {
+            font-size: 1.125rem;
+        }
+
+        .form-actions {
+            flex-direction: column-reverse;
+            align-items: stretch;
+        }
+    }
+</style>
+{% endblock %}
+
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const form = document.getElementById('bulkAssignmentForm');
+    const submitBtn = document.getElementById('submitBtn');
+    const roleSelect = document.querySelector('#id_role');
+    const actionCards = document.querySelectorAll('.action-card');
+    const userCheckboxes = document.querySelectorAll('input[name="users"]');
+    const actionRadios = document.querySelectorAll('input[name="action"]');
+
+    // Summary elements
+    const summaryUsers = document.getElementById('summaryUsers');
+    const summaryAction = document.getElementById('summaryAction');
+    const summaryRole = document.getElementById('summaryRole');
+    const impactPreview = document.getElementById('impactPreview');
+    const selectedUserCount = document.getElementById('selectedUserCount');
+
+    // Search elements
+    const userSearch = document.getElementById('userSearch');
+    const userItems = document.querySelectorAll('.user-item');
+
+    // Utility: debounce (better search performance)
+    function debounce(fn, delay = 300) {
+        let timeout;
+        return (...args) => {
+            clearTimeout(timeout);
+            timeout = setTimeout(() => fn.apply(this, args), delay);
+        };
+    }
+
+    // --- UI Updates ---
+    function updateActionCards() {
+        const selectedAction = document.querySelector('input[name="action"]:checked');
+        actionCards.forEach(card => {
+            card.classList.toggle('selected', selectedAction && card.dataset.action === selectedAction.value);
+        });
+    }
+
+    function updateSummary() {
+        const selectedUsers = document.querySelectorAll('input[name="users"]:checked').length;
+        const selectedAction = document.querySelector('input[name="action"]:checked');
+        const selectedRole = roleSelect.options[roleSelect.selectedIndex];
+
+        // Update counters
+        summaryUsers.textContent = selectedUsers;
+        selectedUserCount.textContent = selectedUsers;
+
+        // Update action text
+        summaryAction.textContent = selectedAction ? selectedAction.value : '-';
+
+        // Update role
+        summaryRole.textContent = selectedRole && selectedRole.value ? selectedRole.text : 'No role selected';
+
+        // Impact preview
+        if (selectedUsers && selectedAction && selectedRole.value) {
+            let impactText = '';
+            switch (selectedAction.value) {
+                case 'add':
+                    impactText = `${selectedUsers} users will gain the "${selectedRole.text}" role.`;
+                    break;
+                case 'remove':
+                    impactText = `${selectedUsers} users will lose the "${selectedRole.text}" role.`;
+                    break;
+                case 'replace':
+                    impactText = `${selectedUsers} users will have ALL roles replaced with "${selectedRole.text}".`;
+                    break;
+            }
+            impactPreview.innerHTML = `<i class="bi bi-info-circle text-info me-1"></i>${impactText}`;
+        } else {
+            impactPreview.textContent = 'Select users and a role to see the impact';
+        }
+
+        submitBtn.disabled = !(selectedUsers && selectedAction && selectedRole.value);
+    }
+
+    // --- Event Listeners ---
+    actionCards.forEach(card => {
+        card.addEventListener('click', function () {
+            const actionValue = this.dataset.action;
+            const radio = document.querySelector(`input[name="action"][value="${actionValue}"]`);
+            if (radio) {
+                radio.checked = true;
+                updateActionCards();
+                updateSummary();
+            }
+        });
+    });
+
+    // Debounced user search
+    userSearch.addEventListener('input', debounce(function () {
+        const searchTerm = this.value.toLowerCase();
+        userItems.forEach(item => {
+            const text = item.querySelector('.form-check-label').textContent.toLowerCase();
+            item.style.display = text.includes(searchTerm) ? 'block' : 'none';
+        });
+    }));
+
+    // Select all users
+    document.getElementById('selectAllUsers').addEventListener('click', () => {
+        userCheckboxes.forEach(cb => {
+            if (cb.closest('.user-item').style.display !== 'none') cb.checked = true;
+        });
+        updateSummary();
+    });
+
+    // Clear all users
+    document.getElementById('clearAllUsers').addEventListener('click', () => {
+        userCheckboxes.forEach(cb => cb.checked = false);
+        updateSummary();
+    });
+
+    // Role preview
+    roleSelect.addEventListener('change', function () {
+        const roleId = this.value;
+        const rolePreview = document.getElementById('rolePreview');
+        const roleInfo = document.getElementById('roleInfo');
+
+        if (!roleId) {
+            rolePreview.style.display = 'none';
+            updateSummary();
+            return;
+        }
+
+        fetch(`/accounts/roles/${roleId}/permissions/`)
+            .then(res => {
+                if (!res.ok) throw new Error(`HTTP error ${res.status}`);
+                return res.json();
+            })
+            .then(data => {
+                rolePreview.style.display = 'block';
+                roleInfo.innerHTML = `
+                    <div class="badge bg-primary me-2">${data.role_name}</div>
+                    <small class="text-muted">${data.total_permissions} permissions</small>
+                `;
+            })
+            .catch(() => {
+                rolePreview.style.display = 'block';
+                roleInfo.innerHTML = `<span class="text-danger">Failed to load role details.</span>`;
+            })
+            .finally(updateSummary);
+    });
+
+    // Checkbox & radio changes
+    userCheckboxes.forEach(cb => cb.addEventListener('change', updateSummary));
+    actionRadios.forEach(r => r.addEventListener('change', () => {
+        updateActionCards();
+        updateSummary();
+    }));
+
+    // --- Form Submission ---
+    form.addEventListener('submit', function (e) {
+        const selectedUsers = document.querySelectorAll('input[name="users"]:checked').length;
+        const selectedAction = document.querySelector('input[name="action"]:checked');
+        const selectedRole = roleSelect.options[roleSelect.selectedIndex];
+
+        if (!(selectedUsers && selectedAction && selectedRole.value)) {
+            e.preventDefault();
+            showAlert('Please complete all steps before submitting.', 'warning');
+            return;
+        }
+
+        // Custom confirmation for replace
+        if (selectedAction.value === 'replace') {
+            const confirmed = confirm(
+                `⚠ WARNING: This will remove ALL roles from ${selectedUsers} users and assign only "${selectedRole.text}". Proceed?`
+            );
+            if (!confirmed) {
+                e.preventDefault();
+                return;
+            }
+        }
+
+        // Final confirmation
+        const confirmed = confirm(
+            `Apply "${selectedAction.value}" action with role "${selectedRole.text}" to ${selectedUsers} users?`
+        );
+        if (!confirmed) e.preventDefault();
+    });
+
+    // Helper to show alerts dynamically
+    function showAlert(message, type = 'info') {
+        const alert = document.createElement('div');
+        alert.className = `alert alert-${type} alert-dismissible fade show mt-3`;
+        alert.role = 'alert';
+        alert.innerHTML = `
+            ${message}
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        `;
+        form.prepend(alert);
+        setTimeout(() => alert.remove(), 5000);
+    }
+
+    // Init
+    updateActionCards();
+    updateSummary();
+});
+    document.addEventListener("DOMContentLoaded", () => {
+    // Action card click
+    document.querySelectorAll(".action-card").forEach(card => {
+        card.addEventListener("click", () => {
+            document.querySelectorAll(".action-card").forEach(c => c.classList.remove("selected"));
+            card.classList.add("selected");
+            card.querySelector("input[type=radio]").checked = true;
+        });
+    });
+
+    // User selection counter
+    const updateCount = () => {
+        const checked = document.querySelectorAll("#usersList input[type=checkbox]:checked").length;
+        document.getElementById("selectedUserCount").textContent = checked;
+    };
+    document.querySelectorAll("#usersList input[type=checkbox]").forEach(cb => {
+        cb.addEventListener("change", updateCount);
+    });
+
+    // Select all / clear all
+    document.getElementById("selectAllUsers").addEventListener("click", () => {
+        document.querySelectorAll("#usersList input[type=checkbox]").forEach(cb => cb.checked = true);
+        updateCount();
+    });
+    document.getElementById("clearAllUsers").addEventListener("click", () => {
+        document.querySelectorAll("#usersList input[type=checkbox]").forEach(cb => cb.checked = false);
+        updateCount();
+    });
+});
+</script>
+{% endblock %}

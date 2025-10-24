@@ -1,0 +1,285 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Customer Dashboard |{{ company.trading_name|default:company.name }}|  {{ block.super }}{% endblock %}
+
+{% block page_header %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h1 class="h3 mb-0">Customer Dashboard</h1>
+        <p class="text-muted mb-0">Manage and track your customer base</p>
+    </div>
+    <div>
+        {% if perms.customers.add_customer %}
+        <a href="{% url 'customers:create' %}" class="btn btn-primary">
+            <i class="bi bi-plus-lg me-1"></i>Add Customer
+        </a>
+        {% endif %}
+        <a href="{% url 'customers:customer_import' %}" class="btn btn-outline-primary ms-2">
+            <i class="bi bi-upload me-1"></i>Import
+        </a>
+    </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<!-- Statistics Cards -->
+<div class="row mb-4">
+    <div class="col-xl-3 col-md-6 mb-3">
+        <div class="card border-0 shadow-sm">
+            <div class="card-body">
+                <div class="d-flex align-items-center">
+                    <div class="flex-shrink-0">
+                        <div class="bg-primary bg-gradient rounded-3 p-3">
+                            <i class="bi bi-people-fill text-white fs-4"></i>
+                        </div>
+                    </div>
+                    <div class="flex-grow-1 ms-3">
+                        <h6 class="card-title text-muted mb-1">Total Customers</h6>
+                        <h3 class="mb-0">{{ total_customers|default:0 }}</h3>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-xl-3 col-md-6 mb-3">
+        <div class="card border-0 shadow-sm">
+            <div class="card-body">
+                <div class="d-flex align-items-center">
+                    <div class="flex-shrink-0">
+                        <div class="bg-success bg-gradient rounded-3 p-3">
+                            <i class="bi bi-person-check-fill text-white fs-4"></i>
+                        </div>
+                    </div>
+                    <div class="flex-grow-1 ms-3">
+                        <h6 class="card-title text-muted mb-1">Active Customers</h6>
+                        <h3 class="mb-0">{{ active_customers|default:0 }}</h3>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-xl-3 col-md-6 mb-3">
+        <div class="card border-0 shadow-sm">
+            <div class="card-body">
+                <div class="d-flex align-items-center">
+                    <div class="flex-shrink-0">
+                        <div class="bg-info bg-gradient rounded-3 p-3">
+                            <i class="bi bi-building text-white fs-4"></i>
+                        </div>
+                    </div>
+                    <div class="flex-grow-1 ms-3">
+                        <h6 class="card-title text-muted mb-1">VAT Registered</h6>
+                        <h3 class="mb-0">{{ vat_customers|default:0 }}</h3>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-xl-3 col-md-6 mb-3">
+        <div class="card border-0 shadow-sm">
+            <div class="card-body">
+                <div class="d-flex align-items-center">
+                    <div class="flex-shrink-0">
+                        <div class="bg-warning bg-gradient rounded-3 p-3">
+                            <i class="bi bi-person-x-fill text-white fs-4"></i>
+                        </div>
+                    </div>
+                    <div class="flex-grow-1 ms-3">
+                        <h6 class="card-title text-muted mb-1">Inactive</h6>
+                        <h3 class="mb-0">{{ inactive_customers|default:0 }}</h3>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <!-- Customer Types Chart -->
+    <div class="col-lg-6 mb-4">
+        <div class="card border-0 shadow-sm">
+            <div class="card-header bg-transparent border-0">
+                <h5 class="card-title mb-0">Customer Types</h5>
+            </div>
+            <div class="card-body">
+                {% if customer_types %}
+                    <div class="list-group list-group-flush">
+                        {% for type_data in customer_types %}
+                        <div class="list-group-item border-0 px-0">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <span class="fw-medium">{{ type_data.customer_type }}</span>
+                                <span class="badge bg-primary rounded-pill">{{ type_data.count }}</span>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                {% else %}
+                    <div class="text-center py-4">
+                        <i class="bi bi-pie-chart text-muted fs-1"></i>
+                        <p class="text-muted mt-2">No customer data available</p>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Top Districts -->
+    <div class="col-lg-6 mb-4">
+        <div class="card border-0 shadow-sm">
+            <div class="card-header bg-transparent border-0">
+                <h5 class="card-title mb-0">Top Districts</h5>
+            </div>
+            <div class="card-body">
+                {% if districts %}
+                    <div class="list-group list-group-flush">
+                        {% for district in districts|slice:":5" %}
+                        <div class="list-group-item border-0 px-0">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <span class="fw-medium">{{ district.district|title }}</span>
+                                <span class="badge bg-secondary rounded-pill">{{ district.count }}</span>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                {% else %}
+                    <div class="text-center py-4">
+                        <i class="bi bi-geo-alt text-muted fs-1"></i>
+                        <p class="text-muted mt-2">No location data available</p>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <!-- Recent Customers -->
+    <div class="col-lg-8 mb-4">
+        <div class="card border-0 shadow-sm">
+            <div class="card-header bg-transparent border-0 d-flex justify-content-between align-items-center">
+                <h5 class="card-title mb-0">Recent Customers</h5>
+                {% if perms.customers.view_customer %}
+                <a href="{% url 'customers:list' %}" class="btn btn-outline-primary btn-sm">View All</a>
+                {% endif %}
+            </div>
+            <div class="card-body">
+                {% if recent_customers %}
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Name</th>
+                                    <th>Type</th>
+                                    <th>Contact</th>
+                                    <th>Created</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for customer in recent_customers %}
+                                <tr>
+                                    <td>
+                                        <div class="d-flex align-items-center">
+                                            <div class="avatar-sm bg-primary bg-gradient rounded-circle d-flex align-items-center justify-content-center me-2">
+                                                <span class="text-white fw-bold">{{ customer.name|first|upper }}</span>
+                                            </div>
+                                            <div>
+                                                <div class="fw-medium">{{ customer.name }}</div>
+                                                <small class="text-muted">ID: {{ customer.customer_id }}</small>
+                                            </div>
+                                        </div>
+                                    </td>
+                                    <td>
+                                        <span class="badge bg-light text-dark">{{ customer.get_customer_type_display }}</span>
+                                    </td>
+                                    <td>
+                                        <div>
+                                            {% if customer.phone %}
+                                                <div><i class="bi bi-telephone-fill text-muted me-1"></i>{{ customer.phone }}</div>
+                                            {% endif %}
+                                            {% if customer.email %}
+                                                <div><i class="bi bi-envelope-fill text-muted me-1"></i>{{ customer.email }}</div>
+                                            {% endif %}
+                                        </div>
+                                    </td>
+                                    <td>{{ customer.created_at|timesince }} ago</td>
+                                    <td>{% if perms.customers.view_customer %}
+                                        <a href="{% url 'customers:detail' customer.pk %}" class="btn btn-outline-primary btn-sm">
+                                            <i class="bi bi-eye"></i>
+                                        </a>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                {% else %}
+                    <div class="text-center py-4">
+                        <i class="bi bi-person-plus text-muted fs-1"></i>
+                        <p class="text-muted mt-2">No recent customers</p>
+                        {% if perms.customers.add_customer %}
+                        <a href="{% url 'customers:create' %}" class="btn btn-primary">Add First Customer</a>
+                        {% endif %}
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Customer Groups -->
+    <div class="col-lg-4 mb-4">
+        <div class="card border-0 shadow-sm">
+            <div class="card-header bg-transparent border-0 d-flex justify-content-between align-items-center">
+                <h5 class="card-title mb-0">Customer Groups</h5>
+                {% if perms.customers.add_customergroup %}
+                <a href="{% url 'customers:group_create' %}" class="btn btn-outline-primary btn-sm">
+                    <i class="bi bi-plus"></i>
+                </a>
+                {% endif %}
+            </div>
+            <div class="card-body">
+                {% if groups %}
+                    <div class="list-group list-group-flush">
+                        {% for group in groups|slice:":5" %}
+                        <div class="list-group-item border-0 px-0">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <div>
+                                    <div class="fw-medium">{{ group.name }}</div>
+                                    <small class="text-muted">{{ group.customer_count }} members</small>
+                                </div>
+                                {% if group.discount_percentage %}
+                                    <span class="badge bg-success">{{ group.discount_percentage }}% off</span>
+                                {% endif %}
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    <div class="text-center mt-3">
+                        {% if perms.customers.view_customergroup %}
+                        <a href="{% url 'customers:group_list' %}" class="btn btn-outline-secondary btn-sm">View All Groups</a>
+                        {% endif %}
+                    </div>
+                {% else %}
+                    <div class="text-center py-3">
+                        <i class="bi bi-collection text-muted fs-4"></i>
+                        <p class="text-muted mt-2 mb-0">No groups created</p>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.avatar-sm {
+    width: 40px;
+    height: 40px;
+    font-size: 0.875rem;
+}
+</style>
+{% endblock %}

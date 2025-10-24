@@ -1,0 +1,163 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}EFRIS Invoices{% endblock %}
+
+{% block breadcrumb_items %}
+<li class="breadcrumb-item"><a href="{% url 'user_dashboard' %}">Home</a></li>
+<li class="breadcrumb-item"><a href="{% url 'efris:dashboard' %}">EFRIS</a></li>
+<li class="breadcrumb-item active">Invoices</li>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h1 class="h2 mb-1">EFRIS Invoices</h1>
+            <p class="text-muted mb-0">Manage invoice fiscalization</p>
+        </div>
+    </div>
+
+    <!-- Filters -->
+    <div class="card mb-4">
+        <div class="card-body">
+            <form method="GET" action="{% url 'efris:invoice_list' %}" class="row g-3">
+                <div class="col-md-5">
+                    <input type="text" class="form-control" name="search"
+                           placeholder="Search by invoice number or customer..." value="{{ search }}">
+                </div>
+                <div class="col-md-3">
+                    <select name="status" class="form-select">
+                        <option value="all" {% if status == 'all' %}selected{% endif %}>All Invoices</option>
+                        <option value="fiscalized" {% if status == 'fiscalized' %}selected{% endif %}>Fiscalized</option>
+                        <option value="pending" {% if status == 'pending' %}selected{% endif %}>Pending</option>
+                    </select>
+                </div>
+                <div class="col-md-4">
+                    <button type="submit" class="btn btn-primary me-2">
+                        <i class="bi bi-search"></i> Search
+                    </button>
+                    <a href="{% url 'efris:invoice_list' %}" class="btn btn-outline-secondary">
+                        <i class="bi bi-x-circle"></i> Clear
+                    </a>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Invoices Table -->
+    <div class="card">
+        <div class="card-header">
+            <h5 class="mb-0"><i class="bi bi-receipt me-2"></i>Invoices ({{ invoices.paginator.count }})</h5>
+        </div>
+        <div class="card-body">
+            {% if invoices %}
+            <div class="table-responsive">
+                <table class="table table-hover">
+                    <thead>
+                        <tr>
+                            <th>Invoice #</th>
+                            <th>Customer</th>
+                            <th>Date</th>
+                            <th>Amount</th>
+                            <th>Status</th>
+                            <th>Fiscalization</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for invoice in invoices %}
+                        <tr>
+                            <td>
+                                <a href="{% url 'efris:invoice_detail' invoice.id %}" class="text-decoration-none">
+                                    <strong>{{ invoice.invoice_number }}</strong>
+                                </a>
+                            </td>
+                            <td>{{ invoice.customer.name|default:"-" }}</td>
+                            <td>{{ invoice.created_at|date:"M d, Y" }}</td>
+                            <td>{{ invoice.total_amount|floatformat:2 }}</td>
+                            <td>
+                                {% if invoice.status == 'paid' %}
+                                <span class="badge bg-success">Paid</span>
+                                {% elif invoice.status == 'draft' %}
+                                <span class="badge bg-secondary">Draft</span>
+                                {% else %}
+                                <span class="badge bg-warning">{{ invoice.status|title }}</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if invoice.is_fiscalized %}
+                                <span class="badge bg-success">
+                                    <i class="bi bi-check-circle"></i> Fiscalized
+                                </span>
+                                {% else %}
+                                <span class="badge bg-warning">
+                                    <i class="bi bi-clock"></i> Pending
+                                </span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if not invoice.is_fiscalized %}
+                                <form method="POST" action="{% url 'efris:invoice_fiscalize' invoice.id %}" class="d-inline">
+                                    {% csrf_token %}
+                                    <button type="submit" class="btn btn-sm btn-primary"
+                                            onclick="return confirm('Fiscalize this invoice?')">
+                                        <i class="bi bi-send"></i> Fiscalize
+                                    </button>
+                                </form>
+                                {% endif %}
+                                <a href="{% url 'efris:invoice_detail' invoice.id %}" class="btn btn-sm btn-outline-info">
+                                    <i class="bi bi-eye"></i> Details
+                                </a>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Pagination -->
+            {% if invoices.has_other_pages %}
+            <nav aria-label="Invoice pagination">
+                <ul class="pagination justify-content-center mt-3">
+                    {% if invoices.has_previous %}
+                    <li class="page-item">
+                        <a class="page-link" href="?page={{ invoices.previous_page_number }}{% if search %}&search={{ search }}{% endif %}{% if status %}&status={{ status }}{% endif %}">
+                            Previous
+                        </a>
+                    </li>
+                    {% endif %}
+
+                    {% for num in invoices.paginator.page_range %}
+                        {% if invoices.number == num %}
+                        <li class="page-item active"><span class="page-link">{{ num }}</span></li>
+                        {% elif num > invoices.number|add:'-3' and num < invoices.number|add:'3' %}
+                        <li class="page-item">
+                            <a class="page-link" href="?page={{ num }}{% if search %}&search={{ search }}{% endif %}{% if status %}&status={{ status }}{% endif %}">
+                                {{ num }}
+                            </a>
+                        </li>
+                        {% endif %}
+                    {% endfor %}
+
+                    {% if invoices.has_next %}
+                    <li class="page-item">
+                        <a class="page-link" href="?page={{ invoices.next_page_number }}{% if search %}&search={{ search }}{% endif %}{% if status %}&status={{ status }}{% endif %}">
+                            Next
+                        </a>
+                    </li>
+                    {% endif %}
+                </ul>
+            </nav>
+            {% endif %}
+
+            {% else %}
+            <div class="text-center py-5">
+                <i class="bi bi-inbox" style="font-size: 3rem; color: var(--gray-400);"></i>
+                <p class="text-muted mt-3">No invoices found</p>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}

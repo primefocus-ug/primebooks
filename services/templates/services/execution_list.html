@@ -1,0 +1,116 @@
+{% extends "services/base.html" %}
+
+{% block title %}Service Executions{% endblock %}
+{% block page_title %}Service Execution History{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="card-header">
+        <h5 class="mb-0"><i class="fas fa-tasks"></i> Service Executions</h5>
+    </div>
+    <div class="card-body">
+        <!-- Filters -->
+        <form method="get" class="row g-3 mb-4">
+            <div class="col-md-4">
+                <select name="status" class="form-select">
+                    <option value="">All Status</option>
+                    {% for value, label in status_choices %}
+                    <option value="{{ value }}">{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-4">
+                <select name="staff" class="form-select">
+                    <option value="">All Staff</option>
+                    <!-- Add staff options dynamically -->
+                </select>
+            </div>
+            <div class="col-md-4">
+                <button type="submit" class="btn btn-primary w-100">
+                    <i class="fas fa-filter"></i> Filter
+                </button>
+            </div>
+        </form>
+
+        <!-- Executions Table -->
+        <div class="table-responsive">
+            <table class="table table-hover">
+                <thead>
+                    <tr>
+                        <th>Execution #</th>
+                        <th>Service</th>
+                        <th>Performed By</th>
+                        <th>Start Time</th>
+                        <th>Duration</th>
+                        <th>Rating</th>
+                        <th>Status</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for execution in page_obj %}
+                    <tr>
+                        <td><strong>{{ execution.execution_number }}</strong></td>
+                        <td>{{ execution.service.name }}</td>
+                        <td>{{ execution.performed_by.get_full_name }}</td>
+                        <td>{{ execution.start_time|date:"M d, Y g:i A" }}</td>
+                        <td>{{ execution.actual_duration_minutes|default:"-" }} min</td>
+                        <td>
+                            {% if execution.quality_rating %}
+                                {% for i in "12345" %}
+                                    {% if forloop.counter <= execution.quality_rating %}
+                                    <i class="fas fa-star text-warning"></i>
+                                    {% else %}
+                                    <i class="far fa-star text-warning"></i>
+                                    {% endif %}
+                                {% endfor %}
+                            {% else %}
+                                <span class="text-muted">-</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <span class="badge status-{{ execution.status }}">
+                                {{ execution.get_status_display }}
+                            </span>
+                        </td>
+                        <td>
+                            <a href="{% url 'services:execution_detail' execution.pk %}"
+                               class="btn btn-sm btn-outline-info">
+                                <i class="fas fa-eye"></i>
+                            </a>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="8" class="text-center text-muted py-4">No executions found</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Pagination -->
+        {% if page_obj.has_other_pages %}
+        <nav>
+            <ul class="pagination justify-content-center">
+                {% if page_obj.has_previous %}
+                <li class="page-item">
+                    <a class="page-link" href="?page={{ page_obj.previous_page_number }}">Previous</a>
+                </li>
+                {% endif %}
+
+                <li class="page-item active">
+                    <span class="page-link">{{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
+                </li>
+
+                {% if page_obj.has_next %}
+                <li class="page-item">
+                    <a class="page-link" href="?page={{ page_obj.next_page_number }}">Next</a>
+                </li>
+                {% endif %}
+            </ul>
+        </nav>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

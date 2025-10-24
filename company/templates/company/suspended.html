@@ -1,0 +1,64 @@
+{% extends 'company/base_status.html' %}
+
+{% block title %}Account Suspended{% endblock %}
+
+{% block container_class %}{% if is_grace_period %}status-grace{% else %}status-suspended{% endif %}{% endblock %}
+
+{% block content %}
+<div class="status-icon">
+    {% if is_grace_period %}⚠️{% else %}🚫{% endif %}
+</div>
+
+<h1 class="status-title">
+    {% if is_grace_period %}Grace Period{% else %}Account Suspended{% endif %}
+</h1>
+
+<div class="company-info">
+    <div class="company-name">{{ company.display_name }}</div>
+    <div class="company-id">ID: {{ company.company_id }}</div>
+</div>
+
+<div class="status-message">
+    {% if is_grace_period %}
+        Your subscription has expired, but you're in a grace period.
+        {% if grace_days_left > 0 %}
+            You have <strong>{{ grace_days_left }} day{{ grace_days_left|pluralize }}</strong> to renew before losing access.
+        {% else %}
+            Your grace period expires today. Please renew immediately.
+        {% endif %}
+    {% else %}
+        Your company account has been suspended. This could be due to:
+        <ul style="text-align: left; display: inline-block; margin: 1rem 0;">
+            <li>Expired subscription past grace period</li>
+            <li>Payment issues</li>
+            <li>Policy violations</li>
+            <li>Administrative action</li>
+        </ul>
+    {% endif %}
+</div>
+
+{% if is_grace_period and grace_days_left > 0 %}
+<div class="countdown">
+    <div class="countdown-number">{{ grace_days_left }}</div>
+    <div>day{{ grace_days_left|pluralize }} remaining</div>
+</div>
+{% endif %}
+
+<div class="actions">
+    {% if is_grace_period %}
+        <a href="{% url 'company:billing' %}" class="btn btn-success">Renew Now</a>
+    {% else %}
+        <a href="mailto:support@yourcompany.com" class="btn btn-primary">Contact Support</a>
+    {% endif %}
+    <a href="{% url 'accounts:logout' %}" class="btn btn-secondary">Logout</a>
+</div>
+
+{% if company.subscription_ends_at %}
+<div style="margin-top: 2rem; padding-top: 2rem; border-top: 1px solid #eee;">
+    <p><strong>Subscription ended:</strong> {{ company.subscription_ends_at }}</p>
+    {% if company.grace_period_ends_at %}
+        <p><strong>Grace period ends:</strong> {{ company.grace_period_ends_at }}</p>
+    {% endif %}
+</div>
+{% endif %}
+{% endblock %}

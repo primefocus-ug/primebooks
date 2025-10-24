@@ -1,0 +1,1762 @@
+{% extends 'base.html' %}
+{% load i18n %}
+
+{% block title %}{% trans "Company Details" %} - {{ company.trading_name|default:company.name }}{% endblock %}
+
+{% block breadcrumb %}
+{{ block.super }}
+<li class="breadcrumb-item"><a href="{% url 'companies:company_list' %}">{% trans 'Companies' %}</a></li>
+<li class="breadcrumb-item active">{{ company.trading_name|default:company.name }}</li>
+{% endblock %}
+
+{% block page_header %}
+<div class="company-header">
+    <div class="company-header-content">
+        <div class="company-avatar">
+            {% if company.logo %}
+                <img src="{{ company.logo.url }}" alt="{{ company.name }}">
+            {% else %}
+                <div class="avatar-placeholder">{{ company.name|first|upper }}</div>
+            {% endif %}
+        </div>
+
+        <div class="company-info">
+            <h1 class="company-title">{{ company.trading_name|default:company.name }}</h1>
+            {% if company.description %}
+                <p class="company-description">{{ company.description|truncatechars:120 }}</p>
+            {% endif %}
+            <div class="company-badges">
+                <span class="status-badge {{ company.status|lower }}">
+                    {{ company.get_status_display }}
+                </span>
+                {% if company.is_verified %}
+                    <span class="feature-badge verified">
+                        <i class="bi bi-shield-check"></i> {% trans 'Verified' %}
+                    </span>
+                {% endif %}
+                {% if company.efris_enabled %}
+                    <span class="feature-badge efris">
+                        <i class="bi bi-gear"></i> {% trans 'EFRIS' %}
+                    </span>
+                {% endif %}
+            </div>
+        </div>
+
+        <div class="company-actions">
+            <button class="btn-icon" id="darkModeToggle" title="{% trans 'Toggle Dark Mode' %}">
+                <i class="bi bi-moon"></i>
+            </button>
+            {% if perms.companies.change_company %}
+                <a href="{% url 'companies:company_update' company_id=company.company_id %}" class="btn-primary">
+                    <i class="bi bi-pencil"></i> {% trans 'Edit' %}
+                </a>
+            {% endif %}
+            <div class="dropdown">
+                <button class="btn-icon" data-bs-toggle="dropdown">
+                    <i class="bi bi-three-dots"></i>
+                </button>
+                <ul class="dropdown-menu">
+                    <li><a class="dropdown-item" href="{% url 'companies:employee_list' company_id=company.company_id %}">
+                        <i class="bi bi-people"></i> {% trans 'Employees' %}
+                    </a></li>
+                    <li><a class="dropdown-item" href="{% url 'companies:domain_list' %}">
+                        <i class="bi bi-globe"></i> {% trans 'Domains' %}
+                    </a></li>
+                    <li><hr class="dropdown-divider"></li>
+                    <li><a class="dropdown-item" href="{% url 'companies:company_export' %}">
+                        <i class="bi bi-download"></i> {% trans 'Export' %}
+                    </a></li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<!-- Key Metrics -->
+<div class="metrics-grid">
+    <div class="metric-card">
+        <div class="metric-icon branches">
+            <i class="bi bi-diagram-3"></i>
+        </div>
+        <div class="metric-content">
+            <div class="metric-value" id="total-branches">{{ total_branches|default:0 }}</div>
+            <div class="metric-label">{% trans 'Branches' %}</div>
+            <div class="metric-sub">{{ active_branches|default:0 }} {% trans 'active' %}</div>
+        </div>
+    </div>
+
+    <div class="metric-card">
+        <div class="metric-icon employees">
+            <i class="bi bi-people"></i>
+        </div>
+        <div class="metric-content">
+            <div class="metric-value" id="total-employees">{{ total_employees|default:0 }}</div>
+            <div class="metric-label">{% trans 'Employees' %}</div>
+            <div class="metric-sub">{{ company_admins|default:0 }} {% trans 'admins' %}</div>
+        </div>
+    </div>
+
+    <div class="metric-card">
+        <div class="metric-icon revenue">
+            <i class="bi bi-currency-dollar"></i>
+        </div>
+        <div class="metric-content">
+            {% if revenue_analytics %}
+                <div class="metric-value">{{ revenue_analytics.current_period.total_revenue|floatformat:0 }}</div>
+                <div class="metric-label">{% trans 'Revenue (30d)' %}</div>
+                {% if revenue_analytics.growth_rates.revenue_growth != 0 %}
+                    <div class="metric-growth {% if revenue_analytics.growth_rates.revenue_growth > 0 %}positive{% else %}negative{% endif %}">
+                        {{ revenue_analytics.growth_rates.revenue_growth|floatformat:1 }}%
+                    </div>
+                {% endif %}
+            {% else %}
+                <div class="metric-value">0</div>
+                <div class="metric-label">{% trans 'Revenue (30d)' %}</div>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="metric-card">
+        <div class="metric-icon performance">
+            <i class="bi bi-speedometer2"></i>
+        </div>
+        <div class="metric-content">
+            <div class="metric-value">{{ overall_performance_score|default:0 }}%</div>
+            <div class="metric-label">{% trans 'Performance' %}</div>
+            <div class="metric-progress">
+                <div class="progress-fill" style="width: {{ overall_performance_score|default:0 }}%"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Content Sections -->
+<div class="content-grid">
+    <!-- Left Column -->
+    <div class="content-main">
+        <!-- Company Information -->
+        <div class="info-section">
+            <div class="section-header">
+                <h2><i class="bi bi-building"></i> {% trans 'Company Information' %}</h2>
+            </div>
+            <div class="info-grid">
+                <div class="info-item">
+                    <label>{% trans 'Legal Name' %}</label>
+                    <span>{{ company.name|default:"—" }}</span>
+                </div>
+                <div class="info-item">
+                    <label>{% trans 'Trading Name' %}</label>
+                    <span>{{ company.trading_name|default:"—" }}</span>
+                </div>
+                <div class="info-item">
+                    <label>{% trans 'TIN' %}</label>
+                    <span>{{ company.tin|default:"—" }}</span>
+                </div>
+                <div class="info-item">
+                    <label>{% trans 'BRN' %}</label>
+                    <span>{{ company.brn|default:"—" }}</span>
+                </div>
+                <div class="info-item">
+                    <label>{% trans 'Email' %}</label>
+                    <span>
+                        {% if company.email %}
+                            <a href="mailto:{{ company.email }}">{{ company.email }}</a>
+                        {% else %}—{% endif %}
+                    </span>
+                </div>
+                <div class="info-item">
+                    <label>{% trans 'Phone' %}</label>
+                    <span>
+                        {% if company.phone %}
+                            <a href="tel:{{ company.phone }}">{{ company.phone }}</a>
+                        {% else %}—{% endif %}
+                    </span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Analytics Chart -->
+        <div class="chart-section">
+            <div class="section-header">
+                <h2><i class="bi bi-graph-up"></i> {% trans 'Revenue Analytics' %}</h2>
+                <div class="chart-controls">
+                    <button class="btn-filter active" data-period="7d">7D</button>
+                    <button class="btn-filter" data-period="30d">30D</button>
+                    <button class="btn-filter" data-period="90d">90D</button>
+                </div>
+            </div>
+            <div class="chart-container">
+                <canvas id="revenueChart"></canvas>
+            </div>
+        </div>
+
+        <!-- Branches Table -->
+        <div class="table-section">
+            <div class="section-header">
+                <h2><i class="bi bi-diagram-3"></i> {% trans 'Branches' %} ({{ total_branches }})</h2>
+                {% if perms.branches.add_companybranch %}
+                    <a href="{% url 'companies:branch_create' %}" class="btn-primary">
+                        <i class="bi bi-plus"></i> {% trans 'Add Branch' %}
+                    </a>
+                {% endif %}
+            </div>
+
+            {% if branches %}
+                <div class="table-wrapper">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>{% trans 'Branch' %}</th>
+                                <th>{% trans 'Performance' %}</th>
+                                <th>{% trans 'Revenue' %}</th>
+                                <th>{% trans 'Status' %}</th>
+                                <th>{% trans 'Actions' %}</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for branch in branches %}
+                            <tr>
+                                <td>
+                                    <div class="branch-info">
+                                        <div class="branch-name">{{ branch.name }}</div>
+                                        {% if branch.analytics.total_stores %}
+                                            <div class="branch-meta">{{ branch.analytics.total_stores }} stores</div>
+                                        {% endif %}
+                                    </div>
+                                </td>
+                                <td>
+                                    {% if branch.analytics.performance_score %}
+                                        <div class="performance-score">{{ branch.analytics.performance_score }}%</div>
+                                    {% else %}—{% endif %}
+                                </td>
+                                <td>
+                                    <div class="revenue-amount">{{ branch.analytics.total_revenue_30d|floatformat:0 }}</div>
+                                </td>
+                                <td>
+                                    {% if branch.is_active %}
+                                        <span class="status-badge active">{% trans 'Active' %}</span>
+                                    {% else %}
+                                        <span class="status-badge inactive">{% trans 'Inactive' %}</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    <div class="action-group">
+                                        <a href="{% url 'companies:branch_detail' branch.pk %}" class="text-decoration-none">
+                                        <button class="btn-icon-sm" onclick="viewBranc({{ branch.id }})">
+                                            <i class="bi bi-eye"></i>
+                                        </button>
+                                        </a>
+                                        <button class="btn-icon-sm" onclick="showBranchAnalytics({{ branch.id }})">
+                                            <i class="bi bi-graph-up"></i>
+                                        </button>
+                                    </div>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            {% else %}
+                <div class="empty-state">
+                    <i class="bi bi-diagram-3"></i>
+                    <h3>{% trans 'No branches found' %}</h3>
+                    <p>{% trans 'Add your first branch to get started' %}</p>
+                    {% if perms.branches.add_companybranch %}
+                        <a href="{% url 'companies:branch_create' %}" class="btn-primary">
+                            {% trans 'Add First Branch' %}
+                        </a>
+                    {% endif %}
+                </div>
+            {% endif %}
+        </div>
+
+        <!-- Employees Table -->
+        <div class="table-section">
+            <div class="section-header">
+                <h2><i class="bi bi-people"></i> {% trans 'Employees' %} ({{ total_employees }})</h2>
+                {% if perms.accounts.add_customuser %}
+                    <a href="{% url 'companies:employee_create' company_id=company.company_id %}" class="btn-primary">
+                        <i class="bi bi-plus"></i> {% trans 'Add Employee' %}
+                    </a>
+                {% endif %}
+            </div>
+
+            {% if employees %}
+                <div class="table-wrapper">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>{% trans 'Employee' %}</th>
+                                <th>{% trans 'Role' %}</th>
+                                <th>{% trans 'Status' %}</th>
+                                <th>{% trans 'Last Activity' %}</th>
+                                <th>{% trans 'Actions' %}</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for employee in employees %}
+                            <tr>
+                                <td>
+                                    <div class="employee-info">
+                                        <div class="employee-avatar">
+                                            {% if employee.avatar %}
+                                                <img src="{{ employee.avatar.url }}" alt="{{ employee.get_full_name }}">
+                                            {% else %}
+                                                <span>{{ employee.first_name|first|default:employee.username|first|upper }}</span>
+                                            {% endif %}
+                                        </div>
+                                        <div class="employee-details">
+                                            <div class="employee-name">{{ employee.get_full_name|default:employee.username }}</div>
+                                            <div class="employee-email">{{ employee.email|default:"" }}</div>
+                                        </div>
+                                    </div>
+                                </td>
+                                <td>
+                                    {% if employee.company_admin %}
+                                        <span class="role-badge admin">{% trans 'Admin' %}</span>
+                                    {% elif employee.user_type == 'MANAGER' %}
+                                        <span class="role-badge manager">{% trans 'Manager' %}</span>
+                                    {% elif employee.user_type == 'CASHIER' %}
+                                        <span class="role-badge cashier">{% trans 'Cashier' %}</span>
+                                    {% else %}
+                                        <span class="role-badge employee">{% trans 'Employee' %}</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if employee.is_active %}
+                                        <span class="status-badge active">{% trans 'Active' %}</span>
+                                    {% else %}
+                                        <span class="status-badge inactive">{% trans 'Inactive' %}</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if employee.last_activity_at %}
+                                        <span class="activity-time">{{ employee.last_activity_at|timesince }} ago</span>
+                                    {% else %}
+                                        <span class="text-muted">{% trans 'Never' %}</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    <div class="action-group">
+                                        <button class="btn-icon-sm" onclick="viewEmployee({{ employee.id }})">
+                                            <i class="bi bi-eye"></i>
+                                        </button>
+                                        {% if perms.accounts.change_customuser %}
+                                            <button class="btn-icon-sm" onclick="editEmployee({{ employee.id }})">
+                                                <i class="bi bi-pencil"></i>
+                                            </button>
+                                        {% endif %}
+                                    </div>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            {% else %}
+                <div class="empty-state">
+                    <i class="bi bi-people"></i>
+                    <h3>{% trans 'No employees found' %}</h3>
+                    <p>{% trans 'Add your first employee to get started' %}</p>
+                    {% if perms.accounts.add_customuser %}
+                        <a href="{% url 'companies:employee_create' company_id=company.company_id %}" class="btn-primary">
+                            {% trans 'Add First Employee' %}
+                        </a>
+                    {% endif %}
+                </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Right Sidebar -->
+    <div class="content-sidebar">
+        <!-- Subscription Info -->
+        <div class="sidebar-section">
+            <div class="section-header">
+                <h3><i class="bi bi-credit-card"></i> {% trans 'Subscription' %}</h3>
+            </div>
+            <div class="subscription-card">
+                <div class="plan-info">
+                    {% if company.plan %}
+                        <div class="plan-name">{{ company.plan.display_name|default:company.plan.name }}</div>
+                        <div class="plan-price">{{ company.plan.price|default:0 }} {{ company.get_preferred_currency_display }}/month</div>
+                    {% else %}
+                        <div class="plan-name">{% trans 'No Plan' %}</div>
+                    {% endif %}
+                </div>
+                {% if company.subscription_ends_at or company.trial_ends_at %}
+                    <div class="expiry-info">
+                        <div class="expiry-date">{{ company.subscription_ends_at|default:company.trial_ends_at|date:"M d, Y" }}</div>
+                        <div class="days-left">{{ days_until_expiry }} {% trans 'days left' %}</div>
+                    </div>
+                {% endif %}
+                <div class="storage-info">
+                    <div class="storage-label">{% trans 'Storage' %}</div>
+                    <div class="storage-bar">
+                        <div class="storage-fill" style="width: {{ storage_usage|default:0 }}%"></div>
+                    </div>
+                    <div class="storage-text">{{ company.storage_used_mb }} MB {% trans 'used' %}</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Performance Overview -->
+        <div class="sidebar-section">
+            <div class="section-header">
+                <h3><i class="bi bi-speedometer2"></i> {% trans 'Performance' %}</h3>
+            </div>
+            <div class="performance-overview">
+                {% if overall_performance_score %}
+                    <div class="performance-circle" data-score="{{ overall_performance_score }}">
+                        <span>{{ overall_performance_score }}%</span>
+                    </div>
+                {% endif %}
+                <div class="performance-metrics">
+                    <div class="metric-item">
+                        <span class="metric-name">{% trans 'Top Branches' %}</span>
+                        <span class="metric-value">{{ top_performing_branches|length }}</span>
+                    </div>
+                    {% if operational_metrics.inventory %}
+                        <div class="metric-item">
+                            <span class="metric-name">{% trans 'Stock Health' %}</span>
+                            <span class="metric-value">{{ operational_metrics.inventory.stock_health_percentage }}%</span>
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- System Alerts -->
+        {% if branches_needing_attention or operational_metrics.inventory.low_stock_items %}
+        <div class="sidebar-section">
+            <div class="section-header">
+                <h3><i class="bi bi-exclamation-triangle"></i> {% trans 'Alerts' %}</h3>
+            </div>
+            <div class="alerts-list">
+                {% if branches_needing_attention %}
+                    <div class="alert-item warning">
+                        <i class="bi bi-exclamation-triangle"></i>
+                        <div class="alert-content">
+                            <div class="alert-title">{% trans 'Branches Need Attention' %}</div>
+                            <div class="alert-text">{{ branches_needing_attention|length }} branch{{ branches_needing_attention|length|pluralize }}</div>
+                        </div>
+                    </div>
+                {% endif %}
+
+                {% if operational_metrics.inventory.low_stock_items %}
+                    <div class="alert-item info">
+                        <i class="bi bi-box-seam"></i>
+                        <div class="alert-content">
+                            <div class="alert-title">{% trans 'Low Stock Items' %}</div>
+                            <div class="alert-text">{{ operational_metrics.inventory.low_stock_items }} item{{ operational_metrics.inventory.low_stock_items|pluralize }}</div>
+                        </div>
+                    </div>
+                {% endif %}
+
+                {% if operational_metrics.inventory.out_of_stock_items %}
+                    <div class="alert-item danger">
+                        <i class="bi bi-x-circle"></i>
+                        <div class="alert-content">
+                            <div class="alert-title">{% trans 'Out of Stock' %}</div>
+                            <div class="alert-text">{{ operational_metrics.inventory.out_of_stock_items }} item{{ operational_metrics.inventory.out_of_stock_items|pluralize }}</div>
+                        </div>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Quick Stats -->
+        <div class="sidebar-section">
+            <div class="section-header">
+                <h3><i class="bi bi-bar-chart"></i> {% trans 'Quick Stats' %}</h3>
+            </div>
+            <div class="stats-list">
+                <div class="stat-item">
+                    <span class="stat-label">{% trans 'Total Stores' %}</span>
+                    <span class="stat-value">{{ total_stores|default:0 }}</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">{% trans 'Active Employees' %}</span>
+                    <span class="stat-value">{{ active_employees|default:0 }}</span>
+                </div>
+                {% if company.domains.all %}
+                <div class="stat-item">
+                    <span class="stat-label">{% trans 'Domains' %}</span>
+                    <span class="stat-value">{{ company.domains.all|length }}</span>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Recent Activity -->
+        {% if recent_activities %}
+        <div class="sidebar-section">
+            <div class="section-header">
+                <h3><i class="bi bi-activity"></i> {% trans 'Recent Activity' %}</h3>
+            </div>
+            <div class="activity-list">
+                {% for activity in recent_activities|slice:":5" %}
+                <div class="activity-item">
+                    <div class="activity-time">{{ activity.created_at|timesince }} ago</div>
+                    <div class="activity-text">{{ activity.description }}</div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Branch Analytics Modal -->
+<div class="modal fade" id="branchAnalyticsModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">{% trans 'Branch Analytics' %}</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="branchAnalyticsContent">
+                <div class="loading-state">
+                    <div class="spinner"></div>
+                    <p>{% trans 'Loading analytics...' %}</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+/* CSS Variables */
+:root {
+    --primary: #3b82f6;
+    --primary-dark: #2563eb;
+    --success: #10b981;
+    --warning: #f59e0b;
+    --danger: #ef4444;
+    --info: #06b6d4;
+
+    --gray-50: #f9fafb;
+    --gray-100: #f3f4f6;
+    --gray-200: #e5e7eb;
+    --gray-300: #d1d5db;
+    --gray-400: #9ca3af;
+    --gray-500: #6b7280;
+    --gray-600: #4b5563;
+    --gray-700: #374151;
+    --gray-800: #1f2937;
+    --gray-900: #111827;
+
+    --bg-primary: #ffffff;
+    --bg-secondary: var(--gray-50);
+    --text-primary: var(--gray-900);
+    --text-secondary: var(--gray-600);
+    --text-muted: var(--gray-400);
+    --border: var(--gray-200);
+
+    --radius: 0.75rem;
+    --radius-sm: 0.375rem;
+    --shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1);
+    --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1);
+    --transition: all 0.2s ease;
+}
+
+/* Dark Theme */
+[data-theme="dark"] {
+    --bg-primary: var(--gray-800);
+    --bg-secondary: var(--gray-900);
+    --text-primary: var(--gray-100);
+    --text-secondary: var(--gray-300);
+    --text-muted: var(--gray-500);
+    --border: var(--gray-600);
+}
+
+/* Base Styles */
+body {
+    background-color: var(--bg-secondary);
+    color: var(--text-primary);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+/* Company Header */
+.company-header {
+    background: var(--bg-primary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 2rem;
+    margin-bottom: 2rem;
+    box-shadow: var(--shadow);
+}
+
+.company-header-content {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    gap: 1.5rem;
+    align-items: center;
+}
+
+.company-avatar {
+    width: 80px;
+    height: 80px;
+    border-radius: var(--radius);
+    overflow: hidden;
+}
+
+.company-avatar img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.avatar-placeholder {
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 2rem;
+    font-weight: 700;
+}
+
+.company-title {
+    font-size: 1.875rem;
+    font-weight: 700;
+    margin: 0 0 0.5rem 0;
+}
+
+.company-description {
+    color: var(--text-secondary);
+    margin: 0 0 1rem 0;
+}
+
+.company-badges {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+
+.company-actions {
+    display: flex;
+    gap: 0.75rem;
+    align-items: center;
+}
+
+/* Buttons */
+.btn-primary {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 1rem;
+    background: var(--primary);
+    color: white;
+    border: none;
+    border-radius: var(--radius-sm);
+    font-weight: 500;
+    text-decoration: none;
+    transition: var(--transition);
+}
+
+.btn-primary:hover {
+    background: var(--primary-dark);
+    color: white;
+}
+
+.btn-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.5rem;
+    height: 2.5rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--bg-primary);
+    color: var(--text-secondary);
+    transition: var(--transition);
+}
+
+.btn-icon:hover {
+    color: var(--text-primary);
+    background: var(--bg-secondary);
+}
+
+.btn-icon-sm {
+    width: 2rem;
+    height: 2rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--bg-primary);
+    color: var(--text-secondary);
+    transition: var(--transition);
+}
+
+.btn-icon-sm:hover {
+    color: var(--text-primary);
+    background: var(--bg-secondary);
+}
+
+.btn-filter {
+    padding: 0.375rem 0.75rem;
+    border: 1px solid var(--border);
+    background: var(--bg-primary);
+    color: var(--text-secondary);
+    border-radius: var(--radius-sm);
+    font-size: 0.875rem;
+    transition: var(--transition);
+}
+
+.btn-filter.active,
+.btn-filter:hover {
+    background: var(--primary);
+    color: white;
+    border-color: var(--primary);
+}
+
+/* Badges */
+.status-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.25rem 0.75rem;
+    border-radius: 9999px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.status-badge.active {
+    background: #dcfce7;
+    color: #166534;
+}
+
+.status-badge.inactive {
+    background: var(--gray-200);
+    color: var(--gray-600);
+}
+
+.status-badge.trial {
+    background: #dbeafe;
+    color: #1e40af;
+}
+
+.status-badge.expired {
+    background: #fef2f2;
+    color: #dc2626;
+}
+
+.feature-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.25rem 0.5rem;
+    border-radius: var(--radius-sm);
+    font-size: 0.75rem;
+    font-weight: 500;
+}
+
+.feature-badge.verified {
+    background: #dcfce7;
+    color: #166534;
+}
+
+.feature-badge.efris {
+    background: #fef3c7;
+    color: #92400e;
+}
+
+.role-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.25rem 0.5rem;
+    border-radius: var(--radius-sm);
+    font-size: 0.75rem;
+    font-weight: 500;
+}
+
+.role-badge.admin {
+    background: #fef2f2;
+    color: #dc2626;
+}
+
+.role-badge.manager {
+    background: #fef3c7;
+    color: #92400e;
+}
+
+.role-badge.cashier {
+    background: #dbeafe;
+    color: #1e40af;
+}
+
+.role-badge.employee {
+    background: var(--gray-200);
+    color: var(--gray-600);
+}
+
+/* Metrics Grid */
+.metrics-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 1.5rem;
+    margin-bottom: 2rem;
+}
+
+.metric-card {
+    background: var(--bg-primary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 1.5rem;
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 1rem;
+    align-items: center;
+    transition: var(--transition);
+}
+
+.metric-card:hover {
+    box-shadow: var(--shadow-lg);
+    transform: translateY(-1px);
+}
+
+.metric-icon {
+    width: 3rem;
+    height: 3rem;
+    border-radius: var(--radius-sm);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.5rem;
+}
+
+.metric-icon.branches {
+    background: rgba(59, 130, 246, 0.1);
+    color: var(--primary);
+}
+
+.metric-icon.employees {
+    background: rgba(16, 185, 129, 0.1);
+    color: var(--success);
+}
+
+.metric-icon.revenue {
+    background: rgba(245, 158, 11, 0.1);
+    color: var(--warning);
+}
+
+.metric-icon.performance {
+    background: rgba(6, 182, 212, 0.1);
+    color: var(--info);
+}
+
+.metric-value {
+    font-size: 2rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    line-height: 1;
+}
+
+.metric-label {
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+    font-weight: 500;
+    margin: 0.25rem 0;
+}
+
+.metric-sub {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+}
+
+.metric-growth {
+    font-size: 0.75rem;
+    font-weight: 600;
+    padding: 0.125rem 0.5rem;
+    border-radius: 0.25rem;
+}
+
+.metric-growth.positive {
+    background: rgba(16, 185, 129, 0.1);
+    color: var(--success);
+}
+
+.metric-growth.negative {
+    background: rgba(239, 68, 68, 0.1);
+    color: var(--danger);
+}
+
+.metric-progress {
+    height: 0.25rem;
+    background: var(--gray-200);
+    border-radius: 0.125rem;
+    overflow: hidden;
+    margin-top: 0.5rem;
+}
+
+.progress-fill {
+    height: 100%;
+    background: var(--primary);
+    transition: width 0.3s ease;
+}
+
+/* Content Grid */
+.content-grid {
+    display: grid;
+    grid-template-columns: 1fr 300px;
+    gap: 2rem;
+}
+
+/* Sections */
+.info-section,
+.chart-section,
+.table-section {
+    background: var(--bg-primary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+    margin-bottom: 2rem;
+    box-shadow: var(--shadow);
+}
+
+.sidebar-section {
+    background: var(--bg-primary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+    margin-bottom: 1.5rem;
+    box-shadow: var(--shadow);
+}
+
+.section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1.5rem;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg-secondary);
+}
+
+.section-header h2,
+.section-header h3 {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 1.125rem;
+    font-weight: 600;
+    margin: 0;
+}
+
+.section-header h3 {
+    font-size: 1rem;
+}
+
+/* Info Grid */
+.info-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1.5rem;
+    padding: 1.5rem;
+}
+
+.info-item {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.info-item label {
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-secondary);
+}
+
+.info-item span {
+    font-weight: 500;
+    color: var(--text-primary);
+}
+
+.info-item a {
+    color: var(--primary);
+    text-decoration: none;
+}
+
+.info-item a:hover {
+    text-decoration: underline;
+}
+
+/* Chart Section */
+.chart-controls {
+    display: flex;
+    gap: 0.25rem;
+}
+
+.chart-container {
+    padding: 1.5rem;
+    height: 300px;
+}
+
+/* Table Section */
+.table-wrapper {
+    overflow-x: auto;
+}
+
+.data-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.data-table th {
+    padding: 1rem 1.5rem;
+    text-align: left;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-secondary);
+    background: var(--bg-secondary);
+    border-bottom: 1px solid var(--border);
+}
+
+.data-table td {
+    padding: 1rem 1.5rem;
+    border-bottom: 1px solid var(--border);
+    vertical-align: middle;
+}
+
+.data-table tr:hover {
+    background: rgba(59, 130, 246, 0.02);
+}
+
+/* Branch Info */
+.branch-info {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.branch-name {
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.branch-meta {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+}
+
+.performance-score {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 3rem;
+    height: 1.5rem;
+    background: var(--primary);
+    color: white;
+    border-radius: 0.75rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+}
+
+.revenue-amount {
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
+/* Employee Info */
+.employee-info {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.employee-avatar {
+    width: 2.5rem;
+    height: 2.5rem;
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+    background: linear-gradient(135deg, var(--primary), var(--primary-dark));
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.employee-avatar img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.employee-avatar span {
+    color: white;
+    font-weight: 600;
+    font-size: 0.875rem;
+}
+
+.employee-details {
+    display: flex;
+    flex-direction: column;
+    gap: 0.125rem;
+}
+
+.employee-name {
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.employee-email {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+}
+
+.activity-time {
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+}
+
+.action-group {
+    display: flex;
+    gap: 0.375rem;
+}
+
+/* Empty State */
+.empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 3rem;
+    text-align: center;
+}
+
+.empty-state i {
+    font-size: 3rem;
+    color: var(--text-muted);
+    margin-bottom: 1rem;
+}
+
+.empty-state h3 {
+    font-size: 1.125rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin: 0 0 0.5rem 0;
+}
+
+.empty-state p {
+    color: var(--text-secondary);
+    margin: 0 0 1.5rem 0;
+}
+
+/* Sidebar */
+.content-sidebar {
+    display: flex;
+    flex-direction: column;
+}
+
+/* Subscription Card */
+.subscription-card {
+    padding: 1.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.plan-info {
+    text-align: center;
+}
+
+.plan-name {
+    font-size: 1.125rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin-bottom: 0.25rem;
+}
+
+.plan-price {
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+}
+
+.expiry-info {
+    text-align: center;
+    padding: 1rem;
+    background: var(--bg-secondary);
+    border-radius: var(--radius-sm);
+}
+
+.expiry-date {
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 0.25rem;
+}
+
+.days-left {
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+}
+
+.storage-info {
+    padding: 1rem;
+    background: var(--bg-secondary);
+    border-radius: var(--radius-sm);
+}
+
+.storage-label {
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--text-primary);
+    margin-bottom: 0.5rem;
+}
+
+.storage-bar {
+    height: 0.5rem;
+    background: var(--bg-primary);
+    border-radius: 0.25rem;
+    overflow: hidden;
+    margin-bottom: 0.5rem;
+}
+
+.storage-fill {
+    height: 100%;
+    background: var(--primary);
+    transition: width 0.3s ease;
+}
+
+.storage-text {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    text-align: center;
+}
+
+/* Performance Overview */
+.performance-overview {
+    padding: 1.5rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1rem;
+}
+
+.performance-circle {
+    width: 4rem;
+    height: 4rem;
+    border-radius: 50%;
+    background: conic-gradient(var(--success) 0deg, var(--success) calc(var(--score, 0) * 3.6deg), var(--gray-200) calc(var(--score, 0) * 3.6deg));
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+}
+
+.performance-circle::before {
+    content: '';
+    position: absolute;
+    inset: 0.5rem;
+    border-radius: 50%;
+    background: var(--bg-primary);
+}
+
+.performance-circle span {
+    font-size: 0.875rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    z-index: 1;
+}
+
+.performance-metrics {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.metric-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.metric-name {
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+}
+
+.metric-value {
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+/* Alerts */
+.alerts-list {
+    padding: 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.alert-item {
+    display: flex;
+    gap: 0.75rem;
+    padding: 0.75rem;
+    border-radius: var(--radius-sm);
+    border-left: 3px solid;
+}
+
+.alert-item.warning {
+    background: #fefcbf;
+    border-color: var(--warning);
+    color: #92400e;
+}
+
+.alert-item.info {
+    background: #ebf8ff;
+    border-color: var(--info);
+    color: #0c4a6e;
+}
+
+.alert-item.danger {
+    background: #fed7d7;
+    border-color: var(--danger);
+    color: #991b1b;
+}
+
+.alert-content {
+    flex: 1;
+}
+
+.alert-title {
+    font-weight: 600;
+    margin-bottom: 0.25rem;
+}
+
+.alert-text {
+    font-size: 0.875rem;
+    opacity: 0.8;
+}
+
+/* Stats List */
+.stats-list {
+    padding: 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.stat-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.5rem 0;
+    border-bottom: 1px solid var(--border);
+}
+
+.stat-item:last-child {
+    border-bottom: none;
+}
+
+.stat-label {
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+}
+
+.stat-value {
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+/* Activity List */
+.activity-list {
+    padding: 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.activity-item {
+    padding: 0.75rem;
+    background: var(--bg-secondary);
+    border-radius: var(--radius-sm);
+}
+
+.activity-time {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    margin-bottom: 0.25rem;
+}
+
+.activity-text {
+    font-size: 0.875rem;
+    color: var(--text-primary);
+}
+
+/* Modal */
+.loading-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 3rem;
+    text-align: center;
+}
+
+.spinner {
+    width: 2rem;
+    height: 2rem;
+    border: 2px solid var(--gray-200);
+    border-top: 2px solid var(--primary);
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+    margin-bottom: 1rem;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+    .content-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .company-header-content {
+        grid-template-columns: auto 1fr;
+        gap: 1rem;
+    }
+
+    .company-actions {
+        grid-column: 1 / -1;
+        justify-self: start;
+        margin-top: 1rem;
+    }
+
+    .metrics-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .info-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .data-table {
+        font-size: 0.875rem;
+    }
+
+    .data-table th,
+    .data-table td {
+        padding: 0.75rem 1rem;
+    }
+}
+
+/* Dark Mode Toggle Animation */
+#darkModeToggle {
+    transition: var(--transition);
+}
+
+#darkModeToggle:hover {
+    transform: rotate(180deg);
+}
+
+/* Utility Classes */
+.text-muted {
+    color: var(--text-muted) !important;
+}
+
+/* Print Styles */
+@media print {
+    .company-actions,
+    .btn-primary,
+    .btn-icon,
+    .btn-icon-sm,
+    .action-group {
+        display: none !important;
+    }
+
+    .content-grid {
+        grid-template-columns: 1fr !important;
+    }
+
+    .sidebar-section {
+        break-inside: avoid;
+    }
+}
+</style>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+<script>
+// Initialize when DOM is loaded
+document.addEventListener('DOMContentLoaded', function() {
+    initializeDarkMode();
+    initializeChart();
+    initializePerformanceCircles();
+    initializeTooltips();
+});
+
+// Dark Mode Toggle
+function initializeDarkMode() {
+    const toggle = document.getElementById('darkModeToggle');
+    const savedTheme = localStorage.getItem('theme') || 'light';
+
+    document.documentElement.setAttribute('data-theme', savedTheme);
+    updateDarkModeIcon(savedTheme === 'dark');
+
+    toggle.addEventListener('click', function() {
+        const currentTheme = document.documentElement.getAttribute('data-theme');
+        const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+
+        document.documentElement.setAttribute('data-theme', newTheme);
+        localStorage.setItem('theme', newTheme);
+        updateDarkModeIcon(newTheme === 'dark');
+    });
+}
+
+function updateDarkModeIcon(isDark) {
+    const icon = document.querySelector('#darkModeToggle i');
+    icon.className = isDark ? 'bi bi-sun' : 'bi bi-moon';
+}
+
+// Initialize Revenue Chart
+function initializeChart() {
+    const canvas = document.getElementById('revenueChart');
+    if (!canvas || typeof Chart === 'undefined') return;
+
+    const ctx = canvas.getContext('2d');
+    const revenueData = {{ revenue_analytics.weekly_trend|safe|default:"[]" }};
+
+    const labels = revenueData.map(item => {
+        const date = new Date(item.date);
+        return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    });
+
+    const values = revenueData.map(item => item.revenue);
+
+    new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: labels,
+            datasets: [{
+                label: 'Revenue',
+                data: values,
+                borderColor: '#3b82f6',
+                backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                tension: 0.4,
+                fill: true,
+                pointBackgroundColor: '#3b82f6',
+                pointBorderColor: '#ffffff',
+                pointBorderWidth: 2,
+                pointRadius: 4,
+                pointHoverRadius: 6
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    display: false
+                }
+            },
+            scales: {
+                x: {
+                    grid: {
+                        display: false
+                    },
+                    border: {
+                        display: false
+                    }
+                },
+                y: {
+                    beginAtZero: true,
+                    grid: {
+                        color: 'rgba(0, 0, 0, 0.1)'
+                    },
+                    border: {
+                        display: false
+                    },
+                    ticks: {
+                        callback: function(value) {
+                            return new Intl.NumberFormat('en-US', {
+                                style: 'currency',
+                                currency: 'USD',
+                                minimumFractionDigits: 0,
+                                maximumFractionDigits: 0
+                            }).format(value);
+                        }
+                    }
+                }
+            }
+        }
+    });
+}
+
+// Initialize Performance Circles
+function initializePerformanceCircles() {
+    const circles = document.querySelectorAll('.performance-circle');
+    circles.forEach(circle => {
+        const score = circle.dataset.score || 0;
+        circle.style.setProperty('--score', score);
+    });
+}
+
+// Initialize Tooltips
+function initializeTooltips() {
+    const tooltipElements = document.querySelectorAll('[title]');
+    tooltipElements.forEach(element => {
+        if (typeof bootstrap !== 'undefined' && bootstrap.Tooltip) {
+            new bootstrap.Tooltip(element);
+        }
+    });
+}
+
+// Branch Analytics Modal
+function showBranchAnalytics(branchId) {
+    const modal = new bootstrap.Modal(document.getElementById('branchAnalyticsModal'));
+    const content = document.getElementById('branchAnalyticsContent');
+
+    // Reset content
+    content.innerHTML = `
+        <div class="loading-state">
+            <div class="spinner"></div>
+            <p>Loading analytics...</p>
+        </div>
+    `;
+
+    modal.show();
+
+    // Load analytics data
+    fetch(`/companies/branches/${branchId}/analytics/`, {
+        headers: {
+            'X-Requested-With': 'XMLHttpRequest'
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            renderBranchAnalytics(data, content);
+        } else {
+            content.innerHTML = `
+                <div class="alert alert-danger">
+                    <i class="bi bi-exclamation-triangle"></i>
+                    Failed to load analytics data.
+                </div>
+            `;
+        }
+    })
+    .catch(error => {
+        console.error('Error loading branch analytics:', error);
+        content.innerHTML = `
+            <div class="alert alert-danger">
+                <i class="bi bi-exclamation-triangle"></i>
+                Error loading analytics. Please try again.
+            </div>
+        `;
+    });
+}
+
+function renderBranchAnalytics(data, container) {
+    const metrics = data.metrics;
+
+    container.innerHTML = `
+        <div class="row mb-4">
+            <div class="col-md-3 col-6">
+                <div class="text-center">
+                    <h4 class="text-primary">${new Intl.NumberFormat().format(metrics.total_revenue)}</h4>
+                    <small class="text-muted">Total Revenue</small>
+                </div>
+            </div>
+            <div class="col-md-3 col-6">
+                <div class="text-center">
+                    <h4 class="text-success">${metrics.total_sales}</h4>
+                    <small class="text-muted">Total Sales</small>
+                </div>
+            </div>
+            <div class="col-md-3 col-6">
+                <div class="text-center">
+                    <h4 class="text-info">${metrics.total_customers}</h4>
+                    <small class="text-muted">Customers</small>
+                </div>
+            </div>
+            <div class="col-md-3 col-6">
+                <div class="text-center">
+                    <h4 class="text-warning">${metrics.low_stock_items}</h4>
+                    <small class="text-muted">Low Stock</small>
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+// Action Functions
+function viewBranch(branchId) {
+    window.location.href = `/companies/branches/${branchId}/`;
+}
+
+function viewEmployee(employeeId) {
+    // Implementation depends on your URL structure
+    console.log('View employee:', employeeId);
+}
+
+function editEmployee(employeeId) {
+    // Implementation depends on your URL structure
+    console.log('Edit employee:', employeeId);
+}
+
+// Auto-refresh data every 5 minutes
+setInterval(function() {
+    refreshMetrics();
+}, 300000);
+
+function refreshMetrics() {
+    // Update metrics via API
+    fetch(`/api/company/{{ company.company_id }}/metrics/`, {
+        headers: {
+            'X-Requested-With': 'XMLHttpRequest'
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            updateMetricValues(data.metrics);
+        }
+    })
+    .catch(error => {
+        console.error('Error refreshing metrics:', error);
+    });
+}
+
+function updateMetricValues(metrics) {
+    const elements = {
+        '#total-branches': metrics.total_branches,
+        '#total-employees': metrics.total_employees
+    };
+
+    Object.entries(elements).forEach(([selector, value]) => {
+        const element = document.querySelector(selector);
+        if (element && element.textContent !== value.toString()) {
+            element.textContent = value;
+            element.style.animation = 'pulse 0.5s ease-in-out';
+        }
+    });
+}
+
+// Keyboard shortcuts
+document.addEventListener('keydown', function(e) {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'e') {
+        e.preventDefault();
+        const editBtn = document.querySelector('a[href*="company_update"]');
+        if (editBtn) editBtn.click();
+    }
+});
+</script>
+{% endblock %}

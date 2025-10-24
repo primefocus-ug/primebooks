@@ -1,0 +1,181 @@
+<!-- efris/templates/efris/excise_duty_list.html -->
+
+{% extends "efris/base.html" %}
+{% load static %}
+
+{% block page_actions %}
+<button type="button" class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#searchModal">
+    <i class="fas fa-search"></i> Search
+</button>
+{% endblock %}
+
+{% block efris_content %}
+<div class="card efris-card">
+    <div class="card-header bg-white d-flex justify-content-between align-items-center">
+        <h5 class="card-title mb-0">
+            Excise Duty Rates
+            <span class="badge bg-secondary">{{ total_count }} items</span>
+        </h5>
+    </div>
+    <div class="card-body">
+        {% if excise_duties %}
+        <div class="table-responsive">
+            <table class="table table-hover">
+                <thead>
+                    <tr>
+                        <th>Code</th>
+                        <th>Goods/Service</th>
+                        <th>Rate Text</th>
+                        <th>Effective Date</th>
+                        <th>Leaf Node</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for duty in excise_duties %}
+                    <tr>
+                        <td><code>{{ duty.exciseDutyCode }}</code></td>
+                        <td>{{ duty.goodService }}</td>
+                        <td>{{ duty.rateText }}</td>
+                        <td>{{ duty.effectiveDate }}</td>
+                        <td>
+                            {% if duty.isLeafNode == '1' %}
+                            <span class="badge bg-success">Yes</span>
+                            {% else %}
+                            <span class="badge bg-secondary">No</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <button class="btn btn-sm btn-outline-primary"
+                                    onclick="showExciseDetails('{{ duty.id }}', {{ duty.exciseDutyDetailsList|safe }})">
+                                <i class="fas fa-info-circle"></i> Details
+                            </button>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Pagination -->
+        {% if excise_duties.has_other_pages %}
+        <nav aria-label="Excise duty pagination">
+            <ul class="pagination justify-content-center">
+                {% if excise_duties.has_previous %}
+                <li class="page-item">
+                    <a class="page-link" href="?page={{ excise_duties.previous_page_number }}">Previous</a>
+                </li>
+                {% endif %}
+
+                <li class="page-item disabled">
+                    <span class="page-link">
+                        Page {{ excise_duties.number }} of {{ excise_duties.paginator.num_pages }}
+                    </span>
+                </li>
+
+                {% if excise_duties.has_next %}
+                <li class="page-item">
+                    <a class="page-link" href="?page={{ excise_duties.next_page_number }}">Next</a>
+                </li>
+                {% endif %}
+            </ul>
+        </nav>
+        {% endif %}
+        {% else %}
+        <div class="alert alert-info mb-0">
+            <i class="fas fa-info-circle"></i> No excise duty rates available.
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Excise Details Modal -->
+<div class="modal fade" id="exciseDetailsModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Excise Duty Details</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div id="exciseDetailsContent"></div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Search Modal -->
+<div class="modal fade" id="searchModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Search Excise Duties</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label for="searchInput" class="form-label">Search by code or description</label>
+                    <input type="text" class="form-control" id="searchInput"
+                           placeholder="Enter search term...">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" onclick="performSearch()">Search</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function showExciseDetails(dutyId, detailsList) {
+    const content = document.getElementById('exciseDetailsContent');
+
+    if (!detailsList || detailsList.length === 0) {
+        content.innerHTML = '<p class="text-muted">No detailed rate information available.</p>';
+    } else {
+        let html = '<table class="table table-sm"><thead><tr>' +
+                   '<th>Type</th><th>Rate</th><th>Unit</th><th>Currency</th></tr></thead><tbody>';
+
+        detailsList.forEach(detail => {
+            const type = detail.type === '101' ? 'Percentage' : 'Unit of Measurement';
+            const rate = detail.type === '101' ? (parseFloat(detail.rate) * 100).toFixed(2) + '%' : detail.rate;
+
+            html += `<tr>
+                <td>${type}</td>
+                <td>${rate}</td>
+                <td>${detail.unit || '-'}</td>
+                <td>${detail.currency || '-'}</td>
+            </tr>`;
+        });
+
+        html += '</tbody></table>';
+        content.innerHTML = html;
+    }
+
+    const modal = new bootstrap.Modal(document.getElementById('exciseDetailsModal'));
+    modal.show();
+}
+
+function performSearch() {
+    const searchTerm = document.getElementById('searchInput').value.toLowerCase();
+    const rows = document.querySelectorAll('tbody tr');
+
+    rows.forEach(row => {
+        const text = row.textContent.toLowerCase();
+        if (text.includes(searchTerm)) {
+            row.style.display = '';
+        } else {
+            row.style.display = 'none';
+        }
+    });
+
+    bootstrap.Modal.getInstance(document.getElementById('searchModal')).hide();
+}
+</script>
+{% endblock %}

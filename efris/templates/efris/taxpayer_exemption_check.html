@@ -1,0 +1,184 @@
+{% extends "efris/base.html" %}
+{% load static %}
+
+{% block efris_content %}
+<div class="row">
+    <div class="col-md-8">
+        <div class="card efris-card">
+            <div class="card-header bg-white">
+                <h5 class="card-title mb-0">Check Taxpayer Exemption Status</h5>
+            </div>
+            <div class="card-body">
+                <form method="post">
+                    {% csrf_token %}
+
+                    <div class="mb-3">
+                        <label for="tin" class="form-label">
+                            Taxpayer TIN <span class="text-danger">*</span>
+                        </label>
+                        <input type="text" class="form-control" id="tin" name="tin"
+                               placeholder="Enter TIN" required
+                               value="{{ searched_tin|default:'' }}">
+                        <small class="form-text text-muted">
+                            Enter the Tax Identification Number of the taxpayer
+                        </small>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="commodity_codes" class="form-label">
+                            Commodity Category Codes <span class="text-muted">(Optional)</span>
+                        </label>
+                        <input type="text" class="form-control" id="commodity_codes"
+                               name="commodity_codes"
+                               placeholder="e.g., 1010101,1010102">
+                        <small class="form-text text-muted">
+                            Enter comma-separated commodity codes to check specific exemptions
+                        </small>
+                    </div>
+
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fas fa-search"></i> Check Status
+                    </button>
+                </form>
+            </div>
+        </div>
+
+        {% if check_result %}
+        <div class="card efris-card mt-4">
+            <div class="card-header bg-white">
+                <h5 class="card-title mb-0">Taxpayer Status Results</h5>
+            </div>
+            <div class="card-body">
+                <div class="row mb-3">
+                    <div class="col-md-6">
+                        <strong>TIN:</strong> {{ searched_tin }}
+                    </div>
+                    <div class="col-md-6">
+                        <strong>Status:</strong>
+                        {% if check_result.is_exempt %}
+                            <span class="badge bg-success">Exempt</span>
+                        {% elif check_result.is_deemed %}
+                            <span class="badge bg-warning">Deemed</span>
+                        {% else %}
+                            <span class="badge bg-secondary">Regular</span>
+                        {% endif %}
+                    </div>
+                </div>
+
+                {% if check_result.taxpayer_name %}
+                <div class="mb-3">
+                    <strong>Taxpayer Name:</strong> {{ check_result.taxpayer_name }}
+                </div>
+                {% endif %}
+
+                {% if check_result.exemption_details %}
+                <hr>
+                <h6>Exemption Details:</h6>
+                <div class="table-responsive">
+                    <table class="table table-sm">
+                        <thead>
+                            <tr>
+                                <th>Commodity Code</th>
+                                <th>Status</th>
+                                <th>Valid From</th>
+                                <th>Valid To</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for detail in check_result.exemption_details %}
+                            <tr>
+                                <td>{{ detail.commodity_code }}</td>
+                                <td>
+                                    <span class="badge bg-info">{{ detail.status }}</span>
+                                </td>
+                                <td>{{ detail.valid_from|default:"N/A" }}</td>
+                                <td>{{ detail.valid_to|default:"N/A" }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% endif %}
+
+                {% if check_result.message %}
+                <div class="alert alert-info mt-3">
+                    {{ check_result.message }}
+                </div>
+                {% endif %}
+            </div>
+        </div>
+        {% endif %}
+    </div>
+
+    <div class="col-md-4">
+        <div class="card efris-card">
+            <div class="card-header bg-white">
+                <h5 class="card-title mb-0">About Exemptions</h5>
+            </div>
+            <div class="card-body">
+                <h6>Exempt Taxpayers:</h6>
+                <p class="small">
+                    Taxpayers who are registered as tax-exempt do not pay VAT
+                    on specified goods or services.
+                </p>
+
+                <hr>
+
+                <h6>Deemed Taxpayers:</h6>
+                <p class="small">
+                    Deemed taxpayers are treated as having paid VAT even though
+                    they may not have been directly charged.
+                </p>
+
+                <hr>
+
+                <h6>Regular Taxpayers:</h6>
+                <p class="small">
+                    Standard taxpayers subject to normal VAT rates and regulations.
+                </p>
+            </div>
+        </div>
+
+        <div class="card efris-card mt-3">
+            <div class="card-header bg-white">
+                <h5 class="card-title mb-0">Quick Actions</h5>
+            </div>
+            <div class="card-body">
+                <div class="d-grid gap-2">
+                    <button class="btn btn-outline-primary btn-sm" onclick="clearForm()">
+                        <i class="fas fa-eraser"></i> Clear Form
+                    </button>
+                    <button class="btn btn-outline-secondary btn-sm" onclick="window.print()">
+                        <i class="fas fa-print"></i> Print Results
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function clearForm() {
+    document.getElementById('tin').value = '';
+    document.getElementById('commodity_codes').value = '';
+}
+
+// API check function for AJAX calls
+function checkTaxpayerStatusAPI(tin) {
+    fetch(`{% url 'efris:api_taxpayer_status' %}?tin=${tin}`)
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            console.log('Taxpayer status:', data);
+        } else {
+            console.error('Check failed:', data.error);
+        }
+    })
+    .catch(error => {
+        console.error('API error:', error);
+    });
+}
+</script>
+{% endblock %}

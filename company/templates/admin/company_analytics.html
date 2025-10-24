@@ -1,0 +1,202 @@
+{% extends 'admin/base_site.html' %}
+
+{% block title %}Company Analytics{% endblock %}
+
+{% block content %}
+<div class="module">
+    <h1>Company Analytics Dashboard</h1>
+
+    <!-- Statistics Overview -->
+    <div class="results">
+        <div class="flex-container" style="display: flex; gap: 20px; margin-bottom: 30px;">
+            <div class="module" style="flex: 1; padding: 15px; background: #f8f9fa; border-radius: 4px;">
+                <h2>Total Companies</h2>
+                <div style="font-size: 2em; font-weight: bold; color: #417690;">{{ stats.total }}</div>
+            </div>
+
+            <div class="module" style="flex: 1; padding: 15px; background: #d4edda; border-radius: 4px;">
+                <h2>Active</h2>
+                <div style="font-size: 2em; font-weight: bold; color: #155724;">{{ stats.active }}</div>
+                <small>{{ stats.active|mul:100|div:stats.total }}%</small>
+            </div>
+
+            <div class="module" style="flex: 1; padding: 15px; background: #d1ecf1; border-radius: 4px;">
+                <h2>Trial</h2>
+                <div style="font-size: 2em; font-weight: bold; color: #0c5460;">{{ stats.trial }}</div>
+                <small>{{ stats.trial|mul:100|div:stats.total }}%</small>
+            </div>
+
+            <div class="module" style="flex: 1; padding: 15px; background: #fff3cd; border-radius: 4px;">
+                <h2>Suspended</h2>
+                <div style="font-size: 2em; font-weight: bold; color: #856404;">{{ stats.suspended }}</div>
+                <small>{{ stats.suspended|mul:100|div:stats.total }}%</small>
+            </div>
+
+            <div class="module" style="flex: 1; padding: 15px; background: #f8d7da; border-radius: 4px;">
+                <h2>Expired</h2>
+                <div style="font-size: 2em; font-weight: bold; color: #721c24;">{{ stats.expired }}</div>
+                <small>{{ stats.expired|mul:100|div:stats.total }}%</small>
+            </div>
+        </div>
+    </div>
+
+    <!-- Companies Requiring Attention -->
+    <div class="module">
+        <h2>⚠️ Companies Requiring Attention</h2>
+
+        {% if expiring_soon %}
+        <div class="module" style="margin-bottom: 20px;">
+            <h3>Expiring Soon (Next 7 days)</h3>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Company</th>
+                        <th>Status</th>
+                        <th>Expires</th>
+                        <th>Days Left</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for company in expiring_soon %}
+                    <tr>
+                        <td><a href="{% url 'admin:company_company_change' company.pk %}">{{ company.display_name }}</a></td>
+                        <td><span class="status-{{ company.status|lower }}">{{ company.get_status_display }}</span></td>
+                        <td>
+                            {% if company.is_trial %}{{ company.trial_ends_at }}{% else %}{{ company.subscription_ends_at }}{% endif %}
+                        </td>
+                        <td style="{% if company.days_until_expiry <= 3 %}color: red; font-weight: bold;{% elif company.days_until_expiry <= 7 %}color: orange;{% endif %}">
+                            {{ company.days_until_expiry }}
+                        </td>
+                        <td>
+                            <a href="mailto:{{ company.email }}?subject=Subscription Renewal Reminder" class="button">Email</a>
+                            <a href="{% url 'admin:company_company_change' company.pk %}" class="button">View</a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% endif %}
+
+        {% if in_grace_period %}
+        <div class="module" style="margin-bottom: 20px;">
+            <h3>In Grace Period</h3>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Company</th>
+                        <th>Grace Ends</th>
+                        <th>Days Left</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for company in in_grace_period %}
+                    <tr>
+                        <td><a href="{% url 'admin:company_company_change' company.pk %}">{{ company.display_name }}</a></td>
+                        <td>{{ company.grace_period_ends_at }}</td>
+                        <td style="color: red; font-weight: bold;">
+                            {{ company.grace_period_ends_at|timeuntil }}
+                        </td>
+                        <td>
+                            <a href="{% url 'company:admin_reactivate_company' company.company_id %}" class="button">Extend Grace</a>
+                            <a href="{% url 'admin:company_company_change' company.pk %}" class="button">View</a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% endif %}
+
+        {% if recently_expired %}
+        <div class="module">
+            <h3>Recently Expired</h3>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Company</th>
+                        <th>Expired</th>
+                        <th>Days Ago</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for company in recently_expired %}
+                    <tr>
+                        <td><a href="{% url 'admin:company_company_change' company.pk %}">{{ company.display_name }}</a></td>
+                        <td>
+                            {% if company.is_trial %}{{ company.trial_ends_at }}{% else %}{{ company.subscription_ends_at }}{% endif %}
+                        </td>
+                        <td>{{ company.subscription_ends_at|timesince }} ago</td>
+                        <td>
+                            <a href="{% url 'company:admin_reactivate_company' company.company_id %}" class="button">Reactivate</a>
+                            <a href="{% url 'admin:company_company_change' company.pk %}" class="button">View</a>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<style>
+.status-active { color: green; font-weight: bold; }
+.status-trial { color: blue; font-weight: bold; }
+.status-suspended { color: orange; font-weight: bold; }
+.status-expired { color: red; font-weight: bold; }
+
+.flex-container {
+    display: flex;
+    gap: 20px;
+    flex-wrap: wrap;
+}
+
+.module h2 {
+    margin-bottom: 10px;
+    color: #333;
+}
+
+.module h3 {
+    color: #666;
+    border-bottom: 1px solid #ddd;
+    padding-bottom: 5px;
+    margin-bottom: 15px;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 20px;
+}
+
+table th, table td {
+    padding: 8px 12px;
+    text-align: left;
+    border-bottom: 1px solid #ddd;
+}
+
+table th {
+    background-color: #f8f9fa;
+    font-weight: bold;
+}
+
+.button {
+    display: inline-block;
+    padding: 4px 8px;
+    background: #417690;
+    color: white;
+    text-decoration: none;
+    border-radius: 3px;
+    font-size: 11px;
+    margin-right: 5px;
+}
+
+.button:hover {
+    background: #205067;
+}
+</style>
+{% endblock %}

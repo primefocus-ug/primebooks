@@ -1,0 +1,283 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}EFRIS Stock Management{% endblock %}
+
+{% block breadcrumb_items %}
+<li class="breadcrumb-item"><a href="{% url 'user_dashboard' %}">Home</a></li>
+<li class="breadcrumb-item"><a href="{% url 'efris:dashboard' %}">EFRIS</a></li>
+<li class="breadcrumb-item active">Stock Management</li>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- Page Header -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h1 class="h2 mb-1">Stock Management</h1>
+            <p class="text-muted mb-0">Manage product stock in EFRIS system</p>
+        </div>
+        <div class="d-flex gap-2">
+            <a href="{% url 'efris:stock_transfer' %}" class="btn btn-primary">
+                <i class="bi bi-arrow-left-right"></i> Transfer Stock
+            </a>
+            <a href="{% url 'efris:bulk_stock_sync' %}" class="btn btn-success">
+                <i class="bi bi-arrow-repeat"></i> Bulk Sync
+            </a>
+            <a href="{% url 'efris:stock_records_query' %}" class="btn btn-outline-secondary">
+                <i class="bi bi-search"></i> Query Records
+            </a>
+        </div>
+    </div>
+
+    <!-- Statistics Cards -->
+    <div class="row mb-4">
+        <div class="col-md-4">
+            <div class="card text-center">
+                <div class="card-body">
+                    <i class="bi bi-box-seam text-primary" style="font-size: 2.5rem;"></i>
+                    <h3 class="mt-3 mb-1">{{ total_products }}</h3>
+                    <p class="text-muted mb-0">Products in EFRIS</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card text-center">
+                <div class="card-body">
+                    <i class="bi bi-exclamation-triangle text-warning" style="font-size: 2.5rem;"></i>
+                    <h3 class="mt-3 mb-1">{{ stocks_needing_sync }}</h3>
+                    <p class="text-muted mb-0">Stocks Needing Sync</p>
+                    {% if stocks_needing_sync > 0 %}
+                    <a href="{% url 'efris:bulk_stock_sync' %}" class="btn btn-sm btn-warning mt-2">
+                        <i class="bi bi-arrow-repeat"></i> Sync Now
+                    </a>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4">
+            <div class="card text-center">
+                <div class="card-body">
+                    <i class="bi bi-clock-history text-info" style="font-size: 2.5rem;"></i>
+                    <h3 class="mt-3 mb-1">{{ recent_movements.count }}</h3>
+                    <p class="text-muted mb-0">Recent Movements</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Quick Actions -->
+    <div class="card mb-4">
+        <div class="card-header">
+            <h5 class="mb-0"><i class="bi bi-lightning me-2"></i>Quick Actions</h5>
+        </div>
+        <div class="card-body">
+            <div class="row g-3">
+                <div class="col-md-3">
+                    <div class="d-grid">
+                        <button type="button" class="btn btn-outline-success" data-bs-toggle="modal" data-bs-target="#increaseStockModal">
+                            <i class="bi bi-plus-circle"></i> Increase Stock
+                        </button>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="d-grid">
+                        <button type="button" class="btn btn-outline-danger" data-bs-toggle="modal" data-bs-target="#decreaseStockModal">
+                            <i class="bi bi-dash-circle"></i> Decrease Stock
+                        </button>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="d-grid">
+                        <a href="{% url 'efris:stock_transfer' %}" class="btn btn-outline-primary">
+                            <i class="bi bi-arrow-left-right"></i> Transfer Stock
+                        </a>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="d-grid">
+                        <button type="button" class="btn btn-outline-info" data-bs-toggle="modal" data-bs-target="#queryStockModal">
+                            <i class="bi bi-search"></i> Query Stock
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Recent Stock Movements -->
+    <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <h5 class="mb-0"><i class="bi bi-clock-history me-2"></i>Recent Stock Movements</h5>
+            <a href="{% url 'inventory:movement_list' %}" class="btn btn-sm btn-outline-primary">View All</a>
+        </div>
+        <div class="card-body">
+            {% if recent_movements %}
+            <div class="table-responsive">
+                <table class="table table-hover">
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>Product</th>
+                            <th>Store</th>
+                            <th>Type</th>
+                            <th>Quantity</th>
+                            <th>Reference</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for movement in recent_movements %}
+                        <tr>
+                            <td>{{ movement.created_at|date:"M d, Y H:i" }}</td>
+                            <td>{{ movement.product.name }}</td>
+                            <td>{{ movement.store.name }}</td>
+                            <td>
+                                {% if movement.movement_type == 'PURCHASE' %}
+                                <span class="badge bg-success">Purchase</span>
+                                {% elif movement.movement_type == 'SALE' %}
+                                <span class="badge bg-primary">Sale</span>
+                                {% elif movement.movement_type == 'TRANSFER_IN' %}
+                                <span class="badge bg-info">Transfer In</span>
+                                {% elif movement.movement_type == 'TRANSFER_OUT' %}
+                                <span class="badge bg-warning">Transfer Out</span>
+                                {% else %}
+                                <span class="badge bg-secondary">{{ movement.get_movement_type_display }}</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <span class="{% if movement.quantity < 0 %}text-danger{% else %}text-success{% endif %}">
+                                    {{ movement.quantity }}
+                                </span>
+                            </td>
+                            <td>{{ movement.reference|default:"-" }}</td>
+                            <td>
+                                <a href="{% url 'efris:stock_query' movement.product.id %}" class="btn btn-sm btn-outline-info">
+                                    <i class="bi bi-eye"></i>
+                                </a>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="text-center py-4">
+                <i class="bi bi-inbox text-muted" style="font-size: 3rem;"></i>
+                <p class="text-muted mt-3">No recent stock movements</p>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<!-- Increase Stock Modal -->
+<div class="modal fade" id="increaseStockModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-success text-white">
+                <h5 class="modal-title"><i class="bi bi-plus-circle me-2"></i>Increase Stock</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p class="text-muted">Select a product to increase its stock in EFRIS</p>
+                <div class="mb-3">
+                    <label class="form-label">Product</label>
+                    <select class="form-select" id="increaseProductSelect">
+                        <option value="">Select a product...</option>
+                        {% for product in products %}
+                        <option value="{{ product.id }}">{{ product.name }} ({{ product.sku }})</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <button type="button" class="btn btn-success w-100" onclick="goToIncrease()">
+                    <i class="bi bi-arrow-right"></i> Continue
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Decrease Stock Modal -->
+<div class="modal fade" id="decreaseStockModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-danger text-white">
+                <h5 class="modal-title"><i class="bi bi-dash-circle me-2"></i>Decrease Stock</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p class="text-muted">Select a product to decrease its stock in EFRIS</p>
+                <div class="mb-3">
+                    <label class="form-label">Product</label>
+                    <select class="form-select" id="decreaseProductSelect">
+                        <option value="">Select a product...</option>
+                        {% for product in products %}
+                        <option value="{{ product.id }}">{{ product.name }} ({{ product.sku }})</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <button type="button" class="btn btn-danger w-100" onclick="goToDecrease()">
+                    <i class="bi bi-arrow-right"></i> Continue
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Query Stock Modal -->
+<div class="modal fade" id="queryStockModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-info text-white">
+                <h5 class="modal-title"><i class="bi bi-search me-2"></i>Query Stock</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p class="text-muted">Select a product to view its stock in EFRIS</p>
+                <div class="mb-3">
+                    <label class="form-label">Product</label>
+                    <select class="form-select" id="queryProductSelect">
+                        <option value="">Select a product...</option>
+                        {% for product in products %}
+                        <option value="{{ product.id }}">{{ product.name }} ({{ product.sku }})</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <button type="button" class="btn btn-info w-100" onclick="goToQuery()">
+                    <i class="bi bi-arrow-right"></i> Continue
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function goToIncrease() {
+    const productId = document.getElementById('increaseProductSelect').value;
+    if (productId) {
+        window.location.href = `/efris/stock/increase/${productId}/`;
+    } else {
+        alert('Please select a product');
+    }
+}
+
+function goToDecrease() {
+    const productId = document.getElementById('decreaseProductSelect').value;
+    if (productId) {
+        window.location.href = `/efris/stock/decrease/${productId}/`;
+    } else {
+        alert('Please select a product');
+    }
+}
+
+function goToQuery() {
+    const productId = document.getElementById('queryProductSelect').value;
+    if (productId) {
+        window.location.href = `/efris/stock/query/${productId}/`;
+    } else {
+        alert('Please select a product');
+    }
+}
+</script>
+{% endblock %}

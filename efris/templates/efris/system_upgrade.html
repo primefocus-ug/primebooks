@@ -1,0 +1,119 @@
+{% extends "efris/base.html" %}
+{% load static %}
+
+{% block efris_content %}
+<div class="row">
+    <div class="col-md-8">
+        <div class="card efris-card">
+            <div class="card-header bg-white">
+                <h5 class="card-title mb-0">System Version Information</h5>
+            </div>
+            <div class="card-body">
+                <div class="row mb-4">
+                    <div class="col-md-6">
+                        <div class="p-3 bg-light rounded text-center">
+                            <h6 class="text-muted">Current Version</h6>
+                            <h2 class="mb-0">{{ current_version }}</h2>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="p-3 bg-light rounded text-center">
+                            <h6 class="text-muted">Latest Version</h6>
+                            <h2 class="mb-0 {% if update_available %}text-success{% endif %}">
+                                {{ latest_version }}
+                            </h2>
+                        </div>
+                    </div>
+                </div>
+
+                {% if update_available %}
+                <div class="alert alert-success">
+                    <i class="fas fa-info-circle"></i>
+                    <strong>Update Available!</strong> A new version ({{ latest_version }}) is available for download.
+                </div>
+
+                <form method="post" action="{% url 'efris:download_upgrade_files' %}" id="upgradeForm">
+                    {% csrf_token %}
+                    <input type="hidden" name="tcs_version" value="{{ latest_version }}">
+
+                    <div class="mb-3">
+                        <label for="os_type" class="form-label">Operating System</label>
+                        <select class="form-select" id="os_type" name="os_type">
+                            <option value="1">Windows</option>
+                            <option value="0">Linux</option>
+                        </select>
+                    </div>
+
+                    <button type="button" class="btn btn-primary" onclick="downloadUpgrade()">
+                        <i class="fas fa-download"></i> Download Upgrade Files
+                    </button>
+                </form>
+                {% else %}
+                <div class="alert alert-info mb-0">
+                    <i class="fas fa-check-circle"></i>
+                    Your system is up to date. No upgrades available.
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-4">
+        <div class="card efris-card">
+            <div class="card-header bg-white">
+                <h5 class="card-title mb-0">Upgrade Guide</h5>
+            </div>
+            <div class="card-body">
+                <h6>Before Upgrading:</h6>
+                <ol class="small">
+                    <li>Back up your current system</li>
+                    <li>Close all running applications</li>
+                    <li>Ensure stable internet connection</li>
+                    <li>Note your current version</li>
+                </ol>
+
+                <hr>
+
+                <h6>Upgrade Process:</h6>
+                <ol class="small">
+                    <li>Select your operating system</li>
+                    <li>Click "Download Upgrade Files"</li>
+                    <li>Follow installation instructions</li>
+                    <li>Restart the system</li>
+                    <li>Verify the new version</li>
+                </ol>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function downloadUpgrade() {
+    if (!confirm('Download upgrade files for version {{ latest_version }}?')) {
+        return;
+    }
+
+    const form = document.getElementById('upgradeForm');
+    const formData = new FormData(form);
+
+    fetch(form.action, {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            alert('Upgrade files downloaded successfully!');
+            console.log('Upgrade info:', data.upgrade_info);
+        } else {
+            alert('Download failed: ' + data.error);
+        }
+    })
+    .catch(error => {
+        alert('Download error: ' + error);
+    });
+}
+</script>
+{% endblock %}

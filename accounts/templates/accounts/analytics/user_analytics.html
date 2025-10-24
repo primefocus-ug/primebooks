@@ -1,0 +1,899 @@
+{% extends "base.html" %}
+{% load static %}
+{% load humanize %}
+
+{% block extra_css %}
+<style>
+    /* Dashboard Header Styling */
+    .dashboard-header {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        border-radius: 20px;
+        padding: 2.5rem;
+        margin-bottom: 2rem;
+        position: relative;
+        overflow: hidden;
+    }
+
+    .dashboard-header::before {
+        content: '';
+        position: absolute;
+        top: -50%;
+        right: -10%;
+        width: 300px;
+        height: 300px;
+        background: rgba(255, 255, 255, 0.1);
+        border-radius: 50%;
+    }
+
+    /* Filter Buttons */
+    .filter-buttons {
+        margin-bottom: 2rem;
+        padding: 1rem;
+        background: white;
+        border-radius: 15px;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.05);
+    }
+
+    .filter-btn {
+        border: 2px solid #e2e8f0;
+        background: white;
+        color: #64748b;
+        padding: 0.75rem 1.5rem;
+        border-radius: 25px;
+        margin: 0.25rem;
+        transition: all 0.3s ease;
+        cursor: pointer;
+        font-weight: 500;
+    }
+
+    .filter-btn:hover {
+        border-color: #667eea;
+        color: #667eea;
+        transform: translateY(-1px);
+    }
+
+    .filter-btn.active {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        border-color: transparent;
+        color: white;
+        transform: translateY(-2px);
+        box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+    }
+
+    /* Analytics Cards */
+    .analytics-card {
+        border: none;
+        border-radius: 20px;
+        box-shadow: 0 8px 25px rgba(0,0,0,0.08);
+        transition: transform 0.3s ease, box-shadow 0.3s ease;
+        overflow: hidden;
+        background: white;
+    }
+
+    .analytics-card:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 15px 35px rgba(0,0,0,0.15);
+    }
+
+    .analytics-card .card-header {
+        background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+        border-bottom: none;
+        padding: 1.5rem;
+    }
+
+    /* Stat Cards */
+    .stat-card {
+        transition: all 0.3s ease;
+        position: relative;
+        overflow: hidden;
+    }
+
+    .stat-card::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 4px;
+        background: linear-gradient(90deg, #667eea, #764ba2);
+        transform: scaleX(0);
+        transition: transform 0.3s ease;
+    }
+
+    .stat-card:hover::before {
+        transform: scaleX(1);
+    }
+
+    .stat-card.users::before { background: linear-gradient(90deg, #3b82f6, #1e40af); }
+    .stat-card.active::before { background: linear-gradient(90deg, #10b981, #059669); }
+    .stat-card.new::before { background: linear-gradient(90deg, #f59e0b, #d97706); }
+    .stat-card.locked::before { background: linear-gradient(90deg, #ef4444, #dc2626); }
+
+    .stat-icon {
+        position: absolute;
+        top: 1rem;
+        right: 1rem;
+        width: 50px;
+        height: 50px;
+        border-radius: 12px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.5rem;
+        opacity: 0.3;
+    }
+
+    .stat-card.users .stat-icon { background: rgba(59, 130, 246, 0.1); color: #3b82f6; }
+    .stat-card.active .stat-icon { background: rgba(16, 185, 129, 0.1); color: #10b981; }
+    .stat-card.new .stat-icon { background: rgba(245, 158, 11, 0.1); color: #f59e0b; }
+    .stat-card.locked .stat-icon { background: rgba(239, 68, 68, 0.1); color: #ef4444; }
+
+    .stat-number {
+        font-size: 2.5rem;
+        font-weight: 800;
+        margin-bottom: 0.5rem;
+        background: linear-gradient(135deg, #1f2937, #4b5563);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+    }
+
+    .stat-label {
+        color: #6b7280;
+        font-size: 0.875rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+
+    /* Chart Containers */
+    .chart-container {
+        position: relative;
+        height: 350px;
+        padding: 1rem;
+    }
+
+    .chart-container canvas {
+        border-radius: 10px;
+    }
+
+    /* Activity Timeline */
+    .activity-timeline {
+        padding: 1rem;
+        max-height: 300px;
+        overflow-y: auto;
+    }
+
+    .activity-item {
+        display: flex;
+        align-items: center;
+        padding: 1rem;
+        margin-bottom: 1rem;
+        background: #f8fafc;
+        border-radius: 12px;
+        border-left: 4px solid #667eea;
+        transition: all 0.3s ease;
+    }
+
+    .activity-item:hover {
+        background: #e2e8f0;
+        transform: translateX(5px);
+    }
+
+    /* Loading Animation */
+    .loading-spinner {
+        width: 60px;
+        height: 60px;
+        border: 4px solid rgba(255, 255, 255, 0.3);
+        border-top: 4px solid white;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+        margin: 0 auto;
+    }
+
+    @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+    }
+
+    /* Export button enhancements */
+    .export-btn {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        border: none;
+        border-radius: 12px;
+        padding: 0.75rem 1.5rem;
+        color: white;
+        font-weight: 600;
+        transition: all 0.3s ease;
+        box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
+    }
+
+    .export-btn:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 25px rgba(102, 126, 234, 0.4);
+        color: white;
+    }
+
+    .dropdown-item {
+        transition: all 0.3s ease;
+        border-radius: 8px;
+        margin: 2px 8px;
+        padding: 0.75rem 1rem;
+    }
+
+    .dropdown-item:hover {
+        background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+        transform: translateX(5px);
+    }
+
+    /* Success/Error toast styles */
+    .toast {
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        z-index: 10000;
+        min-width: 300px;
+        border-radius: 12px;
+        box-shadow: 0 8px 25px rgba(0,0,0,0.15);
+        transform: translateX(400px);
+        transition: transform 0.3s ease;
+    }
+
+    .toast.show {
+        transform: translateX(0);
+    }
+
+    .toast.success {
+        background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+        color: white;
+    }
+
+    .toast.error {
+        background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+        color: white;
+    }
+
+    /* Progress bar for export */
+    .export-progress {
+        height: 4px;
+        background: rgba(255, 255, 255, 0.3);
+        border-radius: 2px;
+        overflow: hidden;
+        margin-top: 10px;
+    }
+
+    .export-progress-bar {
+        height: 100%;
+        background: white;
+        border-radius: 2px;
+        width: 0%;
+        transition: width 0.3s ease;
+    }
+
+    /* Responsive Design */
+    @media (max-width: 768px) {
+        .dashboard-header {
+            text-align: center;
+            padding: 1.5rem;
+        }
+
+        .filter-buttons {
+            text-align: center;
+        }
+
+        .filter-btn {
+            display: block;
+            margin: 0.5rem auto;
+            width: 100%;
+            max-width: 200px;
+        }
+
+        .chart-container {
+            height: 250px;
+        }
+
+        .stat-number {
+            font-size: 2rem;
+        }
+
+        .export-btn {
+            width: 100%;
+            margin-top: 1rem;
+        }
+    }
+
+    /* Custom Scrollbar for Activity Timeline */
+    .activity-timeline::-webkit-scrollbar {
+        width: 6px;
+    }
+
+    .activity-timeline::-webkit-scrollbar-track {
+        background: #f1f5f9;
+        border-radius: 3px;
+    }
+
+    .activity-timeline::-webkit-scrollbar-thumb {
+        background: #cbd5e1;
+        border-radius: 3px;
+    }
+
+    .activity-timeline::-webkit-scrollbar-thumb:hover {
+        background: #94a3b8;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <!-- Dashboard Header -->
+    <div class="dashboard-header">
+        <div class="row align-items-center">
+            <div class="col-md-8">
+                <h1 class="mb-2 fw-bold">
+                    <i class="fas fa-chart-line me-3"></i>User Analytics Dashboard
+                </h1>
+                <p class="mb-0 opacity-85 lead">
+                    Comprehensive insights into user activity and engagement
+                </p>
+            </div>
+            <div class="col-md-4 text-end">
+                <div class="dropdown">
+                    <button class="btn export-btn dropdown-toggle" type="button" data-bs-toggle="dropdown" id="exportDropdown">
+                        <i class="fas fa-download me-2"></i>Export Data
+                    </button>
+                    <ul class="dropdown-menu shadow-lg border-0" style="border-radius: 12px; padding: 8px;">
+                        <li><a class="dropdown-item" href="#" onclick="exportData('pdf')">
+                            <i class="fas fa-file-pdf text-danger me-2"></i>Export as PDF
+                        </a></li>
+                        <li><a class="dropdown-item" href="#" onclick="exportData('excel')">
+                            <i class="fas fa-file-excel text-success me-2"></i>Export as Excel
+                        </a></li>
+                        <li><a class="dropdown-item" href="#" onclick="exportData('csv')">
+                            <i class="fas fa-file-csv text-info me-2"></i>Export as CSV
+                        </a></li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Time Filter Buttons -->
+    <div class="filter-buttons text-center">
+        <button class="filter-btn {% if days == 7 %}active{% endif %}" onclick="updatePeriod(7)" data-period="7">Last 7 Days</button>
+        <button class="filter-btn {% if days == 30 %}active{% endif %}" onclick="updatePeriod(30)" data-period="30">Last 30 Days</button>
+        <button class="filter-btn {% if days == 90 %}active{% endif %}" onclick="updatePeriod(90)" data-period="90">Last 90 Days</button>
+        <button class="filter-btn {% if days == 365 %}active{% endif %}" onclick="updatePeriod(365)" data-period="365">Last Year</button>
+    </div>
+
+    <!-- Stats Cards Row -->
+    <div class="row mb-4">
+        <div class="col-lg-3 col-md-6 mb-3">
+            <div class="card analytics-card stat-card users">
+                <div class="card-body position-relative">
+                    <i class="fas fa-users stat-icon"></i>
+                    <div class="stat-number">{{ new_users_period|default:0 }}</div>
+                    <div class="stat-label">New Users</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-3 col-md-6 mb-3">
+            <div class="card analytics-card stat-card active">
+                <div class="card-body position-relative">
+                    <i class="fas fa-user-check stat-icon"></i>
+                    <div class="stat-number">
+                        {% for item in active_inactive_data %}
+                            {% if item.status == "Active" %}{{ item.count|default:0 }}{% endif %}
+                        {% endfor %}
+                    </div>
+                    <div class="stat-label">Active Users</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-3 col-md-6 mb-3">
+            <div class="card analytics-card stat-card new">
+                <div class="card-body position-relative">
+                    <i class="fas fa-user-plus stat-icon"></i>
+                    <div class="stat-number">{{ total_users|default:0 }}</div>
+                    <div class="stat-label">Total Users</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-3 col-md-6 mb-3">
+            <div class="card analytics-card stat-card locked">
+                <div class="card-body position-relative">
+                    <i class="fas fa-user-lock stat-icon"></i>
+                    <div class="stat-number">
+                        {% for item in active_inactive_data %}
+                            {% if item.status == "Inactive" %}{{ item.count|default:0 }}{% endif %}
+                        {% endfor %}
+                    </div>
+                    <div class="stat-label">Inactive Users</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Charts Row -->
+    <div class="row mb-4">
+        <!-- User Registration Chart -->
+        <div class="col-lg-8 mb-4">
+            <div class="card analytics-card">
+                <div class="card-header border-0 pb-0">
+                    <h5 class="mb-0 fw-bold">
+                        <i class="fas fa-chart-area text-primary me-2"></i>
+                        User Registration Trends (Last {{ days }} Days)
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div class="chart-container">
+                        <canvas id="registrationChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- User Types Distribution -->
+        <div class="col-lg-4 mb-4">
+            <div class="card analytics-card">
+                <div class="card-header border-0 pb-0">
+                    <h5 class="mb-0 fw-bold">
+                        <i class="fas fa-chart-pie text-success me-2"></i>
+                        User Types
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div class="chart-container">
+                        <canvas id="userTypesChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Active vs Inactive and Recent Activity Row -->
+    <div class="row mb-4">
+        <!-- Active vs Inactive Chart -->
+        <div class="col-lg-4 mb-4">
+            <div class="card analytics-card">
+                <div class="card-header border-0 pb-0">
+                    <h5 class="mb-0 fw-bold">
+                        <i class="fas fa-chart-donut text-warning me-2"></i>
+                        User Status
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div class="chart-container">
+                        <canvas id="statusChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Recent Activity Timeline -->
+        <div class="col-lg-8 mb-4">
+            <div class="card analytics-card">
+                <div class="card-header border-0 pb-0">
+                    <h5 class="mb-0 fw-bold">
+                        <i class="fas fa-history text-info me-2"></i>
+                        Recent User Activity
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div class="activity-timeline" id="activityTimeline">
+                        <!-- Will be populated via JavaScript -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Loading Overlay -->
+<div id="loadingOverlay" class="position-fixed top-0 start-0 w-100 h-100 d-none" style="background: rgba(0,0,0,0.7); z-index: 9999; backdrop-filter: blur(5px);">
+    <div class="d-flex justify-content-center align-items-center h-100">
+        <div class="text-center text-white">
+            <div class="loading-spinner mb-3"></div>
+            <h4 class="fw-bold" id="loadingTitle">Loading Analytics Data...</h4>
+            <p class="opacity-75" id="loadingSubtitle">Please wait while we fetch the latest insights</p>
+            <div class="export-progress d-none" id="exportProgress">
+                <div class="export-progress-bar" id="exportProgressBar"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Toast Container -->
+<div id="toastContainer"></div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Get data from Django template
+        const registrationData = JSON.parse('{{ registration_data|escapejs }}');
+        const userTypeData = JSON.parse('{{ user_type_data|escapejs }}');
+        const activeInactiveData = JSON.parse('{{ active_inactive_data|escapejs }}');
+        const currentDays = {{ days }};
+
+        // Initialize charts with actual data
+        initRegistrationChart(registrationData);
+        initUserTypesChart(userTypeData);
+        initStatusChart(activeInactiveData);
+        loadRecentActivity();
+
+        // Set up filter buttons
+        document.querySelector(`.filter-btn[data-period="${currentDays}"]`)?.classList.add('active');
+    });
+
+    function updatePeriod(days) {
+        // Show loading overlay
+        showLoading('Loading Analytics Data...', 'Please wait while we fetch the latest insights');
+
+        // Update URL with new period
+        window.location.search = `?days=${days}`;
+    }
+
+    function exportData(format) {
+        // Show loading overlay with export-specific message
+        const formatName = format.toUpperCase();
+        showLoading(
+            `Generating ${formatName} Report...`,
+            `Please wait while we prepare your analytics data in ${formatName} format`,
+            true
+        );
+
+        // Get current filter period
+        const currentDays = {{ days }};
+
+        // Create export URL
+        const exportUrl = `{% url 'export_analytics_data' %}?format=${format}&days=${currentDays}`;
+
+        // Create hidden iframe for download
+        const iframe = document.createElement('iframe');
+        iframe.style.display = 'none';
+        iframe.src = exportUrl;
+        document.body.appendChild(iframe);
+
+        // Simulate progress
+        simulateProgress();
+
+        // Handle success/error
+        setTimeout(() => {
+            document.body.removeChild(iframe);
+            hideLoading();
+            showToast(`${formatName} report generated successfully!`, 'success');
+        }, 3000);
+
+        // Handle potential errors
+        iframe.onerror = function() {
+            hideLoading();
+            showToast('Failed to generate report. Please try again.', 'error');
+            document.body.removeChild(iframe);
+        };
+    }
+
+    function showLoading(title, subtitle, showProgress = false) {
+        const overlay = document.getElementById('loadingOverlay');
+        const titleEl = document.getElementById('loadingTitle');
+        const subtitleEl = document.getElementById('loadingSubtitle');
+        const progressEl = document.getElementById('exportProgress');
+
+        titleEl.textContent = title;
+        subtitleEl.textContent = subtitle;
+
+        if (showProgress) {
+            progressEl.classList.remove('d-none');
+        } else {
+            progressEl.classList.add('d-none');
+        }
+
+        overlay.classList.remove('d-none');
+    }
+
+    function hideLoading() {
+        document.getElementById('loadingOverlay').classList.add('d-none');
+    }
+
+    function simulateProgress() {
+        const progressBar = document.getElementById('exportProgressBar');
+        let progress = 0;
+
+        const interval = setInterval(() => {
+            progress += Math.random() * 15;
+            if (progress > 90) progress = 90;
+
+            progressBar.style.width = progress + '%';
+
+            if (progress >= 90) {
+                clearInterval(interval);
+                setTimeout(() => {
+                    progressBar.style.width = '100%';
+                }, 200);
+            }
+        }, 200);
+    }
+
+    function showToast(message, type = 'success') {
+        const container = document.getElementById('toastContainer');
+
+        const toast = document.createElement('div');
+        toast.className = `toast ${type}`;
+        toast.innerHTML = `
+            <div class="toast-body d-flex align-items-center justify-content-between p-3">
+                <div class="d-flex align-items-center">
+                    <i class="fas ${type === 'success' ? 'fa-check-circle' : 'fa-exclamation-circle'} me-2"></i>
+                    <span>${message}</span>
+                </div>
+                <button type="button" class="btn-close btn-close-white" onclick="this.parentElement.parentElement.remove()"></button>
+            </div>
+        `;
+
+        container.appendChild(toast);
+
+        // Show toast
+        setTimeout(() => {
+            toast.classList.add('show');
+        }, 100);
+
+        // Auto remove after 5 seconds
+        setTimeout(() => {
+            if (toast.parentElement) {
+                toast.classList.remove('show');
+                setTimeout(() => {
+                    if (toast.parentElement) {
+                        toast.remove();
+                    }
+                }, 300);
+            }
+        }, 5000);
+    }
+
+    function initRegistrationChart(data) {
+        const ctx = document.getElementById('registrationChart').getContext('2d');
+        const labels = data.map(item => {
+            const date = new Date(item.date);
+            return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        });
+        const counts = data.map(item => item.count);
+
+        new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: 'New Registrations',
+                    data: counts,
+                    borderColor: 'rgb(102, 126, 234)',
+                    backgroundColor: 'rgba(102, 126, 234, 0.1)',
+                    borderWidth: 3,
+                    fill: true,
+                    tension: 0.4,
+                    pointBackgroundColor: 'rgb(102, 126, 234)',
+                    pointBorderColor: '#fff',
+                    pointBorderWidth: 2,
+                    pointRadius: 5,
+                    pointHoverRadius: 7
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        display: false
+                    },
+                    tooltip: {
+                        backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                        titleColor: '#fff',
+                        bodyColor: '#fff',
+                        borderColor: 'rgb(102, 126, 234)',
+                        borderWidth: 1
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        grid: {
+                            color: 'rgba(0, 0, 0, 0.05)'
+                        }
+                    },
+                    x: {
+                        grid: {
+                            display: false
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    function initUserTypesChart(data) {
+        const ctx = document.getElementById('userTypesChart').getContext('2d');
+        const labels = data.map(item => {
+            return item.user_type.replace('_', ' ').toLowerCase()
+                .split(' ')
+                .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+                .join(' ');
+        });
+        const counts = data.map(item => item.count);
+
+        new Chart(ctx, {
+            type: 'doughnut',
+            data: {
+                labels: labels,
+                datasets: [{
+                    data: counts,
+                    backgroundColor: [
+                        '#667eea', '#f093fb', '#4facfe', '#fa709a', '#ffd89b',
+                        '#43e97b', '#38f9d7', '#5ee7df', '#66a6ff', '#89f7fe'
+                    ],
+                    borderWidth: 0,
+                    hoverBorderWidth: 3,
+                    hoverBorderColor: '#fff'
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        position: 'bottom',
+                        labels: {
+                            usePointStyle: true,
+                            padding: 20
+                        }
+                    },
+                    tooltip: {
+                        backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                        titleColor: '#fff',
+                        bodyColor: '#fff'
+                    }
+                },
+                cutout: '60%'
+            }
+        });
+    }
+
+    function initStatusChart(data) {
+        const ctx = document.getElementById('statusChart').getContext('2d');
+        const labels = data.map(item => item.status);
+        const counts = data.map(item => item.count);
+
+        new Chart(ctx, {
+            type: 'doughnut',
+            data: {
+                labels: labels,
+                datasets: [{
+                    data: counts,
+                    backgroundColor: ['#10b981', '#ef4444'],
+                    borderWidth: 0,
+                    hoverBorderWidth: 3,
+                    hoverBorderColor: '#fff'
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        position: 'bottom',
+                        labels: {
+                            usePointStyle: true,
+                            padding: 20
+                        }
+                    },
+                    tooltip: {
+                        backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                        titleColor: '#fff',
+                        bodyColor: '#fff'
+                    }
+                },
+                cutout: '70%'
+            }
+        });
+    }
+
+    function loadRecentActivity() {
+        const timeline = document.getElementById('activityTimeline');
+
+        // Show loading state
+        timeline.innerHTML = `
+            <div class="text-center py-4">
+                <div class="loading-spinner mb-3" style="width: 40px; height: 40px; border-width: 3px;"></div>
+                <p class="text-muted">Loading recent activity...</p>
+            </div>
+        `;
+
+        // Simulate loading delay and show sample data
+        setTimeout(() => {
+            timeline.innerHTML = `
+                <div class="activity-item">
+                    <div class="d-flex align-items-start w-100">
+                        <div class="me-3 mt-1">
+                            <i class="fas fa-chart-line text-primary"></i>
+                        </div>
+                        <div class="flex-grow-1">
+                            <div class="fw-semibold mb-1">Analytics dashboard accessed</div>
+                            <small class="text-muted">
+                                <i class="fas fa-clock me-1"></i>Just now
+                                <span class="mx-2">•</span>
+                                <i class="fas fa-user me-1"></i>{{ user.get_full_name|default:user.username }}
+                            </small>
+                        </div>
+                    </div>
+                </div>
+                <div class="activity-item">
+                    <div class="d-flex align-items-start w-100">
+                        <div class="me-3 mt-1">
+                            <i class="fas fa-users text-success"></i>
+                        </div>
+                        <div class="flex-grow-1">
+                            <div class="fw-semibold mb-1">User data synchronized</div>
+                            <small class="text-muted">
+                                <i class="fas fa-clock me-1"></i>5 minutes ago
+                                <span class="mx-2">•</span>
+                                <i class="fas fa-database me-1"></i>System Process
+                            </small>
+                        </div>
+                    </div>
+                </div>
+                <div class="activity-item">
+                    <div class="d-flex align-items-start w-100">
+                        <div class="me-3 mt-1">
+                            <i class="fas fa-download text-info"></i>
+                        </div>
+                        <div class="flex-grow-1">
+                            <div class="fw-semibold mb-1">Analytics report generated</div>
+                            <small class="text-muted">
+                                <i class="fas fa-clock me-1"></i>15 minutes ago
+                                <span class="mx-2">•</span>
+                                <i class="fas fa-file-pdf me-1"></i>PDF Export
+                            </small>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }, 1000);
+    }
+
+    // Add smooth animations to stat cards
+    const observerOptions = {
+        threshold: 0.1,
+        rootMargin: '0px 0px -50px 0px'
+    };
+
+    const observer = new IntersectionObserver((entries) => {
+        entries.forEach(entry => {
+            if (entry.isIntersecting) {
+                const statNumber = entry.target.querySelector('.stat-number');
+                const finalValue = parseInt(statNumber.textContent) || 0;
+                animateCounter(statNumber, finalValue);
+            }
+        });
+    }, observerOptions);
+
+    // Observe all stat cards
+    document.querySelectorAll('.stat-card').forEach(card => {
+        observer.observe(card);
+    });
+
+    function animateCounter(element, target) {
+        const duration = 1500;
+        const start = 0;
+        const increment = target / (duration / 16);
+        let current = start;
+
+        const timer = setInterval(() => {
+            current += increment;
+            if (current >= target) {
+                element.textContent = target.toLocaleString();
+                clearInterval(timer);
+            } else {
+                element.textContent = Math.floor(current).toLocaleString();
+            }
+        }, 16);
+    }
+</script>
+{% endblock %}

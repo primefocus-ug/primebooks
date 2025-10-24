@@ -1,0 +1,210 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}EFRIS Configuration | {{ block.super }}{% endblock %}
+
+{% block breadcrumb_items %}
+<li class="breadcrumb-item"><a href="{% url 'efris:dashboard' %}">EFRIS</a></li>
+<li class="breadcrumb-item active">Configuration</li>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- Page Header -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h2 class="mb-1">EFRIS Configuration</h2>
+            <p class="text-muted mb-0">Manage your EFRIS integration settings</p>
+        </div>
+        <div>
+            <a href="{% url 'efris:dashboard' %}" class="btn btn-outline-primary">
+                <i class="bi bi-arrow-left me-2"></i>Back to Dashboard
+            </a>
+        </div>
+    </div>
+
+    <div class="row">
+        <!-- Configuration Form -->
+        <div class="col-lg-8">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="bi bi-gear me-2"></i>Configuration Settings</h5>
+                </div>
+                <div class="card-body">
+                    <form method="post" id="configForm">
+                        {% csrf_token %}
+                        <input type="hidden" name="action" value="save_config">
+
+                        <div class="mb-3">
+                            <label for="device_number" class="form-label">Device Number <span class="text-danger">*</span></label>
+                            <input type="text" class="form-control" id="device_number" name="device_number"
+                                   value="{{ config.device_number|default:'' }}" required>
+                            <small class="form-text text-muted">Your EFRIS assigned device number</small>
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="api_url" class="form-label">API URL <span class="text-danger">*</span></label>
+                            <input type="url" class="form-control" id="api_url" name="api_url"
+                                   value="{{ config.api_url|default:'https://efris-api.ura.go.ug' }}" required>
+                            <small class="form-text text-muted">EFRIS API endpoint URL</small>
+                        </div>
+
+                        <div class="mb-3">
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" id="is_active" name="is_active"
+                                       {% if config.is_active or not config %}checked{% endif %}>
+                                <label class="form-check-label" for="is_active">
+                                    Enable EFRIS Integration
+                                </label>
+                            </div>
+                            <small class="form-text text-muted">Toggle to enable or disable EFRIS features</small>
+                        </div>
+
+                        <div class="d-flex gap-2">
+                            <button type="submit" class="btn btn-primary">
+                                <i class="bi bi-save me-2"></i>Save Configuration
+                            </button>
+                            <button type="button" class="btn btn-outline-secondary" id="testConnectionBtn">
+                                <i class="bi bi-wifi me-2"></i>Test Connection
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Connection Test Results -->
+            <div class="card mt-4" id="testResultCard" style="display: none;">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="bi bi-activity me-2"></i>Connection Test Results</h5>
+                </div>
+                <div class="card-body" id="testResultBody">
+                    <!-- Results will be inserted here -->
+                </div>
+            </div>
+        </div>
+
+        <!-- Setup Checklist -->
+        <div class="col-lg-4">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="bi bi-list-check me-2"></i>Setup Checklist</h5>
+                </div>
+                <div class="card-body">
+                    <div class="list-group list-group-flush">
+                        {% for item in checklist %}
+                        <div class="list-group-item border-0 px-0">
+                            <div class="d-flex align-items-start">
+                                <div class="me-3">
+                                    {% if item.completed %}
+                                    <i class="bi bi-check-circle-fill text-success fs-5"></i>
+                                    {% else %}
+                                    <i class="bi bi-circle text-muted fs-5"></i>
+                                    {% endif %}
+                                </div>
+                                <div class="flex-grow-1">
+                                    <h6 class="mb-1">{{ item.title }}</h6>
+                                    <p class="mb-0 text-muted small">{{ item.description }}</p>
+                                </div>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+
+            <!-- Quick Stats -->
+            {% if config %}
+            <div class="card mt-4">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="bi bi-info-circle me-2"></i>Configuration Info</h5>
+                </div>
+                <div class="card-body">
+                    <dl class="row mb-0">
+                        <dt class="col-sm-6">Status:</dt>
+                        <dd class="col-sm-6">
+                            {% if config.is_active %}
+                            <span class="badge bg-success">Active</span>
+                            {% else %}
+                            <span class="badge bg-secondary">Inactive</span>
+                            {% endif %}
+                        </dd>
+
+                        <dt class="col-sm-6">Created:</dt>
+                        <dd class="col-sm-6">{{ config.created_at|date:"Y-m-d" }}</dd>
+
+                        <dt class="col-sm-6">Last Updated:</dt>
+                        <dd class="col-sm-6">{{ config.updated_at|date:"Y-m-d H:i" }}</dd>
+                    </dl>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<style>
+.list-group-item {
+    transition: background-color 0.2s ease;
+}
+.list-group-item:hover {
+    background-color: var(--bg-secondary);
+}
+</style>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const testBtn = document.getElementById('testConnectionBtn');
+    const testResultCard = document.getElementById('testResultCard');
+    const testResultBody = document.getElementById('testResultBody');
+
+    testBtn.addEventListener('click', function() {
+        testBtn.disabled = true;
+        testBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Testing...';
+
+        fetch("{% url 'efris:ajax_test_connection' %}", {
+            method: 'POST',
+            headers: {
+                'X-CSRFToken': window.csrfToken,
+                'Content-Type': 'application/json'
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            testResultCard.style.display = 'block';
+
+            if (data.success) {
+                testResultBody.innerHTML = `
+                    <div class="alert alert-success mb-0">
+                        <i class="bi bi-check-circle me-2"></i>
+                        <strong>Connection Successful!</strong>
+                        <p class="mb-0 mt-2">${data.message || 'Successfully connected to EFRIS API'}</p>
+                    </div>
+                `;
+            } else {
+                testResultBody.innerHTML = `
+                    <div class="alert alert-danger mb-0">
+                        <i class="bi bi-x-circle me-2"></i>
+                        <strong>Connection Failed</strong>
+                        <p class="mb-0 mt-2">${data.error || 'Unable to connect to EFRIS API'}</p>
+                    </div>
+                `;
+            }
+        })
+        .catch(error => {
+            testResultCard.style.display = 'block';
+            testResultBody.innerHTML = `
+                <div class="alert alert-danger mb-0">
+                    <i class="bi bi-exclamation-triangle me-2"></i>
+                    <strong>Error</strong>
+                    <p class="mb-0 mt-2">${error.message}</p>
+                </div>
+            `;
+        })
+        .finally(() => {
+            testBtn.disabled = false;
+            testBtn.innerHTML = '<i class="bi bi-wifi me-2"></i>Test Connection';
+        });
+    });
+});
+</script>
+{% endblock %}

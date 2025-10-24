@@ -1,0 +1,1266 @@
+{% extends 'base.html' %}
+{% load i18n %}
+
+{% block title %}{% trans "User Management" %} | {{ company.trading_name|default:company.name }}{% endblock %}
+
+{% block extra_css %}
+<style>
+
+    :root {
+        /* Primary Color Palette */
+        --primary-50: #f0f9ff;
+        --primary-500: #3b82f6;
+        --primary-600: #2563eb;
+        --primary-700: #1d4ed8;
+
+        /* Neutral Colors */
+        --gray-50: #f9fafb;
+        --gray-100: #f3f4f6;
+        --gray-200: #e5e7eb;
+        --gray-300: #d1d5db;
+        --gray-400: #9ca3af;
+        --gray-500: #6b7280;
+        --gray-600: #4b5563;
+        --gray-700: #374151;
+        --gray-800: #1f2937;
+        --gray-900: #111827;
+
+        /* Status Colors */
+        --green-500: #10b981;
+        --green-600: #059669;
+        --amber-500: #f59e0b;
+        --amber-600: #d97706;
+        --red-500: #ef4444;
+        --red-600: #dc2626;
+
+        /* Light Theme Variables */
+        --bg-primary: #ffffff;
+        --bg-secondary: var(--gray-50);
+        --text-primary: var(--gray-900);
+        --text-secondary: var(--gray-600);
+        --text-muted: var(--gray-500);
+        --border-color: var(--gray-200);
+        --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+        --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+        --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+    }
+
+    [data-theme="dark"] {
+        /* Dark Theme Variables */
+        --bg-primary: var(--gray-900);
+        --bg-secondary: var(--gray-800);
+        --text-primary: var(--gray-100);
+        --text-secondary: var(--gray-300);
+        --text-muted: var(--gray-400);
+        --border-color: var(--gray-700);
+        --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.3);
+        --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.4), 0 2px 4px -1px rgba(0, 0, 0, 0.3);
+        --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.4), 0 4px 6px -2px rgba(0, 0, 0, 0.3);
+    }
+
+
+
+    * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+    }
+
+    body {
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', sans-serif;
+        background-color: var(--bg-secondary);
+        color: var(--text-primary);
+        line-height: 1.6;
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+        transition: background-color 0.3s ease, color 0.3s ease;
+    }
+
+    img {
+        max-width: 100%;
+        height: auto;
+    }
+
+    button {
+        cursor: pointer;
+        border: none;
+        background: none;
+    }
+
+
+
+    .dashboard-container {
+        max-width: 1400px;
+        margin: 0 auto;
+        padding: 2rem 1rem;
+        min-height: 100vh;
+    }
+
+    .dashboard-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 2rem;
+        padding-bottom: 1rem;
+        border-bottom: 1px solid var(--border-color);
+    }
+
+    .brand {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+    }
+
+    .brand-logo {
+        width: 40px;
+        height: 40px;
+        background: linear-gradient(135deg, var(--primary-500), var(--primary-600));
+        border-radius: 8px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: white;
+        font-weight: 600;
+        font-size: 1.125rem;
+    }
+
+    .brand-text {
+        font-size: 1.25rem;
+        font-weight: 700;
+        color: var(--text-primary);
+    }
+
+
+
+    .theme-toggle {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+    }
+
+    .theme-switch {
+        position: relative;
+        width: 52px;
+        height: 28px;
+    }
+
+    .theme-switch input {
+        opacity: 0;
+        width: 0;
+        height: 0;
+    }
+
+    .theme-slider {
+        position: absolute;
+        cursor: pointer;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background-color: var(--gray-300);
+        border-radius: 28px;
+        transition: .3s;
+    }
+
+    .theme-slider:before {
+        position: absolute;
+        content: "";
+        height: 20px;
+        width: 20px;
+        left: 4px;
+        bottom: 4px;
+        background-color: white;
+        border-radius: 50%;
+        transition: .3s;
+    }
+
+    input:checked + .theme-slider {
+        background-color: var(--primary-500);
+    }
+
+    input:checked + .theme-slider:before {
+        transform: translateX(24px);
+    }
+
+    .theme-icon {
+        color: var(--text-muted);
+        font-size: 1.125rem;
+    }
+
+
+
+    .welcome-hero {
+        background: linear-gradient(135deg, var(--primary-600) 0%, var(--primary-700) 100%);
+        border-radius: 16px;
+        padding: 2.5rem;
+        color: white;
+        margin-bottom: 2rem;
+        box-shadow: var(--shadow-lg);
+        position: relative;
+        overflow: hidden;
+    }
+
+    .welcome-hero::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        right: 0;
+        width: 300px;
+        height: 300px;
+        background: radial-gradient(circle, rgba(255,255,255,0.1) 0%, transparent 70%);
+        border-radius: 50%;
+        transform: translate(30%, -30%);
+    }
+
+    .welcome-content {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        position: relative;
+        z-index: 2;
+    }
+
+    .welcome-text h1 {
+        font-size: 2rem;
+        font-weight: 700;
+        margin-bottom: 0.5rem;
+        line-height: 1.2;
+    }
+
+    .welcome-text p {
+        opacity: 0.9;
+        font-size: 1rem;
+        margin: 0;
+    }
+
+    .user-avatar {
+        width: 80px;
+        height: 80px;
+        border-radius: 50%;
+        background: rgba(255, 255, 255, 0.2);
+        border: 3px solid rgba(255, 255, 255, 0.3);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.75rem;
+        font-weight: 600;
+    }
+
+
+
+    .stats-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+        gap: 1.5rem;
+        margin-bottom: 2rem;
+    }
+
+    .stat-card {
+        background: var(--bg-primary);
+        border: 1px solid var(--border-color);
+        border-radius: 12px;
+        padding: 1.5rem;
+        box-shadow: var(--shadow-sm);
+        transition: all 0.3s ease;
+    }
+
+    .stat-card:hover {
+        box-shadow: var(--shadow-md);
+        transform: translateY(-2px);
+    }
+
+    .stat-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 1rem;
+    }
+
+    .stat-icon {
+        width: 48px;
+        height: 48px;
+        border-radius: 10px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.25rem;
+        font-weight: 600;
+    }
+
+    .stat-icon.primary {
+        background-color: var(--primary-50);
+        color: var(--primary-600);
+    }
+
+    .stat-icon.success {
+        background-color: rgba(16, 185, 129, 0.1);
+        color: var(--green-600);
+    }
+
+    .stat-icon.warning {
+        background-color: rgba(245, 158, 11, 0.1);
+        color: var(--amber-600);
+    }
+
+    .stat-icon.danger {
+        background-color: rgba(239, 68, 68, 0.1);
+        color: var(--red-600);
+    }
+
+    .stat-value {
+        font-size: 2rem;
+        font-weight: 700;
+        color: var(--text-primary);
+        margin: 0.5rem 0 0.25rem;
+        line-height: 1.1;
+    }
+
+    .stat-label {
+        font-size: 0.875rem;
+        color: var(--text-muted);
+        font-weight: 500;
+        text-transform: uppercase;
+        letter-spacing: 0.025em;
+    }
+
+
+
+    .section-header {
+        margin: 2.5rem 0 1.5rem;
+    }
+
+    .section-title {
+        font-size: 1.5rem;
+        font-weight: 700;
+        color: var(--text-primary);
+        margin-bottom: 0.5rem;
+    }
+
+    .section-subtitle {
+        color: var(--text-secondary);
+        font-size: 1rem;
+    }
+
+
+
+    .content-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 2rem;
+        margin-bottom: 2rem;
+    }
+
+    .content-card {
+        background: var(--bg-primary);
+        border: 1px solid var(--border-color);
+        border-radius: 12px;
+        padding: 1.5rem;
+        box-shadow: var(--shadow-sm);
+    }
+
+    .card-header {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        margin-bottom: 1.5rem;
+    }
+
+    .card-title {
+        font-size: 1.25rem;
+        font-weight: 600;
+        color: var(--text-primary);
+        margin: 0;
+    }
+
+    .card-icon {
+        color: var(--primary-500);
+        font-size: 1.25rem;
+    }
+
+
+
+    .security-list {
+        display: flex;
+        flex-direction: column;
+        gap: 1rem;
+    }
+
+    .security-item {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 1rem;
+        background: var(--bg-secondary);
+        border-radius: 8px;
+        border: 1px solid var(--border-color);
+    }
+
+    .security-item-info {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+    }
+
+    .security-item-icon {
+        color: var(--text-muted);
+        font-size: 1.125rem;
+    }
+
+    .security-item-text {
+        font-weight: 500;
+        color: var(--text-primary);
+    }
+
+    .status-badge {
+        padding: 0.375rem 0.875rem;
+        border-radius: 6px;
+        font-size: 0.75rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.025em;
+    }
+
+    .status-verified {
+        background-color: rgba(16, 185, 129, 0.1);
+        color: var(--green-600);
+    }
+
+    .status-unverified {
+        background-color: rgba(245, 158, 11, 0.1);
+        color: var(--amber-600);
+    }
+
+    .status-danger {
+        background-color: rgba(239, 68, 68, 0.1);
+        color: var(--red-600);
+    }
+
+
+
+    .activity-list {
+        display: flex;
+        flex-direction: column;
+        gap: 1rem;
+    }
+
+    .activity-item {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+        padding: 1rem;
+        background: var(--bg-secondary);
+        border-radius: 8px;
+        border: 1px solid var(--border-color);
+    }
+
+    .activity-icon {
+        width: 40px;
+        height: 40px;
+        border-radius: 8px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1rem;
+        color: white;
+        font-weight: 600;
+    }
+
+    .activity-icon.primary {
+        background: var(--primary-500);
+    }
+
+    .activity-icon.success {
+        background: var(--green-500);
+    }
+
+    .activity-icon.info {
+        background: var(--primary-600);
+    }
+
+    .activity-content h5 {
+        font-size: 0.95rem;
+        font-weight: 600;
+        color: var(--text-primary);
+        margin: 0 0 0.25rem;
+    }
+
+    .activity-meta {
+        font-size: 0.85rem;
+        color: var(--text-muted);
+        margin: 0;
+    }
+
+
+    .actions-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+        gap: 1.5rem;
+        margin-top: 1.5rem;
+    }
+
+    .action-card {
+        display: block;
+        padding: 1.5rem;
+        background: var(--bg-primary);
+        border: 1px solid var(--border-color);
+        border-radius: 12px;
+        text-decoration: none;
+        color: inherit;
+        transition: all 0.3s ease;
+        box-shadow: var(--shadow-sm);
+    }
+
+    .action-card:hover {
+        transform: translateY(-4px);
+        box-shadow: var(--shadow-lg);
+        border-color: var(--primary-500);
+        text-decoration: none;
+        color: inherit;
+    }
+
+    .action-header {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        margin-bottom: 0.75rem;
+    }
+
+    .action-icon {
+        color: var(--primary-500);
+        font-size: 1.5rem;
+    }
+
+    .action-title {
+        font-size: 1rem;
+        font-weight: 600;
+        color: var(--text-primary);
+        margin: 0;
+    }
+
+    .action-description {
+        font-size: 0.875rem;
+        color: var(--text-muted);
+        line-height: 1.5;
+        margin: 0;
+    }
+
+
+
+    @media (max-width: 1024px) {
+        .content-grid {
+            grid-template-columns: 1fr;
+        }
+
+        .stats-grid {
+            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+        }
+    }
+
+    @media (max-width: 768px) {
+        .dashboard-container {
+            padding: 1rem;
+        }
+
+        .dashboard-header {
+            flex-direction: column;
+            gap: 1rem;
+            text-align: center;
+        }
+
+        .welcome-content {
+            flex-direction: column;
+            text-align: center;
+            gap: 1.5rem;
+        }
+
+        .welcome-hero {
+            padding: 2rem;
+        }
+
+        .welcome-text h1 {
+            font-size: 1.75rem;
+        }
+
+        .stats-grid {
+            grid-template-columns: 1fr;
+        }
+
+        .actions-grid {
+            grid-template-columns: 1fr;
+        }
+    }
+
+    @media (max-width: 480px) {
+        .welcome-hero {
+            padding: 1.5rem;
+        }
+
+        .stat-card,
+        .content-card,
+        .action-card {
+            padding: 1.25rem;
+        }
+    }
+
+
+    .action-card:focus,
+    .theme-switch:focus-within {
+        outline: 2px solid var(--primary-500);
+        outline-offset: 2px;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+        * {
+            animation-duration: 0.01ms !important;
+            animation-iteration-count: 1 !important;
+            transition-duration: 0.01ms !important;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="dashboard-container">
+    <!-- Header Section -->
+    <header class="dashboard-header">
+        <div class="brand">
+            <div class="brand-logo">
+                <i class="bi bi-person-gear"></i>
+            </div>
+            <div class="brand-text">{% trans "User Management" %}</div>
+        </div>
+
+    </header>
+
+    <!-- Welcome Hero Section -->
+    <div class="welcome-hero">
+        <div class="welcome-content">
+            <div class="welcome-text">
+                <h1>{% trans "Welcome back,"%} {{ user.get_short_name }}! 👋</h1>
+                <p>{% trans "Here's what's happening with your account today." %}
+                    {% if user.last_login %}
+                        Last login: {{ user.last_login|date:"M d, Y \a\t g:i A" }}
+                        {% if user.last_login_ip %} {% trans "from" %} {{ user.last_login_ip }}{% endif %}
+                    {% endif %}
+                </p>
+            </div>
+            <div class="user-avatar">
+                {% if user.avatar %}
+                    <img src="{{ user.avatar.url }}" alt="{{ user.get_short_name }}'s avatar" style="width: 100%; height: 100%; border-radius: 50%; object-fit: cover;">
+                {% else %}
+                    {{ user.get_short_name|first|default:user.username|first|upper }}
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Personal Statistics -->
+    <div class="stats-grid">
+        <div class="stat-card">
+            <div class="stat-header">
+                <div class="stat-icon primary">
+                    <i class="bi bi-calendar-check"></i>
+                </div>
+            </div>
+            <div class="stat-value">{{ account_age }}</div>
+            <div class="stat-label">{% trans "Days Active" %}</div>
+        </div>
+
+        <div class="stat-card">
+            <div class="stat-header">
+                <div class="stat-icon success">
+                    <i class="bi bi-box-arrow-in-right"></i>
+                </div>
+            </div>
+            <div class="stat-value">{{ total_login_count }}</div>
+            <div class="stat-label">{% trans "Total Logins" %}</div>
+        </div>
+
+        <div class="stat-card">
+            <div class="stat-header">
+                <div class="stat-icon {% if is_locked %}danger{% else %}success{% endif %}">
+                    <i class="bi {% if is_locked %}bi-lock{% else %}bi-unlock{% endif %}"></i>
+                </div>
+            </div>
+            <div class="stat-value">{% if is_locked %}Locked{% else %}Active{% endif %}</div>
+            <div class="stat-label">{% trans "Account Status" %}</div>
+        </div>
+
+        <div class="stat-card">
+            <div class="stat-header">
+                <div class="stat-icon {% if two_factor_enabled %}success{% else %}warning{% endif %}">
+                    <i class="bi bi-shield-{% if two_factor_enabled %}check{% else %}exclamation{% endif %}"></i>
+                </div>
+            </div>
+            <div class="stat-value">{% if two_factor_enabled %}Enabled{% else %}Disabled{% endif %}</div>
+            <div class="stat-label">{% trans "Two Factor Auth" %}</div>
+        </div>
+    </div>
+
+    <!-- System Overview (Admin Only) -->
+    {% if perms.accounts.can_manage_users or is_system_admin %}
+    <div class="section-header">
+        <h2 class="section-title">{% trans "System Overview" %}</h2>
+        <p class="section-subtitle">{% trans "Real-time user statistics and system health" %}</p>
+    </div>
+
+    <div class="stats-grid">
+        <div class="stat-card">
+            <div class="stat-header">
+                <div class="stat-icon primary">
+                    <i class="bi bi-people"></i>
+                </div>
+            </div>
+            <div class="stat-value" id="statTotalUsers">{{ user_stats.total|default:0 }}</div>
+            <div class="stat-label">{% trans "Total Users" %}</div>
+        </div>
+
+        <div class="stat-card">
+            <div class="stat-header">
+                <div class="stat-icon success">
+                    <i class="bi bi-person-check"></i>
+                </div>
+            </div>
+            <div class="stat-value" id="statActiveUsers">{{ user_stats.active|default:0 }}</div>
+            <div class="stat-label">{% trans "Active Users" %}</div>
+        </div>
+
+        <div class="stat-card">
+            <div class="stat-header">
+                <div class="stat-icon warning">
+                    <i class="bi bi-person-plus"></i>
+                </div>
+            </div>
+            <div class="stat-value" id="statNewToday">{{ user_stats.new_today|default:0 }}</div>
+            <div class="stat-label">{% trans "New Today" %}</div>
+        </div>
+
+        <div class="stat-card">
+            <div class="stat-header">
+                <div class="stat-icon danger">
+                    <i class="bi bi-person-lock"></i>
+                </div>
+            </div>
+            <div class="stat-value" id="statLocked">{{ user_stats.locked|default:0 }}</div>
+            <div class="stat-label">{% trans "Locked Accounts" %}</div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Security & Activity Section -->
+    <div class="content-grid">
+        <!-- Security Status -->
+        <div class="content-card">
+            <div class="card-header">
+                <i class="bi bi-shield-lock card-icon"></i>
+                <h3 class="card-title">{% trans "Security Status" %}</h3>
+            </div>
+
+            <div class="security-list">
+                <div class="security-item">
+                    <div class="security-item-info">
+                        <i class="bi bi-envelope security-item-icon"></i>
+                        <span class="security-item-text">{% trans "Email Verification" %}</span>
+                    </div>
+                    <span class="status-badge {% if email_verified %}status-verified{% else %}status-unverified{% endif %}">
+                        {% if email_verified %}
+                            Verified
+                        {% else %}
+                            Unverified —
+                            <a href="#" class="verify-link" id="send-verification">Verify now</a>
+                        {% endif %}
+                    </span>
+                </div>
+
+                <div class="security-item">
+                    <div class="security-item-info">
+                        <i class="bi bi-phone security-item-icon"></i>
+                        <span class="security-item-text">{% trans "Phone Verification" %}</span>
+                    </div>
+                    <span class="status-badge {% if phone_verified %}status-verified{% else %}status-unverified{% endif %}">
+                        {% if phone_verified %}Verified{% else %}Unverified{% endif %}
+                    </span>
+                </div>
+
+                <div class="security-item">
+                    <div class="security-item-info">
+                        <i class="bi bi-shield security-item-icon"></i>
+                        <span class="security-item-text">{% trans "Two-Factor Auth" %}</span>
+                    </div>
+                    <span class="status-badge {% if two_factor_enabled %}status-verified{% else %}status-unverified{% endif %}">
+                        {% if two_factor_enabled %}Enabled{% else %}Disabled{% endif %}
+                    </span>
+                </div>
+
+                <div class="security-item">
+                    <div class="security-item-info">
+                        <i class="bi bi-key security-item-icon"></i>
+                        <span class="security-item-text">{% trans "Account Security" %}</span>
+                    </div>
+                    <span class="status-badge {% if not is_locked %}status-verified{% else %}status-danger{% endif %}">
+                        {% if not is_locked %}Secure{% else %}Locked{% endif %}
+                    </span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Recent Activity -->
+        <div class="content-card">
+            <div class="card-header">
+                <i class="bi bi-clock-history card-icon"></i>
+                <h3 class="card-title">{% trans "Recent Activity" %}</h3>
+            </div>
+
+            <div class="activity-list">
+                <div class="activity-item">
+                    <div class="activity-icon primary">
+                        <i class="bi bi-box-arrow-in-right"></i>
+                    </div>
+                    <div class="activity-content">
+                        <h5>{% trans "Last Login" %}</h5>
+                        <p class="activity-meta">
+                            {% if user.last_login %}
+                                {{ user.last_login|timesince }} ago
+                                {% if user.last_login_ip %}from {{ user.last_login_ip }}{% endif %}
+                            {% else %}
+                                Never logged in
+                            {% endif %}
+                        </p>
+                    </div>
+                </div>
+
+                <div class="activity-item">
+                    <div class="activity-icon success">
+                        <i class="bi bi-person"></i>
+                    </div>
+                    <div class="activity-content">
+                        <h5>{% trans "Account Created" %}</h5>
+                        <p class="activity-meta">{{ user.date_joined|date:"M d, Y" }}</p>
+                    </div>
+                </div>
+
+                <div class="activity-item">
+                    <div class="activity-icon info">
+                        <i class="bi bi-key"></i>
+                    </div>
+                    <div class="activity-content">
+                        <h5>{% trans "Password Changed" %}</h5>
+                        <p class="activity-meta">
+                            {% if user.password_changed_at %}
+                                {{ user.password_changed_at|timesince }} ago
+                            {% else %}
+                                Never changed
+                            {% endif %}
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Quick Actions -->
+    <div class="section-header">
+        <h2 class="section-title">{% trans "Quick Actions" %}</h2>
+        <p class="section-subtitle">{% trans "Manage your account and system settings" %}</p>
+    </div>
+
+    <div class="actions-grid">
+        <a href="{% url 'user_profile' %}" class="action-card">
+            <div class="action-header">
+                <i class="bi bi-person action-icon"></i>
+                <h4 class="action-title">{% trans "Edit Profile"%}</h4>
+            </div>
+            <p class="action-description">{% trans "Update your personal information and preferences" %}</p>
+        </a>
+
+        <a href="{% url 'change_password' %}" class="action-card">
+            <div class="action-header">
+                <i class="bi bi-key action-icon"></i>
+                <h4 class="action-title">{% trans "Change Password" %}</h4>
+            </div>
+            <p class="action-description">{% trans "Update your account password for better security" %}</p>
+        </a>
+
+        <a href="{% url 'user_signature' %}" class="action-card">
+            <div class="action-header">
+                <i class="bi bi-pen action-icon"></i>
+                <h4 class="action-title">{% trans "Manage Signature" %}</h4>
+            </div>
+            <p class="action-description">{% trans "Set up and manage your digital signature" %}</p>
+        </a>
+
+        {% if not two_factor_enabled %}
+        <a href="{% url 'two_factor_setup' %}" class="action-card">
+            <div class="action-header">
+                <i class="bi bi-shield-plus action-icon"></i>
+                <h4 class="action-title">{% trans "Enable 2FA" %}</h4>
+            </div>
+            <p class="action-description">{% trans "Enhance your account security with two-factor authentication" %}</p>
+        </a>
+        {% endif %}
+
+        {% if perms.accounts.can_manage_users or is_system_admin %}
+        <a href="{% url 'user_list' %}" class="action-card">
+            <div class="action-header">
+                <i class="bi bi-people action-icon"></i>
+                <h4 class="action-title">{% trans "Manage Users" %}</h4>
+            </div>
+            <p class="action-description">{% trans "View and manage all system users" %}</p>
+        </a>
+
+        <a href="{% url 'user_create' %}" class="action-card">
+            <div class="action-header">
+                <i class="bi bi-person-plus action-icon"></i>
+                <h4 class="action-title">{% trans "Add User" %}</h4>
+            </div>
+            <p class="action-description">{% trans "Create new user accounts for the system" %}</p>
+        </a>
+        {% endif %}
+
+        {% if perms.accounts.can_view_reports or is_system_admin %}
+        <a href="{% url 'user_analytics' %}" class="action-card">
+            <div class="action-header">
+                <i class="bi bi-graph-up action-icon"></i>
+                <h4 class="action-title">{% trans "View Analytics" %}</h4>
+            </div>
+            <p class="action-description">{% trans "Access detailed system reports and analytics" %}</p>
+        </a>
+        {% endif %}
+
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+    const verifyBtn = document.getElementById('send-verification');
+    if (verifyBtn) {
+        verifyBtn.addEventListener('click', function(e) {
+            e.preventDefault();
+
+            fetch("{% url 'send_verification' %}", {
+                method: "POST",
+                headers: {
+                    "X-CSRFToken": "{{ csrf_token }}",
+                    "Content-Type": "application/x-www-form-urlencoded",
+                },
+                body: "type=email"
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    alert(data.message);
+                } else {
+                    alert(data.error || "Failed to send verification.");
+                }
+            })
+            .catch(() => alert("Something went wrong!"));
+        });
+    }
+});
+    /**
+     * Professional Dashboard JavaScript
+     * Handles theme switching, animations, and real-time updates
+     */
+
+    class DashboardManager {
+        constructor() {
+            this.initThemeToggle();
+            this.initAnimations();
+            this.initStatsRefresh();
+        }
+
+        /**
+         * Initialize theme toggle functionality
+         */
+        initThemeToggle() {
+            const themeToggle = document.getElementById('themeToggle');
+            const prefersDarkScheme = window.matchMedia('(prefers-color-scheme: dark)');
+            const currentTheme = localStorage.getItem('theme');
+
+            // Set initial theme
+            if (currentTheme === 'dark' || (!currentTheme && prefersDarkScheme.matches)) {
+                document.documentElement.setAttribute('data-theme', 'dark');
+                themeToggle.checked = true;
+            } else {
+                document.documentElement.setAttribute('data-theme', 'light');
+                themeToggle.checked = false;
+            }
+
+            // Handle theme toggle
+            themeToggle.addEventListener('change', (e) => {
+                if (e.target.checked) {
+                    document.documentElement.setAttribute('data-theme', 'dark');
+                    localStorage.setItem('theme', 'dark');
+                } else {
+                    document.documentElement.setAttribute('data-theme', 'light');
+                    localStorage.setItem('theme', 'light');
+                }
+            });
+
+            // Listen for system theme changes
+            prefersDarkScheme.addEventListener('change', (e) => {
+                if (!localStorage.getItem('theme')) {
+                    if (e.matches) {
+                        document.documentElement.setAttribute('data-theme', 'dark');
+                        themeToggle.checked = true;
+                    } else {
+                        document.documentElement.setAttribute('data-theme', 'light');
+                        themeToggle.checked = false;
+                    }
+                }
+            });
+        }
+
+        /**
+         * Initialize number animations and other UI animations
+         */
+        initAnimations() {
+            // Animate statistics on page load
+            this.animateStatNumbers();
+
+            // Add intersection observer for scroll animations
+            this.initScrollAnimations();
+        }
+
+        /**
+         * Animate statistic numbers with smooth counting effect
+         */
+        animateStatNumbers() {
+            const statNumbers = document.querySelectorAll('.stat-value');
+
+            statNumbers.forEach(element => {
+                const text = element.textContent.trim();
+                const numericValue = parseInt(text);
+
+                // Only animate if it's a number
+                if (!isNaN(numericValue) && numericValue > 0) {
+                    this.animateValue(element, 0, numericValue, 1200);
+                }
+            });
+        }
+
+        /**
+         * Animate a number from start to end value
+         */
+        animateValue(element, start, end, duration) {
+            const startTime = performance.now();
+            const originalText = element.textContent;
+
+            const animate = (currentTime) => {
+                const elapsed = currentTime - startTime;
+                const progress = Math.min(elapsed / duration, 1);
+
+                // Use easeOutCubic for smooth animation
+                const easeOutCubic = 1 - Math.pow(1 - progress, 3);
+                const currentValue = Math.floor(start + (end - start) * easeOutCubic);
+
+                element.textContent = currentValue;
+
+                if (progress < 1) {
+                    requestAnimationFrame(animate);
+                } else {
+                    // Ensure we end with the exact final value
+                    element.textContent = originalText;
+                }
+            };
+
+            requestAnimationFrame(animate);
+        }
+
+        /**
+         * Initialize scroll-based animations
+         */
+        initScrollAnimations() {
+            const observerOptions = {
+                threshold: 0.1,
+                rootMargin: '0px 0px -50px 0px'
+            };
+
+            const observer = new IntersectionObserver((entries) => {
+                entries.forEach(entry => {
+                    if (entry.isIntersecting) {
+                        entry.target.style.opacity = '1';
+                        entry.target.style.transform = 'translateY(0)';
+                    }
+                });
+            }, observerOptions);
+
+            // Observe cards for fade-in animation
+            document.querySelectorAll('.stat-card, .content-card, .action-card').forEach(card => {
+                card.style.opacity = '0';
+                card.style.transform = 'translateY(20px)';
+                card.style.transition = 'opacity 0.6s ease, transform 0.6s ease';
+                observer.observe(card);
+            });
+        }
+
+        /**
+         * Initialize automatic stats refresh for admin users
+         */
+        initStatsRefresh() {
+            {% if perms.accounts.can_manage_users or is_system_admin %}
+            // Refresh system stats every 5 minutes
+            setInterval(() => {
+                this.refreshSystemStats();
+            }, 300000);
+            {% endif %}
+        }
+
+        /**
+         * Refresh system statistics via AJAX
+         */
+        async refreshSystemStats() {
+            try {
+                const response = await fetch('{% url "user_quick_stats" %}', {
+                    method: 'GET',
+                    headers: {
+                        'X-Requested-With': 'XMLHttpRequest',
+                        'Content-Type': 'application/json',
+                    }
+                });
+
+                if (!response.ok) {
+                    throw new Error('Failed to fetch stats');
+                }
+
+                const data = await response.json();
+                this.updateStatsDisplay(data);
+
+            } catch (error) {
+                console.warn('Stats refresh failed:', error);
+                // Optionally show a subtle notification to admin users
+                this.showNotification('Stats refresh failed', 'warning');
+            }
+        }
+
+        /**
+         * Update stats display with new data
+         */
+        updateStatsDisplay(data) {
+            const statMappings = [
+                { id: 'statTotalUsers', key: 'total_users' },
+                { id: 'statActiveUsers', key: 'active_users' },
+                { id: 'statNewToday', key: 'new_users_today' },
+                { id: 'statLocked', key: 'locked_users' }
+            ];
+
+            statMappings.forEach(({ id, key }) => {
+                const element = document.getElementById(id);
+                if (element && typeof data[key] === 'number') {
+                    const currentValue = parseInt(element.textContent) || 0;
+                    const newValue = data[key];
+
+                    if (currentValue !== newValue) {
+                        this.animateValue(element, currentValue, newValue, 800);
+                    }
+                }
+            });
+        }
+
+        /**
+         * Show a subtle notification (for future use)
+         */
+        showNotification(message, type = 'info') {
+            // Implementation for future notification system
+            console.log(`Notification [${type}]: ${message}`);
+        }
+
+        /**
+         * Handle keyboard navigation for accessibility
+         */
+        initKeyboardNavigation() {
+            document.addEventListener('keydown', (e) => {
+                // Add keyboard shortcuts for common actions
+                if (e.ctrlKey || e.metaKey) {
+                    switch (e.key) {
+                        case 'd':
+                            // Toggle dark mode with Ctrl/Cmd + D
+                            e.preventDefault();
+                            document.getElementById('themeToggle').click();
+                            break;
+                    }
+                }
+            });
+        }
+
+        /**
+         * Initialize performance monitoring
+         */
+        initPerformanceMonitoring() {
+            // Monitor Core Web Vitals
+            if ('web-vitals' in window) {
+                // This would require importing web-vitals library
+                // For now, just log performance metrics
+                window.addEventListener('load', () => {
+                    const loadTime = performance.now();
+                    console.log(`Dashboard loaded in ${Math.round(loadTime)}ms`);
+                });
+            }
+        }
+    }
+
+    // Initialize dashboard when DOM is ready
+    document.addEventListener('DOMContentLoaded', () => {
+        const dashboard = new DashboardManager();
+
+        // Add smooth scrolling for better UX
+        document.documentElement.style.scrollBehavior = 'smooth';
+
+        // Enhance focus management for accessibility
+        document.querySelectorAll('.action-card').forEach(card => {
+            card.addEventListener('focus', function() {
+                this.style.outline = '2px solid var(--primary-500)';
+                this.style.outlineOffset = '2px';
+            });
+
+            card.addEventListener('blur', function() {
+                this.style.outline = '';
+                this.style.outlineOffset = '';
+            });
+        });
+
+        // Add loading states for action cards
+        document.querySelectorAll('.action-card').forEach(card => {
+            card.addEventListener('click', function(e) {
+                // Add a subtle loading indicator
+                const icon = this.querySelector('.action-icon');
+                if (icon) {
+                    icon.style.animation = 'pulse 1s ease-in-out infinite';
+
+                    // Remove animation after a short delay
+                    setTimeout(() => {
+                        icon.style.animation = '';
+                    }, 2000);
+                }
+            });
+        });
+    });
+
+    // Add CSS animations via JavaScript for better performance
+    const style = document.createElement('style');
+    style.textContent = `
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        @keyframes fadeInUp {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .fade-in-up {
+            animation: fadeInUp 0.6s ease forwards;
+        }
+    `;
+    document.head.appendChild(style);
+</script>
+{% endblock %}

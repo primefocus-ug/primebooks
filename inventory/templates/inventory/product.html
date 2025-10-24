@@ -1,0 +1,540 @@
+{% extends 'base.html' %}
+
+{% block title %}Products - {{ company.trading_name|default:company.name }}{% endblock %}
+
+{% block breadcrumbs %}
+    <li class="breadcrumb-item">
+        {% if perms.inventory.view_product %}
+        <a href="{% url 'inventory:dashboard' %}">Dashboard</a>
+    {% endif %}
+    </li>
+    <li class="breadcrumb-item active">Products</li>
+{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1 class="h3 mb-0">
+        <i class="fas fa-box text-primary"></i> Products
+        <span class="badge bg-secondary ms-2">{{ products|length }} items</span>
+    </h1>
+    <div class="btn-group">
+        {% if perms.inventory.add_product %}
+        <a href="{% url 'inventory:product_create' %}" class="btn btn-primary">
+            <i class="fas fa-plus"></i> Add Product
+        </a>
+        {% endif %}
+        <button type="button" class="btn btn-outline-success export-btn" onclick="exportProducts()">
+            <i class="fas fa-download"></i> Export
+        </button>
+        {% if perms.inventory.add_product %}
+        <a href="{% url 'inventory:bulk_import' %}" class="btn btn-outline-info">
+            <i class="fas fa-upload"></i> Import
+        </a>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Advanced Filters -->
+<div class="filter-section">
+    <form method="get" id="filterForm">
+        <div class="row g-3">
+            <div class="col-md-3">
+                <div class="search-box">
+                    <i class="fas fa-search search-icon"></i>
+                    {{ filter_form.search }}
+                </div>
+            </div>
+            <div class="col-md-2">
+                {{ filter_form.category }}
+            </div>
+            <div class="col-md-2">
+                {{ filter_form.supplier }}
+            </div>
+            <div class="col-md-2">
+                {{ filter_form.tax_rate }}
+            </div>
+            <div class="col-md-1">
+                {{ filter_form.min_price }}
+            </div>
+            <div class="col-md-1">
+                {{ filter_form.max_price }}
+            </div>
+            <div class="col-md-1">
+                <div class="d-flex gap-2">
+                    <button type="submit" class="btn btn-outline-primary">
+                        <i class="fas fa-filter"></i>
+                    </button>
+                    {% if perms.inventory.view_product %}
+                    <a href="{% url 'inventory:product_list' %}" class="btn btn-outline-secondary">
+                        <i class="fas fa-times"></i>
+                    </a>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </form>
+</div>
+
+<!-- Bulk Actions -->
+<div class="bulk-actions mb-3" style="display: none;">
+    <div class="card border-primary">
+        <div class="card-body py-2">
+            <form method="post" action="{% url 'inventory:bulk_actions' %}" id="bulkActionForm">
+                {% csrf_token %}
+                <div class="row align-items-center">
+                    <div class="col-md-6">
+                        <span class="text-muted">
+                            <i class="fas fa-check-square"></i>
+                            <span id="selectedCount">0</span> item(s) selected
+                        </span>
+                    </div>
+                    <div class="col-md-4">
+                        <select name="action" id="bulkAction" class="form-select form-select-sm">
+                            <option value="">Select Action</option>
+                            <option value="activate">Activate Selected</option>
+                            <option value="deactivate">Deactivate Selected</option>
+                            <option value="export">Export Selected</option>
+                            <option value="delete" class="text-danger">Delete Selected</option>
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <button type="submit" class="btn btn-sm btn-primary">
+                            <i class="fas fa-bolt"></i> Execute
+                        </button>
+                    </div>
+                </div>
+                <input type="hidden" name="selected_items" id="selectedItems">
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Products Table -->
+<div class="card shadow">
+    <div class="card-body">
+        {% if products %}
+            <div class="table-responsive">
+                <table class="table table-hover data-table" id="productsTable">
+                    <thead>
+                        <tr>
+                            <th width="30">
+                                <input type="checkbox" id="selectAll" class="form-check-input">
+                            </th>
+                            <th>Product</th>
+                            <th>Category</th>
+                            <th>Supplier</th>
+                            <th>Pricing</th>
+                            <th>Stock Info</th>
+                            <th>Status</th>
+                            <th width="120">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for product in products %}
+                        <tr>
+                            <td>
+                                <input type="checkbox" class="form-check-input item-checkbox" value="{{ product.id }}">
+                            </td>
+                            <td>
+                                <div class="d-flex align-items-center">
+                                    {% if product.image %}
+                                        <img src="{{ product.image.url }}" alt="{{ product.name }}" 
+                                             class="rounded me-3" style="width: 40px; height: 40px; object-fit: cover;">
+                                    {% else %}
+                                        <div class="bg-light rounded me-3 d-flex align-items-center justify-content-center" 
+                                             style="width: 40px; height: 40px;">
+                                            <i class="fas fa-box text-muted"></i>
+                                        </div>
+                                    {% endif %}
+                                    <div>
+                                        <strong>{{ product.name }}</strong><br>
+                                        <small class="text-muted">SKU: {{ product.sku }}</small>
+                                        {% if product.barcode %}
+                                            <br><small class="text-muted">Barcode: {{ product.barcode }}</small>
+                                        {% endif %}
+                                    </div>
+                                </div>
+                            </td>
+                            <td>
+                                {% if product.category %}
+                                    <span class="badge bg-info">{{ product.category.name }}</span>
+                                {% else %}
+                                    <span class="text-muted">No category</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if product.supplier %}
+                                    <div>
+                                        <strong>{{ product.supplier.name }}</strong><br>
+                                        <small class="text-muted">{{ product.supplier.phone }}</small>
+                                    </div>
+                                {% else %}
+                                    <span class="text-muted">No supplier</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <div>
+                                    <strong class="text-success">UGX {{ product.selling_price|floatformat:0 }}</strong><br>
+                                    <small class="text-muted">Cost: UGX {{ product.cost_price|floatformat:0 }}</small>
+                                    {% if product.discount_percentage > 0 %}
+                                        <br><small class="text-warning">{{ product.discount_percentage }}% discount</small>
+                                    {% endif %}
+                                </div>
+                            </td>
+                            <td>
+                                <div class="small">
+                                    <div>Tax: {{ product.get_tax_rate_display }}</div>
+                                    <div>Unit: {{ product.unit_of_measure }}</div>
+                                    <div>Min Level: {{ product.min_stock_level }}</div>
+                                </div>
+                            </td>
+                            <td>
+                                {% if product.is_active %}
+                                    <span class="badge bg-success">Active</span>
+                                {% else %}
+                                    <span class="badge bg-danger">Inactive</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <div class="action-buttons">
+                                    {% if perms.inventory.view_product %}
+                                    <a href="{% url 'inventory:product_detail' product.pk %}" 
+                                       class="btn btn-sm btn-outline-info" data-bs-toggle="tooltip" title="View Details">
+                                        <i class="fas fa-eye"></i>
+                                    </a>
+                                    {% endif %}
+                                    {% if perms.inventory.change_product %}
+                                    <a href="{% url 'inventory:product_update' product.pk %}" 
+                                       class="btn btn-sm btn-outline-primary" data-bs-toggle="tooltip" title="Edit">
+                                        <i class="fas fa-edit"></i>
+                                    </a>
+                                    {% endif %}
+                                    <button type="button" class="btn btn-sm btn-outline-success" 
+                                            onclick="quickStockAdjustment({{ product.id }}, '{{ product.name }}')"
+                                            data-bs-toggle="tooltip" title="Quick Stock">
+                                        <i class="fas fa-plus-minus"></i>
+                                    </button>
+                                    {% if product.barcode %}
+                                    {% if perms.inventory.view_product %}
+                                    <a href="{% url 'inventory:barcode_generator' product.pk %}" 
+                                       class="btn btn-sm btn-outline-secondary" data-bs-toggle="tooltip" title="Generate Barcode">
+                                        <i class="fas fa-barcode"></i>
+                                    </a>
+                                    {% endif %}
+                                    {% endif %}
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Pagination -->
+            {% if is_paginated %}
+            <nav aria-label="Products pagination" class="mt-4">
+                <ul class="pagination justify-content-center">
+                    {% if page_obj.has_previous %}
+                    <li class="page-item">
+                        <a class="page-link" href="?page={{ page_obj.previous_page_number }}{{ request.GET.urlencode|slice:'1:' }}">Previous</a>
+                    </li>
+                    {% endif %}
+
+                    {% for num in page_obj.paginator.page_range %}
+                        {% if page_obj.number == num %}
+                        <li class="page-item active">
+                            <span class="page-link">{{ num }}</span>
+                        </li>
+                        {% elif num > page_obj.number|add:'-3' and num < page_obj.number|add:'3' %}
+                        <li class="page-item">
+                            <a class="page-link" href="?page={{ num }}{{ request.GET.urlencode|slice:'1:' }}">{{ num }}</a>
+                        </li>
+                        {% endif %}
+                    {% endfor %}
+
+                    {% if page_obj.has_next %}
+                    <li class="page-item">
+                        <a class="page-link" href="?page={{ page_obj.next_page_number }}{{ request.GET.urlencode|slice:'1:' }}">Next</a>
+                    </li>
+                    <li class="page-item">
+                        <a class="page-link" href="?page={{ page_obj.paginator.num_pages }}{{ request.GET.urlencode|slice:'1:' }}">Last</a>
+                    </li>
+                    {% endif %}
+                </ul>
+            </nav>
+            {% endif %}
+
+        {% else %}
+            <div class="text-center py-5">
+                <i class="fas fa-box-open fa-4x text-muted mb-3"></i>
+                <h4 class="text-muted">No Products Found</h4>
+                <p class="text-muted">Start by adding your first product to the inventory.</p>
+                {% if perms.inventory.add_product %}
+                <a href="{% url 'inventory:product_create' %}" class="btn btn-primary">
+                    <i class="fas fa-plus"></i> Add Product
+                </a>
+                {% endif %}
+            </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Quick Stock Adjustment Modal -->
+<div class="modal fade" id="quickStockModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="fas fa-plus-minus"></i> Quick Stock Adjustment
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form id="quickStockForm">
+                {% csrf_token %}
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">Product</label>
+                        <input type="text" class="form-control" id="quickProductName" readonly>
+                        <input type="hidden" id="quickProductId">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Store</label>
+                        <select class="form-select" id="quickStore" required>
+                            <option value="">Select Store</option>
+                            <!-- Options will be loaded dynamically -->
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Current Stock</label>
+                        <input type="text" class="form-control" id="currentStock" readonly>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">New Quantity</label>
+                        <input type="number" class="form-control" id="newQuantity" step="0.001" min="0" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Reason</label>
+                        <textarea class="form-control" id="adjustmentReason" rows="3" placeholder="Enter reason for adjustment" required></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fas fa-save"></i> Save Adjustment
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Product Details Modal -->
+<div class="modal fade" id="productDetailsModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="fas fa-info-circle"></i> Product Details
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="productDetailsContent">
+                <!-- Content loaded dynamically -->
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+$(document).ready(function() {
+    // Initialize DataTable with advanced features
+    $('#productsTable').DataTable({
+        responsive: true,
+        pageLength: 25,
+        order: [[1, 'asc']],
+        columnDefs: [
+            { orderable: false, targets: [0, 7] }
+        ],
+        language: {
+            search: "Search products:",
+            lengthMenu: "Show _MENU_ products per page",
+            info: "Showing _START_ to _END_ of _TOTAL_ products",
+            emptyTable: "No products found"
+        },
+        dom: 'Bfrtip',
+        buttons: [
+            {
+                extend: 'excel',
+                text: '<i class="fas fa-file-excel"></i> Excel',
+                className: 'btn btn-success btn-sm'
+            },
+            {
+                extend: 'pdf',
+                text: '<i class="fas fa-file-pdf"></i> PDF',
+                className: 'btn btn-danger btn-sm'
+            },
+            {
+                extend: 'print',
+                text: '<i class="fas fa-print"></i> Print',
+                className: 'btn btn-info btn-sm'
+            }
+        ]
+    });
+
+    // Auto-submit filter form on change
+    $('#filterForm select, #filterForm input').on('change keyup', function() {
+        clearTimeout(window.filterTimeout);
+        window.filterTimeout = setTimeout(function() {
+            $('#filterForm').submit();
+        }, 500);
+    });
+
+    // Load stores for quick stock modal
+    function loadStores() {
+        $.get('/api/stores/', function(data) {
+            let options = '<option value="">Select Store</option>';
+            data.forEach(function(store) {
+                options += `<option value="${store.id}">${store.name}</option>`;
+            });
+            $('#quickStore').html(options);
+        });
+    }
+
+    // Quick stock adjustment
+    window.quickStockAdjustment = function(productId, productName) {
+        $('#quickProductId').val(productId);
+        $('#quickProductName').val(productName);
+        $('#currentStock').val('Loading...');
+        $('#newQuantity').val('');
+        $('#adjustmentReason').val('');
+        
+        // Load current stock levels
+        $.get(`/api/products/${productId}/stock/`, function(data) {
+            let stockInfo = 'No stock records';
+            if (data.stock_levels && data.stock_levels.length > 0) {
+                stockInfo = data.stock_levels.map(s => `${s.store_name}: ${s.quantity}`).join(', ');
+            }
+            $('#currentStock').val(stockInfo);
+        });
+        
+        loadStores();
+        $('#quickStockModal').modal('show');
+    };
+
+    // Handle quick stock form submission
+    $('#quickStockForm').on('submit', function(e) {
+        e.preventDefault();
+        
+        const formData = {
+            product: $('#quickProductId').val(),
+            store: $('#quickStore').val(),
+            new_quantity: $('#newQuantity').val(),
+            reason: $('#adjustmentReason').val(),
+            csrfmiddlewaretoken: $('[name=csrfmiddlewaretoken]').val()
+        };
+        
+        $.post('{% url "inventory:stock_adjustment" %}', formData)
+            .done(function(response) {
+                $('#quickStockModal').modal('hide');
+                location.reload();
+            })
+            .fail(function(xhr) {
+                alert('Error: ' + xhr.responseJSON.message);
+            });
+    });
+
+    // Export functionality
+    window.exportProducts = function() {
+        const selectedIds = $('.item-checkbox:checked').map(function() {
+            return this.value;
+        }).get();
+        
+        let url = '{% url "inventory:export_products" %}';
+        if (selectedIds.length > 0) {
+            url += '?ids=' + selectedIds.join(',');
+        }
+        
+        window.location.href = url;
+    };
+
+    // Product details in modal
+    $(document).on('click', '.view-details', function(e) {
+        e.preventDefault();
+        const productId = $(this).data('product-id');
+        
+        $.get(`/api/products/${productId}/`, function(data) {
+            let content = `
+                <div class="row">
+                    <div class="col-md-6">
+                        <h6>Basic Information</h6>
+                        <table class="table table-sm">
+                            <tr><td><strong>Name:</strong></td><td>${data.name}</td></tr>
+                            <tr><td><strong>SKU:</strong></td><td>${data.sku}</td></tr>
+                            <tr><td><strong>Category:</strong></td><td>${data.category || 'N/A'}</td></tr>
+                            <tr><td><strong>Supplier:</strong></td><td>${data.supplier || 'N/A'}</td></tr>
+                        </table>
+                    </div>
+                    <div class="col-md-6">
+                        <h6>Pricing & Tax</h6>
+                        <table class="table table-sm">
+                            <tr><td><strong>Selling Price:</strong></td><td>UGX ${data.selling_price}</td></tr>
+                            <tr><td><strong>Cost Price:</strong></td><td>UGX ${data.cost_price}</td></tr>
+                            <tr><td><strong>Tax Rate:</strong></td><td>${data.tax_rate}</td></tr>
+                            <tr><td><strong>Unit:</strong></td><td>${data.unit_of_measure}</td></tr>
+                        </table>
+                    </div>
+                </div>
+                <div class="row mt-3">
+                    <div class="col-12">
+                        <h6>Stock Levels</h6>
+                        <div class="table-responsive">
+                            <table class="table table-sm">
+                                <thead><tr><th>Store</th><th>Quantity</th><th>Status</th></tr></thead>
+                                <tbody>
+            `;
+            
+            if (data.stock_levels && data.stock_levels.length > 0) {
+                data.stock_levels.forEach(function(stock) {
+                    let statusBadge = '';
+                    if (stock.status === 'in_stock') {
+                        statusBadge = '<span class="badge bg-success">In Stock</span>';
+                    } else if (stock.status === 'low_stock') {
+                        statusBadge = '<span class="badge bg-warning">Low Stock</span>';
+                    } else {
+                        statusBadge = '<span class="badge bg-danger">Out of Stock</span>';
+                    }
+                    
+                    content += `<tr><td>${stock.store_name}</td><td>${stock.quantity}</td><td>${statusBadge}</td></tr>`;
+                });
+            } else {
+                content += '<tr><td colspan="3" class="text-center text-muted">No stock records</td></tr>';
+            }
+            
+            content += '</tbody></table></div></div></div>';
+            
+            $('#productDetailsContent').html(content);
+            $('#productDetailsModal').modal('show');
+        });
+    });
+
+    // Advanced search with autocomplete
+    $('#id_search').autocomplete({
+        source: function(request, response) {
+            $.get('{% url "inventory:product_autocomplete" %}', {
+                term: request.term
+            }, function(data) {
+                response(data);
+            });
+        },
+        minLength: 2,
+        select: function(event, ui) {
+            window.location.href = `/inventory/products/${ui.item.id}/`;
+        }
+    });
+});
+</script>
+{% endblock %}<a class="page-link" href="?page=1{{ request.GET.urlencode|slice:'1:' }}">First</a>
+                    </li>
+                    <li class="page-item">

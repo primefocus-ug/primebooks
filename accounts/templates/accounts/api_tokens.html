@@ -1,0 +1,588 @@
+{% extends 'base.html' %}
+
+{% block title %}API Tokens - PrimeBooks{% endblock %}
+
+{% block extra_css %}
+<style>
+    .tokens-container {
+        max-width: 1000px;
+        margin: 2rem auto;
+        padding: 1rem;
+    }
+
+    .tokens-header {
+        background: linear-gradient(135deg, #1e293b, #475569);
+        color: white;
+        border-radius: 16px;
+        padding: 2.5rem;
+        margin-bottom: 2rem;
+        position: relative;
+        overflow: hidden;
+    }
+
+    .tokens-header::before {
+        content: '';
+        position: absolute;
+        top: -50%;
+        right: -10%;
+        width: 200px;
+        height: 200px;
+        background: rgba(255, 255, 255, 0.1);
+        border-radius: 50%;
+        animation: float 6s ease-in-out infinite;
+    }
+
+    @keyframes float {
+        0%, 100% { transform: translate(0, 0) rotate(0deg); }
+        50% { transform: translate(-10px, -10px) rotate(5deg); }
+    }
+
+    .create-token-card {
+        background: white;
+        border-radius: 16px;
+        box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1);
+        margin-bottom: 2rem;
+        overflow: hidden;
+        border: 1px solid #e2e8f0;
+    }
+
+    .card-header {
+        background: #f8fafc;
+        padding: 1.5rem 2rem;
+        border-bottom: 1px solid #e2e8f0;
+    }
+
+    .card-header h5 {
+        margin: 0;
+        font-weight: 600;
+        color: #1e293b;
+    }
+
+    .card-body {
+        padding: 2rem;
+    }
+
+    .form-floating {
+        margin-bottom: 1.5rem;
+    }
+
+    .form-control, .form-select {
+        border: 2px solid #e2e8f0;
+        border-radius: 8px;
+        transition: all 0.3s ease;
+    }
+
+    .form-control:focus, .form-select:focus {
+        border-color: #2563eb;
+        box-shadow: 0 0 0 0.2rem rgba(37, 99, 235, 0.25);
+    }
+
+    .permissions-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 1rem;
+        margin-top: 1rem;
+    }
+
+    .permission-item {
+        display: flex;
+        align-items: center;
+        padding: 0.75rem;
+        background: #f8fafc;
+        border-radius: 8px;
+        border: 1px solid #e2e8f0;
+    }
+
+    .permission-item input {
+        margin-right: 0.75rem;
+    }
+
+    .tokens-list {
+        background: white;
+        border-radius: 16px;
+        box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1);
+        border: 1px solid #e2e8f0;
+        overflow: hidden;
+    }
+
+    .token-item {
+        padding: 1.5rem 2rem;
+        border-bottom: 1px solid #f1f5f9;
+        transition: all 0.3s ease;
+    }
+
+    .token-item:hover {
+        background: #f8fafc;
+    }
+
+    .token-item:last-child {
+        border-bottom: none;
+    }
+
+    .token-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        margin-bottom: 1rem;
+    }
+
+    .token-name {
+        font-size: 1.1rem;
+        font-weight: 600;
+        color: #1e293b;
+        margin-bottom: 0.5rem;
+    }
+
+    .token-meta {
+        font-size: 0.875rem;
+        color: #64748b;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 1rem;
+    }
+
+    .token-permissions {
+        margin-top: 0.75rem;
+    }
+
+    .permission-tag {
+        display: inline-block;
+        background: #dbeafe;
+        color: #1e40af;
+        padding: 0.25rem 0.75rem;
+        border-radius: 12px;
+        font-size: 0.75rem;
+        font-weight: 500;
+        margin-right: 0.5rem;
+        margin-bottom: 0.25rem;
+    }
+
+    .token-actions {
+        display: flex;
+        gap: 0.5rem;
+        align-items: center;
+    }
+
+    .btn-icon {
+        width: 36px;
+        height: 36px;
+        border-radius: 8px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border: 1px solid #e2e8f0;
+        background: white;
+        color: #64748b;
+        transition: all 0.3s ease;
+    }
+
+    .btn-icon:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+    }
+
+    .btn-danger {
+        color: #ef4444;
+        border-color: #fecaca;
+    }
+
+    .btn-danger:hover {
+        background: #fef2f2;
+        color: #dc2626;
+        border-color: #fca5a5;
+    }
+
+    .status-badge {
+        padding: 0.25rem 0.75rem;
+        border-radius: 12px;
+        font-size: 0.75rem;
+        font-weight: 600;
+        text-transform: uppercase;
+    }
+
+    .status-active {
+        background: #dcfce7;
+        color: #166534;
+    }
+
+    .status-expired {
+        background: #fee2e2;
+        color: #991b1b;
+    }
+
+    .token-value {
+        font-family: 'Monaco', 'Consolas', monospace;
+        background: #1e293b;
+        color: #10b981;
+        padding: 1rem;
+        border-radius: 8px;
+        font-size: 0.875rem;
+        word-break: break-all;
+        position: relative;
+        margin-top: 1rem;
+    }
+
+    .copy-btn {
+        position: absolute;
+        top: 0.5rem;
+        right: 0.5rem;
+        background: rgba(255, 255, 255, 0.1);
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        color: white;
+        padding: 0.5rem;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 0.75rem;
+    }
+
+    .copy-btn:hover {
+        background: rgba(255, 255, 255, 0.2);
+    }
+
+    .no-tokens {
+        text-align: center;
+        padding: 3rem;
+        color: #64748b;
+    }
+
+    .no-tokens i {
+        font-size: 3rem;
+        margin-bottom: 1rem;
+        opacity: 0.5;
+    }
+
+    .btn-primary-modern {
+        background: linear-gradient(135deg, #2563eb, #7c3aed);
+        border: none;
+        color: white;
+        padding: 0.75rem 1.5rem;
+        border-radius: 8px;
+        font-weight: 600;
+        transition: all 0.3s ease;
+    }
+
+    .btn-primary-modern:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 15px rgba(37, 99, 235, 0.4);
+    }
+
+    @media (max-width: 768px) {
+        .tokens-container {
+            margin: 1rem;
+            padding: 0;
+        }
+
+        .tokens-header {
+            padding: 1.5rem;
+        }
+
+        .card-body {
+            padding: 1.5rem;
+        }
+
+        .token-item {
+            padding: 1rem;
+        }
+
+        .token-header {
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 1rem;
+        }
+
+        .permissions-grid {
+            grid-template-columns: 1fr;
+        }
+
+        .token-meta {
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="tokens-container">
+    <!-- Header -->
+    <div class="tokens-header">
+        <div class="row align-items-center">
+            <div class="col">
+                <h2 class="mb-2"><i class="bi bi-key me-3"></i>{% trans "API Tokens" %}</h2>
+                <p class="mb-0 opacity-90">{% trans "Manage API tokens for programmatic access to your account" %}</p>
+            </div>
+            <div class="col-auto">
+                <button class="btn btn-outline-light" data-bs-toggle="collapse" data-bs-target="#createTokenForm">
+                    <i class="bi bi-plus-lg me-2"></i>{% trans "Create New Token" %}
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Create Token Form -->
+    <div class="create-token-card collapse" id="createTokenForm">
+        <div class="card-header">
+            <h5><i class="bi bi-plus-circle me-2"></i>{% trans "Create New API Token" %}</h5>
+        </div>
+        <div class="card-body">
+            <form method="post" id="createTokenForm">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="create">
+
+                <div class="row">
+                    <div class="col-md-8">
+                        <div class="form-floating">
+                            <input type="text" class="form-control" id="token_name" name="name" required>
+                            <label for="token_name">{% trans "Token Name" %}</label>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="form-floating">
+                            <select class="form-select" id="expires_in_days" name="expires_in_days">
+                                <option value="30">{% trans "30 days" %}</option>
+                                <option value="90">{% trans "90 days" %}</option>
+                                <option value="365">{% trans "1 year" %}</option>
+                                <option value="never">{% trans "Never expires" %}</option>
+                            </select>
+                            <label for="expires_in_days">{% trans "Expires" %}</label>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label">{% trans "Permissions:" %}</label>
+                    <div class="permissions-grid">
+                        {% for value, label in available_permissions %}
+                        <div class="permission-item">
+                            <input class="form-check-input" type="checkbox" name="permissions" value="{{ value }}" id="perm_{{ value }}">
+                            <label class="form-check-label" for="perm_{{ value }}">
+                                {{ label }}  {# If label comes from code, translate it at source #}
+                            </label>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+
+                <div class="d-flex justify-content-end gap-2">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-toggle="collapse" data-bs-target="#createTokenForm">
+                        {% trans "Cancel" %}
+                    </button>
+                    <button type="submit" class="btn btn-primary-modern">
+                        <i class="bi bi-key me-2"></i>{% trans "Create Token" %}
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Tokens List -->
+    <div class="tokens-list">
+        <div class="card-header">
+            <h5><i class="bi bi-list me-2"></i>{% trans "Your API Tokens" %}</h5>
+        </div>
+
+        {% if user_tokens %}
+            {% for token in user_tokens %}
+            <div class="token-item">
+                <div class="token-header">
+                    <div>
+                        <div class="token-name">{{ token.name }}</div>
+                        <div class="token-meta">
+                            <span><i class="bi bi-calendar me-1"></i>{% blocktrans %}Created {{ token.created_at|date:"M d, Y" }}{% endblocktrans %}</span>
+                            <span><i class="bi bi-clock me-1"></i>{% blocktrans %}Last used {{ token.last_used|timesince|default:_("Never") }} ago{% endblocktrans %}</span>
+                            {% if token.expires_at %}
+                                <span><i class="bi bi-hourglass me-1"></i>{% blocktrans %}Expires {{ token.expires_at|date:"M d, Y" }}{% endblocktrans %}</span>
+                            {% endif %}
+                        </div>
+                    </div>
+                    <div class="d-flex align-items-center gap-2">
+                        <span class="status-badge {% if token.is_expired %}status-expired{% else %}status-active{% endif %}">
+                            {% if token.is_expired %}{% trans "Expired" %}{% else %}{% trans "Active" %}{% endif %}
+                        </span>
+                        <div class="token-actions">
+                            <button class="btn btn-icon" onclick="copyToken('{{ token.token }}')" title="{% trans "Copy Token" %}">
+                                <i class="bi bi-clipboard"></i>
+                            </button>
+                            <button class="btn btn-icon btn-danger" onclick="deleteToken({{ token.id }}, '{{ token.name }}')" title="{% trans "Delete Token" %}">
+                                <i class="bi bi-trash"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                {% if token.permissions %}
+                <div class="token-permissions">
+                    {% for perm in token.permissions %}
+                        <span class="permission-tag">{{ perm }}</span>  {# If perms are translatable, wrap them in {% trans %} at source #}
+                    {% endfor %}
+                </div>
+                {% endif %}
+
+                <div class="token-value" id="token_{{ token.id }}">
+                    <span class="token-text">{{ token.token }}</span>
+                    <button class="copy-btn" onclick="copyToken('{{ token.token }}')">
+                        <i class="bi bi-clipboard"></i> {% trans "Copy" %}
+                    </button>
+                </div>
+            </div>
+            {% endfor %}
+        {% else %}
+            <div class="no-tokens">
+                <i class="bi bi-key"></i>
+                <h5>{% trans "No API Tokens" %}</h5>
+                <p>{% trans "You haven't created any API tokens yet. Create one to get started with the API." %}</p>
+                <button class="btn btn-primary-modern mt-3" data-bs-toggle="collapse" data-bs-target="#createTokenForm">
+                    <i class="bi bi-plus-lg me-2"></i>{% trans "Create Your First Token" %}
+                </button>
+            </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Token Display Modal -->
+<div class="modal fade" id="tokenModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">{% trans "Your New API Token" %}</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-warning">
+                    <i class="bi bi-exclamation-triangle me-2"></i>
+                    <strong>{% trans "Important:" %}</strong> {% trans "This token will only be displayed once. Make sure to copy it now and store it securely." %}
+                </div>
+                <div class="token-value">
+                    <span id="newTokenValue"></span>
+                    <button class="copy-btn" onclick="copyFromModal()">
+                        <i class="bi bi-clipboard"></i> {% trans "Copy" %}
+                    </button>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">{% trans "I've Copied the Token" %}</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const createForm = document.getElementById('createTokenForm');
+
+    // Handle form submission
+    createForm.addEventListener('submit', function(e) {
+        e.preventDefault();
+
+        const formData = new FormData(this);
+        const submitBtn = this.querySelector('button[type="submit"]');
+
+        // Show loading state
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Creating...';
+
+        fetch(window.location.href, {
+            method: 'POST',
+            body: formData,
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest',
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                // Show the new token in modal
+                document.getElementById('newTokenValue').textContent = data.token.token;
+                new bootstrap.Modal(document.getElementById('tokenModal')).show();
+
+                // Reset form and hide it
+                createForm.reset();
+                bootstrap.Collapse.getOrCreateInstance(document.getElementById('createTokenForm')).hide();
+
+                // Reload page to show new token in list
+                setTimeout(() => {
+                    window.location.reload();
+                }, 2000);
+            } else {
+                showNotification('Error creating token: ' + (data.error || 'Unknown error'), 'danger');
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            showNotification('Failed to create token', 'danger');
+        })
+        .finally(() => {
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = '<i class="bi bi-key me-2"></i>Create Token';
+        });
+    });
+});
+
+function copyToken(token) {
+    navigator.clipboard.writeText(token).then(() => {
+        showNotification('Token copied to clipboard!', 'success');
+    }).catch(err => {
+        console.error('Failed to copy token:', err);
+        showNotification('Failed to copy token', 'danger');
+    });
+}
+
+function copyFromModal() {
+    const token = document.getElementById('newTokenValue').textContent;
+    copyToken(token);
+}
+
+function deleteToken(tokenId, tokenName) {
+    if (!confirm(`Are you sure you want to delete the token "${tokenName}"? This action cannot be undone.`)) {
+        return;
+    }
+
+    const formData = new FormData();
+    formData.append('action', 'delete');
+    formData.append('token_id', tokenId);
+    formData.append('csrfmiddlewaretoken', document.querySelector('[name=csrfmiddlewaretoken]').value);
+
+    fetch(window.location.href, {
+        method: 'POST',
+        body: formData,
+        headers: {
+            'X-Requested-With': 'XMLHttpRequest',
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showNotification(data.message, 'success');
+            // Remove the token item from DOM
+            const tokenItem = document.querySelector(`button[onclick="deleteToken(${tokenId}, '${tokenName}')"]`).closest('.token-item');
+            tokenItem.style.transition = 'all 0.3s ease';
+            tokenItem.style.opacity = '0';
+            tokenItem.style.transform = 'translateX(-100%)';
+            setTimeout(() => tokenItem.remove(), 300);
+        } else {
+            showNotification('Error deleting token: ' + (data.error || 'Unknown error'), 'danger');
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        showNotification('Failed to delete token', 'danger');
+    });
+}
+
+function showNotification(message, type = 'info') {
+    const notification = document.createElement('div');
+    notification.className = `alert alert-${type} alert-dismissible fade show position-fixed`;
+    notification.style.cssText = 'top: 20px; right: 20px; z-index: 9999; min-width: 300px;';
+    notification.innerHTML = `
+        ${message}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    `;
+
+    document.body.appendChild(notification);
+
+    setTimeout(() => {
+        notification.remove();
+    }, 5000);
+}
+</script>
+{% endblock %}

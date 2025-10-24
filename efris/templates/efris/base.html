@@ -1,0 +1,358 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block extra_css %}
+<style>
+    .efris-sidebar {
+        background: #f8f9fa;
+        border-right: 1px solid #dee2e6;
+        min-height: calc(100vh - 56px);
+    }
+
+    .efris-nav-link {
+        color: #495057;
+        padding: 0.75rem 1rem;
+        display: block;
+        text-decoration: none;
+        transition: all 0.3s;
+    }
+
+    .efris-nav-link:hover,
+    .efris-nav-link.active {
+        background: #e9ecef;
+        color: #007bff;
+        border-left: 3px solid #007bff;
+    }
+
+    .efris-nav-section {
+        padding: 0.5rem 1rem;
+        font-size: 0.875rem;
+        font-weight: 600;
+        color: #6c757d;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+
+    .efris-card {
+        border: none;
+        box-shadow: 0 0.125rem 0.25rem rgba(0,0,0,0.075);
+        margin-bottom: 1.5rem;
+    }
+
+    .efris-badge {
+        padding: 0.35rem 0.65rem;
+        font-size: 0.875rem;
+    }
+
+    .status-approved {
+        background-color: #28a745;
+        color: white;
+    }
+
+    .status-pending {
+        background-color: #ffc107;
+        color: #000;
+    }
+
+    .status-rejected {
+        background-color: #dc3545;
+        color: white;
+    }
+
+    .invoice-type-1 { border-left: 4px solid #007bff; }
+    .invoice-type-2 { border-left: 4px solid #28a745; }
+    .invoice-type-4 { border-left: 4px solid #dc3545; }
+
+    .table-hover tbody tr:hover {
+        background-color: #f8f9fa;
+    }
+
+    .search-box {
+        background: #ffffff;
+        padding: 1.5rem;
+        border-radius: 0.25rem;
+        box-shadow: 0 0.125rem 0.25rem rgba(0,0,0,0.075);
+        margin-bottom: 1.5rem;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row">
+        <!-- Sidebar -->
+        <nav class="col-md-2 d-md-block efris-sidebar">
+            <div class="position-sticky pt-3">
+                <h6 class="efris-nav-section">
+                    <i class="fas fa-receipt"></i> Invoice Management
+                </h6>
+                <ul class="nav flex-column">
+                    <li class="nav-item">
+                        <a class="efris-nav-link {% if request.resolver_match.url_name == 'dashboard' %}active{% endif %}"
+                           href="{% url 'efris:dashboard' %}">
+                            <i class="fas fa-tachometer-alt"></i> Dashboard
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="efris-nav-link {% if 'invoice' in request.resolver_match.url_name %}active{% endif %}"
+                           href="{% url 'efris:invoice_search' %}">
+                            <i class="fas fa-search"></i> Invoice Search
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="efris-nav-link {% if 'normal_invoices' in request.resolver_match.url_name %}active{% endif %}"
+                           href="{% url 'efris:normal_invoices' %}">
+                            <i class="fas fa-file-invoice"></i> Normal Invoices
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="efris-nav-link {% if 'credit_note' in request.resolver_match.url_name %}active{% endif %}"
+                           href="{% url 'efris:credit_note_applications' %}">
+                            <i class="fas fa-undo"></i> Credit/Debit Notes
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="efris-nav-link {% if 'batch' in request.resolver_match.url_name %}active{% endif %}"
+                           href="{% url 'efris:batch_invoice_upload' %}">
+                            <i class="fas fa-upload"></i> Batch Upload
+                        </a>
+                    </li>
+                </ul>
+
+                <h6 class="efris-nav-section mt-3">
+                    <i class="fas fa-cog"></i> System Management
+                </h6>
+                <ul class="nav flex-column">
+                    <li class="nav-item">
+                        <a class="efris-nav-link {% if 'exception_logs' in request.resolver_match.url_name %}active{% endif %}"
+                           href="{% url 'efris:exception_logs' %}">
+                            <i class="fas fa-exclamation-triangle"></i> Exception Logs
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="efris-nav-link {% if 'system_upgrade' in request.resolver_match.url_name %}active{% endif %}"
+                           href="{% url 'efris:system_upgrade' %}">
+                            <i class="fas fa-arrow-up"></i> System Upgrade
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="efris-nav-link {% if 'commodity_category_updates' in request.resolver_match.url_name %}active{% endif %}"
+                           href="{% url 'efris:commodity_category_updates' %}">
+                            <i class="fas fa-tags"></i> Category Updates
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="efris-nav-link {% if 'certificate_upload' in request.resolver_match.url_name %}active{% endif %}"
+                           href="{% url 'efris:certificate_upload' %}">
+                            <i class="fas fa-certificate"></i> Certificate Upload
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="efris-nav-link {% if 'branches_list' in request.resolver_match.url_name %}active{% endif %}"
+                           href="{% url 'efris:branches_list' %}">
+                            <i class="fas fa-code-branch"></i> Branches
+                        </a>
+                    </li>
+                </ul>
+
+                <h6 class="efris-nav-section mt-3">
+                    <i class="fas fa-users"></i> Taxpayer Management
+                </h6>
+                <ul class="nav flex-column">
+                    <li class="nav-item">
+                        <a class="efris-nav-link {% if 'taxpayer_exemption_check' in request.resolver_match.url_name %}active{% endif %}"
+                           href="{% url 'efris:taxpayer_exemption_check' %}">
+                            <i class="fas fa-user-check"></i> Exemption Check
+                        </a>
+                    </li>
+                </ul>
+
+                <h6 class="efris-nav-section mt-3">
+                    <i class="fas fa-database"></i> Data & Reports
+                </h6>
+                <ul class="nav flex-column">
+                    <li class="nav-item">
+                        <a class="efris-nav-link {% if 'exchange_rates' in request.resolver_match.url_name %}active{% endif %}"
+                           href="{% url 'efris:exchange_rates' %}">
+                            <i class="fas fa-exchange-alt"></i> Exchange Rates
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="efris-nav-link {% if 'excise_duty' in request.resolver_match.url_name %}active{% endif %}"
+                           href="{% url 'efris:excise_duty_list' %}">
+                            <i class="fas fa-percentage"></i> Excise Duty
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="efris-nav-link {% if 'reports' in request.resolver_match.url_name %}active{% endif %}"
+                           href="{% url 'efris:reports' %}">
+                            <i class="fas fa-chart-bar"></i> Reports
+                        </a>
+                    </li>
+
+                </ul>
+                <!-- Add this section after the existing sidebar sections -->
+                <h6 class="efris-nav-section mt-3">
+                    <i class="fas fa-star"></i> Advanced Features
+                </h6>
+                <ul class="nav flex-column">
+                    <li class="nav-item">
+                        <a class="efris-nav-link" href="{% url 'efris:commodity_category_by_date' %}">
+                            <i class="fas fa-calendar-alt"></i> Category by Date
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="efris-nav-link" href="{% url 'efris:fuel_types_list' %}">
+                            <i class="fas fa-gas-pump"></i> Fuel Types
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="efris-nav-link" href="{% url 'efris:frequent_contacts_management' %}">
+                            <i class="fas fa-address-book"></i> Frequent Contacts
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="efris-nav-link" href="{% url 'efris:hs_code_list' %}">
+                            <i class="fas fa-barcode"></i> HS Codes
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="efris-nav-link" href="{% url 'efris:invoice_remain_details_search' %}">
+                            <i class="fas fa-file-invoice"></i> Invoice Remain Details
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="efris-nav-link {% if 'credit_note' in request.resolver_match.url_name %}active{% endif %}"
+                           href="{% url 'efris:credit_note_applications' %}">
+                            <i class="fas fa-undo"></i> Credit/Debit Notes
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="efris-nav-link {% if request.resolver_match.url_name == 'credit_note_application' %}active{% endif %}"
+                           href="{% url 'efris:credit_note_application' %}">
+                            <i class="fas fa-plus-circle"></i> Apply Credit Note
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="efris-nav-link" href="{% url 'efris:fdn_status_query' %}">
+                            <i class="fas fa-shipping-fast"></i> FDN Status
+                        </a>
+                    </li>
+                </ul>
+
+                <h6 class="efris-nav-section mt-3">
+                    <i class="fas fa-gas-pump"></i> Fuel Station (EDC)
+                </h6>
+                <ul class="nav flex-column">
+                    <li class="nav-item">
+                        <a class="efris-nav-link" href="{% url 'efris:upload_shift_information' %}">
+                            <i class="fas fa-clock"></i> Shift Information
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="efris-nav-link" href="{% url 'efris:edc_invoice_inquiry' %}">
+                            <i class="fas fa-search"></i> EDC Invoices
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="efris-nav-link" href="{% url 'efris:fuel_equipment_query' %}">
+                            <i class="fas fa-tools"></i> Equipment Query
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="efris-nav-link" href="{% url 'efris:efd_location_query' %}">
+                            <i class="fas fa-map-marker-alt"></i> EFD Location
+                        </a>
+                    </li>
+                </ul>
+
+                <h6 class="efris-nav-section mt-3">
+                    <i class="fas fa-user-shield"></i> Agent Management
+                </h6>
+                <ul class="nav flex-column">
+                    <li class="nav-item">
+                        <a class="efris-nav-link" href="{% url 'efris:agent_relations' %}">
+                            <i class="fas fa-network-wired"></i> Agent Relations
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="efris-nav-link" href="{% url 'efris:principal_agent_info' %}">
+                            <i class="fas fa-info-circle"></i> Principal Info
+                        </a>
+                    </li>
+                </ul>
+            </div>
+        </nav>
+
+        <!-- Main content -->
+        <main class="col-md-10 ms-sm-auto px-md-4">
+            <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+                <h1 class="h2">{{ page_title }}</h1>
+                <div class="btn-toolbar mb-2 mb-md-0">
+                    {% block page_actions %}
+                    {% endblock %}
+                </div>
+            </div>
+
+            {% if messages %}
+                {% for message in messages %}
+                <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
+                    {{ message }}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>
+                {% endfor %}
+            {% endif %}
+
+            {% block efris_content %}
+            {% endblock %}
+        </main>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// Global EFRIS JavaScript functions
+const EFRIS = {
+    formatCurrency: function(amount, currency = 'UGX') {
+        return new Intl.NumberFormat('en-UG', {
+            style: 'currency',
+            currency: currency
+        }).format(amount);
+    },
+
+    formatDate: function(dateString) {
+        const date = new Date(dateString);
+        return date.toLocaleDateString('en-UG', {
+            year: 'numeric',
+            month: 'short',
+            day: 'numeric'
+        });
+    },
+
+    getInvoiceTypeLabel: function(type) {
+        const types = {
+            '1': 'Invoice/Receipt',
+            '2': 'Credit Note',
+            '4': 'Debit Note',
+            '5': 'Credit Memo'
+        };
+        return types[type] || 'Unknown';
+    },
+
+    getApprovalStatusLabel: function(status) {
+        const statuses = {
+            '101': '<span class="badge status-approved">Approved</span>',
+            '102': '<span class="badge status-pending">Pending</span>',
+            '103': '<span class="badge status-rejected">Rejected</span>'
+        };
+        return statuses[status] || '<span class="badge bg-secondary">Unknown</span>';
+    }
+};
+
+// Auto-dismiss alerts after 5 seconds
+setTimeout(function() {
+    $('.alert').fadeOut('slow');
+}, 5000);
+</script>
+{% endblock %}

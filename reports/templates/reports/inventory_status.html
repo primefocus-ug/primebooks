@@ -1,0 +1,331 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Inventory Status Report{% endblock %}
+
+{% block extra_css %}
+<style>
+    .status-badge {
+        padding: 6px 12px;
+        border-radius: 20px;
+        font-size: 0.85rem;
+        font-weight: 600;
+        text-transform: uppercase;
+    }
+    .status-in-stock {
+        background-color: #d1fae5;
+        color: #065f46;
+    }
+    .status-low-stock {
+        background-color: #fef3c7;
+        color: #92400e;
+    }
+    .status-out-of-stock {
+        background-color: #fee2e2;
+        color: #991b1b;
+    }
+    .alert-panel {
+        border-left: 4px solid #ef4444;
+        background: #fef2f2;
+        padding: 15px;
+        margin-bottom: 15px;
+        border-radius: 5px;
+    }
+    .stock-meter {
+        height: 8px;
+        background: #e5e7eb;
+        border-radius: 10px;
+        overflow: hidden;
+        margin-top: 5px;
+    }
+    .stock-meter-fill {
+        height: 100%;
+        transition: width 0.3s ease;
+    }
+    .stock-value-card {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 20px;
+        border-radius: 10px;
+        text-align: center;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <!-- Header -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h2 class="mb-1">Inventory Status Report</h2>
+            <p class="text-muted mb-0">Real-time stock levels and alerts</p>
+        </div>
+        <div>
+            <a href="{% url 'reports:dashboard' %}" class="btn btn-outline-secondary me-2">
+                <i class="fas fa-arrow-left"></i> Back
+            </a>
+            {% if page_obj %}
+            <button class="btn btn-success" onclick="exportReport('XLSX')">
+                <i class="fas fa-file-excel"></i> Export to Excel
+            </button>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Filters -->
+    <div class="card shadow-sm mb-4">
+        <div class="card-body">
+            <form method="get" class="row g-3">
+                <div class="col-md-3">
+                    {{ form.store.label_tag }}
+                    {{ form.store }}
+                </div>
+                <div class="col-md-3">
+                    {{ form.category.label_tag }}
+                    {{ form.category }}
+                </div>
+                <div class="col-md-2">
+                    {{ form.status.label_tag }}
+                    {{ form.status }}
+                </div>
+                <div class="col-md-2">
+                    {{ form.sort_by.label_tag }}
+                    {{ form.sort_by }}
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label">&nbsp;</label>
+                    <button type="submit" class="btn btn-primary w-100">
+                        <i class="fas fa-filter"></i> Apply
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    {% if summary_stats %}
+    <!-- Summary Cards -->
+    <div class="row g-3 mb-4">
+        <div class="col-md-3">
+            <div class="stock-value-card">
+                <h4>UGX {{ summary_stats.total_stock_value|floatformat:0 }}</h4>
+                <p class="mb-0">Total Stock Value</p>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card border-success">
+                <div class="card-body text-center">
+                    <h4 class="text-success">{{ summary_stats.total_products }}</h4>
+                    <p class="text-muted mb-0">Total Products</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card border-warning">
+                <div class="card-body text-center">
+                    <h4 class="text-warning">{{ summary_stats.low_stock_count }}</h4>
+                    <p class="text-muted mb-0">Low Stock Items</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card border-danger">
+                <div class="card-body text-center">
+                    <h4 class="text-danger">{{ summary_stats.out_of_stock_count }}</h4>
+                    <p class="text-muted mb-0">Out of Stock</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Critical Alerts -->
+    {% if alerts %}
+    <div class="card shadow-sm mb-4 border-danger">
+        <div class="card-header bg-danger text-white">
+            <h5 class="mb-0"><i class="fas fa-exclamation-triangle"></i> Critical Stock Alerts</h5>
+        </div>
+        <div class="card-body">
+            <div class="row g-3">
+                {% for alert in alerts %}
+                <div class="col-md-6">
+                    <div class="alert-panel">
+                        <div class="d-flex justify-content-between align-items-start">
+                            <div>
+                                <strong class="d-block mb-1">{{ alert.product__name }}</strong>
+                                <small class="text-muted">{{ alert.store__name }}</small>
+                                <div class="stock-meter mt-2">
+                                    <div class="stock-meter-fill bg-danger"
+                                         style="width: {% widthratio alert.quantity alert.low_stock_threshold 100 %}%"></div>
+                                </div>
+                            </div>
+                            <div class="text-end">
+                                <span class="badge bg-danger">{{ alert.quantity }} units</span>
+                                <small class="d-block text-muted mt-1">Reorder: {{ alert.low_stock_threshold }}</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Inventory Table -->
+    <div class="card shadow-sm">
+        <div class="card-header bg-white d-flex justify-content-between align-items-center">
+            <h5 class="mb-0"><i class="fas fa-boxes text-primary"></i> Inventory Details</h5>
+            <div class="input-group" style="width: 300px;">
+                <input type="text" class="form-control" id="searchTable" placeholder="Search products...">
+                <span class="input-group-text"><i class="fas fa-search"></i></span>
+            </div>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover mb-0" id="inventoryTable">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Product</th>
+                            <th>SKU</th>
+                            <th>Store</th>
+                            <th class="text-center">Quantity</th>
+                            <th class="text-center">Reorder Level</th>
+                            <th class="text-center">Status</th>
+                            <th class="text-end">Unit Cost</th>
+                            <th class="text-end">Stock Value</th>
+                            <th class="text-center">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for item in page_obj %}
+                        <tr>
+                            <td>
+                                <strong>{{ item.product__name }}</strong>
+                                {% if item.product__category__name %}
+                                <br><small class="text-muted">{{ item.product__category__name }}</small>
+                                {% endif %}
+                            </td>
+                            <td><code>{{ item.product__sku }}</code></td>
+                            <td>{{ item.store__name }}</td>
+                            <td class="text-center">
+                                <strong class="{% if item.quantity == 0 %}text-danger{% elif item.quantity <= item.low_stock_threshold %}text-warning{% else %}text-success{% endif %}">
+                                    {{ item.quantity }}
+                                </strong>
+                                <div class="stock-meter">
+                                    <div class="stock-meter-fill
+                                        {% if item.quantity == 0 %}bg-danger{% elif item.quantity <= item.low_stock_threshold %}bg-warning{% else %}bg-success{% endif %}"
+                                         style="width: {% if item.quantity >= item.low_stock_threshold %}100{% else %}{% widthratio item.quantity item.low_stock_threshold 100 %}{% endif %}%">
+                                    </div>
+                                </div>
+                            </td>
+                            <td class="text-center">{{ item.low_stock_threshold }}</td>
+                            <td class="text-center">
+                                {% if item.status == 'out_of_stock' %}
+                                    <span class="status-badge status-out-of-stock">Out of Stock</span>
+                                {% elif item.status == 'low_stock' %}
+                                    <span class="status-badge status-low-stock">Low Stock</span>
+                                {% else %}
+                                    <span class="status-badge status-in-stock">In Stock</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-end">UGX {{ item.product__cost_price|floatformat:0 }}</td>
+                            <td class="text-end"><strong>UGX {{ item.stock_value|floatformat:0 }}</strong></td>
+                            <td class="text-center">
+                                <button class="btn btn-sm btn-outline-primary"
+                                        onclick="viewProductDetails({{ item.product__id }})">
+                                    <i class="fas fa-eye"></i>
+                                </button>
+                            </td>
+                        </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="9" class="text-center py-5">
+                                <i class="fas fa-inbox fa-3x text-muted mb-3 d-block"></i>
+                                <p class="text-muted">No inventory data found</p>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        {% if page_obj.paginator.num_pages > 1 %}
+        <div class="card-footer bg-white">
+            <div class="d-flex justify-content-between align-items-center">
+                <div class="text-muted">
+                    Showing {{ page_obj.start_index }} to {{ page_obj.end_index }} of {{ page_obj.paginator.count }} items
+                </div>
+                <nav>
+                    <ul class="pagination mb-0">
+                        {% if page_obj.has_previous %}
+                        <li class="page-item">
+                            <a class="page-link" href="?page={{ page_obj.previous_page_number }}">Previous</a>
+                        </li>
+                        {% endif %}
+
+                        {% for num in page_obj.paginator.page_range %}
+                            {% if page_obj.number == num %}
+                            <li class="page-item active"><span class="page-link">{{ num }}</span></li>
+                            {% elif num > page_obj.number|add:'-3' and num < page_obj.number|add:'3' %}
+                            <li class="page-item"><a class="page-link" href="?page={{ num }}">{{ num }}</a></li>
+                            {% endif %}
+                        {% endfor %}
+
+                        {% if page_obj.has_next %}
+                        <li class="page-item">
+                            <a class="page-link" href="?page={{ page_obj.next_page_number }}">Next</a>
+                        </li>
+                        {% endif %}
+                    </ul>
+                </nav>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+    {% else %}
+    <div class="card shadow-sm">
+        <div class="card-body text-center py-5">
+            <i class="fas fa-warehouse fa-4x text-muted mb-3"></i>
+            <h4 class="text-muted">No Data Available</h4>
+            <p class="text-muted">Apply filters above to view inventory status</p>
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // Table search
+    document.getElementById('searchTable').addEventListener('keyup', function() {
+        const value = this.value.toLowerCase();
+        const rows = document.querySelectorAll('#inventoryTable tbody tr');
+
+        rows.forEach(row => {
+            const text = row.textContent.toLowerCase();
+            row.style.display = text.includes(value) ? '' : 'none';
+        });
+    });
+
+    function exportReport(format) {
+        window.location.href = '{% url "reports:export_report" "inventory_status" %}?format=' + format;
+    }
+
+    function viewProductDetails(productId) {
+        // Redirect to product detail page
+        window.location.href = '/inventory/products/' + productId + '/';
+    }
+
+    // Auto-refresh alerts every 2 minutes
+    setInterval(function() {
+        fetch('{% url "reports:ajax_alerts" %}')
+            .then(response => response.json())
+            .then(data => {
+                if (data.alerts && data.alerts.length > 0) {
+                    // Update alert count or show notification
+                    console.log('New alerts:', data.alerts);
+                }
+            });
+    }, 120000);
+</script>
+{% endblock %}

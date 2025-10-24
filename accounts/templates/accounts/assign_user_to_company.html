@@ -1,0 +1,319 @@
+{% extends 'base.html' %}
+{% load i18n %}
+{% load static %}
+
+{% block extra_css %}
+    <style>
+        .header-section {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 2rem 0;
+            margin-bottom: 2rem;
+        }
+        .user-card {
+            border: none;
+            border-radius: 12px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+            transition: all 0.3s ease;
+        }
+        .user-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(0,0,0,0.15);
+        }
+        .user-avatar {
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            object-fit: cover;
+        }
+        .select2-container--default .select2-selection--single {
+            height: 38px;
+            border: 1px solid #ced4da;
+            border-radius: 0.375rem;
+        }
+        .select2-container--default .select2-selection--single .select2-selection__rendered {
+            line-height: 36px;
+            padding-left: 12px;
+        }
+        .form-section {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+            padding: 2rem;
+            margin-bottom: 2rem;
+        }
+        .section-title {
+            color: #495057;
+            border-bottom: 2px solid #e9ecef;
+            padding-bottom: 0.5rem;
+            margin-bottom: 1.5rem;
+        }
+    </style>
+{% endblock %}
+{% block content %}
+<div class="bg-light">
+    <div class="header-section">
+        <div class="container">
+            <div class="row align-items-center">
+                <div class="col-md-8">
+                    <h1 class="mb-1">
+                        <i class="fas fa-user-plus me-2"></i>
+                        {% trans "Assign User to Company" %}
+                    </h1>
+                    <p class="mb-0 opacity-75">{{ company.display_name }}</p>
+                </div>
+                <div class="col-md-4 text-end">
+                    <a href="{% url 'company_user_list' company.company_id %}" class="btn btn-outline-light">
+                        <i class="fas fa-arrow-left me-1"></i> {% trans "Back to Users" %}
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="container">
+        <!-- Assignment Form -->
+        <div class="form-section">
+            <h4 class="section-title">
+                <i class="fas fa-user-cog me-2"></i>
+                {% trans "Assign Existing User" %}
+            </h4>
+
+            <form method="post">
+                {% csrf_token %}
+                <div class="row">
+                    <div class="col-md-6">
+                        <label for="user_email" class="form-label">{% trans "User Email" %}</label>
+                        <select name="user_email" id="user_email" class="form-select" required>
+                            <option value="">{% trans "Select a user..." %}</option>
+                            {% for user in available_users %}
+                                <option value="{{ user.email }}" data-avatar="{% if user.avatar %}{{ user.avatar.url }}{% endif %}"
+                                        data-name="{{ user.get_full_name|default:user.username }}"
+                                        data-type="{{ user.get_user_type_display }}">
+                                    {{ user.get_full_name|default:user.username }} ({{ user.email }})
+                                </option>
+                            {% endfor %}
+                        </select>
+                        <div class="form-text">{% trans "Select an existing user to add to this company" %}</div>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">{% trans "Permissions" %}</label>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" name="is_admin" id="is_admin">
+                            <label class="form-check-label" for="is_admin">
+                                <i class="fas fa-user-shield text-warning me-1"></i>
+                                {% trans "Make this user a company administrator" %}
+                            </label>
+                        </div>
+                        <div class="form-text">{% trans "Company administrators can manage users and settings" %}</div>
+                    </div>
+                </div>
+
+                <div class="row mt-4">
+                    <div class="col-12">
+                        <button type="submit" class="btn btn-primary me-2" id="assignBtn" disabled>
+                            <i class="fas fa-user-plus me-1"></i> {% trans "Assign User" %}
+                        </button>
+                        <a href="{% url 'company_user_list' company.company_id %}" class="btn btn-outline-secondary">
+                            <i class="fas fa-times me-1"></i> {% trans "Cancel" %}
+                        </a>
+                    </div>
+                </div>
+            </form>
+        </div>
+
+        <!-- User Preview Card -->
+        <div class="form-section" id="userPreview" style="display: none;">
+            <h4 class="section-title">
+                <i class="fas fa-eye me-2"></i>
+                {% trans "User Preview" %}
+            </h4>
+            <div class="card user-card">
+                <div class="card-body">
+                    <div class="row align-items-center">
+                        <div class="col-auto">
+                            <div id="previewAvatar" class="user-avatar bg-secondary d-flex align-items-center justify-content-center text-white">
+                                <i class="fas fa-user"></i>
+                            </div>
+                        </div>
+                        <div class="col">
+                            <h5 class="mb-1" id="previewName">{% trans "User Name" %}</h5>
+                            <p class="text-muted mb-1" id="previewEmail">user@example.com</p>
+                            <span class="badge bg-light text-dark" id="previewType">{% trans "User Type" %}</span>
+                        </div>
+                        <div class="col-auto">
+                            <div class="text-end">
+                                <div class="text-muted small">{% trans "Will be assigned as:" %}</div>
+                                <span class="badge bg-primary" id="previewRole">{% trans "Member" %}</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Available Users List -->
+        {% if available_users %}
+            <div class="form-section">
+                <h4 class="section-title">
+                    <i class="fas fa-users me-2"></i>
+                    {% blocktrans %}Available Users ({{ available_users.count }}){% endblocktrans %}
+                </h4>
+
+                <div class="row">
+                    {% for user in available_users %}
+                        <div class="col-md-6 col-lg-4 mb-3">
+                            <div class="card user-card h-100">
+                                <div class="card-body">
+                                    <div class="d-flex align-items-center mb-3">
+                                        {% if user.avatar %}
+                                            <img src="{{ user.avatar.url }}" class="user-avatar me-3" alt="{% trans "Avatar" %}">
+                                        {% else %}
+                                            <div class="user-avatar me-3 bg-secondary d-flex align-items-center justify-content-center text-white">
+                                                {{ user.get_full_name|first|default:user.username|first }}
+                                            </div>
+                                        {% endif %}
+                                        <div class="flex-grow-1">
+                                            <h6 class="mb-1">{{ user.get_full_name|default:user.username }}</h6>
+                                            <small class="text-muted">{{ user.email }}</small>
+                                        </div>
+                                    </div>
+
+                                    <div class="mb-2">
+                                        <span class="badge bg-light text-dark">{{ user.get_user_type_display }}</span>
+                                        {% if user.email_verified %}
+                                            <i class="fas fa-check-circle text-success ms-1" title="{% trans "Email Verified" %}"></i>
+                                        {% endif %}
+                                    </div>
+
+                                    <div class="text-muted small">
+                                        <div><i class="fas fa-calendar-alt me-1"></i> {% blocktrans %}Joined {{ user.date_joined|date:"M d, Y" }}{% endblocktrans %}</div>
+                                        {% if user.last_login %}
+                                            <div><i class="fas fa-clock me-1"></i> {% blocktrans %}Last login {{ user.last_login|date:"M d, Y" }}{% endblocktrans %}</div>
+                                        {% else %}
+                                            <div><i class="fas fa-clock me-1"></i> {% trans "Never logged in" %}</div>
+                                        {% endif %}
+                                    </div>
+                                </div>
+                                <div class="card-footer bg-transparent border-0">
+                                    <button type="button" class="btn btn-outline-primary btn-sm w-100 select-user-btn"
+                                            data-email="{{ user.email }}"
+                                            data-name="{{ user.get_full_name|default:user.username }}"
+                                            data-type="{{ user.get_user_type_display }}"
+                                            data-avatar="{% if user.avatar %}{{ user.avatar.url }}{% endif %}">
+                                        <i class="fas fa-plus me-1"></i> {% trans "Select User" %}
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    {% endfor %}
+                </div>
+            </div>
+        {% else %}
+            <div class="form-section text-center">
+                <i class="fas fa-users fa-3x text-muted mb-3"></i>
+                <h5 class="text-muted">{% trans "No Available Users" %}</h5>
+                <p class="text-muted">{% trans "All existing users are already assigned to this company." %}</p>
+                <a href="{% url 'invite_user' company.company_id %}" class="btn btn-primary">
+                    <i class="fas fa-envelope me-1"></i> {% trans "Invite New User" %}
+                </a>
+            </div>
+        {% endif %}
+    </div>
+</div>
+
+{% endblock %}
+{% block extra_js %}
+    <script>
+        $(document).ready(function() {
+            // Initialize Select2
+            $('#user_email').select2({
+                placeholder: 'Search and select a user...',
+                allowClear: true,
+                templateResult: formatUser,
+                templateSelection: formatUserSelection
+            });
+
+            // Handle user selection
+            $('#user_email').on('change', function() {
+                const selectedOption = $(this).find('option:selected');
+                updateUserPreview(selectedOption);
+                updateAssignButton();
+            });
+
+            // Handle admin checkbox change
+            $('#is_admin').on('change', function() {
+                updateRolePreview();
+            });
+
+            // Handle user card selection
+            $('.select-user-btn').on('click', function() {
+                const email = $(this).data('email');
+                const name = $(this).data('name');
+                const type = $(this).data('type');
+                const avatar = $(this).data('avatar');
+
+                // Set the select2 value
+                $('#user_email').val(email).trigger('change');
+
+                // Scroll to form
+                $('html, body').animate({
+                    scrollTop: $('.form-section').first().offset().top - 100
+                }, 500);
+            });
+
+            function formatUser(user) {
+                if (!user.id) return user.text;
+                
+                const $user = $(
+                    '<span>' +
+                        '<i class="fas fa-user me-2"></i>' +
+                        user.text +
+                    '</span>'
+                );
+                return $user;
+            }
+
+            function formatUserSelection(user) {
+                return user.text || user.id;
+            }
+
+            function updateUserPreview(selectedOption) {
+                if (selectedOption.val()) {
+                    const name = selectedOption.data('name');
+                    const email = selectedOption.val();
+                    const type = selectedOption.data('type');
+                    const avatar = selectedOption.data('avatar');
+
+                    $('#previewName').text(name);
+                    $('#previewEmail').text(email);
+                    $('#previewType').text(type);
+
+                    if (avatar) {
+                        $('#previewAvatar').html('<img src="' + avatar + '" class="user-avatar" alt="Avatar">');
+                    } else {
+                        $('#previewAvatar').html(name.charAt(0).toUpperCase());
+                    }
+
+                    updateRolePreview();
+                    $('#userPreview').slideDown();
+                } else {
+                    $('#userPreview').slideUp();
+                }
+            }
+
+            function updateRolePreview() {
+                const isAdmin = $('#is_admin').is(':checked');
+                const role = isAdmin ? 'Administrator' : 'Member';
+                const badgeClass = isAdmin ? 'bg-warning' : 'bg-primary';
+                
+                $('#previewRole').removeClass('bg-primary bg-warning').addClass(badgeClass).text(role);
+            }
+
+            function updateAssignButton() {
+                const hasSelection = $('#user_email').val() !== '';
+                $('#assignBtn').prop('disabled', !hasSelection);
+            }
+        });
+    </script>
+{% endblock %}

@@ -1,0 +1,392 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}{{ company.trading_name|default:company.name }} Role Management - {{ block.super }}{% endblock %}
+
+{% block breadcrumb %}
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb mb-0">
+        {% if perms.accounts.view_customuser %}
+        <li class="breadcrumb-item"><a href="{% url 'user_dashboard' %}">Dashboard</a></li>
+        {% endif %}
+        <li class="breadcrumb-item active">Roles</li>
+    </ol>
+</nav>
+{% endblock %}
+
+{% block page_header %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h1 class="h3 mb-0">Role Management</h1>
+        <p class="text-muted mb-0">Manage user roles and permissions</p>
+    </div>
+    {% if can_create_role %}
+    <div>
+        {% if perms.auth.add_group %}
+        <a href="{% url 'role_create' %}" class="btn btn-primary">
+            <i class="bi bi-plus-lg me-2"></i>Create New Role
+        </a>
+        {% endif %}
+        {% if can_manage_system_roles %}
+        {% if perms.accounts.can_bulk_assign_roles %}
+        <a href="{% url 'role_bulk_assignment' %}" class="btn btn-outline-primary ms-2">
+            <i class="bi bi-people me-2"></i>Bulk Assignment
+        </a>
+        {% endif %}
+        {% endif %}
+    </div>
+    {% endif %}
+</div>
+
+<!-- Analytics Cards -->
+<div class="row mb-4">
+    <div class="col-md-3">
+        <div class="card bg-primary text-white">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h5 class="card-title">Total Roles</h5>
+                        <h2 class="mb-0">{{ total_roles }}</h2>
+                    </div>
+                    <div class="align-self-center">
+                        <i class="bi bi-shield-check fs-1"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card bg-success text-white">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h5 class="card-title">Active Roles</h5>
+                        <h2 class="mb-0">{{ active_roles }}</h2>
+                    </div>
+                    <div class="align-self-center">
+                        <i class="bi bi-check-circle fs-1"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card bg-info text-white">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h5 class="card-title">System Roles</h5>
+                        <h2 class="mb-0">{{ system_roles }}</h2>
+                    </div>
+                    <div class="align-self-center">
+                        <i class="bi bi-gear fs-1"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card bg-warning text-white">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h5 class="card-title">Custom Roles</h5>
+                        <h2 class="mb-0">{{ custom_roles }}</h2>
+                    </div>
+                    <div class="align-self-center">
+                        <i class="bi bi-person-gear fs-1"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<!-- Filters -->
+<div class="card mb-4">
+    <div class="card-header">
+        <h5 class="card-title mb-0">
+            <i class="bi bi-funnel me-2"></i>Filters & Search
+        </h5>
+    </div>
+    <div class="card-body">
+        <form method="get" class="row g-3">
+            <div class="col-md-4">
+                {{ filter_form.search.label_tag }}
+                {{ filter_form.search }}
+            </div>
+            <div class="col-md-3">
+                {{ filter_form.company.label_tag }}
+                {{ filter_form.company }}
+            </div>
+            <div class="col-md-2">
+                {{ filter_form.is_system_role.label_tag }}
+                {{ filter_form.is_system_role }}
+            </div>
+            <div class="col-md-2">
+                {{ filter_form.is_active.label_tag }}
+                {{ filter_form.is_active }}
+            </div>
+            <div class="col-md-1 d-flex align-items-end">
+                <button type="submit" class="btn btn-outline-primary w-100">
+                    <i class="bi bi-search"></i>
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Roles Table -->
+<div class="card">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <h5 class="card-title mb-0">
+            <i class="bi bi-list-ul me-2"></i>Roles ({{ page_obj.paginator.count }})
+        </h5>
+        <div class="btn-group btn-group-sm">
+            {% if perms.auth.view_group %}
+            <a href="{% url 'all_role_history' %}" class="btn btn-outline-secondary">
+                <i class="bi bi-clock-history me-1"></i>History
+            </a>
+            {% endif %}
+        </div>
+    </div>
+    <div class="card-body p-0">
+        {% if roles %}
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Role Name</th>
+                        <th>Company</th>
+                        <th>Type</th>
+                        <th>Users</th>
+                        <th>Permissions</th>
+                        <th>Status</th>
+                        <th>Priority</th>
+                        <th class="text-end">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for role in roles %}
+                    <tr>
+                        <td>
+                            <div class="d-flex align-items-center">
+                                <div class="badge rounded-pill me-2" style="background-color: {{ role.color_code }}; width: 12px; height: 12px;"></div>
+                                <div>
+                                    <strong>{{ role.group.name }}</strong>
+                                    {% if role.description %}
+                                    <br><small class="text-muted">{{ role.description|truncatechars:60 }}</small>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </td>
+                        <td>
+                            {% if role.company %}
+                            <span class="badge bg-light text-dark">{{ role.company.name }}</span>
+                            {% else %}
+                            <span class="badge bg-secondary">System-wide</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if role.is_system_role %}
+                            <span class="badge bg-info">
+                                <i class="bi bi-gear me-1"></i>System
+                            </span>
+                            {% else %}
+                            <span class="badge bg-primary">
+                                <i class="bi bi-person-gear me-1"></i>Custom
+                            </span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <div class="d-flex align-items-center">
+                                <span class="badge bg-secondary me-2">{{ role.user_count }}</span>
+                                {% if role.max_users %}
+                                <div class="progress" style="width: 60px; height: 8px;">
+                                    <div class="progress-bar {% if role.capacity_percentage > 80 %}bg-warning{% elif role.capacity_percentage > 95 %}bg-danger{% else %}bg-success{% endif %}"
+                                         style="width: {{ role.capacity_percentage }}%"></div>
+                                </div>
+                                <small class="text-muted ms-1">{{ role.max_users }}</small>
+                                {% endif %}
+                            </div>
+                        </td>
+                        <td>
+                            <span class="badge bg-light text-dark">{{ role.permission_count }}</span>
+                        </td>
+                        <td>
+                            {% if role.is_active %}
+                            <span class="badge bg-success">
+                                <i class="bi bi-check-circle me-1"></i>Active
+                            </span>
+                            {% else %}
+                            <span class="badge bg-danger">
+                                <i class="bi bi-x-circle me-1"></i>Inactive
+                            </span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <span class="badge bg-light text-dark">{{ role.priority }}</span>
+                        </td>
+                        <td class="text-end">
+                            <div class="btn-group btn-group-sm">
+                                {% if perms.auth.view_group %}
+                                <a href="{% url 'role_detail' role.pk %}"
+                                   class="btn btn-outline-primary btn-sm"
+                                   data-bs-toggle="tooltip"
+                                   title="View Details">
+                                    <i class="bi bi-eye"></i>
+                                </a>
+                                {% endif %}
+                                {% if perms.auth.change_group %}
+                                <a href="{% url 'role_edit' role.pk %}"
+                                   class="btn btn-outline-secondary btn-sm"
+                                   data-bs-toggle="tooltip"
+                                   title="Edit Role">
+                                    <i class="bi bi-pencil"></i>
+                                </a>
+                                {% endif %}
+                                <div class="dropdown">
+                                    <button class="btn btn-outline-secondary btn-sm dropdown-toggle"
+                                            type="button"
+                                            data-bs-toggle="dropdown">
+                                        <i class="bi bi-three-dots"></i>
+                                    </button>
+                                    <ul class="dropdown-menu dropdown-menu-end">
+                                        <li>
+                                            {% if perms.accounts.can_view_role_analytics %}
+                                            <a class="dropdown-item" href="{% url 'role_analytics' role.pk %}">
+                                                <i class="bi bi-graph-up me-2"></i>Analytics
+                                            </a>
+                                            {% endif %}
+                                        </li>
+                                        <li>
+                                            {% if perms.auth.view_group %}
+                                            <a class="dropdown-item" href="{% url 'role_history' role.pk %}">
+                                                <i class="bi bi-clock-history me-2"></i>History
+                                            </a>
+                                            {% endif %}
+                                        </li>
+                                        {% if perms.auth.change_group %}
+                                        <li><hr class="dropdown-divider"></li>
+                                        <li>
+                                            <button class="dropdown-item toggle-active-btn"
+                                                    data-role-id="{{ role.pk }}"
+                                                    data-current-status="{{ role.is_active|yesno:'true,false' }}">
+                                                <i class="bi bi-{% if role.is_active %}pause{% else %}play{% endif %}-circle me-2"></i>
+                                                {% if role.is_active %}Deactivate{% else %}Activate{% endif %}
+                                            </button>
+                                        </li>
+                                        {% endif %}
+                                        {% if perms.auth.delete_group and not role.is_system_role %}
+                                        <li><hr class="dropdown-divider"></li>
+                                        <li>
+                                            <a class="dropdown-item text-danger" href="{% url 'role_delete' role.pk %}">
+                                                <i class="bi bi-trash me-2"></i>Delete
+                                            </a>
+                                        </li>
+                                        {% endif %}
+                                    </ul>
+                                </div>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="text-center py-5">
+            <i class="bi bi-inbox display-1 text-muted"></i>
+            <h5 class="mt-3">No roles found</h5>
+            <p class="text-muted">
+                {% if can_create_role %}
+                {% if perms.auth.add_group %}
+                <a href="{% url 'role_create' %}" class="btn btn-primary">
+                    <i class="bi bi-plus-lg me-2"></i>Create your first role
+                </a>
+                {% endif %}
+                {% else %}
+                No roles match your current filters.
+                {% endif %}
+            </p>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Pagination -->
+    {% if is_paginated %}
+    <div class="card-footer">
+        <nav aria-label="Role pagination">
+            <ul class="pagination pagination-sm mb-0 justify-content-center">
+                {% if page_obj.has_previous %}
+                <li class="page-item">
+                    <a class="page-link" href="?{% if request.GET.urlencode %}{{ request.GET.urlencode }}&{% endif %}page=1">&laquo; First</a>
+                </li>
+                <li class="page-item">
+                    <a class="page-link" href="?{% if request.GET.urlencode %}{{ request.GET.urlencode }}&{% endif %}page={{ page_obj.previous_page_number }}">Previous</a>
+                </li>
+                {% endif %}
+
+                <li class="page-item active">
+                    <span class="page-link">
+                        Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}
+                    </span>
+                </li>
+
+                {% if page_obj.has_next %}
+                <li class="page-item">
+                    <a class="page-link" href="?{% if request.GET.urlencode %}{{ request.GET.urlencode }}&{% endif %}page={{ page_obj.next_page_number }}">Next</a>
+                </li>
+                <li class="page-item">
+                    <a class="page-link" href="?{% if request.GET.urlencode %}{{ request.GET.urlencode }}&{% endif %}page={{ page_obj.paginator.num_pages }}">Last &raquo;</a>
+                </li>
+                {% endif %}
+            </ul>
+        </nav>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Initialize tooltips
+    var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+    var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
+        return new bootstrap.Tooltip(tooltipTriggerEl);
+    });
+
+    // Handle toggle active status
+    document.querySelectorAll('.toggle-active-btn').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+            const roleId = this.getAttribute('data-role-id');
+            const currentStatus = this.getAttribute('data-current-status') === 'true';
+
+            fetch(`/accounts/roles/${roleId}/toggle-active/`, {
+                method: 'POST',
+                headers: {
+                    'X-CSRFToken': window.csrfToken,
+                    'Content-Type': 'application/json',
+                },
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    // Reload page to show updated status
+                    window.location.reload();
+                } else {
+                    alert(data.message);
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('An error occurred while updating the role status.');
+            });
+        });
+    });
+});
+</script>
+{% endblock %}

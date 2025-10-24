@@ -1,0 +1,80 @@
+<!-- templates/stores/bulk_actions.html -->
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Bulk Store Actions | Prime Book{% endblock %}
+
+{% block page_header %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h1 class="h3 mb-1">
+            <i class="bi bi-collection me-2"></i>Bulk Store Actions
+        </h1>
+        <p class="text-muted mb-0">Perform actions on multiple stores at once</p>
+    </div>
+    <div>
+        <a href="{% url 'stores:store_list' %}" class="btn btn-outline-secondary">
+            <i class="bi bi-arrow-left me-1"></i>Back to Stores
+        </a>
+    </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">Bulk Action Confirmation</h5>
+            </div>
+            <div class="card-body">
+                <div class="alert alert-warning">
+                    <i class="bi bi-exclamation-triangle me-2"></i>
+                    <strong>Warning:</strong> You are about to perform a bulk action on {{ store_count }} stores.
+                </div>
+
+                <div class="mb-4">
+                    <h6>Action Details:</h6>
+                    <p class="mb-1"><strong>Action:</strong> {{ action_display }}</p>
+                    <p class="mb-0"><strong>Stores Affected:</strong> {{ store_count }}</p>
+                </div>
+
+                <form method="post">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="{{ action }}">
+                    <input type="hidden" name="selected_stores" value="{{ selected_stores_json }}">
+
+                    <div class="mb-3">
+                        <label for="confirmation" class="form-label">
+                            Type <strong>CONFIRM</strong> to proceed:
+                        </label>
+                        <input type="text" class="form-control" id="confirmation" name="confirmation" required>
+                    </div>
+
+                    <div class="d-grid gap-2">
+                        <button type="submit" class="btn btn-danger" id="confirmButton" disabled>
+                            <i class="bi bi-check-circle me-1"></i>Confirm Bulk Action
+                        </button>
+                        <a href="{% url 'stores:store_list' %}" class="btn btn-outline-secondary">
+                            <i class="bi bi-x-circle me-1"></i>Cancel
+                        </a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const confirmationInput = document.getElementById('confirmation');
+    const confirmButton = document.getElementById('confirmButton');
+
+    confirmationInput.addEventListener('input', function() {
+        confirmButton.disabled = this.value.toUpperCase() !== 'CONFIRM';
+    });
+});
+</script>
+{% endblock %}

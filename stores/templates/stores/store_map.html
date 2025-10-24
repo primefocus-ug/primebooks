@@ -1,0 +1,706 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Store Locations Map | Prime Book{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
+<style>
+    :root {
+        --map-height: 600px;
+        --sidebar-height: 600px;
+    }
+
+    #storeMap {
+        height: var(--map-height);
+        border-radius: var(--border-radius);
+        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+
+    .map-container {
+        position: relative;
+    }
+
+    .map-controls {
+        position: absolute;
+        top: 10px;
+        left: 50px;
+        z-index: 1000;
+        background: white;
+        padding: 10px;
+        border-radius: 8px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+    }
+
+    .map-search {
+        width: 300px;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        padding: 8px 12px;
+    }
+
+    .map-sidebar {
+        background: white;
+        border-radius: var(--border-radius);
+        box-shadow: var(--box-shadow);
+        height: var(--sidebar-height);
+        overflow-y: auto;
+    }
+
+    .store-item {
+        border-left: 4px solid transparent;
+        transition: all 0.3s ease;
+        cursor: pointer;
+        padding: 15px;
+        border-bottom: 1px solid #f0f0f0;
+    }
+
+    .store-item:hover {
+        border-left-color: var(--primary-color);
+        background-color: #f8f9fa;
+        transform: translateX(2px);
+    }
+
+    .store-item.active {
+        border-left-color: var(--primary-color);
+        background-color: #e8f4f8;
+    }
+
+    .store-badge {
+        font-size: 0.75rem;
+        padding: 4px 8px;
+        border-radius: 12px;
+    }
+
+    .stat-card {
+        transition: transform 0.2s ease;
+    }
+
+    .stat-card:hover {
+        transform: translateY(-4px);
+    }
+
+    .stat-icon {
+        font-size: 2rem;
+        opacity: 0.8;
+    }
+
+    .region-filter {
+        margin-bottom: 10px;
+    }
+
+    .region-tag {
+        display: inline-block;
+        padding: 4px 12px;
+        margin: 4px;
+        background: #e9ecef;
+        border-radius: 16px;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        font-size: 0.85rem;
+    }
+
+    .region-tag:hover {
+        background: var(--primary-color);
+        color: white;
+    }
+
+    .region-tag.active {
+        background: var(--primary-color);
+        color: white;
+    }
+
+    .custom-popup {
+        min-width: 250px;
+    }
+
+    .custom-popup .popup-header {
+        font-weight: 600;
+        font-size: 1.1rem;
+        margin-bottom: 8px;
+        color: var(--primary-color);
+    }
+
+    .custom-popup .popup-detail {
+        margin: 4px 0;
+        font-size: 0.9rem;
+    }
+
+    .legend {
+        position: absolute;
+        bottom: 20px;
+        right: 20px;
+        background: white;
+        padding: 15px;
+        border-radius: 8px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+        z-index: 1000;
+        font-size: 0.85rem;
+    }
+
+    .legend-item {
+        display: flex;
+        align-items: center;
+        margin: 5px 0;
+    }
+
+    .legend-color {
+        width: 20px;
+        height: 20px;
+        border-radius: 50%;
+        margin-right: 8px;
+        border: 2px solid white;
+        box-shadow: 0 1px 4px rgba(0,0,0,0.3);
+    }
+
+    .tabs-container {
+        border-bottom: 2px solid #e9ecef;
+        margin-bottom: 15px;
+    }
+
+    .tab-btn {
+        padding: 10px 20px;
+        border: none;
+        background: transparent;
+        cursor: pointer;
+        font-weight: 500;
+        color: #6c757d;
+        border-bottom: 3px solid transparent;
+        transition: all 0.2s ease;
+    }
+
+    .tab-btn.active {
+        color: var(--primary-color);
+        border-bottom-color: var(--primary-color);
+    }
+
+    .tab-content {
+        display: none;
+    }
+
+    .tab-content.active {
+        display: block;
+    }
+
+    .unmapped-item {
+        padding: 12px;
+        border-bottom: 1px solid #f0f0f0;
+        background: #fff9e6;
+    }
+
+    .loading-spinner {
+        display: none;
+        text-align: center;
+        padding: 20px;
+    }
+
+    @media (max-width: 768px) {
+        :root {
+            --map-height: 400px;
+            --sidebar-height: auto;
+        }
+
+        .map-controls {
+            position: static;
+            margin-bottom: 10px;
+        }
+
+        .map-search {
+            width: 100%;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block page_header %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h1 class="h3 mb-1">
+            <i class="bi bi-geo-alt-fill me-2 text-primary"></i>Store Locations Map
+        </h1>
+        <p class="text-muted mb-0">Interactive map and directory of all store locations</p>
+    </div>
+    <div class="d-flex gap-2">
+        <button class="btn btn-outline-primary" id="fitAllStores">
+            <i class="bi bi-arrows-fullscreen"></i> Fit All
+        </button>
+        <button class="btn btn-outline-secondary" id="refreshMap">
+            <i class="bi bi-arrow-clockwise"></i> Refresh
+        </button>
+    </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<!-- Statistics Cards -->
+<div class="row mb-4">
+    <div class="col-md-3 col-sm-6 mb-3">
+        <div class="card stat-card border-0 shadow-sm h-100">
+            <div class="card-body text-center">
+                <i class="bi bi-shop stat-icon text-primary"></i>
+                <h3 class="mt-2 mb-0">{{ total_stores }}</h3>
+                <p class="text-muted mb-0 small">Total Stores</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3 col-sm-6 mb-3">
+        <div class="card stat-card border-0 shadow-sm h-100">
+            <div class="card-body text-center">
+                <i class="bi bi-map-fill stat-icon text-success"></i>
+                <h3 class="mt-2 mb-0">{{ mapped_stores }}</h3>
+                <p class="text-muted mb-0 small">Mapped Stores</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3 col-sm-6 mb-3">
+        <div class="card stat-card border-0 shadow-sm h-100">
+            <div class="card-body text-center">
+                <i class="bi bi-pin-map-fill stat-icon text-info"></i>
+                <h3 class="mt-2 mb-0">{{ regions_count }}</h3>
+                <p class="text-muted mb-0 small">Regions Covered</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3 col-sm-6 mb-3">
+        <div class="card stat-card border-0 shadow-sm h-100">
+            <div class="card-body text-center">
+                <i class="bi bi-exclamation-triangle-fill stat-icon text-warning"></i>
+                <h3 class="mt-2 mb-0">{{ unmapped_count }}</h3>
+                <p class="text-muted mb-0 small">Needs Mapping</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Region Filters -->
+{% if region_stats %}
+<div class="card mb-4">
+    <div class="card-body">
+        <h6 class="mb-3"><i class="bi bi-filter-circle"></i> Filter by Region</h6>
+        <div class="region-filter">
+            <span class="region-tag active" data-region="all">
+                <i class="bi bi-globe"></i> All Regions ({{ total_stores }})
+            </span>
+            {% for region in region_stats %}
+            <span class="region-tag" data-region="{{ region.region }}">
+                {{ region.region }} ({{ region.mapped_count }})
+            </span>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<!-- Map and Sidebar -->
+<div class="row">
+    <!-- Map Container -->
+    <div class="col-lg-8 mb-4">
+        <div class="card border-0 shadow">
+            <div class="card-header bg-white">
+                <h5 class="mb-0"><i class="bi bi-map"></i> Store Locations</h5>
+            </div>
+            <div class="card-body p-0 position-relative">
+                <div class="map-container">
+                    <div class="map-controls">
+                        <input type="text" id="mapSearch" class="map-search" placeholder="Search stores...">
+                    </div>
+                    <div id="storeMap"></div>
+                    <div class="legend">
+                        <strong class="d-block mb-2">Legend</strong>
+                        <div class="legend-item">
+                            <div class="legend-color" style="background: #28a745;"></div>
+                            <span>Healthy Stock</span>
+                        </div>
+                        <div class="legend-item">
+                            <div class="legend-color" style="background: #ffc107;"></div>
+                            <span>Low Stock</span>
+                        </div>
+                        <div class="legend-item">
+                            <div class="legend-color" style="background: #007bff;"></div>
+                            <span>Standard</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Sidebar -->
+    <div class="col-lg-4">
+        <div class="card border-0 shadow">
+            <div class="card-header bg-white">
+                <div class="tabs-container">
+                    <button class="tab-btn active" data-tab="mapped">
+                        Mapped ({{ mapped_stores }})
+                    </button>
+                    <button class="tab-btn" data-tab="unmapped">
+                        Unmapped ({{ unmapped_count }})
+                    </button>
+                </div>
+            </div>
+            <div class="card-body p-0">
+                <div class="map-sidebar">
+                    <!-- Mapped Stores Tab -->
+                    <div class="tab-content active" id="mapped-tab">
+                        {% if stores_data %}
+                        <div class="list-group list-group-flush" id="storeList">
+                            <!-- Populated by JavaScript -->
+                        </div>
+                        {% else %}
+                        <div class="text-center py-5">
+                            <i class="bi bi-map display-1 text-muted"></i>
+                            <p class="text-muted mt-3">No stores with location data available</p>
+                        </div>
+                        {% endif %}
+                    </div>
+
+                    <!-- Unmapped Stores Tab -->
+                    <div class="tab-content" id="unmapped-tab">
+                        {% if unmapped_stores %}
+                        <div class="p-3">
+                            <div class="alert alert-warning" role="alert">
+                                <i class="bi bi-exclamation-triangle"></i>
+                                <strong>{{ unmapped_count }}</strong> store(s) need GPS coordinates
+                            </div>
+                        </div>
+                        {% for store in unmapped_stores %}
+                        <div class="unmapped-item">
+                            <div class="d-flex justify-content-between align-items-start">
+                                <div>
+                                    <h6 class="mb-1">{{ store.name }}</h6>
+                                    <p class="text-muted mb-1 small">
+                                        <i class="bi bi-code-square"></i> {{ store.code }}
+                                    </p>
+                                    {% if store.region %}
+                                    <span class="badge bg-secondary">{{ store.region }}</span>
+                                    {% endif %}
+                                </div>
+                                <a href="{% url 'stores:store_detail' store.id %}" class="btn btn-sm btn-outline-primary">
+                                    <i class="bi bi-pencil"></i> Edit
+                                </a>
+                            </div>
+                        </div>
+                        {% endfor %}
+                        {% else %}
+                        <div class="text-center py-5">
+                            <i class="bi bi-check-circle display-1 text-success"></i>
+                            <p class="text-muted mt-3">All stores are mapped!</p>
+                        </div>
+                        {% endif %}
+                    </div>
+
+                    <div class="loading-spinner">
+                        <div class="spinner-border text-primary" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const storesData = JSON.parse('{{ stores_data|escapejs }}');
+    const mapCenter = {{ map_center|safe }};
+    let map, markers = {}, markerCluster, currentFilter = 'all';
+
+    // Initialize map
+    map = L.map('storeMap').setView(mapCenter, 8);
+
+    // Add tile layer with better styling
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+        maxZoom: 19
+    }).addTo(map);
+
+    // Initialize marker cluster group
+    markerCluster = L.markerClusterGroup({
+        chunkedLoading: true,
+        spiderfyOnMaxZoom: true,
+        showCoverageOnHover: false,
+        zoomToBoundsOnClick: true
+    });
+
+    // Custom icon function based on store status
+    function getMarkerIcon(store) {
+        let color = '#007bff'; // Default blue
+
+        if (store.low_stock_count > 0) {
+            color = '#ffc107'; // Yellow for low stock
+        } else if (store.inventory_count > 0) {
+            color = '#28a745'; // Green for healthy stock
+        }
+
+        return L.divIcon({
+            className: 'custom-marker',
+            html: `<div style="background-color: ${color}; width: 24px; height: 24px; border-radius: 50%; border: 3px solid white; box-shadow: 0 2px 8px rgba(0,0,0,0.4);"></div>`,
+            iconSize: [24, 24],
+            iconAnchor: [12, 12]
+        });
+    }
+
+    // Create popup content
+    function createPopupContent(store) {
+        const inventoryStatus = store.low_stock_count > 0
+            ? `<span class="badge bg-warning">Low Stock Items: ${store.low_stock_count}</span>`
+            : `<span class="badge bg-success">Stock Healthy</span>`;
+
+        return `
+            <div class="custom-popup">
+                <div class="popup-header">${store.name}</div>
+                <div class="popup-detail"><i class="bi bi-code-square"></i> <strong>Code:</strong> ${store.code || 'N/A'}</div>
+                <div class="popup-detail"><i class="bi bi-pin-map"></i> <strong>Region:</strong> ${store.region || 'Not specified'}</div>
+                <div class="popup-detail"><i class="bi bi-telephone"></i> ${store.phone || 'No phone'}</div>
+                <div class="popup-detail"><i class="bi bi-box-seam"></i> <strong>Products:</strong> ${store.inventory_count || 0}</div>
+                <div class="mt-2">${inventoryStatus}</div>
+                <div class="mt-3">
+                    <a href="/stores/stores/${store.id}/" class="btn btn-sm btn-primary w-100">
+                        <i class="bi bi-eye"></i> View Details
+                    </a>
+                </div>
+            </div>
+        `;
+    }
+
+    // Add store markers
+    function addMarkers(stores) {
+        markerCluster.clearLayers();
+        markers = {};
+
+        stores.forEach(store => {
+            if (store.latitude && store.longitude && store.id) {
+                const marker = L.marker(
+                    [store.latitude, store.longitude],
+                    { icon: getMarkerIcon(store) }
+                ).bindPopup(createPopupContent(store));
+
+                marker.storeData = store;
+                markers[store.id] = marker;
+                markerCluster.addLayer(marker);
+
+                // Highlight store item when marker is clicked
+                marker.on('click', function() {
+                    highlightStoreItem(store.id);
+                });
+            }
+        });
+
+        map.addLayer(markerCluster);
+
+        // Fit bounds if markers exist
+        if (Object.keys(markers).length > 0) {
+            map.fitBounds(markerCluster.getBounds().pad(0.1));
+        }
+    }
+
+    // Render store list
+    function renderStoreList(stores) {
+        const storeList = document.getElementById('storeList');
+        storeList.innerHTML = '';
+
+        stores.forEach(store => {
+            const storeItem = document.createElement('div');
+            storeItem.className = 'store-item';
+            storeItem.dataset.storeId = store.id;
+
+            const statusBadge = store.latitude && store.longitude
+                ? `<span class="store-badge bg-success">Mapped</span>`
+                : `<span class="store-badge bg-secondary">No GPS</span>`;
+
+            const stockBadge = store.low_stock_count > 0
+                ? `<span class="store-badge bg-warning ms-1">${store.low_stock_count} Low Stock</span>`
+                : '';
+
+            storeItem.innerHTML = `
+                <div class="d-flex justify-content-between align-items-start mb-2">
+                    <div class="flex-grow-1">
+                        <h6 class="mb-1">${store.name}</h6>
+                        <p class="text-muted mb-1 small">
+                            <i class="bi bi-code-square"></i> ${store.code || 'N/A'} |
+                            <i class="bi bi-pin-map"></i> ${store.region || 'No region'}
+                        </p>
+                        <p class="text-muted mb-0 small">
+                            <i class="bi bi-telephone"></i> ${store.phone || 'No phone'}
+                        </p>
+                    </div>
+                    <div class="text-end">
+                        ${statusBadge}
+                        ${stockBadge}
+                    </div>
+                </div>
+                <div class="d-flex gap-2">
+                    <a href="/stores/stores/${store.id}/" class="btn btn-sm btn-outline-primary">
+                        <i class="bi bi-eye"></i> View
+                    </a>
+                    ${store.latitude && store.longitude ? `
+                        <button class="btn btn-sm btn-outline-secondary view-on-map" data-store-id="${store.id}">
+                            <i class="bi bi-geo-alt"></i> Show on Map
+                        </button>
+                    ` : ''}
+                </div>
+            `;
+
+            storeItem.addEventListener('click', function(e) {
+                if (!e.target.closest('a') && !e.target.closest('button')) {
+                    const marker = markers[store.id];
+                    if (marker) {
+                        map.setView(marker.getLatLng(), 15);
+                        marker.openPopup();
+                        highlightStoreItem(store.id);
+                    }
+                }
+            });
+
+            storeList.appendChild(storeItem);
+        });
+
+        // Attach event listeners to "Show on Map" buttons
+        document.querySelectorAll('.view-on-map').forEach(button => {
+            button.addEventListener('click', function(e) {
+                e.stopPropagation();
+                const storeId = this.dataset.storeId;
+                const marker = markers[storeId];
+
+                if (marker) {
+                    map.setView(marker.getLatLng(), 15);
+                    marker.openPopup();
+                    highlightStoreItem(storeId);
+                }
+            });
+        });
+    }
+
+    // Highlight store item
+    function highlightStoreItem(storeId) {
+        document.querySelectorAll('.store-item').forEach(item => {
+            item.classList.remove('active');
+        });
+        const storeItem = document.querySelector(`.store-item[data-store-id="${storeId}"]`);
+        if (storeItem) {
+            storeItem.classList.add('active');
+            storeItem.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+    }
+
+    // Filter stores by region
+    function filterStores(region) {
+        currentFilter = region;
+        let filteredStores = storesData;
+
+        if (region !== 'all') {
+            filteredStores = storesData.filter(store => store.region === region);
+        }
+
+        addMarkers(filteredStores);
+        renderStoreList(filteredStores);
+    }
+
+    // Region filter event listeners
+    document.querySelectorAll('.region-tag').forEach(tag => {
+        tag.addEventListener('click', function() {
+            document.querySelectorAll('.region-tag').forEach(t => t.classList.remove('active'));
+            this.classList.add('active');
+            filterStores(this.dataset.region);
+        });
+    });
+
+    // Tab switching
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+        btn.addEventListener('click', function() {
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+
+            this.classList.add('active');
+            document.getElementById(this.dataset.tab + '-tab').classList.add('active');
+        });
+    });
+
+    // Search functionality
+    const searchInput = document.getElementById('mapSearch');
+    let searchTimeout;
+
+    searchInput.addEventListener('input', function() {
+        clearTimeout(searchTimeout);
+        const query = this.value.toLowerCase().trim();
+
+        if (query.length === 0) {
+            filterStores(currentFilter);
+            return;
+        }
+
+        searchTimeout = setTimeout(() => {
+            const filteredStores = storesData.filter(store => {
+                const matchesQuery =
+                    store.name.toLowerCase().includes(query) ||
+                    (store.code && store.code.toLowerCase().includes(query)) ||
+                    (store.region && store.region.toLowerCase().includes(query)) ||
+                    (store.physical_address && store.physical_address.toLowerCase().includes(query));
+
+                const matchesRegion = currentFilter === 'all' || store.region === currentFilter;
+
+                return matchesQuery && matchesRegion;
+            });
+
+            addMarkers(filteredStores);
+            renderStoreList(filteredStores);
+
+            if (filteredStores.length === 0) {
+                document.getElementById('storeList').innerHTML = `
+                    <div class="text-center py-5">
+                        <i class="bi bi-search display-1 text-muted"></i>
+                        <p class="text-muted mt-3">No stores found matching "${query}"</p>
+                    </div>
+                `;
+            }
+        }, 300);
+    });
+
+    // Fit all stores button
+    document.getElementById('fitAllStores').addEventListener('click', function() {
+        if (Object.keys(markers).length > 0) {
+            map.fitBounds(markerCluster.getBounds().pad(0.1));
+        }
+    });
+
+    // Refresh map button
+    document.getElementById('refreshMap').addEventListener('click', function() {
+        searchInput.value = '';
+        document.querySelector('.region-tag[data-region="all"]').click();
+        filterStores('all');
+    });
+
+    // Initialize with all stores
+    addMarkers(storesData);
+    renderStoreList(storesData);
+
+    // Handle window resize
+    window.addEventListener('resize', function() {
+        map.invalidateSize();
+    });
+
+    // Add keyboard shortcuts
+    document.addEventListener('keydown', function(e) {
+        // Press 'F' to fit all stores
+        if (e.key === 'f' && e.ctrlKey) {
+            e.preventDefault();
+            document.getElementById('fitAllStores').click();
+        }
+        // Press '/' to focus search
+        if (e.key === '/') {
+            e.preventDefault();
+            searchInput.focus();
+        }
+    });
+
+    console.log(`Map initialized with ${storesData.length} stores`);
+});
+</script>
+{% endblock %}

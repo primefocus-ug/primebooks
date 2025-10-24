@@ -1,0 +1,692 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Process Refund - Sale #{{ sale.invoice_number }} | {{ block.super }}{% endblock %}
+
+{% block extra_css %}
+<style>
+.refund-warning {
+    background: linear-gradient(135deg, #ecfdf5 0%, #d1fae5 100%);
+    border: 2px solid #10b981;
+    border-radius: 12px;
+    color: #065f46;
+}
+
+.refund-item-card {
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 1rem;
+    margin-bottom: 1rem;
+    transition: all 0.3s ease;
+}
+
+.refund-item-card:hover {
+    border-color: #3b82f6;
+    box-shadow: 0 2px 8px rgba(59, 130, 246, 0.15);
+}
+
+.refund-item-card.has-refund {
+    background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+    border-color: #d97706;
+}
+
+.quantity-input {
+    width: 100px;
+    text-align: center;
+    font-weight: bold;
+}
+
+.refund-amount {
+    font-size: 1.2rem;
+    font-weight: 700;
+    color: #059669;
+}
+
+.existing-refunds {
+    background: #f1f5f9;
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    padding: 1rem;
+}
+
+.refund-summary {
+    background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
+    border: 1px solid #3b82f6;
+    border-radius: 8px;
+    padding: 1.5rem;
+    position: sticky;
+    top: 20px;
+}
+
+.btn-refund {
+    background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+    border: none;
+    color: white;
+    font-weight: 600;
+    box-shadow: 0 4px 6px rgba(16, 185, 129, 0.3);
+    transition: all 0.3s ease;
+}
+
+.btn-refund:hover {
+    background: linear-gradient(135deg, #059669 0%, #047857 100%);
+    transform: translateY(-1px);
+    box-shadow: 0 6px 12px rgba(16, 185, 129, 0.4);
+    color: white;
+}
+
+.btn-refund:disabled {
+    background: #9ca3af;
+    box-shadow: none;
+    transform: none;
+    cursor: not-allowed;
+}
+
+.refund-reason-select {
+    border: 2px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 0.75rem;
+    transition: border-color 0.3s ease;
+}
+
+.refund-reason-select:focus {
+    border-color: #10b981;
+    box-shadow: 0 0 0 0.2rem rgba(16, 185, 129, 0.25);
+}
+
+.no-refunds-available {
+    background: linear-gradient(135deg, #fef2f2 0%, #fee2e2 100%);
+    border: 2px solid #ef4444;
+    border-radius: 12px;
+    padding: 2rem;
+    text-align: center;
+    color: #991b1b;
+}
+
+.refund-method-card {
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 1rem;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    text-align: center;
+}
+
+.refund-method-card:hover {
+    border-color: #10b981;
+    background-color: rgba(16, 185, 129, 0.05);
+}
+
+.refund-method-card.selected {
+    border-color: #10b981;
+    background-color: rgba(16, 185, 129, 0.1);
+    color: #065f46;
+}
+
+.refund-method-card i {
+    font-size: 1.5rem;
+    margin-bottom: 0.5rem;
+    opacity: 0.7;
+}
+
+.refund-method-card.selected i {
+    opacity: 1;
+}
+
+.total-refund-display {
+    font-size: 2rem;
+    font-weight: 800;
+    color: #059669;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+.progress-bar-refund {
+    background: linear-gradient(90deg, #10b981 0%, #34d399 100%);
+    height: 8px;
+    border-radius: 4px;
+    transition: width 0.5s ease;
+}
+</style>
+{% endblock %}
+
+{% block page_header %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h2 class="mb-1 text-success">
+            <i class="bi bi-arrow-return-left me-2"></i>
+            Process Refund
+        </h2>
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb mb-0">
+                <li class="breadcrumb-item"><a href="{% url 'user_dashboard' %}">Dashboard</a></li>
+                <li class="breadcrumb-item"><a href="{% url 'sales:sales_list' %}">Sales</a></li>
+                <li class="breadcrumb-item"><a href="{% url 'sales:sale_detail' sale.pk %}">Sale #{{ sale.invoice_number }}</a></li>
+                <li class="breadcrumb-item active">Process Refund</li>
+            </ol>
+        </nav>
+    </div>
+    <div>
+        <a href="{% url 'sales:sale_detail' sale.pk %}" class="btn btn-outline-secondary">
+            <i class="bi bi-arrow-left me-1"></i>Back to Sale
+        </a>
+    </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-lg-8">
+        <!-- Information Alert -->
+        <div class="alert refund-warning mb-4">
+            <div class="d-flex">
+                <div class="me-3">
+                    <i class="bi bi-info-circle-fill" style="font-size: 2rem;"></i>
+                </div>
+                <div>
+                    <h4 class="alert-heading mb-2">
+                        <strong>Refund Processing Guidelines</strong>
+                    </h4>
+                    <p class="mb-2">
+                        Processing a refund will create a refund transaction and restore selected items to inventory.
+                        You can process partial or full refunds based on your business needs.
+                    </p>
+                    <ul class="mb-0">
+                        <li>Selected items will be returned to stock</li>
+                        <li>Refund payment will be processed via selected method</li>
+                        <li>All refund actions are logged for audit purposes</li>
+                        <li>Customer will be notified of the refund processing</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <!-- Sale Information -->
+        <div class="card mb-4">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0">
+                    <i class="bi bi-receipt me-2"></i>
+                    Original Sale Details
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <dl class="row">
+                            <dt class="col-sm-5">Invoice Number:</dt>
+                            <dd class="col-sm-7"><strong>{{ sale.invoice_number }}</strong></dd>
+                            <dt class="col-sm-5">Transaction ID:</dt>
+                            <dd class="col-sm-7">{{ sale.transaction_id }}</dd>
+                            <dt class="col-sm-5">Sale Date:</dt>
+                            <dd class="col-sm-7">{{ sale.created_at|date:"M d, Y H:i" }}</dd>
+                            <dt class="col-sm-5">Customer:</dt>
+                            <dd class="col-sm-7">
+                                {% if sale.customer %}
+                                    {{ sale.customer.name }}
+                                    {% if sale.customer.phone %}
+                                        <br><small class="text-muted">{{ sale.customer.phone }}</small>
+                                    {% endif %}
+                                {% else %}
+                                    <span class="text-muted">Walk-in Customer</span>
+                                {% endif %}
+                            </dd>
+                        </dl>
+                    </div>
+                    <div class="col-md-6">
+                        <dl class="row">
+                            <dt class="col-sm-5">Store:</dt>
+                            <dd class="col-sm-7">{{ sale.store.name }}</dd>
+                            <dt class="col-sm-5">Original Total:</dt>
+                            <dd class="col-sm-7">
+                                <strong class="text-primary h5">{{ sale.currency }} {{ sale.total_amount|floatformat:2 }}</strong>
+                            </dd>
+                            <dt class="col-sm-5">Total Refunded:</dt>
+                            <dd class="col-sm-7">
+                                <span class="text-warning h6">{{ sale.currency }} {{ total_refunded|floatformat:2 }}</span>
+                            </dd>
+                            <dt class="col-sm-5">Remaining Amount:</dt>
+                            <dd class="col-sm-7">
+                                <strong class="text-success h5">{{ sale.currency }} {{ remaining_amount|floatformat:2 }}</strong>
+                            </dd>
+                        </dl>
+                    </div>
+                </div>
+
+                <!-- Progress bar showing refund status -->
+                <div class="mt-3">
+                    <div class="d-flex justify-content-between align-items-center mb-1">
+                        <small class="text-muted">Refund Progress</small>
+                        <small class="text-muted">
+                            {{ total_refunded|floatformat:2 }} / {{ sale.total_amount|floatformat:2 }}
+                            ({% widthratio total_refunded sale.total_amount 100 %}%)
+                        </small>
+                    </div>
+                    <div class="progress" style="height: 8px;">
+                        <div class="progress-bar progress-bar-refund" role="progressbar"
+                             style="width: {% widthratio total_refunded sale.total_amount 100 %}%">
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Existing Refunds -->
+        {% if existing_refunds %}
+        <div class="card mb-4">
+            <div class="card-header bg-warning text-dark">
+                <h5 class="mb-0">
+                    <i class="bi bi-clock-history me-2"></i>
+                    Previous Refunds ({{ existing_refunds.count }})
+                </h5>
+            </div>
+            <div class="card-body existing-refunds">
+                <div class="table-responsive">
+                    <table class="table table-sm">
+                        <thead>
+                            <tr>
+                                <th>Refund ID</th>
+                                <th>Date</th>
+                                <th class="text-end">Amount</th>
+                                <th>Items</th>
+                                <th>Notes</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for refund in existing_refunds %}
+                            <tr>
+                                <td>
+                                    <a href="{% url 'sales:sale_detail' refund.pk %}" class="text-decoration-none">
+                                        {{ refund.invoice_number }}
+                                    </a>
+                                </td>
+                                <td>{{ refund.created_at|date:"M d, Y H:i" }}</td>
+                                <td class="text-end">{{ sale.currency }} {{ refund.total_amount|floatformat:2 }}</td>
+                                <td>{{ refund.items.count }} item(s)</td>
+                                <td>
+                                    <small class="text-muted">{{ refund.notes|truncatechars:50 }}</small>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        {% if can_refund %}
+        <!-- Refund Form -->
+        <form method="post" id="refundForm">
+            {% csrf_token %}
+
+            <!-- Refund Items Selection -->
+            <div class="card mb-4">
+                <div class="card-header bg-success text-white">
+                    <h5 class="mb-0">
+                        <i class="bi bi-list-check me-2"></i>
+                        Select Items to Refund
+                    </h5>
+                </div>
+                <div class="card-body">
+                    {% for item_data in items_data %}
+                    <div class="refund-item-card {% if item_data.refunded_quantity > 0 %}has-refund{% endif %}"
+                         data-item-id="{{ item_data.id }}" data-unit-price="{{ item_data.unit_price }}">
+                        <div class="row align-items-center">
+                            <div class="col-md-4">
+                                <h6 class="mb-1">{{ item_data.product.name }}</h6>
+                                <small class="text-muted">SKU: {{ item_data.product.sku|default:"N/A" }}</small>
+                                <br>
+                                <small class="text-muted">Unit Price: {{ sale.currency }} {{ item_data.unit_price|floatformat:2 }}</small>
+                            </div>
+
+                            <div class="col-md-2 text-center">
+                                <div class="small text-muted mb-1">Original</div>
+                                <div class="fw-bold">{{ item_data.original_quantity }}</div>
+                            </div>
+
+                            {% if item_data.refunded_quantity > 0 %}
+                            <div class="col-md-2 text-center">
+                                <div class="small text-warning mb-1">Refunded</div>
+                                <div class="fw-bold text-warning">{{ item_data.refunded_quantity }}</div>
+                            </div>
+                            {% endif %}
+
+                            <div class="col-md-2 text-center">
+                                <div class="small text-muted mb-1">Available</div>
+                                <div class="fw-bold text-success">{{ item_data.available_quantity }}</div>
+                            </div>
+
+                            <div class="col-md-2 text-center">
+                                <label for="refund_qty_{{ item_data.id }}" class="form-label small text-muted mb-1">
+                                    Refund Qty
+                                </label>
+                                <input type="number"
+                                       class="form-control quantity-input refund-quantity"
+                                       id="refund_qty_{{ item_data.id }}"
+                                       name="refund_qty_{{ item_data.id }}"
+                                       min="0"
+                                       max="{{ item_data.available_quantity }}"
+                                       value="0"
+                                       data-item-id="{{ item_data.id }}"
+                                       data-unit-price="{{ item_data.unit_price }}">
+                            </div>
+
+                            <div class="col-md-2 text-end">
+                                <div class="small text-muted mb-1">Refund Amount</div>
+                                <div class="refund-amount" id="amount_{{ item_data.id }}">
+                                    {{ sale.currency }} 0.00
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="row mt-2">
+                            <div class="col-12">
+                                <div class="progress" style="height: 4px;">
+                                    <div class="progress-bar bg-success" style="width: {% widthratio item_data.available_quantity item_data.original_quantity 100 %}%"></div>
+                                    {% if item_data.refunded_quantity > 0 %}
+                                    <div class="progress-bar bg-warning" style="width: {% widthratio item_data.refunded_quantity item_data.original_quantity 100 %}%"></div>
+                                    {% endif %}
+                                </div>
+                                <small class="text-muted">
+                                    Available for refund: {{ item_data.available_quantity }} / {{ item_data.original_quantity }}
+                                </small>
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+
+            <!-- Refund Details -->
+            <div class="card mb-4">
+                <div class="card-header bg-info text-white">
+                    <h5 class="mb-0">
+                        <i class="bi bi-file-text me-2"></i>
+                        Refund Details
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="refund_reason" class="form-label fw-bold">
+                                    Refund Reason <span class="text-danger">*</span>
+                                </label>
+                                <select class="form-select refund-reason-select" id="refund_reason" name="refund_reason" required>
+                                    <option value="">Select a reason...</option>
+                                    <option value="DEFECTIVE_PRODUCT">Defective Product</option>
+                                    <option value="CUSTOMER_DISSATISFACTION">Customer Dissatisfaction</option>
+                                    <option value="WRONG_ITEM_SHIPPED">Wrong Item Shipped</option>
+                                    <option value="PRICING_ERROR">Pricing Error</option>
+                                    <option value="DUPLICATE_ORDER">Duplicate Order</option>
+                                    <option value="CUSTOMER_REQUEST">Customer Request</option>
+                                    <option value="QUALITY_ISSUES">Quality Issues</option>
+                                    <option value="STORE_POLICY">Store Policy</option>
+                                    <option value="OTHER">Other (specify in notes)</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="refund_method" class="form-label fw-bold">Refund Method</label>
+                                <select class="form-select" id="refund_method" name="refund_method">
+                                    <option value="{{ sale.payment_method }}" selected>{{ sale.get_payment_method_display }} (Original)</option>
+                                    {% for method_value, method_label in refund_methods %}
+                                        {% if method_value != sale.payment_method %}
+                                        <option value="{{ method_value }}">{{ method_label }}</option>
+                                        {% endif %}
+                                    {% endfor %}
+                                </select>
+                                <small class="text-muted">Defaults to original payment method</small>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="notes" class="form-label fw-bold">Additional Notes</label>
+                        <textarea class="form-control" id="notes" name="notes" rows="4"
+                                  placeholder="Provide additional details about this refund, including any special circumstances or customer communications..."></textarea>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Quick Actions -->
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h6 class="mb-0">Quick Actions</h6>
+                </div>
+                <div class="card-body">
+                    <div class="d-flex gap-2 flex-wrap">
+                        <button type="button" class="btn btn-sm btn-outline-success" onclick="selectAllItems()">
+                            <i class="bi bi-check-all me-1"></i>Select All Available
+                        </button>
+                        <button type="button" class="btn btn-sm btn-outline-secondary" onclick="clearAllSelections()">
+                            <i class="bi bi-x me-1"></i>Clear All
+                        </button>
+                        <button type="button" class="btn btn-sm btn-outline-info" onclick="setHalfQuantities()">
+                            <i class="bi bi-pie-chart me-1"></i>Select Half Quantities
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Submit Buttons -->
+            <div class="d-flex justify-content-end gap-3 mb-4">
+                <a href="{% url 'sales:sale_detail' sale.pk %}" class="btn btn-outline-secondary btn-lg">
+                    <i class="bi bi-x-circle me-2"></i>Cancel
+                </a>
+                <button type="submit" class="btn btn-refund btn-lg" id="submitRefund" disabled>
+                    <i class="bi bi-arrow-return-left me-2"></i>
+                    <span class="spinner-border spinner-border-sm me-2 d-none" id="refundSpinner"></span>
+                    Process Refund
+                </button>
+            </div>
+        </form>
+        {% else %}
+        <!-- No Items Available for Refund -->
+        <div class="no-refunds-available">
+            <div class="mb-3">
+                <i class="bi bi-exclamation-circle" style="font-size: 3rem;"></i>
+            </div>
+            <h4>No Items Available for Refund</h4>
+            <p class="mb-3">
+                All items from this sale have already been refunded, or the sale cannot be refunded at this time.
+            </p>
+            <div class="d-flex justify-content-center gap-3">
+                <a href="{% url 'sales:sale_detail' sale.pk %}" class="btn btn-outline-secondary">
+                    <i class="bi bi-arrow-left me-1"></i>Back to Sale
+                </a>
+                <a href="{% url 'sales:sales_list' %}" class="btn btn-primary">
+                    <i class="bi bi-list me-1"></i>View All Sales
+                </a>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Sidebar with Refund Summary -->
+    <div class="col-lg-4">
+        <div class="refund-summary mb-4">
+            <h5 class="text-primary mb-3">
+                <i class="bi bi-calculator me-2"></i>
+                Refund Summary
+            </h5>
+
+            <div class="mb-3">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <span>Items Selected:</span>
+                    <strong id="selectedItemsCount">0</strong>
+                </div>
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <span>Total Quantity:</span>
+                    <strong id="totalQuantity">0</strong>
+                </div>
+                <hr>
+                <div class="d-flex justify-content-between align-items-center">
+                    <span class="h6 mb-0">Refund Amount:</span>
+                    <div class="total-refund-display" id="totalRefundAmount">
+                        {{ sale.currency }} 0.00
+                    </div>
+                </div>
+            </div>
+
+            <div class="alert alert-info">
+                <i class="bi bi-info-circle me-2"></i>
+                <small>
+                    <strong>Note:</strong> The refund amount will be processed via the selected payment method.
+                    Selected items will be returned to inventory immediately upon processing.
+                </small>
+            </div>
+        </div>
+
+        <!-- Refund Guidelines -->
+        <div class="card mb-4">
+            <div class="card-header bg-success text-white">
+                <h6 class="mb-0">
+                    <i class="bi bi-info-circle me-2"></i>
+                    Refund Guidelines
+                </h6>
+            </div>
+            <div class="card-body">
+                <div class="small">
+                    <h6 class="text-success">Refund Process:</h6>
+                    <ul class="mb-3">
+                        <li>Select items and quantities to refund</li>
+                        <li>Provide a clear refund reason</li>
+                        <li>Items will be returned to inventory</li>
+                        <li>Refund payment will be processed</li>
+                        <li>Customer notification will be sent</li>
+                    </ul>
+
+                    <h6 class="text-info">Important Notes:</h6>
+                    <ul class="mb-3">
+                        <li>Partial refunds are allowed</li>
+                        <li>Multiple refunds can be processed</li>
+                        <li>All refunds are tracked and audited</li>
+                        <li>Stock levels update immediately</li>
+                    </ul>
+
+                    <h6 class="text-warning">Restrictions:</h6>
+                    <ul>
+                        <li>Cannot refund voided sales</li>
+                        <li>Cannot exceed available quantities</li>
+                        <li>Refund reason is mandatory</li>
+                        <li>Some payment methods may have delays</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const form = document.getElementById('refundForm');
+    const submitButton = document.getElementById('submitRefund');
+    const refundSpinner = document.getElementById('refundSpinner');
+    const quantityInputs = document.querySelectorAll('.refund-quantity');
+
+    // Update refund calculations
+    function updateRefundCalculations() {
+        let totalItems = 0;
+        let totalQuantity = 0;
+        let totalAmount = 0;
+
+        quantityInputs.forEach(input => {
+            const quantity = parseInt(input.value) || 0;
+            const unitPrice = parseFloat(input.dataset.unitPrice) || 0;
+            const itemId = input.dataset.itemId;
+
+            if (quantity > 0) {
+                totalItems++;
+                totalQuantity += quantity;
+                totalAmount += quantity * unitPrice;
+
+                // Update individual item amount
+                const amountElement = document.getElementById(`amount_${itemId}`);
+                if (amountElement) {
+                    amountElement.textContent = `{{ sale.currency }} ${(quantity * unitPrice).toFixed(2)}`;
+                }
+            } else {
+                // Reset individual item amount
+                const amountElement = document.getElementById(`amount_${itemId}`);
+                if (amountElement) {
+                    amountElement.textContent = `{{ sale.currency }} 0.00`;
+                }
+            }
+        });
+
+        // Update summary
+        document.getElementById('selectedItemsCount').textContent = totalItems;
+        document.getElementById('totalQuantity').textContent = totalQuantity;
+        document.getElementById('totalRefundAmount').textContent = `{{ sale.currency }} ${totalAmount.toFixed(2)}`;
+
+        // Enable/disable submit button
+        const reasonSelected = document.getElementById('refund_reason').value;
+        submitButton.disabled = totalItems === 0 || !reasonSelected;
+    }
+
+    // Add event listeners
+    quantityInputs.forEach(input => {
+        input.addEventListener('input', updateRefundCalculations);
+    });
+
+    document.getElementById('refund_reason').addEventListener('change', updateRefundCalculations);
+
+    // Quick action functions
+    window.selectAllItems = function() {
+        quantityInputs.forEach(input => {
+            input.value = input.max;
+        });
+        updateRefundCalculations();
+    };
+
+    window.clearAllSelections = function() {
+        quantityInputs.forEach(input => {
+            input.value = 0;
+        });
+        updateRefundCalculations();
+    };
+
+    window.setHalfQuantities = function() {
+        quantityInputs.forEach(input => {
+            const maxQty = parseInt(input.max);
+            input.value = Math.floor(maxQty / 2);
+        });
+        updateRefundCalculations();
+    };
+
+    // Form submission
+    if (form) {
+        form.addEventListener('submit', function(e) {
+            const totalItems = parseInt(document.getElementById('selectedItemsCount').textContent);
+
+            if (totalItems === 0) {
+                e.preventDefault();
+                alert('Please select at least one item to refund.');
+                return;
+            }
+
+            // Show loading state
+            submitButton.disabled = true;
+            refundSpinner.classList.remove('d-none');
+            submitButton.innerHTML = '<i class="bi bi-arrow-return-left me-2"></i><span class="spinner-border spinner-border-sm me-2"></span>Processing Refund...';
+
+            // Confirm action
+            if (!confirm(`Are you sure you want to process this refund for ${totalItems} item(s)? This action cannot be undone.`)) {
+                e.preventDefault();
+                // Reset button state
+                submitButton.disabled = false;
+                refundSpinner.classList.add('d-none');
+                submitButton.innerHTML = '<i class="bi bi-arrow-return-left me-2"></i>Process Refund';
+                updateRefundCalculations();
+            }
+        });
+    }
+
+    // Initial calculation
+    updateRefundCalculations();
+});
+</script>
+{% endblock %}

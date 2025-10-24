@@ -1,0 +1,119 @@
+{% extends 'base.html' %}
+
+{% block title %}Company Settings{% endblock %}
+
+{% block content %}
+<div class="container mx-auto px-4 py-8">
+    <div class="max-w-4xl mx-auto">
+        <div class="mb-8">
+            <h1 class="text-3xl font-bold text-gray-900">Company Settings</h1>
+            <p class="text-gray-600 mt-2">Manage your company information and preferences</p>
+        </div>
+
+        {% if not can_modify %}
+        <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-6">
+            <div class="flex">
+                <div class="flex-shrink-0">
+                    <svg class="h-5 w-5 text-yellow-400" fill="currentColor" viewBox="0 0 20 20">
+                        <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"/>
+                    </svg>
+                </div>
+                <div class="ml-3">
+                    <h3 class="text-sm font-medium text-yellow-800">Limited Access</h3>
+                    <p class="text-sm text-yellow-700 mt-1">Settings modifications are restricted due to inactive subscription.</p>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        <form method="post" class="space-y-6">
+            {% csrf_token %}
+
+            <!-- Company Information -->
+            <div class="bg-white shadow rounded-lg p-6">
+                <h2 class="text-lg font-medium mb-4">Company Information</h2>
+
+                <div class="grid grid-cols-1 gap-6 sm:grid-cols-2">
+                    <div>
+                        <label for="name" class="block text-sm font-medium text-gray-700">Legal Company Name</label>
+                        <input type="text" name="name" id="name" value="{{ company.name }}"
+                               class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                               {% if not can_modify %}disabled{% endif %}>
+                    </div>
+
+                    <div>
+                        <label for="trading_name" class="block text-sm font-medium text-gray-700">Trading Name</label>
+                        <input type="text" name="trading_name" id="trading_name" value="{{ company.trading_name }}"
+                               class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                               {% if not can_modify %}disabled{% endif %}>
+                    </div>
+
+                    <div>
+                        <label for="email" class="block text-sm font-medium text-gray-700">Primary Email</label>
+                        <input type="email" name="email" id="email" value="{{ company.email }}"
+                               class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                               {% if not can_modify %}disabled{% endif %}>
+                    </div>
+
+                    <div>
+                        <label for="phone" class="block text-sm font-medium text-gray-700">Phone Number</label>
+                        <input type="text" name="phone" id="phone" value="{{ company.phone }}"
+                               class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                               {% if not can_modify %}disabled{% endif %}>
+                    </div>
+                </div>
+
+                <div class="mt-6">
+                    <label for="description" class="block text-sm font-medium text-gray-700">Description</label>
+                    <textarea name="description" id="description" rows="3"
+                              class="mt-1 block w-full border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500"
+                              {% if not can_modify %}disabled{% endif %}>{{ company.description }}</textarea>
+                </div>
+            </div>
+
+            <!-- Company Status -->
+            <div class="bg-white shadow rounded-lg p-6">
+                <h2 class="text-lg font-medium mb-4">Company Status</h2>
+
+                <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <div class="bg-gray-50 p-4 rounded-lg">
+                        <div class="text-sm font-medium text-gray-500">Company ID</div>
+                        <div class="mt-1 text-lg font-semibold">{{ company.company_id }}</div>
+                    </div>
+
+                    <div class="bg-gray-50 p-4 rounded-lg">
+                        <div class="text-sm font-medium text-gray-500">Status</div>
+                        <div class="mt-1">
+                            <span class="inline-flex px-2 py-1 text-sm font-semibold rounded-full
+                                {% if company.status == 'ACTIVE' %}bg-green-100 text-green-800
+                                {% elif company.status == 'TRIAL' %}bg-blue-100 text-blue-800
+                                {% elif company.status == 'SUSPENDED' %}bg-yellow-100 text-yellow-800
+                                {% else %}bg-red-100 text-red-800{% endif %}">
+                                {{ company.access_status_display }}
+                            </span>
+                        </div>
+                    </div>
+
+                    <div class="bg-gray-50 p-4 rounded-lg">
+                        <div class="text-sm font-medium text-gray-500">Plan</div>
+                        <div class="mt-1 text-lg font-semibold">{{ company.plan.display_name|default:company.plan.get_name_display }}</div>
+                    </div>
+
+                    <div class="bg-gray-50 p-4 rounded-lg">
+                        <div class="text-sm font-medium text-gray-500">Created</div>
+                        <div class="mt-1 text-lg font-semibold">{{ company.created_at|date:"M d, Y" }}</div>
+                    </div>
+                </div>
+            </div>
+
+            {% if can_modify %}
+            <div class="flex justify-end">
+                <button type="submit" class="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition duration-200">
+                    Save Changes
+                </button>
+            </div>
+            {% endif %}
+        </form>
+    </div>
+</div>
+{% endblock %}

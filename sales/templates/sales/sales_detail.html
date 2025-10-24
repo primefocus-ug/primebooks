@@ -1,0 +1,2446 @@
+{% extends 'base.html' %}
+{% load i18n %}
+{% load static %}
+
+{% block title %}Sale {{ sale.invoice_number }} - Sales Pro{% endblock %}
+
+{% block extra_css %}
+<style>
+:root {
+    --primary-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    --success-gradient: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+    --danger-gradient: linear-gradient(135deg, #eb3349 0%, #f45c43 100%);
+    --warning-gradient: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+    --info-gradient: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+}
+
+[data-bs-theme="light"] {
+    --bg-primary: #ffffff;
+    --bg-secondary: #f8f9fa;
+    --bg-tertiary: #e9ecef;
+    --bg-accent: #f1f5f9;
+    --text-primary: #1e293b;
+    --text-secondary: #64748b;
+    --text-muted: #94a3b8;
+    --border-color: #e2e8f0;
+    --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.08);
+    --shadow-md: 0 4px 6px rgba(0, 0, 0, 0.1);
+    --shadow-lg: 0 10px 15px rgba(0, 0, 0, 0.1);
+    --shadow-xl: 0 20px 25px rgba(0, 0, 0, 0.15);
+    --overlay: rgba(0, 0, 0, 0.5);
+}
+
+[data-bs-theme="dark"] {
+    --bg-primary: #1e293b;
+    --bg-secondary: #0f172a;
+    --bg-tertiary: #334155;
+    --bg-accent: #1e293b;
+    --text-primary: #f1f5f9;
+    --text-secondary: #cbd5e1;
+    --text-muted: #94a3b8;
+    --border-color: #334155;
+    --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.3);
+    --shadow-md: 0 4px 6px rgba(0, 0, 0, 0.4);
+    --shadow-lg: 0 10px 15px rgba(0, 0, 0, 0.5);
+    --shadow-xl: 0 20px 25px rgba(0, 0, 0, 0.6);
+    --overlay: rgba(0, 0, 0, 0.7);
+}
+
+body {
+    background-color: var(--bg-secondary);
+    color: var(--text-primary);
+    transition: background-color 0.3s ease;
+}
+
+/* Header Section */
+.sale-header {
+    background: var(--primary-gradient);
+    color: white;
+    border-radius: 20px;
+    padding: 2.5rem;
+    margin-bottom: 2rem;
+    position: relative;
+    overflow: hidden;
+    box-shadow: var(--shadow-xl);
+}
+
+.sale-header::before {
+    content: '';
+    position: absolute;
+    top: -50%;
+    right: -10%;
+    width: 400px;
+    height: 400px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 50%;
+    animation: pulse 3s ease-in-out infinite;
+}
+
+@keyframes pulse {
+    0%, 100% { transform: scale(1); opacity: 0.1; }
+    50% { transform: scale(1.1); opacity: 0.15; }
+}
+
+.header-content {
+    position: relative;
+    z-index: 2;
+}
+
+.invoice-title {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-bottom: 1rem;
+}
+
+.invoice-icon {
+    width: 70px;
+    height: 70px;
+    background: rgba(255, 255, 255, 0.2);
+    border-radius: 18px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 2rem;
+    backdrop-filter: blur(10px);
+}
+
+.invoice-number {
+    font-size: 2.5rem;
+    font-weight: 800;
+    margin: 0;
+    letter-spacing: -0.02em;
+}
+
+.invoice-subtitle {
+    font-size: 1.125rem;
+    opacity: 0.9;
+    margin: 0;
+}
+
+/* Status Badges */
+.status-group {
+    position: absolute;
+    top: 2rem;
+    right: 2rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    align-items: flex-end;
+}
+
+.status-badge {
+    padding: 0.625rem 1.25rem;
+    border-radius: 50px;
+    font-weight: 700;
+    font-size: 0.813rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    backdrop-filter: blur(10px);
+    box-shadow: var(--shadow-md);
+    animation: slideInRight 0.5s ease;
+}
+
+@keyframes slideInRight {
+    from {
+        opacity: 0;
+        transform: translateX(20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+.status-badge.fiscalized {
+    background: var(--success-gradient);
+    color: white;
+}
+
+.status-badge.not-fiscalized {
+    background: var(--warning-gradient);
+    color: white;
+}
+
+.status-badge.refunded {
+    background: var(--danger-gradient);
+    color: white;
+}
+
+.status-badge.voided {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+}
+
+/* Info Grid */
+.info-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1.5rem;
+    margin-top: 2rem;
+}
+
+.info-card {
+    background: rgba(255, 255, 255, 0.1);
+    backdrop-filter: blur(10px);
+    border-radius: 12px;
+    padding: 1.25rem;
+    transition: transform 0.2s ease;
+}
+
+.info-card:hover {
+    transform: translateY(-3px);
+}
+
+.info-label {
+    font-size: 0.813rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    opacity: 0.8;
+    margin-bottom: 0.5rem;
+}
+
+.info-value {
+    font-size: 1.25rem;
+    font-weight: 700;
+    margin: 0;
+}
+
+.info-value.large {
+    font-size: 1.75rem;
+}
+
+/* Action Buttons */
+.action-buttons {
+    position: absolute;
+    bottom: 2rem;
+    right: 2rem;
+    display: flex;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+}
+
+.action-btn {
+    padding: 0.875rem 1.75rem;
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    background: rgba(255, 255, 255, 0.15);
+    color: white;
+    border-radius: 12px;
+    text-decoration: none;
+    font-weight: 600;
+    font-size: 0.938rem;
+    transition: all 0.3s ease;
+    backdrop-filter: blur(10px);
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.action-btn:hover {
+    background: rgba(255, 255, 255, 0.25);
+    color: white;
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-lg);
+}
+
+/* Content Grid */
+.content-grid {
+    display: grid;
+    grid-template-columns: 1fr 400px;
+    gap: 2rem;
+}
+
+/* Modern Card */
+.modern-card {
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 16px;
+    overflow: hidden;
+    box-shadow: var(--shadow-md);
+    margin-bottom: 2rem;
+    transition: all 0.3s ease;
+}
+
+.modern-card:hover {
+    box-shadow: var(--shadow-lg);
+    transform: translateY(-2px);
+}
+
+.card-header-modern {
+    padding: 1.5rem;
+    background: var(--bg-accent);
+    border-bottom: 1px solid var(--border-color);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.card-title-modern {
+    font-size: 1.25rem;
+    font-weight: 700;
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    color: var(--text-primary);
+}
+
+.card-title-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+    background: var(--primary-gradient);
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.25rem;
+}
+
+.card-body-modern {
+    padding: 1.5rem;
+}
+
+/* Items Table */
+.items-table-modern {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+}
+
+.items-table-modern thead {
+    background: var(--bg-accent);
+}
+
+.items-table-modern th {
+    padding: 1rem 1.25rem;
+    font-weight: 700;
+    text-align: left;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    font-size: 0.813rem;
+    letter-spacing: 0.05em;
+    border-bottom: 2px solid var(--border-color);
+}
+
+.items-table-modern td {
+    padding: 1.25rem;
+    border-bottom: 1px solid var(--border-color);
+    vertical-align: middle;
+}
+
+.items-table-modern tbody tr {
+    transition: background-color 0.2s ease;
+}
+
+.items-table-modern tbody tr:hover {
+    background: var(--bg-accent);
+}
+
+.items-table-modern tbody tr:last-child td {
+    border-bottom: none;
+}
+
+/* Product Image */
+.product-image {
+    width: 60px;
+    height: 60px;
+    border-radius: 12px;
+    background: var(--bg-accent);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    box-shadow: var(--shadow-sm);
+}
+
+.product-image img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.product-image i {
+    font-size: 1.5rem;
+    color: var(--text-muted);
+}
+
+/* Product Details */
+.product-name {
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 0.25rem;
+}
+
+.product-sku {
+    font-size: 0.813rem;
+    color: var(--text-muted);
+}
+
+/* Badges */
+.qty-badge {
+    background: var(--primary-gradient);
+    color: white;
+    padding: 0.375rem 0.875rem;
+    border-radius: 50px;
+    font-weight: 700;
+    font-size: 0.875rem;
+    display: inline-block;
+}
+
+.tax-badge {
+    padding: 0.25rem 0.75rem;
+    border-radius: 50px;
+    font-weight: 600;
+    font-size: 0.813rem;
+}
+
+/* Tabs */
+.tabs-modern {
+    display: flex;
+    gap: 0.5rem;
+    border-bottom: 2px solid var(--border-color);
+    margin-bottom: 2rem;
+}
+
+.tab-modern {
+    padding: 1rem 1.5rem;
+    background: none;
+    border: none;
+    border-bottom: 3px solid transparent;
+    cursor: pointer;
+    font-weight: 600;
+    color: var(--text-secondary);
+    transition: all 0.3s ease;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.938rem;
+}
+
+.tab-modern:hover {
+    color: var(--text-primary);
+    background: var(--bg-accent);
+}
+
+.tab-modern.active {
+    color: #667eea;
+    border-bottom-color: #667eea;
+}
+
+.tab-content-modern {
+    display: none;
+}
+
+.tab-content-modern.active {
+    display: block;
+    animation: fadeIn 0.3s ease;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Timeline */
+.timeline {
+    position: relative;
+    padding-left: 2rem;
+}
+
+.timeline::before {
+    content: '';
+    position: absolute;
+    left: 0.75rem;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background: var(--border-color);
+}
+
+.timeline-item {
+    position: relative;
+    padding-bottom: 2rem;
+}
+
+.timeline-item:last-child {
+    padding-bottom: 0;
+}
+
+.timeline-icon {
+    position: absolute;
+    left: -1.5rem;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: var(--success-gradient);
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1rem;
+    box-shadow: var(--shadow-md);
+    z-index: 1;
+}
+
+.timeline-content {
+    background: var(--bg-accent);
+    padding: 1.25rem;
+    border-radius: 12px;
+    box-shadow: var(--shadow-sm);
+}
+
+.timeline-title {
+    font-weight: 700;
+    color: var(--text-primary);
+    margin-bottom: 0.5rem;
+}
+
+.timeline-meta {
+    font-size: 0.875rem;
+    color: var(--text-muted);
+}
+
+.timeline-amount {
+    font-size: 1.5rem;
+    font-weight: 800;
+    color: #10b981;
+    margin-top: 0.5rem;
+}
+
+/* Summary Table */
+.summary-table {
+    width: 100%;
+}
+/* Reduced Motion for Accessibility */
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+    }
+}
+
+/* Container Queries for Modern Browsers */
+@supports (container-type: inline-size) {
+    .modern-card {
+        container-type: inline-size;
+        container-name: card;
+    }
+
+    @container card (max-width: 400px) {
+        .card-header-modern {
+            flex-direction: column;
+            align-items: flex-start;
+        }
+    }
+}
+
+/* Dark Mode Print Fixes */
+@media print and (prefers-color-scheme: dark) {
+    * {
+        background: white !important;
+        color: black !important;
+    }
+}
+
+/* Hover-capable Device Detection */
+@media (hover: hover) and (pointer: fine) {
+    .action-btn:hover,
+    .quick-action:hover,
+    .tab-modern:hover {
+        transform: translateY(-2px);
+    }
+
+    .modern-card:hover {
+        transform: translateY(-2px);
+    }
+}
+
+@media (hover: none) and (pointer: coarse) {
+    .action-btn:active,
+    .quick-action:active,
+    .tab-modern:active {
+        transform: scale(0.98);
+    }
+}
+
+/* iOS Safe Area Support */
+@supports (padding: max(0px)) {
+    .sale-header {
+        padding-left: max(1.5rem, env(safe-area-inset-left));
+        padding-right: max(1.5rem, env(safe-area-inset-right));
+    }
+
+    .action-buttons {
+        padding-left: max(0, env(safe-area-inset-left));
+        padding-right: max(0, env(safe-area-inset-right));
+    }
+}
+
+/* Utility Classes for Responsive Visibility */
+.hide-on-mobile {
+    display: initial;
+}
+
+.show-on-mobile {
+    display: none;
+}
+
+@media (max-width: 767px) {
+    .hide-on-mobile {
+        display: none !important;
+    }
+
+    .show-on-mobile {
+        display: initial !important;
+    }
+}
+
+.hide-on-tablet {
+    display: initial;
+}
+
+.show-on-tablet {
+    display: none;
+}
+
+@media (min-width: 768px) and (max-width: 1199px) {
+    .hide-on-tablet {
+        display: none !important;
+    }
+
+    .show-on-tablet {
+        display: initial !important;
+    }
+}
+
+.hide-on-desktop {
+    display: initial;
+}
+
+.show-on-desktop {
+    display: none;
+}
+
+@media (min-width: 1200px) {
+    .hide-on-desktop {
+        display: none !important;
+    }
+
+    .show-on-desktop {
+        display: initial !important;
+    }
+}
+
+/* Text Size Adjustments for Readability */
+@media (max-width: 575px) {
+    body {
+        font-size: 14px;
+    }
+
+    h1 { font-size: 1.75rem; }
+    h2 { font-size: 1.5rem; }
+    h3 { font-size: 1.25rem; }
+    h4 { font-size: 1.125rem; }
+    h5 { font-size: 1rem; }
+    h6 { font-size: 0.938rem; }
+}
+
+/* Improved Touch Targets for Mobile */
+@media (max-width: 767px) {
+    button,
+    a,
+    .action-btn,
+    .quick-action,
+    .tab-modern {
+        min-height: 44px;
+        min-width: 44px;
+    }
+}
+
+/* Landscape Mobile Specific */
+@media (max-width: 767px) and (orientation: landscape) {
+    .sale-header {
+        padding: 1rem;
+    }
+
+    .info-grid {
+        grid-template-columns: repeat(3, 1fr);
+    }
+}
+
+/* Foldable Device Support */
+@media (min-width: 768px) and (max-width: 1024px) and (orientation: portrait) {
+    .content-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .info-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+/* Ultra-wide Screens */
+@media (min-width: 2560px) {
+    .content-grid {
+        max-width: 2000px;
+        margin: 0 auto;
+    }
+}
+
+/* Smooth Scrolling on All Devices */
+* {
+    -webkit-overflow-scrolling: touch;
+}
+
+/* Prevent Horizontal Scroll */
+body {
+    overflow-x: hidden;
+}
+
+.items-table-modern {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
+/* Better Focus Indicators */
+*:focus-visible {
+    outline: 3px solid #667eea;
+    outline-offset: 2px;
+}
+
+@media (max-width: 767px) {
+    *:focus-visible {
+        outline-width: 2px;
+    }}
+.summary-table td {
+    padding: 0.875rem 1.25rem;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.summary-table .label {
+    font-weight: 600;
+    color: var(--text-secondary);
+}
+
+.summary-table .value {
+    text-align: right;
+    font-weight: 700;
+    color: var(--text-primary);
+    font-size: 1.063rem;
+}
+
+.summary-table .total-row {
+    background: var(--primary-gradient);
+    color: white;
+}
+
+.summary-table .total-row td {
+    padding: 1.25rem;
+    font-size: 1.375rem;
+    border: none;
+}
+
+/* Customer Card */
+.customer-info {
+    display: flex;
+    align-items: center;
+    gap: 1.25rem;
+    padding: 1.5rem;
+}
+
+.customer-avatar {
+    width: 70px;
+    height: 70px;
+    border-radius: 50%;
+    background: var(--primary-gradient);
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 2rem;
+    font-weight: 800;
+    box-shadow: var(--shadow-md);
+}
+
+.customer-details h5 {
+    font-size: 1.25rem;
+    font-weight: 700;
+    margin: 0 0 0.25rem 0;
+    color: var(--text-primary);
+}
+
+.customer-details p {
+    margin: 0.25rem 0;
+    color: var(--text-secondary);
+    font-size: 0.938rem;
+}
+
+/* Quick Actions Grid */
+.quick-actions {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 1rem;
+    padding: 1.5rem;
+}
+
+.quick-action {
+    padding: 1.25rem;
+    background: var(--bg-accent);
+    border: 2px solid var(--border-color);
+    border-radius: 12px;
+    text-align: center;
+    text-decoration: none;
+    color: var(--text-primary);
+    transition: all 0.3s ease;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.quick-action:hover {
+    border-color: #667eea;
+    background: rgba(102, 126, 234, 0.1);
+    transform: translateY(-3px);
+    box-shadow: var(--shadow-md);
+    color: #667eea;
+}
+
+.quick-action i {
+    font-size: 1.75rem;
+}
+
+.quick-action span {
+    font-weight: 600;
+    font-size: 0.875rem;
+}
+
+/* Empty State */
+.empty-state {
+    text-align: center;
+    padding: 4rem 2rem;
+    color: var(--text-muted);
+}
+
+.empty-icon {
+    font-size: 4rem;
+    margin-bottom: 1rem;
+    opacity: 0.5;
+}
+
+/* Alert Modern */
+.alert-modern {
+    padding: 1.25rem 1.5rem;
+    border-radius: 12px;
+    border: none;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+    box-shadow: var(--shadow-sm);
+}
+
+.alert-modern.warning {
+    background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+    color: #92400e;
+}
+
+[data-bs-theme="dark"] .alert-modern.warning {
+    background: linear-gradient(135deg, #78350f 0%, #92400e 100%);
+    color: #fde68a;
+}
+
+/* Statistics Cards */
+.stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 1.5rem;
+    margin-bottom: 2rem;
+}
+
+.stat-card {
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 16px;
+    padding: 1.5rem;
+    box-shadow: var(--shadow-sm);
+    transition: all 0.3s ease;
+}
+
+.stat-card:hover {
+    transform: translateY(-5px);
+    box-shadow: var(--shadow-lg);
+}
+
+.stat-icon {
+    width: 50px;
+    height: 50px;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.5rem;
+    margin-bottom: 1rem;
+}
+
+.stat-label {
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 0.5rem;
+}
+
+.stat-value {
+    font-size: 2rem;
+    font-weight: 800;
+    color: var(--text-primary);
+}
+
+/* Responsive Design */
+
+/* Extra Large Screens (1920px and above) */
+@media (min-width: 1920px) {
+    .content-grid {
+        grid-template-columns: 1fr 450px;
+        gap: 2.5rem;
+    }
+
+    .sale-header {
+        padding: 3rem;
+    }
+
+    .invoice-number {
+        font-size: 3rem;
+    }
+
+    .info-grid {
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    }
+}
+
+/* Large Desktop (1440px to 1919px) */
+@media (min-width: 1440px) and (max-width: 1919px) {
+    .content-grid {
+        grid-template-columns: 1fr 420px;
+    }
+
+    .info-grid {
+        grid-template-columns: repeat(3, 1fr);
+    }
+}
+
+/* Desktop (1200px to 1439px) */
+@media (min-width: 1200px) and (max-width: 1439px) {
+    .content-grid {
+        grid-template-columns: 1fr 380px;
+    }
+
+    .info-grid {
+        grid-template-columns: repeat(3, 1fr);
+    }
+
+    .sale-header {
+        padding: 2rem;
+    }
+}
+
+/* Tablet Landscape / Small Desktop (992px to 1199px) */
+@media (min-width: 992px) and (max-width: 1199px) {
+    .content-grid {
+        grid-template-columns: 1fr 350px;
+        gap: 1.5rem;
+    }
+
+    .sale-header {
+        padding: 1.75rem;
+    }
+
+    .invoice-number {
+        font-size: 2rem;
+    }
+
+    .info-grid {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 1rem;
+    }
+
+    .info-value {
+        font-size: 1rem;
+    }
+
+    .action-buttons {
+        flex-wrap: wrap;
+    }
+
+    .action-btn {
+        padding: 0.75rem 1.25rem;
+        font-size: 0.875rem;
+    }
+
+    .items-table-modern th,
+    .items-table-modern td {
+        padding: 1rem;
+        font-size: 0.875rem;
+    }
+
+    .product-image {
+        width: 50px;
+        height: 50px;
+    }
+}
+
+/* Tablet Portrait (768px to 991px) */
+@media (min-width: 768px) and (max-width: 991px) {
+    .content-grid {
+        grid-template-columns: 1fr;
+        gap: 1.5rem;
+    }
+
+    .sale-header {
+        padding: 1.5rem;
+    }
+
+    .invoice-number {
+        font-size: 1.875rem;
+    }
+
+    .invoice-title {
+        flex-direction: row;
+    }
+
+    .invoice-icon {
+        width: 60px;
+        height: 60px;
+        font-size: 1.75rem;
+    }
+
+    .info-grid {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 1rem;
+    }
+
+    .info-card {
+        padding: 1rem;
+    }
+
+    .info-value {
+        font-size: 1rem;
+    }
+
+    .info-value.large {
+        font-size: 1.5rem;
+    }
+
+    .status-group {
+        position: static;
+        flex-direction: row;
+        align-items: center;
+        margin-top: 1.5rem;
+        flex-wrap: wrap;
+    }
+
+    .action-buttons {
+        position: static;
+        margin-top: 1.5rem;
+        justify-content: flex-start;
+        flex-wrap: wrap;
+    }
+
+    .action-btn {
+        padding: 0.75rem 1.25rem;
+        font-size: 0.875rem;
+    }
+
+    .items-table-modern {
+        font-size: 0.875rem;
+    }
+
+    .items-table-modern th,
+    .items-table-modern td {
+        padding: 0.875rem;
+    }
+
+    .product-image {
+        width: 50px;
+        height: 50px;
+    }
+
+    .quick-actions {
+        grid-template-columns: repeat(2, 1fr);
+    }
+
+    .tabs-modern {
+        flex-wrap: wrap;
+        gap: 0.5rem;
+    }
+
+    .tab-modern {
+        padding: 0.875rem 1.25rem;
+        font-size: 0.875rem;
+    }
+}
+
+/* Mobile Landscape / Small Tablet (576px to 767px) */
+@media (min-width: 576px) and (max-width: 767px) {
+    .content-grid {
+        grid-template-columns: 1fr;
+        gap: 1.25rem;
+    }
+
+    .sale-header {
+        padding: 1.25rem;
+    }
+
+    .invoice-number {
+        font-size: 1.625rem;
+    }
+
+    .invoice-title {
+        flex-direction: column;
+        text-align: center;
+    }
+
+    .invoice-icon {
+        width: 55px;
+        height: 55px;
+        font-size: 1.5rem;
+        margin: 0 auto 1rem;
+    }
+
+    .invoice-subtitle {
+        font-size: 1rem;
+    }
+
+    .info-grid {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 0.875rem;
+    }
+
+    .info-card {
+        padding: 0.875rem;
+    }
+
+    .info-label {
+        font-size: 0.75rem;
+    }
+
+    .info-value {
+        font-size: 0.938rem;
+    }
+
+    .info-value.large {
+        font-size: 1.25rem;
+    }
+
+    .status-group {
+        position: static;
+        flex-direction: row;
+        align-items: center;
+        margin-top: 1rem;
+        margin-bottom: 1rem;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+    }
+
+    .status-badge {
+        padding: 0.5rem 1rem;
+        font-size: 0.75rem;
+    }
+
+    .action-buttons {
+        position: static;
+        margin-top: 1rem;
+        justify-content: center;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+    }
+
+    .action-btn {
+        padding: 0.625rem 1rem;
+        font-size: 0.813rem;
+    }
+
+    /* Table becomes card view on mobile */
+    .items-table-modern thead {
+        display: none;
+    }
+
+    .items-table-modern tbody {
+        display: block;
+    }
+
+    .items-table-modern tbody tr {
+        display: block;
+        background: var(--bg-secondary);
+        border-radius: 12px;
+        margin-bottom: 1rem;
+        padding: 1rem;
+        border: 1px solid var(--border-color);
+    }
+
+    .items-table-modern tbody td {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 0.625rem 0;
+        border: none;
+        border-bottom: 1px solid var(--border-color);
+    }
+
+    .items-table-modern tbody td:last-child {
+        border-bottom: none;
+    }
+
+    .items-table-modern tbody td::before {
+        content: attr(data-label);
+        font-weight: 700;
+        color: var(--text-secondary);
+        font-size: 0.75rem;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+    }
+
+    .product-image {
+        width: 60px;
+        height: 60px;
+        margin: 0 auto;
+    }
+
+    .quick-actions {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 0.75rem;
+    }
+
+    .quick-action {
+        padding: 1rem;
+    }
+
+    .tabs-modern {
+        overflow-x: auto;
+        flex-wrap: nowrap;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .tab-modern {
+        padding: 0.75rem 1rem;
+        font-size: 0.813rem;
+        white-space: nowrap;
+    }
+
+    .timeline {
+        padding-left: 1.5rem;
+    }
+
+    .timeline::before {
+        left: 0.5rem;
+    }
+
+    .timeline-icon {
+        width: 35px;
+        height: 35px;
+        left: -1.25rem;
+        font-size: 0.875rem;
+    }
+
+    .timeline-content {
+        padding: 1rem;
+    }
+
+    .timeline-title {
+        font-size: 0.938rem;
+    }
+
+    .timeline-amount {
+        font-size: 1.25rem;
+    }
+}
+
+/* Mobile Portrait (320px to 575px) */
+@media (max-width: 575px) {
+    .content-grid {
+        grid-template-columns: 1fr;
+        gap: 1rem;
+    }
+
+    .sale-header {
+        padding: 1rem;
+        border-radius: 16px;
+    }
+
+    .sale-header::before {
+        width: 250px;
+        height: 250px;
+    }
+
+    .invoice-number {
+        font-size: 1.5rem;
+    }
+
+    .invoice-title {
+        flex-direction: column;
+        text-align: center;
+        gap: 0.75rem;
+    }
+
+    .invoice-icon {
+        width: 50px;
+        height: 50px;
+        font-size: 1.25rem;
+        margin: 0 auto;
+    }
+
+    .invoice-subtitle {
+        font-size: 0.938rem;
+    }
+
+    .info-grid {
+        grid-template-columns: 1fr;
+        gap: 0.75rem;
+        margin-top: 1.5rem;
+    }
+
+    .info-card {
+        padding: 0.875rem;
+        flex-direction: row;
+    }
+
+    .info-label {
+        font-size: 0.688rem;
+        margin-bottom: 0.25rem;
+    }
+
+    .info-value {
+        font-size: 0.875rem;
+    }
+
+    .info-value.large {
+        font-size: 1.125rem;
+    }
+
+    .status-group {
+        position: static;
+        flex-direction: column;
+        align-items: stretch;
+        margin-top: 1rem;
+        margin-bottom: 1rem;
+        gap: 0.5rem;
+    }
+
+    .status-badge {
+        padding: 0.5rem 1rem;
+        font-size: 0.75rem;
+        justify-content: center;
+    }
+
+    .action-buttons {
+        position: static;
+        margin-top: 1rem;
+        flex-direction: column;
+        gap: 0.5rem;
+        width: 100%;
+    }
+
+    .action-btn {
+        width: 100%;
+        padding: 0.75rem 1rem;
+        font-size: 0.875rem;
+        justify-content: center;
+    }
+
+    .modern-card {
+        border-radius: 12px;
+        margin-bottom: 1rem;
+    }
+
+    .card-header-modern {
+        padding: 1rem;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 1rem;
+    }
+
+    .card-title-modern {
+        font-size: 1rem;
+        gap: 0.5rem;
+    }
+
+    .card-title-icon {
+        width: 35px;
+        height: 35px;
+        font-size: 1rem;
+    }
+
+    .card-body-modern {
+        padding: 1rem;
+    }
+
+    /* Mobile-optimized table view */
+    .items-table-modern {
+        display: block;
+        overflow-x: visible;
+    }
+
+    .items-table-modern thead {
+        display: none;
+    }
+
+    .items-table-modern tbody {
+        display: block;
+    }
+
+    .items-table-modern tbody tr {
+        display: block;
+        background: var(--bg-secondary);
+        border-radius: 12px;
+        margin-bottom: 1rem;
+        padding: 1rem;
+        border: 1px solid var(--border-color);
+    }
+
+    .items-table-modern tbody td {
+        display: block;
+        padding: 0.75rem 0;
+        border: none;
+        text-align: left !important;
+    }
+
+    .items-table-modern tbody td::before {
+        content: attr(data-label);
+        font-weight: 700;
+        color: var(--text-secondary);
+        font-size: 0.75rem;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        display: block;
+        margin-bottom: 0.375rem;
+    }
+
+    .items-table-modern tbody td:not(:last-child) {
+        border-bottom: 1px solid var(--border-color);
+        padding-bottom: 0.75rem;
+        margin-bottom: 0.75rem;
+    }
+
+    .product-image {
+        width: 80px;
+        height: 80px;
+        margin: 0.5rem auto;
+    }
+
+    .product-name {
+        font-size: 1rem;
+    }
+
+    .product-sku {
+        font-size: 0.813rem;
+    }
+
+    .qty-badge {
+        display: inline-block;
+        margin-top: 0.5rem;
+    }
+
+    .quick-actions {
+        grid-template-columns: 1fr;
+        gap: 0.75rem;
+        padding: 1rem;
+    }
+
+    .quick-action {
+        padding: 1rem;
+    }
+
+    .quick-action i {
+        font-size: 1.5rem;
+    }
+
+    .tabs-modern {
+        overflow-x: auto;
+        flex-wrap: nowrap;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
+        -ms-overflow-style: none;
+        padding-bottom: 0.5rem;
+        margin-bottom: 1.5rem;
+    }
+
+    .tabs-modern::-webkit-scrollbar {
+        display: none;
+    }
+
+    .tab-modern {
+        padding: 0.75rem 1rem;
+        font-size: 0.813rem;
+        white-space: nowrap;
+        flex-shrink: 0;
+    }
+
+    .timeline {
+        padding-left: 1.25rem;
+    }
+
+    .timeline::before {
+        left: 0.375rem;
+    }
+
+    .timeline-icon {
+        width: 32px;
+        height: 32px;
+        left: -1.125rem;
+        font-size: 0.813rem;
+    }
+
+    .timeline-content {
+        padding: 0.875rem;
+    }
+
+    .timeline-title {
+        font-size: 0.938rem;
+    }
+
+    .timeline-meta {
+        font-size: 0.813rem;
+    }
+
+    .timeline-amount {
+        font-size: 1.125rem;
+    }
+
+    .customer-info {
+        flex-direction: column;
+        text-align: center;
+        padding: 1.25rem;
+    }
+
+    .customer-avatar {
+        width: 60px;
+        height: 60px;
+        font-size: 1.75rem;
+        margin: 0 auto 1rem;
+    }
+
+    .customer-details h5 {
+        font-size: 1.125rem;
+    }
+
+    .customer-details p {
+        font-size: 0.875rem;
+    }
+
+    .summary-table td {
+        padding: 0.75rem;
+        font-size: 0.875rem;
+    }
+
+    .summary-table .value {
+        font-size: 0.938rem;
+    }
+
+    .summary-table .total-row td {
+        padding: 1rem;
+        font-size: 1.125rem;
+    }
+
+    .empty-state {
+        padding: 2rem 1rem;
+    }
+
+    .empty-icon {
+        font-size: 3rem;
+    }
+
+    .alert-modern {
+        padding: 1rem;
+        flex-direction: column;
+        gap: 0.75rem;
+    }
+
+    .alert-modern i {
+        font-size: 1.25rem;
+    }
+}
+
+/* Extra Small Screens (Less than 360px) */
+@media (max-width: 359px) {
+    .sale-header {
+        padding: 0.875rem;
+    }
+
+    .invoice-number {
+        font-size: 1.25rem;
+    }
+
+    .invoice-icon {
+        width: 45px;
+        height: 45px;
+        font-size: 1.125rem;
+    }
+
+    .info-value {
+        font-size: 0.813rem;
+    }
+
+    .info-value.large {
+        font-size: 1rem;
+    }
+
+    .action-btn {
+        padding: 0.625rem 0.875rem;
+        font-size: 0.813rem;
+    }
+
+    .card-body-modern {
+        padding: 0.875rem;
+    }
+
+    .product-image {
+        width: 60px;
+        height: 60px;
+    }
+}
+
+/* Landscape Orientation Fixes */
+@media (max-height: 600px) and (orientation: landscape) {
+    .sale-header {
+        padding: 1rem 1.5rem;
+    }
+
+    .invoice-title {
+        flex-direction: row;
+        gap: 1rem;
+    }
+
+    .info-grid {
+        grid-template-columns: repeat(3, 1fr);
+    }
+
+    .status-group {
+        flex-direction: row;
+        flex-wrap: wrap;
+    }
+
+    .action-buttons {
+        flex-direction: row;
+        flex-wrap: wrap;
+    }
+}
+
+/* High DPI Displays */
+@media (-webkit-min-device-pixel-ratio: 2), (min-resolution: 192dpi) {
+    .product-image img {
+        image-rendering: -webkit-optimize-contrast;
+        image-rendering: crisp-edges;
+    }
+}
+
+/* Reduced Motion for Accessibility */
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+    }
+}
+
+/* Print Styles */
+@media print {
+    .no-print {
+        display: none !important;
+    }
+
+    .sale-header {
+        background: white !important;
+        color: black !important;
+    }
+
+    .modern-card {
+        box-shadow: none !important;
+        border: 1px solid #ddd !important;
+    }
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="animate-fade-in">
+    <!-- Sale Header -->
+    <div class="sale-header">
+        <div class="header-content">
+            <div class="invoice-title">
+                <div class="invoice-icon">
+                    <i class="bi bi-receipt"></i>
+                </div>
+                <div>
+                    <h1 class="invoice-number">{{ sale.invoice_number }}</h1>
+                    <p class="invoice-subtitle">
+                        {{ sale.get_transaction_type_display }}
+                        {% if sale.related_sale %}
+                            - Related to {{ sale.related_sale.invoice_number }}
+                        {% endif %}
+                    </p>
+
+                </div>
+            </div>
+
+            <!-- Info Grid -->
+            <div class="info-grid">
+                <div class="info-card">
+                    <div class="info-label">Transaction ID</div>
+                    <div class="info-value">{{ sale.transaction_id }}</div>
+                </div>
+                <div class="info-card">
+
+                    <div class="info-label">Date & Time</div>
+                    <div class="info-value">
+                        {{ sale.created_at|date:"M d, Y" }}<br>
+                        <small style="font-size: 0.875rem; opacity: 0.8;">{{ sale.created_at|time:"g:i A" }}</small>
+                    </div>
+                </div>
+                <div class="info-card">
+                    <div class="info-label">Store</div>
+                    <div class="info-value">{{ sale.store.name }}</div>
+                </div>
+                <div class="info-card">
+                    <div class="info-label">Cashier</div>
+                    <div class="info-value">{{ sale.created_by.get_full_name|default:sale.created_by.username }}</div>
+                </div>
+                <div class="info-card">
+                    <div class="info-label">Payment Method</div>
+                    <div class="info-value">{{ sale.get_payment_method_display }}</div>
+                </div>
+                <div class="info-card">
+                    <div class="info-label">Total Amount</div>
+                    <div class="info-value large" style="color: {% if sale.transaction_type == 'REFUND' %}#ef4444{% else %}#10b981{% endif %};">
+                        {% if sale.transaction_type == 'REFUND' %}-{% endif %}{{ sale.total_amount|floatformat:0 }} UGX
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <div class="content-grid">
+        <!-- Main Content -->
+        <div>
+            <!-- Sale Items -->
+            <div class="modern-card">
+                <div class="card-header-modern">
+                    <h3 class="card-title-modern">
+                        <span class="card-title-icon">
+                            <i class="bi bi-cart"></i>
+                        </span>
+                        Sale Items ({{ sale.items.count }})
+                    </h3>
+                    <div class="d-flex gap-2 no-print">
+                        <button class="btn btn-sm btn-outline-primary" onclick="exportItems('csv')">
+                            <i class="bi bi-filetype-csv me-1"></i>CSV
+                        </button>
+                        <button class="btn btn-sm btn-outline-primary" onclick="exportItems('excel')">
+                            <i class="bi bi-file-excel me-1"></i>Excel
+                        </button>
+                    </div>
+                </div>
+
+                <div class="card-body-modern" style="padding: 0;">
+                    <table class="items-table-modern">
+                        <thead>
+                            <tr>
+                                <th width="80">Image</th>
+                                <th>Product</th>
+                                <th width="120">Quantity</th>
+                                <th width="140">Unit Price</th>
+                                <th width="100">Tax</th>
+                                <th width="120">Discount</th>
+                                <th width="140">Total</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for item in sale.items.all %}
+                            <tr>
+                                <td data-label="Image">
+                                    <div class="product-image">
+                                        {% if item.product.image %}
+                                            <img src="{{ item.product.image.url }}" alt="{{ item.product.name }}">
+                                        {% else %}
+                                            <i class="bi bi-box"></i>
+                                        {% endif %}
+                                    </div>
+                                </td>
+                                <td data-label="Product">
+                                    <div class="product-name">{{ item.product.name }}</div>
+                                    {% if item.product.sku %}
+                                        <div class="product-sku">SKU: {{ item.product.sku }}</div>
+                                    {% endif %}
+                                </td>
+                                <td data-label="Quantity">
+                                    <span class="qty-badge">{{ item.quantity|floatformat:"-2" }}</span>
+                                </td>
+                                <td data-label="Unit Price" style="font-weight: 600; color: var(--text-primary);">
+                                    {{ item.unit_price|floatformat:0 }} UGX
+                                </td>
+                                <td data-label="Tax">
+                                    {% if item.tax_rate == 'A' %}
+                                        <span class="tax-badge badge bg-success">18%</span>
+                                    {% elif item.tax_rate == 'B' %}
+                                        <span class="tax-badge badge bg-warning">12%</span>
+                                    {% elif item.tax_rate == 'C' %}
+                                        <span class="tax-badge badge bg-info">0%</span>
+                                    {% else %}
+                                        <span class="tax-badge badge bg-secondary">{{ item.tax_rate }}</span>
+                                    {% endif %}
+                                </td>
+                                <td data-label="Discount">
+                                    {% if item.discount > 0 %}
+                                        <span style="color: #ef4444; font-weight: 600;">-{{ item.discount|floatformat:0 }} UGX</span>
+                                    {% else %}
+                                        <span style="color: var(--text-muted);">-</span>
+                                    {% endif %}
+                                </td>
+                                <td data-label="Total" style="font-weight: 700; color: var(--text-primary); font-size: 1.063rem;">
+                                    {{ item.line_total|floatformat:0 }} UGX
+                                </td>
+                            </tr>
+                            {% empty %}
+                            <tr>
+                                <td colspan="7">
+                                    <div class="empty-state">
+                                        <div class="empty-icon">
+                                            <i class="bi bi-inbox"></i>
+                                        </div>
+                                        <h5>No items found</h5>
+                                    </div>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Tabs Section -->
+            <div class="modern-card">
+                <div class="card-body-modern">
+                    <div class="tabs-modern">
+                        <button class="tab-modern active" onclick="showTab('payments')">
+                            <i class="bi bi-credit-card"></i>Payments
+                        </button>
+                        <button class="tab-modern" onclick="showTab('history')">
+                            <i class="bi bi-clock-history"></i>History
+                        </button>
+                        <button class="tab-modern" onclick="showTab('related')">
+                            <i class="bi bi-link-45deg"></i>Related
+                        </button>
+                        {% if sale.notes %}
+                        <button class="tab-modern" onclick="showTab('notes')">
+                            <i class="bi bi-sticky"></i>Notes
+                        </button>
+                        {% endif %}
+                    </div>
+
+                    <!-- Payments Tab -->
+                    <div id="payments-tab" class="tab-content-modern active">
+                        <div class="timeline">
+                            {% for payment in sale.payments.all %}
+                            <div class="timeline-item">
+                                <div class="timeline-icon {% if payment.is_confirmed %}bg-success{% else %}bg-warning{% endif %}">
+                                    <i class="bi {% if payment.payment_method == 'CASH' %}bi-cash-coin{% elif payment.payment_method == 'CARD' %}bi-credit-card{% elif payment.payment_method == 'MOBILE_MONEY' %}bi-phone{% else %}bi-bank{% endif %}"></i>
+                                </div>
+                                <div class="timeline-content">
+                                    <h6 class="timeline-title">{{ payment.get_payment_method_display }}</h6>
+                                    <div class="timeline-meta">
+                                        {{ payment.created_at|date:"M d, Y g:i A" }}
+                                        {% if payment.transaction_reference %}
+                                            | Ref: {{ payment.transaction_reference }}
+                                        {% endif %}
+                                        {% if not payment.is_confirmed %}
+                                            | <span class="badge bg-warning">Pending</span>
+                                        {% endif %}
+                                    </div>
+                                    {% if payment.notes %}
+                                        <div class="timeline-meta mt-2">{{ payment.notes }}</div>
+                                    {% endif %}
+                                    <div class="timeline-amount">{{ payment.amount|floatformat:0 }} UGX</div>
+                                </div>
+                            </div>
+                            {% empty %}
+                            <div class="empty-state">
+                                <div class="empty-icon">
+                                    <i class="bi bi-credit-card"></i>
+                                </div>
+                                <h5>No payments recorded</h5>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+
+                    <!-- History Tab -->
+                    <div id="history-tab" class="tab-content-modern">
+                        <div class="timeline">
+                            <div class="timeline-item">
+                                <div class="timeline-icon" style="background: var(--info-gradient);">
+                                    <i class="bi bi-plus-circle"></i>
+                                </div>
+                                <div class="timeline-content">
+                                    <h6 class="timeline-title">Sale Created</h6>
+                                    <div class="timeline-meta">
+                                        {{ sale.created_at|date:"M d, Y g:i A" }} by {{ sale.created_by.get_full_name|default:sale.created_by.username }}
+                                    </div>
+                                </div>
+                            </div>
+
+                            {% if sale.is_fiscalized %}
+                            <div class="timeline-item">
+                                <div class="timeline-icon" style="background: var(--success-gradient);">
+                                    <i class="bi bi-shield-check"></i>
+                                </div>
+                                <div class="timeline-content">
+                                    <h6 class="timeline-title">Sale Fiscalized</h6>
+                                    <div class="timeline-meta">{{ sale.fiscalization_time|date:"M d, Y g:i A" }}</div>
+                                </div>
+                            </div>
+                            {% endif %}
+
+                            {% if sale.is_refunded %}
+                            <div class="timeline-item">
+                                <div class="timeline-icon" style="background: var(--danger-gradient);">
+                                    <i class="bi bi-arrow-counterclockwise"></i>
+                                </div>
+                                <div class="timeline-content">
+                                    <h6 class="timeline-title">Sale Refunded</h6>
+                                    <div class="timeline-meta">Partial or full refund processed</div>
+                                </div>
+                            </div>
+                            {% endif %}
+
+                            {% if sale.is_voided %}
+                            <div class="timeline-item">
+                                <div class="timeline-icon" style="background: linear-gradient(135deg, #6c757d 0%, #495057 100%);">
+                                    <i class="bi bi-x-circle"></i>
+                                </div>
+                                <div class="timeline-content">
+                                    <h6 class="timeline-title">Sale Voided</h6>
+                                    <div class="timeline-meta">Reason: {{ sale.void_reason|default:"Not specified" }}</div>
+                                </div>
+                            </div>
+                            {% endif %}
+                        </div>
+                    </div>
+
+                    <!-- Related Tab -->
+                    <div id="related-tab" class="tab-content-modern">
+                        {% if sale.related_sale %}
+                        <div class="alert-modern warning">
+                            <i class="bi bi-info-circle" style="font-size: 1.5rem;"></i>
+                            <div>
+                                <h6 style="margin: 0 0 0.5rem 0;">Original Sale</h6>
+                                <p style="margin: 0 0 0.75rem 0;">This {{ sale.get_transaction_type_display|lower }} is related to:</p>
+                                <a href="{% url 'sales:sale_detail' sale.related_sale.pk %}" class="btn btn-sm btn-primary">
+                                    <i class="bi bi-box-arrow-up-right me-1"></i>View {{ sale.related_sale.invoice_number }}
+                                </a>
+                            </div>
+                        </div>
+                        {% endif %}
+
+                        {% with refunds=sale.sale_set.all %}
+                        {% if refunds %}
+                        <h6 style="margin-bottom: 1rem; color: var(--text-primary);">Refunds & Returns</h6>
+                        {% for refund in refunds %}
+                        <div style="display: flex; justify-content: space-between; align-items: center; padding: 1rem; background: var(--bg-accent); border-radius: 12px; margin-bottom: 1rem;">
+                            <div>
+                                <strong style="color: var(--text-primary);">{{ refund.invoice_number }}</strong>
+                                <br><small style="color: var(--text-muted);">{{ refund.created_at|date:"M d, Y" }}</small>
+                            </div>
+                            <div style="text-align: right;">
+                                <div style="color: #ef4444; font-weight: 700; font-size: 1.125rem;">-{{ refund.total_amount|floatformat:0 }} UGX</div>
+                                <a href="{% url 'sales:sale_detail' refund.pk %}" class="btn btn-sm btn-outline-primary mt-2">View</a>
+                            </div>
+                        </div>
+                        {% endfor %}
+                        {% endif %}
+                        {% endwith %}
+
+                        {% if not sale.related_sale and not sale.sale_set.all %}
+                        <div class="empty-state">
+                            <div class="empty-icon">
+                                <i class="bi bi-link-45deg"></i>
+                            </div>
+                            <h5>No related transactions</h5>
+                        </div>
+                        {% endif %}
+                    </div>
+
+                    <!-- Notes Tab -->
+                    {% if sale.notes %}
+                    <div id="notes-tab" class="tab-content-modern">
+                        <div class="alert-modern warning">
+                            <i class="bi bi-sticky" style="font-size: 1.5rem;"></i>
+                            <div>
+                                <h6 style="margin: 0 0 0.5rem 0;">Sale Notes</h6>
+                                <p style="margin: 0;">{{ sale.notes }}</p>
+                            </div>
+                        </div>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Sidebar -->
+        <div>
+            <!-- Customer Card -->
+            <div class="modern-card">
+                <div class="card-header-modern">
+                    <h4 class="card-title-modern">
+                        <span class="card-title-icon">
+                            <i class="bi bi-person"></i>
+                        </span>
+                        Customer
+                    </h4>
+                </div>
+                {% if sale.customer %}
+                <div class="customer-info">
+                    <div class="customer-avatar">
+                        {{ sale.customer.name.0|upper }}
+                    </div>
+                    <div>
+                        <h5>{{ sale.customer.name }}</h5>
+                        <p><i class="bi bi-telephone me-1"></i>{{ sale.customer.phone }}</p>
+                        {% if sale.customer.email %}
+                        <p><i class="bi bi-envelope me-1"></i>{{ sale.customer.email }}</p>
+                        {% endif %}
+                        {% if sale.customer.tin %}
+                        <p><i class="bi bi-badge-tm me-1"></i>TIN: {{ sale.customer.tin }}</p>
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="quick-actions">
+                    <a href="#" class="quick-action">
+                        <i class="bi bi-clock-history"></i>
+                        <span>History</span>
+                    </a>
+                    <a href="#" class="quick-action">
+                        <i class="bi bi-pencil"></i>
+                        <span>Edit</span>
+                    </a>
+                </div>
+                {% else %}
+                <div class="empty-state">
+                    <div class="empty-icon">
+                        <i class="bi bi-person-x"></i>
+                    </div>
+                    <h5>Walk-in Customer</h5>
+                    <p>No customer information</p>
+                </div>
+                {% endif %}
+            </div>
+
+            <!-- Summary Card -->
+            <div class="modern-card">
+                <div class="card-header-modern">
+                    <h4 class="card-title-modern">
+                        <span class="card-title-icon" style="background: var(--success-gradient);">
+                            <i class="bi bi-calculator"></i>
+                        </span>
+                        Summary
+                    </h4>
+                </div>
+                <table class="summary-table">
+                    <tr>
+                        <td class="label">Subtotal:</td>
+                        <td class="value">{{ sale.subtotal|floatformat:0 }} UGX</td>
+                    </tr>
+                    <tr>
+                        <td class="label">Tax:</td>
+                        <td class="value">{{ sale.tax_amount|floatformat:0 }} UGX</td>
+                    </tr>
+                    {% if sale.discount_amount > 0 %}
+                    <tr>
+                        <td class="label">Discount:</td>
+                        <td class="value" style="color: #ef4444;">-{{ sale.discount_amount|floatformat:0 }} UGX</td>
+                    </tr>
+                    {% endif %}
+                    <tr class="total-row">
+                        <td class="label">Total:</td>
+                        <td class="value">{{ sale.total_amount|floatformat:0 }} UGX</td>
+                    </tr>
+                    <tr>
+                        <td class="label">Paid:</td>
+                        <td class="value" style="color: #10b981;">{{ total_paid|floatformat:0 }} UGX</td>
+                    </tr>
+                    {% if total_paid|add:"0" < sale.total_amount %}
+                    <tr>
+                        <td class="label">Balance:</td>
+                        <td class="value" style="color: #ef4444;">{{ sale.total_amount|floatformat:0 }} UGX</td>
+                    </tr>
+                    {% endif %}
+                </table>
+            </div>
+
+            <!-- Quick Actions -->
+            <div class="modern-card no-print">
+                <div class="card-header-modern">
+                    <h4 class="card-title-modern">
+                        <span class="card-title-icon" style="background: var(--warning-gradient);">
+                            <i class="bi bi-lightning"></i>
+                        </span>
+                        Quick Actions
+                    </h4>
+                </div>
+                <div class="quick-actions">
+                    <a href="{% url 'sales:print_receipt' sale.pk %}" class="quick-action" target="_blank">
+                        <i class="bi bi-printer"></i>
+                        <span>Print</span>
+                    </a>
+                    <a href="{% url 'sales:send_receipt' sale.pk %}" class="quick-action">
+                        <i class="bi bi-envelope"></i>
+                        <span>Email</span>
+                    </a>
+                    <a href="{% url 'sales:duplicate_sale' sale.pk %}" class="quick-action">
+                        <i class="bi bi-files"></i>
+                        <span>Duplicate</span>
+                    </a>
+                    {% if not sale.is_fiscalized %}
+                    <a href="{% url 'sales:fiscalize_sale' sale.pk %}" class="quick-action">
+                        <i class="bi bi-shield-check"></i>
+                        <span>Fiscalize</span>
+                    </a>
+                    {% endif %}
+                    {% if sale.transaction_type == 'SALE' and not sale.is_refunded and not sale.is_voided %}
+                    <a href="{% url 'sales:process_refund' sale.pk %}" class="quick-action" style="color: #ef4444;">
+                        <i class="bi bi-arrow-counterclockwise"></i>
+                        <span>Refund</span>
+                    </a>
+                    {% endif %}
+                    {% if sale.transaction_type == 'SALE' and not sale.is_voided %}
+                    <a href="{% url 'sales:void_sale' sale.pk %}" class="quick-action" style="color: #ef4444;">
+                        <i class="bi bi-x-circle"></i>
+                        <span>Void</span>
+                    </a>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// Responsive Utilities
+const ResponsiveUtils = {
+    isMobile: () => window.innerWidth < 768,
+    isTablet: () => window.innerWidth >= 768 && window.innerWidth < 1200,
+    isDesktop: () => window.innerWidth >= 1200,
+
+    getCurrentBreakpoint: () => {
+        const width = window.innerWidth;
+        if (width < 576) return 'xs';
+        if (width < 768) return 'sm';
+        if (width < 992) return 'md';
+        if (width < 1200) return 'lg';
+        if (width < 1440) return 'xl';
+        if (width < 1920) return 'xxl';
+        return 'xxxl';
+    }
+};
+
+// Tab functionality with mobile support
+function showTab(tabName) {
+    // Hide all tabs
+    document.querySelectorAll('.tab-content-modern').forEach(tab => {
+        tab.classList.remove('active');
+    });
+    document.querySelectorAll('.tab-modern').forEach(btn => {
+        btn.classList.remove('active');
+    });
+
+    // Show selected tab
+    const selectedTab = document.getElementById(`${tabName}-tab`);
+    const clickedButton = event.target.closest('.tab-modern');
+
+    if (selectedTab) {
+        selectedTab.classList.add('active');
+    }
+
+    if (clickedButton) {
+        clickedButton.classList.add('active');
+
+        // Scroll tab into view on mobile
+        if (ResponsiveUtils.isMobile()) {
+            clickedButton.scrollIntoView({
+                behavior: 'smooth',
+                block: 'nearest',
+                inline: 'center'
+            });
+        }
+    }
+}
+
+// Export items functionality
+function exportItems(format) {
+    const saleId = {{ sale.id }};
+    window.open(`/sales/${saleId}/export-items/?format=${format}`, '_blank');
+}
+
+// Responsive image loading
+function optimizeImages() {
+    const images = document.querySelectorAll('.product-image img');
+    const breakpoint = ResponsiveUtils.getCurrentBreakpoint();
+
+    images.forEach(img => {
+        if (breakpoint === 'xs' || breakpoint === 'sm') {
+            img.loading = 'lazy';
+        }
+    });
+}
+
+// Handle orientation changes
+let lastOrientation = window.orientation;
+
+window.addEventListener('orientationchange', () => {
+    if (window.orientation !== lastOrientation) {
+        lastOrientation = window.orientation;
+
+        // Adjust layout after orientation change
+        setTimeout(() => {
+            window.scrollTo(0, 0);
+
+            // Recalculate any dynamic heights
+            document.querySelectorAll('.sale-details-body').forEach(el => {
+                el.style.maxHeight = `${window.innerHeight - 200}px`;
+            });
+        }, 300);
+    }
+});
+
+// Smooth scroll for anchor links
+document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+    anchor.addEventListener('click', function (e) {
+        e.preventDefault();
+        const target = document.querySelector(this.getAttribute('href'));
+
+        if (target) {
+            const offset = ResponsiveUtils.isMobile() ? 80 : 100;
+            const targetPosition = target.getBoundingClientRect().top + window.pageYOffset - offset;
+
+            window.scrollTo({
+                top: targetPosition,
+                behavior: 'smooth'
+            });
+        }
+    });
+});
+
+// Keyboard shortcuts with responsive considerations
+document.addEventListener('keydown', function(e) {
+    // Only enable keyboard shortcuts on desktop
+    if (!ResponsiveUtils.isMobile()) {
+        if (e.ctrlKey || e.metaKey) {
+            switch (e.key) {
+                case 'p':
+                    e.preventDefault();
+                    window.print();
+                    break;
+            }
+        }
+
+        // Tab navigation with arrow keys
+        if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+            const tabs = Array.from(document.querySelectorAll('.tab-modern'));
+            const activeTab = document.querySelector('.tab-modern.active');
+            const currentIndex = tabs.indexOf(activeTab);
+
+            if (currentIndex !== -1) {
+                let newIndex;
+                if (e.key === 'ArrowLeft') {
+                    newIndex = currentIndex > 0 ? currentIndex - 1 : tabs.length - 1;
+                } else {
+                    newIndex = currentIndex < tabs.length - 1 ? currentIndex + 1 : 0;
+                }
+
+                tabs[newIndex].click();
+            }
+        }
+    }
+});
+
+// Touch gestures for mobile
+let touchStartX = 0;
+let touchStartY = 0;
+
+document.addEventListener('touchstart', (e) => {
+    touchStartX = e.changedTouches[0].screenX;
+    touchStartY = e.changedTouches[0].screenY;
+}, false);
+
+document.addEventListener('touchend', (e) => {
+    const touchEndX = e.changedTouches[0].screenX;
+    const touchEndY = e.changedTouches[0].screenY;
+
+    handleSwipe(touchStartX, touchStartY, touchEndX, touchEndY);
+}, false);
+
+function handleSwipe(startX, startY, endX, endY) {
+    const deltaX = endX - startX;
+    const deltaY = endY - startY;
+
+    // Only handle horizontal swipes
+    if (Math.abs(deltaX) > Math.abs(deltaY) && Math.abs(deltaX) > 50) {
+        const tabs = Array.from(document.querySelectorAll('.tab-modern'));
+        const activeTab = document.querySelector('.tab-modern.active');
+        const currentIndex = tabs.indexOf(activeTab);
+
+        if (currentIndex !== -1) {
+            if (deltaX > 0 && currentIndex > 0) {
+                // Swipe right - go to previous tab
+                tabs[currentIndex - 1].click();
+            } else if (deltaX < 0 && currentIndex < tabs.length - 1) {
+                // Swipe left - go to next tab
+                tabs[currentIndex + 1].click();
+            }
+        }
+    }
+}
+
+// Responsive table handling
+function handleResponsiveTables() {
+    if (ResponsiveUtils.isMobile()) {
+        // Tables are already styled as cards via CSS
+        // This function can handle any additional mobile-specific logic
+
+        // Add scroll hints for horizontal scrollable content
+        const scrollableElements = document.querySelectorAll('.tabs-modern');
+        scrollableElements.forEach(el => {
+            if (el.scrollWidth > el.clientWidth) {
+                el.classList.add('has-scroll');
+            }
+        });
+    }
+}
+
+// Lazy loading for images on mobile
+function initLazyLoading() {
+    if ('IntersectionObserver' in window && ResponsiveUtils.isMobile()) {
+        const imageObserver = new IntersectionObserver((entries, observer) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    const img = entry.target;
+                    if (img.dataset.src) {
+                        img.src = img.dataset.src;
+                        img.removeAttribute('data-src');
+                        observer.unobserve(img);
+                    }
+                }
+            });
+        });
+
+        document.querySelectorAll('img[data-src]').forEach(img => {
+            imageObserver.observe(img);
+        });
+    }
+}
+
+// Performance monitoring for mobile
+function measurePerformance() {
+    if ('PerformanceObserver' in window && ResponsiveUtils.isMobile()) {
+        const observer = new PerformanceObserver((list) => {
+            for (const entry of list.getEntries()) {
+                if (entry.duration > 100) {
+                    console.warn(`Slow operation detected: ${entry.name} took ${entry.duration}ms`);
+                }
+            }
+        });
+
+        observer.observe({ entryTypes: ['measure'] });
+    }
+}
+
+// Handle window resize with debouncing
+let resizeTimeout;
+window.addEventListener('resize', () => {
+    clearTimeout(resizeTimeout);
+    resizeTimeout = setTimeout(() => {
+        handleResponsiveTables();
+        optimizeImages();
+
+        // Log current breakpoint (for debugging)
+        console.log('Current breakpoint:', ResponsiveUtils.getCurrentBreakpoint());
+    }, 250);
+});
+
+// Initialize everything on page load
+document.addEventListener('DOMContentLoaded', () => {
+    optimizeImages();
+    handleResponsiveTables();
+    initLazyLoading();
+    measurePerformance();
+
+    // Log device info for debugging
+    console.log('Device info:', {
+        breakpoint: ResponsiveUtils.getCurrentBreakpoint(),
+        isMobile: ResponsiveUtils.isMobile(),
+        isTablet: ResponsiveUtils.isTablet(),
+        isDesktop: ResponsiveUtils.isDesktop(),
+        screenWidth: window.innerWidth,
+        screenHeight: window.innerHeight,
+        devicePixelRatio: window.devicePixelRatio
+    });
+
+    // Add touch class to body for CSS targeting
+    if ('ontouchstart' in window || navigator.maxTouchPoints > 0) {
+        document.body.classList.add('touch-device');
+    } else {
+        document.body.classList.add('no-touch');
+    }
+});
+
+// Network status indicator (useful for mobile)
+if ('onLine' in navigator) {
+    window.addEventListener('online', () => {
+        console.log('Network: Online');
+    });
+
+    window.addEventListener('offline', () => {
+        console.log('Network: Offline');
+        // You could show a notification here
+    });
+}
+
+// Prevent zoom on double tap for iOS
+let lastTouchEnd = 0;
+document.addEventListener('touchend', (e) => {
+    const now = Date.now();
+    if (now - lastTouchEnd <= 300) {
+        e.preventDefault();
+    }
+    lastTouchEnd = now;
+}, false);
+
+// Service Worker registration for PWA support (optional)
+if ('serviceWorker' in navigator && ResponsiveUtils.isMobile()) {
+    window.addEventListener('load', () => {
+        // Uncomment if you have a service worker
+        // navigator.serviceWorker.register('/sw.js')
+        //     .then(reg => console.log('Service Worker registered'))
+        //     .catch(err => console.log('Service Worker registration failed'));
+    });
+}
+</script>
+{% endblock %}

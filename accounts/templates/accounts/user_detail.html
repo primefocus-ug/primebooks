@@ -1,0 +1,199 @@
+{% extends 'base.html' %}
+{% load i18n %}
+
+{% block title %}{{ user_profile.get_full_name|default:user_profile.username }}{% endblock %}
+
+{% block extra_css %}
+<style>
+.user-avatar {
+    width: 120px;
+    height: 120px;
+    object-fit: cover;
+    border-radius: 50%;
+    border: 4px solid #e9ecef;
+}
+.status-badge {
+    font-size: 0.85rem;
+    padding: 0.5rem 0.75rem;
+}
+.info-card {
+    border: none;
+    border-radius: 12px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+    transition: transform 0.2s ease;
+}
+.info-card:hover {
+    transform: translateY(-2px);
+}
+.section-title {
+    color: #495057;
+    font-weight: 600;
+    margin-bottom: 1.5rem;
+    position: relative;
+}
+.section-title::after {
+    content: '';
+    position: absolute;
+    bottom: -5px;
+    left: 0;
+    width: 40px;
+    height: 3px;
+    background: linear-gradient(45deg, #007bff, #6610f2);
+    border-radius: 2px;
+}
+.btn-action {
+    border-radius: 8px;
+    padding: 0.5rem 1rem;
+    font-weight: 500;
+    transition: all 0.2s ease;
+}
+.btn-action:hover {
+    transform: translateY(-1px);
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="bg-light">
+    <div class="container-fluid py-4">
+
+        <!-- Header -->
+        <div class="row mb-4">
+            <div class="col-12 d-flex justify-content-between align-items-center">
+                <div>
+                    <h2 class="mb-1">
+                        <i class="fas fa-user-circle text-primary me-2"></i>
+                         {{ user_profile.get_full_name|default:user_profile.username }}
+                    </h2>
+                    <nav aria-label="breadcrumb">
+                        <ol class="breadcrumb">
+                            <li class="breadcrumb-item"><a href="{% url 'user_list' %}">{% trans "Users" %}</a></li>
+                            <li class="breadcrumb-item active">{{ user_profile.get_full_name|default:user_profile.username }}</li>
+                        </ol>
+                    </nav>
+                </div>
+                <div class="btn-group">
+                    {% if can_edit %}
+                    <a href="{% url 'user_update' user_profile.pk %}" class="btn btn-primary btn-action">
+                        <i class="fas fa-edit me-1"></i> {% trans "Edit User" %}
+                    </a>
+                    {% endif %}
+                    {% if can_unlock %}
+                    <a href="{% url 'unlock_user' user_profile.pk %}" class="btn btn-warning btn-action">
+                        <i class="fas fa-unlock me-1"></i> {% trans "Unlock Account" %}
+                    </a>
+                    {% endif %}
+                    {% if can_manage_users %}
+                        <a href="{% url 'user_delete' user_profile.pk %}" class="btn btn-danger btn-action">
+                            <i class="fas fa-trash me-1"></i> {% trans "Delete" %}
+                        </a>
+                    {% endif %}
+
+                </div>
+            </div>
+        </div>
+
+        <!-- User Profile Card -->
+        <div class="row mb-4">
+            <div class="col-12">
+                <div class="card info-card">
+                    <div class="card-body p-4">
+                        <div class="row">
+                            <!-- Avatar & Status -->
+                            <div class="col-md-3 text-center">
+                                {% if user_profile.avatar %}
+                                    <img src="{{ user_profile.avatar.url }}" alt="{% trans 'Avatar' %}" class="user-avatar mb-3">
+                                {% else %}
+                                    <div class="user-avatar bg-secondary d-flex align-items-center justify-content-center mb-3 mx-auto">
+                                        <i class="fas fa-user fa-3x text-white"></i>
+                                    </div>
+                                {% endif %}
+                                <h4 class="mb-1"> {{ user_profile.get_full_name|default:user_profile.username }}</h4>
+                                <p class="text-muted mb-3">{{ user_profile.get_user_type_display }}</p>
+
+                                <div class="d-flex flex-column gap-2">
+                                    {% if user_profile.is_active %}
+                                        <span class="badge bg-success status-badge"><i class="fas fa-check-circle me-1"></i> {% trans "Active" %}</span>
+                                    {% else %}
+                                        <span class="badge bg-danger status-badge"><i class="fas fa-times-circle me-1"></i> {% trans "Inactive" %}</span>
+                                    {% endif %}
+
+                                    {% if user_profile.email_verified %}
+                                        <span class="badge bg-info status-badge"><i class="fas fa-envelope-check me-1"></i> {% trans "Email Verified" %}</span>
+                                    {% endif %}
+
+                                    {% if user_profile.two_factor_enabled %}
+                                        <span class="badge bg-warning status-badge"><i class="fas fa-shield-alt me-1"></i> {% trans "2FA Enabled" %}</span>
+                                    {% endif %}
+
+                                    {% if is_locked %}
+                                        <span class="badge bg-danger status-badge"><i class="fas fa-lock me-1"></i> {% trans "Account Locked" %}</span>
+                                    {% endif %}
+                                </div>
+                            </div>
+
+                            <!-- Details -->
+                            <div class="col-md-9">
+                                <div class="row">
+                                    <div class="col-md-6">
+                                        <h5 class="section-title">{% trans "Personal Information" %}</h5>
+                                        <table class="table table-borderless">
+                                            <tr><td class="fw-semibold text-muted">{% trans "Email:" %}</td><td>{{ user_profile.email }}</td></tr>
+                                            <tr><td class="fw-semibold text-muted">{% trans "Username:" %}</td><td>{{ user_profile.username }}</td></tr>
+                                            <tr><td class="fw-semibold text-muted">{% trans "Phone:" %}</td><td>{{ user_profile.phone_number|default:"Not provided" }}</td></tr>
+                                            <tr><td class="fw-semibold text-muted">{% trans "Language:" %}</td><td>{{ user_profile.get_language_display }}</td></tr>
+                                            <tr><td class="fw-semibold text-muted">{% trans "Company:" %}</td><td>{{ company.name }}</td></tr>
+                                        </table>
+                                    </div>
+
+                                    <div class="col-md-6">
+                                        <h5 class="section-title">{% trans "Account Details" %}</h5>
+                                        <table class="table table-borderless">
+                                            <tr><td class="fw-semibold text-muted">{% trans "Date Joined:" %}</td><td>{{ user_profile.date_joined|date:"M d, Y" }}</td></tr>
+                                            <tr><td class="fw-semibold text-muted">{% trans "Account Age:" %}</td><td>{{ account_age }} {% trans "days" %}</td></tr>
+                                            <tr><td class="fw-semibold text-muted">{% trans "Last Login:" %}</td><td>{{ user_profile.last_login|date:"M d, Y H:i"|default:'Never' }}</td></tr>
+                                            <tr><td class="fw-semibold text-muted">{% trans "Login Count:" %}</td><td>{{ user_profile.login_count }}</td></tr>
+                                            <tr><td class="fw-semibold text-muted">{% trans "Failed Attempts:" %}</td><td>{{ user_profile.failed_login_attempts }}</td></tr>
+                                        </table>
+                                    </div>
+                                </div>
+
+                                {% if user_profile.bio %}
+                                <div class="mt-3">
+                                    <h5 class="section-title">{% trans "Bio" %}</h5>
+                                    <p class="text-muted">{{ user_profile.bio }}</p>
+                                </div>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Messages -->
+        {% if messages %}
+        <div class="position-fixed top-0 end-0 p-3" style="z-index: 1050;">
+            {% for message in messages %}
+            <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
+                {{ message }}
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            </div>
+            {% endfor %}
+        </div>
+        {% endif %}
+
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.0/js/bootstrap.bundle.min.js"></script>
+<script>
+setTimeout(function() {
+    document.querySelectorAll('.alert').forEach(alert => {
+        new bootstrap.Alert(alert).close();
+    });
+}, 5000);
+</script>
+{% endblock %}

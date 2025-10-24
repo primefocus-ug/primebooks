@@ -1,0 +1,175 @@
+<!-- reports/efris_compliance.html -->
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}EFRIS Compliance Report - Prime Book{% endblock %}
+
+{% block page_header %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h1 class="h3 mb-0">EFRIS Compliance Report</h1>
+        <p class="text-muted">Monitor Electronic Fiscal Receipts and Invoicing System compliance</p>
+    </div>
+    <div class="btn-group" role="group">
+        <a href="{% url 'reports:tax_report' %}" class="btn btn-outline-info">
+            <i class="bi bi-receipt me-2"></i>Tax Report
+        </a>
+        <a href="{% url 'reports:dashboard' %}" class="btn btn-outline-secondary">
+            <i class="bi bi-arrow-left me-2"></i>Back to Dashboard
+        </a>
+    </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<!-- Filter Form -->
+<div class="card mb-4">
+    <div class="card-header">
+        <h5 class="card-title mb-0">
+            <i class="bi bi-funnel me-2"></i>Compliance Period
+        </h5>
+    </div>
+    <div class="card-body">
+        <form method="get" class="row g-3">
+            <div class="col-md-3">
+                {{ form.start_date.label_tag }}
+                {{ form.start_date }}
+            </div>
+            <div class="col-md-3">
+                {{ form.end_date.label_tag }}
+                {{ form.end_date }}
+            </div>
+            <div class="col-md-3">
+                {{ form.store.label_tag }}
+                {{ form.store }}
+            </div>
+            <div class="col-md-3 d-flex align-items-end">
+                <button type="submit" class="btn btn-primary">
+                    <i class="bi bi-search me-2"></i>Check Compliance
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+{% if compliance_data %}
+<!-- Compliance Overview -->
+<div class="row mb-4">
+    <div class="col-md-3">
+        <div class="card text-white {% if compliance_data.compliance_rate >= 95 %}bg-success{% elif compliance_data.compliance_rate >= 80 %}bg-warning{% else %}bg-danger{% endif %}">
+            <div class="card-body text-center">
+                <i class="bi bi-shield-check fs-1 mb-2"></i>
+                <h3>{{ compliance_data.compliance_rate|floatformat:1 }}%</h3>
+                <p class="mb-0">Compliance Rate</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card text-white bg-primary">
+            <div class="card-body text-center">
+                <i class="bi bi-receipt-cutoff fs-1 mb-2"></i>
+                <h3>{{ compliance_data.total_sales }}</h3>
+                <p class="mb-0">Total Sales</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card text-white bg-success">
+            <div class="card-body text-center">
+                <i class="bi bi-check-circle fs-1 mb-2"></i>
+                <h3>{{ compliance_data.fiscalized_sales }}</h3>
+                <p class="mb-0">Fiscalized</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card text-white bg-warning">
+            <div class="card-body text-center">
+                <i class="bi bi-clock fs-1 mb-2"></i>
+                <h3>{{ compliance_data.pending_sales }}</h3>
+                <p class="mb-0">Pending</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Store Breakdown -->
+<div class="card mb-4">
+    <div class="card-header">
+        <h6 class="mb-0">Compliance by Store</h6>
+    </div>
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-striped">
+                <thead>
+                    <tr>
+                        <th>Store</th>
+                        <th>Total Sales</th>
+                        <th>Fiscalized</th>
+                        <th>Pending</th>
+                        <th>Compliance Rate</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for store in compliance_data.store_breakdown %}
+                    <tr>
+                        <td>{{ store.store__name }}</td>
+                        <td>{{ store.total }}</td>
+                        <td>{{ store.fiscalized }}</td>
+                        <td>{{ store.pending }}</td>
+                        <td>
+                            {% with rate=store.fiscalized|div:store.total|mul:100 %}
+                            <span class="badge {% if rate >= 95 %}bg-success{% elif rate >= 80 %}bg-warning{% else %}bg-danger{% endif %}">
+                                {{ rate|floatformat:1 }}%
+                            </span>
+                            {% endwith %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Daily Trend -->
+<div class="card">
+    <div class="card-header">
+        <h6 class="mb-0">Daily Compliance Trend</h6>
+    </div>
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-sm">
+                <thead>
+                    <tr>
+                        <th>Date</th>
+                        <th>Total</th>
+                        <th>Fiscalized</th>
+                        <th>Pending</th>
+                        <th>Rate</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for day in compliance_data.daily_breakdown %}
+                    <tr>
+                        <td>{{ day.date }}</td>
+                        <td>{{ day.total }}</td>
+                        <td>{{ day.fiscalized }}</td>
+                        <td>{{ day.pending }}</td>
+                        <td>
+                            {% with rate=day.fiscalized|div:day.total|mul:100 %}
+                            <div class="progress" style="height: 20px;">
+                                <div class="progress-bar {% if rate >= 95 %}bg-success{% elif rate >= 80 %}bg-warning{% else %}bg-danger{% endif %}"
+                                     style="width: {{ rate }}%">{{ rate|floatformat:1 }}%</div>
+                            </div>
+                            {% endwith %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,446 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Report Analytics - {{ company.trading_name|default:company.name }}{% endblock %}
+
+{% block breadcrumbs %}
+<li class="breadcrumb-item">
+    {% if perms.reports.view_savedreport %}
+    <a href="{% url 'reports:dashboard' %}">
+        <i class="fas fa-chart-pie"></i> Reports
+    </a>
+    {% endif %}
+</li>
+<li class="breadcrumb-item active">
+    <i class="fas fa-chart-line"></i> Analytics
+</li>
+{% endblock %}
+
+{% block content %}
+<div class="analytics-container">
+    <!-- Header Section -->
+    <div class="analytics-header">
+        <div class="header-content">
+            <h1>
+                <i class="fas fa-chart-line"></i> Report Analytics
+            </h1>
+            <p class="text-muted">Insights and statistics about report usage</p>
+        </div>
+        
+        <div class="header-actions">
+            <div class="dropdown">
+                <button class="btn btn-outline-secondary dropdown-toggle" type="button" 
+                        id="timeRangeDropdown" data-bs-toggle="dropdown">
+                    <i class="fas fa-calendar-alt"></i> Last 30 Days
+                </button>
+                <ul class="dropdown-menu">
+                    <li><a class="dropdown-item" href="#">Last 7 Days</a></li>
+                    <li><a class="dropdown-item" href="#">Last 30 Days</a></li>
+                    <li><a class="dropdown-item" href="#">Last 90 Days</a></li>
+                    <li><a class="dropdown-item" href="#">This Year</a></li>
+                    <li><hr class="dropdown-divider"></li>
+                    <li><a class="dropdown-item" href="#">Custom Range</a></li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <!-- Stats Overview -->
+    <div class="row mb-4">
+        <div class="col-md-3">
+            <div class="stat-card">
+                <div class="stat-icon bg-primary">
+                    <i class="fas fa-file-alt"></i>
+                </div>
+                <div class="stat-content">
+                    <div class="stat-value">{{ user_reports.count }}</div>
+                    <div class="stat-label">Total Reports</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="stat-card">
+                <div class="stat-icon bg-success">
+                    <i class="fas fa-file-export"></i>
+                </div>
+                <div class="stat-content">
+                    <div class="stat-value">{{ user_generated.count }}</div>
+                    <div class="stat-label">Generations</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="stat-card">
+                <div class="stat-icon bg-info">
+                    <i class="fas fa-calendar-check"></i>
+                </div>
+                <div class="stat-content">
+                    <div class="stat-value">{{ schedule_efficiency.active }}</div>
+                    <div class="stat-label">Active Schedules</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="stat-card">
+                <div class="stat-icon bg-warning">
+                    <i class="fas fa-check-double"></i>
+                </div>
+                <div class="stat-content">
+                    <div class="stat-value">{{ efris_compliance_rate.rate|floatformat:0 }}%</div>
+                    <div class="stat-label">EFRIS Compliance</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Charts Section -->
+    <div class="row mb-4">
+        <div class="col-lg-8">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">
+                        <i class="fas fa-chart-bar"></i> Report Generation Trends
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <canvas id="generationTrendsChart" height="300"></canvas>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-4">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">
+                        <i class="fas fa-chart-pie"></i> Reports by Type
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <canvas id="reportsByTypeChart" height="300"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Tables Section -->
+    <div class="row">
+        <div class="col-lg-6">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">
+                        <i class="fas fa-star"></i> Most Used Reports
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Report</th>
+                                    <th>Type</th>
+                                    <th>Generations</th>
+                                    <th>Last Run</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for report in most_used_reports %}
+                                <tr>
+                                    <td>{{ report.report__name }}</td>
+                                    <td>
+                                        <span class="badge bg-secondary-soft">
+                                            {{ report.report__report_type }}
+                                        </span>
+                                    </td>
+                                    <td>{{ report.generation_count }}</td>
+                                    <td>
+                                        {% if report.last_generated %}
+                                            {{ report.last_generated|date:"M d, Y" }}
+                                        {% else %}
+                                            Never
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-6">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">
+                        <i class="fas fa-tachometer-alt"></i> Schedule Efficiency
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div class="efficiency-stats">
+                        <div class="efficiency-meter mb-4">
+                            <div class="meter-label">
+                                <span>Active Schedules</span>
+                                <span>{{ schedule_efficiency.active }} of {{ schedule_efficiency.total }}</span>
+                            </div>
+                            <div class="progress" style="height: 20px;">
+                                <div class="progress-bar bg-success" 
+                                     role="progressbar" 
+                                     style="width: {{ schedule_efficiency.efficiency }}%"
+                                     aria-valuenow="{{ schedule_efficiency.efficiency }}" 
+                                     aria-valuemin="0" 
+                                     aria-valuemax="100">
+                                    {{ schedule_efficiency.efficiency|floatformat:0 }}%
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="table-responsive">
+                            <table class="table table-hover">
+                                <thead>
+                                    <tr>
+                                        <th>Frequency</th>
+                                        <th>Count</th>
+                                        <th>Success Rate</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td>Daily</td>
+                                        <td>12</td>
+                                        <td>
+                                            <div class="progress thin-progress">
+                                                <div class="progress-bar bg-success" style="width: 95%"></div>
+                                            </div>
+                                            <small>95%</small>
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <td>Weekly</td>
+                                        <td>8</td>
+                                        <td>
+                                            <div class="progress thin-progress">
+                                                <div class="progress-bar bg-success" style="width: 88%"></div>
+                                            </div>
+                                            <small>88%</small>
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <td>Monthly</td>
+                                        <td>5</td>
+                                        <td>
+                                            <div class="progress thin-progress">
+                                                <div class="progress-bar bg-success" style="width: 92%"></div>
+                                            </div>
+                                            <small>92%</small>
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <td>Quarterly</td>
+                                        <td>3</td>
+                                        <td>
+                                            <div class="progress thin-progress">
+                                                <div class="progress-bar bg-success" style="width: 100%"></div>
+                                            </div>
+                                            <small>100%</small>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+.analytics-container {
+    padding: 1.5rem;
+    max-width: 1400px;
+    margin: 0 auto;
+}
+
+/* Header Styles */
+.analytics-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    margin-bottom: 1.5rem;
+    padding-bottom: 1rem;
+    border-bottom: 1px solid #e9ecef;
+}
+
+.header-content h1 {
+    font-size: 1.75rem;
+    font-weight: 600;
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.header-content p {
+    margin: 0.25rem 0 0;
+    color: #6c757d;
+}
+
+/* Stat Cards */
+.stat-card {
+    display: flex;
+    align-items: center;
+    background: white;
+    border-radius: 0.75rem;
+    padding: 1rem;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+    height: 100%;
+}
+
+.stat-icon {
+    width: 50px;
+    height: 50px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-right: 1rem;
+    color: white;
+    font-size: 1.25rem;
+}
+
+.stat-content {
+    flex: 1;
+}
+
+.stat-value {
+    font-size: 1.5rem;
+    font-weight: 600;
+    line-height: 1;
+}
+
+.stat-label {
+    font-size: 0.875rem;
+    color: #6c757d;
+}
+
+/* Card Styles */
+.card {
+    border-radius: 0.75rem;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+    margin-bottom: 1.5rem;
+    height: 100%;
+}
+
+.card-header {
+    background-color: rgba(46, 89, 217, 0.1);
+    border-bottom: 1px solid rgba(46, 89, 217, 0.2);
+}
+
+/* Efficiency Meter */
+.efficiency-meter .meter-label {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 0.5rem;
+    font-size: 0.875rem;
+}
+
+.thin-progress {
+    height: 6px;
+    margin-top: 0.25rem;
+}
+
+/* Responsive Adjustments */
+@media (max-width: 768px) {
+    .stat-card {
+        margin-bottom: 1rem;
+    }
+}
+</style>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+$(document).ready(function() {
+    // Generation Trends Chart
+    const trendsCtx = document.getElementById('generationTrendsChart').getContext('2d');
+    const trendsChart = new Chart(trendsCtx, {
+        type: 'line',
+        data: {
+            labels: [
+                {% for trend in generation_trends %}
+                    '{{ trend.date|date:"M d" }}'{% if not forloop.last %},{% endif %}
+                {% endfor %}
+            ],
+            datasets: [{
+                label: 'Report Generations',
+                data: [
+                    {% for trend in generation_trends %}
+                        {{ trend.count }}{% if not forloop.last %},{% endif %}
+                    {% endfor %}
+                ],
+                backgroundColor: 'rgba(46, 89, 217, 0.1)',
+                borderColor: 'rgba(46, 89, 217, 1)',
+                borderWidth: 2,
+                tension: 0.4,
+                fill: true
+            }]
+        },
+        options: {
+            responsive: true,
+            plugins: {
+                legend: {
+                    display: false
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    ticks: {
+                        stepSize: 1
+                    }
+                }
+            }
+        }
+    });
+
+    // Reports by Type Chart
+    const typeCtx = document.getElementById('reportsByTypeChart').getContext('2d');
+    const typeChart = new Chart(typeCtx, {
+        type: 'doughnut',
+        data: {
+            labels: [
+                {% for type in reports_by_type %}
+                    '{{ type.report_type }}'{% if not forloop.last %},{% endif %}
+                {% endfor %}
+            ],
+            datasets: [{
+                data: [
+                    {% for type in reports_by_type %}
+                        {{ type.count }}{% if not forloop.last %},{% endif %}
+                    {% endfor %}
+                ],
+                backgroundColor: [
+                    '#2e59d9',
+                    '#17a2b8',
+                    '#28a745',
+                    '#ffc107',
+                    '#fd7e14',
+                    '#dc3545'
+                ],
+                borderWidth: 0
+            }]
+        },
+        options: {
+            responsive: true,
+            plugins: {
+                legend: {
+                    position: 'right'
+                }
+            },
+            cutout: '70%'
+        }
+    });
+});
+</script>
+{% endblock %}

@@ -1,0 +1,388 @@
+<!-- templates/stores/store_list.html -->
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Store List | Prime Book{% endblock %}
+
+{% block extra_css %}
+<style>
+.action-checkbox {
+    cursor: pointer;
+}
+.bulk-actions-bar {
+    background: #f8f9fa;
+    border: 1px solid #dee2e6;
+    border-radius: 8px;
+    padding: 1rem;
+    margin-bottom: 1rem;
+    display: none;
+}
+.bulk-actions-bar.show {
+    display: block;
+}
+</style>
+{% endblock %}
+
+{% block page_header %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h1 class="h3 mb-1">Store Management</h1>
+        <p class="text-muted mb-0">Manage all stores and their settings</p>
+    </div>
+    <div class="d-flex gap-2">
+        {% if perms.stores.add_store %}
+        <a href="{% url 'stores:store_create' %}" class="btn btn-primary">
+            <i class="bi bi-plus-circle me-1"></i>Add Store
+        </a>
+        {% endif %}
+        <a href="{% url 'stores:export_data' %}" class="btn btn-outline-secondary">
+            <i class="bi bi-download me-1"></i>Export
+        </a>
+    </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<!-- Statistics Summary -->
+<div class="row mb-4">
+    <div class="col-md-2">
+        <div class="card text-center">
+            <div class="card-body py-3">
+                <h4 class="text-primary mb-1">{{ stats.total_stores }}</h4>
+                <small class="text-muted">Total</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-2">
+        <div class="card text-center">
+            <div class="card-body py-3">
+                <h4 class="text-success mb-1">{{ stats.active_stores }}</h4>
+                <small class="text-muted">Active</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-2">
+        <div class="card text-center">
+            <div class="card-body py-3">
+                <h4 class="text-info mb-1">{{ stats.efris_enabled }}</h4>
+                <small class="text-muted">EFRIS</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-2">
+        <div class="card text-center">
+            <div class="card-body py-3">
+                <h4 class="text-warning mb-1">{{ stats.has_devices }}</h4>
+                <small class="text-muted">With Devices</small>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Filters -->
+<div class="card mb-4">
+    <div class="card-body">
+        <form method="get" class="row g-3">
+            <div class="col-md-3">
+                {{ filter_form.search }}
+            </div>
+            <div class="col-md-2">
+                {{ filter_form.branch }}
+            </div>
+            <div class="col-md-2">
+                {{ filter_form.region }}
+            </div>
+            <div class="col-md-2">
+                {{ filter_form.status }}
+            </div>
+            <div class="col-md-2">
+                {{ filter_form.efris_status }}
+            </div>
+            <div class="col-md-1">
+                <button type="submit" class="btn btn-primary w-100">
+                    <i class="bi bi-search"></i>
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Bulk Actions Bar -->
+<div class="bulk-actions-bar" id="bulkActionsBar">
+    <form method="post" action="{% url 'stores:bulk_actions' %}" id="bulkActionForm">
+        {% csrf_token %}
+        <div class="row align-items-center">
+            <div class="col-md-6">
+                <span class="fw-bold">
+                    <span id="selectedCount">0</span> stores selected
+                </span>
+            </div>
+            <div class="col-md-4">
+                {{ bulk_form.action }}
+                {{ bulk_form.selected_stores }}
+            </div>
+            <div class="col-md-2">
+                <button type="submit" class="btn btn-warning w-100" id="executeBulkAction">
+                    Execute Action
+                </button>
+            </div>
+        </div>
+    </form>
+</div>
+
+<!-- Store List -->
+<div class="card">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <h5 class="card-title mb-0">
+            Stores
+            {% if stores.count %}
+                <span class="badge bg-secondary">{{ stores|length }}</span>
+            {% endif %}
+        </h5>
+        <div>
+            <input type="checkbox" class="form-check-input" id="selectAll">
+            <label for="selectAll" class="form-check-label ms-2">Select All</label>
+        </div>
+    </div>
+    <div class="card-body p-0">
+        {% if stores %}
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th width="40">
+                                <input type="checkbox" class="form-check-input" id="masterCheckbox">
+                            </th>
+                            <th>Store</th>
+                            <th>Branch</th>
+                            <th>Location</th>
+                            <th>Contact</th>
+                            <th>Status</th>
+                            <th>EFRIS</th>
+                            <th>Staff</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for store in stores %}
+                        <tr>
+                            <td>
+                                <input type="checkbox" class="form-check-input action-checkbox" value="{{ store.id }}">
+                            </td>
+                            <td>
+                                <div>
+                                    <strong>
+                                        <a href="{% url 'stores:store_detail' store.pk %}" class="text-decoration-none">
+                                            {{ store.name }}
+                                        </a>
+                                    </strong>
+                                    <small class="text-muted d-block">{{ store.code }}</small>
+                                </div>
+                            </td>
+                            <td>{{ store.branch.name|default:"-" }}</td>
+                            <td>
+                                <div>
+                                    <small class="text-muted">{{ store.region|default:"-" }}</small>
+                                    {% if store.physical_address %}
+                                        <br><small>{{ store.physical_address|truncatechars:30 }}</small>
+                                    {% endif %}
+                                </div>
+                            </td>
+                            <td>
+                                {% if store.phone %}
+                                    <small><i class="bi bi-telephone me-1"></i>{{ store.phone }}</small>
+                                {% endif %}
+                                {% if store.email %}
+                                    <br><small><i class="bi bi-envelope me-1"></i>{{ store.email }}</small>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if store.is_active %}
+                                    <span class="badge bg-success">Active</span>
+                                {% else %}
+                                    <span class="badge bg-secondary">Inactive</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if store.efris_enabled %}
+                                    <span class="badge bg-info">
+                                        <i class="bi bi-check-circle me-1"></i>Enabled
+                                    </span>
+                                {% else %}
+                                    <span class="badge bg-light text-dark">Disabled</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <span class="badge bg-light text-dark">{{ store.staff.count }}</span>
+                            </td>
+                            <td>
+                                <div class="dropdown">
+                                    <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown">
+                                        Actions
+                                    </button>
+                                    <ul class="dropdown-menu">
+                                        <li><a class="dropdown-item" href="{% url 'stores:store_detail' store.pk %}">
+                                            <i class="bi bi-eye me-2"></i>View Details
+                                        </a></li>
+                                        {% if perms.stores.change_store %}
+                                        <li><a class="dropdown-item" href="{% url 'stores:store_edit' store.pk %}">
+                                            <i class="bi bi-pencil me-2"></i>Edit
+                                        </a></li>
+                                        <li><a class="dropdown-item" href="{% url 'stores:manage_staff' store.pk %}">
+                                            <i class="bi bi-people me-2"></i>Manage Staff
+                                        </a></li>
+                                        {% endif %}
+                                        <li><hr class="dropdown-divider"></li>
+                                        {% if perms.stores.delete_store %}
+                                        <li><a class="dropdown-item text-danger" href="{% url 'stores:store_delete' store.pk %}">
+                                            <i class="bi bi-trash me-2"></i>Delete
+                                        </a></li>
+                                        {% endif %}
+                                    </ul>
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        {% else %}
+            <div class="text-center py-5">
+                <i class="bi bi-shop fs-1 text-muted"></i>
+                <h5 class="text-muted mt-3">No stores found</h5>
+                <p class="text-muted">Get started by adding your first store</p>
+                <a href="{% url 'stores:store_create' %}" class="btn btn-primary">
+                    <i class="bi bi-plus-circle me-1"></i>Add Store
+                </a>
+            </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Pagination -->
+{% if is_paginated %}
+<nav aria-label="Store pagination" class="mt-4">
+    <ul class="pagination justify-content-center">
+        {% if page_obj.has_previous %}
+            <li class="page-item">
+                <a class="page-link" href="?page=1{% if request.GET.search %}&search={{ request.GET.search }}{% endif %}">
+                    <i class="bi bi-chevron-double-left"></i>
+                </a>
+            </li>
+            <li class="page-item">
+                <a class="page-link" href="?page={{ page_obj.previous_page_number }}{% if request.GET.search %}&search={{ request.GET.search }}{% endif %}">
+                    <i class="bi bi-chevron-left"></i>
+                </a>
+            </li>
+        {% endif %}
+
+        {% for i in paginator.page_range %}
+            {% if page_obj.number == i %}
+                <li class="page-item active">
+                    <span class="page-link">{{ i }}</span>
+                </li>
+            {% elif i > page_obj.number|add:'-3' and i < page_obj.number|add:'3' %}
+                <li class="page-item">
+                    <a class="page-link" href="?page={{ i }}{% if request.GET.search %}&search={{ request.GET.search }}{% endif %}">{{ i }}</a>
+                </li>
+            {% endif %}
+        {% endfor %}
+
+        {% if page_obj.has_next %}
+            <li class="page-item">
+                <a class="page-link" href="?page={{ page_obj.next_page_number }}{% if request.GET.search %}&search={{ request.GET.search }}{% endif %}">
+                    <i class="bi bi-chevron-right"></i>
+                </a>
+            </li>
+            <li class="page-item">
+                <a class="page-link" href="?page={{ page_obj.paginator.num_pages }}{% if request.GET.search %}&search={{ request.GET.search }}{% endif %}">
+                    <i class="bi bi-chevron-double-right"></i>
+                </a>
+            </li>
+        {% endif %}
+    </ul>
+</nav>
+{% endif %}
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const masterCheckbox = document.getElementById('masterCheckbox');
+    const actionCheckboxes = document.querySelectorAll('.action-checkbox');
+    const bulkActionsBar = document.getElementById('bulkActionsBar');
+    const selectedCountSpan = document.getElementById('selectedCount');
+    const selectedStoresInput = document.getElementById('id_selected_stores');
+    const bulkActionForm = document.getElementById('bulkActionForm');
+
+    function updateBulkActions() {
+        const checkedBoxes = document.querySelectorAll('.action-checkbox:checked');
+        const selectedIds = Array.from(checkedBoxes).map(cb => cb.value);
+        
+        selectedCountSpan.textContent = checkedBoxes.length;
+        selectedStoresInput.value = JSON.stringify(selectedIds);
+        
+        if (checkedBoxes.length > 0) {
+            bulkActionsBar.classList.add('show');
+        } else {
+            bulkActionsBar.classList.remove('show');
+        }
+
+        // Update master checkbox state
+        if (checkedBoxes.length === actionCheckboxes.length) {
+            masterCheckbox.indeterminate = false;
+            masterCheckbox.checked = true;
+        } else if (checkedBoxes.length > 0) {
+            masterCheckbox.indeterminate = true;
+            masterCheckbox.checked = false;
+        } else {
+            masterCheckbox.indeterminate = false;
+            masterCheckbox.checked = false;
+        }
+    }
+
+    // Master checkbox functionality
+    masterCheckbox.addEventListener('change', function() {
+        actionCheckboxes.forEach(cb => {
+            cb.checked = this.checked;
+        });
+        updateBulkActions();
+    });
+
+    // Individual checkbox functionality
+    actionCheckboxes.forEach(cb => {
+        cb.addEventListener('change', updateBulkActions);
+    });
+
+    // Bulk action form submission
+    bulkActionForm.addEventListener('submit', function(e) {
+        const action = document.getElementById('id_action').value;
+        const checkedBoxes = document.querySelectorAll('.action-checkbox:checked');
+        
+        if (!action) {
+            e.preventDefault();
+            alert('Please select an action to perform.');
+            return;
+        }
+        
+        if (checkedBoxes.length === 0) {
+            e.preventDefault();
+            alert('Please select at least one store.');
+            return;
+        }
+
+        if (action === 'delete') {
+            if (!confirm(`Are you sure you want to delete ${checkedBoxes.length} store(s)? This action cannot be undone.`)) {
+                e.preventDefault();
+                return;
+            }
+        } else {
+            if (!confirm(`Are you sure you want to ${action} ${checkedBoxes.length} store(s)?`)) {
+                e.preventDefault();
+                return;
+            }
+        }
+    });
+});
+</script>
+{% endblock %}

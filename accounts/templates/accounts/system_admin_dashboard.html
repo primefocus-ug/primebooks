@@ -1,0 +1,465 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>System Admin Dashboard</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.0/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/chart.js/3.9.1/chart.min.css" rel="stylesheet">
+    <style>
+        .dashboard-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 2rem 0;
+            margin-bottom: 2rem;
+        }
+        .stat-card {
+            border: none;
+            border-radius: 15px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+            transition: all 0.3s ease;
+            height: 100%;
+        }
+        .stat-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 8px 30px rgba(0,0,0,0.15);
+        }
+        .stat-icon {
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.5rem;
+            margin-bottom: 1rem;
+        }
+        .stat-number {
+            font-size: 2.5rem;
+            font-weight: bold;
+            margin-bottom: 0.5rem;
+        }
+        .chart-container {
+            position: relative;
+            height: 300px;
+            margin: 20px 0;
+        }
+        .activity-item {
+            border-left: 3px solid #007bff;
+            padding: 1rem;
+            margin-bottom: 1rem;
+            background: white;
+            border-radius: 0 8px 8px 0;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .status-badge {
+            padding: 0.25rem 0.75rem;
+            border-radius: 20px;
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+        .status-active { background-color: #d4edda; color: #155724; }
+        .status-trial { background-color: #fff3cd; color: #856404; }
+        .status-expired { background-color: #f8d7da; color: #721c24; }
+        .status-suspended { background-color: #f1f3f4; color: #495057; }
+        .quick-action-btn {
+            border-radius: 12px;
+            padding: 0.75rem 1.5rem;
+            font-weight: 600;
+            transition: all 0.3s ease;
+        }
+        .quick-action-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+        }
+    </style>
+</head>
+<body class="bg-light">
+    <div class="dashboard-header">
+        <div class="container-fluid">
+            <div class="row align-items-center">
+                <div class="col-md-8">
+                    <h1 class="mb-1">
+                        <i class="fas fa-tachometer-alt me-2"></i>
+                        System Administration
+                    </h1>
+                    <p class="mb-0 opacity-75">Global platform overview and management</p>
+                </div>
+                <div class="col-md-4 text-end">
+                    <div class="d-flex gap-2 justify-content-end">
+                        <a href="{% url 'system_companies_list' %}" class="btn btn-light">
+                            <i class="fas fa-building me-1"></i> Manage Companies
+                        </a>
+                        <a href="{% url 'user_list' %}" class="btn btn-outline-light">
+                            <i class="fas fa-users me-1"></i> All Users
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="container-fluid">
+        <!-- Main Statistics -->
+        <div class="row mb-4">
+            <div class="col-xl-3 col-md-6 mb-4">
+                <div class="card stat-card">
+                    <div class="card-body text-center">
+                        <div class="stat-icon bg-primary bg-opacity-10 text-primary mx-auto">
+                            <i class="fas fa-building"></i>
+                        </div>
+                        <div class="stat-number text-primary">{{ total_companies }}</div>
+                        <div class="text-muted">Total Companies</div>
+                        <div class="mt-2">
+                            <small class="text-success">
+                                <i class="fas fa-arrow-up"></i> {{ active_companies }} active
+                            </small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="col-xl-3 col-md-6 mb-4">
+                <div class="card stat-card">
+                    <div class="card-body text-center">
+                        <div class="stat-icon bg-success bg-opacity-10 text-success mx-auto">
+                            <i class="fas fa-users"></i>
+                        </div>
+                        <div class="stat-number text-success">{{ total_users }}</div>
+                        <div class="text-muted">Total Users</div>
+                        <div class="mt-2">
+                            <small class="text-success">
+                                <i class="fas fa-user-check"></i> {{ active_users }} active
+                            </small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="col-xl-3 col-md-6 mb-4">
+                <div class="card stat-card">
+                    <div class="card-body text-center">
+                        <div class="stat-icon bg-warning bg-opacity-10 text-warning mx-auto">
+                            <i class="fas fa-clock"></i>
+                        </div>
+                        <div class="stat-number text-warning">{{ trial_companies }}</div>
+                        <div class="text-muted">Trial Companies</div>
+                        <div class="mt-2">
+                            <small class="text-warning">
+                                <i class="fas fa-hourglass-half"></i> Need attention
+                            </small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="col-xl-3 col-md-6 mb-4">
+                <div class="card stat-card">
+                    <div class="card-body text-center">
+                        <div class="stat-icon bg-danger bg-opacity-10 text-danger mx-auto">
+                            <i class="fas fa-exclamation-triangle"></i>
+                        </div>
+                        <div class="stat-number text-danger">{{ expired_companies }}</div>
+                        <div class="text-muted">Expired Companies</div>
+                        <div class="mt-2">
+                            <small class="text-danger">
+                                <i class="fas fa-times-circle"></i> Require action
+                            </small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Charts and Analytics -->
+        <div class="row mb-4">
+            <div class="col-lg-8">
+                <div class="card">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0">
+                            <i class="fas fa-chart-line me-2"></i>
+                            Subscription Plans Distribution
+                        </h5>
+                        <div class="btn-group btn-group-sm" role="group">
+                            <input type="radio" class="btn-check" name="chartType" id="chartPie" checked>
+                            <label class="btn btn-outline-primary" for="chartPie">Pie</label>
+                            <input type="radio" class="btn-check" name="chartType" id="chartBar">
+                            <label class="btn btn-outline-primary" for="chartBar">Bar</label>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <div class="chart-container">
+                            <canvas id="planChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="col-lg-4">
+                <div class="card h-100">
+                    <div class="card-header">
+                        <h5 class="mb-0">
+                            <i class="fas fa-exclamation-circle me-2 text-warning"></i>
+                            Expiring Soon
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        {% if expiring_soon %}
+                            <div class="list-group list-group-flush">
+                                {% for company in expiring_soon %}
+                                    <div class="list-group-item border-0 px-0">
+                                        <div class="d-flex justify-content-between align-items-start">
+                                            <div class="flex-grow-1">
+                                                <h6 class="mb-1">{{ company.display_name }}</h6>
+                                                <small class="text-muted">{{ company.company_id }}</small>
+                                            </div>
+                                            <div class="text-end">
+                                                <small class="text-danger fw-bold">
+                                                    {{ company.subscription_ends_at|date:"M d" }}
+                                                </small>
+                                            </div>
+                                        </div>
+                                    </div>
+                                {% endfor %}
+                            </div>
+                        {% else %}
+                            <div class="text-center text-muted">
+                                <i class="fas fa-check-circle fa-2x mb-2"></i>
+                                <p>No companies expiring soon</p>
+                            </div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Recent Activity -->
+        <div class="row">
+            <div class="col-lg-6">
+                <div class="card">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0">
+                            <i class="fas fa-building me-2"></i>
+                            Recent Companies
+                        </h5>
+                        <a href="{% url 'system_companies_list' %}" class="btn btn-sm btn-outline-primary">
+                            View All
+                        </a>
+                    </div>
+                    <div class="card-body">
+                        {% if recent_companies %}
+                            {% for company in recent_companies %}
+                                <div class="activity-item">
+                                    <div class="d-flex justify-content-between align-items-start">
+                                        <div class="flex-grow-1">
+                                            <h6 class="mb-1">{{ company.display_name }}</h6>
+                                            <div class="d-flex align-items-center mb-1">
+                                                <span class="status-badge status-{{ company.status|lower }}">
+                                                    {{ company.get_status_display }}
+                                                </span>
+                                                <small class="text-muted ms-2">{{ company.plan.display_name }}</small>
+                                            </div>
+                                            <small class="text-muted">
+                                                <i class="fas fa-user me-1"></i>
+                                                {{ company.owner.get_full_name|default:company.owner.email }}
+                                            </small>
+                                        </div>
+                                        <div class="text-end">
+                                            <small class="text-muted">{{ company.created_at|date:"M d, H:i" }}</small>
+                                        </div>
+                                    </div>
+                                </div>
+                            {% endfor %}
+                        {% else %}
+                            <div class="text-center text-muted">
+                                <i class="fas fa-building fa-2x mb-2"></i>
+                                <p>No recent companies</p>
+                            </div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+            
+            <div class="col-lg-6">
+                <div class="card">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0">
+                            <i class="fas fa-users me-2"></i>
+                            Recent Users
+                        </h5>
+                        <a href="{% url 'user_list' %}" class="btn btn-sm btn-outline-primary">
+                            View All
+                        </a>
+                    </div>
+                    <div class="card-body">
+                        {% if recent_users %}
+                            {% for user in recent_users %}
+                                <div class="activity-item">
+                                    <div class="d-flex justify-content-between align-items-start">
+                                        <div class="d-flex align-items-center flex-grow-1">
+                                            {% if user.avatar %}
+                                                <img src="{{ user.avatar.url }}" class="rounded-circle me-3" 
+                                                     width="40" height="40" alt="Avatar">
+                                            {% else %}
+                                                <div class="bg-secondary rounded-circle me-3 d-flex align-items-center justify-content-center text-white" 
+                                                     style="width: 40px; height: 40px;">
+                                                    {{ user.get_full_name|first|default:user.username|first }}
+                                                </div>
+                                            {% endif %}
+                                            <div>
+                                                <h6 class="mb-1">{{ user.get_full_name|default:user.username }}</h6>
+                                                <small class="text-muted">{{ user.email }}</small>
+                                                <div>
+                                                    <span class="badge bg-light text-dark">{{ user.get_user_type_display }}</span>
+                                                    {% if user.is_active %}
+                                                        <i class="fas fa-check-circle text-success ms-1" title="Active"></i>
+                                                    {% else %}
+                                                        <i class="fas fa-times-circle text-danger ms-1" title="Inactive"></i>
+                                                    {% endif %}
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div class="text-end">
+                                            <small class="text-muted">{{ user.date_joined|date:"M d, H:i" }}</small>
+                                        </div>
+                                    </div>
+                                </div>
+                            {% endfor %}
+                        {% else %}
+                            <div class="text-center text-muted">
+                                <i class="fas fa-users fa-2x mb-2"></i>
+                                <p>No recent users</p>
+                            </div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Quick Actions -->
+        <div class="row mt-4">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="mb-0">
+                            <i class="fas fa-bolt me-2"></i>
+                            Quick Actions
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row g-3">
+                            <div class="col-md-3">
+                                <a href="{% url 'system_companies_list' %}?status=TRIAL" class="btn btn-warning quick-action-btn w-100">
+                                    <i class="fas fa-clock me-2"></i>
+                                    Manage Trials
+                                </a>
+                            </div>
+                            <div class="col-md-3">
+                                <a href="{% url 'system_companies_list' %}?status=EXPIRED" class="btn btn-danger quick-action-btn w-100">
+                                    <i class="fas fa-exclamation-triangle me-2"></i>
+                                    Handle Expired
+                                </a>
+                            </div>
+                            <div class="col-md-3">
+                                <a href="{% url 'user_analytics' %}" class="btn btn-info quick-action-btn w-100">
+                                    <i class="fas fa-chart-bar me-2"></i>
+                                    View Analytics
+                                </a>
+                            </div>
+                            <div class="col-md-3">
+                                <a href="{% url 'export_users' %}" class="btn btn-success quick-action-btn w-100">
+                                    <i class="fas fa-download me-2"></i>
+                                    Export Data
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.0/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/chart.js/3.9.1/chart.min.js"></script>
+    
+    <script>
+        // Plan distribution chart
+        const planData = {{ plan_stats|safe }};
+        const ctx = document.getElementById('planChart').getContext('2d');
+        
+        let currentChart = null;
+        
+        function createChart(type) {
+            if (currentChart) {
+                currentChart.destroy();
+            }
+            
+            const labels = planData.map(item => item.plan__display_name || item.plan__name || 'Unknown');
+            const data = planData.map(item => item.count);
+            const colors = [
+                '#007bff', '#28a745', '#ffc107', '#dc3545', 
+                '#6f42c1', '#fd7e14', '#20c997', '#6c757d'
+            ];
+            
+            const config = {
+                type: type,
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Companies',
+                        data: data,
+                        backgroundColor: colors.slice(0, data.length),
+                        borderColor: colors.slice(0, data.length),
+                        borderWidth: 2
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: type === 'pie' ? 'right' : 'top',
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    const total = context.dataset.data.reduce((a, b) => a + b, 0);
+                                    const percentage = ((context.parsed * 100) / total).toFixed(1);
+                                    return `${context.label}: ${context.parsed} (${percentage}%)`;
+                                }
+                            }
+                        }
+                    },
+                    scales: type === 'bar' ? {
+                        y: {
+                            beginAtZero: true,
+                            ticks: {
+                                stepSize: 1
+                            }
+                        }
+                    } : {}
+                }
+            };
+            
+            currentChart = new Chart(ctx, config);
+        }
+        
+        // Initialize with pie chart
+        createChart('pie');
+        
+        // Handle chart type change
+        document.querySelectorAll('input[name="chartType"]').forEach(radio => {
+            radio.addEventListener('change', function() {
+                const chartType = this.id === 'chartPie' ? 'pie' : 'bar';
+                createChart(chartType);
+            });
+        });
+        
+        // Auto-refresh data every 5 minutes
+        setInterval(function() {
+            location.reload();
+        }, 300000);
+    </script>
+</body>
+</html>

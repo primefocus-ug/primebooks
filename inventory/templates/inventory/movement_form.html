@@ -1,0 +1,1684 @@
+{% extends 'base.html' %}
+{% load widget_tweaks %}
+
+{% block title %}
+    {% if form.instance.pk %}Edit Movement{% else %}Record Stock Movement{% endif %} - {{ company.trading_name|default:company.name }}
+{% endblock %}
+
+{% block page_title %}
+    {% if form.instance.pk %}Edit Stock Movement{% else %}Record New Stock Movement{% endif %}
+{% endblock %}
+
+{% block extra_css %}
+<link href="https://cdnjs.cloudflare.com/ajax/libs/select2/4.1.0-rc.0/css/select2.min.css" rel="stylesheet">
+<link href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/4.1.1/animate.min.css" rel="stylesheet">
+
+<style>
+    :root {
+        --primary-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        --success-gradient: linear-gradient(135deg, #84fab0 0%, #8fd3f4 100%);
+        --warning-gradient: linear-gradient(135deg, #ffecd2 0%, #fcb69f 100%);
+        --danger-gradient: linear-gradient(135deg, #ff9a9e 0%, #fecfef 100%);
+        --shadow-light: 0 2px 12px rgba(0,0,0,0.08);
+        --shadow-medium: 0 4px 20px rgba(0,0,0,0.12);
+        --shadow-heavy: 0 8px 32px rgba(0,0,0,0.16);
+        --border-radius: 16px;
+        --transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    /* Layout */
+    .movement-container {
+        max-width: 1400px;
+        margin: 0 auto;
+    }
+
+    .movement-form-card {
+        background: white;
+        border-radius: var(--border-radius);
+        box-shadow: var(--shadow-light);
+        overflow: hidden;
+        border: 1px solid rgba(0,0,0,0.05);
+    }
+
+    .form-header {
+        background: var(--primary-gradient);
+        color: white;
+        padding: 2rem;
+        position: relative;
+        overflow: hidden;
+    }
+
+    .form-header::before {
+        content: '';
+        position: absolute;
+        top: -50%;
+        right: -50%;
+        width: 100%;
+        height: 100%;
+        background: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><circle cx="50" cy="50" r="2" fill="rgba(255,255,255,0.1)"/><circle cx="20" cy="20" r="1" fill="rgba(255,255,255,0.05)"/><circle cx="80" cy="30" r="1.5" fill="rgba(255,255,255,0.1)"/></svg>');
+        animation: float 20s infinite linear;
+    }
+
+    @keyframes float {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+    }
+
+    .form-header h4 {
+        margin: 0;
+        font-weight: 600;
+        font-size: 1.5rem;
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+    }
+
+    .form-header p {
+        margin: 0.5rem 0 0 0;
+        opacity: 0.9;
+    }
+
+    /* Movement Type Selection */
+    .movement-type-section {
+        padding: 2rem;
+        background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+        border-bottom: 1px solid #e2e8f0;
+    }
+
+    .movement-types-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+        gap: 1.5rem;
+        margin-top: 1.5rem;
+    }
+
+    .movement-type-card {
+        background: white;
+        border: 3px solid #e2e8f0;
+        border-radius: var(--border-radius);
+        padding: 2rem;
+        text-align: center;
+        cursor: pointer;
+        transition: var(--transition);
+        position: relative;
+        overflow: hidden;
+    }
+
+    .movement-type-card::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: -100%;
+        width: 100%;
+        height: 100%;
+        background: linear-gradient(90deg, transparent, rgba(255,255,255,0.4), transparent);
+        transition: var(--transition);
+    }
+
+    .movement-type-card:hover::before {
+        left: 100%;
+    }
+
+    .movement-type-card:hover {
+        transform: translateY(-4px);
+        box-shadow: var(--shadow-medium);
+    }
+
+    .movement-type-card.active {
+        border-color: #667eea;
+        background: linear-gradient(135deg, #f0f4ff, #e0e7ff);
+        transform: translateY(-4px);
+        box-shadow: var(--shadow-heavy);
+    }
+
+    .movement-type-card.stock-in {
+        border-left: 6px solid #10b981;
+    }
+
+    .movement-type-card.stock-out {
+        border-left: 6px solid #ef4444;
+    }
+
+    .movement-type-card.adjustment {
+        border-left: 6px solid #3b82f6;
+    }
+
+    .movement-type-icon {
+        width: 80px;
+        height: 80px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 2rem;
+        margin: 0 auto 1.5rem;
+        transition: var(--transition);
+    }
+
+    .movement-type-card.stock-in .movement-type-icon {
+        background: linear-gradient(135deg, rgba(16, 185, 129, 0.1), rgba(16, 185, 129, 0.2));
+        color: #10b981;
+    }
+
+    .movement-type-card.stock-out .movement-type-icon {
+        background: linear-gradient(135deg, rgba(239, 68, 68, 0.1), rgba(239, 68, 68, 0.2));
+        color: #ef4444;
+    }
+
+    .movement-type-card.adjustment .movement-type-icon {
+        background: linear-gradient(135deg, rgba(59, 130, 246, 0.1), rgba(59, 130, 246, 0.2));
+        color: #3b82f6;
+    }
+
+    .movement-type-card.active .movement-type-icon {
+        transform: scale(1.1);
+        box-shadow: var(--shadow-light);
+    }
+
+    .movement-type-title {
+        font-size: 1.25rem;
+        font-weight: 700;
+        margin-bottom: 0.5rem;
+        color: #1a202c;
+    }
+
+    .movement-type-description {
+        color: #64748b;
+        font-size: 0.925rem;
+        line-height: 1.5;
+    }
+
+    .movement-type-examples {
+        margin-top: 1rem;
+        padding-top: 1rem;
+        border-top: 1px solid #f1f5f9;
+        font-size: 0.825rem;
+        color: #8b5cf6;
+        font-weight: 500;
+    }
+
+    /* Form Sections */
+    .form-content {
+        padding: 2rem;
+    }
+
+    .form-section {
+        margin-bottom: 3rem;
+    }
+
+    .section-header {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        margin-bottom: 1.5rem;
+        padding-bottom: 0.75rem;
+        border-bottom: 2px solid #f1f5f9;
+    }
+
+    .section-number {
+        width: 32px;
+        height: 32px;
+        border-radius: 50%;
+        background: var(--primary-gradient);
+        color: white;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 700;
+        font-size: 0.875rem;
+    }
+
+    .section-title {
+        font-size: 1.25rem;
+        font-weight: 700;
+        color: #1a202c;
+        margin: 0;
+    }
+
+    /* Product Selection */
+    .product-selector-card {
+        background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+        border-radius: var(--border-radius);
+        padding: 2rem;
+        border: 1px solid #e2e8f0;
+    }
+
+    .product-info-panel {
+        background: white;
+        border-radius: 12px;
+        padding: 1.5rem;
+        margin-top: 1.5rem;
+        box-shadow: var(--shadow-light);
+        border: 1px solid #f1f5f9;
+        display: none;
+    }
+
+    .product-info-panel.show {
+        display: block;
+        animation: slideDown 0.4s ease-out;
+    }
+
+    @keyframes slideDown {
+        from {
+            opacity: 0;
+            transform: translateY(-10px);
+        }
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+
+    .product-details {
+        display: flex;
+        align-items: center;
+        gap: 1.5rem;
+    }
+
+    .product-image {
+        width: 80px;
+        height: 80px;
+        border-radius: 12px;
+        object-fit: cover;
+        box-shadow: var(--shadow-light);
+    }
+
+    .product-placeholder {
+        width: 80px;
+        height: 80px;
+        border-radius: 12px;
+        background: linear-gradient(135deg, #f1f5f9, #e2e8f0);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #64748b;
+        font-size: 1.5rem;
+    }
+
+    .product-info h6 {
+        font-size: 1.125rem;
+        font-weight: 700;
+        margin: 0 0 0.5rem 0;
+        color: #1a202c;
+    }
+
+    .product-meta {
+        display: flex;
+        gap: 1.5rem;
+        font-size: 0.875rem;
+        color: #64748b;
+        margin-bottom: 1rem;
+    }
+
+    .product-meta span {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
+    .product-badges {
+        display: flex;
+        gap: 0.75rem;
+        flex-wrap: wrap;
+    }
+
+    .product-badge {
+        padding: 0.25rem 0.75rem;
+        border-radius: 20px;
+        font-size: 0.75rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.025em;
+    }
+
+    .badge-category {
+        background: rgba(59, 130, 246, 0.1);
+        color: #3b82f6;
+    }
+
+    .badge-supplier {
+        background: rgba(16, 185, 129, 0.1);
+        color: #10b981;
+    }
+
+    /* Stock Information */
+    .stock-info-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 1.5rem;
+        margin-top: 1.5rem;
+    }
+
+    .stock-info-card {
+        background: white;
+        border-radius: 12px;
+        padding: 1.5rem;
+        text-align: center;
+        box-shadow: var(--shadow-light);
+        border: 1px solid #f1f5f9;
+        transition: var(--transition);
+    }
+
+    .stock-info-card:hover {
+        transform: translateY(-2px);
+        box-shadow: var(--shadow-medium);
+    }
+
+    .stock-info-value {
+        font-size: 1.75rem;
+        font-weight: 800;
+        margin-bottom: 0.5rem;
+        color: #1a202c;
+    }
+
+    .stock-info-label {
+        font-size: 0.875rem;
+        color: #64748b;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        font-weight: 500;
+    }
+
+    .stock-level-indicator {
+        width: 100%;
+        height: 6px;
+        background: #f1f5f9;
+        border-radius: 3px;
+        margin-top: 0.75rem;
+        overflow: hidden;
+    }
+
+    .stock-level-fill {
+        height: 100%;
+        border-radius: 3px;
+        transition: var(--transition);
+    }
+
+    .level-critical { background: #ef4444; }
+    .level-low { background: #f59e0b; }
+    .level-medium { background: #06b6d4; }
+    .level-good { background: #10b981; }
+
+    /* Form Controls */
+    .form-floating {
+        position: relative;
+        margin-bottom: 1.5rem;
+    }
+
+    .form-floating .form-control,
+    .form-floating .form-select {
+        border: 2px solid #e2e8f0;
+        border-radius: 12px;
+        padding: 1rem 0.75rem 0.25rem 0.75rem;
+        height: 3.5rem;
+        font-size: 1rem;
+        transition: var(--transition);
+        background: white;
+    }
+
+    .form-floating .form-control:focus,
+    .form-floating .form-select:focus {
+        border-color: #667eea;
+        box-shadow: 0 0 0 4px rgba(102, 126, 234, 0.1);
+        outline: none;
+    }
+
+    .form-floating label {
+        padding: 0.75rem;
+        color: #64748b;
+        font-weight: 500;
+        transition: var(--transition);
+    }
+
+    .form-floating .form-control:focus ~ label,
+    .form-floating .form-control:not(:placeholder-shown) ~ label,
+    .form-floating .form-select:focus ~ label,
+    .form-floating .form-select:not([value=""]) ~ label {
+        color: #667eea;
+        font-weight: 600;
+    }
+
+    .invalid-feedback {
+        display: block;
+        width: 100%;
+        margin-top: 0.5rem;
+        font-size: 0.875rem;
+        color: #ef4444;
+        font-weight: 500;
+    }
+
+    /* Movement Details */
+    .movement-details-card {
+        background: white;
+        border-radius: var(--border-radius);
+        padding: 2rem;
+        box-shadow: var(--shadow-light);
+        border: 1px solid #f1f5f9;
+    }
+
+    .quantity-input-group {
+        position: relative;
+    }
+
+    .quantity-input {
+        font-size: 1.125rem;
+        font-weight: 600;
+        text-align: center;
+        padding: 1rem;
+        border: 3px solid #e2e8f0;
+        border-radius: 12px;
+        transition: var(--transition);
+    }
+
+    .quantity-input:focus {
+        border-color: #667eea;
+        box-shadow: 0 0 0 4px rgba(102, 126, 234, 0.1);
+    }
+
+    .quantity-buttons {
+        display: flex;
+        gap: 0.5rem;
+        margin-top: 0.75rem;
+    }
+
+    .quantity-btn {
+        flex: 1;
+        padding: 0.5rem;
+        border: 2px solid #e2e8f0;
+        border-radius: 8px;
+        background: white;
+        color: #64748b;
+        font-weight: 600;
+        transition: var(--transition);
+        cursor: pointer;
+    }
+
+    .quantity-btn:hover {
+        border-color: #667eea;
+        color: #667eea;
+        background: #f8fafc;
+    }
+
+    /* Impact Preview */
+    .impact-preview {
+        background: linear-gradient(135deg, #f0f4ff 0%, #e0e7ff 100%);
+        border-radius: 12px;
+        padding: 1.5rem;
+        margin-top: 2rem;
+        border: 1px solid #c7d2fe;
+    }
+
+    .impact-preview-header {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        margin-bottom: 1rem;
+    }
+
+    .impact-preview-icon {
+        width: 40px;
+        height: 40px;
+        border-radius: 50%;
+        background: #667eea;
+        color: white;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1rem;
+    }
+
+    .impact-preview-title {
+        font-size: 1.125rem;
+        font-weight: 700;
+        color: #1a202c;
+        margin: 0;
+    }
+
+    .impact-details {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+        gap: 1rem;
+    }
+
+    .impact-item {
+        text-align: center;
+        padding: 1rem;
+        background: rgba(255, 255, 255, 0.7);
+        border-radius: 8px;
+        border: 1px solid rgba(102, 126, 234, 0.2);
+    }
+
+    .impact-value {
+        font-size: 1.25rem;
+        font-weight: 800;
+        color: #1a202c;
+        margin-bottom: 0.25rem;
+    }
+
+    .impact-label {
+        font-size: 0.875rem;
+        color: #64748b;
+        text-transform: uppercase;
+        letter-spacing: 0.025em;
+        font-weight: 500;
+    }
+
+    .warning-indicator {
+        background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+        border: 1px solid #f59e0b;
+        color: #92400e;
+        padding: 1rem;
+        border-radius: 8px;
+        margin-top: 1rem;
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        animation: pulse-warning 2s infinite;
+    }
+
+    @keyframes pulse-warning {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.8; }
+    }
+
+    /* Action Buttons */
+    .form-actions {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 2rem;
+        background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+        border-top: 1px solid #e2e8f0;
+        margin-top: 2rem;
+    }
+
+    .btn-group-custom {
+        display: flex;
+        gap: 1rem;
+    }
+
+    .btn-custom {
+        padding: 0.875rem 2rem;
+        border-radius: 12px;
+        font-weight: 600;
+        text-decoration: none;
+        transition: var(--transition);
+        border: 2px solid;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        cursor: pointer;
+        font-size: 1rem;
+    }
+
+    .btn-primary-custom {
+        background: var(--primary-gradient);
+        border-color: #667eea;
+        color: white;
+    }
+
+    .btn-primary-custom:hover {
+        transform: translateY(-2px);
+        box-shadow: var(--shadow-medium);
+        color: white;
+    }
+
+    .btn-secondary-custom {
+        background: white;
+        border-color: #e2e8f0;
+        color: #64748b;
+    }
+
+    .btn-secondary-custom:hover {
+        border-color: #667eea;
+        color: #667eea;
+        background: #f8fafc;
+    }
+
+    /* Sidebar */
+    .sidebar {
+        background: white;
+        border-radius: var(--border-radius);
+        box-shadow: var(--shadow-light);
+        height: fit-content;
+        position: sticky;
+        top: 2rem;
+    }
+
+    .sidebar-section {
+        padding: 1.5rem;
+        border-bottom: 1px solid #f1f5f9;
+    }
+
+    .sidebar-section:last-child {
+        border-bottom: none;
+    }
+
+    .sidebar-title {
+        font-size: 1rem;
+        font-weight: 700;
+        color: #1a202c;
+        margin: 0 0 1rem 0;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
+    /* Recent Movements */
+    .movement-item {
+        display: flex;
+        align-items: center;
+        padding: 0.75rem 0;
+        border-bottom: 1px solid #f8fafc;
+        transition: var(--transition);
+    }
+
+    .movement-item:hover {
+        background: #f8fafc;
+        margin: 0 -1.5rem;
+        padding-left: 1.5rem;
+        padding-right: 1.5rem;
+        border-radius: 8px;
+    }
+
+    .movement-item:last-child {
+        border-bottom: none;
+    }
+
+    .movement-type-badge {
+        width: 32px;
+        height: 32px;
+        border-radius: 8px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 0.875rem;
+        margin-right: 0.75rem;
+        flex-shrink: 0;
+    }
+
+    .movement-type-in {
+        background: rgba(16, 185, 129, 0.1);
+        color: #10b981;
+    }
+
+    .movement-type-out {
+        background: rgba(239, 68, 68, 0.1);
+        color: #ef4444;
+    }
+
+    .movement-type-adjustment {
+        background: rgba(59, 130, 246, 0.1);
+        color: #3b82f6;
+    }
+
+    .movement-info {
+        flex: 1;
+        min-width: 0;
+    }
+
+    .movement-product {
+        font-weight: 600;
+        color: #1a202c;
+        margin: 0 0 0.25rem 0;
+        font-size: 0.875rem;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .movement-details {
+        font-size: 0.75rem;
+        color: #64748b;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
+    .movement-quantity {
+        font-weight: 700;
+        font-size: 0.875rem;
+    }
+
+    .movement-quantity.positive { color: #10b981; }
+    .movement-quantity.negative { color: #ef4444; }
+    .movement-quantity.neutral { color: #3b82f6; }
+
+    /* Help Accordion */
+    .help-accordion .accordion-item {
+        border: 1px solid #f1f5f9;
+        border-radius: 8px;
+        margin-bottom: 0.5rem;
+    }
+
+    .help-accordion .accordion-button {
+        background: #f8fafc;
+        color: #1a202c;
+        font-weight: 600;
+        padding: 0.875rem 1rem;
+        border-radius: 8px;
+        border: none;
+    }
+
+    .help-accordion .accordion-button:not(.collapsed) {
+        background: var(--primary-gradient);
+        color: white;
+    }
+
+    .help-accordion .accordion-button:focus {
+        box-shadow: none;
+    }
+
+    .help-accordion .accordion-body {
+        padding: 1rem;
+        font-size: 0.875rem;
+        line-height: 1.6;
+    }
+
+    /* Statistics Cards */
+    .stats-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+        gap: 1rem;
+        margin-top: 1rem;
+    }
+
+    .stat-card {
+        text-align: center;
+        padding: 1rem;
+        background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+        border-radius: 8px;
+        border: 1px solid #e2e8f0;
+    }
+
+    .stat-value {
+        font-size: 1.5rem;
+        font-weight: 800;
+        color: #667eea;
+        margin-bottom: 0.25rem;
+    }
+
+    .stat-label {
+        font-size: 0.75rem;
+        color: #64748b;
+        text-transform: uppercase;
+        letter-spacing: 0.025em;
+        font-weight: 500;
+    }
+
+    /* Responsive Design */
+    @media (max-width: 1200px) {
+        .movement-container {
+            padding: 0 1rem;
+        }
+
+        .sidebar {
+            position: static;
+            margin-top: 2rem;
+        }
+    }
+
+    @media (max-width: 768px) {
+        .movement-types-grid {
+            grid-template-columns: 1fr;
+        }
+
+        .form-header {
+            padding: 1.5rem;
+        }
+
+        .form-content {
+            padding: 1.5rem;
+        }
+
+        .stock-info-grid {
+            grid-template-columns: repeat(2, 1fr);
+        }
+
+        .impact-details {
+            grid-template-columns: 1fr;
+        }
+
+        .form-actions {
+            flex-direction: column;
+            gap: 1rem;
+            padding: 1.5rem;
+        }
+
+        .btn-group-custom {
+            width: 100%;
+        }
+
+        .btn-custom {
+            flex: 1;
+            justify-content: center;
+        }
+
+        .movement-type-card {
+            padding: 1.5rem;
+        }
+
+        .movement-type-icon {
+            width: 60px;
+            height: 60px;
+            font-size: 1.5rem;
+        }
+    }
+
+    @media (max-width: 576px) {
+        .stock-info-grid {
+            grid-template-columns: 1fr;
+        }
+
+        .product-details {
+            flex-direction: column;
+            text-align: center;
+        }
+
+        .product-meta {
+            justify-content: center;
+        }
+
+        .stats-grid {
+            grid-template-columns: repeat(2, 1fr);
+        }
+    }
+
+    /* Loading and Animation States */
+    .loading-state {
+        opacity: 0.6;
+        pointer-events: none;
+        position: relative;
+    }
+
+    .loading-state::after {
+        content: '';
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        width: 24px;
+        height: 24px;
+        margin: -12px 0 0 -12px;
+        border: 2px solid #667eea;
+        border-top-color: transparent;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+    }
+
+    @keyframes spin {
+        to {
+            transform: rotate(360deg);
+        }
+    }
+
+    /* Focus States and Accessibility */
+    .movement-type-card:focus {
+        outline: 3px solid rgba(102, 126, 234, 0.3);
+        outline-offset: 2px;
+    }
+
+    .btn-custom:focus {
+        outline: 3px solid rgba(102, 126, 234, 0.3);
+        outline-offset: 2px;
+    }
+
+    /* High Contrast Mode Support */
+    @media (prefers-contrast: high) {
+        .movement-type-card,
+        .form-control,
+        .form-select {
+            border-width: 3px;
+        }
+
+        .movement-type-card.active {
+            border-width: 4px;
+        }
+    }
+
+    /* Reduced Motion Support */
+    @media (prefers-reduced-motion: reduce) {
+        * {
+            animation-duration: 0.01ms !important;
+            animation-iteration-count: 1 !important;
+            transition-duration: 0.01ms !important;
+        }
+
+        .movement-type-card:hover,
+        .btn-primary-custom:hover {
+            transform: none;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="movement-container">
+    <div class="row">
+        <div class="col-lg-8">
+            <div class="movement-form-card animate__animated animate__fadeInUp">
+                <!-- Form Header -->
+                <div class="form-header">
+                    <h4>
+                        <i class="fas fa-exchange-alt"></i>
+                        {% if form.instance.pk %}Edit Stock Movement{% else %}Record New Stock Movement{% endif %}
+                    </h4>
+                    <p>Track inventory changes with detailed movement records</p>
+                </div>
+
+                <form method="post" id="movementForm" novalidate>
+                    {% csrf_token %}
+
+                    {% if form.non_field_errors %}
+                    <div class="alert alert-danger animate__animated animate__shakeX">
+                        <i class="fas fa-exclamation-triangle me-2"></i>
+                        {% for error in form.non_field_errors %}
+                            {{ error }}
+                        {% endfor %}
+                    </div>
+                    {% endif %}
+
+                    <!-- Movement Type Selection -->
+                    <div class="movement-type-section">
+                        <div class="section-header">
+                            <div class="section-number">1</div>
+                            <h5 class="section-title">Select Movement Type</h5>
+                        </div>
+
+                        <div class="movement-types-grid">
+                            <div class="movement-type-card stock-in {% if form.movement_type.value == 'PURCHASE' or form.movement_type.value == 'RETURN' or form.movement_type.value == 'TRANSFER_IN' %}active{% endif %}"
+                                 onclick="selectMovementType('in')" tabindex="0" role="button">
+                                <div class="movement-type-icon">
+                                    <i class="fas fa-plus"></i>
+                                </div>
+                                <div class="movement-type-title">Stock In</div>
+                                <div class="movement-type-description">
+                                    Add inventory to your stock levels
+                                </div>
+                                <div class="movement-type-examples">
+                                    Purchases • Returns • Transfers In
+                                </div>
+                                <input type="radio" name="movement_type" value="PURCHASE"
+                                       {% if form.movement_type.value == 'PURCHASE' %}checked{% endif %} style="display: none;">
+                            </div>
+
+                            <div class="movement-type-card stock-out {% if form.movement_type.value == 'SALE' or form.movement_type.value == 'TRANSFER_OUT' %}active{% endif %}"
+                                 onclick="selectMovementType('out')" tabindex="0" role="button">
+                                <div class="movement-type-icon">
+                                    <i class="fas fa-minus"></i>
+                                </div>
+                                <div class="movement-type-title">Stock Out</div>
+                                <div class="movement-type-description">
+                                    Remove inventory from stock levels
+                                </div>
+                                <div class="movement-type-examples">
+                                    Sales • Damages • Transfers Out
+                                </div>
+                                <input type="radio" name="movement_type" value="SALE"
+                                       {% if form.movement_type.value == 'SALE' %}checked{% endif %} style="display: none;">
+                            </div>
+
+                            <div class="movement-type-card adjustment {% if form.movement_type.value == 'ADJUSTMENT' %}active{% endif %}"
+                                 onclick="selectMovementType('adjustment')" tabindex="0" role="button">
+                                <div class="movement-type-icon">
+                                    <i class="fas fa-balance-scale"></i>
+                                </div>
+                                <div class="movement-type-title">Adjustment</div>
+                                <div class="movement-type-description">
+                                    Correct inventory discrepancies
+                                </div>
+                                <div class="movement-type-examples">
+                                    Stock Counts • Corrections • Losses
+                                </div>
+                                <input type="radio" name="movement_type" value="ADJUSTMENT"
+                                       {% if form.movement_type.value == 'ADJUSTMENT' %}checked{% endif %} style="display: none;">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="form-content">
+                        <!-- Product Selection -->
+                        <div class="form-section">
+                            <div class="section-header">
+                                <div class="section-number">2</div>
+                                <h5 class="section-title">Product & Location</h5>
+                            </div>
+
+                            <div class="product-selector-card">
+                                <div class="row g-3">
+                                    <div class="col-md-6">
+                                        <div class="form-floating">
+                                            <select class="form-select" id="id_product" name="product" required>
+                                                <option value="">Select a product...</option>
+                                                {% for product in products %}
+                                                <option value="{{ product.id }}"
+                                                        {% if form.product.value == product.id %}selected{% endif %}
+                                                        data-image="{% if product.image %}{{ product.image.url }}{% endif %}"
+                                                        data-sku="{{ product.sku }}"
+                                                        data-category="{% if product.category %}{{ product.category.name }}{% endif %}"
+                                                        data-unit="{{ product.unit_of_measure }}">
+                                                    {{ product.name }} ({{ product.sku }})
+                                                </option>
+                                                {% endfor %}
+                                            </select>
+                                            <label for="id_product">Product *</label>
+                                        </div>
+                                        {% if form.product.errors %}
+                                        <div class="invalid-feedback">
+                                            {% for error in form.product.errors %}{{ error }}{% endfor %}
+                                        </div>
+                                        {% endif %}
+                                    </div>
+
+                                    <div class="col-md-6">
+                                        <div class="form-floating">
+                                            <select class="form-select" id="id_store" name="store" required>
+                                                <option value="">Select a store...</option>
+                                                {% for store in stores %}
+                                                <option value="{{ store.id }}"
+                                                        {% if form.store.value == store.id %}selected{% endif %}>
+                                                    {{ store.name }}
+                                                </option>
+                                                {% endfor %}
+                                            </select>
+                                            <label for="id_store">Store Location *</label>
+                                        </div>
+                                        {% if form.store.errors %}
+                                        <div class="invalid-feedback">
+                                            {% for error in form.store.errors %}{{ error }}{% endfor %}
+                                        </div>
+                                        {% endif %}
+                                    </div>
+                                </div>
+
+                                <!-- Product Information Panel -->
+                                <div class="product-info-panel" id="productInfoPanel">
+                                    <div class="product-details">
+                                        <div id="productImageContainer">
+                                            <div class="product-placeholder">
+                                                <i class="fas fa-box"></i>
+                                            </div>
+                                        </div>
+                                        <div class="product-info flex-grow-1">
+                                            <h6 id="productName">Product Name</h6>
+                                            <div class="product-meta">
+                                                <span><i class="fas fa-barcode"></i><span id="productSku">—</span></span>
+                                                <span><i class="fas fa-tag"></i><span id="productCategory">—</span></span>
+                                                <span><i class="fas fa-ruler"></i><span id="productUnit">—</span></span>
+                                            </div>
+                                            <div class="product-badges">
+                                                <span class="product-badge badge-category" id="categoryBadge" style="display: none;"></span>
+                                                <span class="product-badge badge-supplier" id="supplierBadge" style="display: none;"></span>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <!-- Stock Information -->
+                                    <div class="stock-info-grid" id="stockInfoGrid" style="display: none;">
+                                        <div class="stock-info-card">
+                                            <div class="stock-info-value" id="currentStock">—</div>
+                                            <div class="stock-info-label">Current Stock</div>
+                                            <div class="stock-level-indicator">
+                                                <div class="stock-level-fill level-good" id="currentStockBar" style="width: 0%;"></div>
+                                            </div>
+                                        </div>
+                                        <div class="stock-info-card">
+                                            <div class="stock-info-value" id="reorderLevel">—</div>
+                                            <div class="stock-info-label">Reorder Level</div>
+                                        </div>
+                                        <div class="stock-info-card">
+                                            <div class="stock-info-value" id="lastMovement">—</div>
+                                            <div class="stock-info-label">Last Movement</div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Movement Details -->
+                        <div class="form-section">
+                            <div class="section-header">
+                                <div class="section-number">3</div>
+                                <h5 class="section-title">Movement Details</h5>
+                            </div>
+
+                            <div class="movement-details-card">
+                                <div class="row g-4">
+                                    <div class="col-md-6">
+                                        <div class="form-floating">
+                                            <input type="number" class="form-control quantity-input"
+                                                   id="id_quantity" name="quantity"
+                                                   value="{{ form.quantity.value|default:'' }}"
+                                                   min="0" step="0.001" required>
+                                            <label for="id_quantity">Quantity *</label>
+                                        </div>
+                                        {% if form.quantity.errors %}
+                                        <div class="invalid-feedback">
+                                            {% for error in form.quantity.errors %}{{ error }}{% endfor %}
+                                        </div>
+                                        {% endif %}
+
+                                        <div class="quantity-buttons">
+                                            <button type="button" class="quantity-btn" onclick="adjustQuantity(1)">+1</button>
+                                            <button type="button" class="quantity-btn" onclick="adjustQuantity(5)">+5</button>
+                                            <button type="button" class="quantity-btn" onclick="adjustQuantity(10)">+10</button>
+                                            <button type="button" class="quantity-btn" onclick="clearQuantity()">Clear</button>
+                                        </div>
+                                    </div>
+
+                                    <div class="col-md-6">
+                                        <div class="form-floating">
+                                            <select class="form-select" id="id_reference" name="reference">
+                                                <option value="">Select reason...</option>
+                                                <option value="purchase" {% if form.reference.value == 'purchase' %}selected{% endif %}>Purchase Order</option>
+                                                <option value="sale" {% if form.reference.value == 'sale' %}selected{% endif %}>Sales Order</option>
+                                                <option value="return" {% if form.reference.value == 'return' %}selected{% endif %}>Customer Return</option>
+                                                <option value="damage" {% if form.reference.value == 'damage' %}selected{% endif %}>Damage/Loss</option>
+                                                <option value="transfer" {% if form.reference.value == 'transfer' %}selected{% endif %}>Store Transfer</option>
+                                                <option value="adjustment" {% if form.reference.value == 'adjustment' %}selected{% endif %}>Stock Count Adjustment</option>
+                                                <option value="other" {% if form.reference.value == 'other' %}selected{% endif %}>Other</option>
+                                            </select>
+                                            <label for="id_reference">Movement Reason *</label>
+                                        </div>
+                                        {% if form.reference.errors %}
+                                        <div class="invalid-feedback">
+                                            {% for error in form.reference.errors %}{{ error }}{% endfor %}
+                                        </div>
+                                        {% endif %}
+                                    </div>
+
+                                    <div class="col-12">
+                                        <div class="form-floating">
+                                            <textarea class="form-control" id="id_notes" name="notes"
+                                                      style="height: 100px">{{ form.notes.value|default:'' }}</textarea>
+                                            <label for="id_notes">Additional Notes</label>
+                                        </div>
+                                        {% if form.notes.errors %}
+                                        <div class="invalid-feedback">
+                                            {% for error in form.notes.errors %}{{ error }}{% endfor %}
+                                        </div>
+                                        {% endif %}
+                                    </div>
+                                </div>
+
+                                <!-- Impact Preview -->
+                                <div class="impact-preview" id="impactPreview" style="display: none;">
+                                    <div class="impact-preview-header">
+                                        <div class="impact-preview-icon">
+                                            <i class="fas fa-calculator"></i>
+                                        </div>
+                                        <h6 class="impact-preview-title">Movement Impact</h6>
+                                    </div>
+
+                                    <div class="impact-details">
+                                        <div class="impact-item">
+                                            <div class="impact-value" id="newStockLevel">—</div>
+                                            <div class="impact-label">New Stock Level</div>
+                                        </div>
+                                        <div class="impact-item">
+                                            <div class="impact-value" id="stockChange">—</div>
+                                            <div class="impact-label">Change Amount</div>
+                                        </div>
+                                        <div class="impact-item">
+                                            <div class="impact-value" id="valueImpact">—</div>
+                                            <div class="impact-label">Value Impact</div>
+                                        </div>
+                                        <div class="impact-item">
+                                            <div class="impact-value" id="stockStatus">—</div>
+                                            <div class="impact-label">Stock Status</div>
+                                        </div>
+                                    </div>
+
+                                    <!-- Warning for critical stock levels -->
+                                    <div class="warning-indicator" id="stockWarning" style="display: none;">
+                                        <i class="fas fa-exclamation-triangle"></i>
+                                        <div>
+                                            <strong>Warning:</strong> This movement will result in critically low stock levels.
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Form Actions -->
+                    <div class="form-actions">
+                        <div class="btn-group-custom">
+                            {% if perms.inventory.view_stockmovement %}
+                            <a href="{% url 'inventory:movement_list' %}" class="btn-custom btn-secondary-custom">
+                                <i class="fas fa-times"></i>
+                                Cancel
+                            </a>
+                            {% endif %}
+                            <button type="submit" class="btn-custom btn-primary-custom" id="submitBtn">
+                                <i class="fas fa-save"></i>
+                                {% if form.instance.pk %}Update Movement{% else %}Record Movement{% endif %}
+                            </button>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- Sidebar -->
+        <div class="col-lg-4">
+            <div class="sidebar">
+                <!-- Statistics -->
+                <div class="sidebar-section">
+                    <h6 class="sidebar-title">
+                        <i class="fas fa-chart-bar"></i>
+                        Today's Activity
+                    </h6>
+                    <div class="stats-grid">
+                        <div class="stat-card">
+                            <div class="stat-value">{{ movement_stats.today_movements|default:0 }}</div>
+                            <div class="stat-label">Movements</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-value">{{ movement_stats.week_movements|default:0 }}</div>
+                            <div class="stat-label">This Week</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Recent Movements -->
+                <div class="sidebar-section">
+                    <h6 class="sidebar-title">
+                        <i class="fas fa-clock"></i>
+                        Recent Movements
+                    </h6>
+                    {% for movement in recent_movements %}
+                    <div class="movement-item">
+                        <div class="movement-type-badge {% if movement.movement_type == 'PURCHASE' or movement.movement_type == 'RETURN' %}movement-type-in{% elif movement.movement_type == 'SALE' %}movement-type-out{% else %}movement-type-adjustment{% endif %}">
+                            {% if movement.movement_type == 'PURCHASE' or movement.movement_type == 'RETURN' %}
+                                <i class="fas fa-plus"></i>
+                            {% elif movement.movement_type == 'SALE' %}
+                                <i class="fas fa-minus"></i>
+                            {% else %}
+                                <i class="fas fa-balance-scale"></i>
+                            {% endif %}
+                        </div>
+                        <div class="movement-info">
+                            <div class="movement-product">{{ movement.product.name }}</div>
+                            <div class="movement-details">
+                                <span class="movement-quantity {% if movement.movement_type == 'PURCHASE' or movement.movement_type == 'RETURN' %}positive{% elif movement.movement_type == 'SALE' %}negative{% else %}neutral{% endif %}">
+                                    {% if movement.movement_type == 'PURCHASE' or movement.movement_type == 'RETURN' %}+{% elif movement.movement_type == 'SALE' %}-{% endif %}{{ movement.quantity }}
+                                </span>
+                                <span>•</span>
+                                <span>{{ movement.store.name }}</span>
+                                <span>•</span>
+                                <span>{{ movement.created_at|timesince }} ago</span>
+                            </div>
+                        </div>
+                    </div>
+                    {% empty %}
+                    <div class="text-muted text-center py-3">
+                        <i class="fas fa-inbox"></i>
+                        <br>No recent movements
+                    </div>
+                    {% endfor %}
+                </div>
+
+                <!-- Help Section -->
+                <div class="sidebar-section">
+                    <h6 class="sidebar-title">
+                        <i class="fas fa-question-circle"></i>
+                        Quick Help
+                    </h6>
+                    <div class="help-accordion accordion" id="helpAccordion">
+                        <div class="accordion-item">
+                            <h6 class="accordion-header" id="helpMovementTypes">
+                                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse"
+                                        data-bs-target="#collapseMovementTypes" aria-expanded="false">
+                                    Movement Types
+                                </button>
+                            </h6>
+                            <div id="collapseMovementTypes" class="accordion-collapse collapse"
+                                 data-bs-parent="#helpAccordion">
+                                <div class="accordion-body">
+                                    <strong>Stock In:</strong> Use for purchases, returns, and transfers into the store.<br>
+                                    <strong>Stock Out:</strong> Use for sales, damages, and transfers out of the store.<br>
+                                    <strong>Adjustment:</strong> Use for stock count corrections and discrepancies.
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="accordion-item">
+                            <h6 class="accordion-header" id="helpQuantity">
+                                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse"
+                                        data-bs-target="#collapseQuantity" aria-expanded="false">
+                                    Quantity Tips
+                                </button>
+                            </h6>
+                            <div id="collapseQuantity" class="accordion-collapse collapse"
+                                 data-bs-parent="#helpAccordion">
+                                <div class="accordion-body">
+                                    Enter the exact quantity being moved. Use decimal values for partial units when applicable.
+                                    The system will automatically update stock levels based on the movement type.
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="accordion-item">
+                            <h6 class="accordion-header" id="helpReasons">
+                                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse"
+                                        data-bs-target="#collapseReasons" aria-expanded="false">
+                                    Movement Reasons
+                                </button>
+                            </h6>
+                            <div id="collapseReasons" class="accordion-collapse collapse"
+                                 data-bs-parent="#helpAccordion">
+                                <div class="accordion-body">
+                                    Select the appropriate reason to help with reporting and auditing.
+                                    Add detailed notes for complex movements or adjustments.
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/select2/4.1.0-rc.0/js/select2.min.js"></script>
+
+<script>
+    let currentStockData = null;
+
+    document.addEventListener('DOMContentLoaded', function() {
+        // Initialize Select2 for better dropdowns
+        $('#id_product').select2({
+            placeholder: 'Search for a product...',
+            allowClear: true,
+            width: '100%'
+        });
+
+        $('#id_store').select2({
+            placeholder: 'Select a store...',
+            allowClear: true,
+            width: '100%'
+        });
+
+        // Event listeners
+        document.getElementById('id_product').addEventListener('change', handleProductChange);
+        document.getElementById('id_store').addEventListener('change', handleStoreChange);
+        document.getElementById('id_quantity').addEventListener('input', updateImpactPreview);
+        document.getElementById('id_reference').addEventListener('change', updateImpactPreview);
+
+        // Initialize form state
+        if (document.getElementById('id_product').value && document.getElementById('id_store').value) {
+            loadStockData();
+        }
+    });
+
+    function selectMovementType(type) {
+        // Remove active class from all cards
+        document.querySelectorAll('.movement-type-card').forEach(card => {
+            card.classList.remove('active');
+        });
+
+        // Add active class to selected card
+        const selectedCard = event.target.closest('.movement-type-card');
+        selectedCard.classList.add('active');
+
+        // Update radio button value
+        let movementType = '';
+        if (type === 'in') {
+            movementType = 'PURCHASE';
+        } else if (type === 'out') {
+            movementType = 'SALE';
+        } else if (type === 'adjustment') {
+            movementType = 'ADJUSTMENT';
+        }
+
+        const radioButton = selectedCard.querySelector('input[type="radio"]');
+        radioButton.checked = true;
+        radioButton.value = movementType;
+
+        // Update the form field name
+        radioButton.name = 'movement_type';
+
+        updateImpactPreview();
+    }
+
+    function handleProductChange() {
+        const productSelect = document.getElementById('id_product');
+        const selectedOption = productSelect.options[productSelect.selectedIndex];
+
+        if (selectedOption.value) {
+            // Update product info panel
+            updateProductInfo(selectedOption);
+
+            // Load stock data if store is also selected
+            if (document.getElementById('id_store').value) {
+                loadStockData();
+            }
+        } else {
+            hideProductInfo();
+        }
+    }
+
+    function handleStoreChange() {
+        if (document.getElementById('id_product').value && document.getElementById('id_store').value) {
+            loadStockData();
+        } else {
+            hideStockInfo();
+        }
+    }
+
+    function updateProductInfo(option) {
+        const panel = document.getElementById('productInfoPanel');
+        const imageContainer = document.getElementById('productImageContainer');
+
+        // Update product name
+        document.getElementById('productName').textContent = option.textContent.split(' (')[0];
+
+        // Update product meta
+        document.getElementById('productSku').textContent = option.dataset.sku || '—';
+        document.getElementById('productCategory').textContent = option.dataset.category || '—';
+        document.getElementById('productUnit').textContent = option.dataset.unit || '—';
+
+        // Update product image
+        if (option.dataset.image) {
+            imageContainer.innerHTML = `<img src="${option.dataset.image}" class="product-image" alt="Product Image">`;
+        } else {
+            imageContainer.innerHTML = '<div class="product-placeholder"><i class="fas fa-box"></i></div>';
+        }
+
+        // Update badges
+        const categoryBadge = document.getElementById('categoryBadge');
+        if (option.dataset.category) {
+            categoryBadge.textContent = option.dataset.category;
+            categoryBadge.style.display = 'inline-block';
+        } else {
+            categoryBadge.style.display = 'none';
+        }
+
+        // Show product panel
+        panel.classList.add('show');
+    }
+
+    function hideProductInfo() {
+        document.getElementById('productInfoPanel').classList.remove('show');
+        hideStockInfo();
+    }
+
+    function hideStockInfo() {
+        document.getElementById('stockInfoGrid').style.display = 'none';
+        currentStockData = null;
+        updateImpactPreview();
+    }
+
+    async function loadStockData() {
+        const productId = document.getElementById('id_product').value;
+        const storeId = document.getElementById('id_store').value;
+
+        if (!productId || !storeId) return;
+
+        try {
+            const response = await fetch(`/inventory/api/stock/?product=${productId}&store=${storeId}`);
+            const data = await response.json();
+
+            if (data.results && data.results.length > 0) {
+                currentStockData = data.results[0];
+                updateStockInfo();
+            } else {
+                // No existing stock record
+                currentStockData = {
+                    quantity: 0,
+                    reorder_level: 0,
+                    product_name: document.getElementById('productName').textContent,
+                    store_name: document.getElementById('id_store').options[document.getElementById('id_store').selectedIndex].text
+                };
+                updateStockInfo();
+            }
+        } catch (error) {
+            console.error('Error loading stock data:', error);
+            currentStockData = {
+                quantity: 0,
+                reorder_level: 0,
+                product_name: document.getElementById('productName').textContent,
+                store_name: document.getElementById('id_store').options[document.getElementById('id_store').selectedIndex].text
+            };
+            updateStockInfo();
+        }
+    }
+
+    function updateStockInfo() {
+        if (!currentStockData) return;
+
+        // Update stock values
+        document.getElementById('currentStock').textContent = currentStockData.quantity.toFixed(2);
+        document.getElementById('reorderLevel').textContent = currentStockData.reorder_level.toFixed(2);
+        document.getElementById('lastMovement').textContent = '—'; // Would need API enhancement
+
+        // Update stock level indicator
+        const currentStockBar = document.getElementById('currentStockBar');
+        const percentage = currentStockData.reorder_level > 0
+            ? Math.min((currentStockData.quantity / (currentStockData.reorder_level * 2)) * 100, 100)
+            : (currentStockData.quantity > 0 ? 100 : 0);
+
+        currentStockBar.style.width = percentage + '%';
+
+        // Update color based on stock level
+        currentStockBar.className = 'stock-level-fill';
+        if (currentStockData.quantity === 0) {
+            currentStockBar.classList.add('level-critical');
+        } else if (currentStockData.quantity <= currentStockData.reorder_level) {
+            currentStockBar.classList.add('level-low');
+        } else if (currentStockData.quantity <= currentStockData.reorder_level * 2) {
+            currentStockBar.classList.add('level-medium');
+        } else {
+            currentStockBar.classList.add('level-good');
+        }
+
+        // Show stock info grid
+        document.getElementById('stockInfoGrid').style.display = 'grid';
+
+        updateImpactPreview();
+    }
+
+    function updateImpactPreview() {
+        const quantity = parseFloat(document.getElementById('id_quantity').value) || 0;
+        const movementType = getSelectedMovementType();
+
+        if (!currentStockData || !quantity || !movementType) {
+            document.getElementById('impactPreview').style.display = 'none';
+            return;
+        }
+
+        let stockChange = 0;
+        let newStockLevel = currentStockData.quantity;
+
+        // Calculate stock change based on movement type
+        if (movementType === 'PURCHASE' || movementType === 'RETURN' || movementType === 'TRANSFER_IN') {
+            stockChange = quantity;
+            newStockLevel += quantity;
+        } else if (movementType === 'SALE' || movementType === 'TRANSFER_OUT') {
+            stockChange = -quantity;
+            newStockLevel -= quantity;
+        } else if (movementType === 'ADJUSTMENT') {
+            stockChange = quantity - currentStockData.quantity;
+            newStockLevel = quantity;
+        }
+
+        // Update impact preview
+        document.getElementById('newStockLevel').textContent = newStockLevel.toFixed(2);
+        document.getElementById('stockChange').textContent = (stockChange >= 0 ? '+' : '') + stockChange.toFixed(2);
+
+        // Calculate value impact (would need product price data)
+        document.getElementById('valueImpact').textContent = '—';
+
+        // Update stock status
+        let status = 'Good';
+        let statusClass = 'text-success';
+
+        if (newStockLevel === 0) {
+            status = 'Out of Stock';
+            statusClass = 'text-danger';
+        } else if (newStockLevel < 0) {
+            status = 'Negative Stock!';
+            statusClass = 'text-danger';
+        } else if (newStockLevel <= currentStockData.reorder_level) {
+            status = 'Low Stock';
+            statusClass = 'text-warning';
+        }
+
+        const statusElement = document.getElementById('stockStatus');
+        statusElement.textContent = status;
+        statusElement.className = 'impact-value ' + statusClass;
+
+        // Show/hide warning
+        const warning = document.getElementById('stockWarning');
+        if (newStockLevel < 0 || (newStockLevel === 0 && stockChange < 0)) {
+            warning.style.display = 'flex';
+        } else {
+            warning.style.display = 'none';
+        }
+
+        // Show impact preview
+        document.getElementById('impactPreview').style.display = 'block';
+    }
+
+    function getSelectedMovementType() {
+        const checkedRadio = document.querySelector('input[name="movement_type"]:checked');
+        return checkedRadio ? checkedRadio.value : null;
+    }
+
+    function adjustQuantity(amount) {
+        const quantityInput = document.getElementById('id_quantity');
+        const currentValue = parseFloat(quantityInput.value) || 0;
+        quantityInput.value = (currentValue + amount).toFixed(3);
+        updateImpactPreview();
+    }
+
+    function clearQuantity() {
+        document.getElementById('id_quantity').value = '';
+        updateImpactPreview();
+    }
+
+    // Form submission handling
+    document.getElementById('movementForm').addEventListener('submit', function(e) {
+        const submitBtn = document.getElementById('submitBtn');
+        submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Processing...';
+        submitBtn.disabled = true;
+
+        // Add loading state to form
+        document.querySelector('.movement-form-card').classList.add('loading-state');
+    });
+
+    // Handle keyboard navigation for movement type cards
+    document.querySelectorAll('.movement-type-card').forEach(card => {
+        card.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                const type = this.classList.contains('stock-in') ? 'in' :
+                            this.classList.contains('stock-out') ? 'out' : 'adjustment';
+                selectMovementType(type);
+            }
+        });
+    });
+</script>
+{% endblock %}

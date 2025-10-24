@@ -1,0 +1,466 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}{{ company.trading_name|default:company.name }}{{ title }} - {{ block.super }}{% endblock %}
+
+{% block breadcrumb %}
+<nav aria-label="breadcrumb">
+    <ol class="breadcrumb mb-0">
+        {% if perms.accounts.view_customuser %}
+        <li class="breadcrumb-item"><a href="{% url 'user_dashboard' %}">Dashboard</a></li>
+        {% endif %}
+        {% if perms.auth.view_group %}
+        <li class="breadcrumb-item"><a href="{% url 'role_list' %}">Roles</a></li>
+        {% if role %}
+        <li class="breadcrumb-item"><a href="{% url 'role_detail' role.pk %}">{{ role.group.name }}</a></li>
+        {% endif %}
+        <li class="breadcrumb-item active">Edit</li>
+        {% else %}
+        <li class="breadcrumb-item active">Create</li>
+        {% endif %}
+    </ol>
+</nav>
+{% endblock %}
+
+{% block page_header %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h1 class="h3 mb-0">{{ title }}</h1>
+        <p class="text-muted mb-0">
+            {% if role %}
+            Modify role settings and permissions
+            {% else %}
+            Create a new role with specific permissions
+            {% endif %}
+        </p>
+    </div>
+    <div>
+        {% if role %}
+        <a href="{% url 'role_detail' role.pk %}" class="btn btn-outline-secondary">
+            <i class="bi bi-arrow-left me-2"></i>Back to Role
+        </a>
+        {% else %}
+        <a href="{% url 'role_list' %}" class="btn btn-outline-secondary">
+            <i class="bi bi-arrow-left me-2"></i>Back to Roles
+        </a>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<form method="post" novalidate>
+    {% csrf_token %}
+
+    <div class="row">
+        <!-- Main Form -->
+        <div class="col-lg-8">
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">
+                        <i class="bi bi-info-circle me-2"></i>Basic Information
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label for="{{ form.name.id_for_label }}" class="form-label">
+                                {{ form.name.label }}
+                                <span class="text-danger">*</span>
+                            </label>
+                            {{ form.name }}
+                            {% if form.name.errors %}
+                                <div class="invalid-feedback d-block">
+                                    {{ form.name.errors.0 }}
+                                </div>
+                            {% endif %}
+                            {% if form.name.help_text %}
+                                <div class="form-text">{{ form.name.help_text }}</div>
+                            {% endif %}
+                        </div>
+
+                        <div class="col-md-6 mb-3">
+                            <label for="{{ form.company.id_for_label }}" class="form-label">
+                                {{ form.company.label }}
+                            </label>
+                            {{ form.company }}
+                            {% if form.company.errors %}
+                                <div class="invalid-feedback d-block">
+                                    {{ form.company.errors.0 }}
+                                </div>
+                            {% endif %}
+                            {% if form.company.help_text %}
+                                <div class="form-text">{{ form.company.help_text }}</div>
+                            {% endif %}
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="{{ form.description.id_for_label }}" class="form-label">
+                            {{ form.description.label }}
+                        </label>
+                        {{ form.description }}
+                        {% if form.description.errors %}
+                            <div class="invalid-feedback d-block">
+                                {{ form.description.errors.0 }}
+                            </div>
+                        {% endif %}
+                        {% if form.description.help_text %}
+                            <div class="form-text">{{ form.description.help_text }}</div>
+                        {% endif %}
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-4 mb-3">
+                            <label for="{{ form.priority.id_for_label }}" class="form-label">
+                                {{ form.priority.label }}
+                            </label>
+                            {{ form.priority }}
+                            {% if form.priority.errors %}
+                                <div class="invalid-feedback d-block">
+                                    {{ form.priority.errors.0 }}
+                                </div>
+                            {% endif %}
+                            {% if form.priority.help_text %}
+                                <div class="form-text">{{ form.priority.help_text }}</div>
+                            {% endif %}
+                        </div>
+
+                        <div class="col-md-4 mb-3">
+                            <label for="{{ form.color_code.id_for_label }}" class="form-label">
+                                {{ form.color_code.label }}
+                            </label>
+                            <div class="d-flex align-items-center">
+                                {{ form.color_code }}
+                                <div id="color-preview" class="rounded ms-2" style="width: 30px; height: 30px; border: 1px solid #dee2e6;"></div>
+                            </div>
+                            {% if form.color_code.errors %}
+                                <div class="invalid-feedback d-block">
+                                    {{ form.color_code.errors.0 }}
+                                </div>
+                            {% endif %}
+                            {% if form.color_code.help_text %}
+                                <div class="form-text">{{ form.color_code.help_text }}</div>
+                            {% endif %}
+                        </div>
+
+                        <div class="col-md-4 mb-3">
+                            <label for="{{ form.max_users.id_for_label }}" class="form-label">
+                                {{ form.max_users.label }}
+                            </label>
+                            {{ form.max_users }}
+                            {% if form.max_users.errors %}
+                                <div class="invalid-feedback d-block">
+                                    {{ form.max_users.errors.0 }}
+                                </div>
+                            {% endif %}
+                            {% if form.max_users.help_text %}
+                                <div class="form-text">{{ form.max_users.help_text }}</div>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Permissions Section -->
+            <div class="card mb-4">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="card-title mb-0">
+                        <i class="bi bi-shield-check me-2"></i>Permissions
+                    </h5>
+                    <div class="btn-group btn-group-sm">
+                        <button type="button" class="btn btn-outline-secondary" onclick="selectAllPermissions()">
+                            Select All
+                        </button>
+                        <button type="button" class="btn btn-outline-secondary" onclick="clearAllPermissions()">
+                            Clear All
+                        </button>
+                    </div>
+                </div>
+                <div class="card-body">
+                    {% if form.grouped_permissions %}
+                    <div class="accordion" id="permissionsAccordion">
+                        {% for app_name, permissions in form.grouped_permissions.items %}
+                        <div class="accordion-item">
+                            <h2 class="accordion-header">
+                                <button class="accordion-button {% if not forloop.first %}collapsed{% endif %}"
+                                        type="button"
+                                        data-bs-toggle="collapse"
+                                        data-bs-target="#permissions{{ forloop.counter }}"
+                                        aria-expanded="{% if forloop.first %}true{% else %}false{% endif %}">
+                                    <div class="d-flex justify-content-between align-items-center w-100 me-3">
+                                        <span><strong>{{ app_name }}</strong></span>
+                                        <span class="badge bg-secondary">{{ permissions|length }}</span>
+                                    </div>
+                                </button>
+                            </h2>
+                            <div id="permissions{{ forloop.counter }}"
+                                 class="accordion-collapse collapse {% if forloop.first %}show{% endif %}"
+                                 data-bs-parent="#permissionsAccordion">
+                                <div class="accordion-body">
+                                    <div class="mb-3">
+                                        <div class="form-check">
+                                            <input class="form-check-input app-select-all"
+                                                   type="checkbox"
+                                                   id="select-all-{{ forloop.counter }}"
+                                                   data-app="{{ forloop.counter }}">
+                                            <label class="form-check-label fw-bold" for="select-all-{{ forloop.counter }}">
+                                                Select All {{ app_name }}
+                                            </label>
+                                        </div>
+                                        <hr>
+                                    </div>
+
+                                    <div class="row">
+                                        {% for permission in permissions %}
+                                        <div class="col-md-6 col-lg-4 mb-2">
+                                            <div class="form-check">
+                                                <input class="form-check-input permission-checkbox app-{{ forloop.parentloop.counter }}"
+                                                       type="checkbox"
+                                                       name="permissions"
+                                                       value="{{ permission.pk }}"
+                                                       id="permission_{{ permission.pk }}"
+                                                       {% if permission in form.permissions.value %}checked{% endif %}>
+                                                <label class="form-check-label" for="permission_{{ permission.pk }}">
+                                                    <div>
+                                                        <div class="fw-medium">{{ permission.name }}</div>
+                                                        <small class="text-muted">{{ permission.codename }}</small>
+                                                    </div>
+                                                </label>
+                                            </div>
+                                        </div>
+                                        {% endfor %}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    {% else %}
+                    <p class="text-muted">No permissions available.</p>
+                    {% endif %}
+
+                    {% if form.permissions.errors %}
+                        <div class="alert alert-danger mt-3">
+                            {{ form.permissions.errors.0 }}
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Sidebar -->
+        <div class="col-lg-4">
+            <!-- Role Settings -->
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h6 class="card-title mb-0">
+                        <i class="bi bi-gear me-2"></i>Role Settings
+                    </h6>
+                </div>
+                <div class="card-body">
+                    <div class="mb-3">
+                        <div class="form-check form-switch">
+                            {{ form.is_active }}
+                            <label class="form-check-label" for="{{ form.is_active.id_for_label }}">
+                                {{ form.is_active.label }}
+                            </label>
+                        </div>
+                        {% if form.is_active.help_text %}
+                            <div class="form-text">{{ form.is_active.help_text }}</div>
+                        {% endif %}
+                        {% if form.is_active.errors %}
+                            <div class="text-danger small mt-1">{{ form.is_active.errors.0 }}</div>
+                        {% endif %}
+                    </div>
+
+                    {% if user.is_superuser or perms.accounts.can_manage_system_roles %}
+                    <div class="mb-3">
+                        <div class="form-check form-switch">
+                            {{ form.is_system_role }}
+                            <label class="form-check-label" for="{{ form.is_system_role.id_for_label }}">
+                                {{ form.is_system_role.label }}
+                            </label>
+                        </div>
+                        {% if form.is_system_role.help_text %}
+                            <div class="form-text">{{ form.is_system_role.help_text }}</div>
+                        {% endif %}
+                        {% if form.is_system_role.errors %}
+                            <div class="text-danger small mt-1">{{ form.is_system_role.errors.0 }}</div>
+                        {% endif %}
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+
+            <!-- Form Actions -->
+            <div class="card">
+                <div class="card-body">
+                    <div class="d-grid gap-2">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-check-lg me-2"></i>{{ submit_text }}
+                        </button>
+                        {% if role %}
+                        {% if perms.auth.view_group %}
+                        <a href="{% url 'role_detail' role.pk %}" class="btn btn-outline-secondary">
+                            <i class="bi bi-x-lg me-2"></i>Cancel
+                        </a>
+                        {% else %}
+                        <a href="{% url 'role_list' %}" class="btn btn-outline-secondary">
+                            <i class="bi bi-x-lg me-2"></i>Cancel
+                        </a>
+                        {% endif %}
+                        {% endif %}
+                    </div>
+
+                    {% if role %}
+                    <hr class="my-3">
+                    <div class="text-center">
+                        <small class="text-muted">
+                            Role created {{ role.created_at|date:"M d, Y" }}
+                            {% if role.created_by %}
+                            by {{ role.created_by.get_full_name|default:role.created_by.username }}
+                            {% endif %}
+                        </small>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+
+            {% if role and role.user_count > 0 %}
+            <!-- Impact Warning -->
+            <div class="card border-warning mt-3">
+                <div class="card-header bg-warning bg-opacity-10">
+                    <h6 class="card-title mb-0 text-warning">
+                        <i class="bi bi-exclamation-triangle me-2"></i>Impact Notice
+                    </h6>
+                </div>
+                <div class="card-body">
+                    <p class="small mb-0">
+                        This role is currently assigned to <strong>{{ role.user_count }}</strong> user(s).
+                        Changes to permissions will immediately affect all assigned users.
+                    </p>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Form Errors -->
+    {% if form.non_field_errors %}
+    <div class="alert alert-danger">
+        <h6><i class="bi bi-exclamation-triangle me-2"></i>Please correct the following errors:</h6>
+        {% for error in form.non_field_errors %}
+        <div>{{ error }}</div>
+        {% endfor %}
+    </div>
+    {% endif %}
+</form>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Initialize tooltips
+    var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+    var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
+        return new bootstrap.Tooltip(tooltipTriggerEl);
+    });
+
+    // Color preview update
+    const colorInput = document.getElementById('{{ form.color_code.id_for_label }}');
+    const colorPreview = document.getElementById('color-preview');
+
+    if (colorInput && colorPreview) {
+        function updateColorPreview() {
+            colorPreview.style.backgroundColor = colorInput.value;
+        }
+
+        // Initialize preview
+        updateColorPreview();
+
+        // Update on change
+        colorInput.addEventListener('input', updateColorPreview);
+        colorInput.addEventListener('change', updateColorPreview);
+    }
+
+    // App-level select all functionality
+    document.querySelectorAll('.app-select-all').forEach(function(checkbox) {
+        checkbox.addEventListener('change', function() {
+            const appNumber = this.getAttribute('data-app');
+            const appCheckboxes = document.querySelectorAll('.app-' + appNumber);
+
+            appCheckboxes.forEach(function(cb) {
+                cb.checked = checkbox.checked;
+            });
+        });
+    });
+
+    // Update app-level checkbox when individual permissions change
+    document.querySelectorAll('.permission-checkbox').forEach(function(checkbox) {
+        checkbox.addEventListener('change', function() {
+            const classes = this.className.split(' ');
+            let appClass = null;
+
+            classes.forEach(function(cls) {
+                if (cls.startsWith('app-')) {
+                    appClass = cls;
+                }
+            });
+
+            if (appClass) {
+                const appNumber = appClass.split('-')[1];
+                const appSelectAll = document.getElementById('select-all-' + appNumber);
+                const appCheckboxes = document.querySelectorAll('.' + appClass);
+                const checkedCount = document.querySelectorAll('.' + appClass + ':checked').length;
+
+                if (appSelectAll) {
+                    appSelectAll.checked = checkedCount === appCheckboxes.length;
+                    appSelectAll.indeterminate = checkedCount > 0 && checkedCount < appCheckboxes.length;
+                }
+            }
+        });
+
+        // Trigger change to set initial state
+        checkbox.dispatchEvent(new Event('change'));
+    });
+});
+
+// Global permission functions
+function selectAllPermissions() {
+    document.querySelectorAll('.permission-checkbox').forEach(function(cb) {
+        cb.checked = true;
+    });
+
+    document.querySelectorAll('.app-select-all').forEach(function(cb) {
+        cb.checked = true;
+        cb.indeterminate = false;
+    });
+}
+
+function clearAllPermissions() {
+    document.querySelectorAll('.permission-checkbox').forEach(function(cb) {
+        cb.checked = false;
+    });
+
+    document.querySelectorAll('.app-select-all').forEach(function(cb) {
+        cb.checked = false;
+        cb.indeterminate = false;
+    });
+}
+
+// Form validation
+document.querySelector('form').addEventListener('submit', function(e) {
+    const nameInput = document.getElementById('{{ form.name.id_for_label }}');
+
+    if (!nameInput.value.trim()) {
+        e.preventDefault();
+        nameInput.focus();
+        alert('Role name is required.');
+        return false;
+    }
+
+    // Add any other validation as needed
+});
+</script>
+{% endblock %}

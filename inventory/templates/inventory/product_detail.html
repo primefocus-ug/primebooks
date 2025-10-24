@@ -1,0 +1,1151 @@
+{% extends 'base.html' %}
+{% load i18n %}
+
+{% block title %}{{ product.name }} - {% trans "Product Details" %} | {{ company.trading_name|default:company.name }}{% endblock %}
+
+{% block breadcrumbs %}
+<li class="breadcrumb-item">
+    {% if perms.inventory.view_product %}
+    <a href="{% url 'inventory:dashboard' %}">
+        <i class="fas fa-home"></i> {% trans "Dashboard" %}
+    </a>
+</li>
+<li class="breadcrumb-item">
+    <a href="{% url 'inventory:product_list' %}">
+        <i class="fas fa-box"></i> {% trans "Products" %}
+    </a>
+    {% endif %}
+</li>
+<li class="breadcrumb-item active">{{ product.name|truncatechars:30 }}</li>
+{% endblock %}
+
+{% block content %}
+<div class="product-detail-container">
+    <!-- Header Section -->
+    <div class="detail-header">
+        <div class="header-content">
+            <h1>
+                <i class="fas fa-box-open"></i> {{ product.name }}
+                <span class="badge {% if product.is_active %}bg-success{% else %}bg-danger{% endif %}">
+                    {% if product.is_active %}{% trans "Active" %}{% else %}{% trans "Inactive" %}{% endif %}
+                </span>
+            </h1>
+            <div class="product-meta">
+                <span class="badge bg-secondary">
+                    <i class="fas fa-barcode"></i> {{ product.sku }}
+                </span>
+                {% if product.barcode %}
+                <span class="badge bg-info">
+                    <i class="fas fa-qrcode"></i> {{ product.barcode }}
+                </span>
+                {% endif %}
+            </div>
+        </div>
+
+        <div class="header-actions">
+            <div class="btn-group">
+                {% if perms.inventory.change_product %}
+                <a href="{% url 'inventory:product_update' product.pk %}" class="btn btn-primary">
+                    <i class="fas fa-edit"></i> {% trans "Edit" %}
+                </a>
+                {% endif %}
+                <button type="button" class="btn btn-primary dropdown-toggle dropdown-toggle-split" data-bs-toggle="dropdown">
+                    <span class="visually-hidden">{% trans "Toggle Dropdown" %}</span>
+                </button>
+                <ul class="dropdown-menu">
+                    <li>
+                        <a class="dropdown-item" href="#" data-bs-toggle="modal" data-bs-target="#quickStockModal">
+                            <i class="fas fa-plus-minus"></i> {% trans "Quick Stock Adjustment" %}
+                        </a>
+                    </li>
+                    <li>
+                        <a class="dropdown-item" href="#">
+                            <i class="fas fa-history"></i> {% trans "View History" %}
+                        </a>
+                    </li>
+                    {% if product.barcode %}
+                    <li>
+                        {% if perms.inventory.view_product %}
+                        <a class="dropdown-item" href="{% url 'inventory:barcode_generator' product.pk %}">
+                            <i class="fas fa-barcode"></i> {% trans "Generate Barcode" %}
+                        </a>
+                        {% endif %}
+                    </li>
+                    {% endif %}
+                    <li><hr class="dropdown-divider"></li>
+                    <li>
+                        <a class="dropdown-item text-danger" href="#" data-bs-toggle="modal" data-bs-target="#deleteProductModal">
+                            <i class="fas fa-trash"></i> {% trans "Delete Product" %}
+                        </a>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Content -->
+    <div class="detail-content">
+        <div class="row">
+            <!-- Left Column - Product Info -->
+            <div class="col-lg-8">
+                <div class="card product-info-card mb-4">
+                    <div class="card-body">
+                        <div class="row">
+                            <!-- Product Image -->
+                            <div class="col-md-4">
+                                <div class="product-image-container">
+                                    {% if product.image %}
+                                    <img src="{{ product.image.url }}" alt="{{ product.name }}" class="img-fluid rounded product-image">
+                                    {% else %}
+                                    <div class="image-placeholder">
+                                        <i class="fas fa-box-open"></i>
+                                        <span>{% trans "No Image Available" %}</span>
+                                    </div>
+                                    {% endif %}
+                                </div>
+
+                                {% if product.barcode %}
+                                <div class="barcode-preview mt-3 text-center">
+                                    <img src="#" alt="{% trans 'Barcode' %}" class="img-fluid">
+                                    <small class="text-muted">{% trans "Barcode" %}: {{ product.barcode }}</small>
+                                </div>
+                                {% endif %}
+                            </div>
+
+                            <!-- Product Details -->
+                            <div class="col-md-8">
+                                <div class="product-details">
+                                    <h4 class="mb-3">{% trans "Product Information" %}</h4>
+
+                                    <div class="detail-item">
+                                        <span class="detail-label">{% trans "Category" %}:</span>
+                                        <span class="detail-value">
+                                            {% if product.category %}
+                                            <span class="badge bg-primary">{{ product.category.name }}</span>
+                                            {% else %}
+                                            <span class="text-muted">{% trans "Not assigned" %}</span>
+                                            {% endif %}
+                                        </span>
+                                    </div>
+
+                                    <div class="detail-item">
+                                        <span class="detail-label">{% trans "Supplier" %}:</span>
+                                        <span class="detail-value">
+                                            {% if product.supplier %}
+                                            {% if perms.inventory.view_supplier %}
+                                            <a href="{% url 'inventory:supplier_detail' product.supplier.pk %}">
+                                                {{ product.supplier.name }}
+                                            </a>
+                                            {% else %}
+                                            {{ product.supplier.name }}
+                                            {% endif %}
+                                            {% else %}
+                                            <span class="text-muted">{% trans "No supplier" %}</span>
+                                            {% endif %}
+                                        </span>
+                                    </div>
+
+                                    <div class="detail-item">
+                                        <span class="detail-label">{% trans "Description" %}:</span>
+                                        <span class="detail-value">
+                                            {% if product.description %}
+                                            {{ product.description }}
+                                            {% else %}
+                                            <span class="text-muted">{% trans "No description provided" %}</span>
+                                            {% endif %}
+                                        </span>
+                                    </div>
+
+                                    <div class="detail-item">
+                                        <span class="detail-label">{% trans "Created" %}:</span>
+                                        <span class="detail-value">
+                                            {{ product.created_at|date:"M d, Y" }}
+                                        </span>
+                                    </div>
+
+                                    <div class="detail-item">
+                                        <span class="detail-label">{% trans "Last Updated" %}:</span>
+                                        <span class="detail-value">
+                                            {{ product.updated_at|date:"M d, Y" }}
+                                        </span>
+                                    </div>
+
+                                    <div class="detail-item">
+                                        <span class="detail-label">{% trans "Tax Rate" %}:</span>
+                                        <span class="detail-value">
+                                            {{ product.get_tax_rate_display }}
+                                        </span>
+                                    </div>
+
+                                    <div class="detail-item">
+                                        <span class="detail-label">{% trans "Unit of Measure" %}:</span>
+                                        <span class="detail-value">
+                                            {{ product.unit_of_measure }}
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Pricing Card -->
+                <div class="card pricing-card mb-4">
+                    <div class="card-body">
+                        <h4 class="card-title">
+                            <i class="fas fa-tags"></i> {% trans "Pricing Information" %}
+                        </h4>
+
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="pricing-detail">
+                                    <span class="label">{% trans "Selling Price" %}:</span>
+                                    <span class="value text-success">UGX {{ product.selling_price|floatformat:0 }}</span>
+                                </div>
+
+                                <div class="pricing-detail">
+                                    <span class="label">{% trans "Cost Price" %}:</span>
+                                    <span class="value">UGX {{ product.cost_price|floatformat:0 }}</span>
+                                </div>
+
+                                <div class="pricing-detail">
+                                    <span class="label">{% trans "Final Price" %}:</span>
+                                    <span class="value text-primary">UGX {{ final_price|floatformat:0 }}</span>
+                                </div>
+                            </div>
+
+                            <div class="col-md-6">
+                                {% if product.discount_percentage > 0 %}
+                                <div class="pricing-detail">
+                                    <span class="label">{% trans "Discount" %}:</span>
+                                    <span class="value text-warning">{{ product.discount_percentage }}% {% trans "off" %}</span>
+                                </div>
+
+                                <div class="pricing-detail">
+                                    <span class="label">{% trans "Stock Percentage" %}:</span>
+                                    <span class="value text-info">{{ stock_percentage }}%</span>
+                                </div>
+                                {% else %}
+                                <div class="alert alert-secondary mb-0">
+                                    {% trans "No active discounts for this product" %}
+                                </div>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Inventory History Card -->
+                <div class="card history-card">
+                    <div class="card-body">
+                        <h4 class="card-title">
+                            <i class="fas fa-history"></i> {% trans "Recent Stock Movements" %}
+                        </h4>
+
+                        {% if recent_movements %}
+                        <div class="table-responsive">
+                            <table class="table table-sm">
+                                <thead>
+                                    <tr>
+                                        <th>{% trans "Date" %}</th>
+                                        <th>{% trans "Type" %}</th>
+                                        <th>{% trans "Quantity" %}</th>
+                                        <th>{% trans "Store" %}</th>
+                                        <th>{% trans "Reference" %}</th>
+                                        <th>{% trans "User" %}</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for movement in recent_movements %}
+                                    <tr>
+                                        <td>{{ movement.created_at|date:"M d, Y" }}</td>
+                                        <td>
+                                            <span class="badge
+                                                {% if movement.movement_type == 'PURCHASE' or movement.movement_type == 'RETURN' or movement.movement_type == 'TRANSFER_IN' %}bg-success
+                                                {% elif movement.movement_type == 'SALE' or movement.movement_type == 'TRANSFER_OUT' %}bg-danger
+                                                {% else %}bg-secondary{% endif %}">
+                                                {{ movement.get_movement_type_display }}
+                                            </span>
+                                        </td>
+                                        <td>{{ movement.quantity }}</td>
+                                        <td>{{ movement.store.name }}</td>
+                                        <td>{{ movement.reference|default:"-" }}</td>
+                                        <td>{{ movement.created_by.get_full_name|default:movement.created_by.username }}</td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <div class="text-center mt-3">
+                            <a href="{% url 'inventory:movement_list' %}?product={{ product.id }}" class="btn btn-outline-primary">
+                                <i class="fas fa-list"></i> {% trans "View Full History" %}
+                            </a>
+                        </div>
+                        {% else %}
+                        <div class="alert alert-info mb-0">
+                            {% trans "No stock movement history available for this product" %}
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right Column - Inventory Status -->
+            <div class="col-lg-4">
+                <!-- Inventory Status Card -->
+                <div class="card inventory-card mb-4">
+                    <div class="card-body">
+                        <h4 class="card-title">
+                            <i class="fas fa-warehouse"></i> {% trans "Inventory Status" %}
+                        </h4>
+
+                        <div class="total-inventory">
+                            <div class="total-label">{% trans "Total Available Stock" %}</div>
+                            <div class="total-value">{{ total_stock }} {{ product.unit_of_measure }}</div>
+                            <div class="progress">
+                                <div class="progress-bar
+                                    {% if stock_percentage < 30 %}bg-danger
+                                    {% elif stock_percentage < 70 %}bg-warning
+                                    {% else %}bg-success{% endif %}"
+                                    role="progressbar" style="width: {{ stock_percentage }}%">
+                                </div>
+                            </div>
+                            <div class="total-meta">
+                                <span>{% trans "Minimum Level" %}: {{ product.min_stock_level }}</span>
+                            </div>
+                        </div>
+
+                        <hr>
+
+                        <h5 class="section-title">
+                            <i class="fas fa-store"></i> {% trans "Stock by Location" %}
+                        </h5>
+
+                        {% if stock_levels %}
+                        <div class="location-stock">
+                            {% for stock in stock_levels %}
+                            <div class="location-item">
+                                <div class="location-info">
+                                    <span class="location-name">{{ stock.store.name }}</span>
+                                    <span class="location-quantity {% if stock.quantity <= product.min_stock_level %}text-danger{% endif %}">
+                                        {{ stock.quantity }} {{ product.unit_of_measure }}
+                                    </span>
+                                </div>
+                                <div class="progress thin-progress">
+                                    <div class="progress-bar
+                                        {% if stock.stock_percentage < 30 %}bg-danger
+                                        {% elif stock.stock_percentage < 70 %}bg-warning
+                                        {% else %}bg-success{% endif %}"
+                                        role="progressbar" style="width: {{ stock.stock_percentage }}%">
+                                    </div>
+                                </div>
+                                <div class="location-meta">
+                                    <span>{% trans "Status" %}:
+                                        {% if stock.quantity == 0 %}
+                                        <span class="text-danger">{% trans "Out of Stock" %}</span>
+                                        {% elif stock.quantity <= product.min_stock_level %}
+                                        <span class="text-warning">{% trans "Low Stock" %}</span>
+                                        {% else %}
+                                        <span class="text-success">{% trans "In Stock" %}</span>
+                                        {% endif %}
+                                    </span>
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </div>
+                        {% else %}
+                        <div class="alert alert-warning mb-0">
+                            {% trans "No stock information available for this product" %}
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <!-- EFRIS Status Card -->
+                <div class="card efris-card mb-4">
+                    <div class="card-body">
+                        <h4 class="card-title">
+                            <i class="fas fa-sync"></i> {% trans "EFRIS Status" %}
+                        </h4>
+
+                        <div class="efris-status">
+                            <div class="status-badge">
+                                <span class="badge {% if efris_configuration_complete %}bg-success{% else %}bg-warning{% endif %}">
+                                    {{ efris_status }}
+                                </span>
+                            </div>
+
+                            {% if efris_errors %}
+                            <div class="mt-3">
+                                <h6 class="text-danger">{% trans "Configuration Issues" %}:</h6>
+                                <ul class="list-unstyled">
+                                    {% for error in efris_errors %}
+                                    <li class="text-danger"><i class="fas fa-exclamation-triangle"></i> {{ error }}</li>
+                                    {% endfor %}
+                                </ul>
+                            </div>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Product Metrics Card -->
+                <div class="card metrics-card">
+                    <div class="card-body">
+                        <h4 class="card-title">
+                            <i class="fas fa-chart-line"></i> {% trans "Product Metrics" %}
+                        </h4>
+
+                        <div class="metrics-grid">
+                            {% if movement_stats %}
+                            <div class="metric-item">
+                                <div class="metric-value">{{ movement_stats.total_purchased|default:"0" }}</div>
+                                <div class="metric-label">{% trans "Units Purchased" %}</div>
+                            </div>
+
+                            <div class="metric-item">
+                                <div class="metric-value">{{ movement_stats.total_sold|default:"0" }}</div>
+                                <div class="metric-label">{% trans "Units Sold" %}</div>
+                            </div>
+
+                            <div class="metric-item">
+                                <div class="metric-value">{{ movement_stats.total_movements|default:"0" }}</div>
+                                <div class="metric-label">{% trans "Total Movements" %}</div>
+                            </div>
+
+                            <div class="metric-item">
+                                <div class="metric-value">{{ stock_percentage }}%</div>
+                                <div class="metric-label">{% trans "Stock Level" %}</div>
+                            </div>
+                            {% endif %}
+                        </div>
+
+                        <hr>
+
+                        <div class="text-center">
+                            <a href="{% url 'inventory:movement_analytics' %}?product={{ product.id }}" class="btn btn-outline-primary">
+                                <i class="fas fa-chart-bar"></i> {% trans "View Detailed Metrics" %}
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Quick Stock Adjustment Modal -->
+<div class="modal fade" id="quickStockModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="fas fa-plus-minus"></i> {% trans "Quick Stock Adjustment" %}
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="{% trans 'Close' %}"></button>
+            </div>
+            <form method="post" action="{% url 'inventory:stock_adjustment' %}">
+                {% csrf_token %}
+                <div class="modal-body">
+                    <input type="hidden" name="product" value="{{ product.pk }}">
+
+                    <div class="mb-3">
+                        <label class="form-label">{% trans "Adjustment Type" %}</label>
+                        <div class="btn-group w-100" role="group">
+                            <input type="radio" class="btn-check" name="adjustment_type" id="increaseStock" value="PURCHASE" checked>
+                            <label class="btn btn-outline-success" for="increaseStock">
+                                <i class="fas fa-plus"></i> {% trans "Increase" %}
+                            </label>
+
+                            <input type="radio" class="btn-check" name="adjustment_type" id="decreaseStock" value="ADJUSTMENT">
+                            <label class="btn btn-outline-danger" for="decreaseStock">
+                                <i class="fas fa-minus"></i> {% trans "Decrease" %}
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">{% trans "Store" %}</label>
+                        <select class="form-select" name="store" required>
+                            <option value="">{% trans "Select Store" %}</option>
+                            {% for stock in stock_levels %}
+                            <option value="{{ stock.store.pk }}">{{ stock.store.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">{% trans "Quantity" %}</label>
+                        <input type="number" class="form-control" name="quantity" step="0.001" min="0" required>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">{% trans "Notes" %}</label>
+                        <textarea class="form-control" name="notes" rows="2" placeholder="{% trans 'Additional details...' %}"></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                        <i class="fas fa-times"></i> {% trans "Cancel" %}
+                    </button>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fas fa-save"></i> {% trans "Save Adjustment" %}
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Delete Product Modal -->
+<div class="modal fade" id="deleteProductModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header bg-danger text-white">
+                <h5 class="modal-title">
+                    <i class="fas fa-exclamation-triangle"></i> {% trans "Confirm Deletion" %}
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="{% trans 'Close' %}"></button>
+            </div>
+            <form method="post" action="{% url 'inventory:product_delete' product.pk %}">
+                {% csrf_token %}
+                <div class="modal-body">
+                    <p>{% trans "Are you sure you want to delete this product?" %}</p>
+                    <div class="alert alert-warning">
+                        <strong>{% trans "Warning" %}:</strong> {% trans "This action cannot be undone. All inventory records and sales data for this product will be permanently deleted." %}
+                    </div>
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" id="confirmDelete" required>
+                        <label class="form-check-label" for="confirmDelete">
+                            {% trans "I understand the consequences and want to proceed" %}
+                        </label>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                        <i class="fas fa-times"></i> {% trans "Cancel" %}
+                    </button>
+                    <button type="submit" class="btn btn-danger">
+                        <i class="fas fa-trash"></i> {% trans "Delete Product" %}
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+:root {
+    --bg-primary: #ffffff;
+    --bg-secondary: #f8f9fa;
+    --bg-card: #ffffff;
+    --text-primary: #212529;
+    --text-secondary: #6c757d;
+    --text-muted: #adb5bd;
+    --border-color: #e9ecef;
+    --shadow-color: rgba(0, 0, 0, 0.05);
+    --header-bg: #ffffff;
+}
+
+[data-bs-theme="dark"] {
+    --bg-primary: #212529;
+    --bg-secondary: #343a40;
+    --bg-card: #2d3338;
+    --text-primary: #ffffff;
+    --text-secondary: #adb5bd;
+    --text-muted: #6c757d;
+    --border-color: #495057;
+    --shadow-color: rgba(0, 0, 0, 0.3);
+    --header-bg: #2d3338;
+}
+
+.product-detail-container {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 1.5rem;
+    background-color: var(--bg-primary);
+    color: var(--text-primary);
+}
+
+/* Header Styles */
+.detail-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 2rem;
+    padding-bottom: 1rem;
+    border-bottom: 1px solid var(--border-color);
+    background-color: var(--header-bg);
+    border-radius: 0.75rem;
+    padding: 1.5rem;
+}
+
+.header-content h1 {
+    font-size: 1.75rem;
+    font-weight: 600;
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    color: var(--text-primary);
+}
+
+.product-meta {
+    display: flex;
+    gap: 0.5rem;
+    margin-top: 0.5rem;
+}
+
+.header-actions .btn-group {
+    margin-left: 1rem;
+}
+
+/* Card Styles */
+.card {
+    border: 1px solid var(--border-color);
+    border-radius: 0.75rem;
+    box-shadow: 0 2px 10px var(--shadow-color);
+    margin-bottom: 1.5rem;
+    background-color: var(--bg-card);
+}
+
+.card-body {
+    padding: 1.5rem;
+    color: var(--text-primary);
+}
+
+.card-title {
+    font-size: 1.25rem;
+    font-weight: 600;
+    margin-bottom: 1.25rem;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    color: var(--text-primary);
+}
+
+.section-title {
+    font-size: 1rem;
+    font-weight: 600;
+    margin-bottom: 1rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    color: var(--text-primary);
+}
+
+/* Product Image */
+.product-image-container {
+    background-color: var(--bg-secondary);
+    border-radius: 0.75rem;
+    overflow: hidden;
+    margin-bottom: 1rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 250px;
+    border: 1px solid var(--border-color);
+}
+
+.product-image {
+    max-height: 100%;
+    width: auto;
+    object-fit: contain;
+}
+
+.image-placeholder {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-muted);
+    height: 100%;
+    width: 100%;
+}
+
+.image-placeholder i {
+    font-size: 3rem;
+    margin-bottom: 0.5rem;
+}
+
+.barcode-preview {
+    background: var(--bg-card);
+    padding: 0.75rem;
+    border-radius: 0.5rem;
+    border: 1px solid var(--border-color);
+}
+
+/* Product Details */
+.product-details {
+    height: 100%;
+}
+
+.detail-item {
+    display: flex;
+    margin-bottom: 1rem;
+}
+
+.detail-label {
+    flex: 0 0 120px;
+    font-weight: 500;
+    color: var(--text-secondary);
+}
+
+.detail-value {
+    flex: 1;
+    color: var(--text-primary);
+}
+
+/* Pricing Information */
+.pricing-detail {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 0.75rem;
+    padding-bottom: 0.75rem;
+    border-bottom: 1px dashed var(--border-color);
+}
+
+.pricing-detail:last-child {
+    border-bottom: none;
+    margin-bottom: 0;
+    padding-bottom: 0;
+}
+
+.pricing-detail .label {
+    font-weight: 500;
+    color: var(--text-secondary);
+}
+
+.pricing-detail .value {
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+/* Inventory Status */
+.total-inventory {
+    text-align: center;
+    margin-bottom: 1.5rem;
+}
+
+.total-label {
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+}
+
+.total-value {
+    font-size: 1.75rem;
+    font-weight: 600;
+    margin: 0.25rem 0;
+    color: #2e59d9;
+}
+
+.total-meta {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+    margin-top: 0.5rem;
+}
+
+.progress {
+    height: 10px;
+    border-radius: 5px;
+    margin: 0.5rem 0;
+    background-color: var(--bg-secondary);
+}
+
+.thin-progress {
+    height: 6px;
+    margin: 0.25rem 0;
+}
+
+/* Location Stock */
+.location-stock {
+    margin-top: 1rem;
+}
+
+.location-item {
+    margin-bottom: 1rem;
+    padding-bottom: 1rem;
+    border-bottom: 1px dashed var(--border-color);
+}
+
+.location-item:last-child {
+    margin-bottom: 0;
+    padding-bottom: 0;
+    border-bottom: none;
+}
+
+.location-info {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 0.25rem;
+}
+
+.location-name {
+    font-weight: 500;
+    color: var(--text-primary);
+}
+
+.location-quantity {
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.location-meta {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    margin-top: 0.25rem;
+}
+
+/* EFRIS Status */
+.efris-status {
+    text-align: center;
+}
+
+.status-badge {
+    margin-bottom: 1rem;
+}
+
+/* Metrics Grid */
+.metrics-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+    margin: 1rem 0;
+}
+
+.metric-item {
+    background-color: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 0.5rem;
+    padding: 1rem;
+    text-align: center;
+}
+
+.metric-value {
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: #2e59d9;
+}
+
+.metric-label {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+/* Table Styles */
+.table {
+    margin-bottom: 0;
+    color: var(--text-primary);
+}
+
+.table th {
+    font-weight: 500;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--text-secondary);
+    background-color: var(--bg-secondary);
+    border-color: var(--border-color);
+}
+
+.table td {
+    vertical-align: middle;
+    border-color: var(--border-color);
+    color: var(--text-primary);
+}
+
+.table-responsive {
+    border-radius: 0.5rem;
+    border: 1px solid var(--border-color);
+}
+
+/* Modal Customizations */
+.modal-content {
+    border-radius: 0.75rem;
+    background-color: var(--bg-card);
+    border: 1px solid var(--border-color);
+}
+
+.modal-header {
+    border-bottom: 1px solid var(--border-color);
+    background-color: var(--bg-card);
+    color: var(--text-primary);
+}
+
+.modal-body {
+    background-color: var(--bg-card);
+    color: var(--text-primary);
+}
+
+.modal-footer {
+    border-top: 1px solid var(--border-color);
+    background-color: var(--bg-card);
+}
+
+.modal-title {
+    color: var(--text-primary);
+}
+
+/* Form Controls Dark Theme */
+[data-bs-theme="dark"] .form-control,
+[data-bs-theme="dark"] .form-select {
+    background-color: var(--bg-secondary);
+    border-color: var(--border-color);
+    color: var(--text-primary);
+}
+
+[data-bs-theme="dark"] .form-control:focus,
+[data-bs-theme="dark"] .form-select:focus {
+    background-color: var(--bg-secondary);
+    border-color: #86b7fe;
+    color: var(--text-primary);
+    box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.25);
+}
+
+[data-bs-theme="dark"] .form-label {
+    color: var(--text-primary);
+}
+
+/* Alert Dark Theme */
+[data-bs-theme="dark"] .alert-secondary {
+    background-color: #2d3338;
+    border-color: #495057;
+    color: var(--text-primary);
+}
+
+[data-bs-theme="dark"] .alert-info {
+    background-color: #1f4068;
+    border-color: #0c5460;
+    color: #b6effb;
+}
+
+[data-bs-theme="dark"] .alert-warning {
+    background-color: #664d03;
+    border-color: #997404;
+    color: #ffecb5;
+}
+
+/* Badge Dark Theme */
+[data-bs-theme="dark"] .badge {
+    color: #ffffff;
+}
+
+/* Dropdown Dark Theme */
+[data-bs-theme="dark"] .dropdown-menu {
+    background-color: var(--bg-card);
+    border-color: var(--border-color);
+}
+
+[data-bs-theme="dark"] .dropdown-item {
+    color: var(--text-primary);
+}
+
+[data-bs-theme="dark"] .dropdown-item:hover {
+    background-color: var(--bg-secondary);
+    color: var(--text-primary);
+}
+
+[data-bs-theme="dark"] .dropdown-divider {
+    border-color: var(--border-color);
+}
+
+/* Text Colors for Dark Theme */
+[data-bs-theme="dark"] .text-muted {
+    color: var(--text-muted) !important;
+}
+
+[data-bs-theme="dark"] .text-secondary {
+    color: var(--text-secondary) !important;
+}
+
+/* Responsive Adjustments */
+@media (max-width: 992px) {
+    .detail-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 1rem;
+    }
+
+    .header-actions {
+        width: 100%;
+    }
+
+    .header-actions .btn-group {
+        width: 100%;
+        margin-left: 0;
+    }
+}
+
+@media (max-width: 768px) {
+    .product-detail-container {
+        padding: 1rem;
+    }
+
+    .detail-header {
+        padding: 1rem;
+        margin-bottom: 1rem;
+    }
+
+    .product-image-container {
+        height: 200px;
+    }
+
+    .detail-item {
+        flex-direction: column;
+    }
+
+    .detail-label {
+        margin-bottom: 0.25rem;
+    }
+
+    .metrics-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .pricing-detail {
+        flex-direction: column;
+        gap: 0.25rem;
+    }
+
+    .location-info {
+        flex-direction: column;
+        gap: 0.25rem;
+    }
+
+    .total-meta {
+        flex-direction: column;
+        gap: 0.25rem;
+        text-align: center;
+    }
+}
+
+/* Animation for theme transitions */
+* {
+    transition: background-color 0.3s ease, border-color 0.3s ease, color 0.3s ease;
+}
+
+/* Button hover effects for dark theme */
+[data-bs-theme="dark"] .btn-outline-primary:hover {
+    background-color: #0d6efd;
+    border-color: #0d6efd;
+}
+
+[data-bs-theme="dark"] .btn-outline-secondary:hover {
+    background-color: #6c757d;
+    border-color: #6c757d;
+}
+
+/* Progress bar dark theme */
+[data-bs-theme="dark"] .progress {
+    background-color: #495057;
+}
+</style>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+$(document).ready(function() {
+    // Initialize tooltips
+    $('[data-bs-toggle="tooltip"]').tooltip();
+
+    // Auto-focus first field in modals
+    $('.modal').on('shown.bs.modal', function() {
+        $(this).find('input, select, textarea').not('[type=hidden]').first().focus();
+    });
+
+    // Show warning when decreasing stock below minimum level
+    $('input[name="quantity"]').on('change', function() {
+        const adjustmentType = $('input[name="adjustment_type"]:checked').val();
+        const quantity = parseFloat($(this).val());
+
+        if (adjustmentType === 'ADJUSTMENT') {
+            const currentStock = parseFloat('{{ total_stock }}');
+            const minStock = parseFloat('{{ product.min_stock_level }}');
+
+            if ((currentStock - quantity) < minStock) {
+                alert('{% trans "Warning: This adjustment will bring stock below the minimum level!" %}');
+            }
+        }
+    });
+
+    // Confirm before submitting delete form
+    $('#deleteProductModal form').on('submit', function(e) {
+        if (!confirm('{% trans "Are you absolutely sure you want to delete this product?" %}')) {
+            e.preventDefault();
+        }
+    });
+
+    // Theme toggle functionality
+    const themeToggle = $('#theme-toggle');
+    const body = $('body');
+    const currentTheme = localStorage.getItem('theme') || 'light';
+
+    // Set initial theme
+    body.attr('data-bs-theme', currentTheme);
+
+    // Theme toggle click handler
+    themeToggle.on('click', function() {
+        const currentTheme = body.attr('data-bs-theme');
+        const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+
+        body.attr('data-bs-theme', newTheme);
+        localStorage.setItem('theme', newTheme);
+
+        // Update button text/icon
+        const icon = themeToggle.find('i');
+        const text = themeToggle.find('span');
+
+        if (newTheme === 'dark') {
+            icon.removeClass('fa-moon').addClass('fa-sun');
+            text.text('{% trans "Light Mode" %}');
+        } else {
+            icon.removeClass('fa-sun').addClass('fa-moon');
+            text.text('{% trans "Dark Mode" %}');
+        }
+    });
+
+    // Add theme toggle button if it doesn't exist
+    if (!$('#theme-toggle').length) {
+        const themeButton = $(`
+            <button id="theme-toggle" class="btn btn-outline-secondary btn-sm position-fixed"
+                    style="top: 80px; right: 20px; z-index: 1050; border-radius: 50px; padding: 8px 12px;">
+                <i class="fas fa-${currentTheme === 'dark' ? 'sun' : 'moon'}"></i>
+                <span class="ms-1 d-none d-md-inline">
+                    ${currentTheme === 'dark' ? '{% trans "Light Mode" %}' : '{% trans "Dark Mode" %}'}
+                </span>
+            </button>
+        `);
+        $('body').append(themeButton);
+
+        // Re-bind click handler for the new button
+        themeButton.on('click', function() {
+            const currentTheme = body.attr('data-bs-theme');
+            const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+
+            body.attr('data-bs-theme', newTheme);
+            localStorage.setItem('theme', newTheme);
+
+            const icon = $(this).find('i');
+            const text = $(this).find('span');
+
+            if (newTheme === 'dark') {
+                icon.removeClass('fa-moon').addClass('fa-sun');
+                text.text('{% trans "Light Mode" %}');
+            } else {
+                icon.removeClass('fa-sun').addClass('fa-moon');
+                text.text('{% trans "Dark Mode" %}');
+            }
+        });
+    }
+});
+</script>
+{% endblock %}

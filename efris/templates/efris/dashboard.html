@@ -1,0 +1,255 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}EFRIS Dashboard{% endblock %}
+
+{% block breadcrumb_items %}
+<li class="breadcrumb-item"><a href="{% url 'user_dashboard' %}">Home</a></li>
+<li class="breadcrumb-item active">EFRIS Dashboard</li>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- Page Header -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h1 class="h2 mb-1">EFRIS Dashboard</h1>
+            <p class="text-muted mb-0">Monitor EFRIS integration and system health</p>
+        </div>
+        <div>
+            <a href="{% url 'efris:configuration' %}" class="btn btn-outline-primary me-2">
+                <i class="bi bi-gear"></i> Configuration
+            </a>
+            <a href="{% url 'efris:diagnostic_tool' %}" class="btn btn-outline-secondary">
+                <i class="bi bi-activity"></i> Diagnostics
+            </a>
+        </div>
+    </div>
+
+    <!-- Configuration Alert -->
+    {% if not config_exists %}
+    <div class="alert alert-warning" role="alert">
+        <i class="bi bi-exclamation-triangle me-2"></i>
+        <strong>Configuration Required:</strong> EFRIS is not yet configured.
+        <a href="{% url 'efris:configuration' %}" class="alert-link">Configure now</a>
+    </div>
+    {% endif %}
+
+    <!-- System Health Status -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header bg-primary text-white">
+                    <h5 class="mb-0"><i class="bi bi-heart-pulse me-2"></i>System Health</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-3">
+                            <div class="text-center">
+                                <div class="mb-2">
+                                    {% if health_status.overall_status == 'healthy' %}
+                                    <i class="bi bi-check-circle-fill text-success" style="font-size: 3rem;"></i>
+                                    {% elif health_status.overall_status == 'degraded' %}
+                                    <i class="bi bi-exclamation-triangle-fill text-warning" style="font-size: 3rem;"></i>
+                                    {% else %}
+                                    <i class="bi bi-x-circle-fill text-danger" style="font-size: 3rem;"></i>
+                                    {% endif %}
+                                </div>
+                                <h4 class="text-uppercase">{{ health_status.overall_status }}</h4>
+                                <p class="text-muted mb-0">Overall Status</p>
+                            </div>
+                        </div>
+                        <div class="col-md-9">
+                            <div class="row">
+                                <div class="col-md-4 mb-3">
+                                    <div class="border rounded p-3">
+                                        <div class="d-flex justify-content-between align-items-center mb-2">
+                                            <span class="fw-bold">Configuration</span>
+                                            {% if health_status.configuration.status == 'ok' %}
+                                            <i class="bi bi-check-circle text-success"></i>
+                                            {% else %}
+                                            <i class="bi bi-x-circle text-danger"></i>
+                                            {% endif %}
+                                        </div>
+                                        <small class="text-muted">{{ health_status.configuration.message }}</small>
+                                    </div>
+                                </div>
+                                <div class="col-md-4 mb-3">
+                                    <div class="border rounded p-3">
+                                        <div class="d-flex justify-content-between align-items-center mb-2">
+                                            <span class="fw-bold">API Connectivity</span>
+                                            {% if health_status.api_connectivity.status == 'ok' %}
+                                            <i class="bi bi-check-circle text-success"></i>
+                                            {% else %}
+                                            <i class="bi bi-x-circle text-danger"></i>
+                                            {% endif %}
+                                        </div>
+                                        <small class="text-muted">{{ health_status.api_connectivity.message }}</small>
+                                    </div>
+                                </div>
+                                <div class="col-md-4 mb-3">
+                                    <div class="border rounded p-3">
+                                        <div class="d-flex justify-content-between align-items-center mb-2">
+                                            <span class="fw-bold">Recent Activity</span>
+                                            {% if health_status.recent_activity.status == 'ok' %}
+                                            <i class="bi bi-check-circle text-success"></i>
+                                            {% elif health_status.recent_activity.status == 'warning' %}
+                                            <i class="bi bi-exclamation-triangle text-warning"></i>
+                                            {% else %}
+                                            <i class="bi bi-x-circle text-danger"></i>
+                                            {% endif %}
+                                        </div>
+                                        <small class="text-muted">{{ health_status.recent_activity.message }}</small>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Statistics Cards -->
+    <div class="row mb-4">
+        <div class="col-md-3">
+            <div class="card text-center">
+                <div class="card-body">
+                    <i class="bi bi-box-seam text-primary" style="font-size: 2.5rem;"></i>
+                    <h3 class="mt-3 mb-1">{{ uploaded_products }}/{{ total_products }}</h3>
+                    <p class="text-muted mb-0">Products Uploaded</p>
+                    <a href="{% url 'efris:product_list' %}" class="btn btn-sm btn-outline-primary mt-2">Manage</a>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card text-center">
+                <div class="card-body">
+                    <i class="bi bi-receipt text-success" style="font-size: 2.5rem;"></i>
+                    <h3 class="mt-3 mb-1">{{ fiscalized_invoices }}/{{ total_invoices }}</h3>
+                    <p class="text-muted mb-0">Invoices Fiscalized</p>
+                    <a href="{% url 'efris:invoice_list' %}" class="btn btn-sm btn-outline-success mt-2">View</a>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card text-center">
+                <div class="card-body">
+                    <i class="bi bi-graph-up text-info" style="font-size: 2.5rem;"></i>
+                    <h3 class="mt-3 mb-1">{{ metrics.overall.success_rate|floatformat:1 }}%</h3>
+                    <p class="text-muted mb-0">Success Rate (24h)</p>
+                    <a href="{% url 'efris:system_health' %}" class="btn btn-sm btn-outline-info mt-2">Details</a>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card text-center">
+                <div class="card-body">
+                    <i class="bi bi-clock-history text-warning" style="font-size: 2.5rem;"></i>
+                    <h3 class="mt-3 mb-1">{{ metrics.overall.average_duration_ms|floatformat:0 }}ms</h3>
+                    <p class="text-muted mb-0">Avg Response Time</p>
+                    <a href="{% url 'efris:api_logs' %}" class="btn btn-sm btn-outline-warning mt-2">Logs</a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Invoice Fiscalization Metrics -->
+    <div class="row mb-4">
+        <div class="col-md-12">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="bi bi-bar-chart me-2"></i>Invoice Fiscalization Metrics (7 Days)</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-3 text-center">
+                            <h4 class="text-primary">{{ invoice_metrics.total_invoices }}</h4>
+                            <p class="text-muted mb-0">Total Invoices</p>
+                        </div>
+                        <div class="col-md-3 text-center">
+                            <h4 class="text-success">{{ invoice_metrics.fiscalized_invoices }}</h4>
+                            <p class="text-muted mb-0">Fiscalized</p>
+                        </div>
+                        <div class="col-md-3 text-center">
+                            <h4 class="text-warning">{{ invoice_metrics.pending_invoices }}</h4>
+                            <p class="text-muted mb-0">Pending</p>
+                        </div>
+                        <div class="col-md-3 text-center">
+                            <h4 class="text-info">{{ invoice_metrics.fiscalization_rate|floatformat:1 }}%</h4>
+                            <p class="text-muted mb-0">Fiscalization Rate</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Recent API Logs -->
+    <div class="row">
+        <div class="col-md-12">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0"><i class="bi bi-journal-text me-2"></i>Recent API Logs</h5>
+                    <a href="{% url 'efris:api_logs' %}" class="btn btn-sm btn-outline-primary">View All</a>
+                </div>
+                <div class="card-body">
+                    {% if recent_logs %}
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Time</th>
+                                    <th>Interface</th>
+                                    <th>Status</th>
+                                    <th>Duration</th>
+                                    <th>Message</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for log in recent_logs %}
+                                <tr>
+                                    <td>{{ log.created_at|date:"M d, Y H:i" }}</td>
+                                    <td><code>{{ log.interface_code }}</code></td>
+                                    <td>
+                                        {% if log.status == 'success' %}
+                                        <span class="badge bg-success">Success</span>
+                                        {% elif log.status == 'error' %}
+                                        <span class="badge bg-danger">Error</span>
+                                        {% else %}
+                                        <span class="badge bg-warning">{{ log.status }}</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>{{ log.duration_ms|floatformat:0 }}ms</td>
+                                    <td>{{ log.message|truncatewords:10 }}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% else %}
+                    <p class="text-muted text-center mb-0">No recent API logs</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Auto-refresh dashboard stats every 30 seconds
+    setInterval(function() {
+        fetch("{% url 'efris:ajax_dashboard_stats' %}")
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    console.log('Dashboard stats refreshed:', data);
+                    // You can update specific elements here if needed
+                }
+            })
+            .catch(error => console.error('Error refreshing stats:', error));
+    }, 30000);
+});
+</script>
+{% endblock %}

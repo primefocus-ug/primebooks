@@ -1,0 +1,410 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Expense Reports{% endblock %}
+
+{% block extra_css %}
+<style>
+    .report-card {
+        border-radius: 10px;
+        padding: 20px;
+        margin-bottom: 20px;
+        background: white;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+    .stat-box {
+        text-align: center;
+        padding: 15px;
+        border-radius: 8px;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        margin-bottom: 15px;
+    }
+    .stat-box h3 {
+        margin: 10px 0 5px 0;
+        font-size: 2rem;
+    }
+    .chart-container {
+        position: relative;
+        height: 300px;
+        margin: 20px 0;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <div class="row mb-4">
+        <div class="col-md-6">
+            <h1><i class="fas fa-chart-line"></i> Expense Reports & Analytics</h1>
+        </div>
+        <div class="col-md-6 text-right">
+            <div class="btn-group" role="group">
+                <a href="{% url 'expenses:export_expenses' %}?format=excel&start_date={{ start_date }}&end_date={{ end_date }}"
+                   class="btn btn-success">
+                    <i class="fas fa-file-excel"></i> Export Excel
+                </a>
+                <a href="{% url 'expenses:export_expenses' %}?format=pdf&start_date={{ start_date }}&end_date={{ end_date }}"
+                   class="btn btn-danger">
+                    <i class="fas fa-file-pdf"></i> Export PDF
+                </a>
+                <a href="{% url 'expenses:export_expenses' %}?format=csv&start_date={{ start_date }}&end_date={{ end_date }}"
+                   class="btn btn-info">
+                    <i class="fas fa-file-csv"></i> Export CSV
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Date Range Filter -->
+    <div class="card mb-4">
+        <div class="card-body">
+            <form method="get" class="form-row align-items-center">
+                <div class="col-md-3">
+                    <label for="start_date">Start Date</label>
+                    <input type="date" name="start_date" id="start_date"
+                           class="form-control" value="{{ start_date|date:'Y-m-d' }}">
+                </div>
+                <div class="col-md-3">
+                    <label for="end_date">End Date</label>
+                    <input type="date" name="end_date" id="end_date"
+                           class="form-control" value="{{ end_date|date:'Y-m-d' }}">
+                </div>
+                <div class="col-md-2">
+                    <label>&nbsp;</label>
+                    <button type="submit" class="btn btn-primary btn-block">
+                        <i class="fas fa-filter"></i> Filter
+                    </button>
+                </div>
+                <div class="col-md-4">
+                    <label>&nbsp;</label>
+                    <div class="btn-group btn-block" role="group">
+                        <button type="button" class="btn btn-outline-secondary" onclick="setDateRange('today')">Today</button>
+                        <button type="button" class="btn btn-outline-secondary" onclick="setDateRange('week')">This Week</button>
+                        <button type="button" class="btn btn-outline-secondary" onclick="setDateRange('month')">This Month</button>
+                        <button type="button" class="btn btn-outline-secondary" onclick="setDateRange('year')">This Year</button>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Summary Statistics -->
+    <div class="row">
+        <div class="col-md-3">
+            <div class="stat-box">
+                <i class="fas fa-money-bill-wave fa-2x"></i>
+                <h3>{{ analytics.summary.total_expenses|default:0|floatformat:2 }}</h3>
+                <p class="mb-0">Total Expenses (UGX)</p>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="stat-box" style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);">
+                <i class="fas fa-receipt fa-2x"></i>
+                <h3>{{ analytics.summary.total_count|default:0 }}</h3>
+                <p class="mb-0">Total Transactions</p>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="stat-box" style="background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);">
+                <i class="fas fa-chart-bar fa-2x"></i>
+                <h3>{{ analytics.summary.average_expense|default:0|floatformat:2 }}</h3>
+                <p class="mb-0">Average Expense (UGX)</p>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="stat-box" style="background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);">
+                <i class="fas fa-percentage fa-2x"></i>
+                <h3>{{ analytics.summary.total_tax|default:0|floatformat:2 }}</h3>
+                <p class="mb-0">Total Tax (UGX)</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Charts Section -->
+    <div class="row">
+        <div class="col-md-6">
+            <div class="report-card">
+                <h5><i class="fas fa-chart-pie"></i> Expenses by Category</h5>
+                <div class="chart-container">
+                    <canvas id="categoryChart"></canvas>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="report-card">
+                <h5><i class="fas fa-user-tie"></i> Top Vendors</h5>
+                <div class="chart-container">
+                    <canvas id="vendorChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-md-12">
+            <div class="report-card">
+                <h5><i class="fas fa-chart-line"></i> Expense Trends</h5>
+                <div class="chart-container">
+                    <canvas id="trendChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Category Breakdown Table -->
+    <div class="row">
+        <div class="col-md-12">
+            <div class="report-card">
+                <h5><i class="fas fa-table"></i> Category Breakdown</h5>
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead>
+                            <tr>
+                                <th>Category</th>
+                                <th>Transaction Count</th>
+                                <th>Total Amount</th>
+                                <th>Percentage</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for item in analytics.by_category %}
+                            <tr>
+                                <td><strong>{{ item.category__name }}</strong></td>
+                                <td>{{ item.count }}</td>
+                                <td>{{ item.total|floatformat:2 }} UGX</td>
+                                <td>
+                                    {% widthratio item.total analytics.summary.total_expenses 100 as percentage %}
+                                    <div class="progress" style="height: 20px;">
+                                        <div class="progress-bar" style="width: {{ percentage }}%">
+                                            {{ percentage }}%
+                                        </div>
+                                    </div>
+                                </td>
+                            </tr>
+                            {% empty %}
+                            <tr>
+                                <td colspan="4" class="text-center">No data available</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Overdue Expenses -->
+    {% if overdue %}
+    <div class="row">
+        <div class="col-md-12">
+            <div class="report-card">
+                <h5><i class="fas fa-exclamation-triangle text-danger"></i> Overdue Expenses</h5>
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead>
+                            <tr>
+                                <th>Expense #</th>
+                                <th>Vendor</th>
+                                <th>Amount Due</th>
+                                <th>Due Date</th>
+                                <th>Days Overdue</th>
+                                <th>Category</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for expense in overdue %}
+                            <tr>
+                                <td>{{ expense.expense_number }}</td>
+                                <td>{{ expense.vendor }}</td>
+                                <td class="text-danger"><strong>{{ expense.amount_due|floatformat:2 }}</strong></td>
+                                <td>{{ expense.due_date|date:"Y-m-d" }}</td>
+                                <td>
+                                    <span class="badge badge-danger">{{ expense.days_overdue }} days</span>
+                                </td>
+                                <td>{{ expense.category }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Payment Method Breakdown -->
+    <div class="row">
+        <div class="col-md-6">
+            <div class="report-card">
+                <h5><i class="fas fa-credit-card"></i> Payment Methods</h5>
+                <div class="table-responsive">
+                    <table class="table table-sm">
+                        <thead>
+                            <tr>
+                                <th>Payment Method</th>
+                                <th>Count</th>
+                                <th>Total</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for item in analytics.by_payment_method %}
+                            <tr>
+                                <td>{{ item.payment_method }}</td>
+                                <td>{{ item.count }}</td>
+                                <td>{{ item.total|floatformat:2 }} UGX</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-6">
+            <div class="report-card">
+                <h5><i class="fas fa-chart-bar"></i> Payment Method Distribution</h5>
+                <div class="chart-container" style="height: 250px;">
+                    <canvas id="paymentMethodChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+    // Category Chart
+    const categoryData = {{ analytics.by_category|safe }};
+    const ctxCategory = document.getElementById('categoryChart').getContext('2d');
+    new Chart(ctxCategory, {
+        type: 'doughnut',
+        data: {
+            labels: categoryData.map(item => item.category__name),
+            datasets: [{
+                data: categoryData.map(item => item.total),
+                backgroundColor: [
+                    '#667eea', '#764ba2', '#f093fb', '#f5576c', '#4facfe',
+                    '#00f2fe', '#43e97b', '#38f9d7', '#fa709a', '#fee140'
+                ]
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    position: 'right'
+                }
+            }
+        }
+    });
+
+    // Vendor Chart
+    const vendorData = {{ analytics.by_vendor|safe }};
+    const ctxVendor = document.getElementById('vendorChart').getContext('2d');
+    new Chart(ctxVendor, {
+        type: 'bar',
+        data: {
+            labels: vendorData.map(item => item.vendor__name),
+            datasets: [{
+                label: 'Total Spent (UGX)',
+                data: vendorData.map(item => item.total),
+                backgroundColor: '#667eea'
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            indexAxis: 'y',
+            scales: {
+                x: {
+                    beginAtZero: true
+                }
+            }
+        }
+    });
+
+    // Trend Chart
+    const trendData = {{ trends|safe }};
+    const ctxTrend = document.getElementById('trendChart').getContext('2d');
+    new Chart(ctxTrend, {
+        type: 'line',
+        data: {
+            labels: trendData.map(item => {
+                const date = new Date(item.month);
+                return date.toLocaleDateString('en-US', { year: 'numeric', month: 'short' });
+            }),
+            datasets: [{
+                label: 'Total Expenses',
+                data: trendData.map(item => item.total),
+                borderColor: '#667eea',
+                backgroundColor: 'rgba(102, 126, 234, 0.1)',
+                fill: true,
+                tension: 0.4
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                y: {
+                    beginAtZero: true
+                }
+            }
+        }
+    });
+
+    // Payment Method Chart
+    const paymentData = {{ analytics.by_payment_method|safe }};
+    const ctxPayment = document.getElementById('paymentMethodChart').getContext('2d');
+    new Chart(ctxPayment, {
+        type: 'pie',
+        data: {
+            labels: paymentData.map(item => item.payment_method),
+            datasets: [{
+                data: paymentData.map(item => item.total),
+                backgroundColor: [
+                    '#28a745', '#17a2b8', '#ffc107', '#dc3545', '#6c757d'
+                ]
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    position: 'bottom'
+                }
+            }
+        }
+    });
+
+    // Date Range Quick Filters
+    function setDateRange(range) {
+        const today = new Date();
+        let startDate = new Date();
+        let endDate = today;
+
+        switch(range) {
+            case 'today':
+                startDate = today;
+                break;
+            case 'week':
+                startDate.setDate(today.getDate() - 7);
+                break;
+            case 'month':
+                startDate.setMonth(today.getMonth() - 1);
+                break;
+            case 'year':
+                startDate.setFullYear(today.getFullYear() - 1);
+                break;
+        }
+
+        document.getElementById('start_date').value = startDate.toISOString().split('T')[0];
+        document.getElementById('end_date').value = endDate.toISOString().split('T')[0];
+    }
+</script>
+{% endblock %}

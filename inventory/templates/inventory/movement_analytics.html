@@ -1,0 +1,193 @@
+{% extends 'base.html' %}
+{% load math_extras %}
+{% load custom_filters %}
+{% load humanize %}
+
+{% block title %}Movement Analytics - {{ company.trading_name|default:company.name }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid px-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1 class="mt-4"><i class="fas fa-chart-line me-2 text-primary"></i>Movement Analytics</h1>
+        <div>
+            {% if perms.inventory.view_stockmovement %}
+            <a href="{% url 'inventory:movement_list' %}" class="btn btn-outline-primary">
+                <i class="fas fa-list me-1"></i>View All Movements
+            </a>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Summary Cards -->
+    <div class="row mb-4">
+        <div class="col-xl-3 col-md-6">
+            <div class="card bg-primary text-white mb-4">
+                <div class="card-body">
+                    <h5 class="card-title">{{ movement_summary|length }}</h5>
+                    <p class="card-text">Movement Types</p>
+                </div>
+                <div class="card-footer d-flex align-items-center justify-content-between">
+                    <a class="small text-white stretched-link" href="#movement-summary">View Details</a>
+                    <div class="small text-white"><i class="fas fa-angle-right"></i></div>
+                </div>
+            </div>
+        </div>
+        <div class="col-xl-3 col-md-6">
+            <div class="card bg-success text-white mb-4">
+                <div class="card-body">
+                    <h5 class="card-title">{{ top_products|length }}</h5>
+                    <p class="card-text">Active Products</p>
+                </div>
+                <div class="card-footer d-flex align-items-center justify-content-between">
+                    <a class="small text-white stretched-link" href="#top-products">View Top Products</a>
+                    <div class="small text-white"><i class="fas fa-angle-right"></i></div>
+                </div>
+            </div>
+        </div>
+        <div class="col-xl-3 col-md-6">
+            <div class="card bg-info text-white mb-4">
+                <div class="card-body">
+                    <h5 class="card-title">{{ recent_movements|length }}</h5>
+                    <p class="card-text">Recent Activities</p>
+                </div>
+                <div class="card-footer d-flex align-items-center justify-content-between">
+                    <a class="small text-white stretched-link" href="#recent-activities">View Activities</a>
+                    <div class="small text-white"><i class="fas fa-angle-right"></i></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Movement Summary -->
+    <div class="card mb-4" id="movement-summary">
+        <div class="card-header">
+            <i class="fas fa-chart-pie me-1"></i>
+            Movement Summary by Type
+        </div>
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-bordered">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Movement Type</th>
+                            <th>Total Movements</th>
+                            <th>Total Quantity</th>
+                            <th>Average per Movement</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for summary in movement_summary %}
+                        <tr>
+                            <td>
+                                <span class="badge bg-secondary">{{ summary.movement_type }}</span>
+                            </td>
+                            <td>{{ summary.count }}</td>
+                            <td>{{ summary.total_quantity }}</td>
+                                                        <td>
+                                {% if summary.count > 0 %}
+                                    {% widthratio summary.total_quantity summary.count 1 as avg_quantity %}
+                                    {{ avg_quantity|floatformat:1 }}
+                                {% else %}
+                                    0
+                                {% endif %}
+
+                            </td>
+
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Top Products -->
+    <div class="row mb-4">
+        <div class="col-lg-6">
+            <div class="card mb-4" id="top-products">
+                <div class="card-header">
+                    <i class="fas fa-star me-1"></i>
+                    Top Products by Movement Activity
+                </div>
+                <div class="card-body">
+                    <div class="list-group">
+                        {% for product in top_products %}
+                        {% if perms.inventory.view_product %}
+                        <a href="{% url 'inventory:product_detail' product.id %}"
+                           class="list-group-item list-group-item-action d-flex justify-content-between align-items-center">
+                            {{ product.name }}
+                            <span class="badge bg-primary rounded-pill">{{ product.movement_count }}</span>
+                        </a>
+                        {% endif %}
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Recent Activities -->
+    <div class="card mb-4" id="recent-activities">
+        <div class="card-header">
+            <i class="fas fa-history me-1"></i>
+            Recent Stock Movements
+        </div>
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-bordered table-hover">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Date & Time</th>
+                            <th>Product</th>
+                            <th>Type</th>
+                            <th>Quantity</th>
+                            <th>Store</th>
+                            <th>User</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for movement in recent_movements %}
+                        <tr>
+                            <td>{{ movement.created_at|date:"M d, Y H:i" }}</td>
+                            <td>
+                                {% if perms.inventory.view_product %}
+                                <a href="{% url 'inventory:product_detail' movement.product.id %}">
+                                    {{ movement.product.name }}
+                                </a>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <span class="badge
+                                    {% if movement.movement_type in 'PURCHASE,TRANSFER_IN' %}bg-success
+                                    {% elif movement.movement_type in 'SALE,TRANSFER_OUT' %}bg-danger
+                                    {% else %}bg-secondary{% endif %}">
+                                    {{ movement.movement_type }}
+                                </span>
+                            </td>
+                            <td class="{% if movement.quantity > 0 %}text-success{% else %}text-danger{% endif %}">
+                                {% if movement.quantity > 0 %}+{% endif %}{{ movement.quantity }}
+                            </td>
+                            <td>{{ movement.store.name|default:"N/A" }}</td>
+                            <td>{{ movement.created_by.get_full_name|default:movement.created_by.username }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+$(document).ready(function() {
+    // Initialize DataTables
+    $('table').DataTable({
+        pageLength: 10,
+        order: [[0, 'desc']],
+        dom: '<"row"<"col-md-6"l><"col-md-6"f>><"row"<"col-md-12"tr>><"row"<"col-md-6"i><"col-md-6"p>>'
+    });
+});
+</script>
+{% endblock %}

@@ -1,0 +1,1044 @@
+{% extends 'base.html' %}
+{% load humanize %}
+{% load static %}
+
+{% block title %}Low Stock Report - {{ company.trading_name|default:company.name }}{% endblock %}
+
+{% block extra_css %}
+<link href="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.css" rel="stylesheet">
+<style>
+    .low-stock-header {
+        background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%);
+        color: white;
+        border-radius: 15px;
+        padding: 2rem;
+        margin-bottom: 2rem;
+        position: relative;
+        overflow: hidden;
+    }
+
+    .low-stock-header::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 20"><defs><radialGradient id="a" cx="50%" cy="50%"><stop offset="0%" stop-color="white" stop-opacity="0.1"/><stop offset="100%" stop-color="white" stop-opacity="0"/></radialGradient></defs><circle cx="20" cy="10" r="15" fill="url(%23a)"/><circle cx="80" cy="10" r="10" fill="url(%23a)"/></svg>');
+        opacity: 0.1;
+    }
+
+    .low-stock-header h1 {
+        position: relative;
+        z-index: 1;
+        margin: 0;
+        font-weight: 700;
+    }
+
+    .low-stock-header p {
+        position: relative;
+        z-index: 1;
+        margin: 0.5rem 0 0 0;
+        opacity: 0.9;
+    }
+
+    .summary-cards {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 1.5rem;
+        margin-bottom: 2rem;
+    }
+
+    .summary-card {
+        background: white;
+        border-radius: 15px;
+        padding: 1.5rem;
+        box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1);
+        position: relative;
+        overflow: hidden;
+        border: 1px solid #f1f5f9;
+        transition: all 0.3s ease;
+    }
+
+    .summary-card:hover {
+        transform: translateY(-4px);
+        box-shadow: 0 12px 35px rgba(0, 0, 0, 0.15);
+    }
+
+    .summary-card::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 4px;
+        background: var(--accent-color);
+    }
+
+    .summary-card.danger::before { background: #dc2626; }
+    .summary-card.warning::before { background: #f59e0b; }
+    .summary-card.info::before { background: #3b82f6; }
+    .summary-card.success::before { background: #10b981; }
+
+    .summary-number {
+        font-size: 2.5rem;
+        font-weight: 800;
+        color: #1f2937;
+        line-height: 1;
+        margin-bottom: 0.5rem;
+    }
+
+    .summary-label {
+        color: #6b7280;
+        font-size: 0.875rem;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        font-weight: 600;
+    }
+
+    .summary-change {
+        font-size: 0.75rem;
+        font-weight: 500;
+        margin-top: 0.25rem;
+    }
+
+    .summary-change.positive { color: #10b981; }
+    .summary-change.negative { color: #dc2626; }
+
+    .filters-section {
+        background: white;
+        border-radius: 15px;
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);
+        margin-bottom: 2rem;
+        overflow: hidden;
+        border: 1px solid #e5e7eb;
+    }
+
+    .filters-header {
+        background: #f8fafc;
+        padding: 1.5rem;
+        border-bottom: 1px solid #e5e7eb;
+    }
+
+    .filters-body {
+        padding: 1.5rem;
+    }
+
+    .chart-section {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 2rem;
+        margin-bottom: 2rem;
+    }
+
+    .chart-container {
+        background: white;
+        border-radius: 15px;
+        padding: 1.5rem;
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);
+        border: 1px solid #e5e7eb;
+    }
+
+    .main-table-container {
+        background: white;
+        border-radius: 15px;
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);
+        overflow: hidden;
+        border: 1px solid #e5e7eb;
+    }
+
+    .table-header {
+        background: #f8fafc;
+        padding: 1.5rem;
+        border-bottom: 1px solid #e5e7eb;
+    }
+
+    .table-actions {
+        display: flex;
+        gap: 0.5rem;
+    }
+
+    .status-badge {
+        font-size: 0.75rem;
+        padding: 0.5rem 0.75rem;
+        border-radius: 20px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.025em;
+    }
+
+    .status-out-of-stock {
+        background: #fee2e2;
+        color: #dc2626;
+        border: 1px solid #fecaca;
+    }
+
+    .status-critical {
+        background: #fef3c7;
+        color: #d97706;
+        border: 1px solid #fde68a;
+    }
+
+    .status-low-stock {
+        background: #dbeafe;
+        color: #2563eb;
+        border: 1px solid #bfdbfe;
+    }
+
+    .product-info {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+    }
+
+    .product-image {
+        width: 48px;
+        height: 48px;
+        border-radius: 8px;
+        object-fit: cover;
+        background: #f3f4f6;
+        border: 1px solid #e5e7eb;
+    }
+
+    .product-image-placeholder {
+        width: 48px;
+        height: 48px;
+        border-radius: 8px;
+        background: #f3f4f6;
+        border: 1px solid #e5e7eb;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #9ca3af;
+    }
+
+    .product-details h6 {
+        margin: 0;
+        font-weight: 600;
+        color: #1f2937;
+    }
+
+    .product-details .text-muted {
+        font-size: 0.875rem;
+        margin-top: 0.25rem;
+    }
+
+    .quantity-display {
+        font-weight: 700;
+        font-size: 1.1rem;
+    }
+
+    .quantity-unit {
+        color: #6b7280;
+        font-size: 0.875rem;
+        font-weight: 500;
+    }
+
+    .stock-progress {
+        width: 100%;
+        height: 8px;
+        background: #f3f4f6;
+        border-radius: 4px;
+        overflow: hidden;
+        margin-top: 0.5rem;
+    }
+
+    .progress-fill {
+        height: 100%;
+        border-radius: 4px;
+        transition: width 0.3s ease;
+    }
+
+    .progress-critical { background: #dc2626; }
+    .progress-low { background: #f59e0b; }
+    .progress-ok { background: #10b981; }
+
+    .recommendations-section {
+        background: white;
+        border-radius: 15px;
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);
+        margin-top: 2rem;
+        overflow: hidden;
+        border: 1px solid #e5e7eb;
+    }
+
+    .recommendation-item {
+        padding: 1rem;
+        border-left: 4px solid;
+        margin-bottom: 1rem;
+        border-radius: 0 8px 8px 0;
+    }
+
+    .recommendation-item.high {
+        border-color: #dc2626;
+        background: #fef2f2;
+    }
+
+    .recommendation-item.medium {
+        border-color: #f59e0b;
+        background: #fffbeb;
+    }
+
+    .recommendation-item.low {
+        border-color: #3b82f6;
+        background: #eff6ff;
+    }
+
+    .recommendation-title {
+        font-weight: 600;
+        margin-bottom: 0.5rem;
+    }
+
+    .recommendation-message {
+        font-size: 0.875rem;
+        color: #6b7280;
+        margin-bottom: 0.5rem;
+    }
+
+    .recommendation-action {
+        font-size: 0.875rem;
+        font-weight: 500;
+        color: #374151;
+    }
+
+    .empty-state {
+        text-align: center;
+        padding: 4rem 2rem;
+        color: #6b7280;
+    }
+
+    .empty-state i {
+        font-size: 4rem;
+        color: #d1d5db;
+        margin-bottom: 1rem;
+    }
+
+    .export-dropdown .dropdown-item {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.75rem 1rem;
+    }
+
+    .export-dropdown .dropdown-item:hover {
+        background: #f8fafc;
+    }
+
+    .table-responsive {
+        border-radius: 0 0 15px 15px;
+    }
+
+    .table th {
+        background: #f8fafc;
+        border: none;
+        font-weight: 600;
+        color: #374151;
+        padding: 1rem;
+        font-size: 0.875rem;
+        text-transform: uppercase;
+        letter-spacing: 0.025em;
+    }
+
+    .table td {
+        padding: 1rem;
+        border: none;
+        border-bottom: 1px solid #f1f5f9;
+        vertical-align: middle;
+    }
+
+    .table tbody tr:hover {
+        background: #f8fafc;
+    }
+
+    @media (max-width: 992px) {
+        .chart-section {
+            grid-template-columns: 1fr;
+        }
+
+        .summary-cards {
+            grid-template-columns: repeat(2, 1fr);
+        }
+    }
+
+    @media (max-width: 576px) {
+        .summary-cards {
+            grid-template-columns: 1fr;
+        }
+
+        .low-stock-header {
+            text-align: center;
+        }
+
+        .filters-body .row > div {
+            margin-bottom: 1rem;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid px-4">
+    <!-- Header -->
+    <div class="low-stock-header">
+        <div class="row align-items-center">
+            <div class="col-md-8">
+                <h1 class="mb-2">
+                    <i class="fas fa-exclamation-triangle me-3"></i>
+                    Low Stock Alert Report
+                </h1>
+                <p class="mb-0">Critical inventory levels requiring immediate attention</p>
+            </div>
+            <div class="col-md-4 text-end">
+                <div class="d-flex gap-2 justify-content-end">
+                    <div class="dropdown">
+                        <button class="btn btn-light dropdown-toggle" data-bs-toggle="dropdown">
+                            <i class="fas fa-download me-2"></i>Export
+                        </button>
+                        <ul class="dropdown-menu export-dropdown">
+                            <li><a class="dropdown-item" href="?format=excel{{ request.GET.urlencode|add:'&' }}">
+                                <i class="fas fa-file-excel text-success"></i>Excel Report
+                            </a></li>
+                            <li><a class="dropdown-item" href="?format=pdf{{ request.GET.urlencode|add:'&' }}">
+                                <i class="fas fa-file-pdf text-danger"></i>PDF Report
+                            </a></li>
+                            <li><a class="dropdown-item" href="?format=csv{{ request.GET.urlencode|add:'&' }}">
+                                <i class="fas fa-file-csv text-info"></i>CSV Export
+                            </a></li>
+                        </ul>
+                    </div>
+                    <button class="btn btn-light" onclick="window.print()">
+                        <i class="fas fa-print me-2"></i>Print
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Summary Cards -->
+    <div class="summary-cards">
+        <div class="summary-card danger">
+            <div class="summary-number">{{ summary_stats.total_items|default:0 }}</div>
+            <div class="summary-label">Total Low Stock Items</div>
+            {% if summary_stats.total_items > 0 %}
+                <div class="summary-change negative">
+                    <i class="fas fa-arrow-up me-1"></i>Requires attention
+                </div>
+            {% endif %}
+        </div>
+
+        <div class="summary-card warning">
+            <div class="summary-number">{{ summary_stats.out_of_stock_count|default:0 }}</div>
+            <div class="summary-label">Out of Stock</div>
+            {% if summary_stats.out_of_stock_count > 0 %}
+                <div class="summary-change negative">
+                    <i class="fas fa-exclamation-triangle me-1"></i>Critical
+                </div>
+            {% endif %}
+        </div>
+
+        <div class="summary-card info">
+            <div class="summary-number">{{ summary_stats.critical_count|default:0 }}</div>
+            <div class="summary-label">Critical Level</div>
+            {% if summary_stats.critical_count > 0 %}
+                <div class="summary-change negative">
+                    <i class="fas fa-bolt me-1"></i>Urgent action needed
+                </div>
+            {% endif %}
+        </div>
+
+        <div class="summary-card success">
+            <div class="summary-number">${{ summary_stats.total_value_at_risk|floatformat:0|default:0 }}</div>
+            <div class="summary-label">Value at Risk</div>
+            <div class="summary-change">
+                <i class="fas fa-dollar-sign me-1"></i>Inventory value
+            </div>
+        </div>
+    </div>
+
+    <!-- Filters -->
+    <div class="filters-section">
+        <div class="filters-header">
+            <h6 class="mb-0">
+                <i class="fas fa-filter me-2"></i>
+                Filter & Search Options
+            </h6>
+        </div>
+        <div class="filters-body">
+            <form method="GET" class="row g-3">
+                <div class="col-md-3">
+                    <label class="form-label">Category</label>
+                    <select class="form-select" name="category">
+                        <option value="">All Categories</option>
+                        {% for category in categories %}
+                            <option value="{{ category.id }}" {% if selected_category == category.id|stringformat:"s" %}selected{% endif %}>
+                                {{ category.name }}
+                            </option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div class="col-md-3">
+                    <label class="form-label">Store</label>
+                    <select class="form-select" name="store">
+                        <option value="">All Stores</option>
+                        {% for store in stores %}
+                            <option value="{{ store.id }}" {% if selected_store == store.id|stringformat:"s" %}selected{% endif %}>
+                                {{ store.name }}
+                            </option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div class="col-md-3">
+                    <label class="form-label">Severity Level</label>
+                    <select class="form-select" name="severity">
+                        {% for value, label in severity_choices %}
+                            <option value="{{ value }}" {% if selected_severity == value %}selected{% endif %}>
+                                {{ label }}
+                            </option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div class="col-md-3">
+                    <label class="form-label">&nbsp;</label>
+                    <div class="d-flex gap-2">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="fas fa-search me-2"></i>Apply Filters
+                        </button>
+                        {% if perms.inventory.view_stock %}
+                        <a href="{% url 'inventory:low_stock_report' %}" class="btn btn-outline-secondary">
+                            <i class="fas fa-undo me-2"></i>Reset
+                        </a>
+                        {% endif %}
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Charts Section -->
+    <div class="chart-section">
+        <div class="chart-container">
+            <h6 class="mb-3">
+                <i class="fas fa-chart-bar me-2"></i>
+                Low Stock by Category
+            </h6>
+            <canvas id="categoryChart" height="300"></canvas>
+        </div>
+
+        <div class="chart-container">
+            <h6 class="mb-3">
+                <i class="fas fa-chart-pie me-2"></i>
+                Stock Status Distribution
+            </h6>
+            <canvas id="statusChart" height="300"></canvas>
+        </div>
+    </div>
+
+    <!-- Main Table -->
+    <div class="main-table-container">
+        <div class="table-header">
+            <div class="row align-items-center">
+                <div class="col-md-6">
+                    <h6 class="mb-0">
+                        <i class="fas fa-table me-2"></i>
+                        Low Stock Items Details
+                        <span class="badge bg-danger ms-2">{{ page_obj.paginator.count }} items</span>
+                    </h6>
+                </div>
+                <div class="col-md-6 text-end">
+                    <div class="d-flex gap-2 justify-content-end">
+                        <button class="btn btn-outline-primary btn-sm" onclick="selectAllItems()">
+                            <i class="fas fa-check-square me-1"></i>Select All
+                        </button>
+                        <button class="btn btn-outline-success btn-sm" onclick="bulkReorder()" id="bulkReorderBtn" disabled>
+                            <i class="fas fa-shopping-cart me-1"></i>Bulk Reorder
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead>
+                    <tr>
+                        <th width="40px">
+                            <input type="checkbox" class="form-check-input" id="selectAllCheckbox" onchange="toggleSelectAll()">
+                        </th>
+                        <th>Product</th>
+                        <th>Category</th>
+                        <th>Store</th>
+                        <th>Current Stock</th>
+                        <th>Reorder Level</th>
+                        <th>Stock Status</th>
+                        <th>Value</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in page_obj %}
+                    <tr data-item-id="{{ item.stock.id }}">
+                        <td>
+                            <input type="checkbox" class="form-check-input item-checkbox" value="{{ item.stock.id }}">
+                        </td>
+                        <td>
+                            <div class="product-info">
+                                {% if item.stock.product.image %}
+                                    <img src="{{ item.stock.product.image.url }}"
+                                         alt="{{ item.stock.product.name }}"
+                                         class="product-image">
+                                {% else %}
+                                    <div class="product-image-placeholder">
+                                        <i class="fas fa-box"></i>
+                                    </div>
+                                {% endif %}
+                                <div class="product-details">
+                                    <h6>
+                                        {% if perms.inventory.view_product %}
+                                        <a href="{% url 'inventory:product_detail' item.stock.product.id %}"
+                                           class="text-decoration-none">
+                                            {{ item.stock.product.name }}
+                                        </a>
+                                        {% endif %}
+                                    </h6>
+                                    <div class="text-muted">SKU: {{ item.stock.product.sku }}</div>
+                                </div>
+                            </div>
+                        </td>
+                        <td>
+                            {% if item.stock.product.category %}
+                                <span class="badge bg-info">{{ item.stock.product.category.name }}</span>
+                            {% else %}
+                                <span class="text-muted">No Category</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <strong>{{ item.stock.store.name }}</strong>
+                        </td>
+                        <td>
+                            <div>
+                                <span class="quantity-display">{{ item.stock.quantity|floatformat:0 }}</span>
+                                <span class="quantity-unit">{{ item.stock.product.unit_of_measure }}</span>
+                            </div>
+                            <div class="stock-progress">
+                                <div class="progress-fill {% if item.stock.quantity == 0 %}progress-critical{% elif item.stock.quantity <= item.half_reorder %}progress-critical{% else %}progress-low{% endif %}"
+                                     style="width: {{ item.stock_percentage }}%"></div>
+                            </div>
+                        </td>
+                        <td class="text-center">
+                            <strong>{{ item.stock.reorder_level|floatformat:0 }}</strong>
+                            <div class="text-muted small">Gap: {{ item.reorder_gap|floatformat:0 }}</div>
+                        </td>
+                        <td>
+                            {% if item.stock.quantity == 0 %}
+                                <span class="status-badge status-out-of-stock">Out of Stock</span>
+                            {% elif item.stock.quantity <= item.half_reorder %}
+                                <span class="status-badge status-critical">Critical</span>
+                            {% else %}
+                                <span class="status-badge status-low-stock">Low Stock</span>
+                            {% endif %}
+                        </td>
+                        <td class="text-end">
+                            <div class="fw-bold">${{ item.total_cost|floatformat:2 }}</div>
+                            <div class="text-muted small">${{ item.stock.product.cost_price|floatformat:2 }}/unit</div>
+                        </td>
+                        <td>
+                            <div class="table-actions">
+                                {% if perms.inventory.add_stockmovement %}
+                                <a href="{% url 'inventory:stock_adjustment' %}?product={{ item.stock.product.id }}&store={{ item.stock.store.id }}"
+                                   class="btn btn-sm btn-outline-success"
+                                   data-bs-toggle="tooltip"
+                                   title="Adjust Stock">
+                                    <i class="fas fa-plus-minus"></i>
+                                </a>
+                                {% endif %}
+                                <button type="button"
+                                        class="btn btn-sm btn-outline-primary"
+                                        onclick="showItemDetails({{ item.stock.id }})"
+                                        data-bs-toggle="tooltip"
+                                        title="View Details">
+                                    <i class="fas fa-eye"></i>
+                                </button>
+                                <button type="button"
+                                        class="btn btn-sm btn-outline-warning"
+                                        onclick="quickReorder({{ item.stock.product.id }}, {{ item.stock.store.id }}, {{ item.recommended_order_qty }})"
+                                        data-bs-toggle="tooltip"
+                                        title="Quick Reorder">
+                                    <i class="fas fa-shopping-cart"></i>
+                                </button>
+                            </div>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="9">
+                            <div class="empty-state">
+                                <i class="fas fa-check-circle"></i>
+                                <h5 class="mt-3 mb-2">No Low Stock Items Found!</h5>
+                                <p class="text-muted">All your products are adequately stocked. Great job managing your inventory!</p>
+                                {% if perms.inventory.view_product %}
+                                <a href="{% url 'inventory:product_list' %}" class="btn btn-primary">
+                                    <i class="fas fa-boxes me-2"></i>View All Products
+                                </a>
+                                {% endif %}
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Pagination -->
+        {% if page_obj.has_other_pages %}
+        <div class="p-3 border-top">
+            <nav aria-label="Page navigation">
+                <ul class="pagination justify-content-center mb-0">
+                    {% if page_obj.has_previous %}
+                        <li class="page-item">
+                            <a class="page-link" href="?page={{ page_obj.previous_page_number }}{{ request.GET.urlencode|add:'&' }}">
+                                <i class="fas fa-chevron-left"></i>
+                            </a>
+                        </li>
+                    {% endif %}
+
+                    {% for num in page_obj.paginator.page_range %}
+                        {% if page_obj.number == num %}
+                            <li class="page-item active">
+                                <span class="page-link">{{ num }}</span>
+                            </li>
+                        {% elif num > page_obj.number|add:'-3' and num < page_obj.number|add:'3' %}
+                            <li class="page-item">
+                                <a class="page-link" href="?page={{ num }}{{ request.GET.urlencode|add:'&' }}">{{ num }}</a>
+                            </li>
+                        {% endif %}
+                    {% endfor %}
+
+                    {% if page_obj.has_next %}
+                        <li class="page-item">
+                            <a class="page-link" href="?page={{ page_obj.next_page_number }}{{ request.GET.urlencode|add:'&' }}">
+                                <i class="fas fa-chevron-right"></i>
+                            </a>
+                        </li>
+                    {% endif %}
+                </ul>
+            </nav>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Recommendations Section -->
+    {% if recommendations %}
+    <div class="recommendations-section">
+        <div class="p-3 border-bottom">
+            <h6 class="mb-0">
+                <i class="fas fa-lightbulb me-2"></i>
+                Smart Recommendations
+            </h6>
+        </div>
+        <div class="p-3">
+            {% for rec in recommendations %}
+            <div class="recommendation-item {{ rec.priority }}">
+                <div class="recommendation-title">
+                    {% if rec.priority == 'high' %}
+                        <i class="fas fa-exclamation-triangle me-2"></i>
+                    {% elif rec.priority == 'medium' %}
+                        <i class="fas fa-exclamation-circle me-2"></i>
+                    {% else %}
+                        <i class="fas fa-info-circle me-2"></i>
+                    {% endif %}
+                    {{ rec.title }}
+                </div>
+                <div class="recommendation-message">{{ rec.message }}</div>
+                <div class="recommendation-action">
+                    <i class="fas fa-arrow-right me-1"></i>{{ rec.action }}
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+<!-- Item Details Modal -->
+<div class="modal fade" id="itemDetailsModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Stock Item Details</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="itemDetailsContent">
+                <!-- Content loaded via AJAX -->
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Quick Reorder Modal -->
+<div class="modal fade" id="quickReorderModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Quick Reorder</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="quickReorderForm">
+                    <div class="mb-3">
+                        <label class="form-label">Recommended Order Quantity</label>
+                        <input type="number" class="form-control" id="orderQuantity" min="1" step="0.001">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Notes</label>
+                        <textarea class="form-control" rows="3" placeholder="Optional notes for this order..."></textarea>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" onclick="processQuickReorder()">
+                    <i class="fas fa-shopping-cart me-2"></i>Create Order
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+<script>
+$(document).ready(function() {
+    // Initialize tooltips
+    var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+    var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
+        return new bootstrap.Tooltip(tooltipTriggerEl);
+    });
+
+    // Initialize charts
+    initializeCharts();
+
+    // Update bulk action button state
+    updateBulkActionButtons();
+});
+
+function initializeCharts() {
+    // Category Chart
+    const categoryCtx = document.getElementById('categoryChart');
+    if (categoryCtx) {
+        new Chart(categoryCtx, {
+            type: 'bar',
+            data: {
+                labels: {{ chart_data.categories.labels|safe }},
+                datasets: [{
+                    label: 'Low Stock Items',
+                    data: {{ chart_data.categories.values|safe }},
+                    backgroundColor: '#dc2626',
+                    borderRadius: 6,
+                }, {
+                    label: 'Critical Items',
+                    data: {{ chart_data.categories.critical|safe }},
+                    backgroundColor: '#f59e0b',
+                    borderRadius: 6,
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        position: 'bottom'
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        ticks: {
+                            stepSize: 1
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    // Status Distribution Chart
+    const statusCtx = document.getElementById('statusChart');
+    if (statusCtx) {
+        new Chart(statusCtx, {
+            type: 'doughnut',
+            data: {
+                labels: ['Out of Stock', 'Critical', 'Low Stock'],
+                datasets: [{
+                    data: [
+                        {{ summary_stats.out_of_stock_count|default:0 }},
+                        {{ summary_stats.critical_count|default:0 }},
+                        {{ summary_stats.low_stock_count|default:0 }}
+                    ],
+                    backgroundColor: [
+                        '#dc2626',
+                        '#f59e0b',
+                        '#3b82f6'
+                    ],
+                    borderWidth: 0
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        position: 'bottom'
+                    }
+                }
+            }
+        });
+    }
+}
+
+function toggleSelectAll() {
+    const selectAllCheckbox = document.getElementById('selectAllCheckbox');
+    const itemCheckboxes = document.querySelectorAll('.item-checkbox');
+
+    itemCheckboxes.forEach(checkbox => {
+        checkbox.checked = selectAllCheckbox.checked;
+    });
+
+    updateBulkActionButtons();
+}
+
+function selectAllItems() {
+    const selectAllCheckbox = document.getElementById('selectAllCheckbox');
+    selectAllCheckbox.checked = true;
+    toggleSelectAll();
+}
+
+function updateBulkActionButtons() {
+    const checkedBoxes = document.querySelectorAll('.item-checkbox:checked');
+    const bulkReorderBtn = document.getElementById('bulkReorderBtn');
+
+    bulkReorderBtn.disabled = checkedBoxes.length === 0;
+
+    // Update button text with count
+    if (checkedBoxes.length > 0) {
+        bulkReorderBtn.innerHTML = `<i class="fas fa-shopping-cart me-1"></i>Bulk Reorder (${checkedBoxes.length})`;
+    } else {
+        bulkReorderBtn.innerHTML = '<i class="fas fa-shopping-cart me-1"></i>Bulk Reorder';
+    }
+}
+
+function showItemDetails(stockId) {
+    const modal = new bootstrap.Modal(document.getElementById('itemDetailsModal'));
+    const content = document.getElementById('itemDetailsContent');
+
+    content.innerHTML = '<div class="text-center"><div class="spinner-border" role="status"></div></div>';
+    modal.show();
+
+    // Load item details via AJAX (you'll need to implement this endpoint)
+    fetch(`/inventory/ajax/stock-details/${stockId}/`)
+        .then(response => response.json())
+        .then(data => {
+            content.innerHTML = `
+                <div class="row">
+                    <div class="col-md-6">
+                        <h6>Product Information</h6>
+                        <p><strong>Name:</strong> ${data.product_name}</p>
+                        <p><strong>SKU:</strong> ${data.sku}</p>
+                        <p><strong>Category:</strong> ${data.category}</p>
+                        <p><strong>Unit:</strong> ${data.unit}</p>
+                    </div>
+                    <div class="col-md-6">
+                        <h6>Stock Information</h6>
+                        <p><strong>Current Stock:</strong> ${data.current_stock}</p>
+                        <p><strong>Reorder Level:</strong> ${data.reorder_level}</p>
+                        <p><strong>Last Updated:</strong> ${data.last_updated}</p>
+                        <p><strong>Store:</strong> ${data.store_name}</p>
+                    </div>
+                </div>
+                <div class="mt-3">
+                    <h6>Recent Movements</h6>
+                    <div class="table-responsive">
+                        <table class="table table-sm">
+                            <thead>
+                                <tr>
+                                    <th>Date</th>
+                                    <th>Type</th>
+                                    <th>Quantity</th>
+                                    <th>By</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${data.recent_movements.map(movement => `
+                                    <tr>
+                                        <td>${movement.date}</td>
+                                        <td>${movement.type}</td>
+                                        <td>${movement.quantity}</td>
+                                        <td>${movement.created_by}</td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            `;
+        })
+        .catch(error => {
+            content.innerHTML = '<div class="alert alert-danger">Failed to load item details</div>';
+        });
+}
+
+function quickReorder(productId, storeId, recommendedQty) {
+    document.getElementById('orderQuantity').value = recommendedQty;
+
+    const modal = new bootstrap.Modal(document.getElementById('quickReorderModal'));
+    modal.show();
+
+    // Store data for processing
+    document.getElementById('quickReorderForm').setAttribute('data-product-id', productId);
+    document.getElementById('quickReorderForm').setAttribute('data-store-id', storeId);
+}
+
+function processQuickReorder() {
+    const form = document.getElementById('quickReorderForm');
+    const productId = form.getAttribute('data-product-id');
+    const storeId = form.getAttribute('data-store-id');
+    const quantity = document.getElementById('orderQuantity').value;
+
+    if (!quantity || quantity <= 0) {
+        alert('Please enter a valid quantity');
+        return;
+    }
+
+    // This would typically make an AJAX call to create a purchase order
+    // For now, redirect to stock adjustment
+    window.location.href = `/inventory/stock-adjustment/?product=${productId}&store=${storeId}&quantity=${quantity}`;
+}
+
+function bulkReorder() {
+    const checkedBoxes = document.querySelectorAll('.item-checkbox:checked');
+    const stockIds = Array.from(checkedBoxes).map(box => box.value);
+
+    if (stockIds.length === 0) {
+        alert('Please select at least one item');
+        return;
+    }
+
+    // This would typically open a bulk reorder interface
+    // For now, show a simple alert
+    if (confirm(`Create reorder requests for ${stockIds.length} items?`)) {
+        // Process bulk reorder
+        window.location.href = `/inventory/bulk-reorder/?items=${stockIds.join(',')}`;
+    }
+}
+
+// Add event listeners for checkboxes
+document.addEventListener('change', function(e) {
+    if (e.target.classList.contains('item-checkbox')) {
+        updateBulkActionButtons();
+    }
+});
+</script>
+{% endblock %}

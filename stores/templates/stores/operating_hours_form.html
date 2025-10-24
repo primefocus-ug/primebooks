@@ -1,0 +1,138 @@
+{% extends "base.html" %}
+{% load static %}
+{% load crispy_forms_tags %}
+
+{% block title %}
+    {% if object %}Edit Operating Hours{% else %}Add Operating Hours{% endif %} | Prime Book
+{% endblock %}
+
+{% block page_header %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h1 class="h3 mb-1">
+            <i class="bi bi-clock me-2"></i>
+            {% if object %}Edit Operating Hours{% else %}Add Operating Hours{% endif %}
+        </h1>
+        <p class="text-muted mb-0">
+            {% if object %}Update store operating schedule{% else %}Create new operating schedule{% endif %}
+        </p>
+    </div>
+    <div>
+        {% if object and object.store %}
+        <a href="{% url 'stores:store_detail' object.store.pk %}" class="btn btn-outline-secondary">
+            <i class="bi bi-arrow-left me-1"></i>Back to Store
+        </a>
+        {% elif request.GET.store %}
+        <a href="{% url 'stores:store_detail' request.GET.store %}" class="btn btn-outline-secondary">
+            <i class="bi bi-arrow-left me-1"></i>Back to Store
+        </a>
+        {% else %}
+        <a href="{% url 'stores:store_list' %}" class="btn btn-outline-secondary">
+            <i class="bi bi-arrow-left me-1"></i>Back to Stores
+        </a>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">Operating Hours Details</h5>
+            </div>
+            <div class="card-body">
+                <form method="post">
+                    {% csrf_token %}
+
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label for="{{ form.store.id_for_label }}" class="form-label">Store *</label>
+                            {{ form.store }}
+                            {% if form.store.errors %}
+                                <div class="text-danger small mt-1">{{ form.store.errors.0 }}</div>
+                            {% endif %}
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label for="{{ form.day.id_for_label }}" class="form-label">Day *</label>
+                            {{ form.day }}
+                            {% if form.day.errors %}
+                                <div class="text-danger small mt-1">{{ form.day.errors.0 }}</div>
+                            {% endif %}
+                        </div>
+                    </div>
+
+                    <div class="mb-3 form-check">
+                        {{ form.is_closed }}
+                        <label class="form-check-label" for="{{ form.is_closed.id_for_label }}">
+                            Closed All Day
+                        </label>
+                        <div class="form-text">Check if the store is closed on this day</div>
+                        {% if form.is_closed.errors %}
+                            <div class="text-danger small mt-1">{{ form.is_closed.errors.0 }}</div>
+                        {% endif %}
+                    </div>
+
+                    <div class="row closed-times-container" style="display: {% if form.instance.is_closed %}none{% else %}block{% endif %};">
+                        <div class="col-md-6 mb-3">
+                            <label for="{{ form.opening_time.id_for_label }}" class="form-label">Opening Time</label>
+                            {{ form.opening_time }}
+                            {% if form.opening_time.errors %}
+                                <div class="text-danger small mt-1">{{ form.opening_time.errors.0 }}</div>
+                            {% endif %}
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label for="{{ form.closing_time.id_for_label }}" class="form-label">Closing Time</label>
+                            {{ form.closing_time }}
+                            {% if form.closing_time.errors %}
+                                <div class="text-danger small mt-1">{{ form.closing_time.errors.0 }}</div>
+                            {% endif %}
+                        </div>
+                    </div>
+
+                    <div class="mt-4">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-check-circle me-1"></i>
+                            {% if object %}Update Hours{% else %}Create Hours{% endif %}
+                        </button>
+                        {% if object and object.store %}
+                        <a href="{% url 'stores:store_detail' object.store.pk %}" class="btn btn-outline-secondary ms-2">
+                            <i class="bi bi-x-circle me-1"></i>Cancel
+                        </a>
+                        {% elif request.GET.store %}
+                        <a href="{% url 'stores:store_detail' request.GET.store %}" class="btn btn-outline-secondary ms-2">
+                            <i class="bi bi-x-circle me-1"></i>Cancel
+                        </a>
+                        {% else %}
+                        <a href="{% url 'stores:store_list' %}" class="btn btn-outline-secondary ms-2">
+                            <i class="bi bi-x-circle me-1"></i>Cancel
+                        </a>
+                        {% endif %}
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const isClosedCheckbox = document.getElementById('{{ form.is_closed.id_for_label }}');
+    const closedTimesContainer = document.querySelector('.closed-times-container');
+
+    function toggleClosedTimes() {
+        if (isClosedCheckbox.checked) {
+            closedTimesContainer.style.display = 'none';
+        } else {
+            closedTimesContainer.style.display = 'block';
+        }
+    }
+
+    isClosedCheckbox.addEventListener('change', toggleClosedTimes);
+    toggleClosedTimes(); // Initial state
+});
+</script>
+{% endblock %}

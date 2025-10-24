@@ -1,0 +1,81 @@
+<!-- templates/core/navigation.html -->
+{% load navigation_tags %}
+
+{% for nav_item in navigation_items %}
+    <div class="nav-section">
+        {% if nav_item.children %}
+            <!-- Parent item with children -->
+            {% is_section_active nav_item as section_active %}
+            <button class="btn btn-toggle align-items-center rounded collapsed w-100 text-start"
+                    data-bs-toggle="collapse"
+                    data-bs-target="#{{ nav_item.name|slugify_nav }}Collapse"
+                    aria-expanded="{% if section_active %}true{% else %}false{% endif %}"
+                    aria-controls="{{ nav_item.name|slugify_nav }}Collapse">
+                {% if nav_item.icon %}
+                    <i class="{{ nav_item.icon }} me-2"></i>
+                {% endif %}
+                {{ nav_item.name }}
+            </button>
+
+            <div class="collapse {% if section_active %}show{% endif %}" id="{{ nav_item.name|slugify_nav }}Collapse">
+                {% for child in nav_item.children %}
+                    {% if child.children %}
+                        <!-- Nested dropdown (3rd level) -->
+                        <div class="nav-item dropdown ms-3">
+                            <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown">
+                                {% if child.icon %}
+                                    <i class="{{ child.icon }} me-2"></i>
+                                {% endif %}
+                                {{ child.name }}
+                            </a>
+                            <ul class="dropdown-menu">
+                                {% for nested_child in child.children %}
+                                    <li>
+                                        {% nav_item_url nested_child as nested_url %}
+                                        <a class="dropdown-item {% if nested_child.css_class %}{{ nested_child.css_class }}{% endif %}"
+                                           href="{{ nested_url }}">
+                                            {% if nested_child.icon %}
+                                                <i class="{{ nested_child.icon }} me-2"></i>
+                                            {% endif %}
+                                            {{ nested_child.name }}
+                                        </a>
+                                    </li>
+                                {% endfor %}
+                            </ul>
+                        </div>
+                    {% else %}
+                        <!-- Regular child item -->
+                        {% nav_item_url child as child_url %}
+                        {% is_active_nav child.url_name as is_active %}
+                        <a href="{{ child_url }}"
+                           class="nav-link {% if is_active %}active{% endif %} {% if child.css_class %}{{ child.css_class }}{% endif %}">
+                            {% if child.icon %}
+                                <i class="{{ child.icon }} me-2"></i>
+                            {% endif %}
+                            {{ child.name }}
+                        </a>
+                    {% endif %}
+                {% endfor %}
+            </div>
+        {% else %}
+            <!-- Single item without children -->
+            {% nav_item_url nav_item as item_url %}
+            {% is_active_nav nav_item.url_name as is_active %}
+            <a href="{{ item_url }}"
+               class="nav-link {% if is_active %}active{% endif %} {% if nav_item.css_class %}{{ nav_item.css_class }}{% endif %}">
+                {% if nav_item.icon %}
+                    <i class="{{ nav_item.icon }} me-2"></i>
+                {% endif %}
+                {{ nav_item.name }}
+            </a>
+        {% endif %}
+    </div>
+{% empty %}
+    <div class="nav-section">
+        <div class="alert alert-info small">
+            <i class="bi bi-info-circle me-2"></i>
+            No navigation items available
+        </div>
+    </div>
+{% endfor %}
+

@@ -1,0 +1,131 @@
+{% extends "efris/base.html" %}
+{% load static %}
+
+{% block efris_content %}
+<div class="efris-card">
+    <div class="card-body">
+        <h5 class="card-title">
+            <i class="fas fa-boxes"></i> Negative Stock Configuration
+        </h5>
+
+        {% if config_data %}
+        <!-- Main Configuration -->
+        <div class="card mt-4">
+            <div class="card-header bg-primary text-white">
+                <h6 class="mb-0">Stock Limit Configuration</h6>
+            </div>
+            <div class="card-body">
+                <dl class="row">
+                    <dt class="col-sm-3">Configuration ID:</dt>
+                    <dd class="col-sm-9"><code>{{ config_data.goods_stock_limit.id }}</code></dd>
+
+                    <dt class="col-sm-3">Period From:</dt>
+                    <dd class="col-sm-9">{{ config_data.goods_stock_limit.periodFrom }}</dd>
+
+                    <dt class="col-sm-3">Period To:</dt>
+                    <dd class="col-sm-9">{{ config_data.goods_stock_limit.periodTo }}</dd>
+
+                    <dt class="col-sm-3">All Negative Allowed:</dt>
+                    <dd class="col-sm-9">
+                        {% if config_data.goods_stock_limit.allNegativeCode == '101' %}
+                            <span class="badge bg-success">
+                                <i class="fas fa-check"></i> Yes - All categories allowed
+                            </span>
+                        {% else %}
+                            <span class="badge bg-warning">
+                                <i class="fas fa-times"></i> No - Specific categories only
+                            </span>
+                        {% endif %}
+                    </dd>
+
+                    <dt class="col-sm-3">Status:</dt>
+                    <dd class="col-sm-9">
+                        {% if config_data.goods_stock_limit.statusCode == '101' %}
+                            <span class="badge bg-success">Enabled</span>
+                        {% else %}
+                            <span class="badge bg-danger">Disabled</span>
+                        {% endif %}
+                    </dd>
+                </dl>
+            </div>
+        </div>
+
+        <!-- Category List -->
+        {% if config_data.category_list %}
+        <div class="card mt-4">
+            <div class="card-header bg-info text-white">
+                <h6 class="mb-0">
+                    Allowed Categories
+                    <span class="badge bg-light text-dark">{{ config_data.category_list|length }}</span>
+                </h6>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Category Code</th>
+                                <th>Select All Subcategories</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for category in config_data.category_list %}
+                            <tr>
+                                <td><code>{{ category.id }}</code></td>
+                                <td><strong>{{ category.commodityCategoryCode }}</strong></td>
+                                <td>
+                                    {% if category.isSelectAll == '101' %}
+                                        <span class="badge bg-success">
+                                            <i class="fas fa-check"></i> Yes
+                                        </span>
+                                    {% else %}
+                                        <span class="badge bg-secondary">
+                                            <i class="fas fa-times"></i> No
+                                        </span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        <div class="card mt-4">
+            <div class="card-header bg-light">
+                <h6 class="mb-0">
+                    <i class="fas fa-info-circle"></i> About Negative Stock
+                </h6>
+            </div>
+            <div class="card-body">
+                <p>Negative stock configuration determines which commodity categories can have negative inventory balances in EFRIS.</p>
+
+                <h6 class="mt-3">Configuration Options:</h6>
+                <ul>
+                    <li><strong>All Negative (101):</strong> All commodity categories allow negative stock</li>
+                    <li><strong>Specific Categories (102):</strong> Only specified categories allow negative stock</li>
+                </ul>
+
+                <h6 class="mt-3">Use Cases:</h6>
+                <ul>
+                    <li>Pre-selling goods before stock arrival</li>
+                    <li>Service-based businesses with virtual inventory</li>
+                    <li>Temporary stock discrepancies during audits</li>
+                </ul>
+
+                <div class="alert alert-warning mt-3">
+                    <strong>Note:</strong> This configuration is set by URA. Contact URA to modify negative stock settings.
+                </div>
+            </div>
+        </div>
+        {% else %}
+        <div class="alert alert-info mt-4">
+            <i class="fas fa-info-circle"></i> No negative stock configuration found. This may be set at the URA level.
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

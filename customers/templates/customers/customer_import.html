@@ -1,0 +1,763 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Import Customers{% endblock %}
+
+{% block extra_css %}
+<style>
+    .import-card {
+        background: white;
+        border-radius: 12px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        padding: 2rem;
+        margin-bottom: 2rem;
+    }
+
+    .import-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 2rem;
+        padding-bottom: 1rem;
+        border-bottom: 2px solid #E5E7EB;
+    }
+
+    .step-indicator {
+        display: flex;
+        gap: 2rem;
+        margin-bottom: 2rem;
+    }
+
+    .step {
+        flex: 1;
+        text-align: center;
+        position: relative;
+    }
+
+    .step-number {
+        width: 40px;
+        height: 40px;
+        border-radius: 50%;
+        background: #E5E7EB;
+        color: #6B7280;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: bold;
+        margin-bottom: 0.5rem;
+    }
+
+    .step.active .step-number {
+        background: #4F46E5;
+        color: white;
+    }
+
+    .step.completed .step-number {
+        background: #10B981;
+        color: white;
+    }
+
+    .step-title {
+        font-size: 0.875rem;
+        color: #6B7280;
+    }
+
+    .step.active .step-title {
+        color: #1F2937;
+        font-weight: 600;
+    }
+
+    .download-section {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+        gap: 1.5rem;
+        margin-bottom: 2rem;
+    }
+
+    .download-card {
+        border: 2px solid #E5E7EB;
+        border-radius: 8px;
+        padding: 1.5rem;
+        transition: all 0.3s;
+        cursor: pointer;
+    }
+
+    .download-card:hover {
+        border-color: #4F46E5;
+        box-shadow: 0 4px 12px rgba(79, 70, 229, 0.1);
+        transform: translateY(-2px);
+    }
+
+    .download-icon {
+        width: 48px;
+        height: 48px;
+        background: #EEF2FF;
+        border-radius: 8px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin-bottom: 1rem;
+    }
+
+    .upload-zone {
+        border: 2px dashed #D1D5DB;
+        border-radius: 8px;
+        padding: 3rem 2rem;
+        text-align: center;
+        transition: all 0.3s;
+        background: #F9FAFB;
+        cursor: pointer;
+    }
+
+    .upload-zone:hover, .upload-zone.drag-over {
+        border-color: #4F46E5;
+        background: #EEF2FF;
+    }
+
+    .upload-icon {
+        width: 64px;
+        height: 64px;
+        margin: 0 auto 1rem;
+        background: #E0E7FF;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .file-selected {
+        background: #EEF2FF;
+        border: 2px solid #4F46E5;
+        padding: 1rem;
+        border-radius: 8px;
+        margin-top: 1rem;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+    }
+
+    .import-options {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 1.5rem;
+        margin: 2rem 0;
+    }
+
+    .option-group {
+        padding: 1.5rem;
+        border: 1px solid #E5E7EB;
+        border-radius: 8px;
+        background: #F9FAFB;
+    }
+
+    .option-group label {
+        display: block;
+        margin-bottom: 0.5rem;
+        font-weight: 600;
+        color: #374151;
+    }
+
+    .radio-group {
+        display: flex;
+        flex-direction: column;
+        gap: 0.75rem;
+    }
+
+    .radio-option {
+        display: flex;
+        align-items: start;
+        gap: 0.75rem;
+        padding: 0.75rem;
+        border-radius: 6px;
+        transition: background 0.2s;
+    }
+
+    .radio-option:hover {
+        background: white;
+    }
+
+    .checkbox-option {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        padding: 0.75rem;
+        border-radius: 6px;
+        background: white;
+    }
+
+    .alert-box {
+        padding: 1rem;
+        border-radius: 8px;
+        margin-bottom: 1rem;
+        display: flex;
+        gap: 0.75rem;
+    }
+
+    .alert-warning {
+        background: #FEF3C7;
+        border-left: 4px solid #F59E0B;
+        color: #92400E;
+    }
+
+    .alert-info {
+        background: #DBEAFE;
+        border-left: 4px solid #3B82F6;
+        color: #1E3A8A;
+    }
+
+    .alert-success {
+        background: #D1FAE5;
+        border-left: 4px solid #10B981;
+        color: #065F46;
+    }
+
+    .btn-primary {
+        background: #4F46E5;
+        color: white;
+        padding: 0.75rem 1.5rem;
+        border-radius: 8px;
+        border: none;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.3s;
+    }
+
+    .btn-primary:hover:not(:disabled) {
+        background: #4338CA;
+        transform: translateY(-1px);
+        box-shadow: 0 4px 12px rgba(79, 70, 229, 0.3);
+    }
+
+    .btn-primary:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
+
+    .btn-secondary {
+        background: white;
+        color: #4F46E5;
+        border: 2px solid #4F46E5;
+        padding: 0.75rem 1.5rem;
+        border-radius: 8px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.3s;
+    }
+
+    .btn-secondary:hover {
+        background: #EEF2FF;
+    }
+
+    .loading-spinner {
+        display: inline-block;
+        width: 20px;
+        height: 20px;
+        border: 3px solid rgba(255,255,255,0.3);
+        border-radius: 50%;
+        border-top-color: white;
+        animation: spin 1s linear infinite;
+    }
+
+    @keyframes spin {
+        to { transform: rotate(360deg); }
+    }
+
+    .validation-summary {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 1rem;
+        margin: 1.5rem 0;
+    }
+
+    .stat-box {
+        padding: 1.5rem;
+        border-radius: 8px;
+        border: 2px solid #E5E7EB;
+    }
+
+    .stat-value {
+        font-size: 2rem;
+        font-weight: bold;
+        margin-bottom: 0.5rem;
+    }
+
+    .stat-label {
+        color: #6B7280;
+        font-size: 0.875rem;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container mx-auto px-4 py-6">
+    {% if messages %}
+    <div class="mb-4">
+        {% for message in messages %}
+        <div class="alert-box {% if message.tags == 'success' %}alert-success{% elif message.tags == 'error' %}alert-warning{% elif message.tags == 'info' %}alert-info{% else %}alert-warning{% endif %}">
+            <div>{{ message }}</div>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+    <div class="import-card">
+        <div class="import-header">
+            <div>
+                <h1 class="text-3xl font-bold text-gray-900">Import Customers</h1>
+                <p class="text-gray-600 mt-1">Upload CSV or Excel files to import customer data with EFRIS integration</p>
+            </div>
+        </div>
+
+        <!-- Step Indicator -->
+        <div class="step-indicator">
+            <div class="step active" id="step-1">
+                <div class="step-number">1</div>
+                <div class="step-title">Download Template</div>
+            </div>
+            <div class="step" id="step-2">
+                <div class="step-number">2</div>
+                <div class="step-title">Upload File</div>
+            </div>
+            <div class="step" id="step-3">
+                <div class="step-number">3</div>
+                <div class="step-title">Configure Import</div>
+            </div>
+            <div class="step" id="step-4">
+                <div class="step-number">4</div>
+                <div class="step-title">Process & Review</div>
+            </div>
+        </div>
+
+        <!-- Download Templates Section -->
+        <div id="download-section">
+            <h2 class="text-xl font-bold text-gray-900 mb-4">Step 1: Download Sample Template</h2>
+
+            <div class="alert-box alert-info">
+                <svg class="w-5 h-5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                    <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd"/>
+                </svg>
+                <div>
+                    <strong>Import customer data:</strong> Download the template, fill in customer information, and upload to create or update customer records.
+                </div>
+            </div>
+
+            <div class="download-section">
+                <div class="download-card" onclick="window.location.href='{% url "customers:download_sample_csv" %}'">
+                    <div class="download-icon">
+                        <svg class="w-6 h-6 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                        </svg>
+                    </div>
+                    <h3 class="font-bold text-gray-900 mb-2">Customer Import - CSV</h3>
+                    <p class="text-sm text-gray-600 mb-3">Lightweight format with sample customer data</p>
+                    <span class="text-indigo-600 text-sm font-semibold">Download CSV →</span>
+                </div>
+
+                <div class="download-card" onclick="window.location.href='{% url "customers:download_sample_excel" %}'">
+                    <div class="download-icon">
+                        <svg class="w-6 h-6 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                        </svg>
+                    </div>
+                    <h3 class="font-bold text-gray-900 mb-2">Customer Import - Excel</h3>
+                    <p class="text-sm text-gray-600 mb-3">Includes instructions, reference data & EFRIS fields (Recommended)</p>
+                    <span class="text-indigo-600 text-sm font-semibold">Download Excel →</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Upload Section -->
+        <form id="import-form" method="post" enctype="multipart/form-data" action="{% url 'customers:customer_import' %}">
+            {% csrf_token %}
+
+            <div id="upload-section" class="mt-8">
+                <h2 class="text-xl font-bold text-gray-900 mb-4">Step 2: Upload Your File</h2>
+
+                <div class="upload-zone" id="upload-zone">
+                    <input type="file" name="import_file" id="import_file" accept=".csv,.xlsx,.xls" class="hidden">
+                    <div class="upload-icon">
+                        <svg class="w-8 h-8 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/>
+                        </svg>
+                    </div>
+                    <h3 class="text-lg font-semibold text-gray-900 mb-2">Drop your file here or click to browse</h3>
+                    <p class="text-sm text-gray-600">Supports CSV, XLSX, XLS files (Max 10MB)</p>
+                </div>
+
+                <div id="file-selected" class="file-selected" style="display: none;">
+                    <div class="flex items-center gap-3">
+                        <svg class="w-8 h-8 text-green-600" fill="currentColor" viewBox="0 0 20 20">
+                            <path fill-rule="evenodd" d="M6 2a2 2 0 00-2 2v12a2 2 0 002 2h8a2 2 0 002-2V7.414A2 2 0 0015.414 6L12 2.586A2 2 0 0010.586 2H6zm5 6a1 1 0 10-2 0v3.586l-1.293-1.293a1 1 0 10-1.414 1.414l3 3a1 1 0 001.414 0l3-3a1 1 0 00-1.414-1.414L11 11.586V8z" clip-rule="evenodd"/>
+                        </svg>
+                        <div>
+                            <p class="font-semibold text-gray-900" id="file-name"></p>
+                            <p class="text-sm text-gray-600" id="file-size"></p>
+                        </div>
+                    </div>
+                    <button type="button" class="text-red-600 hover:text-red-700" onclick="clearFile()">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Import Options -->
+            <div id="options-section" style="display: none;">
+                <h2 class="text-xl font-bold text-gray-900 mb-4 mt-8">Step 3: Configure Import Options</h2>
+
+                <div class="import-options">
+                    <div class="option-group">
+                        <label>Conflict Resolution</label>
+                        <div class="radio-group">
+                            <label class="radio-option">
+                                <input type="radio" name="conflict_resolution" value="overwrite" checked>
+                                <div>
+                                    <div class="font-semibold text-gray-900">Update Existing</div>
+                                    <div class="text-sm text-gray-600">Update customers that already exist (matched by phone)</div>
+                                </div>
+                            </label>
+                            <label class="radio-option">
+                                <input type="radio" name="conflict_resolution" value="skip">
+                                <div>
+                                    <div class="font-semibold text-gray-900">Skip Existing</div>
+                                    <div class="text-sm text-gray-600">Keep existing data, only import new customers</div>
+                                </div>
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="option-group">
+                        <label>EFRIS Integration</label>
+                        <div class="checkbox-option">
+                            <input type="checkbox" name="auto_sync_efris" id="auto_sync_efris">
+                            <div>
+                                <div class="font-semibold text-gray-900">Auto-sync to EFRIS</div>
+                                <div class="text-sm text-gray-600">Automatically register eligible customers in EFRIS after import</div>
+                            </div>
+                        </div>
+
+                        <div class="mt-3 p-3 bg-blue-50 rounded text-sm text-blue-800">
+                            <strong>Note:</strong> Only customers with valid TIN/NIN/BRN will be synced to EFRIS.
+                        </div>
+                    </div>
+                </div>
+
+                <div class="alert-box alert-warning" id="overwrite-warning" style="display: none;">
+                    <svg class="w-5 h-5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                        <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"/>
+                    </svg>
+                    <div>
+                        <strong>Warning:</strong> Existing customers will be updated with new data. Customer information including contact details, addresses, and tax information will be overwritten.
+                    </div>
+                </div>
+
+                <div class="mt-6">
+                    <button type="button" class="btn-secondary mr-3" onclick="validateImport()">
+                        <svg class="w-5 h-5 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                        </svg>
+                        Validate Data
+                    </button>
+                    <button type="submit" class="btn-primary" id="import-btn">
+                        <svg class="w-5 h-5 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
+                        </svg>
+                        <span id="import-btn-text">Import Customers</span>
+                    </button>
+                </div>
+            </div>
+        </form>
+
+        <!-- Validation Results -->
+        <div id="validation-results" style="display: none;" class="mt-8">
+            <h2 class="text-xl font-bold text-gray-900 mb-4">Validation Results</h2>
+            <div id="validation-content"></div>
+        </div>
+    </div>
+
+    <!-- Import Errors (if any from session) -->
+    {% if request.session.import_errors %}
+    <div class="import-card">
+        <h2 class="text-2xl font-bold text-gray-900 mb-4">Import Errors</h2>
+        <div class="space-y-2">
+            {% for error in request.session.import_errors %}
+            <div class="p-3 bg-red-50 border-l-4 border-red-500 rounded">
+                <p class="font-semibold text-red-800">Row {{ error.row }}</p>
+                <ul class="list-disc list-inside text-red-700 text-sm">
+                    {% for err in error.errors %}
+                    <li>{{ err }}</li>
+                    {% endfor %}
+                </ul>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+<script>
+// File Upload Handling
+const uploadZone = document.getElementById('upload-zone');
+const fileInput = document.getElementById('import_file');
+const fileSelected = document.getElementById('file-selected');
+const optionsSection = document.getElementById('options-section');
+const importBtn = document.getElementById('import-btn');
+
+// Click to browse
+uploadZone.addEventListener('click', () => fileInput.click());
+
+// Drag and drop
+uploadZone.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    uploadZone.classList.add('drag-over');
+});
+
+uploadZone.addEventListener('dragleave', () => {
+    uploadZone.classList.remove('drag-over');
+});
+
+uploadZone.addEventListener('drop', (e) => {
+    e.preventDefault();
+    uploadZone.classList.remove('drag-over');
+
+    const files = e.dataTransfer.files;
+    if (files.length > 0) {
+        fileInput.files = files;
+        handleFileSelect();
+    }
+});
+
+// File selection
+fileInput.addEventListener('change', handleFileSelect);
+
+function handleFileSelect() {
+    const file = fileInput.files[0];
+
+    if (!file) return;
+
+    // Validate file type
+    const validTypes = ['.csv', '.xlsx', '.xls'];
+    const fileExt = '.' + file.name.split('.').pop().toLowerCase();
+
+    if (!validTypes.includes(fileExt)) {
+        alert('Please upload a CSV or Excel file (.csv, .xlsx, .xls)');
+        clearFile();
+        return;
+    }
+
+    // Validate file size (10MB max)
+    if (file.size > 10 * 1024 * 1024) {
+        alert('File size must be less than 10MB');
+        clearFile();
+        return;
+    }
+
+    // Show file info
+    document.getElementById('file-name').textContent = file.name;
+    document.getElementById('file-size').textContent = formatFileSize(file.size);
+
+    uploadZone.style.display = 'none';
+    fileSelected.style.display = 'flex';
+    optionsSection.style.display = 'block';
+
+    // Update steps
+    updateStep(2);
+}
+
+function clearFile() {
+    fileInput.value = '';
+    uploadZone.style.display = 'block';
+    fileSelected.style.display = 'none';
+    optionsSection.style.display = 'none';
+    document.getElementById('validation-results').style.display = 'none';
+    updateStep(1);
+}
+
+function formatFileSize(bytes) {
+    if (bytes < 1024) return bytes + ' B';
+    else if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
+    else return (bytes / 1048576).toFixed(1) + ' MB';
+}
+
+// Step Management
+function updateStep(stepNumber) {
+    for (let i = 1; i <= 4; i++) {
+        const step = document.getElementById(`step-${i}`);
+        step.classList.remove('active', 'completed');
+
+        if (i < stepNumber) {
+            step.classList.add('completed');
+        } else if (i === stepNumber) {
+            step.classList.add('active');
+        }
+    }
+}
+
+// Conflict Resolution Warning
+document.querySelectorAll('input[name="conflict_resolution"]').forEach(radio => {
+    radio.addEventListener('change', (e) => {
+        const warning = document.getElementById('overwrite-warning');
+        if (e.target.value === 'overwrite') {
+            warning.style.display = 'flex';
+        } else {
+            warning.style.display = 'none';
+        }
+    });
+});
+
+// Show overwrite warning by default
+document.getElementById('overwrite-warning').style.display = 'flex';
+
+// Validate Import
+async function validateImport() {
+    const file = fileInput.files[0];
+    if (!file) {
+        alert('Please select a file first');
+        return;
+    }
+
+    const formData = new FormData();
+    formData.append('validate_file', file);
+
+    try {
+        const response = await fetch('{% url "customers:validate_import" %}', {
+            method: 'POST',
+            headers: {
+                'X-CSRFToken': '{{ csrf_token }}'
+            },
+            body: formData
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            showValidationResults(data.validation);
+        } else {
+            alert('Validation failed: ' + data.error);
+        }
+    } catch (error) {
+        console.error('Validation error:', error);
+        alert('Failed to validate file. Please try again.');
+    }
+}
+
+function showValidationResults(validation) {
+    const resultsDiv = document.getElementById('validation-results');
+    const contentDiv = document.getElementById('validation-content');
+
+    let html = `
+        <div class="validation-summary">
+            <div class="stat-box" style="border-color: #3B82F6;">
+                <div class="stat-value" style="color: #3B82F6;">${validation.total_rows}</div>
+                <div class="stat-label">Total Rows</div>
+            </div>
+            <div class="stat-box" style="border-color: #10B981;">
+                <div class="stat-value" style="color: #10B981;">${validation.valid_rows}</div>
+                <div class="stat-label">Valid Rows</div>
+            </div>
+            <div class="stat-box" style="border-color: #EF4444;">
+                <div class="stat-value" style="color: #EF4444;">${validation.invalid_rows}</div>
+                <div class="stat-label">Invalid Rows</div>
+            </div>
+        </div>
+    `;
+
+    if (validation.warnings && validation.warnings.length > 0) {
+        html += '<div class="alert-box alert-warning mb-4"><div>';
+        html += '<strong>Warnings:</strong><br>';
+        html += '<ul class="mt-2 ml-4 list-disc">';
+        validation.warnings.slice(0, 10).forEach(warning => {
+            html += `<li class="text-sm">Row ${warning.row}: ${warning.warning}</li>`;
+        });
+        if (validation.warnings.length > 10) {
+            html += `<li class="text-sm font-semibold">...and ${validation.warnings.length - 10} more warnings</li>`;
+        }
+        html += '</ul></div></div>';
+    }
+
+    if (validation.errors.length > 0) {
+        html += '<div class="alert-box alert-warning mb-4"><div>';
+        html += '<strong>Validation Errors Found:</strong><br>';
+        html += '<ul class="mt-2 ml-4 list-disc">';
+        validation.errors.slice(0, 10).forEach(error => {
+            html += `<li class="text-sm">Row ${error.row}: ${error.errors.join(', ')}</li>`;
+        });
+        if (validation.errors.length > 10) {
+            html += `<li class="text-sm font-semibold">...and ${validation.errors.length - 10} more errors</li>`;
+        }
+        html += '</ul></div></div>';
+    }
+
+    if (validation.valid_rows === validation.total_rows) {
+        html += '<div class="alert-box alert-success"><div>';
+        html += '<strong>✓ All rows are valid!</strong> You can proceed with the import.';
+        html += '</div></div>';
+    }
+
+    contentDiv.innerHTML = html;
+    resultsDiv.style.display = 'block';
+    updateStep(3);
+}
+
+// Form Submission
+document.getElementById('import-form').addEventListener('submit', async function(e) {
+    e.preventDefault(); // Prevent default form submission
+
+    const btn = document.getElementById('import-btn');
+    const btnText = document.getElementById('import-btn-text');
+
+    btn.disabled = true;
+    btnText.innerHTML = '<span class="loading-spinner mr-2"></span> Processing...';
+    updateStep(4);
+
+    try {
+        const formData = new FormData(this);
+        const response = await fetch('{% url "customers:customer_import" %}', {
+            method: 'POST',
+            headers: {
+                'X-CSRFToken': '{{ csrf_token }}',
+                'Accept': 'application/json' // Explicitly request JSON
+            },
+            body: formData
+        });
+
+        // Log response details for debugging
+        console.log('Response status:', response.status);
+        console.log('Response headers:', [...response.headers]);
+
+        if (response.redirected) {
+            console.warn('Request redirected to:', response.url);
+            window.location.href = response.url;
+            return;
+        }
+
+        // Check if response is JSON
+        const contentType = response.headers.get('content-type');
+        if (!contentType || !contentType.includes('application/json')) {
+            const text = await response.text();
+            console.error('Non-JSON response received:', text.slice(0, 500)); // Log first 500 chars
+            throw new Error(`Expected JSON, got ${contentType || 'unknown content type'}`);
+        }
+
+        const data = await response.json();
+        if (data.success) {
+            showValidationResults(data.results);
+            const message = `Import successful! Created: ${data.results.created_count}, Updated: ${data.results.updated_count}, Skipped: ${data.results.skipped_count}, Errors: ${data.results.error_count}`;
+            console.log(message);
+            alert(message);
+            window.location.reload(); // Reload to show session errors
+        } else {
+            console.error('Server error:', data.error);
+            alert(`Import failed: ${data.error}`);
+        }
+    } catch (error) {
+        console.error('Client-side error during import:', error);
+        console.error('Response body (if available):', error.responseText || 'Not available');
+        alert(`Import error: ${error.message}. Check the console for details.`);
+    } finally {
+        btn.disabled = false;
+        btnText.innerHTML = 'Import Customers';
+    }
+});
+</script>
+{% endblock %}

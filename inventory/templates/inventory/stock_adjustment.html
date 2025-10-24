@@ -1,0 +1,1365 @@
+{% extends 'base.html' %}
+{% load static %}
+{% load widget_tweaks %}
+
+{% block title %}Stock Adjustment - {{ company.trading_name|default:company.name }}{% endblock %}
+
+{% block extra_css %}
+<link href="https://cdnjs.cloudflare.com/ajax/libs/select2/4.1.0-rc.0/css/select2.min.css" rel="stylesheet">
+<link href="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/2.1.4/toastr.min.css" rel="stylesheet">
+
+<style>
+    .adjustment-form-container {
+        background: white;
+        border-radius: 15px;
+        box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1);
+        overflow: hidden;
+        margin-bottom: 2rem;
+        border: 1px solid #e5e7eb;
+    }
+
+    .form-header {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 2rem;
+        text-align: center;
+        position: relative;
+    }
+
+    .form-header::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 20"><defs><radialGradient id="a" cx="50%" cy="50%"><stop offset="0%" stop-color="white" stop-opacity="0.1"/><stop offset="100%" stop-color="white" stop-opacity="0"/></radialGradient></defs><circle cx="10" cy="10" r="10" fill="url(%23a)"/><circle cx="50" cy="10" r="10" fill="url(%23a)"/><circle cx="90" cy="10" r="10" fill="url(%23a)"/></svg>');
+        opacity: 0.1;
+    }
+
+    .form-header h4 {
+        margin: 0;
+        font-size: 1.75rem;
+        font-weight: 600;
+        position: relative;
+        z-index: 1;
+    }
+
+    .form-header p {
+        margin: 0.5rem 0 0 0;
+        opacity: 0.9;
+        position: relative;
+        z-index: 1;
+    }
+
+    .form-body {
+        padding: 2rem;
+    }
+
+    .product-preview {
+        background: linear-gradient(135deg, #f8fafc, #e2e8f0);
+        border-radius: 15px;
+        padding: 2rem;
+        margin-bottom: 2rem;
+        border: 3px dashed #cbd5e1;
+        text-align: center;
+        transition: all 0.3s ease;
+        position: relative;
+        min-height: 120px;
+    }
+
+    .product-preview.active {
+        border-color: #3b82f6;
+        background: linear-gradient(135deg, #dbeafe, #bfdbfe);
+        transform: translateY(-2px);
+        box-shadow: 0 10px 25px rgba(59, 130, 246, 0.15);
+    }
+
+    .product-info {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+        background: white;
+        border-radius: 12px;
+        padding: 1.5rem;
+        margin-top: 1rem;
+        box-shadow: 0 4px 10px rgba(0, 0, 0, 0.08);
+        border: 1px solid #f1f5f9;
+    }
+
+    .product-image {
+        width: 64px;
+        height: 64px;
+        border-radius: 12px;
+        object-fit: cover;
+        background: #f8fafc;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border: 2px solid #e2e8f0;
+    }
+
+    .product-details {
+        flex: 1;
+    }
+
+    .product-name {
+        font-weight: 600;
+        color: #1f2937;
+        margin-bottom: 0.25rem;
+    }
+
+    .product-sku {
+        color: #6b7280;
+        font-size: 0.875rem;
+    }
+
+    .adjustment-type-cards {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 1.5rem;
+        margin-bottom: 2rem;
+    }
+
+    .adjustment-card {
+        border: 2px solid #e5e7eb;
+        border-radius: 15px;
+        padding: 2rem 1.5rem;
+        text-align: center;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        background: white;
+        position: relative;
+        overflow: hidden;
+    }
+
+    .adjustment-card::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 4px;
+        background: transparent;
+        transition: background 0.3s ease;
+    }
+
+    .adjustment-card:hover {
+        border-color: #3b82f6;
+        background: #f8fafc;
+        transform: translateY(-4px);
+        box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+    }
+
+    .adjustment-card.selected {
+        border-color: #3b82f6;
+        background: linear-gradient(135deg, #3b82f6, #1d4ed8);
+        color: white;
+        transform: translateY(-4px);
+        box-shadow: 0 10px 25px rgba(59, 130, 246, 0.3);
+    }
+
+    .adjustment-card.selected::before {
+        background: rgba(255, 255, 255, 0.2);
+    }
+
+    .adjustment-icon {
+        width: 60px;
+        height: 60px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin: 0 auto 1rem;
+        font-size: 1.5rem;
+        background: #f1f5f9;
+        color: #64748b;
+        transition: all 0.3s ease;
+    }
+
+    .adjustment-card:hover .adjustment-icon {
+        background: #dbeafe;
+        color: #3b82f6;
+        transform: scale(1.1);
+    }
+
+    .adjustment-card.selected .adjustment-icon {
+        background: rgba(255, 255, 255, 0.2);
+        color: white;
+        transform: scale(1.1);
+    }
+
+    .adjustment-card h6 {
+        margin-bottom: 0.5rem;
+        font-weight: 600;
+    }
+
+    .adjustment-card small {
+        opacity: 0.8;
+    }
+
+    .quantity-section {
+        background: #f8fafc;
+        border-radius: 15px;
+        padding: 2rem;
+        margin-bottom: 2rem;
+        border: 1px solid #e2e8f0;
+    }
+
+    .quantity-controls {
+        display: flex;
+        align-items: center;
+        gap: 1.5rem;
+        justify-content: center;
+        margin-bottom: 1.5rem;
+    }
+
+    .quantity-btn {
+        width: 50px;
+        height: 50px;
+        border-radius: 50%;
+        border: 2px solid #e5e7eb;
+        background: white;
+        color: #6b7280;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        font-size: 1.2rem;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+    }
+
+    .quantity-btn:hover {
+        border-color: #3b82f6;
+        color: #3b82f6;
+        background: #f0f9ff;
+        transform: scale(1.1);
+    }
+
+    .quantity-btn:active {
+        transform: scale(0.95);
+    }
+
+    .quantity-display {
+        font-size: 2.5rem;
+        font-weight: 800;
+        color: #1f2937;
+        min-width: 120px;
+        text-align: center;
+        background: white;
+        border-radius: 12px;
+        padding: 0.5rem;
+        border: 2px solid #e5e7eb;
+    }
+
+    .stock-summary {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+        gap: 1.5rem;
+        margin: 2rem 0;
+    }
+
+    .summary-card {
+        background: white;
+        border-radius: 12px;
+        padding: 1.5rem;
+        text-align: center;
+        border: 1px solid #e5e7eb;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+        transition: all 0.3s ease;
+    }
+
+    .summary-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+    }
+
+    .summary-value {
+        font-size: 1.75rem;
+        font-weight: 800;
+        margin-bottom: 0.5rem;
+    }
+
+    .summary-label {
+        font-size: 0.875rem;
+        color: #6b7280;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        font-weight: 500;
+    }
+
+    .current-stock { color: #3b82f6; }
+    .adjustment-amount { color: #059669; }
+    .new-stock { color: #dc2626; }
+    .new-stock.positive { color: #059669; }
+
+    .reason-section {
+        margin-bottom: 2rem;
+    }
+
+    .reason-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+        gap: 1rem;
+        margin-bottom: 1rem;
+    }
+
+    .reason-option {
+        border: 2px solid #e5e7eb;
+        border-radius: 10px;
+        padding: 1rem 0.75rem;
+        text-align: center;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        font-size: 0.875rem;
+        font-weight: 500;
+        background: white;
+    }
+
+    .reason-option:hover {
+        border-color: #3b82f6;
+        background: #f0f9ff;
+        color: #3b82f6;
+        transform: translateY(-2px);
+    }
+
+    .reason-option.selected {
+        border-color: #3b82f6;
+        background: #3b82f6;
+        color: white;
+        transform: translateY(-2px);
+    }
+
+    .quick-actions {
+        display: flex;
+        gap: 0.75rem;
+        justify-content: center;
+        margin-bottom: 2rem;
+        flex-wrap: wrap;
+    }
+
+    .quick-action-btn {
+        padding: 0.5rem 1rem;
+        border: 2px solid #e5e7eb;
+        border-radius: 8px;
+        background: white;
+        color: #374151;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        font-size: 0.875rem;
+        font-weight: 500;
+    }
+
+    .quick-action-btn:hover {
+        border-color: #3b82f6;
+        color: #3b82f6;
+        background: #f0f9ff;
+        transform: translateY(-1px);
+    }
+
+    .adjustment-preview {
+        background: linear-gradient(135deg, #f0f9ff, #e0f2fe);
+        border-radius: 15px;
+        padding: 2rem;
+        margin: 2rem 0;
+        border: 2px solid #bfdbfe;
+        box-shadow: 0 4px 15px rgba(59, 130, 246, 0.1);
+    }
+
+    .preview-title {
+        font-weight: 600;
+        color: #1e40af;
+        margin-bottom: 1.5rem;
+        text-align: center;
+        font-size: 1.1rem;
+    }
+
+    .batch-adjustment {
+        background: linear-gradient(135deg, #fef3c7, #fed7aa);
+        border-radius: 15px;
+        padding: 2rem;
+        margin-bottom: 2rem;
+        border: 2px solid #fbbf24;
+        box-shadow: 0 4px 15px rgba(251, 191, 36, 0.1);
+    }
+
+    .batch-toggle {
+        background: #f8fafc;
+        border-radius: 12px;
+        padding: 1.5rem;
+        margin-bottom: 2rem;
+        border: 1px solid #e2e8f0;
+    }
+
+    .action-buttons {
+        display: flex;
+        gap: 1rem;
+        justify-content: center;
+        flex-wrap: wrap;
+        margin-top: 2rem;
+    }
+
+    .btn {
+        border-radius: 10px;
+        padding: 0.75rem 2rem;
+        font-weight: 600;
+        transition: all 0.3s ease;
+        border: 2px solid transparent;
+    }
+
+    .btn:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+    }
+
+    .btn-primary {
+        background: linear-gradient(135deg, #3b82f6, #1d4ed8);
+        color: white;
+    }
+
+    .btn-primary:hover {
+        background: linear-gradient(135deg, #2563eb, #1e40af);
+    }
+
+    .btn-info {
+        background: linear-gradient(135deg, #06b6d4, #0891b2);
+        color: white;
+    }
+
+    .btn-outline-secondary {
+        border-color: #6b7280;
+        color: #6b7280;
+        background: white;
+    }
+
+    .btn-outline-secondary:hover {
+        background: #6b7280;
+        color: white;
+    }
+
+    .recent-adjustments {
+        background: white;
+        border-radius: 15px;
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);
+        margin-top: 2rem;
+        overflow: hidden;
+        border: 1px solid #e5e7eb;
+    }
+
+    .recent-adjustments-header {
+        background: #f8fafc;
+        padding: 1.5rem;
+        border-bottom: 1px solid #e5e7eb;
+    }
+
+    .loading-spinner {
+        display: inline-block;
+        width: 20px;
+        height: 20px;
+        border: 3px solid #f3f3f3;
+        border-top: 3px solid #3498db;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+    }
+
+    @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+    }
+
+    @media (max-width: 992px) {
+        .adjustment-type-cards {
+            grid-template-columns: 1fr;
+        }
+
+        .stock-summary {
+            grid-template-columns: repeat(2, 1fr);
+        }
+
+        .reason-grid {
+            grid-template-columns: repeat(2, 1fr);
+        }
+    }
+
+    @media (max-width: 576px) {
+        .form-body {
+            padding: 1.5rem;
+        }
+
+        .stock-summary,
+        .reason-grid {
+            grid-template-columns: 1fr;
+        }
+
+        .quantity-controls {
+            gap: 1rem;
+        }
+
+        .quantity-btn {
+            width: 40px;
+            height: 40px;
+        }
+
+        .quantity-display {
+            font-size: 2rem;
+            min-width: 100px;
+        }
+    }
+
+    .select2-container--default .select2-selection--single {
+        height: 48px !important;
+        border: 2px solid #e5e7eb !important;
+        border-radius: 10px !important;
+    }
+
+    .select2-container--default .select2-selection--single .select2-selection__rendered {
+        line-height: 44px !important;
+        padding-left: 12px !important;
+    }
+
+    .select2-container--default .select2-selection--single .select2-selection__arrow {
+        top: 12px !important;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="adjustment-form-container">
+    <div class="form-header">
+        <h4>
+            <i class="fas fa-plus-minus me-2"></i>
+            Stock Adjustment
+        </h4>
+        <p>Precisely manage your inventory levels with confidence</p>
+    </div>
+
+    <div class="form-body">
+        <!-- Action Bar -->
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <div class="batch-toggle">
+                <div class="form-check form-switch">
+                    <input class="form-check-input" type="checkbox" id="batchMode" onchange="toggleBatchMode()">
+                    <label class="form-check-label fw-semibold" for="batchMode">
+                        <i class="fas fa-layer-group me-2"></i>
+                        Batch Adjustment Mode
+                    </label>
+                </div>
+            </div>
+
+            <div class="d-flex gap-2">
+                <button type="button" class="btn btn-outline-secondary btn-sm" onclick="history.back()">
+                    <i class="fas fa-arrow-left me-1"></i>Back
+                </button>
+                <button type="button" class="btn btn-outline-info btn-sm" onclick="showRecentAdjustments()">
+                    <i class="fas fa-history me-1"></i>Recent
+                </button>
+            </div>
+        </div>
+
+        <form method="post" id="stockAdjustmentForm">
+            {% csrf_token %}
+
+            <!-- Single Product Mode -->
+            <div id="singleProductMode">
+                <!-- Product Selection -->
+                <div class="product-preview" id="productPreview">
+                    <div class="d-flex flex-column align-items-center justify-content-center h-100">
+                        <i class="fas fa-search fa-3x text-muted mb-3"></i>
+                        <h6 class="text-muted mb-2">Select a product to adjust</h6>
+                        <p class="text-muted mb-0 text-center">Search by name, SKU, or barcode to get started</p>
+                    </div>
+                </div>
+
+                <div class="mb-4">
+                    <label class="form-label fw-semibold">
+                        <i class="fas fa-box me-2"></i>Product
+                    </label>
+                    <select class="form-select" name="product" id="productSelect" required onchange="onProductChange()">
+                        <option value="">Search and select product...</option>
+                        {% for product in products %}
+                            <option value="{{ product.id }}"
+                                    data-name="{{ product.name }}"
+                                    data-sku="{{ product.sku }}"
+                                    data-image="{% if product.image %}{{ product.image.url }}{% else %}{% static 'images/placeholder.png' %}{% endif %}"
+                                    data-unit="{{ product.unit_of_measure }}"
+                                    data-cost="{{ product.cost_price }}">
+                                {{ product.name }} ({{ product.sku }})
+                            </option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div class="mb-4">
+                    <label class="form-label fw-semibold">
+                        <i class="fas fa-store me-2"></i>Store
+                    </label>
+                    <select class="form-select" name="store" id="storeSelect" required onchange="onStoreChange()">
+                        <option value="">Select store...</option>
+                        {% for store in stores %}
+                            <option value="{{ store.id }}">{{ store.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+
+            <!-- Batch Mode (Hidden by default) -->
+            <div id="batchProductMode" style="display: none;">
+                <div class="batch-adjustment">
+                    <h6 class="mb-3 d-flex align-items-center">
+                        <i class="fas fa-layer-group me-2"></i>
+                        Batch Adjustment Mode
+                    </h6>
+                    <p class="text-muted mb-3">Select multiple products to apply the same adjustment</p>
+
+                    <div class="row">
+                        <div class="col-md-8 mb-3">
+                            <label class="form-label fw-semibold">Select Products</label>
+                            <select class="form-select" multiple id="batchProductSelect" name="batch_products">
+                                {% for product in products %}
+                                    <option value="{{ product.id }}"
+                                            data-name="{{ product.name }}"
+                                            data-sku="{{ product.sku }}">
+                                        {{ product.name }} ({{ product.sku }})
+                                    </option>
+                                {% endfor %}
+                            </select>
+                        </div>
+
+                        <div class="col-md-4 mb-3">
+                            <label class="form-label fw-semibold">Store</label>
+                            <select class="form-select" name="store" id="batchStoreSelect">
+                                <option value="">Select store...</option>
+                                {% for store in stores %}
+                                    <option value="{{ store.id }}">{{ store.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                    </div>
+                </div>
+                <input type="hidden" name="batch_mode" id="batchModeInput">
+            </div>
+
+            <!-- Adjustment Type Selection -->
+            <div class="mb-4">
+                <label class="form-label fw-semibold">
+                    <i class="fas fa-exchange-alt me-2"></i>Adjustment Type
+                </label>
+                <div class="adjustment-type-cards">
+                    <div class="adjustment-card" onclick="selectAdjustmentType('add')" data-type="add">
+                        <div class="adjustment-icon">
+                            <i class="fas fa-plus"></i>
+                        </div>
+                        <h6>Add Stock</h6>
+                        <small>Increase inventory levels</small>
+                    </div>
+
+                    <div class="adjustment-card" onclick="selectAdjustmentType('remove')" data-type="remove">
+                        <div class="adjustment-icon">
+                            <i class="fas fa-minus"></i>
+                        </div>
+                        <h6>Remove Stock</h6>
+                        <small>Decrease inventory levels</small>
+                    </div>
+
+                    <div class="adjustment-card" onclick="selectAdjustmentType('set')" data-type="set">
+                        <div class="adjustment-icon">
+                            <i class="fas fa-equals"></i>
+                        </div>
+                        <h6>Set Level</h6>
+                        <small>Set exact quantity</small>
+                    </div>
+                </div>
+                <input type="hidden" name="adjustment_type" id="adjustmentType" required>
+            </div>
+
+            <!-- Quantity Section -->
+            <div class="quantity-section">
+                <label class="form-label fw-semibold mb-3">
+                    <i class="fas fa-calculator me-2"></i>Quantity
+                </label>
+
+                <div class="quantity-controls">
+                    <button type="button" class="quantity-btn" onclick="adjustQuantity(-1)">
+                        <i class="fas fa-minus"></i>
+                    </button>
+                    <div class="quantity-display" id="quantityDisplay">0</div>
+                    <button type="button" class="quantity-btn" onclick="adjustQuantity(1)">
+                        <i class="fas fa-plus"></i>
+                    </button>
+                </div>
+
+                <input type="number" class="form-control text-center d-none" name="quantity" id="quantityInput"
+                       min="0" step="0.001" value="0" required onchange="updateQuantityDisplay()">
+
+                <div class="quick-actions">
+                    <button type="button" class="quick-action-btn" onclick="setQuickQuantity(1)">+1</button>
+                    <button type="button" class="quick-action-btn" onclick="setQuickQuantity(5)">+5</button>
+                    <button type="button" class="quick-action-btn" onclick="setQuickQuantity(10)">+10</button>
+                    <button type="button" class="quick-action-btn" onclick="setQuickQuantity(50)">+50</button>
+                    <button type="button" class="quick-action-btn" onclick="setQuickQuantity(100)">+100</button>
+                </div>
+            </div>
+
+            <!-- Stock Summary -->
+            <div class="stock-summary" id="stockSummary" style="display: none;">
+                <div class="summary-card">
+                    <div class="summary-value current-stock" id="currentStockValue">0</div>
+                    <div class="summary-label">Current Stock</div>
+                </div>
+                <div class="summary-card">
+                    <div class="summary-value adjustment-amount" id="adjustmentValue">0</div>
+                    <div class="summary-label">Adjustment</div>
+                </div>
+                <div class="summary-card">
+                    <div class="summary-value new-stock" id="newStockValue">0</div>
+                    <div class="summary-label">New Stock</div>
+                </div>
+                <div class="summary-card">
+                    <div class="summary-value" id="unitValue">-</div>
+                    <div class="summary-label">Unit</div>
+                </div>
+            </div>
+
+            <!-- Reason Selection -->
+            <div class="reason-section">
+                <label class="form-label fw-semibold">
+                    <i class="fas fa-clipboard-list me-2"></i>Reason for Adjustment
+                </label>
+                <div class="reason-grid">
+                    <div class="reason-option" onclick="selectReason('received')" data-reason="received">
+                        <i class="fas fa-truck-loading d-block mb-1"></i>
+                        Stock Received
+                    </div>
+                    <div class="reason-option" onclick="selectReason('sold')" data-reason="sold">
+                        <i class="fas fa-cash-register d-block mb-1"></i>
+                        Stock Sold
+                    </div>
+                    <div class="reason-option" onclick="selectReason('damaged')" data-reason="damaged">
+                        <i class="fas fa-exclamation-triangle d-block mb-1"></i>
+                        Damaged/Lost
+                    </div>
+                    <div class="reason-option" onclick="selectReason('returned')" data-reason="returned">
+                        <i class="fas fa-undo d-block mb-1"></i>
+                        Customer Return
+                    </div>
+                    <div class="reason-option" onclick="selectReason('correction')" data-reason="correction">
+                        <i class="fas fa-edit d-block mb-1"></i>
+                        Stock Correction
+                    </div>
+                    <div class="reason-option" onclick="selectReason('transfer')" data-reason="transfer">
+                        <i class="fas fa-exchange-alt d-block mb-1"></i>
+                        Transfer
+                    </div>
+                    <div class="reason-option" onclick="selectReason('inventory')" data-reason="inventory">
+                        <i class="fas fa-clipboard-check d-block mb-1"></i>
+                        Physical Count
+                    </div>
+                    <div class="reason-option" onclick="selectReason('other')" data-reason="other">
+                        <i class="fas fa-ellipsis-h d-block mb-1"></i>
+                        Other
+                    </div>
+                </div>
+                <input type="hidden" name="reason" id="reasonInput" required>
+            </div>
+
+            <!-- Additional Notes -->
+            <div class="mb-4">
+                <label class="form-label fw-semibold">
+                    <i class="fas fa-sticky-note me-2"></i>Additional Notes
+                </label>
+                <textarea class="form-control" name="notes" rows="3"
+                          placeholder="Add any additional details about this adjustment..."
+                          style="border-radius: 10px; border: 2px solid #e5e7eb;"></textarea>
+            </div>
+
+            <!-- Adjustment Preview -->
+            <div class="adjustment-preview" id="adjustmentPreview" style="display: none;">
+                <div class="preview-title">
+                    <i class="fas fa-eye me-2"></i>
+                    Adjustment Preview
+                </div>
+                <div class="row text-center">
+                    <div class="col-md-4">
+                        <h6 class="mb-2">Before</h6>
+                        <div class="h4 text-primary" id="previewBefore">0</div>
+                    </div>
+                    <div class="col-md-4">
+                        <h6 class="mb-2">Change</h6>
+                        <div class="h4 text-info" id="previewChange">0</div>
+                    </div>
+                    <div class="col-md-4">
+                        <h6 class="mb-2">After</h6>
+                        <div class="h4 text-success" id="previewAfter">0</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Action Buttons -->
+            <div class="action-buttons">
+                <button type="button" class="btn btn-outline-secondary" onclick="resetForm()">
+                    <i class="fas fa-undo me-2"></i>Reset Form
+                </button>
+                <button type="button" class="btn btn-info" onclick="previewAdjustment()">
+                    <i class="fas fa-eye me-2"></i>Preview Changes
+                </button>
+                <button type="submit" class="btn btn-primary" id="submitBtn" disabled>
+                    <i class="fas fa-save me-2"></i>Save Adjustment
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Recent Adjustments Panel -->
+<div class="recent-adjustments" id="recentAdjustments" style="display: none;">
+    <div class="recent-adjustments-header">
+        <h6 class="mb-0 d-flex align-items-center">
+            <i class="fas fa-history me-2"></i>
+            Recent Stock Adjustments
+        </h6>
+    </div>
+    <div class="p-3" id="recentAdjustmentsContent">
+        <div class="text-center">
+            <div class="loading-spinner me-2"></div>
+            Loading recent adjustments...
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/select2/4.1.0-rc.0/js/select2.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/2.1.4/toastr.min.js"></script>
+<script>
+$(document).ready(function() {
+    // Initialize Select2
+    $('#productSelect').select2({
+        placeholder: 'Search and select product...',
+        allowClear: true,
+        width: '100%'
+    });
+
+    $('#storeSelect, #batchStoreSelect').select2({
+        placeholder: 'Select store...',
+        allowClear: true,
+        width: '100%'
+    });
+
+    $('#batchProductSelect').select2({
+        placeholder: 'Select multiple products',
+        closeOnSelect: false,
+        width: '100%'
+    });
+
+    // Configure toastr
+    toastr.options = {
+        "closeButton": true,
+        "progressBar": true,
+        "positionClass": "toast-top-right",
+        "timeOut": "5000"
+    };
+
+    // Initialize form
+    resetForm();
+});
+
+// Global variables
+let selectedAdjustmentType = null;
+let selectedReason = null;
+let currentStockData = null;
+
+// Toggle batch mode
+function toggleBatchMode() {
+    const batchMode = document.getElementById('batchMode').checked;
+    document.getElementById('singleProductMode').style.display = batchMode ? 'none' : 'block';
+    document.getElementById('batchProductMode').style.display = batchMode ? 'block' : 'none';
+    document.getElementById('batchModeInput').value = batchMode ? 'on' : '';
+
+    if (batchMode) {
+        // Clear single product selections
+        $('#productSelect').val(null).trigger('change');
+        $('#storeSelect').val(null).trigger('change');
+        resetProductPreview();
+    } else {
+        // Clear batch selections
+        $('#batchProductSelect').val(null).trigger('change');
+        $('#batchStoreSelect').val(null).trigger('change');
+    }
+
+    validateForm();
+}
+
+// Product change handler
+function onProductChange() {
+    const productSelect = document.getElementById('productSelect');
+    const selectedOption = productSelect.options[productSelect.selectedIndex];
+
+    if (selectedOption.value) {
+        updateProductPreview(selectedOption);
+        loadStockInfo();
+    } else {
+        resetProductPreview();
+        hideStockSummary();
+    }
+
+    validateForm();
+}
+
+// Store change handler
+function onStoreChange() {
+    if (document.getElementById('productSelect').value && document.getElementById('storeSelect').value) {
+        loadStockInfo();
+    }
+    validateForm();
+}
+
+// Update product preview
+function updateProductPreview(selectedOption) {
+    const preview = document.getElementById('productPreview');
+    const productName = selectedOption.getAttribute('data-name');
+    const productSku = selectedOption.getAttribute('data-sku');
+    const productImage = selectedOption.getAttribute('data-image');
+
+    preview.classList.add('active');
+    preview.innerHTML = `
+        <div class="product-info">
+            <div class="product-image">
+                <img src="${productImage}" alt="${productName}" style="width: 100%; height: 100%; object-fit: cover; border-radius: 12px;">
+            </div>
+            <div class="product-details">
+                <div class="product-name">${productName}</div>
+                <div class="product-sku">SKU: ${productSku}</div>
+            </div>
+            <div class="text-end">
+                <i class="fas fa-check-circle fa-2x text-success"></i>
+            </div>
+        </div>
+    `;
+}
+
+// Reset product preview
+function resetProductPreview() {
+    const preview = document.getElementById('productPreview');
+    preview.classList.remove('active');
+    preview.innerHTML = `
+        <div class="d-flex flex-column align-items-center justify-content-center h-100">
+            <i class="fas fa-search fa-3x text-muted mb-3"></i>
+            <h6 class="text-muted mb-2">Select a product to adjust</h6>
+            <p class="text-muted mb-0 text-center">Search by name, SKU, or barcode to get started</p>
+        </div>
+    `;
+}
+
+// Load stock information via AJAX
+function loadStockInfo() {
+    const productId = document.getElementById('productSelect').value;
+    const storeId = document.getElementById('storeSelect').value;
+
+    if (!productId || !storeId) return;
+
+    // Show loading state
+    showStockSummary();
+    document.getElementById('currentStockValue').innerHTML = '<div class="loading-spinner"></div>';
+
+    fetch(`/inventory/ajax/stock-info/?product_id=${productId}&store_id=${storeId}`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.error) {
+                toastr.error(data.error);
+                hideStockSummary();
+                return;
+            }
+
+            currentStockData = data;
+            updateStockDisplay();
+            updateStockSummary();
+        })
+        .catch(error => {
+            console.error('Error loading stock info:', error);
+            toastr.error('Failed to load current stock information');
+            hideStockSummary();
+        });
+}
+
+// Update stock display with loaded data
+function updateStockDisplay() {
+    if (!currentStockData) return;
+
+    document.getElementById('currentStockValue').textContent = currentStockData.current_stock;
+    document.getElementById('unitValue').textContent = currentStockData.unit_of_measure;
+
+    // Show stock status indicator
+    const statusColor = currentStockData.stock_status === 'out_of_stock' ? 'danger' :
+                       currentStockData.stock_status === 'low_stock' ? 'warning' : 'success';
+
+    toastr.info(`Current stock: ${currentStockData.current_stock} ${currentStockData.unit_of_measure}`, 'Stock Information');
+}
+
+// Show stock summary
+function showStockSummary() {
+    document.getElementById('stockSummary').style.display = 'grid';
+}
+
+// Hide stock summary
+function hideStockSummary() {
+    document.getElementById('stockSummary').style.display = 'none';
+}
+
+// Select adjustment type
+function selectAdjustmentType(type) {
+    selectedAdjustmentType = type;
+    document.getElementById('adjustmentType').value = type;
+
+    // Update UI
+    document.querySelectorAll('.adjustment-card').forEach(card => {
+        card.classList.toggle('selected', card.getAttribute('data-type') === type);
+    });
+
+    updateStockSummary();
+    validateForm();
+
+    // Show relevant quick actions based on type
+    updateQuickActions(type);
+}
+
+// Update quick actions based on adjustment type
+function updateQuickActions(type) {
+    const quickActions = document.querySelector('.quick-actions');
+    let actions = [];
+
+    if (type === 'add') {
+        actions = ['+1', '+5', '+10', '+50', '+100'];
+    } else if (type === 'remove') {
+        actions = ['-1', '-5', '-10', '-25', '-50'];
+    } else if (type === 'set') {
+        actions = ['10', '25', '50', '100', '500'];
+    }
+
+    quickActions.innerHTML = actions.map(action =>
+        `<button type="button" class="quick-action-btn" onclick="handleQuickAction('${action}')">${action}</button>`
+    ).join('');
+}
+
+// Handle quick action buttons
+function handleQuickAction(action) {
+    if (action.startsWith('+') || action.startsWith('-')) {
+        const value = parseInt(action);
+        adjustQuantity(value);
+    } else {
+        setQuickQuantity(parseInt(action));
+    }
+}
+
+// Select reason
+function selectReason(reason) {
+    selectedReason = reason;
+    document.getElementById('reasonInput').value = reason;
+
+    document.querySelectorAll('.reason-option').forEach(opt => {
+        opt.classList.toggle('selected', opt.getAttribute('data-reason') === reason);
+    });
+
+    validateForm();
+}
+
+// Quantity controls
+function adjustQuantity(delta) {
+    const input = document.getElementById('quantityInput');
+    let value = parseFloat(input.value) || 0;
+    value += delta;
+
+    if (value < 0) value = 0;
+
+    input.value = value.toFixed(3);
+    updateQuantityDisplay();
+    updateStockSummary();
+    validateForm();
+}
+
+// Update quantity display
+function updateQuantityDisplay() {
+    const input = document.getElementById('quantityInput');
+    const display = document.getElementById('quantityDisplay');
+    const value = parseFloat(input.value) || 0;
+
+    display.textContent = value.toFixed(value % 1 === 0 ? 0 : 3);
+    updateStockSummary();
+    validateForm();
+}
+
+// Set quick quantity
+function setQuickQuantity(qty) {
+    document.getElementById('quantityInput').value = qty;
+    updateQuantityDisplay();
+}
+
+// Update stock summary
+function updateStockSummary() {
+    if (!currentStockData || !selectedAdjustmentType) {
+        return;
+    }
+
+    const currentStock = parseFloat(currentStockData.current_stock) || 0;
+    const quantity = parseFloat(document.getElementById('quantityInput').value) || 0;
+
+    if (quantity === 0) {
+        hideStockSummary();
+        return;
+    }
+
+    showStockSummary();
+
+    let adjustmentAmount = quantity;
+    let newStock = currentStock;
+
+    if (selectedAdjustmentType === 'add') {
+        newStock = currentStock + quantity;
+    } else if (selectedAdjustmentType === 'remove') {
+        newStock = Math.max(0, currentStock - quantity);
+        adjustmentAmount = -quantity;
+    } else if (selectedAdjustmentType === 'set') {
+        adjustmentAmount = quantity - currentStock;
+        newStock = quantity;
+    }
+
+    // Update display
+    document.getElementById('currentStockValue').textContent = currentStock.toFixed(3);
+    document.getElementById('adjustmentValue').textContent = adjustmentAmount > 0 ? `+${adjustmentAmount.toFixed(3)}` : adjustmentAmount.toFixed(3);
+    document.getElementById('newStockValue').textContent = newStock.toFixed(3);
+    document.getElementById('unitValue').textContent = currentStockData.unit_of_measure;
+
+    // Update colors
+    const newStockElement = document.getElementById('newStockValue');
+    newStockElement.className = 'summary-value new-stock ' + (newStock >= currentStock ? 'positive' : '');
+
+    // Show warnings
+    if (selectedAdjustmentType === 'remove' && quantity > currentStock) {
+        toastr.warning('Adjustment will result in negative stock. Stock will be set to 0.', 'Stock Warning');
+    }
+}
+
+// Preview adjustment
+function previewAdjustment() {
+    if (!validateFormData()) {
+        return;
+    }
+
+    const currentStock = parseFloat(currentStockData.current_stock) || 0;
+    const quantity = parseFloat(document.getElementById('quantityInput').value) || 0;
+
+    let change = quantity;
+    let after = currentStock;
+
+    if (selectedAdjustmentType === 'add') {
+        after = currentStock + quantity;
+    } else if (selectedAdjustmentType === 'remove') {
+        after = Math.max(0, currentStock - quantity);
+        change = -quantity;
+    } else if (selectedAdjustmentType === 'set') {
+        change = quantity - currentStock;
+        after = quantity;
+    }
+
+    // Show preview
+    document.getElementById('adjustmentPreview').style.display = 'block';
+    document.getElementById('previewBefore').textContent = currentStock.toFixed(3);
+    document.getElementById('previewChange').textContent = change > 0 ? `+${change.toFixed(3)}` : change.toFixed(3);
+    document.getElementById('previewAfter').textContent = after.toFixed(3);
+
+    // Scroll to preview
+    document.getElementById('adjustmentPreview').scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+// Validate form data
+function validateFormData() {
+    if (!document.getElementById('productSelect').value && !document.getElementById('batchMode').checked) {
+        toastr.error('Please select a product.');
+        return false;
+    }
+
+    if (!document.getElementById('storeSelect').value && !document.getElementById('batchStoreSelect').value) {
+        toastr.error('Please select a store.');
+        return false;
+    }
+
+    if (!selectedAdjustmentType) {
+        toastr.error('Please select an adjustment type.');
+        return false;
+    }
+
+    const quantity = parseFloat(document.getElementById('quantityInput').value) || 0;
+    if (quantity <= 0) {
+        toastr.error('Please enter a valid quantity greater than 0.');
+        return false;
+    }
+
+    if (!selectedReason) {
+        toastr.error('Please select a reason for the adjustment.');
+        return false;
+    }
+
+    return true;
+}
+
+// Validate form to enable submit button
+function validateForm() {
+    const batchMode = document.getElementById('batchMode').checked;
+    let isValid = false;
+
+    if (batchMode) {
+        const batchProducts = $('#batchProductSelect').val() || [];
+        const batchStore = document.getElementById('batchStoreSelect').value;
+        isValid = batchProducts.length > 0 && batchStore;
+    } else {
+        const productSelected = document.getElementById('productSelect').value !== '';
+        const storeSelected = document.getElementById('storeSelect').value !== '';
+        isValid = productSelected && storeSelected;
+    }
+
+    const quantity = parseFloat(document.getElementById('quantityInput').value) || 0;
+    const adjustmentTypeSet = !!selectedAdjustmentType;
+    const reasonSet = !!selectedReason;
+
+    const enable = isValid && quantity > 0 && adjustmentTypeSet && reasonSet;
+    document.getElementById('submitBtn').disabled = !enable;
+}
+
+// Reset form
+function resetForm() {
+    // Clear all form fields
+    document.getElementById('stockAdjustmentForm').reset();
+
+    // Reset Select2 fields
+    $('#productSelect').val(null).trigger('change');
+    $('#storeSelect').val(null).trigger('change');
+    $('#batchProductSelect').val(null).trigger('change');
+    $('#batchStoreSelect').val(null).trigger('change');
+
+    // Reset variables
+    selectedAdjustmentType = null;
+    selectedReason = null;
+    currentStockData = null;
+
+    // Clear hidden fields
+    document.getElementById('adjustmentType').value = '';
+    document.getElementById('reasonInput').value = '';
+    document.getElementById('batchModeInput').value = '';
+
+    // Reset UI states
+    document.querySelectorAll('.adjustment-card').forEach(card => card.classList.remove('selected'));
+    document.querySelectorAll('.reason-option').forEach(opt => opt.classList.remove('selected'));
+
+    // Hide sections
+    hideStockSummary();
+    document.getElementById('adjustmentPreview').style.display = 'none';
+
+    // Reset batch mode
+    document.getElementById('batchMode').checked = false;
+    toggleBatchMode();
+
+    // Reset product preview
+    resetProductPreview();
+
+    // Reset quantity
+    document.getElementById('quantityInput').value = 0;
+    updateQuantityDisplay();
+
+    // Disable submit button
+    document.getElementById('submitBtn').disabled = true;
+
+    toastr.success('Form has been reset');
+}
+
+// Show recent adjustments
+function showRecentAdjustments() {
+    const panel = document.getElementById('recentAdjustments');
+    const content = document.getElementById('recentAdjustmentsContent');
+
+    if (panel.style.display === 'none' || panel.style.display === '') {
+        panel.style.display = 'block';
+
+        // Load recent adjustments via AJAX
+        fetch('/inventory/ajax/recent-adjustments/')
+            .then(response => response.json())
+            .then(data => {
+                if (data.adjustments && data.adjustments.length > 0) {
+                    const adjustmentsHtml = data.adjustments.map(adj => `
+                        <div class="border-bottom pb-2 mb-2">
+                            <div class="d-flex justify-content-between align-items-start">
+                                <div>
+                                    <strong>${adj.product_name}</strong> <small class="text-muted">(${adj.product_sku})</small>
+                                    <br>
+                                    <small class="text-muted">
+                                        ${adj.store_name} • ${adj.quantity} ${adj.unit} • ${adj.created_at}
+                                    </small>
+                                </div>
+                                <div class="text-end">
+                                    <small class="text-muted">${adj.created_by}</small>
+                                </div>
+                            </div>
+                            ${adj.notes ? `<small class="text-muted d-block mt-1">${adj.notes}</small>` : ''}
+                        </div>
+                    `).join('');
+
+                    content.innerHTML = adjustmentsHtml;
+                } else {
+                    content.innerHTML = '<p class="text-muted text-center">No recent adjustments found</p>';
+                }
+            })
+            .catch(error => {
+                console.error('Error loading recent adjustments:', error);
+                content.innerHTML = '<p class="text-danger text-center">Failed to load recent adjustments</p>';
+            });
+    } else {
+        panel.style.display = 'none';
+    }
+}
+
+// Form submission handler
+document.getElementById('stockAdjustmentForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+
+    if (!validateFormData()) {
+        return;
+    }
+
+    // Show loading state
+    const submitBtn = document.getElementById('submitBtn');
+    const originalText = submitBtn.innerHTML;
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = '<div class="loading-spinner me-2"></div>Saving...';
+
+    // Set the actual quantity value based on adjustment type and current stock
+    if (selectedAdjustmentType === 'set') {
+        // For "set" type, the quantity is the final quantity
+        document.getElementById('quantityInput').name = 'new_quantity';
+    } else {
+        // For "add" and "remove", quantity represents the change
+        document.getElementById('quantityInput').name = 'quantity';
+    }
+
+    // Submit the form
+    this.submit();
+});
+
+// Initialize event listeners
+document.addEventListener('DOMContentLoaded', function() {
+    // Add event listeners for real-time validation
+    document.getElementById('quantityInput').addEventListener('input', updateQuantityDisplay);
+
+    // Handle keyboard shortcuts
+    document.addEventListener('keydown', function(e) {
+        if (e.ctrlKey && e.key === 'Enter') {
+            e.preventDefault();
+            if (!document.getElementById('submitBtn').disabled) {
+                document.getElementById('stockAdjustmentForm').dispatchEvent(new Event('submit'));
+            }
+        } else if (e.key === 'Escape') {
+            resetForm();
+        }
+    });
+});
+</script>
+{% endblock %}

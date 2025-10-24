@@ -1,0 +1,1101 @@
+{% extends 'base.html' %}
+{% load widget_tweaks %}
+
+{% block title %}Bulk Import - {{ company.trading_name|default:company.name }}{% endblock %}
+{% block page_title %}Bulk Products Import{% endblock %}
+
+{% block extra_css %}
+<style>
+    .import-container {
+        background: white;
+        border-radius: 15px;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        padding: 2rem;
+    }
+    
+    .import-step {
+        display: flex;
+        align-items: center;
+        padding: 1.5rem;
+        border-radius: 10px;
+        margin-bottom: 1.5rem;
+        background: #f8fafc;
+    }
+    
+    .step-number {
+        width: 40px;
+        height: 40px;
+        border-radius: 50%;
+        background: #3b82f6;
+        color: white;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: bold;
+        margin-right: 1.5rem;
+        flex-shrink: 0;
+    }
+    
+    .step-content {
+        flex-grow: 1;
+    }
+    
+    .file-dropzone {
+        border: 2px dashed #cbd5e1;
+        border-radius: 10px;
+        padding: 2rem;
+        text-align: center;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        margin-bottom: 1.5rem;
+    }
+    
+    .file-dropzone:hover {
+        border-color: #3b82f6;
+        background: #f0f9ff;
+    }
+    
+    .file-dropzone.active {
+        border-color: #10b981;
+        background: #f0fdf4;
+    }
+    
+    .file-preview {
+        margin-top: 1.5rem;
+        border-radius: 8px;
+        overflow: hidden;
+    }
+    
+    .template-card {
+        border: 1px solid #e5e7eb;
+        border-radius: 10px;
+        padding: 1.5rem;
+        transition: all 0.3s ease;
+    }
+    
+    .template-card:hover {
+        border-color: #3b82f6;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    }
+    
+    .import-progress {
+        height: 8px;
+        background: #e5e7eb;
+        border-radius: 4px;
+        margin-top: 1rem;
+        overflow: hidden;
+    }
+    
+    .progress-bar {
+        height: 100%;
+        background: linear-gradient(90deg, #3b82f6, #6366f1);
+        transition: width 0.3s ease;
+    }
+    
+    .import-log {
+        max-height: 300px;
+        overflow-y: auto;
+        background: #f8fafc;
+        border-radius: 8px;
+        padding: 1rem;
+        font-family: monospace;
+        font-size: 0.875rem;
+    }
+    
+    .log-entry {
+        margin-bottom: 0.5rem;
+        padding-bottom: 0.5rem;
+        border-bottom: 1px solid #e5e7eb;
+    }
+    
+    .log-entry.success {
+        color: #059669;
+    }
+    
+    .log-entry.warning {
+        color: #d97706;
+    }
+    
+    .log-entry.error {
+        color: #dc2626;
+    }
+    
+    .import-summary {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 1rem;
+        margin-top: 1.5rem;
+    }
+    
+    .summary-card {
+        background: white;
+        border-radius: 8px;
+        padding: 1rem;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+        text-align: center;
+    }
+    
+    .summary-number {
+        font-size: 1.5rem;
+        font-weight: bold;
+        margin-bottom: 0.5rem;
+    }
+    
+    .summary-label {
+        color: #64748b;
+        font-size: 0.875rem;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-lg-8">
+        <div class="import-container">
+            <h4 class="mb-4">Import Products Data</h4>
+            
+            <!-- Import Steps -->
+            <div class="import-step" id="step1">
+                <div class="step-number">1</div>
+                <div class="step-content">
+                    <h6>Upload Your File</h6>
+                    <p class="text-muted">Select an Excel or CSV file containing your stock data</p>
+                    
+                    <div id="fileDropzone" class="file-dropzone">
+                        <div class="py-4">
+                            <i class="fas fa-file-upload fa-3x mb-3 text-muted"></i>
+                            <h5>Drag & Drop your file here</h5>
+                            <p class="text-muted">or click to browse files</p>
+                            <input type="file" id="fileInput" accept=".xlsx,.xls,.csv" style="display: none;">
+                            <button class="btn btn-primary mt-2" onclick="document.getElementById('fileInput').click()">
+                                <i class="fas fa-folder-open me-2"></i>Select File
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <div id="filePreview" class="file-preview" style="display: none;">
+                        <div class="alert alert-success">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <div>
+                                    <i class="fas fa-file-excel me-2"></i>
+                                    <span id="fileName">filename.xlsx</span>
+                                    <small class="text-muted ms-2" id="fileSize">(25 KB)</small>
+                                </div>
+                                <button class="btn btn-sm btn-outline-danger" onclick="clearFileSelection()">
+                                    <i class="fas fa-times"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="import-step" id="step2" style="display: none;">
+                <div class="step-number">2</div>
+                <div class="step-content">
+                    <h6>Map Your Columns</h6>
+                    <p class="text-muted">Match your file columns to our system fields</p>
+                    
+                    <div id="columnMapping">
+                        <div class="table-responsive">
+                            <table class="table table-bordered">
+                                <thead>
+                                    <tr>
+                                        <th>System Field</th>
+                                        <th>Your Column</th>
+                                        <th>Required</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="mappingTableBody">
+                                    <!-- Dynamic content will be inserted here -->
+                                </tbody>
+                            </table>
+                        </div>
+                        
+                        <div class="form-check mt-3">
+                            <input type="checkbox" class="form-check-input" id="headerRowCheck" checked>
+                            <label class="form-check-label" for="headerRowCheck">First row contains column headers</label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="import-step" id="step3" style="display: none;">
+                <div class="step-number">3</div>
+                <div class="step-content">
+                    <h6>Import Settings</h6>
+                    <p class="text-muted">Configure how the import should be processed</p>
+                    
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label class="form-label">Import Mode</label>
+                                <select class="form-select" id="importMode">
+                                    <option value="add">Add new items only</option>
+                                    <option value="update">Update existing items</option>
+                                    <option value="both" selected>Add new and update existing</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label class="form-label">Conflict Resolution</label>
+                                <select class="form-select" id="conflictResolution">
+                                    <option value="skip">Skip conflicting items</option>
+                                    <option value="overwrite" selected>Overwrite with imported data</option>
+                                    <option value="merge">Merge quantities</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="form-check">
+                        <input type="checkbox" class="form-check-input" id="notifyCheck" checked>
+                        <label class="form-check-label" for="notifyCheck">Notify me when import is complete</label>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="d-flex justify-content-between mt-4">
+                <button class="btn btn-outline-secondary" id="backBtn" onclick="prevStep()" style="display: none;">
+                    <i class="fas fa-arrow-left me-2"></i>Back
+                </button>
+                <button class="btn btn-primary" id="nextBtn" onclick="nextStep()">
+                    Next <i class="fas fa-arrow-right ms-2"></i>
+                </button>
+                <button class="btn btn-success" id="importBtn" style="display: none;" onclick="startImport()">
+                    <i class="fas fa-upload me-2"></i>Start Import
+                </button>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-lg-4">
+        <!-- Import Templates -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <h6 class="mb-0">Download Templates</h6>
+            </div>
+            <div class="card-body">
+                <div class="template-card mb-3">
+                    <div class="d-flex align-items-center">
+                        <div class="me-3">
+                            <i class="fas fa-file-excel fa-2x text-success"></i>
+                        </div>
+                        <div>
+                            <h6 class="mb-1">Standard Products Import</h6>
+                            <small class="text-muted">Includes all fields for complete products import</small>
+                        </div>
+                    </div>
+                    <div class="text-end mt-3">
+                        {% if perms.inventory.add_product %}
+                        <a href="{% url 'inventory:download_template' 'standard' %}" class="btn btn-sm btn-outline-primary">
+                            <i class="fas fa-download me-1"></i>Download
+                        </a>
+                        {% endif %}
+                    </div>
+                </div>
+                
+                <div class="template-card">
+                    <div class="d-flex align-items-center">
+                        <div class="me-3">
+                            <i class="fas fa-file-csv fa-2x text-info"></i>
+                        </div>
+                        <div>
+                            <h6 class="mb-1">Simple CSV Template</h6>
+                            <small class="text-muted">Basic format for quick products updates</small>
+                        </div>
+                    </div>
+                    <div class="text-end mt-3">
+                        {% if perms.inventory.add_product %}
+                        <a href="{% url 'inventory:download_template' 'simple' %}" class="btn btn-sm btn-outline-primary">
+                            <i class="fas fa-download me-1"></i>Download
+                        </a>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Import Help -->
+        <div class="card">
+            <div class="card-header">
+                <h6 class="mb-0">Import Help</h6>
+            </div>
+            <div class="card-body">
+                <div class="accordion" id="importHelpAccordion">
+                    <div class="accordion-item">
+                        <h2 class="accordion-header">
+                            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#helpOne">
+                                Supported File Formats
+                            </button>
+                        </h2>
+                        <div id="helpOne" class="accordion-collapse collapse" data-bs-parent="#importHelpAccordion">
+                            <div class="accordion-body">
+                                <p>We support the following file formats:</p>
+                                <ul>
+                                    <li>Excel (.xlsx, .xls)</li>
+                                    <li>CSV (.csv)</li>
+                                </ul>
+                                <p>Maximum file size: 10MB</p>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="accordion-item">
+                        <h2 class="accordion-header">
+                            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#helpTwo">
+                                Required Fields
+                            </button>
+                        </h2>
+                        <div id="helpTwo" class="accordion-collapse collapse" data-bs-parent="#importHelpAccordion">
+                            <div class="accordion-body">
+                                <p>At minimum, your file must include:</p>
+                                <ul>
+                                    <li>Product Name or SKU</li>
+                                    <li>Quantity</li>
+                                    <li>Store Location</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="accordion-item">
+                        <h2 class="accordion-header">
+                            <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#helpThree">
+                                Import Tips
+                            </button>
+                        </h2>
+                        <div id="helpThree" class="accordion-collapse collapse" data-bs-parent="#importHelpAccordion">
+                            <div class="accordion-body">
+                                <ul>
+                                    <li>Use our templates to ensure proper formatting</li>
+                                    <li>Test with a small file first</li>
+                                    <li>Backup your data before large imports</li>
+                                    <li>Use SKUs for more reliable matching</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Import Progress Modal -->
+<div class="modal fade" id="importProgressModal" tabindex="-1" data-bs-backdrop="static">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Importing Products Data</h5>
+            </div>
+            <div class="modal-body">
+                <div class="text-center mb-4">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                    <h6 class="mt-3" id="importStatusText">Processing your file...</h6>
+                </div>
+                
+                <div class="import-progress">
+                    <div class="progress-bar" id="importProgressBar" style="width: 0%"></div>
+                </div>
+                
+                <div class="import-log mt-3" id="importLog">
+                    <!-- Log entries will be added here -->
+                </div>
+                
+                <div class="import-summary" id="importSummary" style="display: none;">
+                    <div class="summary-card">
+                        <div class="summary-number" id="summaryCreated">0</div>
+                        <div class="summary-label">New Items</div>
+                    </div>
+                    <div class="summary-card">
+                        <div class="summary-number" id="summaryUpdated">0</div>
+                        <div class="summary-label">Updated</div>
+                    </div>
+                    <div class="summary-card">
+                        <div class="summary-number" id="summarySkipped">0</div>
+                        <div class="summary-label">Skipped</div>
+                    </div>
+                    <div class="summary-card">
+                        <div class="summary-number" id="summaryErrors">0</div>
+                        <div class="summary-label">Errors</div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer" id="importModalFooter">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal" id="cancelImportBtn">
+                    <i class="fas fa-times me-2"></i>Cancel
+                </button>
+                <button type="button" class="btn btn-primary" id="viewResultsBtn" style="display: none;" onclick="viewImportResults()">
+                    <i class="fas fa-eye me-2"></i>View Results
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Import Results Modal -->
+<div class="modal fade" id="importResultsModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Import Results</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="alert alert-success" id="importResultAlert">
+                    <i class="fas fa-check-circle me-2"></i>
+                    Import completed successfully with <strong id="resultsTotal">0</strong> items processed
+                </div>
+                
+                <ul class="nav nav-tabs" id="resultsTabs" role="tablist">
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link active" id="created-tab" data-bs-toggle="tab" data-bs-target="#created" type="button">
+                            New Items <span class="badge bg-success ms-1" id="createdCount">0</span>
+                        </button>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link" id="updated-tab" data-bs-toggle="tab" data-bs-target="#updated" type="button">
+                            Updated <span class="badge bg-primary ms-1" id="updatedCount">0</span>
+                        </button>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link" id="skipped-tab" data-bs-toggle="tab" data-bs-target="#skipped" type="button">
+                            Skipped <span class="badge bg-warning ms-1" id="skippedCount">0</span>
+                        </button>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link" id="errors-tab" data-bs-toggle="tab" data-bs-target="#errors" type="button">
+                            Errors <span class="badge bg-danger ms-1" id="errorsCount">0</span>
+                        </button>
+                    </li>
+                </ul>
+                
+                <div class="tab-content p-3 border border-top-0 rounded-bottom" id="resultsTabContent">
+                    <div class="tab-pane fade show active" id="created" role="tabpanel">
+                        <div class="table-responsive">
+                            <table class="table table-sm">
+                                <thead>
+                                    <tr>
+                                        <th>Product</th>
+                                        <th>Store</th>
+                                        <th>Quantity</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="createdItems">
+                                    <!-- New items will be listed here -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                    <div class="tab-pane fade" id="updated" role="tabpanel">
+                        <div class="table-responsive">
+                            <table class="table table-sm">
+                                <thead>
+                                    <tr>
+                                        <th>Product</th>
+                                        <th>Store</th>
+                                        <th>Old Qty</th>
+                                        <th>New Qty</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="updatedItems">
+                                    <!-- Updated items will be listed here -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                    <div class="tab-pane fade" id="skipped" role="tabpanel">
+                        <div class="table-responsive">
+                            <table class="table table-sm">
+                                <thead>
+                                    <tr>
+                                        <th>Product</th>
+                                        <th>Store</th>
+                                        <th>Reason</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="skippedItems">
+                                    <!-- Skipped items will be listed here -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                    <div class="tab-pane fade" id="errors" role="tabpanel">
+                        <div class="table-responsive">
+                            <table class="table table-sm">
+                                <thead>
+                                    <tr>
+                                        <th>Row</th>
+                                        <th>Error</th>
+                                        <th>Details</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="errorItems">
+                                    <!-- Errors will be listed here -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                    <i class="fas fa-times me-2"></i>Close
+                </button>
+                <button type="button" class="btn btn-primary" onclick="exportImportResults()">
+                    <i class="fas fa-download me-2"></i>Export Results
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let currentStep = 1;
+let selectedFile = null;
+let fileColumns = [];
+let importResults = null;
+
+$(document).ready(function() {
+    initializeFileDropzone();
+});
+
+function initializeFileDropzone() {
+    const dropzone = document.getElementById('fileDropzone');
+    
+    ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+        dropzone.addEventListener(eventName, preventDefaults, false);
+    });
+    
+    function preventDefaults(e) {
+        e.preventDefault();
+        e.stopPropagation();
+    }
+    
+    ['dragenter', 'dragover'].forEach(eventName => {
+        dropzone.addEventListener(eventName, highlight, false);
+    });
+    
+    ['dragleave', 'drop'].forEach(eventName => {
+        dropzone.addEventListener(eventName, unhighlight, false);
+    });
+    
+    function highlight() {
+        dropzone.classList.add('active');
+    }
+    
+    function unhighlight() {
+        dropzone.classList.remove('active');
+    }
+    
+    dropzone.addEventListener('drop', handleDrop, false);
+    
+    function handleDrop(e) {
+        const dt = e.dataTransfer;
+        const files = dt.files;
+        handleFiles(files);
+    }
+    
+    document.getElementById('fileInput').addEventListener('change', function() {
+        handleFiles(this.files);
+    });
+}
+
+function handleFiles(files) {
+    if (files.length > 0) {
+        const file = files[0];
+        
+        // Validate file type
+        const validTypes = ['.xlsx', '.xls', '.csv'];
+        const isValidType = validTypes.some(type => file.name.toLowerCase().endsWith(type));
+        
+        if (!isValidType) {
+            showNotification('Please select a valid Excel (.xlsx, .xls) or CSV (.csv) file', 'error');
+            return;
+        }
+        
+        // Validate file size (10MB limit)
+        if (file.size > 10 * 1024 * 1024) {
+            showNotification('File size must be less than 10MB', 'error');
+            return;
+        }
+        
+        selectedFile = file;
+        analyzeFile(file);
+    }
+}
+
+function analyzeFile(file) {
+    const formData = new FormData();
+    formData.append('file', file);
+    
+    showNotification('Analyzing file...', 'info');
+    
+    fetch('{% url "inventory:analyze_import_file" %}', {
+        method: 'POST',
+        body: formData,
+        headers: {
+            'X-CSRFToken': getCookie('csrftoken')
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            fileColumns = data.columns;
+            displayFileInfo(data.filename, data.size);
+            generateColumnMapping();
+            showStep(2);
+        } else {
+            showNotification(data.error || 'Error analyzing file', 'error');
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        showNotification('Error analyzing file', 'error');
+    });
+}
+
+function displayFileInfo(fileName, fileSize) {
+    const fileSizeFormatted = (fileSize / 1024).toFixed(1) + ' KB';
+    
+    document.getElementById('fileName').textContent = fileName;
+    document.getElementById('fileSize').textContent = `(${fileSizeFormatted})`;
+    document.getElementById('filePreview').style.display = 'block';
+}
+
+function generateColumnMapping() {
+    const tbody = document.getElementById('mappingTableBody');
+    tbody.innerHTML = '';
+    
+    const systemFields = [
+        {field: 'product_name', label: 'Product Name', required: true},
+        {field: 'sku', label: 'SKU', required: false},
+        {field: 'quantity', label: 'Quantity', required: true},
+        {field: 'store', label: 'Store', required: true},
+        {field: 'category', label: 'Category', required: false},
+        {field: 'cost_price', label: 'Cost Price', required: false},
+        {field: 'selling_price', label: 'Selling Price', required: false},
+        {field: 'description', label: 'Description', required: false}
+    ];
+    
+    systemFields.forEach(field => {
+        const row = document.createElement('tr');
+        
+        const requiredBadge = field.required ? 
+            '<span class="badge bg-danger ms-2">Required</span>' : 
+            '<span class="badge bg-secondary ms-2">Optional</span>';
+        
+        row.innerHTML = `
+            <td>${field.label}${requiredBadge}</td>
+            <td>
+                <select class="form-select form-select-sm" data-field="${field.field}">
+                    <option value="">Select column...</option>
+                    ${fileColumns.map((col, index) => 
+                        `<option value="${index}">${col.name}</option>`
+                    ).join('')}
+                </select>
+            </td>
+            <td>${field.required ? 'Yes' : 'No'}</td>
+        `;
+        
+        tbody.appendChild(row);
+    });
+    
+    // Auto-map columns based on common names
+    autoMapColumns();
+}
+
+function autoMapColumns() {
+    const mappings = {
+        'product_name': ['product name', 'name', 'product', 'item'],
+        'sku': ['sku', 'code', 'item code'],
+        'quantity': ['quantity', 'qty', 'stock', 'amount'],
+        'store': ['store', 'location', 'warehouse', 'branch'],
+        'category': ['category', 'type', 'group'],
+        'cost_price': ['cost price', 'cost', 'purchase price'],
+        'selling_price': ['selling price', 'price', 'sell price'],
+        'description': ['description', 'desc', 'details']
+    };
+    
+    Object.keys(mappings).forEach(field => {
+        const select = document.querySelector(`select[data-field="${field}"]`);
+        if (select) {
+            const matchingColumn = fileColumns.find(col => 
+                mappings[field].some(mapping => 
+                    col.name.toLowerCase().includes(mapping.toLowerCase())
+                )
+            );
+            
+            if (matchingColumn) {
+                select.value = matchingColumn.index;
+            }
+        }
+    });
+}
+
+function clearFileSelection() {
+    selectedFile = null;
+    fileColumns = [];
+    document.getElementById('fileInput').value = '';
+    document.getElementById('filePreview').style.display = 'none';
+    showStep(1);
+}
+
+function nextStep() {
+    if (currentStep === 1) {
+        if (!selectedFile) {
+            showNotification('Please select a file first', 'error');
+            return;
+        }
+        showStep(2);
+    } else if (currentStep === 2) {
+        if (!validateColumnMapping()) {
+            return;
+        }
+        showStep(3);
+    }
+}
+
+function prevStep() {
+    if (currentStep > 1) {
+        showStep(currentStep - 1);
+    }
+}
+
+function showStep(step) {
+    currentStep = step;
+    
+    // Hide all steps
+    document.querySelectorAll('.import-step').forEach(stepEl => {
+        stepEl.style.display = 'none';
+    });
+    
+    // Show steps up to current
+    for (let i = 1; i <= step; i++) {
+        document.getElementById(`step${i}`).style.display = 'flex';
+    }
+    
+    // Update buttons
+    const backBtn = document.getElementById('backBtn');
+    const nextBtn = document.getElementById('nextBtn');
+    const importBtn = document.getElementById('importBtn');
+    
+    backBtn.style.display = step > 1 ? 'inline-block' : 'none';
+    nextBtn.style.display = step < 3 ? 'inline-block' : 'none';
+    importBtn.style.display = step === 3 ? 'inline-block' : 'none';
+}
+
+function validateColumnMapping() {
+    const requiredFields = ['product_name', 'quantity', 'store'];
+    let isValid = true;
+    let missingFields = [];
+    
+    requiredFields.forEach(field => {
+        const select = document.querySelector(`select[data-field="${field}"]`);
+        if (!select || select.value === '') {
+            isValid = false;
+            missingFields.push(field.replace('_', ' '));
+            if (select) {
+                select.classList.add('is-invalid');
+            }
+        } else {
+            if (select) {
+                select.classList.remove('is-invalid');
+            }
+        }
+    });
+    
+    // Check that either product_name or sku is mapped
+    const productNameSelect = document.querySelector(`select[data-field="product_name"]`);
+    const skuSelect = document.querySelector(`select[data-field="sku"]`);
+    
+    if ((!productNameSelect || productNameSelect.value === '') && 
+        (!skuSelect || skuSelect.value === '')) {
+        showNotification('Please map either Product Name or SKU field', 'error');
+        return false;
+    }
+    
+    if (!isValid) {
+        showNotification(`Please map required fields: ${missingFields.join(', ')}`, 'error');
+        return false;
+    }
+    
+    return true;
+}
+
+function getColumnMapping() {
+    const mapping = {};
+    document.querySelectorAll('select[data-field]').forEach(select => {
+        if (select.value !== '') {
+            mapping[select.dataset.field] = select.value;
+        }
+    });
+    return mapping;
+}
+
+function startImport() {
+    if (!selectedFile) {
+        showNotification('Please select a file first', 'error');
+        return;
+    }
+    
+    const columnMapping = getColumnMapping();
+    const importMode = document.getElementById('importMode').value;
+    const conflictResolution = document.getElementById('conflictResolution').value;
+    const hasHeader = document.getElementById('headerRowCheck').checked;
+    
+    const formData = new FormData();
+    formData.append('file', selectedFile);
+    formData.append('import_mode', importMode);
+    formData.append('conflict_resolution', conflictResolution);
+    formData.append('column_mapping', JSON.stringify(columnMapping));
+    formData.append('has_header', hasHeader);
+    
+    // Show progress modal
+    const importModal = new bootstrap.Modal(document.getElementById('importProgressModal'));
+    importModal.show();
+    
+    // Reset progress
+    document.getElementById('importProgressBar').style.width = '0%';
+    document.getElementById('importLog').innerHTML = '';
+    document.getElementById('importSummary').style.display = 'none';
+    document.getElementById('viewResultsBtn').style.display = 'none';
+    document.getElementById('cancelImportBtn').disabled = false;
+    
+    // Start import
+    performImport(formData);
+}
+
+function performImport(formData) {
+    const statusText = document.getElementById('importStatusText');
+    const progressBar = document.getElementById('importProgressBar');
+    
+    statusText.textContent = 'Processing import...';
+    
+    fetch('{% url "inventory:process_bulk_import" %}', {
+        method: 'POST',
+        body: formData,
+        headers: {
+            'X-CSRFToken': getCookie('csrftoken')
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        progressBar.style.width = '100%';
+        
+        if (data.success) {
+            statusText.textContent = 'Import completed successfully!';
+            importResults = data;
+            displayImportSummary(data);
+            
+            document.getElementById('cancelImportBtn').disabled = true;
+            document.getElementById('viewResultsBtn').style.display = 'inline-block';
+            
+            showNotification('Import completed successfully!', 'success');
+        } else {
+            statusText.textContent = 'Import failed!';
+            addLogEntry(data.error || 'Import failed', 'error');
+            showNotification(data.error || 'Import failed', 'error');
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        statusText.textContent = 'Import failed!';
+        addLogEntry('Network error occurred', 'error');
+        showNotification('Import failed due to network error', 'error');
+    });
+}
+
+function displayImportSummary(data) {
+    const summary = data.summary;
+    
+    document.getElementById('summaryCreated').textContent = summary.created_count;
+    document.getElementById('summaryUpdated').textContent = summary.updated_count;
+    document.getElementById('summarySkipped').textContent = summary.skipped_count;
+    document.getElementById('summaryErrors').textContent = summary.error_count;
+    
+    document.getElementById('importSummary').style.display = 'grid';
+    
+    // Add summary to log
+    addLogEntry(`Processed ${data.total_processed} items`, 'success');
+    addLogEntry(`Created: ${summary.created_count}, Updated: ${summary.updated_count}`, 'success');
+    
+    if (summary.skipped_count > 0) {
+        addLogEntry(`Skipped: ${summary.skipped_count} items`, 'warning');
+    }
+    
+    if (summary.error_count > 0) {
+        addLogEntry(`Errors: ${summary.error_count} items`, 'error');
+    }
+}
+
+function addLogEntry(message, type) {
+    const logEntry = document.createElement('div');
+    logEntry.className = `log-entry ${type}`;
+    logEntry.innerHTML = `
+        <i class="fas fa-${type === 'success' ? 'check-circle' : type === 'warning' ? 'exclamation-triangle' : 'times-circle'} me-2"></i>
+        ${new Date().toLocaleTimeString()} - ${message}
+    `;
+    document.getElementById('importLog').appendChild(logEntry);
+    
+    // Scroll to bottom
+    const logContainer = document.getElementById('importLog');
+    logContainer.scrollTop = logContainer.scrollHeight;
+}
+
+function viewImportResults() {
+    if (!importResults) {
+        showNotification('No import results available', 'error');
+        return;
+    }
+    
+    // Hide progress modal
+    const importModal = bootstrap.Modal.getInstance(document.getElementById('importProgressModal'));
+    importModal.hide();
+    
+    // Populate results
+    populateResultsModal(importResults);
+    
+    // Show results modal
+    const resultsModal = new bootstrap.Modal(document.getElementById('importResultsModal'));
+    resultsModal.show();
+}
+
+function populateResultsModal(data) {
+    const summary = data.summary;
+    
+    // Update totals
+    document.getElementById('resultsTotal').textContent = data.total_processed;
+    document.getElementById('createdCount').textContent = summary.created_count;
+    document.getElementById('updatedCount').textContent = summary.updated_count;
+    document.getElementById('skippedCount').textContent = summary.skipped_count;
+    document.getElementById('errorsCount').textContent = summary.error_count;
+    
+    // Update alert
+    const alertEl = document.getElementById('importResultAlert');
+    if (summary.error_count > 0) {
+        alertEl.className = 'alert alert-warning';
+        alertEl.innerHTML = `<i class="fas fa-exclamation-triangle me-2"></i>Import completed with ${summary.error_count} errors. <strong>${data.total_processed}</strong> items processed.`;
+    } else {
+        alertEl.className = 'alert alert-success';
+        alertEl.innerHTML = `<i class="fas fa-check-circle me-2"></i>Import completed successfully with <strong>${data.total_processed}</strong> items processed.`;
+    }
+    
+    // Populate tables
+    populateResultTable('createdItems', data.created, ['product', 'store', 'quantity']);
+    populateResultTable('updatedItems', data.updated, ['product', 'store', 'old_quantity', 'new_quantity']);
+    populateResultTable('skippedItems', data.skipped, ['product', 'store', 'reason']);
+    populateResultTable('errorItems', data.errors, ['row', 'error', 'details']);
+}
+
+function populateResultTable(tableId, data, columns) {
+    const tbody = document.getElementById(tableId);
+    tbody.innerHTML = '';
+    
+    if (data.length === 0) {
+        const row = document.createElement('tr');
+        row.innerHTML = `<td colspan="${columns.length}" class="text-center text-muted">No items</td>`;
+        tbody.appendChild(row);
+        return;
+    }
+    
+    data.slice(0, 100).forEach(item => { // Limit to first 100 items
+        const row = document.createElement('tr');
+        row.innerHTML = columns.map(col => `<td>${item[col] || ''}</td>`).join('');
+        tbody.appendChild(row);
+    });
+    
+    if (data.length > 100) {
+        const row = document.createElement('tr');
+        row.innerHTML = `<td colspan="${columns.length}" class="text-center text-muted">... and ${data.length - 100} more items</td>`;
+        tbody.appendChild(row);
+    }
+}
+
+function exportImportResults() {
+    if (!importResults) {
+        showNotification('No results to export', 'error');
+        return;
+    }
+    
+    // Create CSV content
+    let csvContent = "Type,Product,Store,Quantity,Details\n";
+    
+    importResults.created.forEach(item => {
+        csvContent += `Created,"${item.product}","${item.store}",${item.quantity},\n`;
+    });
+    
+    importResults.updated.forEach(item => {
+        csvContent += `Updated,"${item.product}","${item.store}",${item.new_quantity},"Old: ${item.old_quantity}"\n`;
+    });
+    
+    importResults.skipped.forEach(item => {
+        csvContent += `Skipped,"${item.product}","${item.store}",,"${item.reason}"\n`;
+    });
+    
+    importResults.errors.forEach(item => {
+        csvContent += `Error,,,,"Row ${item.row}: ${item.error}"\n`;
+    });
+    
+    // Download file
+    const blob = new Blob([csvContent], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `import_results_${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    window.URL.revokeObjectURL(url);
+    
+    showNotification('Results exported successfully', 'success');
+}
+
+function showNotification(message, type) {
+    const alertClass = type === 'error' ? 'alert-danger' : 
+                     type === 'warning' ? 'alert-warning' :
+                     type === 'info' ? 'alert-info' : 'alert-success';
+    
+    const icon = type === 'error' ? 'exclamation-triangle' :
+                type === 'warning' ? 'exclamation-triangle' :
+                type === 'info' ? 'info-circle' : 'check-circle';
+    
+    const alert = document.createElement('div');
+    alert.className = `alert ${alertClass} alert-dismissible fade show`;
+    alert.innerHTML = `
+        <i class="fas fa-${icon} me-2"></i>
+        ${message}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    `;
+    
+    const container = document.querySelector('.import-container');
+    container.insertBefore(alert, container.firstChild);
+    
+    setTimeout(() => {
+        alert.classList.remove('show');
+        setTimeout(() => alert.remove(), 150);
+    }, 5000);
+}
+
+function getCookie(name) {
+    let cookieValue = null;
+    if (document.cookie && document.cookie !== '') {
+        const cookies = document.cookie.split(';');
+        for (let i = 0; i < cookies.length; i++) {
+            const cookie = cookies[i].trim();
+            if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                break;
+            }
+        }
+    }
+    return cookieValue;
+}
+</script>
+{% endblock %}

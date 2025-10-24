@@ -1,0 +1,154 @@
+{% extends "efris/base.html" %}
+{% load static %}
+
+{% block efris_content %}
+<div class="efris-card">
+    <div class="card-body">
+        <h5 class="card-title">
+            <i class="fas fa-tools"></i> Fuel Equipment Query
+        </h5>
+
+        <form method="post" class="mt-4">
+            {% csrf_token %}
+
+            <div class="mb-3">
+                <label for="pump_id" class="form-label">Pump ID</label>
+                <input type="text" class="form-control" id="pump_id"
+                       name="pump_id" required
+                       placeholder="Enter 18-digit pump ID">
+            </div>
+
+            <button type="submit" class="btn btn-primary">
+                <i class="fas fa-search"></i> Query Equipment
+            </button>
+        </form>
+
+        {% if equipment_data %}
+        <hr>
+
+        <!-- Pump Details -->
+        {% if equipment_data.fuel_pump %}
+        <div class="card mt-4">
+            <div class="card-header bg-primary text-white">
+                <h6 class="mb-0">Fuel Pump Details</h6>
+            </div>
+            <div class="card-body">
+                <dl class="row">
+                    <dt class="col-sm-3">Pump No:</dt>
+                    <dd class="col-sm-9"><code>{{ equipment_data.fuel_pump.pumpNo }}</code></dd>
+
+                    <dt class="col-sm-3">Serial Number:</dt>
+                    <dd class="col-sm-9">{{ equipment_data.fuel_pump.pumpSerialNumber }}</dd>
+
+                    <dt class="col-sm-3">Manufacturer:</dt>
+                    <dd class="col-sm-9">{{ equipment_data.fuel_pump.manufacturerName }}</dd>
+
+                    <dt class="col-sm-3">Status:</dt>
+                    <dd class="col-sm-9">
+                        {% if equipment_data.fuel_pump.enableStatusCode == '101' %}
+                            <span class="badge bg-success">Enabled</span>
+                        {% else %}
+                            <span class="badge bg-danger">Disabled</span>
+                        {% endif %}
+                    </dd>
+
+                    <dt class="col-sm-3">Version:</dt>
+                    <dd class="col-sm-9">{{ equipment_data.fuel_pump.pumpVersion }}</dd>
+                </dl>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Nozzle List -->
+        {% if equipment_data.fuel_nozzle_list %}
+        <div class="card mt-3">
+            <div class="card-header bg-info text-white">
+                <h6 class="mb-0">Nozzles ({{ equipment_data.fuel_nozzle_list|length }})</h6>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-sm">
+                        <thead>
+                            <tr>
+                                <th>Nozzle No</th>
+                                <th>Serial Number</th>
+                                <th>Tank</th>
+                                <th>Status</th>
+                                <th>Locked</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for nozzle in equipment_data.fuel_nozzle_list %}
+                            <tr>
+                                <td><code>{{ nozzle.nozzleNo }}</code></td>
+                                <td>{{ nozzle.nozzleSerialNumber }}</td>
+                                <td>{{ nozzle.tankNo }}</td>
+                                <td>
+                                    {% if nozzle.enableStatusCode == '101' %}
+                                        <span class="badge bg-success">Enabled</span>
+                                    {% else %}
+                                        <span class="badge bg-danger">Disabled</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if nozzle.lockedStatusCode == '101' %}
+                                        <span class="badge bg-warning">Locked</span>
+                                    {% else %}
+                                        <span class="badge bg-success">Unlocked</span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Tank List -->
+        {% if equipment_data.fuel_tank_list %}
+        <div class="card mt-3">
+            <div class="card-header bg-warning text-dark">
+                <h6 class="mb-0">Tanks ({{ equipment_data.fuel_tank_list|length }})</h6>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-sm">
+                        <thead>
+                            <tr>
+                                <th>Tank No</th>
+                                <th>Serial Number</th>
+                                <th>Goods ID</th>
+                                <th>Price</th>
+                                <th>Status</th>
+                                <th>Version</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for tank in equipment_data.fuel_tank_list %}
+                            <tr>
+                                <td><code>{{ tank.tankNo }}</code></td>
+                                <td>{{ tank.tankSerialNumber }}</td>
+                                <td>{{ tank.commodityGoodsId }}</td>
+                                <td>{{ tank.presentPrice }}</td>
+                                <td>
+                                    {% if tank.enableStatusCode == '101' %}
+                                        <span class="badge bg-success">Enabled</span>
+                                    {% else %}
+                                        <span class="badge bg-danger">Disabled</span>
+                                    {% endif %}
+                                </td>
+                                <td>{{ tank.tankVersion }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

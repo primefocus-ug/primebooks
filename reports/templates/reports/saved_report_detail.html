@@ -1,0 +1,762 @@
+{% extends 'base.html' %}
+{% load static i18n %}
+
+{% block title %}{{ report.name }} - Report Details | {{company.trading_name|default:company.name}}{% endblock %}
+
+{% block breadcrumbs %}
+<li class="breadcrumb-item">
+    {% if perms.reports.view_savedreport %}
+    <a href="{% url 'reports:dashboard' %}">
+        <i class="fas fa-chart-pie"></i> Reports
+    </a>
+    {% endif %}
+</li>
+<li class="breadcrumb-item active">
+    <i class="fas fa-file-alt"></i> {{ report.name }}
+</li>
+{% endblock %}
+
+{% block content %}
+<div class="report-detail-container">
+    <div class="row">
+        <div class="col-lg-8">
+            <!-- Report Info Card -->
+            <div class="card mb-4">
+                <div class="card-header">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <h5 class="card-title mb-0">
+                            <i class="fas fa-info-circle"></i> Report Details
+                        </h5>
+                        <div class="dropdown">
+                            <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" 
+                                    id="reportActionsDropdown" data-bs-toggle="dropdown">
+                                <i class="fas fa-ellipsis-v"></i>
+                            </button>
+                            <ul class="dropdown-menu dropdown-menu-end">
+                                <li>
+                                    {% if perms.reports.change_savedreport %}
+                                    <a class="dropdown-item" href="{% url 'reports:report_update' report.pk %}">
+                                        <i class="fas fa-edit"></i> Edit Report
+                                    </a>
+                                    {% endif %}
+                                </li>
+                                <li>
+                                    <a class="dropdown-item" href="#" data-bs-toggle="modal" 
+                                       data-bs-target="#shareReportModal">
+                                        <i class="fas fa-share-alt"></i> Share Report
+                                    </a>
+                                </li>
+                                <li><hr class="dropdown-divider"></li>
+                                <li>
+                                    {% if perms.reports.delete_savedreport %}
+                                    <a class="dropdown-item text-danger" href="#" 
+                                       onclick="confirmDelete('{% url 'reports:delete_report_ajax' report.pk %}', 
+                                       'Are you sure you want to delete this report?')">
+                                        <i class="fas fa-trash-alt"></i> Delete Report
+                                    </a>
+                                    {% endif %}
+                                </li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="detail-row">
+                                <div class="detail-label">Report Name</div>
+                                <div class="detail-value">{{ report.name }}</div>
+                            </div>
+                            <div class="detail-row">
+                                <div class="detail-label">Report Type</div>
+                                <div class="detail-value">{{ report.get_report_type_display }}</div>
+                            </div>
+                            <div class="detail-row">
+                                <div class="detail-label">Created By</div>
+                                <div class="detail-value">{{ report.created_by.get_full_name }}</div>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="detail-row">
+                                <div class="detail-label">Created At</div>
+                                <div class="detail-value">{{ report.created_at|date:"M d, Y H:i" }}</div>
+                            </div>
+                            <div class="detail-row">
+                                <div class="detail-label">Last Modified</div>
+                                <div class="detail-value">{{ report.last_modified|date:"M d, Y H:i" }}</div>
+                            </div>
+                            <div class="detail-row">
+                                <div class="detail-label">EFRIS Approved</div>
+                                <div class="detail-value">
+                                    {% if report.is_efris_approved %}
+                                    <span class="badge bg-success rounded-pill">
+                                        <i class="fas fa-check-circle"></i> Approved
+                                    </span>
+                                    {% else %}
+                                    <span class="badge bg-secondary rounded-pill">
+                                        <i class="fas fa-times-circle"></i> Not Approved
+                                    </span>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="detail-row mt-3">
+                        <div class="detail-label">Description</div>
+                        <div class="detail-value">
+                            {% if report.description %}
+                                {{ report.description }}
+                            {% else %}
+                                <span class="text-muted">No description provided</span>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Report Generation Card -->
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">
+                        <i class="fas fa-cog"></i> Generate Report
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <form method="post" id="generateReportForm">
+                        {% csrf_token %}
+                        {{ generation_form.as_p }}
+                        
+                        <div class="row mt-3">
+                            <div class="col-md-6">
+                                <label class="form-label">Output Format</label>
+                                <div class="btn-group w-100" role="group">
+                                    <input type="radio" class="btn-check" name="format" id="formatPdf" value="PDF" checked>
+                                    <label class="btn btn-outline-danger" for="formatPdf">
+                                        <i class="fas fa-file-pdf"></i> PDF
+                                    </label>
+                                    
+                                    <input type="radio" class="btn-check" name="format" id="formatExcel" value="XLSX">
+                                    <label class="btn btn-outline-success" for="formatExcel">
+                                        <i class="fas fa-file-excel"></i> Excel
+                                    </label>
+                                    
+                                    <input type="radio" class="btn-check" name="format" id="formatCsv" value="CSV">
+                                    <label class="btn btn-outline-primary" for="formatCsv">
+                                        <i class="fas fa-file-csv"></i> CSV
+                                    </label>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="form-check form-switch mt-4">
+                                    <input class="form-check-input" type="checkbox" id="includeEfris" name="include_efris">
+                                    <label class="form-check-label" for="includeEfris">
+                                        Include EFRIS Verification
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="form-actions mt-4">
+                            <button type="submit" class="btn btn-primary">
+                                <i class="fas fa-play"></i> Generate Report
+                            </button>
+                            <button type="button" class="btn btn-outline-secondary" id="previewReportBtn">
+                                <i class="fas fa-eye"></i> Preview Data
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+            
+            <!-- Preview Modal -->
+            <div class="modal fade" id="previewModal" tabindex="-1" aria-hidden="true">
+                <div class="modal-dialog modal-xl">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h5 class="modal-title">
+                                <i class="fas fa-eye"></i> Report Data Preview
+                            </h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                        </div>
+                        <div class="modal-body">
+                            <div class="table-responsive">
+                                <table class="table table-hover" id="previewTable">
+                                    <thead>
+                                        <tr id="previewHeaders"></tr>
+                                    </thead>
+                                    <tbody id="previewBody"></tbody>
+                                </table>
+                            </div>
+                            <div class="text-muted text-center" id="previewLoading">
+                                <i class="fas fa-spinner fa-spin fa-2x"></i>
+                                <p>Loading preview data...</p>
+                            </div>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                                <i class="fas fa-times"></i> Close
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Generation History Card -->
+            <div class="card">
+                <div class="card-header">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <h5 class="card-title mb-0">
+                            <i class="fas fa-history"></i> Generation History
+                        </h5>
+                        <div class="dropdown">
+                            <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" 
+                                    id="historyActionsDropdown" data-bs-toggle="dropdown">
+                                <i class="fas fa-filter"></i> Filter
+                            </button>
+                            <ul class="dropdown-menu dropdown-menu-end">
+                                <li><a class="dropdown-item" href="#">Last 7 days</a></li>
+                                <li><a class="dropdown-item" href="#">Last 30 days</a></li>
+                                <li><a class="dropdown-item" href="#">Last 90 days</a></li>
+                                <li><hr class="dropdown-divider"></li>
+                                <li><a class="dropdown-item" href="#">All time</a></li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+                <div class="card-body">
+                    {% if generated_instances %}
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Generated At</th>
+                                    <th>Format</th>
+                                    <th>Generated By</th>
+                                    <th>EFRIS Status</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for instance in generated_instances %}
+                                <tr>
+                                    <td>{{ instance.generated_at|date:"M d, Y H:i" }}</td>
+                                    <td>
+                                        <span class="badge bg-{% if instance.file_format == 'PDF' %}danger{% elif instance.file_format == 'XLSX' %}success{% else %}primary{% endif %}">
+                                            {{ instance.get_file_format_display }}
+                                        </span>
+                                    </td>
+                                    <td>{{ instance.generated_by.get_full_name }}</td>
+                                    <td>
+                                        {% if instance.is_efris_verified %}
+                                        <span class="badge bg-success rounded-pill">
+                                            <i class="fas fa-check-circle"></i> Verified
+                                        </span>
+                                        {% elif report.is_efris_approved %}
+                                        <button class="btn btn-sm btn-outline-warning verify-efris-btn" 
+                                                data-report-id="{{ instance.id }}">
+                                            <i class="fas fa-check-double"></i> Verify
+                                        </button>
+                                        {% else %}
+                                        <span class="badge bg-secondary rounded-pill">
+                                            N/A
+                                        </span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        <div class="action-buttons">
+                                            {% if perms.reports.view_savedreport %}
+                                            <a href="{% url 'reports:download_report' instance.pk %}" 
+                                               class="btn btn-sm btn-outline-primary" 
+                                               data-bs-toggle="tooltip" title="Download">
+                                                <i class="fas fa-download"></i>
+                                            </a>
+                                            {% endif %}
+                                            <button class="btn btn-sm btn-outline-danger delete-generated-btn" 
+                                                    data-report-id="{{ instance.id }}"
+                                                    data-bs-toggle="tooltip" title="Delete">
+                                                <i class="fas fa-trash-alt"></i>
+                                            </button>
+                                        </div>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                    {% else %}
+                    <div class="empty-state">
+                        <div class="empty-state-icon">
+                            <i class="fas fa-file-alt"></i>
+                        </div>
+                        <h5>No Generation History</h5>
+                        <p class="text-muted">This report hasn't been generated yet.</p>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-lg-4">
+            <!-- Report Schedule Card -->
+            <div class="card mb-4">
+                <div class="card-header">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <h5 class="card-title mb-0">
+                            <i class="fas fa-calendar-alt"></i> Scheduled Runs
+                        </h5>
+                        {% if perms.reports.add_reportschedule %}
+                        <a href="{% url 'reports:schedule_create' %}?report_id={{ report.pk }}" 
+                           class="btn btn-sm btn-primary">
+                            <i class="fas fa-plus"></i> New Schedule
+                        </a>
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="card-body">
+                    {% if active_schedules %}
+                    <div class="schedules-list">
+                        {% for schedule in active_schedules %}
+                        <div class="schedule-item mb-3">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <div>
+                                    <h6 class="mb-1">{{ schedule.get_frequency_display }}</h6>
+                                    <small class="text-muted">
+                                        Next run: {{ schedule.next_scheduled|date:"M d, Y H:i" }}
+                                    </small>
+                                </div>
+                                <div class="form-check form-switch">
+                                    <input class="form-check-input toggle-schedule" 
+                                           type="checkbox" 
+                                           data-schedule-id="{{ schedule.id }}"
+                                           id="scheduleToggle{{ schedule.id }}" 
+                                           {% if schedule.is_active %}checked{% endif %}>
+                                    <label class="form-check-label" for="scheduleToggle{{ schedule.id }}"></label>
+                                </div>
+                            </div>
+                            <div class="mt-2">
+                                {% if perms.reports.change_reportschedule %}
+                                <a href="{% url 'reports:schedule_update' schedule.pk %}" 
+                                   class="btn btn-sm btn-outline-primary">
+                                    <i class="fas fa-edit"></i> Edit
+                                </a>
+                                {% endif %}
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    {% else %}
+                    <div class="empty-state">
+                        <div class="empty-state-icon">
+                            <i class="fas fa-calendar-times"></i>
+                        </div>
+                        <h5>No Active Schedules</h5>
+                        <p class="text-muted">This report isn't scheduled to run automatically.</p>
+                        {% if perms.reports.add_reportschedule %}
+                        <a href="{% url 'reports:schedule_create' %}?report_id={{ report.pk }}" 
+                           class="btn btn-primary btn-sm">
+                            <i class="fas fa-plus"></i> Create Schedule
+                        </a>
+                        {% endif %}
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+            
+            <!-- Report Columns Card -->
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">
+                        <i class="fas fa-columns"></i> Report Columns
+                    </h5>
+                </div>
+                <div class="card-body">
+                    {% if report.columns %}
+                    <ul class="list-group list-group-flush">
+                        {% for column in report.columns %}
+                        <li class="list-group-item d-flex justify-content-between align-items-center">
+                            {{ column.name }}
+                            {% if column.required %}
+                            <span class="badge bg-primary rounded-pill">Required</span>
+                            {% endif %}
+                        </li>
+                        {% endfor %}
+                    </ul>
+                    {% else %}
+                    <div class="empty-state">
+                        <div class="empty-state-icon">
+                            <i class="fas fa-columns"></i>
+                        </div>
+                        <h5>No Columns Defined</h5>
+                        <p class="text-muted">This report doesn't have any columns configured.</p>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+            
+            <!-- Report Filters Card -->
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">
+                        <i class="fas fa-filter"></i> Report Filters
+                    </h5>
+                </div>
+                <div class="card-body">
+                    {% if report.filters %}
+                    <div class="filter-parameters">
+                        {% for key, value in report.filters.items %}
+                        <div class="mb-2">
+                            <strong>{{ key|title }}:</strong> 
+                            <span class="text-muted">{{ value }}</span>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    {% else %}
+                    <div class="empty-state">
+                        <div class="empty-state-icon">
+                            <i class="fas fa-filter"></i>
+                        </div>
+                        <h5>No Filters Defined</h5>
+                        <p class="text-muted">This report doesn't have any filters configured.</p>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Share Report Modal -->
+<div class="modal fade" id="shareReportModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="fas fa-share-alt"></i> Share Report
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label class="form-label">Share with users</label>
+                    <select class="form-select" multiple id="shareWithUsers">
+                        {% for user in available_users %}
+                        <option value="{{ user.id }}">{{ user.get_full_name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="form-check form-switch">
+                    <input class="form-check-input" type="checkbox" id="makePublic" name="make_public">
+                    <label class="form-check-label" for="makePublic">
+                        Make report public
+                    </label>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                    <i class="fas fa-times"></i> Cancel
+                </button>
+                <button type="button" class="btn btn-primary" id="saveShareSettings">
+                    <i class="fas fa-save"></i> Save Changes
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+.report-detail-container {
+    padding: 1.5rem;
+    max-width: 1400px;
+    margin: 0 auto;
+}
+
+.card {
+    border-radius: 0.75rem;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+    margin-bottom: 1.5rem;
+}
+
+.card-header {
+    background-color: rgba(46, 89, 217, 0.1);
+    border-bottom: 1px solid rgba(46, 89, 217, 0.2);
+}
+
+.detail-row {
+    display: flex;
+    margin-bottom: 0.75rem;
+}
+
+.detail-label {
+    flex: 0 0 150px;
+    font-weight: 500;
+    color: #495057;
+}
+
+.detail-value {
+    flex: 1;
+}
+
+.form-actions {
+    display: flex;
+    gap: 0.75rem;
+}
+
+/* Schedule Items */
+.schedule-item {
+    padding: 0.75rem;
+    background-color: #f8f9fa;
+    border-radius: 0.5rem;
+}
+
+/* Empty State */
+.empty-state {
+    text-align: center;
+    padding: 1.5rem 0;
+}
+
+.empty-state-icon {
+    font-size: 2rem;
+    color: #e9ecef;
+    margin-bottom: 0.5rem;
+}
+
+.empty-state h5 {
+    margin-bottom: 0.5rem;
+    color: #495057;
+}
+
+/* Action Buttons */
+.action-buttons {
+    display: flex;
+    gap: 0.5rem;
+}
+
+/* Format Buttons */
+.btn-group.w-100 .btn {
+    flex: 1;
+}
+
+/* Preview Modal */
+#previewTable {
+    font-size: 0.875rem;
+}
+
+#previewLoading {
+    padding: 2rem;
+}
+
+/* Responsive Adjustments */
+@media (max-width: 768px) {
+    .detail-row {
+        flex-direction: column;
+        gap: 0.25rem;
+    }
+    
+    .detail-label {
+        flex: 1;
+    }
+    
+    .form-actions {
+        flex-direction: column;
+    }
+}
+</style>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+$(document).ready(function() {
+    // Initialize tooltips
+    $('[data-bs-toggle="tooltip"]').tooltip({
+        trigger: 'hover',
+        placement: 'top'
+    });
+
+    // Toggle schedule status
+    $('.toggle-schedule').change(function() {
+        const scheduleId = $(this).data('schedule-id');
+        const isActive = $(this).is(':checked');
+        
+        $.ajax({
+            url: '{% url "reports:toggle_schedule_status" 0 %}'.replace('0', scheduleId),
+            method: 'POST',
+            data: {
+                csrfmiddlewaretoken: '{{ csrf_token }}'
+            },
+            success: function(response) {
+                if (!response.success) {
+                    // Revert the toggle if failed
+                    $(this).prop('checked', !isActive);
+                    showToast('Error', response.error, 'danger');
+                }
+            },
+            error: function() {
+                $(this).prop('checked', !isActive);
+                showToast('Error', 'Failed to update schedule status', 'danger');
+            }
+        });
+    });
+
+    // Preview report data
+    $('#previewReportBtn').click(function() {
+        $('#previewModal').modal('show');
+        $('#previewLoading').show();
+        $('#previewHeaders').empty();
+        $('#previewBody').empty();
+        
+        $.ajax({
+            url: '{% url "reports:preview_report_data" report.pk %}',
+            method: 'GET',
+            success: function(response) {
+                if (response.success) {
+                    // Set up headers
+                    response.columns.forEach(function(column) {
+                        $('#previewHeaders').append(`<th>${column.name}</th>`);
+                    });
+                    
+                    // Populate data
+                    response.data.results.forEach(function(row) {
+                        const tr = $('<tr>');
+                        response.columns.forEach(function(column) {
+                            tr.append(`<td>${row[column.id] || ''}</td>`);
+                        });
+                        $('#previewBody').append(tr);
+                    });
+                    
+                    $('#previewLoading').hide();
+                } else {
+                    $('#previewLoading').html(
+                        `<div class="alert alert-danger">${response.error}</div>`
+                    );
+                }
+            },
+            error: function() {
+                $('#previewLoading').html(
+                    `<div class="alert alert-danger">Error loading preview data</div>`
+                );
+            }
+        });
+    });
+
+    // Verify EFRIS report
+    $('.verify-efris-btn').click(function() {
+        const reportId = $(this).data('report-id');
+        const btn = $(this);
+        
+        btn.html('<i class="fas fa-spinner fa-spin"></i> Verifying...');
+        btn.prop('disabled', true);
+        
+        $.ajax({
+            url: '{% url "reports:verify_efris_report" 0 %}'.replace('0', reportId),
+            method: 'POST',
+            data: {
+                csrfmiddlewaretoken: '{{ csrf_token }}'
+            },
+            success: function(response) {
+                if (response.success) {
+                    btn.replaceWith(
+                        `<span class="badge bg-success rounded-pill">
+                            <i class="fas fa-check-circle"></i> Verified
+                        </span>`
+                    );
+                    showToast('Success', response.message, 'success');
+                } else {
+                    btn.html('<i class="fas fa-check-double"></i> Verify');
+                    btn.prop('disabled', false);
+                    showToast('Error', response.error, 'danger');
+                }
+            },
+            error: function() {
+                btn.html('<i class="fas fa-check-double"></i> Verify');
+                btn.prop('disabled', false);
+                showToast('Error', 'Error verifying with EFRIS', 'danger');
+            }
+        });
+    });
+
+    // Delete generated report
+    $('.delete-generated-btn').click(function() {
+        const reportId = $(this).data('report-id');
+        const row = $(this).closest('tr');
+        
+        if (confirm('Are you sure you want to delete this generated report?')) {
+            $.ajax({
+                url: '{% url "reports:delete_report_ajax" 0 %}'.replace('0', reportId),
+                method: 'DELETE',
+                data: {
+                    csrfmiddlewaretoken: '{{ csrf_token }}'
+                },
+                success: function(response) {
+                    if (response.success) {
+                        row.fadeOut(300, function() {
+                            row.remove();
+                        });
+                        showToast('Success', response.message, 'success');
+                    } else {
+                        showToast('Error', response.error, 'danger');
+                    }
+                },
+                error: function() {
+                    showToast('Error', 'Error deleting report', 'danger');
+                }
+            });
+        }
+    });
+
+    // Share report settings
+    $('#saveShareSettings').click(function() {
+        const userIds = $('#shareWithUsers').val();
+        const isPublic = $('#makePublic').is(':checked');
+        
+        $.ajax({
+            url: '{% url "reports:share_report" report.pk %}',
+            method: 'POST',
+            data: {
+                users: userIds,
+                is_public: isPublic,
+                csrfmiddlewaretoken: '{{ csrf_token }}'
+            },
+            success: function(response) {
+                if (response.success) {
+                    $('#shareReportModal').modal('hide');
+                    showToast('Success', 'Report sharing settings updated', 'success');
+                } else {
+                    showToast('Error', response.error, 'danger');
+                }
+            },
+            error: function() {
+                showToast('Error', 'Error updating sharing settings', 'danger');
+            }
+        });
+    });
+
+    // Helper function to show toast messages
+    function showToast(title, message, type) {
+        const toast = $(`
+            <div class="toast align-items-center text-white bg-${type} border-0" role="alert">
+                <div class="d-flex">
+                    <div class="toast-body">
+                        <strong>${title}</strong>: ${message}
+                    </div>
+                    <button type="button" class="btn-close btn-close-white me-2 m-auto" 
+                            data-bs-dismiss="toast" aria-label="Close"></button>
+                </div>
+            </div>
+        `);
+        
+        $('#toastContainer').append(toast);
+        const bsToast = new bootstrap.Toast(toast);
+        bsToast.show();
+        
+        toast.on('hidden.bs.toast', function() {
+            toast.remove();
+        });
+    }
+});
+</script>
+
+<div id="toastContainer" class="position-fixed bottom-0 end-0 p-3" style="z-index: 11"></div>
+{% endblock %}

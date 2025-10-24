@@ -1,0 +1,319 @@
+{% extends 'base.html' %}
+{% load static %}
+{% load i18n %}
+
+{% block title %}{% trans "Device Fingerprints" %} - {{ block.super }}{% endblock %}
+
+{% block breadcrumb_items %}
+<li class="breadcrumb-item"><a href="{% url 'user_dashboard' %}">{% trans "Dashboard" %}</a></li>
+<li class="breadcrumb-item"><a href="{% url 'stores:store_dashboard' %}">{% trans "Stores" %}</a></li>
+<li class="breadcrumb-item active">{% trans "Device Fingerprints" %}</li>
+{% endblock %}
+
+{% block page_header %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h1 class="h3 mb-1">{% trans "Device Fingerprints" %}</h1>
+        <p class="text-muted mb-0">{% trans "Manage known devices and trust levels" %}</p>
+    </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<!-- Statistics Cards -->
+<div class="row mb-4">
+    <div class="col-md-3 mb-3">
+        <div class="card shadow-sm border-start border-primary border-4">
+            <div class="card-body">
+                <div class="d-flex align-items-center">
+                    <div class="flex-shrink-0">
+                        <i class="bi bi-laptop fs-1 text-primary"></i>
+                    </div>
+                    <div class="ms-3">
+                        <h6 class="text-muted mb-1">{% trans "Total Devices" %}</h6>
+                        <h3 class="mb-0">{{ stats.total_devices }}</h3>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3 mb-3">
+        <div class="card shadow-sm border-start border-success border-4">
+            <div class="card-body">
+                <div class="d-flex align-items-center">
+                    <div class="flex-shrink-0">
+                        <i class="bi bi-shield-check fs-1 text-success"></i>
+                    </div>
+                    <div class="ms-3">
+                        <h6 class="text-muted mb-1">{% trans "Trusted Devices" %}</h6>
+                        <h3 class="mb-0">{{ stats.trusted_devices }}</h3>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3 mb-3">
+        <div class="card shadow-sm border-start border-info border-4">
+            <div class="card-body">
+                <div class="d-flex align-items-center">
+                    <div class="flex-shrink-0">
+                        <i class="bi bi-activity fs-1 text-info"></i>
+                    </div>
+                    <div class="ms-3">
+                        <h6 class="text-muted mb-1">{% trans "Active Devices" %}</h6>
+                        <h3 class="mb-0">{{ stats.active_devices }}</h3>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3 mb-3">
+        <div class="card shadow-sm border-start border-warning border-4">
+            <div class="card-body">
+                <div class="d-flex align-items-center">
+                    <div class="flex-shrink-0">
+                        <i class="bi bi-clock-history fs-1 text-warning"></i>
+                    </div>
+                    <div class="ms-3">
+                        <h6 class="text-muted mb-1">{% trans "Recent Logins (7d)" %}</h6>
+                        <h3 class="mb-0">{{ stats.recent_logins }}</h3>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Filters -->
+<div class="card shadow-sm mb-4">
+    <div class="card-body">
+        <form method="get" class="row g-3">
+            <div class="col-md-3">
+                <label for="user" class="form-label">{% trans "User ID" %}</label>
+                <input type="number" name="user" id="user" class="form-control" value="{{ selected_user }}" placeholder="{% trans 'Filter by user ID' %}">
+            </div>
+            <div class="col-md-3">
+                <label for="trusted" class="form-label">{% trans "Trust Status" %}</label>
+                <select name="trusted" id="trusted" class="form-select">
+                    <option value="all" {% if selected_trusted == "all" %}selected{% endif %}>{% trans "All Devices" %}</option>
+                    <option value="true" {% if selected_trusted == "true" %}selected{% endif %}>{% trans "Trusted Only" %}</option>
+                    <option value="false" {% if selected_trusted == "false" %}selected{% endif %}>{% trans "Untrusted Only" %}</option>
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label for="active" class="form-label">{% trans "Active Status" %}</label>
+                <select name="active" id="active" class="form-select">
+                    <option value="all" {% if selected_active == "all" %}selected{% endif %}>{% trans "All Status" %}</option>
+                    <option value="true" {% if selected_active == "true" or not selected_active %}selected{% endif %}>{% trans "Active Only" %}</option>
+                    <option value="false" {% if selected_active == "false" %}selected{% endif %}>{% trans "Inactive Only" %}</option>
+                </select>
+            </div>
+            <div class="col-md-3 d-flex align-items-end">
+                <button type="submit" class="btn btn-primary w-100">
+                    <i class="bi bi-funnel me-1"></i>{% trans "Filter" %}
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Device Fingerprints Grid -->
+<div class="row">
+    {% for fingerprint in fingerprints %}
+    <div class="col-md-6 col-lg-4 mb-4">
+        <div class="card shadow-sm h-100 {% if not fingerprint.is_active %}opacity-50{% endif %}">
+            <div class="card-header d-flex justify-content-between align-items-center {% if fingerprint.is_trusted %}bg-success-subtle{% else %}bg-light{% endif %}">
+                <div class="d-flex align-items-center">
+                    {% if fingerprint.browser_name == "Chrome" %}
+                        <i class="bi bi-google text-primary fs-4 me-2"></i>
+                    {% elif fingerprint.browser_name == "Firefox" %}
+                        <i class="bi bi-firefox text-warning fs-4 me-2"></i>
+                    {% elif fingerprint.browser_name == "Safari" %}
+                        <i class="bi bi-apple text-secondary fs-4 me-2"></i>
+                    {% elif fingerprint.browser_name == "Edge" %}
+                        <i class="bi bi-microsoft text-info fs-4 me-2"></i>
+                    {% else %}
+                        <i class="bi bi-browser-chrome fs-4 me-2"></i>
+                    {% endif %}
+                    <h6 class="mb-0">{{ fingerprint.device_name|truncatechars:25 }}</h6>
+                </div>
+                {% if fingerprint.is_trusted %}
+                    <span class="badge bg-success"><i class="bi bi-shield-check"></i></span>
+                {% else %}
+                    <span class="badge bg-secondary"><i class="bi bi-shield"></i></span>
+                {% endif %}
+            </div>
+            <div class="card-body">
+                <!-- User Info -->
+                <div class="d-flex align-items-center mb-3 pb-3 border-bottom">
+                    {% if fingerprint.user.avatar %}
+                        <img src="{{ fingerprint.user.avatar.url }}" class="rounded-circle me-2" style="width: 40px; height: 40px;" alt="{{ fingerprint.user.get_full_name }}">
+                    {% else %}
+                        <i class="bi bi-person-circle fs-2 me-2 text-muted"></i>
+                    {% endif %}
+                    <div>
+                        <div class="fw-semibold">{{ fingerprint.user.get_full_name|default:fingerprint.user.username }}</div>
+                        <small class="text-muted">{{ fingerprint.user.email }}</small>
+                    </div>
+                </div>
+
+                <!-- Device Details -->
+                <dl class="row small mb-3">
+                    <dt class="col-5 text-muted">{% trans "Browser" %}:</dt>
+                    <dd class="col-7">{{ fingerprint.browser_name|default:"Unknown" }}</dd>
+
+                    <dt class="col-5 text-muted">{% trans "OS" %}:</dt>
+                    <dd class="col-7">{{ fingerprint.os_name|default:"Unknown" }}</dd>
+
+                    <dt class="col-5 text-muted">{% trans "Trust Score" %}:</dt>
+                    <dd class="col-7">
+                        <div class="d-flex align-items-center">
+                            <div class="progress flex-grow-1 me-2" style="height: 8px;">
+                                <div class="progress-bar
+                                    {% if fingerprint.trust_score >= 80 %}bg-success
+                                    {% elif fingerprint.trust_score >= 50 %}bg-info
+                                    {% elif fingerprint.trust_score >= 20 %}bg-warning
+                                    {% else %}bg-danger{% endif %}"
+                                    role="progressbar"
+                                    style="width: {{ fingerprint.trust_score }}%"
+                                    aria-valuenow="{{ fingerprint.trust_score }}"
+                                    aria-valuemin="0"
+                                    aria-valuemax="100">
+                                </div>
+                            </div>
+                            <span class="fw-semibold">{{ fingerprint.trust_score }}</span>
+                        </div>
+                    </dd>
+
+                    <dt class="col-5 text-muted">{% trans "Logins" %}:</dt>
+                    <dd class="col-7">
+                        <span class="badge bg-primary">{{ fingerprint.login_count }}</span>
+                    </dd>
+
+                    <dt class="col-5 text-muted">{% trans "First Seen" %}:</dt>
+                    <dd class="col-7">{{ fingerprint.first_seen_at|date:"Y-m-d" }}</dd>
+
+                    <dt class="col-5 text-muted">{% trans "Last Seen" %}:</dt>
+                    <dd class="col-7">
+                        {{ fingerprint.last_seen_at|timesince }} {% trans "ago" %}
+                    </dd>
+
+                    <dt class="col-5 text-muted">{% trans "Last IP" %}:</dt>
+                    <dd class="col-7">
+                        <code class="small">{{ fingerprint.last_ip_address|default:"N/A" }}</code>
+                    </dd>
+
+                    {% if fingerprint.last_location %}
+                    <dt class="col-5 text-muted">{% trans "Location" %}:</dt>
+                    <dd class="col-7">{{ fingerprint.last_location }}</dd>
+                    {% endif %}
+
+                    <dt class="col-5 text-muted">{% trans "Status" %}:</dt>
+                    <dd class="col-7">
+                        {% if fingerprint.is_active %}
+                            <span class="badge bg-success">{% trans "Active" %}</span>
+                        {% else %}
+                            <span class="badge bg-secondary">{% trans "Inactive" %}</span>
+                        {% endif %}
+                    </dd>
+                </dl>
+
+                <!-- Fingerprint Hash (collapsed) -->
+                <div class="accordion accordion-flush" id="accordion{{ fingerprint.id }}">
+                    <div class="accordion-item border-0">
+                        <h2 class="accordion-header">
+                            <button class="accordion-button collapsed p-0 small text-muted bg-transparent" type="button" data-bs-toggle="collapse" data-bs-target="#collapse{{ fingerprint.id }}">
+                                <i class="bi bi-fingerprint me-1"></i>{% trans "Fingerprint Hash" %}
+                            </button>
+                        </h2>
+                        <div id="collapse{{ fingerprint.id }}" class="accordion-collapse collapse" data-bs-parent="#accordion{{ fingerprint.id }}">
+                            <div class="accordion-body p-2">
+                                <code class="small d-block text-break">{{ fingerprint.fingerprint_hash }}</code>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                {% if fingerprint.notes %}
+                <div class="alert alert-info small mt-3 mb-0">
+                    <i class="bi bi-info-circle me-1"></i>{{ fingerprint.notes }}
+                </div>
+                {% endif %}
+            </div>
+            <div class="card-footer bg-light">
+                <div class="d-flex justify-content-between">
+                    {% if not fingerprint.is_trusted %}
+                    <form method="post" action="{% url 'stores:trust_device' fingerprint.id %}" class="flex-grow-1 me-2">
+                        {% csrf_token %}
+                        <button type="submit" class="btn btn-success btn-sm w-100">
+                            <i class="bi bi-shield-check me-1"></i>{% trans "Trust Device" %}
+                        </button>
+                    </form>
+                    {% endif %}
+
+                    {% if fingerprint.is_active %}
+                    <form method="post" action="{% url 'stores:remove_device' fingerprint.id %}" class="{% if not fingerprint.is_trusted %}flex-grow-1{% else %}w-100{% endif %}">
+                        {% csrf_token %}
+                        <button type="submit" class="btn btn-danger btn-sm w-100" onclick="return confirm('{% trans "Deactivate this device? This will terminate all active sessions." %}')">
+                            <i class="bi bi-trash me-1"></i>{% trans "Deactivate" %}
+                        </button>
+                    </form>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+    {% empty %}
+    <div class="col-12">
+        <div class="card shadow-sm">
+            <div class="card-body text-center py-5">
+                <i class="bi bi-laptop fs-1 text-muted d-block mb-3"></i>
+                <h5 class="text-muted">{% trans "No device fingerprints found" %}</h5>
+                <p class="text-muted mb-0">{% trans "Devices will appear here as users log in" %}</p>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+<!-- Pagination -->
+{% if fingerprints.has_other_pages %}
+<div class="d-flex justify-content-center mt-4">
+    <nav aria-label="Page navigation">
+        <ul class="pagination">
+            {% if fingerprints.has_previous %}
+            <li class="page-item">
+                <a class="page-link" href="?page={{ fingerprints.previous_page_number }}{% if selected_user %}&user={{ selected_user }}{% endif %}{% if selected_trusted != 'all' %}&trusted={{ selected_trusted }}{% endif %}{% if selected_active != 'true' %}&active={{ selected_active }}{% endif %}">
+                    <i class="bi bi-chevron-left"></i>
+                </a>
+            </li>
+            {% endif %}
+
+            <li class="page-item active">
+                <span class="page-link">
+                    {% trans "Page" %} {{ fingerprints.number }} {% trans "of" %} {{ fingerprints.paginator.num_pages }}
+                </span>
+            </li>
+
+            {% if fingerprints.has_next %}
+            <li class="page-item">
+                <a class="page-link" href="?page={{ fingerprints.next_page_number }}{% if selected_user %}&user={{ selected_user }}{% endif %}{% if selected_trusted != 'all' %}&trusted={{ selected_trusted }}{% endif %}{% if selected_active != 'true' %}&active={{ selected_active }}{% endif %}">
+                    <i class="bi bi-chevron-right"></i>
+                </a>
+            </li>
+            {% endif %}
+        </ul>
+    </nav>
+</div>
+{% endif %}
+
+<!-- Info Card -->
+<div class="card shadow-sm mt-4">
+    <div class="card-body">
+        <h5 class="card-title"><i class="bi bi-info-circle me-2"></i>{% trans "About Device Fingerprints" %}</h5>
+        <p class="card-text text-muted mb-0">
+            {% trans "Device fingerprints uniquely identify devices based on browser, operating system, and other characteristics. Trust scores increase with successful logins and decrease with suspicious activity. Trusted devices may receive fewer security alerts." %}
+        </p>
+    </div>
+</div>
+{% endblock %}

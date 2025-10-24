@@ -1,0 +1,483 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Bulk Assign Users to Role{% endblock %}
+
+{% block extra_css %}
+<style>
+    .assignment-container {
+        max-width: 1400px;
+        margin: 0 auto;
+    }
+    .user-selection-card {
+        border: 2px solid #e0e0e0;
+        border-radius: 12px;
+        transition: all 0.3s ease;
+        height: 100%;
+    }
+    .user-selection-card:hover {
+        border-color: #0d6efd;
+        box-shadow: 0 4px 12px rgba(13, 110, 253, 0.15);
+    }
+    .user-item {
+        padding: 12px;
+        border-bottom: 1px solid #f0f0f0;
+        transition: background 0.2s ease;
+        cursor: pointer;
+    }
+    .user-item:hover {
+        background-color: #f8f9fa;
+    }
+    .user-item:last-child {
+        border-bottom: none;
+    }
+    .user-item.selected {
+        background-color: #e7f3ff;
+        border-left: 4px solid #0d6efd;
+    }
+    .user-avatar {
+        width: 40px;
+        height: 40px;
+        border-radius: 50%;
+        object-fit: cover;
+    }
+    .user-avatar-placeholder {
+        width: 40px;
+        height: 40px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: bold;
+        color: white;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    }
+    .role-card {
+        border: 2px solid #e0e0e0;
+        border-radius: 12px;
+        padding: 16px;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        margin-bottom: 12px;
+    }
+    .role-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    }
+    .role-card.selected {
+        border-color: #0d6efd;
+        background: linear-gradient(135deg, #e7f3ff 0%, #f8f9fa 100%);
+        border-width: 3px;
+    }
+    .role-card input[type="radio"] {
+        width: 20px;
+        height: 20px;
+        cursor: pointer;
+    }
+    .search-box {
+        position: sticky;
+        top: 0;
+        background: white;
+        z-index: 10;
+        padding: 16px;
+        border-bottom: 2px solid #f0f0f0;
+    }
+    .scrollable-list {
+        max-height: 500px;
+        overflow-y: auto;
+    }
+    .capacity-warning {
+        animation: pulse 2s infinite;
+    }
+    @keyframes pulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.7; }
+    }
+    .selection-summary {
+        position: sticky;
+        bottom: 0;
+        background: white;
+        border-top: 2px solid #e0e0e0;
+        padding: 16px;
+        z-index: 10;
+    }
+    .quick-select-btn {
+        font-size: 0.85rem;
+        padding: 6px 12px;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4 assignment-container">
+    <!-- Header -->
+    <nav aria-label="breadcrumb" class="mb-4">
+        <ol class="breadcrumb">
+            <li class="breadcrumb-item"><a href="{% url 'role_list' %}">Roles</a></li>
+            <li class="breadcrumb-item active">Bulk Assign Users</li>
+        </ol>
+    </nav>
+
+    <div class="row mb-4">
+        <div class="col-md-8">
+            <h2 class="mb-2">
+                <i class="fas fa-users-cog me-2"></i>
+                Bulk Assign Users to Role
+            </h2>
+            <p class="text-muted">Select multiple users and assign them to a role</p>
+        </div>
+        <div class="col-md-4 text-end">
+            <div class="card shadow-sm">
+                <div class="card-body py-2">
+                    <div class="row text-center">
+                        <div class="col-6">
+                            <div class="h5 mb-0">{{ total_users }}</div>
+                            <small class="text-muted">Total Users</small>
+                        </div>
+                        <div class="col-6">
+                            <div class="h5 mb-0">{{ total_roles }}</div>
+                            <small class="text-muted">Total Roles</small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <form method="post" id="assignmentForm">
+        {% csrf_token %}
+
+        {% if form.non_field_errors %}
+        <div class="alert alert-danger alert-dismissible fade show">
+            <i class="fas fa-exclamation-triangle me-2"></i>
+            {{ form.non_field_errors }}
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+        {% endif %}
+
+        <div class="row">
+            <!-- Select Role -->
+            <div class="col-lg-4 mb-4">
+                <div class="card user-selection-card shadow-sm">
+                    <div class="card-header bg-primary text-white">
+                        <h5 class="mb-0">
+                            <i class="fas fa-user-shield me-2"></i>
+                            Step 1: Select Role
+                        </h5>
+                    </div>
+                    <div class="search-box">
+                        <input type="text"
+                               class="form-control"
+                               id="searchRoles"
+                               placeholder="Search roles...">
+                        {% if form.role.errors %}
+                        <div class="text-danger small mt-2">{{ form.role.errors }}</div>
+                        {% endif %}
+                    </div>
+                    <div class="scrollable-list p-3">
+                        {% for role in roles %}
+                        <div class="role-card" data-role-name="{{ role.group.name|lower }}" onclick="selectRole(this, {{ role.pk }})">
+                            <div class="d-flex align-items-start">
+                                <input type="radio"
+                                       name="role"
+                                       value="{{ role.pk }}"
+                                       id="role_{{ role.pk }}"
+                                       class="me-3 mt-1"
+                                       data-max-users="{{ role.max_users|default:'' }}"
+                                       data-current-users="{{ role.total_users }}"
+                                       data-role-name="{{ role.group.name }}"
+                                       required>
+                                <div class="flex-grow-1">
+                                    <div class="d-flex justify-content-between align-items-start mb-2">
+                                        <h6 class="mb-0">{{ role.group.name }}</h6>
+                                        <div class="d-flex align-items-center gap-2">
+                                            <div style="width: 16px; height: 16px; background: {{ role.color_code }}; border-radius: 4px;"></div>
+                                            {% if role.is_system_role %}
+                                            <span class="badge bg-primary">System</span>
+                                            {% endif %}
+                                        </div>
+                                    </div>
+                                    <p class="text-muted small mb-2">{{ role.description|truncatewords:15 }}</p>
+                                    <div class="d-flex gap-3 small">
+                                        <span>
+                                            <i class="fas fa-users me-1"></i>
+                                            {{ role.total_users }} users
+                                        </span>
+                                        <span>
+                                            <i class="fas fa-key me-1"></i>
+                                            {{ role.permission_count }} perms
+                                        </span>
+                                    </div>
+                                    {% if role.max_users %}
+                                    <div class="mt-2">
+                                        <div class="progress" style="height: 4px;">
+                                            <div class="progress-bar {% if role.is_at_capacity %}bg-danger{% elif role.capacity_percentage > 80 %}bg-warning{% else %}bg-success{% endif %}"
+                                                 style="width: {{ role.capacity_percentage }}%"></div>
+                                        </div>
+                                        <small class="text-muted">
+                                            {% if role.is_at_capacity %}
+                                            <span class="text-danger">At capacity ({{ role.max_users }})</span>
+                                            {% else %}
+                                            {{ role.max_users|add:"-"|add:role.total_users }} slots available
+                                            {% endif %}
+                                        </small>
+                                    </div>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </div>
+                        {% empty %}
+                        <div class="text-center py-5">
+                            <i class="fas fa-user-shield fa-3x text-muted mb-3"></i>
+                            <p class="text-muted">No roles available</p>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+
+            <!-- Select Users -->
+            <div class="col-lg-8 mb-4">
+                <div class="card user-selection-card shadow-sm">
+                    <div class="card-header bg-success text-white">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <h5 class="mb-0">
+                                <i class="fas fa-users me-2"></i>
+                                Step 2: Select Users
+                                <span class="badge bg-light text-dark ms-2" id="selectedUserCount">0</span>
+                            </h5>
+                            <div class="btn-group btn-group-sm">
+                                <button type="button" class="btn btn-light quick-select-btn" onclick="selectAllUsers()">
+                                    Select All
+                                </button>
+                                <button type="button" class="btn btn-light quick-select-btn" onclick="clearAllUsers()">
+                                    Clear All
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="search-box">
+                        <input type="text"
+                               class="form-control"
+                               id="searchUsers"
+                               placeholder="Search users by name or email...">
+                        {% if form.users.errors %}
+                        <div class="text-danger small mt-2">{{ form.users.errors }}</div>
+                        {% endif %}
+                    </div>
+                    <div class="scrollable-list">
+                        {% for user in available_users %}
+                        <div class="user-item" data-user-name="{{ user.get_full_name|lower }} {{ user.email|lower }}" onclick="toggleUser(this)">
+                            <div class="d-flex align-items-center">
+                                <input type="checkbox"
+                                       name="users"
+                                       value="{{ user.pk }}"
+                                       class="form-check-input me-3"
+                                       id="user_{{ user.pk }}">
+
+                                {% if user.avatar %}
+                                <img src="{{ user.avatar.url }}" class="user-avatar me-3" alt="{{ user.get_full_name }}">
+                                {% else %}
+                                <div class="user-avatar-placeholder me-3">
+                                    {{ user.first_name|first|upper }}{{ user.last_name|first|upper }}
+                                </div>
+                                {% endif %}
+
+                                <div class="flex-grow-1">
+                                    <h6 class="mb-1">{{ user.get_full_name }}</h6>
+                                    <small class="text-muted">
+                                        <i class="fas fa-envelope me-1"></i>
+                                        {{ user.email }}
+                                    </small>
+                                </div>
+
+                                <div class="text-end">
+                                    <span class="badge bg-light text-dark">{{ user.user_type }}</span>
+                                    <br>
+                                    <small class="text-muted">
+                                        {% with user.groups.count as group_count %}
+                                        <i class="fas fa-users me-1"></i>
+                                        {{ group_count }} role{{ group_count|pluralize }}
+                                        {% endwith %}
+                                    </small>
+                                </div>
+                            </div>
+                        </div>
+                        {% empty %}
+                        <div class="text-center py-5">
+                            <i class="fas fa-users-slash fa-3x text-muted mb-3"></i>
+                            <p class="text-muted">No users available</p>
+                        </div>
+                        {% endfor %}
+                    </div>
+
+                    <!-- Selection Summary -->
+                    <div class="selection-summary">
+                        <div class="row align-items-center">
+                            <div class="col-md-6">
+                                <div id="capacityWarning" class="alert alert-warning mb-0 d-none capacity-warning">
+                                    <i class="fas fa-exclamation-triangle me-2"></i>
+                                    <strong>Warning:</strong> <span id="warningText"></span>
+                                </div>
+                                <div id="selectionInfo" class="text-muted">
+                                    <i class="fas fa-info-circle me-2"></i>
+                                    <span id="selectedCount">0</span> user(s) selected
+                                    <span id="roleInfo"></span>
+                                </div>
+                            </div>
+                            <div class="col-md-6 text-end">
+                                <a href="{% url 'role_list' %}" class="btn btn-outline-secondary me-2">
+                                    <i class="fas fa-times me-1"></i>
+                                    Cancel
+                                </a>
+                                <button type="submit" class="btn btn-primary btn-lg" id="submitBtn" disabled>
+                                    <i class="fas fa-check me-2"></i>
+                                    Assign to Role
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </form>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    let selectedRoleData = null;
+
+    // Role search
+    document.getElementById('searchRoles').addEventListener('input', function() {
+        const searchTerm = this.value.toLowerCase();
+        document.querySelectorAll('.role-card').forEach(card => {
+            const roleName = card.dataset.roleName;
+            card.style.display = roleName.includes(searchTerm) ? '' : 'none';
+        });
+    });
+
+    // User search
+    document.getElementById('searchUsers').addEventListener('input', function() {
+        const searchTerm = this.value.toLowerCase();
+        document.querySelectorAll('.user-item').forEach(item => {
+            const userName = item.dataset.userName;
+            item.style.display = userName.includes(searchTerm) ? '' : 'none';
+        });
+    });
+
+    // Select role
+    function selectRole(card, roleId) {
+        // Remove previous selection
+        document.querySelectorAll('.role-card').forEach(c => c.classList.remove('selected'));
+
+        // Add selection
+        card.classList.add('selected');
+        const radio = card.querySelector('input[type="radio"]');
+        radio.checked = true;
+
+        // Store role data
+        selectedRoleData = {
+            name: radio.dataset.roleName,
+            maxUsers: parseInt(radio.dataset.maxUsers) || null,
+            currentUsers: parseInt(radio.dataset.currentUsers) || 0
+        };
+
+        updateSelectionInfo();
+    }
+
+    // Toggle user selection
+    function toggleUser(item) {
+        const checkbox = item.querySelector('input[type="checkbox"]');
+        checkbox.checked = !checkbox.checked;
+
+        if (checkbox.checked) {
+            item.classList.add('selected');
+        } else {
+            item.classList.remove('selected');
+        }
+
+        updateSelectionInfo();
+    }
+
+    // Select all users
+    function selectAllUsers() {
+        document.querySelectorAll('.user-item input[type="checkbox"]:not([disabled])').forEach(cb => {
+            cb.checked = true;
+            cb.closest('.user-item').classList.add('selected');
+        });
+        updateSelectionInfo();
+    }
+
+    // Clear all users
+    function clearAllUsers() {
+        document.querySelectorAll('.user-item input[type="checkbox"]').forEach(cb => {
+            cb.checked = false;
+            cb.closest('.user-item').classList.remove('selected');
+        });
+        updateSelectionInfo();
+    }
+
+    // Update selection info
+    function updateSelectionInfo() {
+        const selectedUsers = document.querySelectorAll('.user-item input[type="checkbox"]:checked').length;
+        const submitBtn = document.getElementById('submitBtn');
+        const capacityWarning = document.getElementById('capacityWarning');
+        const warningText = document.getElementById('warningText');
+        const selectedCount = document.getElementById('selectedCount');
+        const roleInfo = document.getElementById('roleInfo');
+        const selectedUserCount = document.getElementById('selectedUserCount');
+
+        selectedCount.textContent = selectedUsers;
+        selectedUserCount.textContent = selectedUsers;
+
+        // Check if role is selected
+        if (!selectedRoleData) {
+            submitBtn.disabled = true;
+            roleInfo.textContent = ' - Please select a role first';
+            capacityWarning.classList.add('d-none');
+            return;
+        }
+
+        roleInfo.textContent = ` for role "${selectedRoleData.name}"`;
+
+        // Check capacity
+        if (selectedRoleData.maxUsers) {
+            const availableSlots = selectedRoleData.maxUsers - selectedRoleData.currentUsers;
+
+            if (selectedUsers > availableSlots) {
+                capacityWarning.classList.remove('d-none');
+                warningText.textContent = `Role only has ${availableSlots} available slot(s). You selected ${selectedUsers} user(s).`;
+                submitBtn.disabled = true;
+                return;
+            }
+        }
+
+        capacityWarning.classList.add('d-none');
+        submitBtn.disabled = selectedUsers === 0 || !selectedRoleData;
+    }
+
+    // Form validation
+    document.getElementById('assignmentForm').addEventListener('submit', function(e) {
+        const selectedUsers = document.querySelectorAll('.user-item input[type="checkbox"]:checked').length;
+        const selectedRole = document.querySelector('input[name="role"]:checked');
+
+        if (!selectedRole) {
+            e.preventDefault();
+            alert('Please select a role');
+            return false;
+        }
+
+        if (selectedUsers === 0) {
+            e.preventDefault();
+            alert('Please select at least one user');
+            return false;
+        }
+
+        if (!confirm(`Assign ${selectedUsers} user(s) to role "${selectedRoleData.name}"?`)) {
+            e.preventDefault();
+            return false;
+        }
+    });
+</script>
+{% endblock %}

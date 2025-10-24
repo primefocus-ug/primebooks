@@ -1,0 +1,217 @@
+<!-- efris/templates/efris/batch_invoice_upload.html -->
+
+{% extends "efris/base.html" %}
+{% load static %}
+
+{% block efris_content %}
+<div class="row">
+    <div class="col-md-8">
+        <div class="card efris-card">
+            <div class="card-header bg-white">
+                <h5 class="card-title mb-0">Select Invoices for Batch Upload</h5>
+            </div>
+            <div class="card-body">
+                {% if pending_invoices %}
+                <form method="post" id="batchUploadForm">
+                    {% csrf_token %}
+
+                    <div class="mb-3">
+                        <button type="button" class="btn btn-sm btn-outline-secondary" onclick="selectAll()">
+                            <i class="fas fa-check-square"></i> Select All
+                        </button>
+                        <button type="button" class="btn btn-sm btn-outline-secondary" onclick="deselectAll()">
+                            <i class="fas fa-square"></i> Deselect All
+                        </button>
+                        <span class="ms-3 text-muted">
+                            <span id="selectedCount">0</span> invoices selected
+                        </span>
+                    </div>
+
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th width="40">
+                                        <input type="checkbox" class="form-check-input" id="selectAllCheckbox"
+                                               onchange="toggleAll(this)">
+                                    </th>
+                                    <th>Invoice No</th>
+                                    <th>Date</th>
+                                    <th>Customer</th>
+                                    <th class="text-end">Amount</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for invoice in pending_invoices %}
+                                <tr>
+                                    <td>
+                                        <input type="checkbox" class="form-check-input invoice-checkbox"
+                                               name="invoice_ids" value="{{ invoice.id }}"
+                                               onchange="updateCount()">
+                                    </td>
+                                    <td><strong>{{ invoice.number }}</strong></td>
+                                    <td>{{ invoice.created_at|date:"M d, Y" }}</td>
+                                    <td>{{ invoice.customer.name|truncatewords:3 }}</td>
+                                    <td class="text-end">{{ invoice.total_amount|floatformat:2 }} UGX</td>
+                                    <td>
+                                        <span class="badge bg-warning">Pending</span>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <div class="mt-3">
+                        <button type="submit" class="btn btn-primary" id="uploadBtn">
+                            <i class="fas fa-cloud-upload-alt"></i> Upload Selected Invoices
+                        </button>
+                    </div>
+                </form>
+                {% else %}
+                <div class="alert alert-info mb-0">
+                    <i class="fas fa-info-circle"></i> No pending invoices available for upload.
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-4">
+        <div class="card efris-card">
+            <div class="card-header bg-white">
+                <h5 class="card-title mb-0">Batch Upload Guide</h5>
+            </div>
+            <div class="card-body">
+                <h6>Instructions:</h6>
+                <ol class="small">
+                    <li>Select invoices you want to upload</li>
+                    <li>Maximum 50 invoices per batch</li>
+                    <li>Ensure all invoices have valid data</li>
+                    <li>Click "Upload Selected Invoices"</li>
+                </ol>
+
+                <hr>
+
+                <h6>Requirements:</h6>
+                <ul class="small">
+                    <li>Valid customer information</li>
+                    <li>Complete invoice items</li>
+                    <li>Correct tax calculations</li>
+                    <li>Valid payment methods</li>
+                </ul>
+
+                <hr>
+
+                <div class="alert alert-warning small mb-0">
+                    <i class="fas fa-exclamation-triangle"></i>
+                    <strong>Note:</strong> Batch upload may take several minutes depending on the number of invoices.
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Progress Modal -->
+<div class="modal fade" id="progressModal" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-body text-center py-4">
+                <div class="spinner-border text-primary mb-3" role="status" style="width: 3rem; height: 3rem;">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+                <h5>Uploading Invoices...</h5>
+                <p class="text-muted mb-0">Please wait while we process your invoices.</p>
+                <div class="progress mt-3" style="height: 25px;">
+                    <div class="progress-bar progress-bar-striped progress-bar-animated"
+                         id="uploadProgress" role="progressbar" style="width: 0%">
+                        <span id="progressText">0%</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function toggleAll(checkbox) {
+    const checkboxes = document.querySelectorAll('.invoice-checkbox');
+    checkboxes.forEach(cb => cb.checked = checkbox.checked);
+    updateCount();
+}
+
+function selectAll() {
+    document.getElementById('selectAllCheckbox').checked = true;
+    toggleAll(document.getElementById('selectAllCheckbox'));
+}
+
+function deselectAll() {
+    document.getElementById('selectAllCheckbox').checked = false;
+    toggleAll(document.getElementById('selectAllCheckbox'));
+}
+
+function updateCount() {
+    const checked = document.querySelectorAll('.invoice-checkbox:checked').length;
+    document.getElementById('selectedCount').textContent = checked;
+
+    // Update select all checkbox state
+    const total = document.querySelectorAll('.invoice-checkbox').length;
+    const selectAllCheckbox = document.getElementById('selectAllCheckbox');
+    selectAllCheckbox.checked = checked === total && total > 0;
+}
+
+// Handle form submission
+document.addEventListener('DOMContentLoaded', function() {
+    const form = document.getElementById('batchUploadForm');
+
+    if (form) {
+        form.addEventListener('submit', function(e) {
+            e.preventDefault();
+
+            const checkedBoxes = document.querySelectorAll('.invoice-checkbox:checked');
+
+            if (checkedBoxes.length === 0) {
+                alert('Please select at least one invoice to upload.');
+                return;
+            }
+
+            if (checkedBoxes.length > 50) {
+                alert('Maximum 50 invoices can be uploaded at once.');
+                return;
+            }
+
+            if (!confirm(`Upload ${checkedBoxes.length} invoice(s) to EFRIS?`)) {
+                return;
+            }
+
+            // Show progress modal
+            const progressModal = new bootstrap.Modal(document.getElementById('progressModal'));
+            progressModal.show();
+
+            // Simulate progress (in production, use actual progress tracking)
+            let progress = 0;
+            const interval = setInterval(() => {
+                progress += 5;
+                if (progress >= 95) {
+                    clearInterval(interval);
+                }
+                updateProgress(progress);
+            }, 500);
+
+            // Submit form
+            this.submit();
+        });
+    }
+});
+
+function updateProgress(percent) {
+    const progressBar = document.getElementById('uploadProgress');
+    const progressText = document.getElementById('progressText');
+    progressBar.style.width = percent + '%';
+    progressText.textContent = percent + '%';
+}
+</script>
+{% endblock %}

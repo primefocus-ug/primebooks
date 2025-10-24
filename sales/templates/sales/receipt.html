@@ -1,0 +1,286 @@
+{% extends 'base.html' %}
+{% load humanize %}
+
+{% block content %}
+<style>
+    /* === GENERAL === */
+    body {
+        background: #f8f9fa;
+        font-family: 'Poppins', sans-serif;
+    }
+
+    .invoice-wrapper {
+        max-width: 900px;
+        margin: 40px auto;
+        background: #fff;
+        padding: 40px 50px;
+        border-radius: 12px;
+        box-shadow: 0 3px 12px rgba(0,0,0,0.1);
+    }
+
+    /* === HEADER === */
+    .invoice-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        border-bottom: 3px solid #f7931e;
+        padding-bottom: 15px;
+        margin-bottom: 25px;
+    }
+
+    .company-logo img {
+        max-height: 60px;
+    }
+
+    .invoice-title {
+        text-align: right;
+    }
+
+    .invoice-title h2 {
+        color: #f7931e;
+        font-weight: 700;
+        margin: 0;
+    }
+
+    .invoice-title p {
+        margin: 0;
+        color: #555;
+        font-size: 14px;
+    }
+
+    /* === INFO BOXES === */
+    .invoice-info {
+        display: flex;
+        justify-content: space-between;
+        margin-bottom: 30px;
+    }
+
+    .info-box {
+        width: 48%;
+        background: #f8f8f8;
+        padding: 15px;
+        border-radius: 8px;
+    }
+
+    .info-box h5 {
+        color: #f7931e;
+        font-weight: 600;
+        margin-bottom: 10px;
+    }
+
+    .info-box p {
+        margin: 0;
+        color: #333;
+        font-size: 14px;
+        line-height: 1.4;
+    }
+
+    /* === ITEMS TABLE === */
+    table.invoice-table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 10px;
+    }
+
+    table.invoice-table th {
+        background: #f7931e;
+        color: white;
+        text-transform: uppercase;
+        font-size: 13px;
+        padding: 10px;
+    }
+
+    table.invoice-table td {
+        padding: 10px;
+        border-bottom: 1px solid #ddd;
+        font-size: 14px;
+        color: #333;
+    }
+
+    table.invoice-table tr:last-child td {
+        border-bottom: none;
+    }
+
+    /* === TOTALS SECTION (Now at bottom) === */
+    .totals {
+        width: 100%;
+        margin-top: 30px;
+    }
+
+    .totals table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 10px;
+    }
+
+    .totals th, .totals td {
+        padding: 10px;
+        font-size: 15px;
+    }
+
+    .totals tr {
+        border-top: 1px solid #eee;
+    }
+
+    .totals th {
+        text-align: right;
+        color: #444;
+        font-weight: 500;
+    }
+
+    .totals td {
+        text-align: right;
+        font-weight: 600;
+    }
+
+    .totals tr:last-child {
+        background: #f7931e;
+        color: white;
+        font-weight: 700;
+        font-size: 16px;
+    }
+
+    /* === FOOTER === */
+    .invoice-footer {
+        text-align: center;
+        border-top: 2px solid #f7931e;
+        padding-top: 20px;
+        margin-top: 50px;
+        font-size: 14px;
+        color: #666;
+    }
+
+    .qr-section img {
+        max-width: 120px;
+        margin-top: 10px;
+    }
+
+    /* === PRINT BUTTON === */
+    .print-actions {
+        text-align: center;
+        margin-top: 20px;
+    }
+
+    /* === PRINT MODE === */
+    @media print {
+        body * {
+            visibility: hidden;
+        }
+
+        .invoice-wrapper, .invoice-wrapper * {
+            visibility: visible;
+        }
+
+        .invoice-wrapper {
+            position: absolute;
+            left: 0;
+            top: 0;
+            width: 100%;
+            margin: 0;
+            box-shadow: none;
+            border-radius: 0;
+        }
+
+        .print-actions {
+            display: none;
+        }
+    }
+</style>
+
+<div class="invoice-wrapper">
+
+    <!-- === HEADER === -->
+    <div class="invoice-header">
+        <div class="company-logo">
+            {% if sale.store.company.logo %}
+                <img src="{{ sale.store.company.logo.url }}" alt="Company Logo">
+            {% else %}
+                <h4>{{ sale.store.company.name }}</h4>
+            {% endif %}
+        </div>
+        <div class="invoice-title">
+            <h2>INVOICE</h2>
+            <p><strong>No:</strong> {{ sale.invoice_number }}</p>
+            <p><strong>Date:</strong> {{ sale.created_at|date:"d M Y" }}</p>
+        </div>
+    </div>
+
+    <!-- === INFO BOXES === -->
+    <div class="invoice-info">
+        <div class="info-box">
+            <h5>Invoice From</h5>
+            <p>{{ sale.store.company.name }}</p>
+            <p>{{ sale.store.company.physical_address }}</p>
+            <p>Tel: {{ sale.store.company.phone }}</p>
+            <p>Email: {{ sale.store.company.email }}</p>
+        </div>
+
+        <div class="info-box">
+            <h5>Invoice To</h5>
+            <p>{{ sale.customer.name|default:"Walk-in Customer" }}</p>
+            {% if sale.customer.phone %}
+                <p>Phone: {{ sale.customer.phone }}</p>
+            {% endif %}
+            {% if sale.customer.tin %}
+                <p>TIN: {{ sale.customer.tin }}</p>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- === ITEMS TABLE === -->
+    <table class="invoice-table">
+        <thead>
+            <tr>
+                <th>#</th>
+                <th>Description</th>
+                <th>Qty</th>
+                <th>Unit Price</th>
+                <th>Total</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for item in sale.items.all %}
+            <tr>
+                <td>{{ forloop.counter }}</td>
+                <td>{{ item.product.name }}</td>
+                <td>{{ item.quantity }}</td>
+                <td>{{ item.unit_price|floatformat:2|intcomma }}</td>
+                <td>{{ item.total_price|floatformat:2|intcomma }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    <!-- === TOTALS SECTION (Bottom) === -->
+    <div class="totals">
+        <table>
+            <tr><th>Subtotal:</th><td>{{ sale.subtotal|floatformat:2|intcomma }}</td></tr>
+            <tr><th>Tax:</th><td>{{ sale.tax_amount|floatformat:2|intcomma }}</td></tr>
+            <tr><th>Payment Method:</th><td>{{ sale.get_payment_method_display }}</td></tr>
+            <tr><th>Total:</th><td>{{ sale.total_amount|floatformat:2|intcomma }}</td></tr>
+        </table>
+    </div>
+
+    <!-- === EFRIS SECTION === -->
+    {% if sale.efris_invoice_number %}
+    <div class="qr-section text-center mt-5">
+        <p><strong>EFRIS Invoice:</strong> {{ sale.efris_invoice_number }}</p>
+        <img src="data:image/png;base64,{{ sale.qr_code }}" alt="QR Code">
+        <p><strong>Verification Code:</strong> {{ sale.verification_code }}</p>
+    </div>
+    {% endif %}
+
+    <!-- === FOOTER === -->
+    <div class="invoice-footer">
+        <p>Thank you for your business!</p>
+        <p><strong>{{ sale.store.company.name }}</strong> | {{ sale.store.company.website|default:"" }}</p>
+    </div>
+
+    <!-- === PRINT BUTTON === -->
+    <div class="print-actions">
+        <button class="btn btn-warning text-white" onclick="window.print()">
+            <i class="bi bi-printer"></i> Print Invoice
+        </button>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,379 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Saved Reports{% endblock %}
+
+{% block extra_css %}
+<style>
+    .report-card {
+        border: 2px solid #e5e7eb;
+        border-radius: 12px;
+        padding: 20px;
+        transition: all 0.3s ease;
+        height: 100%;
+        cursor: pointer;
+        position: relative;
+    }
+    .report-card:hover {
+        border-color: #3b82f6;
+        box-shadow: 0 8px 20px rgba(59, 130, 246, 0.15);
+        transform: translateY(-3px);
+    }
+    .report-card.favorite {
+        border-color: #f59e0b;
+        background: linear-gradient(135deg, #fffbeb 0%, #ffffff 100%);
+    }
+    .report-type-badge {
+        padding: 6px 12px;
+        border-radius: 20px;
+        font-size: 0.8rem;
+        font-weight: 600;
+    }
+    .favorite-icon {
+        position: absolute;
+        top: 15px;
+        right: 15px;
+        font-size: 1.5rem;
+        color: #f59e0b;
+        cursor: pointer;
+        transition: transform 0.2s;
+    }
+    .favorite-icon:hover {
+        transform: scale(1.2);
+    }
+    .report-actions {
+        margin-top: 15px;
+        padding-top: 15px;
+        border-top: 1px solid #e5e7eb;
+    }
+    .search-box {
+        background: white;
+        border-radius: 10px;
+        padding: 20px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+        margin-bottom: 25px;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <!-- Header -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h2 class="mb-1">Saved Reports</h2>
+            <p class="text-muted mb-0">Manage and run your saved report configurations</p>
+        </div>
+        <div>
+            <a href="{% url 'reports:dashboard' %}" class="btn btn-outline-secondary me-2">
+                <i class="fas fa-arrow-left"></i> Dashboard
+            </a>
+            <a href="{% url 'reports:create_saved_report' %}" class="btn btn-primary">
+                <i class="fas fa-plus"></i> Create New Report
+            </a>
+        </div>
+    </div>
+
+    <!-- Search and Filters -->
+    <div class="search-box">
+        <form method="get" class="row g-3 align-items-end">
+            <div class="col-md-4">
+                <label class="form-label">Search Reports</label>
+                <div class="input-group">
+                    <span class="input-group-text"><i class="fas fa-search"></i></span>
+                    <input type="text" class="form-control" name="search"
+                           value="{{ search_query }}" placeholder="Search by name or description...">
+                </div>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">Report Type</label>
+                <select class="form-select" name="type">
+                    <option value="">All Types</option>
+                    {% for value, label in report_types %}
+                    <option value="{{ value }}" {% if value == selected_type %}selected{% endif %}>
+                        {{ label }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-2">
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" name="favorites" id="favoritesOnly"
+                           {% if request.GET.favorites %}checked{% endif %}>
+                    <label class="form-check-label" for="favoritesOnly">
+                        <i class="fas fa-star text-warning"></i> Favorites Only
+                    </label>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <button type="submit" class="btn btn-primary w-100">
+                    <i class="fas fa-filter"></i> Apply Filters
+                </button>
+            </div>
+        </form>
+    </div>
+
+    <!-- Reports Grid -->
+    {% if page_obj %}
+    <div class="row g-4">
+        {% for report in page_obj %}
+        <div class="col-md-6 col-lg-4">
+            <div class="report-card {% if report.is_favorite %}favorite{% endif %}">
+                <!-- Favorite Icon -->
+                <i class="{% if report.is_favorite %}fas{% else %}far{% endif %} fa-star favorite-icon"
+                   onclick="toggleFavorite({{ report.id }}, event)"></i>
+
+                <!-- Report Type Badge -->
+                <span class="report-type-badge bg-primary text-white mb-3 d-inline-block">
+                    {{ report.get_report_type_display }}
+                </span>
+
+                <!-- Report Info -->
+                <h5 class="mb-2">{{ report.name }}</h5>
+                {% if report.description %}
+                <p class="text-muted small mb-3">{{ report.description|truncatewords:15 }}</p>
+                {% endif %}
+
+                <!-- Meta Info -->
+                <div class="row g-2 mb-2 small text-muted">
+                    <div class="col-6">
+                        <i class="far fa-user"></i> {{ report.created_by.get_full_name }}
+                    </div>
+                    <div class="col-6">
+                        <i class="far fa-clock"></i> {{ report.last_modified|timesince }} ago
+                    </div>
+                    <div class="col-6">
+                        <i class="fas fa-play"></i> Run {{ report.execution_count }} times
+                    </div>
+                    <div class="col-6">
+                        {% if report.is_shared %}
+                        <i class="fas fa-share-alt text-success"></i> Shared
+                        {% else %}
+                        <i class="fas fa-lock text-muted"></i> Private
+                        {% endif %}
+                    </div>
+                </div>
+
+                <!-- Tags -->
+                {% if report.tags %}
+                <div class="mb-2">
+                    {% for tag in report.tags %}
+                    <span class="badge bg-light text-dark">{{ tag }}</span>
+                    {% endfor %}
+                </div>
+                {% endif %}
+
+                <!-- Actions -->
+                <div class="report-actions">
+                    <div class="d-flex gap-2">
+                        <button class="btn btn-sm btn-primary flex-fill"
+                                onclick="runReport({{ report.id }})">
+                            <i class="fas fa-play"></i> Run
+                        </button>
+                        <a href="{% url 'reports:edit_saved_report' report.id %}"
+                           class="btn btn-sm btn-outline-secondary"
+                           onclick="event.stopPropagation()">
+                            <i class="fas fa-edit"></i>
+                        </a>
+                        <button class="btn btn-sm btn-outline-danger"
+                                onclick="confirmDelete({{ report.id }}, '{{ report.name }}', event)">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+
+    <!-- Pagination -->
+    {% if page_obj.paginator.num_pages > 1 %}
+    <div class="d-flex justify-content-center mt-5">
+        <nav>
+            <ul class="pagination">
+                {% if page_obj.has_previous %}
+                <li class="page-item">
+                    <a class="page-link" href="?page=1{% if search_query %}&search={{ search_query }}{% endif %}{% if selected_type %}&type={{ selected_type }}{% endif %}">
+                        <i class="fas fa-angle-double-left"></i>
+                    </a>
+                </li>
+                <li class="page-item">
+                    <a class="page-link" href="?page={{ page_obj.previous_page_number }}{% if search_query %}&search={{ search_query }}{% endif %}{% if selected_type %}&type={{ selected_type }}{% endif %}">
+                        <i class="fas fa-angle-left"></i>
+                    </a>
+                </li>
+                {% endif %}
+
+                {% for num in page_obj.paginator.page_range %}
+                    {% if page_obj.number == num %}
+                    <li class="page-item active"><span class="page-link">{{ num }}</span></li>
+                    {% elif num > page_obj.number|add:'-3' and num < page_obj.number|add:'3' %}
+                    <li class="page-item">
+                        <a class="page-link" href="?page={{ num }}{% if search_query %}&search={{ search_query }}{% endif %}{% if selected_type %}&type={{ selected_type }}{% endif %}">
+                            {{ num }}
+                        </a>
+                    </li>
+                    {% endif %}
+                {% endfor %}
+
+                {% if page_obj.has_next %}
+                <li class="page-item">
+                    <a class="page-link" href="?page={{ page_obj.next_page_number }}{% if search_query %}&search={{ search_query }}{% endif %}{% if selected_type %}&type={{ selected_type }}{% endif %}">
+                        <i class="fas fa-angle-right"></i>
+                    </a>
+                </li>
+                <li class="page-item">
+                    <a class="page-link" href="?page={{ page_obj.paginator.num_pages }}{% if search_query %}&search={{ search_query }}{% endif %}{% if selected_type %}&type={{ selected_type }}{% endif %}">
+                        <i class="fas fa-angle-double-right"></i>
+                    </a>
+                </li>
+                {% endif %}
+            </ul>
+        </nav>
+    </div>
+    {% endif %}
+
+    {% else %}
+    <!-- Empty State -->
+    <div class="text-center py-5">
+        <i class="fas fa-folder-open fa-5x text-muted mb-4"></i>
+        <h4 class="text-muted">No Saved Reports Found</h4>
+        <p class="text-muted mb-4">
+            {% if search_query or selected_type %}
+            No reports match your search criteria. Try adjusting your filters.
+            {% else %}
+            Get started by creating your first saved report configuration.
+            {% endif %}
+        </p>
+        {% if not search_query and not selected_type %}
+        <a href="{% url 'reports:create_saved_report' %}" class="btn btn-primary btn-lg">
+            <i class="fas fa-plus"></i> Create Your First Report
+        </a>
+        {% endif %}
+    </div>
+    {% endif %}
+</div>
+
+<!-- Delete Confirmation Modal -->
+<div class="modal fade" id="deleteModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-danger text-white">
+                <h5 class="modal-title">Confirm Deletion</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p>Are you sure you want to delete the report <strong id="reportName"></strong>?</p>
+                <p class="text-muted mb-0">This action cannot be undone.</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-danger" id="confirmDeleteBtn">
+                    <i class="fas fa-trash"></i> Delete Report
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    function toggleFavorite(reportId, event) {
+        event.stopPropagation();
+
+        fetch(`/reports/saved/${reportId}/toggle-favorite/`, {
+            method: 'POST',
+            headers: {
+                'X-CSRFToken': '{{ csrf_token }}',
+                'Content-Type': 'application/json'
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                // Toggle icon
+                const icon = event.target;
+                if (data.is_favorite) {
+                    icon.classList.remove('far');
+                    icon.classList.add('fas');
+                    icon.closest('.report-card').classList.add('favorite');
+                } else {
+                    icon.classList.remove('fas');
+                    icon.classList.add('far');
+                    icon.closest('.report-card').classList.remove('favorite');
+                }
+
+                // Show toast notification
+                showToast(data.message, 'success');
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            showToast('Failed to update favorite status', 'error');
+        });
+    }
+
+    function runReport(reportId) {
+        window.location.href = `/reports/generate/${reportId}/`;
+    }
+
+    function confirmDelete(reportId, reportName, event) {
+        event.stopPropagation();
+
+        document.getElementById('reportName').textContent = reportName;
+        const modal = new bootstrap.Modal(document.getElementById('deleteModal'));
+        modal.show();
+
+        document.getElementById('confirmDeleteBtn').onclick = function() {
+            deleteReport(reportId);
+        };
+    }
+
+    function deleteReport(reportId) {
+        fetch(`/reports/saved/${reportId}/delete/`, {
+            method: 'POST',
+            headers: {
+                'X-CSRFToken': '{{ csrf_token }}'
+            }
+        })
+        .then(response => {
+            if (response.ok) {
+                showToast('Report deleted successfully', 'success');
+                setTimeout(() => location.reload(), 1000);
+            } else {
+                showToast('Failed to delete report', 'error');
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            showToast('An error occurred', 'error');
+        });
+    }
+
+    function showToast(message, type) {
+        const toast = document.createElement('div');
+        toast.className = `alert alert-${type === 'success' ? 'success' : 'danger'} alert-dismissible fade show position-fixed`;
+        toast.style.cssText = 'top: 20px; right: 20px; z-index: 9999; min-width: 300px;';
+        toast.innerHTML = `
+            ${message}
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        `;
+        document.body.appendChild(toast);
+
+        setTimeout(() => {
+            toast.remove();
+        }, 3000);
+    }
+
+    // Make cards clickable
+    document.querySelectorAll('.report-card').forEach(card => {
+        card.addEventListener('click', function(e) {
+            if (!e.target.closest('button') && !e.target.closest('a') && !e.target.closest('.favorite-icon')) {
+                const reportId = this.querySelector('[onclick*="runReport"]').onclick.toString().match(/\d+/)[0];
+                runReport(reportId);
+            }
+        });
+    });
+</script>
+{% endblock %}

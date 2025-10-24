@@ -1,0 +1,141 @@
+{% extends "services/base.html" %}
+
+{% block title %}Services{% endblock %}
+{% block page_title %}Service Management{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <h5 class="mb-0"><i class="fas fa-concierge-bell"></i> All Services</h5>
+        <a href="{% url 'services:service_create' %}" class="btn btn-primary">
+            <i class="fas fa-plus"></i> Add New Service
+        </a>
+    </div>
+    <div class="card-body">
+        <!-- Filters -->
+        <form method="get" class="row g-3 mb-4">
+            <div class="col-md-3">
+                <input type="text" name="search" class="form-control" placeholder="Search services..."
+                       value="{{ search_query }}">
+            </div>
+            <div class="col-md-3">
+                <select name="category" class="form-select">
+                    <option value="">All Categories</option>
+                    {% for category in categories %}
+                    <option value="{{ category.id }}" {% if category.id|stringformat:"s" == selected_category %}selected{% endif %}>
+                        {{ category.name }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-3">
+                <select name="service_type" class="form-select">
+                    <option value="">All Types</option>
+                    {% for type in service_types %}
+                    <option value="{{ type.id }}" {% if type.id|stringformat:"s" == selected_type %}selected{% endif %}>
+                        {{ type.name }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-3">
+                <button type="submit" class="btn btn-primary w-100">
+                    <i class="fas fa-filter"></i> Filter
+                </button>
+            </div>
+        </form>
+
+        <!-- Services Table -->
+        <div class="table-responsive">
+            <table class="table table-hover">
+                <thead>
+                    <tr>
+                        <th>Code</th>
+                        <th>Name</th>
+                        <th>Category</th>
+                        <th>Type</th>
+                        <th>Price</th>
+                        <th>Duration</th>
+                        <th>Status</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for service in page_obj %}
+                    <tr>
+                        <td><strong>{{ service.code }}</strong></td>
+                        <td>
+                            <div>{{ service.name }}</div>
+                            {% if service.is_featured %}
+                            <span class="badge bg-warning">Featured</span>
+                            {% endif %}
+                        </td>
+                        <td>{{ service.category.name|default:"Uncategorized" }}</td>
+                        <td>{{ service.service_type.name }}</td>
+                        <td>
+                            ${{ service.base_price }}
+                            {% if service.service_type.pricing_type == 'hourly' %}
+                            <small class="text-muted">/hr</small>
+                            {% endif %}
+                        </td>
+                        <td>{{ service.default_duration|default:"-" }} min</td>
+                        <td>
+                            {% if service.is_active %}
+                            <span class="badge bg-success">Active</span>
+                            {% else %}
+                            <span class="badge bg-secondary">Inactive</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <div class="btn-group btn-group-sm">
+                                <a href="{% url 'services:service_detail' service.pk %}"
+                                   class="btn btn-outline-info" title="View">
+                                    <i class="fas fa-eye"></i>
+                                </a>
+                                <a href="{% url 'services:service_update' service.pk %}"
+                                   class="btn btn-outline-primary" title="Edit">
+                                    <i class="fas fa-edit"></i>
+                                </a>
+                                <a href="{% url 'services:appointment_create' %}?service={{ service.pk }}"
+                                   class="btn btn-outline-success" title="Book">
+                                    <i class="fas fa-calendar-plus"></i>
+                                </a>
+                            </div>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="8" class="text-center text-muted py-4">No services found</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Pagination -->
+        {% if page_obj.has_other_pages %}
+        <nav>
+            <ul class="pagination justify-content-center">
+                {% if page_obj.has_previous %}
+                <li class="page-item">
+                    <a class="page-link" href="?page={{ page_obj.previous_page_number }}">Previous</a>
+                </li>
+                {% endif %}
+
+                {% for num in page_obj.paginator.page_range %}
+                <li class="page-item {% if page_obj.number == num %}active{% endif %}">
+                    <a class="page-link" href="?page={{ num }}">{{ num }}</a>
+                </li>
+                {% endfor %}
+
+                {% if page_obj.has_next %}
+                <li class="page-item">
+                    <a class="page-link" href="?page={{ page_obj.next_page_number }}">Next</a>
+                </li>
+                {% endif %}
+            </ul>
+        </nav>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

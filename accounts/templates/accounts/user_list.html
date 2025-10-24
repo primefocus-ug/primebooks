@@ -1,0 +1,631 @@
+{% extends 'base.html' %}
+{% load i18n %}
+
+{% block title %}{% trans "User Management" %} - PrimeBooks{% endblock %}
+
+{% block extra_css %}
+<style>
+    .search-card {
+        background: white;
+        border-radius: 12px;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        margin-bottom: 2rem;
+    }
+
+    .search-header {
+        background: linear-gradient(135deg, var(--primary-color) 0%, #1d4ed8 100%);
+        color: white;
+        padding: 1.5rem;
+        border-radius: 12px 12px 0 0;
+    }
+
+    .search-body {
+        padding: 1.5rem;
+    }
+
+    .user-card {
+        background: white;
+        border-radius: 12px;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+        margin-bottom: 1rem;
+    }
+
+    .user-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 15px -3px rgba(0, 0, 0, 0.1);
+    }
+
+    .user-header {
+        padding: 1.5rem;
+        border-bottom: 1px solid #f1f5f9;
+    }
+
+    .user-avatar-lg {
+        width: 60px;
+        height: 60px;
+        border-radius: 50%;
+        object-fit: cover;
+        border: 3px solid white;
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+    }
+
+    .user-meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 1rem;
+        padding: 1rem 1.5rem;
+        background: #f8fafc;
+        border-radius: 0 0 12px 12px;
+    }
+
+    .meta-item {
+        display: flex;
+        align-items: center;
+        font-size: 0.875rem;
+        color: var(--secondary-color);
+    }
+
+    .meta-item i {
+        margin-right: 0.5rem;
+        width: 16px;
+    }
+
+    .bulk-actions {
+        background: white;
+        border-radius: 12px;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        padding: 1rem 1.5rem;
+        margin-bottom: 2rem;
+        display: none;
+    }
+
+    .bulk-actions.show {
+        display: block;
+        animation: slideDown 0.3s ease;
+    }
+
+    @keyframes slideDown {
+        from { opacity: 0; transform: translateY(-10px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+
+    .stats-overview {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 1rem;
+        margin-bottom: 2rem;
+    }
+
+    .stat-item {
+        background: white;
+        padding: 1rem;
+        border-radius: 8px;
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        text-align: center;
+    }
+
+    .stat-number {
+        font-size: 2rem;
+        font-weight: 700;
+        margin-bottom: 0.5rem;
+    }
+
+    .stat-label {
+        color: var(--secondary-color);
+        font-size: 0.875rem;
+    }
+
+    .table-actions {
+        display: flex;
+        gap: 0.5rem;
+    }
+
+    .action-btn {
+        width: 32px;
+        height: 32px;
+        border-radius: 6px;
+        border: none;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: all 0.2s ease;
+    }
+
+    .action-btn:hover {
+        transform: scale(1.1);
+    }
+
+    .pagination-container {
+        background: white;
+        border-radius: 12px;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        padding: 1.5rem;
+        margin-top: 2rem;
+    }
+
+    .user-type-badge {
+        font-size: 0.75rem;
+        padding: 4px 8px;
+        border-radius: 12px;
+        font-weight: 600;
+    }
+
+    .type-super-admin { background: #fee2e2; color: #dc2626; }
+    .type-company-admin { background: #fef3c7; color: #d97706; }
+    .type-manager { background: #dbeafe; color: #2563eb; }
+    .type-cashier { background: #d1fae5; color: #059669; }
+    .type-employee { background: #f3e8ff; color: #7c3aed; }
+
+    @media (max-width: 768px) {
+        .stats-overview {
+            grid-template-columns: repeat(2, 1fr);
+        }
+        
+        .user-meta {
+            flex-direction: column;
+            align-items: flex-start;
+        }
+        
+        .search-body .row > div {
+            margin-bottom: 1rem;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h1 class="mb-1">{% trans "User Management" %}</h1>
+        <p class="text-muted mb-0">{% trans "Manage all system users and their permissions" %}</p>
+    </div>
+    <div>
+        <a href="{% url 'user_create' %}" class="btn btn-primary">
+            <i class="bi bi-person-plus me-2"></i>{% trans "Add New User" %}
+        </a>
+        <a href="{% url 'export_users' %}" class="btn btn-outline-secondary ms-2">
+            <i class="bi bi-download me-2"></i>{% trans "Export" %}
+        </a>
+    </div>
+</div>
+
+<!-- Statistics Overview -->
+<div class="stats-overview">
+    <div class="stat-item">
+        <div class="stat-number text-primary">{{ user_stats.total }}</div>
+        <div class="stat-label">{% trans "Total Users" %}</div>
+    </div>
+    <div class="stat-item">
+        <div class="stat-number text-success">{{ user_stats.active }}</div>
+        <div class="stat-label">{% trans "Active Users" %}</div>
+    </div>
+    <div class="stat-item">
+        <div class="stat-number text-warning">{{ user_stats.inactive }}</div>
+        <div class="stat-label">{% trans "Inactive Users" %}</div>
+    </div>
+    <div class="stat-item">
+        <div class="stat-number text-danger">{{ user_stats.locked }}</div>
+        <div class="stat-label">{% trans "Locked Accounts" %}</div>
+    </div>
+</div>
+
+<!-- Search and Filters -->
+<div class="search-card">
+    <div class="search-header">
+        <h4 class="mb-0">
+            <i class="bi bi-search me-2"></i>
+            {% trans "Search & Filter Users" %}
+        </h4>
+    </div>
+    <div class="search-body">
+        <form method="get" id="searchForm">
+            <div class="row">
+                <div class="col-md-3">
+                    <label class="form-label">{% trans "Search Query" %}</label>
+                    {{ search_form.search_query }}
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label">{% trans "User Type" %}</label>
+                    {{ search_form.user_type }}
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label">{% trans "Status" %}</label>
+                    {{ search_form.is_active }}
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label">{% trans "Email Status" %}</label>
+                    {{ search_form.email_verified }}
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">{% trans "Actions" %}</label>
+                    <div class="d-flex gap-2">
+                        <button type="submit" class="btn btn-primary flex-fill">
+                            <i class="bi bi-search me-1"></i>{% trans "Search" %}
+                        </button>
+                        <a href="{% url 'user_list' %}" class="btn btn-outline-secondary">
+                            <i class="bi bi-arrow-clockwise"></i>
+                        </a>
+                    </div>
+                </div>
+            </div>
+            <div class="row mt-3">
+                <div class="col-md-3">
+                    <label class="form-label">{% trans "Date From" %}</label>
+                    {{ search_form.date_joined_from }}
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">{% trans "Date To" %}</label>
+                    {{ search_form.date_joined_to }}
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Bulk Actions -->
+<div class="bulk-actions" id="bulkActions">
+    <form method="post" action="{% url 'bulk_user_actions' %}" id="bulkForm">
+        {% csrf_token %}
+        <div class="row align-items-end">
+            <div class="col-md-3">
+                <label class="form-label">{% trans "Selected:" %} <span id="selectedCount">0</span> {% trans "users" %}</label>
+                {{ bulk_form.selected_users }}
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">{% trans "Action" %}</label>
+                {{ bulk_form.action }}
+            </div>
+            <div class="col-md-3">
+                <button type="submit" class="btn btn-warning" onclick="return confirm('{% trans "Are you sure?" %}')">
+                    <i class="bi bi-lightning me-1"></i>{% trans "Execute Action" %}
+                </button>
+            </div>
+            <div class="col-md-2 text-end">
+                <button type="button" class="btn btn-outline-secondary" onclick="hideBulkActions()">
+                    <i class="bi bi-x"></i>
+                </button>
+            </div>
+        </div>
+    </form>
+</div>
+
+<!-- User List -->
+<div class="user-list">
+    {% for user_profile in users %}
+    <div class="user-card">
+        <div class="user-header">
+            <div class="row align-items-center">
+                <div class="col-auto">
+                    <input type="checkbox" class="form-check-input user-checkbox" 
+                           value="{{ user_profile.id }}" style="transform: scale(1.2);">
+                </div>
+                <div class="col-auto">
+                    {% if user_profile.avatar %}
+                        <img src="{{ user_profile.avatar.url }}" class="user-avatar-lg" alt="Avatar">
+                    {% else %}
+                        <div class="user-avatar-lg bg-primary text-white d-flex align-items-center justify-content-center">
+                            <i class="bi bi-person fs-4"></i>
+                        </div>
+                    {% endif %}
+                </div>
+                <div class="col">
+                    <div class="d-flex align-items-center mb-1">
+                        <h5 class="mb-0 me-2">{{ user_profile.get_full_name|default:user_profile.username }}</h5>
+                        <span class="status-indicator status-{% if user_profile.is_active %}active{% elif user_profile.is_locked %}locked{% else %}inactive{% endif %} me-2"></span>
+                        <span class="user-type-badge type-{{ user_profile.user_type|lower|slugify }}">
+                            {{ user_profile.get_user_type_display }}
+                        </span>
+                    </div>
+                    <p class="text-muted mb-0">{{ user_profile.email }}</p>
+                </div>
+                <div class="col-auto">
+                    <div class="table-actions">
+                        <a href="{% url 'user_detail' user_profile.pk %}" 
+                           class="action-btn btn btn-outline-info" title="{% trans 'View Details' %}">
+                            <i class="bi bi-eye"></i>
+                        </a>
+                        <a href="{% url 'user_update' user_profile.pk %}"
+                           class="action-btn btn btn-outline-primary" title="{% trans 'Edit User' %}">
+                            <i class="bi bi-pencil"></i>
+                        </a>
+                        {% if user_profile.is_locked %}
+                            <a href="{% url 'unlock_user' user_profile.pk %}"
+                               class="action-btn btn btn-outline-success" title="{% trans 'Unlock Account' %}">
+                                <i class="bi bi-unlock"></i>
+                            </a>
+                        {% endif %}
+                        <a href="{% url 'user_delete' user_profile.pk %}"
+                           class="action-btn btn btn-outline-danger" title="{% trans 'Delete User' %}"
+                           onclick="return confirm('{% trans "Are you sure you want to delete" %} {{ user_profile.get_full_name }}?')">
+                            <i class="bi bi-trash"></i>
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="user-meta">
+            <div class="meta-item">
+                <i class="bi bi-calendar-plus text-primary"></i>
+                {% trans "Joined" %} {{ user_profile.date_joined|date:"M d, Y" }}
+            </div>
+            <div class="meta-item">
+                <i class="bi bi-clock text-info"></i>
+                {% if user_profile.last_login %}
+                    {% trans "Last login" %} {{ user_profile.last_login|timesince }} {% trans "ago" %}
+                {% else %}
+                    {% trans "Never logged in" %}
+                {% endif %}
+            </div>
+            <div class="meta-item">
+                <i class="bi bi-box-arrow-in-right text-success"></i>
+                {{ user_profile.login_count }} {% trans "logins" %}
+            </div>
+            {% if user_profile.phone_number %}
+            <div class="meta-item">
+                <i class="bi bi-phone text-secondary"></i>
+                {{ user_profile.phone_number }}
+            </div>
+            {% endif %}
+            <div class="meta-item">
+                <i class="bi bi-{% if user_profile.email_verified %}check-circle text-success{% else %}x-circle text-danger{% endif %}"></i>
+                {% trans "Email" %} {% if user_profile.email_verified %}{% trans "verified" %}{% else %}{% trans "unverified" %}{% endif %}
+            </div>
+            {% if user_profile.two_factor_enabled %}
+            <div class="meta-item">
+                <i class="bi bi-shield-check text-success"></i>
+                {% trans "2FA Enabled" %}
+            </div>
+            {% endif %}
+        </div>
+    </div>
+    {% empty %}
+    <div class="text-center py-5">
+        <i class="bi bi-people fs-1 text-muted mb-3 d-block"></i>
+        <h4 class="text-muted">{% trans "No users found" %}</h4>
+        <p class="text-muted">{% trans "Try adjusting your search criteria or add a new user." %}</p>
+        <a href="{% url 'user_create' %}" class="btn btn-primary">
+            <i class="bi bi-person-plus me-2"></i>{% trans "Add First User" %}
+        </a>
+    </div>
+    {% endfor %}
+</div>
+
+<!-- Pagination -->
+{% if is_paginated %}
+<div class="pagination-container">
+    <div class="row align-items-center">
+        <div class="col-md-6">
+            <p class="mb-0 text-muted">
+                {% trans "Showing" %} {{ page_obj.start_index }} {% trans "to" %} {{ page_obj.end_index }}
+                {% trans "of" %} {{ page_obj.paginator.count }} {% trans "users" %}
+            </p>
+        </div>
+        <div class="col-md-6">
+            <nav aria-label="{% trans 'User pagination' %}">
+                <ul class="pagination justify-content-end mb-0">
+                    {% if page_obj.has_previous %}
+                        <li class="page-item">
+                            <a class="page-link" href="?page=1{% if request.GET.urlencode %}&{{ request.GET.urlencode }}{% endif %}">
+                                <i class="bi bi-chevron-double-left"></i>
+                            </a>
+                        </li>
+                        <li class="page-item">
+                            <a class="page-link" href="?page={{ page_obj.previous_page_number }}{% if request.GET.urlencode %}&{{ request.GET.urlencode }}{% endif %}">
+                                <i class="bi bi-chevron-left"></i>
+                            </a>
+                        </li>
+                    {% endif %}
+
+                    {% for num in page_obj.paginator.page_range %}
+                        {% if page_obj.number == num %}
+                            <li class="page-item active">
+                                <span class="page-link">{{ num }}</span>
+                            </li>
+                        {% elif num > page_obj.number|add:'-3' and num < page_obj.number|add:'3' %}
+                            <li class="page-item">
+                                <a class="page-link" href="?page={{ num }}{% if request.GET.urlencode %}&{{ request.GET.urlencode }}{% endif %}">{{ num }}</a>
+                            </li>
+                        {% endif %}
+                    {% endfor %}
+
+                    {% if page_obj.has_next %}
+                        <li class="page-item">
+                            <a class="page-link" href="?page={{ page_obj.next_page_number }}{% if request.GET.urlencode %}&{{ request.GET.urlencode }}{% endif %}">
+                                <i class="bi bi-chevron-right"></i>
+                            </a>
+                        </li>
+                        <li class="page-item">
+                            <a class="page-link" href="?page={{ page_obj.paginator.num_pages }}{% if request.GET.urlencode %}&{{ request.GET.urlencode }}{% endif %}">
+                                <i class="bi bi-chevron-double-right"></i>
+                            </a>
+                        </li>
+                    {% endif %}
+                </ul>
+            </nav>
+        </div>
+    </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const checkboxes = document.querySelectorAll('.user-checkbox');
+        const bulkActions = document.getElementById('bulkActions');
+        const selectedCountSpan = document.getElementById('selectedCount');
+        const selectedUsersInput = document.getElementById('id_selected_users');
+        const selectAllBtn = document.getElementById('selectAll');
+        
+        // Add select all button
+        const searchHeader = document.querySelector('.search-header h4');
+        searchHeader.innerHTML += `
+            <button type="button" class="btn btn-outline-light btn-sm ms-3" id="selectAllBtn">
+                <i class="bi bi-check-square me-1"></i>Select All
+            </button>
+        `;
+        
+        const selectAllButton = document.getElementById('selectAllBtn');
+        
+        function updateBulkActions() {
+            const selectedCheckboxes = document.querySelectorAll('.user-checkbox:checked');
+            const count = selectedCheckboxes.length;
+            
+            selectedCountSpan.textContent = count;
+            
+            if (count > 0) {
+                bulkActions.classList.add('show');
+                const selectedIds = Array.from(selectedCheckboxes).map(cb => cb.value);
+                selectedUsersInput.value = selectedIds.join(',');
+            } else {
+                bulkActions.classList.remove('show');
+                selectedUsersInput.value = '';
+            }
+            
+            // Update select all button
+            if (count === checkboxes.length) {
+                selectAllButton.innerHTML = '<i class="bi bi-square me-1"></i>Deselect All';
+            } else {
+                selectAllButton.innerHTML = '<i class="bi bi-check-square me-1"></i>Select All';
+            }
+        }
+        
+        // Handle individual checkbox changes
+        checkboxes.forEach(checkbox => {
+            checkbox.addEventListener('change', updateBulkActions);
+        });
+        
+        // Handle select all button
+        selectAllButton.addEventListener('click', function() {
+            const allChecked = document.querySelectorAll('.user-checkbox:checked').length === checkboxes.length;
+            
+            checkboxes.forEach(checkbox => {
+                checkbox.checked = !allChecked;
+            });
+            
+            updateBulkActions();
+        });
+        
+        // Auto-submit search form on select change
+        const searchForm = document.getElementById('searchForm');
+        const selectInputs = searchForm.querySelectorAll('select');
+        
+        selectInputs.forEach(select => {
+            select.addEventListener('change', function() {
+                searchForm.submit();
+            });
+        });
+        
+        // Real-time search with debounce
+        const searchInput = searchForm.querySelector('input[name="search_query"]');
+        let searchTimeout;
+        
+        if (searchInput) {
+            searchInput.addEventListener('input', function() {
+                clearTimeout(searchTimeout);
+                searchTimeout = setTimeout(() => {
+                    if (this.value.length === 0 || this.value.length >= 3) {
+                        searchForm.submit();
+                    }
+                }, 500);
+            });
+        }
+        
+        // Keyboard shortcuts
+        document.addEventListener('keydown', function(e) {
+            // Ctrl/Cmd + A to select all
+            if ((e.ctrlKey || e.metaKey) && e.key === 'a' && !e.target.matches('input, textarea')) {
+                e.preventDefault();
+                selectAllButton.click();
+            }
+            
+            // Escape to clear selection
+            if (e.key === 'Escape') {
+                checkboxes.forEach(cb => cb.checked = false);
+                updateBulkActions();
+            }
+        });
+        
+        // Confirm bulk actions
+        const bulkForm = document.getElementById('bulkForm');
+        bulkForm.addEventListener('submit', function(e) {
+            const action = document.getElementById('id_action').value;
+            const count = document.querySelectorAll('.user-checkbox:checked').length;
+            
+            let message = `Are you sure you want to ${action} ${count} selected user(s)?`;
+            
+            if (action === 'delete') {
+                message = `⚠️ WARNING: This will permanently delete ${count} user(s) and cannot be undone. Are you absolutely sure?`;
+            }
+            
+            if (!confirm(message)) {
+                e.preventDefault();
+            }
+        });
+        
+        // Animate stats on load
+        const statNumbers = document.querySelectorAll('.stat-number');
+        statNumbers.forEach(stat => {
+            const finalNumber = parseInt(stat.textContent) || 0;
+            if (finalNumber > 0) {
+                animateValue(stat, 0, finalNumber, 800);
+            }
+        });
+        
+        function animateValue(element, start, end, duration) {
+            const range = end - start;
+            const increment = range / (duration / 16);
+            let current = start;
+            
+            const timer = setInterval(() => {
+                current += increment;
+                if (current >= end) {
+                    element.textContent = end;
+                    clearInterval(timer);
+                } else {
+                    element.textContent = Math.floor(current);
+                }
+            }, 16);
+        }
+    });
+    
+    function hideBulkActions() {
+        document.getElementById('bulkActions').classList.remove('show');
+        document.querySelectorAll('.user-checkbox').forEach(cb => cb.checked = false);
+        document.getElementById('selectedCount').textContent = '0';
+        document.getElementById('id_selected_users').value = '';
+    }
+    
+    // Export functionality
+    function exportUsers() {
+        const selectedCheckboxes = document.querySelectorAll('.user-checkbox:checked');
+        
+        if (selectedCheckboxes.length > 0) {
+            const selectedIds = Array.from(selectedCheckboxes).map(cb => cb.value);
+            const form = document.createElement('form');
+            form.method = 'POST';
+            form.action = '{% url "export_users" %}';
+            
+            const csrfInput = document.createElement('input');
+            csrfInput.type = 'hidden';
+            csrfInput.name = 'csrfmiddlewaretoken';
+            csrfInput.value = getCookie('csrftoken');
+            form.appendChild(csrfInput);
+            
+            const idsInput = document.createElement('input');
+            idsInput.type = 'hidden';
+            idsInput.name = 'user_ids';
+            idsInput.value = selectedIds.join(',');
+            form.appendChild(idsInput);
+            
+            document.body.appendChild(form);
+            form.submit();
+            document.body.removeChild(form);
+        } else {
+            window.location.href = '{% url "export_users" %}';
+        }
+    }
+</script>
+{% endblock %}

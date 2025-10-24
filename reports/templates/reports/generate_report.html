@@ -1,0 +1,176 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Generate Report - {{ report.name }}{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+    <div class="row justify-content-center">
+        <div class="col-md-8">
+            <div class="card shadow">
+                <div class="card-header bg-primary text-white">
+                    <h4 class="mb-0"><i class="fas fa-file-download"></i> Generate Report</h4>
+                </div>
+                <div class="card-body">
+                    <h5 class="mb-4">{{ report.name }}</h5>
+                    <p class="text-muted">{{ report.description }}</p>
+
+                    <form method="post" id="generateForm">
+                        {% csrf_token %}
+
+                        <div class="mb-3">
+                            <label class="form-label">Export Format</label>
+                            <select class="form-select" name="format" required>
+                                <option value="PDF">PDF</option>
+                                <option value="XLSX">Excel (XLSX)</option>
+                                <option value="CSV">CSV</option>
+                                <option value="JSON">JSON</option>
+                            </select>
+                        </div>
+
+                        <div class="mb-3">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" name="include_charts" id="includeCharts" checked>
+                                <label class="form-check-label" for="includeCharts">
+                                    Include Charts and Visualizations
+                                </label>
+                            </div>
+                        </div>
+
+                        <div class="mb-3">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" name="include_summary" id="includeSummary" checked>
+                                <label class="form-check-label" for="includeSummary">
+                                    Include Summary Statistics
+                                </label>
+                            </div>
+                        </div>
+
+                        <div class="mb-3">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" name="confidential" id="confidential">
+                                <label class="form-check-label" for="confidential">
+                                    Mark as Confidential (adds watermark)
+                                </label>
+                            </div>
+                        </div>
+
+                        <div class="mb-3" id="watermarkField" style="display:none;">
+                            <label class="form-label">Watermark Text</label>
+                            <input type="text" class="form-control" name="watermark" value="CONFIDENTIAL">
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label">Email Report (Optional)</label>
+                            <input type="email" class="form-control" name="email_recipients" placeholder="email@example.com">
+                            <small class="text-muted">Leave empty to download directly</small>
+                        </div>
+
+                        <div class="d-grid gap-2">
+                            <button type="submit" class="btn btn-primary btn-lg">
+                                <i class="fas fa-cog fa-spin" id="loadingIcon" style="display:none;"></i>
+                                <i class="fas fa-download" id="downloadIcon"></i>
+                                <span id="btnText">Generate Report</span>
+                            </button>
+                            <a href="{% url 'reports:saved_reports' %}" class="btn btn-outline-secondary">
+                                <i class="fas fa-arrow-left"></i> Back to Reports
+                            </a>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Progress Modal -->
+<div class="modal fade" id="progressModal" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Generating Report</h5>
+            </div>
+            <div class="modal-body">
+                <div class="text-center mb-3">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                </div>
+                <div class="progress mb-3">
+                    <div class="progress-bar progress-bar-striped progress-bar-animated"
+                         id="progressBar" role="progressbar" style="width: 0%">0%</div>
+                </div>
+                <p id="progressMessage" class="text-center">Initializing...</p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // Confidential checkbox toggle
+    document.getElementById('confidential').addEventListener('change', function() {
+        document.getElementById('watermarkField').style.display = this.checked ? 'block' : 'none';
+    });
+
+    // Form submission
+    document.getElementById('generateForm').addEventListener('submit', function(e) {
+        e.preventDefault();
+
+        const btn = this.querySelector('button[type="submit"]');
+        const loadingIcon = document.getElementById('loadingIcon');
+        const downloadIcon = document.getElementById('downloadIcon');
+        const btnText = document.getElementById('btnText');
+
+        // Show loading state
+        btn.disabled = true;
+        loadingIcon.style.display = 'inline-block';
+        downloadIcon.style.display = 'none';
+        btnText.textContent = 'Generating...';
+
+        const formData = new FormData(this);
+
+        fetch('', {
+            method: 'POST',
+            body: formData,
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest'
+            }
+        })
+        .then(response => {
+            if (!response.ok) {
+                throw new Error('Server returned ' + response.status);
+            }
+            return response.json();
+        })
+        .then(data => {
+            if (data.success) {
+                // Show progress modal
+                const modal = new bootstrap.Modal(document.getElementById('progressModal'));
+                modal.show();
+
+                // Redirect to history after a moment
+                setTimeout(() => {
+                    window.location.href = data.redirect_url || "{% url 'reports:history' %}";
+                }, 2000);
+            } else {
+                alert('Error: ' + (data.error || 'Unknown error occurred'));
+                resetButton();
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('Error generating report: ' + error.message);
+            resetButton();
+        });
+
+        function resetButton() {
+            btn.disabled = false;
+            loadingIcon.style.display = 'none';
+            downloadIcon.style.display = 'inline-block';
+            btnText.textContent = 'Generate Report';
+        }
+    });
+</script>
+{% endblock %}

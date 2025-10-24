@@ -1,0 +1,270 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Query Stock Records{% endblock %}
+
+{% block breadcrumb_items %}
+<li class="breadcrumb-item"><a href="{% url 'user_dashboard' %}">Home</a></li>
+<li class="breadcrumb-item"><a href="{% url 'efris:dashboard' %}">EFRIS</a></li>
+<li class="breadcrumb-item"><a href="{% url 'efris:stock_management_dashboard' %}">Stock Management</a></li>
+<li class="breadcrumb-item active">Query Records</li>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h1 class="h2 mb-1">Query Stock Records from EFRIS</h1>
+            <p class="text-muted mb-0">Search stock records using various criteria</p>
+        </div>
+        <a href="{% url 'efris:stock_management_dashboard' %}" class="btn btn-outline-secondary">
+            <i class="bi bi-arrow-left"></i> Back
+        </a>
+    </div>
+
+    <!-- Search Tabs -->
+    <ul class="nav nav-tabs mb-4" id="searchTab" role="tablist">
+        <li class="nav-item" role="presentation">
+            <button class="nav-link active" id="basic-tab" data-bs-toggle="tab" data-bs-target="#basic" type="button">
+                <i class="bi bi-search me-1"></i> Basic Search
+            </button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="advanced-tab" data-bs-toggle="tab" data-bs-target="#advanced" type="button">
+                <i class="bi bi-sliders me-1"></i> Advanced Search
+            </button>
+        </li>
+    </ul>
+
+    <!-- Tab Content -->
+    <div class="tab-content" id="searchTabContent">
+        <!-- Basic Search -->
+        <div class="tab-pane fade show active" id="basic" role="tabpanel">
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="bi bi-search me-2"></i>Basic Search (T145)</h5>
+                </div>
+                <div class="card-body">
+                    <form method="GET" action="{% url 'efris:stock_records_query' %}">
+                        <input type="hidden" name="search" value="1">
+
+                        <div class="row">
+                            <div class="col-md-4 mb-3">
+                                <label for="batch_no" class="form-label">Production Batch No</label>
+                                <input type="text" class="form-control" id="batch_no" name="batch_no"
+                                       value="{{ request.GET.batch_no }}">
+                            </div>
+                            <div class="col-md-4 mb-3">
+                                <label for="invoice_no" class="form-label">Invoice Number</label>
+                                <input type="text" class="form-control" id="invoice_no" name="invoice_no"
+                                       value="{{ request.GET.invoice_no }}">
+                            </div>
+                            <div class="col-md-4 mb-3">
+                                <label for="reference_no" class="form-label">Reference Number</label>
+                                <input type="text" class="form-control" id="reference_no" name="reference_no"
+                                       value="{{ request.GET.reference_no }}">
+                            </div>
+                        </div>
+
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label for="page_size" class="form-label">Results per Page</label>
+                                <select class="form-select" id="page_size" name="page_size">
+                                    <option value="10" {% if request.GET.page_size == '10' %}selected{% endif %}>10</option>
+                                    <option value="25" {% if request.GET.page_size == '25' %}selected{% endif %}>25</option>
+                                    <option value="50" {% if request.GET.page_size == '50' %}selected{% endif %}>50</option>
+                                    <option value="100" {% if request.GET.page_size == '100' %}selected{% endif %}>100</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div class="alert alert-info">
+                            <i class="bi bi-info-circle me-2"></i>
+                            <strong>Note:</strong> Provide at least one search criterion
+                        </div>
+
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-search"></i> Search Records
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <!-- Advanced Search -->
+        <div class="tab-pane fade" id="advanced" role="tabpanel">
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="bi bi-sliders me-2"></i>Advanced Search (T147)</h5>
+                </div>
+                <div class="card-body">
+                    <form method="GET" action="{% url 'efris:stock_records_query' %}">
+                        <input type="hidden" name="advanced_search" value="1">
+
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label for="keywords" class="form-label">Keywords</label>
+                                <input type="text" class="form-control" id="keywords" name="keywords"
+                                       value="{{ request.GET.keywords }}"
+                                       placeholder="Search in goods code or name">
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label for="stock_in_type" class="form-label">Stock In Type</label>
+                                <select class="form-select" id="stock_in_type" name="stock_in_type">
+                                    <option value="">All Types</option>
+                                    <option value="101">Import</option>
+                                    <option value="102">Local Purchase</option>
+                                    <option value="103">Manufacture/Assembling</option>
+                                    <option value="104">Opening Stock</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label for="start_date" class="form-label">Start Date</label>
+                                <input type="date" class="form-control" id="start_date" name="start_date"
+                                       value="{{ request.GET.start_date }}">
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label for="end_date" class="form-label">End Date</label>
+                                <input type="date" class="form-control" id="end_date" name="end_date"
+                                       value="{{ request.GET.end_date }}">
+                            </div>
+                        </div>
+
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label for="supplier_tin" class="form-label">Supplier TIN</label>
+                                <input type="text" class="form-control" id="supplier_tin" name="supplier_tin"
+                                       value="{{ request.GET.supplier_tin }}" maxlength="10">
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label for="supplier_name" class="form-label">Supplier Name</label>
+                                <input type="text" class="form-control" id="supplier_name" name="supplier_name"
+                                       value="{{ request.GET.supplier_name }}">
+                            </div>
+                        </div>
+
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label for="page_size_adv" class="form-label">Results per Page</label>
+                                <select class="form-select" id="page_size_adv" name="page_size">
+                                    <option value="10">10</option>
+                                    <option value="25" selected>25</option>
+                                    <option value="50">50</option>
+                                    <option value="100">100</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-search"></i> Advanced Search
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Results -->
+    {% if records %}
+    <div class="card">
+        <div class="card-header bg-success text-white">
+            <h5 class="mb-0"><i class="bi bi-list-check me-2"></i>Search Results ({{ records|length }})</h5>
+        </div>
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-hover">
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>Goods Code</th>
+                            <th>Goods Name</th>
+                            <th>Quantity</th>
+                            <th>Unit Price</th>
+                            <th>Supplier</th>
+                            <th>Type</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for record in records %}
+                        <tr>
+                            <td>{{ record.stockInDate|default:record.createDate }}</td>
+                            <td><code>{{ record.goodsCode }}</code></td>
+                            <td>{{ record.goodsName|truncatewords:5 }}</td>
+                            <td><strong>{{ record.quantity }}</strong></td>
+                            <td>{{ record.unitPrice|floatformat:2 }}</td>
+                            <td>{{ record.supplierName|default:"-" }}</td>
+                            <td>
+                                {% if record.stockInType == '101' %}
+                                <span class="badge bg-info">Import</span>
+                                {% elif record.stockInType == '102' %}
+                                <span class="badge bg-success">Purchase</span>
+                                {% elif record.stockInType == '103' %}
+                                <span class="badge bg-warning">Manufacture</span>
+                                {% elif record.stockInType == '104' %}
+                                <span class="badge bg-secondary">Opening</span>
+                                {% else %}
+                                <span class="badge bg-primary">{{ record.stockInType }}</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if record.id %}
+                                <a href="{% url 'efris:stock_record_detail' record.id %}"
+                                   class="btn btn-sm btn-outline-info">
+                                    <i class="bi bi-eye"></i> Details
+                                </a>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Pagination -->
+            {% if pagination %}
+            <nav aria-label="Stock records pagination" class="mt-3">
+                <ul class="pagination justify-content-center">
+                    {% if pagination.pageNo > 1 %}
+                    <li class="page-item">
+                        <a class="page-link" href="?{% for key, value in request.GET.items %}{% if key != 'page' %}{{ key }}={{ value }}&{% endif %}{% endfor %}page={{ pagination.pageNo|add:-1 }}">
+                            Previous
+                        </a>
+                    </li>
+                    {% endif %}
+
+                    <li class="page-item active">
+                        <span class="page-link">
+                            Page {{ pagination.pageNo }} of {{ pagination.pageCount }}
+                        </span>
+                    </li>
+
+                    {% if pagination.pageNo < pagination.pageCount %}
+                    <li class="page-item">
+                        <a class="page-link" href="?{% for key, value in request.GET.items %}{% if key != 'page' %}{{ key }}={{ value }}&{% endif %}{% endfor %}page={{ pagination.pageNo|add:1 }}">
+                            Next
+                        </a>
+                    </li>
+                    {% endif %}
+                </ul>
+                <p class="text-center text-muted">
+                    Total Records: {{ pagination.totalSize }}
+                </p>
+            </nav>
+            {% endif %}
+        </div>
+    </div>
+    {% elif request.GET.search or request.GET.advanced_search %}
+    <div class="card">
+        <div class="card-body text-center py-5">
+            <i class="bi bi-inbox text-muted" style="font-size: 4rem;"></i>
+            <h3 class="mt-3">No Records Found</h3>
+            <p class="text-muted">Try adjusting your search criteria</p>
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

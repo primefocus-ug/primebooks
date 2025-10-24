@@ -1,0 +1,168 @@
+<!-- templates/stores/analytics.html -->
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Store Analytics | Prime Book{% endblock %}
+
+{% block page_header %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h1 class="h3 mb-1"><i class="bi bi-graph-up me-2"></i>Store Analytics</h1>
+        <p class="text-muted mb-0">Comprehensive analytics and insights for all stores</p>
+    </div>
+    <div>
+        {% if perms.stores.view_store %}
+        <a href="{% url 'stores:generate_report' %}" class="btn btn-primary">
+            <i class="bi bi-file-earmark-bar-graph me-1"></i>Generate Report
+        </a>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="row">
+    <!-- Inventory Summary -->
+    <div class="col-md-4">
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="mb-0">Inventory Summary</h5>
+            </div>
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <span>Total Items</span>
+                    <strong class="h4">{{ analytics_data.inventory_summary.total_items|default:0 }}</strong>
+                </div>
+                <div class="d-flex justify-content-between align-items-center">
+                    <span>Low Stock Items</span>
+                    <strong class="h4 text-warning">{{ analytics_data.inventory_summary.low_stock_count|default:0 }}</strong>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Device Status -->
+    <div class="col-md-4">
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="mb-0">Device Status</h5>
+            </div>
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <span>Total Devices</span>
+                    <strong>{{ analytics_data.device_status.total|default:0 }}</strong>
+                </div>
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <span>Active Devices</span>
+                    <strong class="text-success">{{ analytics_data.device_status.active|default:0 }}</strong>
+                </div>
+                <div class="d-flex justify-content-between align-items-center">
+                    <span>POS Devices</span>
+                    <strong>{{ analytics_data.device_status.pos_devices|default:0 }}</strong>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Regional Distribution -->
+    <div class="col-md-4">
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="mb-0">Regional Distribution</h5>
+            </div>
+            <div class="card-body">
+                {% for region in analytics_data.regional_distribution %}
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <span>{{ region.region|default:"Unknown" }}</span>
+                    <strong>{{ region.store_count }}</strong>
+                </div>
+                {% empty %}
+                <p class="text-muted">No regional data available</p>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Store Performance -->
+<div class="card mb-4">
+    <div class="card-header">
+        <h5 class="mb-0">Store Performance</h5>
+    </div>
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-hover">
+                <thead>
+                    <tr>
+                        <th>Store Name</th>
+                        <th>Inventory Value</th>
+                        <th>Devices</th>
+                        <th>Staff</th>
+                        <th>Low Stock Items</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for store in analytics_data.store_performance %}
+                    <tr>
+                        <td>{{ store.name }}</td>
+                        <td>UGX {{ store.inventory_value|floatformat:2 }}</td>
+                        <td>{{ store.device_count }}</td>
+                        <td>{{ store.staff_count }}</td>
+                        <td>
+                            <span class="badge bg-{% if store.low_stock_items > 0 %}warning{% else %}success{% endif %}">
+                                {{ store.low_stock_items }}
+                            </span>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="5" class="text-center py-4">
+                            <i class="bi bi-graph-up display-1 text-muted"></i>
+                            <p class="text-muted mt-2">No performance data available</p>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Quick Links -->
+<div class="row">
+    <div class="col-md-4">
+        <div class="card text-center">
+            <div class="card-body">
+                <i class="bi bi-map display-4 text-primary mb-3"></i>
+                <h5>Store Map</h5>
+                <p class="text-muted">View all store locations on an interactive map</p>
+                <a href="{% url 'stores:store_map' %}" class="btn btn-outline-primary">View Map</a>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card text-center">
+            <div class="card-body">
+                <i class="bi bi-exclamation-triangle display-4 text-warning mb-3"></i>
+                <h5>Low Stock Alerts</h5>
+                <p class="text-muted">Monitor inventory items that need restocking</p>
+                {% if perms.stores.view_storeinventory %}
+                <a href="{% url 'stores:low_stock_alert' %}" class="btn btn-outline-warning">View Alerts</a>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card text-center">
+            <div class="card-body">
+                <i class="bi bi-clipboard-data display-4 text-info mb-3"></i>
+                <h5>Device Logs</h5>
+                <p class="text-muted">Review device usage and maintenance history</p>
+                {% if perms.stores.view_deviceoperatorlog %}
+                <a href="{% url 'stores:device_logs' %}" class="btn btn-outline-info">View Logs</a>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

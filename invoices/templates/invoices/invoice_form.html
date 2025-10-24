@@ -1,0 +1,102 @@
+{% extends 'base.html' %}
+{% load crispy_forms_tags %}
+
+{% block title %}
+{% if object %}Edit Invoice {{ object.invoice_number }}{% else %}Create New Invoice{% endif %}
+{% endblock %}
+
+{% block content %}
+<div class="invoice-header">
+    <div class="row align-items-center">
+        <div class="col">
+            <h1>
+                <i class="fas fa-{% if object %}edit{% else %}plus{% endif %} me-3"></i>
+                {% if object %}Edit Invoice {{ object.invoice_number }}{% else %}Create New Invoice{% endif %}
+            </h1>
+            <p class="mb-0">
+                {% if object %}Update invoice details and financial information{% else %}Create a new invoice from sale or manually{% endif %}
+            </p>
+        </div>
+        <div class="col-auto">
+            {% if perms.invoices.view_invoice %}
+            <a href="{% if object %}{% url 'invoices:detail' object.pk %}{% else %}{% url 'invoices:list' %}{% endif %}" class="btn btn-outline-light">
+                <i class="fas fa-arrow-left me-2"></i>Back
+            </a>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<div class="row justify-content-center">
+    <div class="col-xl-10">
+        <div class="card">
+            <div class="card-body">
+                <form method="post" id="invoice-form">
+                    {% csrf_token %}
+                    {% crispy form %}
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Auto-calculate total amount when financial fields change
+    const subtotalField = document.getElementById('id_subtotal');
+    const taxField = document.getElementById('id_tax_amount');
+    const discountField = document.getElementById('id_discount_amount');
+    const totalField = document.getElementById('id_total_amount');
+
+    function calculateTotal() {
+        const subtotal = parseFloat(subtotalField.value) || 0;
+        const tax = parseFloat(taxField.value) || 0;
+        const discount = parseFloat(discountField.value) || 0;
+        const total = Math.max(0, subtotal + tax - discount);
+        totalField.value = total.toFixed(2);
+    }
+
+    [subtotalField, taxField, discountField].forEach(field => {
+        if (field) {
+            field.addEventListener('input', calculateTotal);
+        }
+    });
+
+    // Auto-populate due date based on issue date
+    const issueDateField = document.getElementById('id_issue_date');
+    const dueDateField = document.getElementById('id_due_date');
+
+    if (issueDateField && dueDateField && !dueDateField.value) {
+        issueDateField.addEventListener('change', function() {
+            if (this.value) {
+                const issueDate = new Date(this.value);
+                const dueDate = new Date(issueDate.getTime() + (30 * 24 * 60 * 60 * 1000)); // Add 30 days
+                dueDateField.value = dueDate.toISOString().split('T')[0];
+            }
+        });
+    }
+
+    // Sale selection change handler
+    const saleField = document.getElementById('id_sale');
+    if (saleField) {
+        saleField.addEventListener('change', function() {
+            if (this.value) {
+                // In a real implementation, you'd fetch sale data via AJAX
+                // For now, we'll just show a loading indicator
+                const loadingMsg = document.createElement('div');
+                loadingMsg.className = 'alert alert-info';
+                loadingMsg.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Loading sale data...';
+                this.parentNode.appendChild(loadingMsg);
+                
+                // Simulate AJAX call
+                setTimeout(() => {
+                    loadingMsg.remove();
+                }, 1000);
+            }
+        });
+    }
+});
+</script>
+{% endblock %}

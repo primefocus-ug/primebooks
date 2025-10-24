@@ -1,0 +1,481 @@
+{% extends 'base.html' %}
+{% load i18n %}
+
+{% block title %}Goods Inquiry - EFRIS{% endblock %}
+
+{% block extra_css %}
+<style>
+    .goods-card {
+        transition: transform 0.2s;
+        cursor: pointer;
+    }
+    .goods-card:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+    }
+    .badge-tax {
+        font-size: 0.85rem;
+        padding: 5px 10px;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <div>
+                        <h4><i class="fas fa-search"></i> Goods/Services Inquiry (T127)</h4>
+                        <p class="text-muted mb-0">Search and browse goods registered in EFRIS</p>
+                    </div>
+                    <div>
+                        <a href="{% url 'efris:goods_batch_query' %}" class="btn btn-outline-primary">
+                            <i class="fas fa-layer-group"></i> Batch Query (T144)
+                        </a>
+                        <form method="post" action="{% url 'efris:goods_sync' %}" class="d-inline">
+                            {% csrf_token %}
+                            <button type="submit" class="btn btn-success" 
+                                    onclick="return confirm('Sync all goods from EFRIS to local products? This may take a few minutes.')">
+                                <i class="fas fa-sync"></i> Sync All
+                            </button>
+                        </form>
+                    </div>
+                </div>
+                
+                <div class="card-body">
+                    <!-- Quick Tips -->
+                    <div class="alert alert-info alert-dismissible fade show" role="alert">
+                        <i class="fas fa-lightbulb"></i> 
+                        <strong>Quick Tips:</strong>
+                        <ul class="mb-0">
+                            <li>Use <strong>Search Keywords</strong> for quick search across code and name</li>
+                            <li>Use specific fields for precise filtering</li>
+                            <li>Click <i class="fas fa-download"></i> to import goods to your product catalog</li>
+                            <li>Click <i class="fas fa-eye"></i> to view detailed information</li>
+                        </ul>
+                        <button type="button" class="close" data-dismiss="alert">
+                            <span>&times;</span>
+                        </button>
+                    </div>
+                    
+                    <!-- Advanced Search Form -->
+                    <form method="get" class="mb-4">
+                        <div class="card bg-light">
+                            <div class="card-body">
+                                <h5 class="card-title">
+                                    <i class="fas fa-filter"></i> Search Filters
+                                </h5>
+                                
+                                <div class="row">
+                                    <!-- Quick Search -->
+                                    <div class="col-md-6">
+                                        <div class="form-group">
+                                            <label><i class="fas fa-search"></i> Quick Search (Keywords)</label>
+                                            <input type="text" name="search" class="form-control form-control-lg" 
+                                                   placeholder="Search goods code or name..." value="{{ search_term }}">
+                                            <small class="text-muted">Searches both goodsCode and goodsName</small>
+                                        </div>
+                                    </div>
+                                    
+                                    <!-- Page Size -->
+                                    <div class="col-md-3">
+                                        <div class="form-group">
+                                            <label>Results Per Page</label>
+                                            <select name="page_size" class="form-control">
+                                                <option value="10" selected>10</option>
+                                                <option value="20" >20</option>
+                                                <option value="50">50</option>
+                                                <option value="100">100</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                    
+                                    <!-- Search Button -->
+                                    <div class="col-md-3">
+                                        <label>&nbsp;</label>
+                                        <button type="submit" class="btn btn-primary btn-block btn-lg">
+                                            <i class="fas fa-search"></i> Search
+                                        </button>
+                                    </div>
+                                </div>
+                                
+                                <!-- Advanced Filters (Collapsible) -->
+                                <div class="mt-3">
+                                    <button class="btn btn-sm btn-outline-secondary" type="button" 
+                                            data-toggle="collapse" data-target="#advancedFilters">
+                                        <i class="fas fa-sliders-h"></i> Advanced Filters
+                                    </button>
+                                </div>
+                                
+                                <div class="collapse mt-3" id="advancedFilters">
+                                    <div class="row">
+                                        <div class="col-md-4">
+                                            <div class="form-group">
+                                                <label>Goods Code</label>
+                                                <input type="text" name="goods_code" class="form-control" 
+                                                       placeholder="Exact code" value="{{ goods_code }}">
+                                            </div>
+                                        </div>
+                                        
+                                        <div class="col-md-4">
+                                            <div class="form-group">
+                                                <label>Goods Name</label>
+                                                <input type="text" name="goods_name" class="form-control" 
+                                                       placeholder="Exact name" value="{{ goods_name }}">
+                                            </div>
+                                        </div>
+                                        
+                                        <div class="col-md-4">
+                                            <div class="form-group">
+                                                <label>Category Name</label>
+                                                <input type="text" name="category" class="form-control" 
+                                                       placeholder="Category" value="{{ category }}">
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="mt-2">
+                            <a href="{% url 'efris:goods_inquiry' %}" class="btn btn-secondary">
+                                <i class="fas fa-times"></i> Clear All
+                            </a>
+                        </div>
+                    </form>
+                    
+                    {% if goods_list %}
+                    <!-- Results Section -->
+                    <div class="results-section">
+                        <div class="d-flex justify-content-between align-items-center mb-3">
+                            <h5 class="mb-0">
+                                <i class="fas fa-box-open"></i> Search Results
+                            </h5>
+                            <span class="badge badge-info badge-pill" style="font-size: 1rem; padding: 8px 15px;">
+                                {{ pagination.total_size }} total goods
+                            </span>
+                        </div>
+                        
+                        <!-- View Toggle -->
+                        <div class="btn-group mb-3" role="group">
+                            <button type="button" class="btn btn-outline-primary active" onclick="showTableView()">
+                                <i class="fas fa-table"></i> Table
+                            </button>
+                            <button type="button" class="btn btn-outline-primary" onclick="showCardView()">
+                                <i class="fas fa-th"></i> Cards
+                            </button>
+                        </div>
+                        
+                        <!-- Table View -->
+                        <div id="tableView" class="table-responsive">
+                            <table class="table table-bordered table-hover">
+                                <thead class="thead-dark">
+                                    <tr>
+                                        <th width="10%">Code</th>
+                                        <th width="25%">Name</th>
+                                        <th width="20%">Category</th>
+                                        <th width="8%">Unit</th>
+                                        <th width="10%" class="text-right">Price</th>
+                                        <th width="8%">Stock</th>
+                                        <th width="8%">Tax</th>
+                                        <th width="11%" class="text-center">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for goods in goods_list %}
+                                    <tr>
+                                        <td><code style="font-size: 0.9rem;">{{ goods.goodsCode }}</code></td>
+                                        <td><strong>{{ goods.goodsName|truncatewords:8 }}</strong></td>
+                                        <td>
+                                            <small class="text-muted">
+                                                {{ goods.commodityCategoryName|default:"N/A"|truncatewords:5 }}
+                                            </small>
+                                        </td>
+                                        <td>
+                                            <span class="badge badge-secondary">{{ goods.measureUnit }}</span>
+                                        </td>
+                                        <td class="text-right">
+                                            <strong>{{ goods.unitPrice }}</strong>
+                                            <small class="text-muted">{{ goods.currency|default:"UGX" }}</small>
+                                        </td>
+                                        <td>
+                                            {% if goods.stock %}
+                                            <span class="badge badge-success">{{ goods.stock }}</span>
+                                            {% else %}
+                                            <span class="badge badge-light">N/A</span>
+                                            {% endif %}
+                                        </td>
+                                        <td>
+                                            {% if goods.isExempt == "101" %}
+                                            <span class="badge badge-warning badge-tax">Exempt</span>
+                                            {% elif goods.isZeroRate == "101" %}
+                                            <span class="badge badge-info badge-tax">0%</span>
+                                            {% else %}
+                                            <span class="badge badge-success badge-tax">{{ goods.taxRate|default:"18" }}%</span>
+                                            {% endif %}
+                                        </td>
+                                        <td class="text-center">
+                                            <div class="btn-group" role="group">
+                                                <form method="post" action="{% url 'efris:goods_import' %}" class="d-inline">
+                                                    {% csrf_token %}
+                                                    <input type="hidden" name="goods_code" value="{{ goods.goodsCode }}">
+                                                    <button type="submit" class="btn btn-sm btn-primary" 
+                                                            title="Import to Products">
+                                                        <i class="fas fa-download"></i>
+                                                    </button>
+                                                </form>
+                                                
+                                                <button type="button" class="btn btn-sm btn-info" 
+                                                        data-toggle="modal" data-target="#detailsModal{{ forloop.counter }}"
+                                                        title="View Details">
+                                                    <i class="fas fa-eye"></i>
+                                                </button>
+                                            </div>
+                                            
+                                            <!-- Details Modal -->
+                                            <div class="modal fade" id="detailsModal{{ forloop.counter }}" tabindex="-1">
+                                                <div class="modal-dialog modal-lg">
+                                                    <div class="modal-content">
+                                                        <div class="modal-header bg-primary text-white">
+                                                            <h5 class="modal-title">
+                                                                <i class="fas fa-box"></i> {{ goods.goodsName }}
+                                                            </h5>
+                                                            <button type="button" class="close text-white" data-dismiss="modal">
+                                                                <span>&times;</span>
+                                                            </button>
+                                                        </div>
+                                                        <div class="modal-body">
+                                                          <div class="row">
+                                                            <div class="col-md-6">
+                                                              <h6 class="text-primary border-bottom pb-2">Basic Information</h6>
+                                                              <table class="table table-sm table-bordered">
+                                                                <tr><th>Goods Code</th><td><code>{{ goods.goodsCode }}</code></td></tr>
+                                                                <tr><th>Goods Name</th><td>{{ goods.goodsName }}</td></tr>
+                                                                <tr><th>Commodity Category Code</th><td>{{ goods.commodityCategoryCode }}</td></tr>
+                                                                <tr><th>Commodity Category Name</th><td>{{ goods.commodityCategoryName }}</td></tr>
+                                                                <tr><th>Goods Type Code</th><td>{{ goods.goodsTypeCode }}</td></tr>
+                                                                <tr><th>Measure Unit</th><td>{{ goods.measureUnit }}</td></tr>
+                                                                <tr><th>Currency</th><td>{{ goods.currency }}</td></tr>
+                                                                <tr><th>Unit Price</th><td>{{ goods.unitPrice }}</td></tr>
+                                                                <tr><th>Stock</th><td>{{ goods.stock }}</td></tr>
+                                                                <tr><th>Stock Warning</th><td>{{ goods.stockPrewarning }}</td></tr>
+                                                                <tr><th>Remarks</th><td>{{ goods.remarks }}</td></tr>
+                                                              </table>
+                                                            </div>
+
+                                                            <div class="col-md-6">
+                                                              <h6 class="text-primary border-bottom pb-2">Tax & Compliance</h6>
+                                                              <table class="table table-sm table-bordered">
+                                                                <tr><th>Tax Rate</th><td>{{ goods.taxRate }}%</td></tr>
+                                                                <tr><th>Is Exempt</th>
+                                                                  <td>{% if goods.isExempt == "101" %}Yes{% else %}No{% endif %}</td></tr>
+                                                                <tr><th>Is Zero Rate</th>
+                                                                  <td>{% if goods.isZeroRate == "101" %}Yes{% else %}No{% endif %}</td></tr>
+                                                                <tr><th>Have Excise Tax</th>
+                                                                  <td>{% if goods.haveExciseTax == "101" %}Yes{% else %}No{% endif %}</td></tr>
+                                                                <tr><th>Have Other Unit</th>
+                                                                  <td>{% if goods.haveOtherUnit == "101" %}Yes{% else %}No{% endif %}</td></tr>
+                                                                <tr><th>Have Piece Unit</th>
+                                                                  <td>{% if goods.havePieceUnit == "101" %}Yes{% else %}No{% endif %}</td></tr>
+                                                                <tr><th>Exclusion</th><td>{{ goods.exclusion }}</td></tr>
+                                                                <tr><th>Service Mark</th><td>{{ goods.serviceMark }}</td></tr>
+                                                                <tr><th>Source</th><td>{{ goods.source }}</td></tr>
+                                                                <tr><th>Status Code</th><td>{{ goods.statusCode }}</td></tr>
+                                                              </table>
+                                                            </div>
+                                                          </div>
+
+                                                          <div class="row mt-3">
+                                                            <div class="col-md-6">
+                                                              <h6 class="text-primary border-bottom pb-2">Date & Time Info</h6>
+                                                              <table class="table table-sm table-bordered">
+                                                                <tr><th>Create Date (ms)</th><td>{{ goods.createDate }}</td></tr>
+                                                                <tr><th>Update Date</th><td>{{ goods.updateDateStr }}</td></tr>
+                                                                <tr><th>Date Format</th><td>{{ goods.dateFormat }}</td></tr>
+                                                                <tr><th>Time Format</th><td>{{ goods.timeFormat }}</td></tr>
+                                                                <tr><th>Now Time</th><td>{{ now_time }}</td></tr>
+                                                              </table>
+                                                            </div>
+
+                                                            <div class="col-md-6">
+                                                              <h6 class="text-primary border-bottom pb-2">System Identifiers</h6>
+                                                              <table class="table table-sm table-bordered">
+                                                                <tr><th>ID</th><td>{{ goods.id }}</td></tr>
+                                                                <tr><th>Page Index</th><td>{{ goods.pageIndex }}</td></tr>
+                                                                <tr><th>Page No</th><td>{{ goods.pageNo }}</td></tr>
+                                                                <tr><th>Page Size</th><td>{{ goods.pageSize }}</td></tr>
+                                                              </table>
+                                                            </div>
+                                                          </div>
+                                                        </div>
+                                                        <div class="mt-3">
+                                                          <details>
+                                                            <summary class="text-primary">View Raw JSON</summary>
+                                                            <pre class="bg-light p-2 border">{{ goods|json_script:"goods_data" }}</pre>
+                                                          </details>
+                                                        </div>
+
+                                                        <div class="modal-footer">
+                                                            <form method="post" action="{% url 'efris:goods_import' %}">
+                                                                {% csrf_token %}
+                                                                <input type="hidden" name="goods_code" value="{{ goods.goodsCode }}">
+                                                                <button type="submit" class="btn btn-primary">
+                                                                    <i class="fas fa-download"></i> Import to Products
+                                                                </button>
+                                                            </form>
+                                                            <button type="button" class="btn btn-secondary" data-dismiss="modal">Close</button>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                        
+                        <!-- Card View (Hidden by default) -->
+                        <div id="cardView" class="row" style="display: none;">
+                            {% for goods in goods_list %}
+                            <div class="col-md-4 mb-3">
+                                <div class="card goods-card h-100" data-toggle="modal" data-target="#detailsModal{{ forloop.counter }}">
+                                    <div class="card-body">
+                                        <h6 class="card-title">{{ goods.goodsName|truncatewords:6 }}</h6>
+                                        <p class="card-text">
+                                            <code>{{ goods.goodsCode }}</code><br>
+                                            <small class="text-muted">{{ goods.commodityCategoryName|truncatewords:4 }}</small>
+                                        </p>
+                                        <div class="d-flex justify-content-between align-items-center">
+                                            <span class="h5 mb-0">{{ goods.unitPrice }} UGX</span>
+                                            {% if goods.isExempt == "101" %}
+                                            <span class="badge badge-warning">Exempt</span>
+                                            {% elif goods.isZeroRate == "101" %}
+                                            <span class="badge badge-info">0%</span>
+                                            {% else %}
+                                            <span class="badge badge-success">{{ goods.taxRate }}%</span>
+                                            {% endif %}
+                                        </div>
+                                    </div>
+                                    <div class="card-footer bg-transparent">
+                                        <form method="post" action="{% url 'efris:goods_import' %}" onclick="event.stopPropagation()">
+                                            {% csrf_token %}
+                                            <input type="hidden" name="goods_code" value="{{ goods.goodsCode }}">
+                                            <button type="submit" class="btn btn-sm btn-primary btn-block">
+                                                <i class="fas fa-download"></i> Import
+                                            </button>
+                                        </form>
+                                    </div>
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </div>
+                        
+                        <!-- Pagination -->
+                        {% if pagination.page_count > 1 %}
+                        <nav aria-label="Goods pagination" class="mt-4">
+                            <ul class="pagination justify-content-center">
+                                {% if pagination.page_no > 1 %}
+                                <li class="page-item">
+                                    <a class="page-link" href="?search={{ search_term }}&page=1">
+                                        <i class="fas fa-angle-double-left"></i> First
+                                    </a>
+                                </li>
+                                <li class="page-item">
+                                    <a class="page-link" href="?search={{ search_term }}&page={{ pagination.page_no|add:"-1" }}">
+                                        <i class="fas fa-angle-left"></i> Previous
+                                    </a>
+                                </li>
+                                {% endif %}
+                                
+                                <li class="page-item active">
+                                    <span class="page-link">
+                                        Page {{ pagination.page_no }} of {{ pagination.page_count }}
+                                        <span class="badge badge-light ml-2">{{ pagination.total_size }} items</span>
+                                    </span>
+                                </li>
+                                
+                                {% if pagination.page_no < pagination.page_count %}
+                                <li class="page-item">
+                                    <a class="page-link" href="?search={{ search_term }}&page={{ pagination.page_no|add:"1" }}">
+                                        Next <i class="fas fa-angle-right"></i>
+                                    </a>
+                                </li>
+                                <li class="page-item">
+                                    <a class="page-link" href="?search={{ search_term }}&page={{ pagination.page_count }}">
+                                        Last <i class="fas fa-angle-double-right"></i>
+                                    </a>
+                                </li>
+                                {% endif %}
+                            </ul>
+                        </nav>
+                        {% endif %}
+                    </div>
+                    {% elif search_term or goods_code or goods_name %}
+                    <div class="alert alert-warning">
+                        <i class="fas fa-search"></i> 
+                        <strong>No results found</strong><br>
+                        No goods found matching your search criteria. Try different keywords or filters.
+                    </div>
+                    {% else %}
+                    <div class="alert alert-info">
+                        <i class="fas fa-info-circle"></i> 
+                        <strong>Start searching</strong><br>
+                        Enter search criteria above to find goods in EFRIS database.
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+    const form = document.querySelector("form[method='get']");
+    const cardBody = document.querySelector(".card-body");
+
+    function fetchResults(url = null) {
+        const params = new URLSearchParams(new FormData(form));
+        const fetchUrl = url || `${window.location.pathname}?${params.toString()}`;
+
+        fetch(fetchUrl, {
+            headers: { "X-Requested-With": "XMLHttpRequest" },
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data.html) {
+                // Replace only results section dynamically
+                const parser = new DOMParser();
+                const newContent = parser.parseFromString(data.html, "text/html").body;
+                const resultsSection = document.querySelector(".results-section");
+                if (resultsSection) resultsSection.replaceWith(newContent.querySelector(".results-section"));
+                else cardBody.insertAdjacentElement("beforeend", newContent.querySelector(".results-section"));
+                attachPaginationListeners();
+            }
+        })
+        .catch(err => console.error("Error fetching results:", err));
+    }
+
+    form.addEventListener("submit", function(e) {
+        e.preventDefault();
+        fetchResults();
+    });
+
+    function attachPaginationListeners() {
+        document.querySelectorAll(".pagination a.page-link").forEach(link => {
+            link.addEventListener("click", function(e) {
+                e.preventDefault();
+                fetchResults(this.href);
+            });
+        });
+    }
+
+    // Attach listeners initially if pagination exists
+    attachPaginationListeners();
+});
+</script>
+
+{% endblock %}

@@ -1,0 +1,179 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Shopping Cart{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'sales/css/cart.css' %}">
+{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-lg-8">
+        <div class="card mb-4">
+            <div class="card-header bg-white d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">Your Cart</h5>
+                <span class="badge bg-primary cart-item-count">{{ cart.items.count }}</span>
+            </div>
+            <div class="card-body">
+                {% if cart.items.all %}
+                <div class="table-responsive">
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th>Product</th>
+                                <th>Price</th>
+                                <th>Quantity</th>
+                                <th>Total</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for item in cart.items.all %}
+                            <tr class="cart-item" data-item-id="{{ item.id }}">
+                                <td>
+                                    <div class="d-flex align-items-center">
+                                        {% if item.product.image %}
+                                        <img src="{{ item.product.image.url }}" alt="{{ item.product.name }}" 
+                                             class="img-thumbnail me-3" width="60">
+                                        {% endif %}
+                                        <div>
+                                            <h6 class="mb-0">{{ item.product.name }}</h6>
+                                            <small class="text-muted">{{ item.product.sku }}</small>
+                                        </div>
+                                    </div>
+                                </td>
+                                <td>{{ item.unit_price }}</td>
+                                <td>
+                                    <div class="input-group" style="width: 120px;">
+                                        <button class="btn btn-outline-secondary update-quantity" 
+                                                type="button" data-action="decrease">-</button>
+                                        <input type="number" class="form-control text-center quantity-input" 
+                                               value="{{ item.quantity }}" min="1">
+                                        <button class="btn btn-outline-secondary update-quantity" 
+                                                type="button" data-action="increase">+</button>
+                                    </div>
+                                </td>
+                                <td class="item-total">{{ item.total_price }}</td>
+                                <td>
+                                    <button class="btn btn-danger btn-sm remove-item" 
+                                            data-item-id="{{ item.id }}">
+                                        <i class="fas fa-trash"></i>
+                                    </button>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <div class="text-center py-4">
+                    <i class="fas fa-shopping-cart fa-4x text-muted mb-3"></i>
+                    <h5>Your cart is empty</h5>
+                    <a href="{% url 'inventory:product_list' %}" class="btn btn-primary mt-3">
+                        Continue Shopping
+                    </a>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-lg-4">
+        <div class="card">
+            <div class="card-header bg-white">
+                <h5 class="mb-0">Order Summary</h5>
+            </div>
+            <div class="card-body">
+                <div class="d-flex justify-content-between mb-2">
+                    <span>Subtotal:</span>
+                    <span class="cart-subtotal">{{ cart.subtotal }}</span>
+                </div>
+                <div class="d-flex justify-content-between mb-2">
+                    <span>Tax:</span>
+                    <span class="cart-tax">{{ cart.tax_amount }}</span>
+                </div>
+                <div class="d-flex justify-content-between mb-2">
+                    <span>Discount:</span>
+                    <span class="cart-discount">{{ cart.discount_amount }}</span>
+                </div>
+                <hr>
+                <div class="d-flex justify-content-between fw-bold mb-3">
+                    <span>Total:</span>
+                    <span class="cart-total">{{ cart.total_amount }}</span>
+                </div>
+                
+                {% if cart.items.all %}
+                <form method="post" action="{% url 'sales:confirm_order' %}">
+                    {% csrf_token %}
+                    <div class="mb-3">
+                        <label for="payment_method" class="form-label">Payment Method</label>
+                        <select class="form-select" id="payment_method" name="payment_method" required>
+                            <option value="CASH">Cash</option>
+                            <option value="CARD">Credit Card</option>
+                            <option value="MOBILE_MONEY">Mobile Money</option>
+                        </select>
+                    </div>
+                    <button type="submit" class="btn btn-primary w-100 py-2">
+                        <i class="fas fa-check-circle me-2"></i> Confirm Order
+                    </button>
+                </form>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+$(document).ready(function() {
+    // Update quantity
+    $('.update-quantity').click(function() {
+        const button = $(this);
+        const input = button.siblings('.quantity-input');
+        let quantity = parseInt(input.val());
+        
+        if (button.data('action') === 'increase') {
+            quantity += 1;
+        } else {
+            quantity = Math.max(1, quantity - 1);
+        }
+        
+        input.val(quantity);
+        updateCartItem(button.closest('.cart-item').data('item-id'), quantity);
+    });
+    
+    // Remove item
+    $('.remove-item').click(function() {
+        if (confirm('Are you sure you want to remove this item?')) {
+            removeCartItem($(this).data('item-id'));
+        }
+    });
+    
+    function updateCartItem(itemId, quantity) {
+        $.post('{% url "sales:update_cart_item" %}', {
+            item_id: itemId,
+            quantity: quantity,
+            csrfmiddlewaretoken: '{{ csrf_token }}'
+        }).fail(function() {
+            alert('Error updating item quantity');
+        });
+    }
+    
+    function removeCartItem(itemId) {
+        $.post('{% url "sales:remove_cart_item" %}', {
+            item_id: itemId,
+            csrfmiddlewaretoken: '{{ csrf_token }}'
+        }).done(function() {
+            $(`.cart-item[data-item-id="${itemId}"]`).remove();
+            if ($('.cart-item').length === 0) {
+                location.reload();
+            }
+        }).fail(function() {
+            alert('Error removing item');
+        });
+    }
+});
+</script>
+{% endblock %}

@@ -1,0 +1,95 @@
+{% extends "efris/base.html" %}
+{% load static %}
+
+{% block efris_content %}
+<div class="efris-card">
+    <div class="card-body">
+        <h5 class="card-title">
+            <i class="fas fa-network-wired"></i> Query Agent Relations
+        </h5>
+
+        <form method="post" class="mt-4">
+            {% csrf_token %}
+
+            <div class="mb-3">
+                <label for="tin" class="form-label">Principal Agent TIN (Optional)</label>
+                <input type="text" class="form-control" id="tin"
+                       name="tin" maxlength="20"
+                       placeholder="Leave empty to query all agent relations">
+                <small class="form-text text-muted">
+                    Enter TIN to query specific principal agent, or leave empty for all relations
+                </small>
+            </div>
+
+            <button type="submit" class="btn btn-primary">
+                <i class="fas fa-search"></i> Query Relations
+            </button>
+        </form>
+
+        {% if agent_taxpayers %}
+        <hr>
+
+        <h6 class="text-muted mt-4">
+            Agent Taxpayers
+            <span class="badge bg-primary">{{ agent_taxpayers|length }}</span>
+        </h6>
+
+        <div class="table-responsive mt-3">
+            <table class="table table-hover">
+                <thead>
+                    <tr>
+                        <th>TIN</th>
+                        <th>Names</th>
+                        <th>Contact</th>
+                        <th>Branch</th>
+                        <th>Status</th>
+                        <th>Type</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for taxpayer in agent_taxpayers %}
+                    <tr>
+                        <td><code>{{ taxpayer.tin }}</code></td>
+                        <td>
+                            <strong>{{ taxpayer.legalName }}</strong><br>
+                            <small class="text-muted">{{ taxpayer.businessName }}</small>
+                        </td>
+                        <td>
+                            <small>
+                                <i class="fas fa-phone"></i> {{ taxpayer.contactNumber|default:"-" }}<br>
+                                <i class="fas fa-envelope"></i> {{ taxpayer.contactEmail|default:"-" }}
+                            </small>
+                        </td>
+                        <td>
+                            <small>
+                                {{ taxpayer.branchName }}<br>
+                                <code>{{ taxpayer.branchCode }}</code>
+                            </small>
+                        </td>
+                        <td>
+                            {% if taxpayer.taxpayerStatus == '101' %}
+                                <span class="badge bg-success">Registered</span>
+                            {% elif taxpayer.taxpayerStatus == '102' %}
+                                <span class="badge bg-danger">Deactivated</span>
+                            {% elif taxpayer.taxpayerStatus == '103' %}
+                                <span class="badge bg-warning">Suspended</span>
+                            {% elif taxpayer.taxpayerStatus == '104' %}
+                                <span class="badge bg-secondary">Deregistered</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if taxpayer.taxpayerType == '201' %}
+                                <span class="badge bg-info">Individual</span>
+                            {% elif taxpayer.taxpayerType == '202' %}
+                                <span class="badge bg-primary">Non-Individual</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

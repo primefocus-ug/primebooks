@@ -1,0 +1,129 @@
+{% extends 'base.html' %}
+
+{% block title %} {{ company.trading_name|default:company.name }} {% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-body">
+                <h5 class="card-title">Live Company Count</h5>
+                <canvas id="companyChart" height="120"></canvas>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h5 class="card-title mb-0">Companies</h5>
+                    <a href="#" class="btn btn-sm btn-primary">View All</a>
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-hover" id="companies-table">
+                        <thead>
+                            <tr>
+                                <th>CName</th>
+                                <th>Phone</th>
+                                <th>Email</th>
+                                <th>Currency</th>
+                                <th>Status</th>
+                                <th>Action</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for invoice in invoices %}
+                            <tr data-company-id="{{ company.company_id }}">
+                                <td>{{ invoice.invoice_number }}</td>
+                                <td>{{ invoice.sale }}</td>
+                                <td>{{ invoice.get_status_display }}</td>
+                                <td>{{ invoice.total_amount }}</td>
+                                <td><span class="badge bg-success">Completed</span></td>
+                                <td><a href="#" class="btn btn-sm btn-outline-primary">View</a></td>
+                            </tr>
+                            {% empty %}
+                            <tr><td colspan="6">No invocie Available</td></tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<!-- Chart.js CDN -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const socket = new WebSocket('ws://127.0.0.1:8000/ws/inventory-updates/');
+    const tbody = document.querySelector('#companies-table tbody');
+
+    let companyCount = {{ companies|length }};
+    const ctx = document.getElementById('companyChart').getContext('2d');
+    const companyChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: ['Companies'],
+            datasets: [{
+                label: '# of Companies',
+                data: [companyCount],
+                backgroundColor: ['rgba(54, 162, 235, 0.5)'],
+                borderColor: ['rgba(54, 162, 235, 1)'],
+                borderWidth: 1
+            }]
+        },
+        options: {
+            responsive: true,
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    ticks: { stepSize: 1 }
+                }
+            }
+        }
+    });
+
+    socket.onmessage = function (event) {
+        const data = JSON.parse(event.data);
+        console.log('inventory update received:', data);
+
+        const existingRow = Array.from(tbody.rows).find(row =>
+            row.dataset.companyId === data.company_id
+        );
+
+        const rowHtml = `
+            <td>${data.name || '—'}</td>
+            <td>${data.phone || '—'}</td>
+            <td>${data.email || '—'}</td>
+            <td>${data.preferred_currency || '—'}</td>
+            <td><span class="badge bg-success">Completed</span></td>
+            <td><a href="#" class="btn btn-sm btn-outline-primary">View</a></td>
+        `;
+
+        if (existingRow) {
+            existingRow.innerHTML = rowHtml;
+        } else {
+            const row = document.createElement('tr');
+            row.dataset.companyId = data.company_id;
+            row.innerHTML = rowHtml;
+            tbody.appendChild(row);
+
+            // 📊 Update chart
+            companyChart.data.datasets[0].data[0] += 1;
+            companyChart.update();
+        }
+    };
+
+    socket.onclose = function () {
+        console.warn('WebSocket closed unexpectedly');
+    };
+});
+</script>
+{% endblock %}

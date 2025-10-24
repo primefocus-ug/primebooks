@@ -1,0 +1,189 @@
+{% extends 'base.html' %}
+
+{% block title %}Payment History {{ company.trading_name|default:company.name }}{% endblock %}
+
+{% block content %}
+<div class="invoice-header">
+    <div class="row align-items-center">
+        <div class="col">
+            <h1><i class="fas fa-money-bill me-3"></i>Payment History</h1>
+            <p class="mb-0">Track all invoice payments and financial transactions</p>
+        </div>
+        <div class="col-auto">
+            {% if perms.invoices.view_invoice %}
+            <a href="{% url 'invoices:list' %}" class="btn btn-outline-light">
+                <i class="fas fa-file-invoice me-2"></i>Back to Invoices
+            </a>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<!-- Payment Summary Cards -->
+<div class="row mb-4">
+    <div class="col-md-4">
+        <div class="card text-center">
+            <div class="card-body">
+                <h3 class="text-primary">{{ total_payments }}</h3>
+                <p class="card-text">Total Payments</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card text-center">
+            <div class="card-body">
+                <h3 class="text-success">{{ total_amount|floatformat:"2g" }}</h3>
+                <p class="card-text">Total Amount (UGX)</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card text-center">
+            <div class="card-body">
+                <h3 class="text-info">{{ payment_methods|length }}</h3>
+                <p class="card-text">Payment Methods Used</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Payment Methods Breakdown -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">Payment Methods Breakdown</h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    {% for method in payment_methods %}
+                    <div class="col-md-3 mb-3">
+                        <div class="text-center">
+                            <h4 class="text-primary">{{ method.count }}</h4>
+                            <p class="mb-1">{{ method.payment_method }}</p>
+                            <small class="text-muted">UGX {{ method.total|floatformat:"2g" }}</small>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Payment Table -->
+<div class="card">
+    <div class="card-header">
+        <h5 class="mb-0">All Payments ({{ page_obj.paginator.count }} total)</h5>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Date</th>
+                        <th>Invoice</th>
+                        <th>Customer</th>
+                        <th>Amount</th>
+                        <th>Method</th>
+                        <th>Reference</th>
+                        <th>Processed By</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for payment in payments %}
+                    <tr>
+                        <td>{{ payment.payment_date }}</td>
+                        <td>
+                            {% if perms.invoices.view_invoice %}
+                            <a href="{% url 'invoices:detail' payment.invoice.pk %}" class="text-decoration-none">
+                                {{ payment.invoice.invoice_number }}
+                            </a>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if payment.invoice.sale.customer %}
+                                {{ payment.invoice.sale.customer.name }}
+                            {% else %}
+                                <span class="text-muted">Walk-in</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <strong>UGX {{ payment.amount|floatformat:"2g" }}</strong>
+                        </td>
+                        <td>
+                            <span class="badge bg-secondary">{{ payment.get_payment_method_display }}</span>
+                        </td>
+                        <td>{{ payment.transaction_reference|default:"-" }}</td>
+                        <td>{{ payment.processed_by.get_full_name|default:payment.processed_by.username }}</td>
+                        <td>
+                            {% if perms.invoices.view_invoice %}
+                            <div class="btn-group btn-group-sm">
+                                <a href="{% url 'invoices:detail' payment.invoice.pk %}" class="btn btn-outline-primary" title="View Invoice">
+                                    <i class="fas fa-eye"></i>
+                                </a>
+                                {% endif %}
+                                <button type="button" class="btn btn-outline-info" title="Payment Receipt" onclick="generateReceipt({{ payment.id }})">
+                                    <i class="fas fa-receipt"></i>
+                                </button>
+                            </div>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="8" class="text-center py-5">
+                            <div class="text-muted">
+                                <i class="fas fa-money-bill fa-3x mb-3"></i>
+                                <h5>No payments found</h5>
+                                <p>Payments will appear here once invoices are paid.</p>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Pagination -->
+{% if is_paginated %}
+<nav aria-label="Payment pagination" class="mt-4">
+    <ul class="pagination justify-content-center">
+        {% if page_obj.has_previous %}
+            <li class="page-item">
+                <a class="page-link" href="?page={{ page_obj.previous_page_number }}">Previous</a>
+            </li>
+        {% endif %}
+        
+        {% for num in page_obj.paginator.page_range %}
+            {% if page_obj.number == num %}
+                <li class="page-item active">
+                    <span class="page-link">{{ num }}</span>
+                </li>
+            {% elif num > page_obj.number|add:'-3' and num < page_obj.number|add:'3' %}
+                <li class="page-item">
+                    <a class="page-link" href="?page={{ num }}">{{ num }}</a>
+                </li>
+            {% endif %}
+        {% endfor %}
+        
+        {% if page_obj.has_next %}
+            <li class="page-item">
+                <a class="page-link" href="?page={{ page_obj.next_page_number }}">Next</a>
+            </li>
+        {% endif %}
+    </ul>
+</nav>
+{% endif %}
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function generateReceipt(paymentId) {
+    // This would generate a payment receipt
+    window.open(`/invoices/payment/${paymentId}/receipt/`, '_blank');
+}
+</script>
+{% endblock %}
