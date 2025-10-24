@@ -7,10 +7,12 @@ from accounts.models import CustomUser
 import logging
 
 
-from .models import Company, Domain, EFRISCommodityCategory
+from .models import Company,TenantEmailSettings,TenantInvoiceSettings, Domain, EFRISCommodityCategory
 
 logger = logging.getLogger(__name__)
 
+admin.site.register(TenantInvoiceSettings)
+admin.site.register(TenantEmailSettings)
 @admin.register(EFRISCommodityCategory)
 class EFRISCommodityCategoryAdmin(admin.ModelAdmin):
     list_display = (
