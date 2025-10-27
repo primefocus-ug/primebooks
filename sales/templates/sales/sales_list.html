@@ -1,17 +1,35 @@
 {% extends 'base.html' %}
+{% load i18n %}
 {% load static %}
+{% load i18n %}
+{% load theme_filters %}
 {% block title %}Sales Management - Sales Pro{% endblock %}
 
 {% block extra_css %}
 <link rel="stylesheet" href="{% static 'sales/css/sales_list.css' %}">
+<link rel="stylesheet" href="{% static 'themes.css' %}">
+<style>
+    [data-theme="dark"] .filter-section {
+        background: #374151;
+        color: wheat;
+    }
+    [data-theme="dark"] .sales-table-wrapper {
+        background: #374151;
+        color: wheat;
+    }
+    [data-theme="dark"] .text-center {
+        background: #4b5563;
+        color: white;
+    }
+</style>
 {% endblock %}
 
 {% block content %}
 <div class="page-header animate-fade-in">
     <div class="d-flex justify-content-between align-items-center">
         <div>
-            <h1 class="page-title">Sales Management</h1>
-            <p class="page-subtitle">Manage and track all your sales transactions</p>
+            <h1 class="page-title">{% trans "Sales Management" %}</h1>
+            <p class="page-subtitle">{% trans "Manage and track all your sales transactions" %}</p>
         </div>
         <div class="d-flex gap-2">
             <a href="{% url 'sales:create_sale' %}" class="btn btn-primary">
@@ -28,22 +46,22 @@
 <div class="stats-grid animate-fade-in">
     <div class="stat-card" style="background: linear-gradient(135deg, #3b82f6, #1d4ed8);">
         <div class="stat-value">{{ stats.total_sales }}</div>
-        <div class="stat-label">Total Sales</div>
+        <div class="stat-label">{% trans "Total Sales" %}</div>
         <i class="fas fa-shopping-cart stat-icon"></i>
     </div>
     <div class="stat-card" style="background: linear-gradient(135deg, #10b981, #059669);">
         <div class="stat-value">{{ stats.total_amount|floatformat:0 }}</div>
-        <div class="stat-label">Total Revenue (UGX)</div>
+        <div class="stat-label">{% trans "Total Revenue (UGX)" %}</div>
         <i class="fas fa-money-bill-wave stat-icon"></i>
     </div>
     <div class="stat-card" style="background: linear-gradient(135deg, #f59e0b, #d97706);">
         <div class="stat-value">{{ stats.avg_amount|floatformat:0 }}</div>
-        <div class="stat-label">Average Sale (UGX)</div>
+        <div class="stat-label">{% trans "Average Sale (UGX)" %}</div>
         <i class="fas fa-chart-line stat-icon"></i>
     </div>
     <div class="stat-card" style="background: linear-gradient(135deg, #8b5cf6, #7c3aed);">
         <div class="stat-value">{{ stats.fiscalized_count }}</div>
-        <div class="stat-label">Fiscalized Sales</div>
+        <div class="stat-label">{% trans "Fiscalized Sales" %}</div>
         <i class="fas fa-receipt stat-icon"></i>
     </div>
 </div>
@@ -53,7 +71,7 @@
     <form method="get" id="filterForm">
         <div class="row g-3">
             <div class="col-md-4">
-                <label class="form-label">Search</label>
+                <label class="form-label">{% trans "Search" %}</label>
                 <div class="input-group">
                     <span class="input-group-text">
                         <i class="fas fa-search"></i>
@@ -62,38 +80,38 @@
                 </div>
             </div>
             <div class="col-md-2">
-                <label class="form-label">Store</label>
+                <label class="form-label">{% trans "Store" %}</label>
                 {{ search_form.store }}
             </div>
             <div class="col-md-2">
-                <label class="form-label">Transaction Type</label>
+                <label class="form-label">{% trans "Transaction Type" %}</label>
                 {{ search_form.transaction_type }}
             </div>
             <div class="col-md-2">
-                <label class="form-label">Payment Method</label>
+                <label class="form-label">{% trans "Payment Method" %}</label>
                 {{ search_form.payment_method }}
             </div>
             <div class="col-md-2">
-                <label class="form-label">Status</label>
+                <label class="form-label">{% trans "Status" %}</label>
                 {{ search_form.is_fiscalized }}
             </div>
         </div>
-        
+
         <div class="row g-3 mt-2">
             <div class="col-md-2">
-                <label class="form-label">Date From</label>
+                <label class="form-label">{% trans "Date From" %}</label>
                 {{ search_form.date_from }}
             </div>
             <div class="col-md-2">
-                <label class="form-label">Date To</label>
+                <label class="form-label">{% trans "Date To" %}</label>
                 {{ search_form.date_to }}
             </div>
             <div class="col-md-2">
-                <label class="form-label">Min Amount</label>
+                <label class="form-label">{% trans "Min Amount" %}</label>
                 {{ search_form.min_amount }}
             </div>
             <div class="col-md-2">
-                <label class="form-label">Max Amount</label>
+                <label class="form-label">{% trans "Max Amount" %}</label>
                 {{ search_form.max_amount }}
             </div>
             <div class="col-md-4 d-flex align-items-end gap-2">
@@ -108,7 +126,7 @@
                 </button>
             </div>
         </div>
-        
+
         <!-- Active Filter Tags -->
         <div class="filter-tags" id="filterTags"></div>
     </form>
@@ -122,7 +140,7 @@
                 <i class="fas fa-search search-icon"></i>
                 <input type="text" class="form-control" placeholder="Quick search sales..." id="quickSearch">
             </div>
-            
+
             <div class="form-check">
                 <input class="form-check-input" type="checkbox" id="selectAll">
                 <label class="form-check-label" for="selectAll">
@@ -130,7 +148,7 @@
                 </label>
             </div>
         </div>
-        
+
         <div class="d-flex align-items-center gap-2">
             <div class="dropdown export-dropdown">
                 <button class="btn btn-outline-primary dropdown-toggle" type="button" data-bs-toggle="dropdown">
@@ -148,11 +166,11 @@
                     </a></li>
                 </ul>
             </div>
-            
+
             <button class="btn btn-outline-secondary" onclick="refreshTable()">
                 <i class="fas fa-sync-alt"></i>
             </button>
-            
+
             <div class="dropdown">
                 <button class="btn btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown">
                     <i class="fas fa-columns me-2"></i>Columns
@@ -177,22 +195,22 @@
             </div>
         </div>
     </div>
-    
-    <div class="table-responsive">
+
+    <div class="table-responsive totall">
         <table class="table table-hover mb-0" id="salesTable">
             <thead>
                 <tr>
                     <th width="50">
                         <input type="checkbox" class="form-check-input" id="selectAllRows">
                     </th>
-                    <th>Invoice #</th>
-                    <th>Date & Time</th>
-                    <th>Customer</th>
-                    <th>Store</th>
-                    <th>Payment Method</th>
-                    <th>Amount (UGX)</th>
-                    <th>Status</th>
-                    <th>Actions</th>
+                    <th>{% trans "Invoice #" %}</th>
+                    <th>{% trans "Date & Time" %}</th>
+                    <th>{% trans "Customer" %}</th>
+                    <th>{% trans "Store" %}</th>
+                    <th>{% trans "Payment Method" %}</th>
+                    <th>{% trans "Amount (UGX)" %}</th>
+                    <th>{% trans "Status" %}</th>
+                    <th>{% trans "Actions" %}</th>
                 </tr>
             </thead>
             <tbody>
@@ -205,7 +223,7 @@
                         <div class="d-flex align-items-center">
                             <strong>{{ sale.invoice_number }}</strong>
                             {% if sale.transaction_type == 'REFUND' %}
-                                <span class="badge bg-warning ms-2">REFUND</span>
+                                <span class="badge bg-warning ms-2">{% trans "REFUND" %}</span>
                             {% endif %}
                         </div>
                         <small class="text-muted">{{ sale.transaction_id }}</small>
@@ -222,7 +240,7 @@
                                 <small class="text-muted">{{ sale.customer.phone }}</small>
                             </div>
                         {% else %}
-                            <span class="text-muted">Walk-in Customer</span>
+                            <span class="text-muted">{% trans "Walk-in Customer" %}</span>
                         {% endif %}
                     </td>
                     <td>
@@ -244,20 +262,20 @@
                     <td>
                         <div class="d-flex flex-column gap-1">
                             {% if sale.is_fiscalized %}
-                                <span class="badge fiscalized">Fiscalized</span>
+                                <span class="badge fiscalized">{% trans "Fiscalized" %}</span>
                             {% else %}
-                                <span class="badge not-fiscalized">Not Fiscalized</span>
+                                <span class="badge not-fiscalized">{% trans "Not Fiscalized" %}</span>
                             {% endif %}
 
                             {% if sale.is_refunded %}
                                 <a href="{% url 'sales:process_refund' sale.pk %}">
-                                    <span class="badge bg-danger">Refunded</span>
+                                    <span class="badge bg-danger">{% trans "Refunded" %}</span>
                                 </a>
                             {% elif sale.is_voided %}
-                                <span class="badge bg-secondary">Voided</span>
+                                <span class="badge bg-secondary">{% trans "Voided" %}</span>
                             {% else %}
                                 <a href="{% url 'sales:process_refund' sale.pk %}">
-                                    <span class="badge bg-primary">Process Refund</span>
+                                    <span class="badge bg-primary">{% trans "Process Refund" %}</span>
                                 </a>
                             {% endif %}
 
@@ -265,42 +283,42 @@
                     </td>
                     <td>
                         <div class="action-buttons">
-                            <a href="{% url 'sales:sale_detail' sale.pk %}" 
-                               class="action-btn bg-primary text-white" 
-                               title="View Details" 
+                            <a href="{% url 'sales:sale_detail' sale.pk %}"
+                               class="action-btn bg-primary text-white"
+                               title="View Details"
                                data-bs-toggle="tooltip">
                                 <i class="fas fa-eye"></i>
                             </a>
-                            
-                            <button class="action-btn bg-success text-white" 
-                                    title="Print Receipt" 
+
+                            <button class="action-btn bg-success text-white"
+                                    title="Print Receipt"
                                     data-bs-toggle="tooltip"
                                     onclick="printReceipt({{ sale.id }})">
                                 <i class="fas fa-print"></i>
                             </button>
-                            
+
                             {% if not sale.is_fiscalized %}
-                                <button class="action-btn bg-warning text-white" 
-                                        title="Fiscalize" 
+                                <button class="action-btn bg-warning text-white"
+                                        title="Fiscalize"
                                         data-bs-toggle="tooltip"
                                         onclick="fiscalizeSale({{ sale.id }})">
                                     <i class="fas fa-stamp"></i>
                                 </button>
                             {% endif %}
-                            
+
                             {% if sale.transaction_type == 'SALE' and not sale.is_refunded and not sale.is_voided %}
                             <a href="{% url 'sales:process_refund' sale.pk %}">
-                                <button class="action-btn bg-danger text-white" 
-                                        title="Process Refund" 
+                                <button class="action-btn bg-danger text-white"
+                                        title="Process Refund"
                                         data-bs-toggle="tooltip">
                                     <i class="fas fa-undo"></i>
                                 </button>
                             </a>
                             {% endif %}
-                            
+
                             <div class="dropdown">
-                                <button class="action-btn bg-secondary text-white dropdown-toggle" 
-                                        data-bs-toggle="dropdown" 
+                                <button class="action-btn bg-secondary text-white dropdown-toggle"
+                                        data-bs-toggle="dropdown"
                                         title="More Actions">
                                     <i class="fas fa-ellipsis-v"></i>
                                 </button>
@@ -330,8 +348,8 @@
                     <td colspan="9" class="text-center py-5">
                         <div class="text-muted">
                             <i class="fas fa-inbox fa-3x mb-3"></i>
-                            <p>No sales found matching your criteria</p>
-                            <a href="{% url 'sales:create_sale' %}" class="btn btn-primary">Create Your First Sale</a>
+                            <p>{% trans "No sales found matching your criteria" %}</p>
+                            <a href="{% url 'sales:create_sale' %}" class="btn btn-primary">{% trans "Create Your First Sale" %}</a>
                         </div>
                     </td>
                 </tr>
@@ -339,44 +357,44 @@
             </tbody>
         </table>
     </div>
-    
+
     <!-- Bulk Actions Bar -->
     <div class="bulk-actions" id="bulkActions">
         <form method="post" action="{% url 'sales:bulk_actions' %}" id="bulkForm">
             {% csrf_token %}
             <div class="d-flex align-items-center justify-content-between">
                 <div class="d-flex align-items-center gap-3">
-                    <span id="selectedCount">0 items selected</span>
-                    
+                    <span id="selectedCount">{% trans "0 items selected" %}</span>
+
                     <select name="action" class="form-select" style="width: auto;">
-                        <option value="">Choose Action...</option>
-                        <option value="fiscalize">Fiscalize Selected</option>
-                        <option value="print_receipts">Print Receipts</option>
-                        <option value="export_csv">Export to CSV</option>
-                        <option value="export_excel">Export to Excel</option>
+                        <option value="">{% trans "Choose Action..." %}</option>
+                        <option value="fiscalize">{% trans "Fiscalize Selected" %}</option>
+                        <option value="print_receipts">{% trans "Print Receipts" %}</option>
+                        <option value="export_csv">{% trans "Export to CSV" %}</option>
+                        <option value="export_excel">{% trans "Export to Excel" %}</option>
                     </select>
-                    
+
                     <button type="submit" class="btn btn-primary" id="executeBulkAction">
                         Execute
                     </button>
                 </div>
-                
+
                 <button type="button" class="btn btn-link" onclick="clearSelection()">
                     Clear Selection
                 </button>
             </div>
-            
+
             <input type="hidden" name="selected_sales" id="selectedSales">
         </form>
     </div>
-    
+
     <!-- Pagination -->
     {% if is_paginated %}
     <div class="d-flex justify-content-between align-items-center p-3 border-top">
         <div class="text-muted">
             Showing {{ page_obj.start_index }} to {{ page_obj.end_index }} of {{ paginator.count }} sales
         </div>
-        
+
         <nav>
             <ul class="pagination mb-0">
                 {% if page_obj.has_previous %}
@@ -391,7 +409,7 @@
                         </a>
                     </li>
                 {% endif %}
-                
+
                 {% for num in page_obj.paginator.page_range %}
                     {% if page_obj.number == num %}
                         <li class="page-item active">
@@ -403,7 +421,7 @@
                         </li>
                     {% endif %}
                 {% endfor %}
-                
+
                 {% if page_obj.has_next %}
                     <li class="page-item">
                         <a class="page-link" href="?{% if request.GET %}{{ request.GET.urlencode }}&{% endif %}page={{ page_obj.next_page_number }}">
@@ -427,7 +445,7 @@
     <div class="modal-dialog modal-lg">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title">Process Refund</h5>
+                <h5 class="modal-title">{% trans "Process Refund" %}</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
@@ -435,33 +453,33 @@
                     {% csrf_token %}
                     <div class="row g-3">
                         <div class="col-12">
-                            <label class="form-label">Reason for Refund</label>
+                            <label class="form-label">{% trans "Reason for Refund" %}</label>
                             <textarea class="form-control" name="reason" rows="3" required></textarea>
                         </div>
                         <div class="col-md-6">
-                            <label class="form-label">Refund Amount</label>
+                            <label class="form-label">{% trans "Refund Amount" %}</label>
                             <input type="number" class="form-control" name="refund_amount" step="0.01" required>
                         </div>
                         <div class="col-md-6">
-                            <label class="form-label">Refund Method</label>
+                            <label class="form-label">{% trans "Refund Method" %}</label>
                             <select class="form-select" name="refund_method" required>
-                                <option value="CASH">Cash</option>
-                                <option value="CARD">Credit Card</option>
-                                <option value="MOBILE_MONEY">Mobile Money</option>
-                                <option value="BANK_TRANSFER">Bank Transfer</option>
+                                <option value="CASH">{% trans "Cash" %}</option>
+                                <option value="CARD">{% trans "Credit Card" %}</option>
+                                <option value="MOBILE_MONEY">{% trans "Mobile Money" %}</option>
+                                <option value="BANK_TRANSFER">{% trans "Bank Transfer" %}</option>
                             </select>
                         </div>
                     </div>
-                    
+
                     <div class="mt-4">
-                        <h6>Items to Refund</h6>
+                        <h6>{% trans "Items to Refund" %}</h6>
                         <div id="refundItems"></div>
                     </div>
                 </form>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                <button type="button" class="btn btn-danger" onclick="processRefund()">Process Refund</button>
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">{% trans "Cancel" %}</button>
+                <button type="button" class="btn btn-danger" onclick="processRefund()">{% trans "Process Refund" %}</button>
             </div>
         </div>
     </div>
@@ -472,12 +490,12 @@
     <div class="modal-dialog modal-xl">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title">Quick Sale</h5>
+                <h5 class="modal-title">{% trans "Quick Sale" %}</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
                 <!-- Quick sale form will be loaded here -->
-                <div id="quickSaleContent">Loading...</div>
+                <div id="quickSaleContent">{% trans "Loading..." %}</div>
             </div>
         </div>
     </div>
