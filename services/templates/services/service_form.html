@@ -1,177 +1,340 @@
-{% extends "services/base.html" %}
+{% extends "base.html" %}
+{% load static %}
+{% load i18n %}
 
-{% block title %}{{ action }} Service{% endblock %}
-{% block page_title %}{{ action }} Service{% endblock %}
+{% block title %}{% if service %}{% trans "Edit Service" %}{% else %}{% trans "New Service" %}{% endif %} | {{ block.super }}{% endblock %}
+
+{% block breadcrumb_items %}
+<li class="breadcrumb-item"><a href="{% url 'user_dashboard' %}">{% trans "Home" %}</a></li>
+<li class="breadcrumb-item"><a href="{% url 'services:dashboard' %}">{% trans "Services" %}</a></li>
+<li class="breadcrumb-item"><a href="{% url 'services:service_list' %}">{% trans "All Services" %}</a></li>
+<li class="breadcrumb-item active">{% if service %}{% trans "Edit" %}{% else %}{% trans "New" %}{% endif %}</li>
+{% endblock %}
 
 {% block content %}
-<div class="row justify-content-center">
-    <div class="col-lg-8">
-        <div class="card">
-            <div class="card-header">
-                <h5 class="mb-0">{{ action }} Service</h5>
+<div class="container-fluid">
+    <div class="row justify-content-center">
+        <div class="col-lg-10">
+            <!-- Page Header -->
+            <div class="mb-4">
+                <h1 class="h3 mb-1">{{ action }} {% trans "Service" %}</h1>
+                <p class="text-muted mb-0">{% trans "Fill in the service details below" %}</p>
             </div>
-            <div class="card-body">
-                <form method="post" enctype="multipart/form-data">
-                    {% csrf_token %}
 
-                    <div class="row">
-                        <div class="col-md-6 mb-3">
-                            <label class="form-label">Name *</label>
-                            {{ form.name }}
-                        </div>
-                        <div class="col-md-6 mb-3">
-                            <label class="form-label">Code *</label>
-                            {{ form.code }}
-                        </div>
+            <form method="post" enctype="multipart/form-data" id="serviceForm">
+                {% csrf_token %}
+
+                <!-- Basic Information -->
+                <div class="card border-0 mb-4">
+                    <div class="card-header bg-transparent">
+                        <h5 class="mb-0">
+                            <i class="bi bi-info-circle text-primary me-2"></i>{% trans "Basic Information" %}
+                        </h5>
                     </div>
+                    <div class="card-body">
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label for="{{ form.name.id_for_label }}" class="form-label">
+                                    {% trans "Service Name" %} <span class="text-danger">*</span>
+                                </label>
+                                {{ form.name }}
+                                {% if form.name.errors %}
+                                <div class="invalid-feedback d-block">{{ form.name.errors }}</div>
+                                {% endif %}
+                            </div>
 
-                    <div class="row">
-                        <div class="col-md-6 mb-3">
-                            <label class="form-label">Category</label>
-                            {{ form.category }}
-                        </div>
-                        <div class="col-md-6 mb-3">
-                            <label class="form-label">Service Type *</label>
-                            {{ form.service_type }}
-                        </div>
-                    </div>
+                            <div class="col-md-6">
+                                <label for="{{ form.code.id_for_label }}" class="form-label">
+                                    {% trans "Service Code" %} <span class="text-danger">*</span>
+                                </label>
+                                {{ form.code }}
+                                {% if form.code.errors %}
+                                <div class="invalid-feedback d-block">{{ form.code.errors }}</div>
+                                {% endif %}
+                            </div>
 
-                    <div class="mb-3">
-                        <label class="form-label">Description</label>
-                        {{ form.description }}
-                    </div>
+                            <div class="col-md-6">
+                                <label for="{{ form.category.id_for_label }}" class="form-label">
+                                    {% trans "Category" %}
+                                </label>
+                                {{ form.category }}
+                                {% if form.category.errors %}
+                                <div class="invalid-feedback d-block">{{ form.category.errors }}</div>
+                                {% endif %}
+                            </div>
 
-                    <div class="row">
-                        <div class="col-md-4 mb-3">
-                            <label class="form-label">Base Price *</label>
-                            {{ form.base_price }}
-                        </div>
-                        <div class="col-md-4 mb-3">
-                            <label class="form-label">Cost Price</label>
-                            {{ form.cost_price }}
-                        </div>
-                        <div class="col-md-4 mb-3">
-                            <label class="form-label">Hourly Rate</label>
-                            {{ form.hourly_rate }}
-                        </div>
-                    </div>
+                            <div class="col-md-6">
+                                <label for="{{ form.service_type.id_for_label }}" class="form-label">
+                                    {% trans "Service Type" %} <span class="text-danger">*</span>
+                                </label>
+                                {{ form.service_type }}
+                                {% if form.service_type.errors %}
+                                <div class="invalid-feedback d-block">{{ form.service_type.errors }}</div>
+                                {% endif %}
+                            </div>
 
-                    <div class="row">
-                        <div class="col-md-6 mb-3">
-                            <label class="form-label">Tax Rate (%)</label>
-                            {{ form.tax_rate }}
-                        </div>
-                        <div class="col-md-6 mb-3 d-flex align-items-end">
-                            <div class="form-check">
-                                {{ form.is_tax_inclusive }}
-                                <label class="form-check-label">Tax Inclusive</label>
+                            <div class="col-md-6">
+                                <label for="{{ form.store.id_for_label }}" class="form-label">
+                                    {% trans "Store" %} <span class="text-danger">*</span>
+                                </label>
+                                {{ form.store }}
+                                {% if form.store.errors %}
+                                <div class="invalid-feedback d-block">{{ form.store.errors }}</div>
+                                {% endif %}
+                            </div>
+
+                            <div class="col-12">
+                                <label for="{{ form.description.id_for_label }}" class="form-label">
+                                    {% trans "Description" %}
+                                </label>
+                                {{ form.description }}
+                                {% if form.description.errors %}
+                                <div class="invalid-feedback d-block">{{ form.description.errors }}</div>
+                                {% endif %}
+                            </div>
+
+                            <div class="col-md-6">
+                                <label for="{{ form.image.id_for_label }}" class="form-label">
+                                    {% trans "Image" %}
+                                </label>
+                                {{ form.image }}
+                                {% if form.image.errors %}
+                                <div class="invalid-feedback d-block">{{ form.image.errors }}</div>
+                                {% endif %}
+                                {% if service and service.image %}
+                                <div class="mt-2">
+                                    <img src="{{ service.image.url }}" alt="{{ service.name }}"
+                                         class="img-thumbnail" style="max-width: 200px;">
+                                </div>
+                                {% endif %}
+                            </div>
+
+                            <div class="col-md-6">
+                                <label for="{{ form.tags.id_for_label }}" class="form-label">
+                                    {% trans "Tags" %}
+                                </label>
+                                {{ form.tags }}
+                                <small class="form-text text-muted">{% trans "Comma-separated tags" %}</small>
+                                {% if form.tags.errors %}
+                                <div class="invalid-feedback d-block">{{ form.tags.errors }}</div>
+                                {% endif %}
                             </div>
                         </div>
                     </div>
+                </div>
 
-                    <div class="row">
-                        <div class="col-md-6 mb-3">
-                            <label class="form-label">Default Duration (minutes)</label>
-                            {{ form.default_duration }}
-                        </div>
-                        <div class="col-md-6 mb-3">
-                            <label class="form-label">Staff Commission (%)</label>
-                            {{ form.staff_commission_rate }}
-                        </div>
+                <!-- Pricing -->
+                <div class="card border-0 mb-4">
+                    <div class="card-header bg-transparent">
+                        <h5 class="mb-0">
+                            <i class="bi bi-currency-exchange text-success me-2"></i>{% trans "Pricing" %}
+                        </h5>
                     </div>
+                    <div class="card-body">
+                        <div class="row g-3">
+                            <div class="col-md-4">
+                                <label for="{{ form.base_price.id_for_label }}" class="form-label">
+                                    {% trans "Base Price" %} <span class="text-danger">*</span>
+                                </label>
+                                {{ form.base_price }}
+                                {% if form.base_price.errors %}
+                                <div class="invalid-feedback d-block">{{ form.base_price.errors }}</div>
+                                {% endif %}
+                            </div>
 
-                    <div class="mb-3">
-                        <label class="form-label">Image</label>
-                        {{ form.image }}
-                    </div>
+                            <div class="col-md-4">
+                                <label for="{{ form.cost_price.id_for_label }}" class="form-label">
+                                    {% trans "Cost Price" %}
+                                </label>
+                                {{ form.cost_price }}
+                                {% if form.cost_price.errors %}
+                                <div class="invalid-feedback d-block">{{ form.cost_price.errors }}</div>
+                                {% endif %}
+                            </div>
 
-                    <div class="mb-3">
-                        <label class="form-label">Tags</label>
-                        {{ form.tags }}
-                    </div>
+                            <div class="col-md-4">
+                                <label for="{{ form.hourly_rate.id_for_label }}" class="form-label">
+                                    {% trans "Hourly Rate" %}
+                                </label>
+                                {{ form.hourly_rate }}
+                                {% if form.hourly_rate.errors %}
+                                <div class="invalid-feedback d-block">{{ form.hourly_rate.errors }}</div>
+                                {% endif %}
+                            </div>
 
-                    <div class="row">
-                        <div class="col-md-4">
-                            <div class="form-check mb-3">
-                                {{ form.requires_appointment }}
-                                <label class="form-check-label">Requires Appointment</label>
+                            <div class="col-md-6">
+                                <label for="{{ form.tax_rate.id_for_label }}" class="form-label">
+                                    {% trans "Tax Rate" %}
+                                </label>
+                                {{ form.tax_rate }}
+                                {% if form.tax_rate.errors %}
+                                <div class="invalid-feedback d-block">{{ form.tax_rate.errors }}</div>
+                                {% endif %}
                             </div>
-                        </div>
-                        <div class="col-md-4">
-                            <div class="form-check mb-3">
-                                {{ form.allow_online_booking }}
-                                <label class="form-check-label">Allow Online Booking</label>
-                            </div>
-                        </div>
-                        <div class="col-md-4">
-                            <div class="form-check mb-3">
-                                {{ form.is_recurring }}
-                                <label class="form-check-label">Is Recurring</label>
-                            </div>
-                        </div>
-                    </div>
 
-                    <div class="row">
-                        <div class="col-md-4">
-                            <div class="form-check mb-3">
-                                {{ form.requires_staff }}
-                                <label class="form-check-label">Requires Staff</label>
-                            </div>
-                        </div>
-                        <div class="col-md-4">
-                            <div class="form-check mb-3">
-                                {{ form.consumes_inventory }}
-                                <label class="form-check-label">Consumes Inventory</label>
-                            </div>
-                        </div>
-                        <div class="col-md-4">
-                            <div class="form-check mb-3">
-                                {{ form.is_active }}
-                                <label class="form-check-label">Active</label>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="row">
-                        <div class="col-md-6">
-                            <div class="form-check mb-3">
-                                {{ form.is_featured }}
-                                <label class="form-check-label">Featured</label>
-                            </div>
-                        </div>
-                        <div class="col-md-6">
-                            <div class="form-check mb-3">
-                                {{ form.available_online }}
-                                <label class="form-check-label">Available Online</label>
+                            <div class="col-md-6">
+                                <label for="{{ form.staff_commission_rate.id_for_label }}" class="form-label">
+                                    {% trans "Staff Commission (%)" %}
+                                </label>
+                                {{ form.staff_commission_rate }}
+                                {% if form.staff_commission_rate.errors %}
+                                <div class="invalid-feedback d-block">{{ form.staff_commission_rate.errors }}</div>
+                                {% endif %}
                             </div>
                         </div>
                     </div>
+                </div>
 
-                    <div class="d-flex justify-content-between">
-                        <a href="{% url 'services:service_list' %}" class="btn btn-secondary">
-                            <i class="fas fa-times"></i> Cancel
-                        </a>
-                        <button type="submit" class="btn btn-primary">
-                            <i class="fas fa-save"></i> {{ action }} Service
-                        </button>
+                <!-- Service Settings -->
+                <div class="card border-0 mb-4">
+                    <div class="card-header bg-transparent">
+                        <h5 class="mb-0">
+                            <i class="bi bi-gear text-info me-2"></i>{% trans "Service Settings" %}
+                        </h5>
                     </div>
-                </form>
-            </div>
+                    <div class="card-body">
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label for="{{ form.default_duration.id_for_label }}" class="form-label">
+                                    {% trans "Duration (minutes)" %}
+                                </label>
+                                {{ form.default_duration }}
+                                {% if form.default_duration.errors %}
+                                <div class="invalid-feedback d-block">{{ form.default_duration.errors }}</div>
+                                {% endif %}
+                            </div>
+
+                            <div class="col-md-6">
+                                <label for="{{ form.recurrence_interval.id_for_label }}" class="form-label">
+                                    {% trans "Recurrence Interval" %}
+                                </label>
+                                {{ form.recurrence_interval }}
+                                {% if form.recurrence_interval.errors %}
+                                <div class="invalid-feedback d-block">{{ form.recurrence_interval.errors }}</div>
+                                {% endif %}
+                            </div>
+
+                            <div class="col-12">
+                                <div class="row g-3">
+                                    <div class="col-md-3">
+                                        <div class="form-check form-switch">
+                                            {{ form.requires_appointment }}
+                                            <label class="form-check-label" for="{{ form.requires_appointment.id_for_label }}">
+                                                {% trans "Requires Appointment" %}
+                                            </label>
+                                        </div>
+                                    </div>
+
+                                    <div class="col-md-3">
+                                        <div class="form-check form-switch">
+                                            {{ form.allow_online_booking }}
+                                            <label class="form-check-label" for="{{ form.allow_online_booking.id_for_label }}">
+                                                {% trans "Allow Online Booking" %}
+                                            </label>
+                                        </div>
+                                    </div>
+
+                                    <div class="col-md-3">
+                                        <div class="form-check form-switch">
+                                            {{ form.requires_staff }}
+                                            <label class="form-check-label" for="{{ form.requires_staff.id_for_label }}">
+                                                {% trans "Requires Staff" %}
+                                            </label>
+                                        </div>
+                                    </div>
+
+                                    <div class="col-md-3">
+                                        <div class="form-check form-switch">
+                                            {{ form.is_recurring }}
+                                            <label class="form-check-label" for="{{ form.is_recurring.id_for_label }}">
+                                                {% trans "Is Recurring" %}
+                                            </label>
+                                        </div>
+                                    </div>
+
+                                    <div class="col-md-3">
+                                        <div class="form-check form-switch">
+                                            {{ form.consumes_inventory }}
+                                            <label class="form-check-label" for="{{ form.consumes_inventory.id_for_label }}">
+                                                {% trans "Consumes Inventory" %}
+                                            </label>
+                                        </div>
+                                    </div>
+
+                                    <div class="col-md-3">
+                                        <div class="form-check form-switch">
+                                            {{ form.is_active }}
+                                            <label class="form-check-label" for="{{ form.is_active.id_for_label }}">
+                                                {% trans "Active" %}
+                                            </label>
+                                        </div>
+                                    </div>
+
+                                    <div class="col-md-3">
+                                        <div class="form-check form-switch">
+                                            {{ form.is_featured }}
+                                            <label class="form-check-label" for="{{ form.is_featured.id_for_label }}">
+                                                {% trans "Featured" %}
+                                            </label>
+                                        </div>
+                                    </div>
+
+                                    <div class="col-md-3">
+                                        <div class="form-check form-switch">
+                                            {{ form.available_online }}
+                                            <label class="form-check-label" for="{{ form.available_online.id_for_label }}">
+                                                {% trans "Available Online" %}
+                                            </label>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Form Actions -->
+                <div class="card border-0 mb-4">
+                    <div class="card-body">
+                        <div class="d-flex gap-2">
+                            <button type="submit" class="btn btn-primary">
+                                <i class="bi bi-check-circle me-2"></i>
+                                {% if service %}{% trans "Update Service" %}{% else %}{% trans "Create Service" %}{% endif %}
+                            </button>
+                            <a href="{% url 'services:service_list' %}" class="btn btn-outline-secondary">
+                                <i class="bi bi-x-circle me-2"></i>{% trans "Cancel" %}
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </form>
         </div>
     </div>
 </div>
 
-{% endblock %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Add Bootstrap classes to form fields
+    const formControls = document.querySelectorAll('#serviceForm input:not([type="checkbox"]), #serviceForm select, #serviceForm textarea');
+    formControls.forEach(field => {
+        field.classList.add('form-control');
+    });
 
-{% block extra_css %}
-<style>
-    .form-control, .form-select {
-        border: 1px solid #e2e8f0;
-        border-radius: 6px;
-    }
-    .form-control:focus, .form-select:focus {
-        border-color: var(--primary-color);
-        box-shadow: 0 0 0 0.2rem rgba(79, 70, 229, 0.1);
-    }
-</style>
+    // Handle checkboxes
+    const checkboxes = document.querySelectorAll('#serviceForm input[type="checkbox"]');
+    checkboxes.forEach(checkbox => {
+        checkbox.classList.add('form-check-input');
+    });
+
+    // Form validation
+    const form = document.getElementById('serviceForm');
+    form.addEventListener('submit', function(e) {
+        if (!form.checkValidity()) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+        form.classList.add('was-validated');
+    });
+});
+</script>
 {% endblock %}

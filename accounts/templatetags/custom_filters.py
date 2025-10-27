@@ -14,6 +14,27 @@ def absolute(value):
     except (ValueError, TypeError):
         return 0
 
+@register.filter
+def get_item(dictionary, key):
+    """Return dictionary[key] safely."""
+    return dictionary.get(key)
+
+@register.filter
+def is_section_active(nav_item, current_section):
+    """
+    Check if the nav_item section is currently active
+    """
+    return getattr(nav_item, "name", "") == current_section
+
+@register.filter
+def has_nav_permission(user, perm_name):
+    """
+    Check if the user has a specific permission
+    Example: 'accounts.change_customuser'
+    """
+    if not user or user.is_anonymous:
+        return False
+    return user.has_perm(perm_name)
 
 @register.filter
 def mul(value, arg):

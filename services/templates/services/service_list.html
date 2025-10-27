@@ -1,141 +1,220 @@
-{% extends "services/base.html" %}
+{% extends "base.html" %}
+{% load static %}
+{% load i18n %}
 
-{% block title %}Services{% endblock %}
-{% block page_title %}Service Management{% endblock %}
+{% block title %}{% trans "Services" %} | {{ block.super }}{% endblock %}
+
+{% block breadcrumb_items %}
+<li class="breadcrumb-item"><a href="{% url 'user_dashboard' %}">{% trans "Home" %}</a></li>
+<li class="breadcrumb-item"><a href="{% url 'services:dashboard' %}">{% trans "Services" %}</a></li>
+<li class="breadcrumb-item active">{% trans "All Services" %}</li>
+{% endblock %}
 
 {% block content %}
-<div class="card">
-    <div class="card-header d-flex justify-content-between align-items-center">
-        <h5 class="mb-0"><i class="fas fa-concierge-bell"></i> All Services</h5>
+<div class="container-fluid">
+    <!-- Page Header -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h1 class="h3 mb-1">{% trans "Services" %}</h1>
+            <p class="text-muted mb-0">{% trans "Manage your service offerings" %}</p>
+        </div>
         <a href="{% url 'services:service_create' %}" class="btn btn-primary">
-            <i class="fas fa-plus"></i> Add New Service
+            <i class="bi bi-plus-circle me-2"></i>{% trans "Add Service" %}
         </a>
     </div>
-    <div class="card-body">
-        <!-- Filters -->
-        <form method="get" class="row g-3 mb-4">
-            <div class="col-md-3">
-                <input type="text" name="search" class="form-control" placeholder="Search services..."
-                       value="{{ search_query }}">
-            </div>
-            <div class="col-md-3">
-                <select name="category" class="form-select">
-                    <option value="">All Categories</option>
-                    {% for category in categories %}
-                    <option value="{{ category.id }}" {% if category.id|stringformat:"s" == selected_category %}selected{% endif %}>
-                        {{ category.name }}
-                    </option>
-                    {% endfor %}
-                </select>
-            </div>
-            <div class="col-md-3">
-                <select name="service_type" class="form-select">
-                    <option value="">All Types</option>
-                    {% for type in service_types %}
-                    <option value="{{ type.id }}" {% if type.id|stringformat:"s" == selected_type %}selected{% endif %}>
-                        {{ type.name }}
-                    </option>
-                    {% endfor %}
-                </select>
-            </div>
-            <div class="col-md-3">
-                <button type="submit" class="btn btn-primary w-100">
-                    <i class="fas fa-filter"></i> Filter
-                </button>
-            </div>
-        </form>
 
-        <!-- Services Table -->
-        <div class="table-responsive">
-            <table class="table table-hover">
-                <thead>
-                    <tr>
-                        <th>Code</th>
-                        <th>Name</th>
-                        <th>Category</th>
-                        <th>Type</th>
-                        <th>Price</th>
-                        <th>Duration</th>
-                        <th>Status</th>
-                        <th>Actions</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for service in page_obj %}
-                    <tr>
-                        <td><strong>{{ service.code }}</strong></td>
-                        <td>
-                            <div>{{ service.name }}</div>
-                            {% if service.is_featured %}
-                            <span class="badge bg-warning">Featured</span>
-                            {% endif %}
-                        </td>
-                        <td>{{ service.category.name|default:"Uncategorized" }}</td>
-                        <td>{{ service.service_type.name }}</td>
-                        <td>
-                            ${{ service.base_price }}
-                            {% if service.service_type.pricing_type == 'hourly' %}
-                            <small class="text-muted">/hr</small>
-                            {% endif %}
-                        </td>
-                        <td>{{ service.default_duration|default:"-" }} min</td>
-                        <td>
-                            {% if service.is_active %}
-                            <span class="badge bg-success">Active</span>
-                            {% else %}
-                            <span class="badge bg-secondary">Inactive</span>
-                            {% endif %}
-                        </td>
-                        <td>
-                            <div class="btn-group btn-group-sm">
-                                <a href="{% url 'services:service_detail' service.pk %}"
-                                   class="btn btn-outline-info" title="View">
-                                    <i class="fas fa-eye"></i>
-                                </a>
-                                <a href="{% url 'services:service_update' service.pk %}"
-                                   class="btn btn-outline-primary" title="Edit">
-                                    <i class="fas fa-edit"></i>
-                                </a>
-                                <a href="{% url 'services:appointment_create' %}?service={{ service.pk }}"
-                                   class="btn btn-outline-success" title="Book">
-                                    <i class="fas fa-calendar-plus"></i>
-                                </a>
-                            </div>
-                        </td>
-                    </tr>
-                    {% empty %}
-                    <tr>
-                        <td colspan="8" class="text-center text-muted py-4">No services found</td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
+    <!-- Filters -->
+    <div class="card border-0 mb-4">
+        <div class="card-body">
+            <form method="get" class="row g-3" id="filterForm">
+                <div class="col-md-3">
+                    <label class="form-label">{% trans "Search" %}</label>
+                    <input type="text" name="search" class="form-control" 
+                           placeholder="{% trans 'Search services...' %}" 
+                           value="{{ search_query }}">
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">{% trans "Category" %}</label>
+                    <select name="category" class="form-select">
+                        <option value="">{% trans "All Categories" %}</option>
+                        {% for category in categories %}
+                        <option value="{{ category.id }}" {% if selected_category == category.id|stringformat:"s" %}selected{% endif %}>
+                            {{ category.name }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">{% trans "Service Type" %}</label>
+                    <select name="service_type" class="form-select">
+                        <option value="">{% trans "All Types" %}</option>
+                        {% for type in service_types %}
+                        <option value="{{ type.id }}" {% if selected_type == type.id|stringformat:"s" %}selected{% endif %}>
+                            {{ type.name }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">{% trans "Store" %}</label>
+                    <select name="store" class="form-select">
+                        <option value="">{% trans "All Stores" %}</option>
+                        {% for store in stores %}
+                        <option value="{{ store.id }}" {% if selected_store == store.id|stringformat:"s" %}selected{% endif %}>
+                            {{ store.name }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-12">
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-search me-2"></i>{% trans "Filter" %}
+                    </button>
+                    <a href="{% url 'services:service_list' %}" class="btn btn-outline-secondary">
+                        <i class="bi bi-x-circle me-2"></i>{% trans "Clear" %}
+                    </a>
+                </div>
+            </form>
         </div>
-
-        <!-- Pagination -->
-        {% if page_obj.has_other_pages %}
-        <nav>
-            <ul class="pagination justify-content-center">
-                {% if page_obj.has_previous %}
-                <li class="page-item">
-                    <a class="page-link" href="?page={{ page_obj.previous_page_number }}">Previous</a>
-                </li>
-                {% endif %}
-
-                {% for num in page_obj.paginator.page_range %}
-                <li class="page-item {% if page_obj.number == num %}active{% endif %}">
-                    <a class="page-link" href="?page={{ num }}">{{ num }}</a>
-                </li>
-                {% endfor %}
-
-                {% if page_obj.has_next %}
-                <li class="page-item">
-                    <a class="page-link" href="?page={{ page_obj.next_page_number }}">Next</a>
-                </li>
-                {% endif %}
-            </ul>
-        </nav>
-        {% endif %}
     </div>
+
+    <!-- Services Grid -->
+    {% if page_obj %}
+    <div class="row g-4 mb-4">
+        {% for service in page_obj %}
+        <div class="col-md-6 col-lg-4">
+            <div class="card h-100 border-0 service-card">
+                {% if service.image %}
+                <img src="{{ service.image.url }}" class="card-img-top" alt="{{ service.name }}"
+                     style="height: 200px; object-fit: cover;">
+                {% else %}
+                <div class="card-img-top bg-light d-flex align-items-center justify-content-center" 
+                     style="height: 200px;">
+                    <i class="bi bi-concierge-bell text-muted" style="font-size: 3rem;"></i>
+                </div>
+                {% endif %}
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-start mb-2">
+                        <h5 class="card-title mb-0">{{ service.name }}</h5>
+                        {% if service.is_featured %}
+                        <span class="badge bg-warning">
+                            <i class="bi bi-star-fill"></i> {% trans "Featured" %}
+                        </span>
+                        {% endif %}
+                    </div>
+                    <p class="text-muted small mb-2">
+                        <i class="bi bi-tag me-1"></i>{{ service.code }} | 
+                        <i class="bi bi-shop me-1"></i>{{ service.store.name }}
+                    </p>
+                    <p class="card-text text-muted">{{ service.description|truncatewords:15 }}</p>
+                    
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <div>
+                            <div class="h4 text-primary mb-0">UGX {{ service.base_price|floatformat:0 }}</div>
+                            {% if service.default_duration %}
+                            <small class="text-muted">{{ service.default_duration }} {% trans "mins" %}</small>
+                            {% endif %}
+                        </div>
+                        <div>
+                            {% if service.is_active %}
+                            <span class="badge bg-success">{% trans "Active" %}</span>
+                            {% else %}
+                            <span class="badge bg-secondary">{% trans "Inactive" %}</span>
+                            {% endif %}
+                        </div>
+                    </div>
+
+                    <div class="d-flex gap-2">
+                        <a href="{% url 'services:service_detail' service.pk %}" 
+                           class="btn btn-sm btn-primary flex-grow-1">
+                            <i class="bi bi-eye me-1"></i>{% trans "View" %}
+                        </a>
+                        {% if service.requires_appointment %}
+                        <a href="{% url 'services:appointment_create' %}?service={{ service.id }}" 
+                           class="btn btn-sm btn-outline-primary">
+                            <i class="bi bi-calendar-plus"></i>
+                        </a>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+
+    <!-- Pagination -->
+    {% if page_obj.has_other_pages %}
+    <nav aria-label="{% trans 'Page navigation' %}">
+        <ul class="pagination justify-content-center">
+            {% if page_obj.has_previous %}
+            <li class="page-item">
+                <a class="page-link" href="?page=1{% if search_query %}&search={{ search_query }}{% endif %}">
+                    <i class="bi bi-chevron-double-left"></i>
+                </a>
+            </li>
+            <li class="page-item">
+                <a class="page-link" href="?page={{ page_obj.previous_page_number }}{% if search_query %}&search={{ search_query }}{% endif %}">
+                    <i class="bi bi-chevron-left"></i>
+                </a>
+            </li>
+            {% endif %}
+
+            {% for num in page_obj.paginator.page_range %}
+                {% if page_obj.number == num %}
+                <li class="page-item active"><span class="page-link">{{ num }}</span></li>
+                {% elif num > page_obj.number|add:'-3' and num < page_obj.number|add:'3' %}
+                <li class="page-item">
+                    <a class="page-link" href="?page={{ num }}{% if search_query %}&search={{ search_query }}{% endif %}">{{ num }}</a>
+                </li>
+                {% endif %}
+            {% endfor %}
+
+            {% if page_obj.has_next %}
+            <li class="page-item">
+                <a class="page-link" href="?page={{ page_obj.next_page_number }}{% if search_query %}&search={{ search_query }}{% endif %}">
+                    <i class="bi bi-chevron-right"></i>
+                </a>
+            </li>
+            <li class="page-item">
+                <a class="page-link" href="?page={{ page_obj.paginator.num_pages }}{% if search_query %}&search={{ search_query }}{% endif %}">
+                    <i class="bi bi-chevron-double-right"></i>
+                </a>
+            </li>
+            {% endif %}
+        </ul>
+    </nav>
+    {% endif %}
+
+    {% else %}
+    <div class="card border-0">
+        <div class="card-body text-center py-5">
+            <i class="bi bi-inbox text-muted" style="font-size: 4rem;"></i>
+            <h4 class="mt-3">{% trans "No Services Found" %}</h4>
+            <p class="text-muted">{% trans "Start by adding your first service" %}</p>
+            <a href="{% url 'services:service_create' %}" class="btn btn-primary mt-3">
+                <i class="bi bi-plus-circle me-2"></i>{% trans "Add Service" %}
+            </a>
+        </div>
+    </div>
+    {% endif %}
 </div>
+
+<style>
+    .service-card {
+        transition: transform 0.3s ease, box-shadow 0.3s ease;
+    }
+
+    .service-card:hover {
+        transform: translateY(-5px);
+        box-shadow: var(--shadow-lg);
+    }
+
+    [data-theme="dark"] .service-card {
+        background-color: var(--bg-secondary);
+    }
+
+    [data-theme="dark"] .service-card .card-img-top.bg-light {
+        background-color: var(--bg-tertiary) !important;
+    }
+</style>
 {% endblock %}

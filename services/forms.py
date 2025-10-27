@@ -9,7 +9,7 @@ class ServiceForm(forms.ModelForm):
     class Meta:
         model = Service
         fields = [
-            'name', 'code', 'description', 'category', 'service_type',
+            'store', 'name', 'code', 'description', 'category', 'service_type',
             'base_price', 'cost_price', 'hourly_rate', 'tax_rate',
             'default_duration', 'requires_appointment', 'allow_online_booking',
             'is_recurring', 'recurrence_interval', 'requires_staff',
@@ -22,7 +22,6 @@ class ServiceForm(forms.ModelForm):
             'base_price': forms.NumberInput(attrs={'step': '0.01'}),
             'cost_price': forms.NumberInput(attrs={'step': '0.01'}),
             'hourly_rate': forms.NumberInput(attrs={'step': '0.01'}),
-            'tax_rate': forms.NumberInput(attrs={'step': '0.01'}),
             'staff_commission_rate': forms.NumberInput(attrs={'step': '0.01'}),
         }
 
@@ -31,14 +30,29 @@ class ServiceAppointmentForm(forms.ModelForm):
     class Meta:
         model = ServiceAppointment
         fields = [
-            'service', 'pricing_tier', 'scheduled_date', 'scheduled_time',
-            'duration_minutes', 'assigned_staff', 'notes'
+            'service', 'pricing_tier', 'customer', 'store',
+            'scheduled_date', 'scheduled_time', 'duration_minutes',
+            'assigned_staff', 'notes'
         ]
         widgets = {
             'scheduled_date': forms.DateInput(attrs={'type': 'date'}),
             'scheduled_time': forms.TimeInput(attrs={'type': 'time'}),
             'notes': forms.Textarea(attrs={'rows': 3}),
         }
+
+    def __init__(self, *args, **kwargs):
+        user = kwargs.pop('user', None)
+        super().__init__(*args, **kwargs)
+
+        # Filter services and store by tenant
+        if user and hasattr(user, 'company'):
+            from stores.models import Store
+            self.fields['store'].queryset = Store.objects.filter(
+                company=user.company,
+                is_active=True
+            )
+            if self.fields['store'].queryset.count() == 1:
+                self.fields['store'].initial = self.fields['store'].queryset.first()
 
 
 class ServiceExecutionForm(forms.ModelForm):
@@ -60,7 +74,7 @@ class ServicePackageForm(forms.ModelForm):
     class Meta:
         model = ServicePackage
         fields = [
-            'name', 'code', 'description', 'price',
+            'store', 'name', 'code', 'description', 'price',
             'discount_amount', 'discount_percentage',
             'validity_days', 'max_uses', 'is_active'
         ]
@@ -75,8 +89,11 @@ class ServiceReviewForm(forms.ModelForm):
         fields = ['rating', 'review_text', 'staff_rating']
         widgets = {
             'review_text': forms.Textarea(attrs={'rows': 4}),
-            'rating': forms.RadioSelect(choices=[(i, f'{i} Star{"s" if i > 1 else ""}') for i in range(1, 6)]),
-            'staff_rating': forms.RadioSelect(choices=[(i, f'{i} Star{"s" if i > 1 else ""}') for i in range(1, 6)]),
+            'rating': forms.RadioSelect(
+                choices=[(i, f'{i} Star{"s" if i > 1 else ""}') for i in range(1, 6)]
+            ),
+            'staff_rating': forms.RadioSelect(
+                choices=[(i, f'{i} Star{"s" if i > 1 else ""}') for i in range(1, 6)]
+            ),
         }
-
 

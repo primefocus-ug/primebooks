@@ -1,7 +1,3 @@
-"""
-Django POS Services App - Fully Integrated with Multi-Tenant SaaS POS
-File: services/models.py
-"""
 from django.db import models
 from django.core.validators import MinValueValidator, MaxValueValidator
 from django.contrib.auth import get_user_model
@@ -97,7 +93,7 @@ class Service(models.Model):
     code = models.CharField(max_length=50, unique=True)
     description = models.TextField(blank=True)
     category = models.ForeignKey(
-        ServiceCategory,
+        'inventory.Category',
         on_delete=models.SET_NULL,
         null=True,
         related_name='services'

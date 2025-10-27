@@ -42,6 +42,7 @@ urlpatterns += i18n_patterns(
     path('notifications/', include('notifications.urls')),
     path('reports/', include('reports.urls')),
     path('expenses/', include('expenses.urls')),
+    path('services/', include('services.urls')),
     path('efris-man/',include('efris.ford')),
     path('efris/',include('efris.urls')),
     path('errors/', include((error_patterns, 'errors'), namespace='errors')),

@@ -1,17 +1,11 @@
 {% load navigation_tags %}
+{% load static %}
+{% load custom_filters %}
 
 <!-- Mobile Hamburger Button -->
-<button class="hamburger-btn d-md-none"
-        id="sidebarToggle"
-        aria-label="Toggle navigation menu"
-        aria-expanded="false"
-        aria-controls="navigationSidebar">
-    <span class="hamburger-line"></span>
-    <span class="hamburger-line"></span>
-    <span class="hamburger-line"></span>
-</button>
 
-<!-- Navigation Sidebar Wrapper -->
+
+<!-- Navigation Sidebar -->
 <div class="navigation-sidebar" id="navigationSidebar">
     <!-- Close button for mobile -->
     <button class="sidebar-close d-md-none"
@@ -20,820 +14,942 @@
         <i class="bi bi-x-lg"></i>
     </button>
 
-    {% for nav_item in navigation_items %}
-        <div class="nav-section">
-            {% if nav_item.children %}
-                <!-- Parent item with collapsible children -->
-                <button class="btn btn-toggle align-items-center rounded collapsed w-100 text-start"
-                        data-bs-toggle="collapse"
-                        data-bs-target="#{{ nav_item.name|slugify_nav }}Collapse"
-                        aria-expanded="false"
-                        aria-controls="{{ nav_item.name|slugify_nav }}Collapse"
-                        aria-label="Toggle {{ nav_item.name }} menu">
-                    {% if nav_item.icon %}
-                        <i class="{{ nav_item.icon }}"></i>
-                    {% else %}
-                        <i class="bi bi-folder"></i>
-                    {% endif %}
-                    <span class="nav-text">{{ nav_item.name }}</span>
-                    <i class="bi bi-chevron-down ms-auto toggle-icon"></i>
-                </button>
+    <!-- Navigation Content -->
+    <div class="navigation-content" id="navigationContent">
+        {% for nav_item in navigation_items %}
+            <div class="nav-section">
+                {% if nav_item.children %}
+                    <!-- Parent item with collapsible children -->
+                    <button class="btn btn-toggle align-items-center rounded collapsed w-100 text-start"
+                            data-bs-toggle="collapse"
+                            data-bs-target="#{{ nav_item.name|slugify }}Collapse"
+                            aria-expanded="false"
+                            aria-controls="{{ nav_item.name|slugify }}Collapse"
+                            aria-label="Toggle {{ nav_item.name }} menu">
+                        {% if nav_item.icon %}
+                            <i class="{{ nav_item.icon }}"></i>
+                        {% else %}
+                            <i class="bi bi-folder"></i>
+                        {% endif %}
+                        <span class="nav-text">{{ nav_item.name }}</span>
+                        <i class="bi bi-chevron-down ms-auto toggle-icon"></i>
+                    </button>
 
-                <div class="collapse{% if nav_item|is_section_active %} show{% endif %}"
-                     id="{{ nav_item.name|slugify_nav }}Collapse">
-                    <div class="nav-children">
-                        {% for child in nav_item.children %}
-                            {% if child.children %}
-                                <!-- Nested dropdown -->
-                                <div class="nav-dropdown">
-                                    <button class="btn btn-toggle collapsed w-100 text-start nested-toggle"
-                                            data-bs-toggle="collapse"
-                                            data-bs-target="#{{ child.name|slugify_nav }}Nested"
-                                            aria-expanded="{% if child|is_section_active %}true{% else %}false{% endif %}"
-                                            aria-controls="{{ child.name|slugify_nav }}Nested"
-                                            aria-label="Toggle {{ child.name }} submenu">
+                    <div class="collapse{% if nav_item|is_section_active:current_section %} show{% endif %}"
+
+                         id="{{ nav_item.name|slugify }}Collapse">
+                        <div class="nav-children">
+                            {% for child in nav_item.children %}
+                                {% if child.children %}
+                                    <!-- Nested dropdown -->
+                                    <div class="nav-dropdown">
+                                        <button class="btn btn-toggle collapsed w-100 text-start nested-toggle"
+                                                data-bs-toggle="collapse"
+                                                data-bs-target="#{{ child.name|slugify }}Nested"
+                                                aria-expanded="{% if child|is_section_active:active_section %}true{% else %}false{% endif %}"
+                                                aria-controls="{{ child.name|slugify }}Nested"
+                                                aria-label="Toggle {{ child.name }} submenu">
+                                            {% if child.icon %}
+                                                <i class="{{ child.icon }}"></i>
+                                            {% else %}
+                                                <i class="bi bi-folder2"></i>
+                                            {% endif %}
+                                            <span class="nav-text">{{ child.name }}</span>
+                                            <i class="bi bi-chevron-down ms-auto toggle-icon"></i>
+                                        </button>
+
+                                        <div class="collapse{% if nav_item|is_section_active:active_section %} show{% endif %}"
+                                             id="{{ child.name|slugify }}Nested">
+                                            <div class="nested-children">
+                                                {% for nested_child in child.children %}
+                                                    {% nav_item_url nested_child as child_url %}
+                                                    {% is_active_nav nested_child.url_name as is_active %}
+                                                    <a href="{{ child_url }}"
+                                                       class="nav-link nested-link{% if is_active %} active{% endif %} {{ nested_child.css_class }}"
+                                                       title="{{ nested_child.name }}">
+                                                        {% if nested_child.icon %}
+                                                            <i class="{{ nested_child.icon }}"></i>
+                                                        {% else %}
+                                                            <i class="bi bi-file-earmark"></i>
+                                                        {% endif %}
+                                                        <span class="nav-text">{{ nested_child.name }}</span>
+                                                        {% if is_active %}
+                                                            <i class="bi bi-dot ms-auto active-indicator"></i>
+                                                        {% endif %}
+                                                    </a>
+                                                {% endfor %}
+                                            </div>
+                                        </div>
+                                    </div>
+                                {% else %}
+                                    <!-- Regular child item -->
+                                    {% nav_item_url child as child_url %}
+                                    {% is_active_nav child.url_name as is_active %}
+                                    <a href="{{ child_url }}"
+                                       class="nav-link child-link{% if is_active %} active{% endif %} {{ child.css_class }}"
+                                       title="{{ child.name }}">
                                         {% if child.icon %}
                                             <i class="{{ child.icon }}"></i>
                                         {% else %}
-                                            <i class="bi bi-folder2"></i>
+                                            <i class="bi bi-circle"></i>
                                         {% endif %}
                                         <span class="nav-text">{{ child.name }}</span>
-                                        <i class="bi bi-chevron-down ms-auto toggle-icon"></i>
-                                    </button>
-
-                                    <div class="collapse{% if child|is_section_active %} show{% endif %}"
-                                         id="{{ child.name|slugify_nav }}Nested">
-                                        <div class="nested-children">
-                                            {% for nested_child in child.children %}
-                                                {% nav_item_url nested_child as child_url %}
-                                                {% is_active_nav nested_child.url_name as is_active %}
-                                                <a href="{{ child_url }}"
-                                                   class="nav-link nested-link{% if is_active %} active{% endif %} {{ nested_child.css_class }}"
-                                                   title="{{ nested_child.name }}">
-                                                    {% if nested_child.icon %}
-                                                        <i class="{{ nested_child.icon }}"></i>
-                                                    {% else %}
-                                                        <i class="bi bi-file-earmark"></i>
-                                                    {% endif %}
-                                                    <span class="nav-text">{{ nested_child.name }}</span>
-                                                    {% if is_active %}
-                                                        <i class="bi bi-dot ms-auto active-indicator"></i>
-                                                    {% endif %}
-                                                </a>
-                                            {% endfor %}
-                                        </div>
-                                    </div>
-                                </div>
-                            {% else %}
-                                <!-- Regular child item -->
-                                {% nav_item_url child as child_url %}
-                                {% is_active_nav child.url_name as is_active %}
-                                <a href="{{ child_url }}"
-                                   class="nav-link child-link{% if is_active %} active{% endif %} {{ child.css_class }}"
-                                   title="{{ child.name }}">
-                                    {% if child.icon %}
-                                        <i class="{{ child.icon }}"></i>
-                                    {% else %}
-                                        <i class="bi bi-circle"></i>
-                                    {% endif %}
-                                    <span class="nav-text">{{ child.name }}</span>
-                                    {% if is_active %}
-                                        <i class="bi bi-dot ms-auto active-indicator"></i>
-                                    {% endif %}
-                                </a>
-                            {% endif %}
-                        {% endfor %}
+                                        {% if is_active %}
+                                            <i class="bi bi-dot ms-auto active-indicator"></i>
+                                        {% endif %}
+                                    </a>
+                                {% endif %}
+                            {% endfor %}
+                        </div>
                     </div>
-                </div>
-            {% else %}
-                <!-- Single item without children -->
-                {% nav_item_url nav_item as nav_url %}
-                {% is_active_nav nav_item.url_name as is_active %}
-                <a href="{{ nav_url }}"
-                   class="nav-link main-link{% if is_active %} active{% endif %} {{ nav_item.css_class }}"
-                   title="{{ nav_item.name }}">
-                    {% if nav_item.icon %}
-                        <i class="{{ nav_item.icon }}"></i>
-                    {% else %}
-                        <i class="bi bi-circle"></i>
-                    {% endif %}
-                    <span class="nav-text">{{ nav_item.name }}</span>
-                    {% if is_active %}
-                        <i class="bi bi-dot ms-auto active-indicator"></i>
-                    {% endif %}
-                </a>
-            {% endif %}
-        </div>
-    {% empty %}
-        <!-- Empty state for no navigation items -->
-        <div class="nav-section">
-            <div class="nav-empty-state">
-                <i class="bi bi-grid-3x3-gap text-muted mb-2 fs-3"></i>
-                <p class="text-muted small mb-0">No navigation items available</p>
-            </div>
-        </div>
-    {% endfor %}
-
-    <!-- Contextual Navigation Section -->
-    {% if nav_context %}
-    <div class="nav-divider">
-        <hr class="nav-hr">
-        <small class="text-muted px-3">Context Actions</small>
-    </div>
-
-    {% if nav_context.company %}
-        <div class="nav-section contextual-section">
-            <div class="contextual-header">
-                <i class="bi bi-building text-primary"></i>
-                <span class="nav-text">{{ nav_context.company.name }}</span>
-            </div>
-            {% object_nav_menu nav_context.company 'company' as company_menu %}
-            {% for menu_item in company_menu %}
-                <a href="{{ menu_item.url }}"
-                   class="nav-link child-link contextual-link{% if menu_item.active %} active{% endif %}"
-                   title="{{ menu_item.name }}">
-                    <i class="{{ menu_item.icon }}"></i>
-                    <span class="nav-text">{{ menu_item.name }}</span>
-                    {% if menu_item.active %}
-                        <i class="bi bi-dot ms-auto active-indicator"></i>
-                    {% endif %}
-                </a>
-            {% endfor %}
-        </div>
-    {% endif %}
-
-    {% if nav_context.store %}
-        <div class="nav-section contextual-section">
-            <div class="contextual-header">
-                <i class="bi bi-shop text-success"></i>
-                <span class="nav-text">{{ nav_context.store.name }}</span>
-            </div>
-            {% object_nav_menu nav_context.store 'store' as store_menu %}
-            {% for menu_item in store_menu %}
-                <a href="{{ menu_item.url }}"
-                   class="nav-link child-link contextual-link{% if menu_item.active %} active{% endif %}"
-                   title="{{ menu_item.name }}">
-                    <i class="{{ menu_item.icon }}"></i>
-                    <span class="nav-text">{{ menu_item.name }}</span>
-                    {% if menu_item.active %}
-                        <i class="bi bi-dot ms-auto active-indicator"></i>
-                    {% endif %}
-                </a>
-            {% endfor %}
-        </div>
-    {% endif %}
-
-    {% if nav_context.user_obj and nav_context.user_obj != user %}
-        <div class="nav-section contextual-section">
-            <div class="contextual-header">
-                <i class="bi bi-person text-info"></i>
-                <span class="nav-text">{{ nav_context.user_obj.get_full_name|default:nav_context.user_obj.username }}</span>
-            </div>
-            <a href="{% get_nav_url 'user_detail' user_id=nav_context.user_obj.pk %}"
-               class="nav-link child-link contextual-link{% is_active_nav 'user_detail' as is_active %}{% if is_active %} active{% endif %}"
-               title="View Profile">
-                <i class="bi bi-person"></i>
-                <span class="nav-text">View Profile</span>
-                {% if is_active %}
-                    <i class="bi bi-dot ms-auto active-indicator"></i>
+                {% else %}
+                    <!-- Single item without children -->
+                    {% nav_item_url nav_item as nav_url %}
+                    {% is_active_nav nav_item.url_name as is_active %}
+                    <a href="{{ nav_url }}"
+                       class="nav-link main-link{% if is_active %} active{% endif %} {{ nav_item.css_class }}"
+                       title="{{ nav_item.name }}">
+                        {% if nav_item.icon %}
+                            <i class="{{ nav_item.icon }}"></i>
+                        {% else %}
+                            <i class="bi bi-circle"></i>
+                        {% endif %}
+                        <span class="nav-text">{{ nav_item.name }}</span>
+                        {% if is_active %}
+                            <i class="bi bi-dot ms-auto active-indicator"></i>
+                        {% endif %}
+                    </a>
                 {% endif %}
-            </a>
-            {% if user|has_nav_permission:'accounts.change_customuser' %}
-                <a href="{% get_nav_url 'user_update' user_id=nav_context.user_obj.pk %}"
-                   class="nav-link child-link contextual-link{% is_active_nav 'user_update' as is_active %}{% if is_active %} active{% endif %}"
-                   title="Edit User">
-                    <i class="bi bi-pencil"></i>
-                    <span class="nav-text">Edit User</span>
-                    {% if is_active %}
+            </div>
+        {% empty %}
+            <!-- Empty state for no navigation items -->
+            <div class="nav-section">
+                <div class="nav-empty-state">
+                    <i class="bi bi-grid-3x3-gap text-muted mb-2 fs-3"></i>
+                    <p class="text-muted small mb-0">No navigation items available</p>
+                </div>
+            </div>
+        {% endfor %}
+
+        <!-- Contextual Navigation Section -->
+        {% if nav_context %}
+        <div class="nav-divider">
+            <hr class="nav-hr">
+            <small class="text-muted px-3">Context Actions</small>
+        </div>
+
+        {% if nav_context.company %}
+            <div class="nav-section contextual-section">
+                <div class="contextual-header">
+                    <i class="bi bi-building text-primary"></i>
+                    <span class="nav-text">{{ nav_context.company.name }}</span>
+                </div>
+                {% object_nav_menu nav_context.company 'company' as company_menu %}
+                {% for menu_item in company_menu %}
+                    <a href="{{ menu_item.url }}"
+                       class="nav-link child-link contextual-link{% if menu_item.active %} active{% endif %}"
+                       title="{{ menu_item.name }}">
+                        <i class="{{ menu_item.icon }}"></i>
+                        <span class="nav-text">{{ menu_item.name }}</span>
+                        {% if menu_item.active %}
+                            <i class="bi bi-dot ms-auto active-indicator"></i>
+                        {% endif %}
+                    </a>
+                {% endfor %}
+            </div>
+        {% endif %}
+
+        {% if nav_context.store %}
+            <div class="nav-section contextual-section">
+                <div class="contextual-header">
+                    <i class="bi bi-shop text-success"></i>
+                    <span class="nav-text">{{ nav_context.store.name }}</span>
+                </div>
+                {% object_nav_menu nav_context.store 'store' as store_menu %}
+                {% for menu_item in store_menu %}
+                    <a href="{{ menu_item.url }}"
+                       class="nav-link child-link contextual-link{% if menu_item.active %} active{% endif %}"
+                       title="{{ menu_item.name }}">
+                        <i class="{{ menu_item.icon }}"></i>
+                        <span class="nav-text">{{ menu_item.name }}</span>
+                        {% if menu_item.active %}
+                            <i class="bi bi-dot ms-auto active-indicator"></i>
+                        {% endif %}
+                    </a>
+                {% endfor %}
+            </div>
+        {% endif %}
+
+        {% if nav_context.user_obj and nav_context.user_obj != user %}
+            <div class="nav-section contextual-section">
+                <div class="contextual-header">
+                    <i class="bi bi-person text-info"></i>
+                    <span class="nav-text">{{ nav_context.user_obj.get_full_name|default:nav_context.user_obj.username }}</span>
+                </div>
+                {% is_active_nav 'user_detail' as is_user_detail_active %}
+                <a href="{% get_nav_url 'user_detail' user_id=nav_context.user_obj.pk %}"
+                   class="nav-link child-link contextual-link{% if is_user_detail_active %} active{% endif %}"
+                   title="View Profile">
+                    <i class="bi bi-person"></i>
+                    <span class="nav-text">View Profile</span>
+                    {% if is_user_detail_active %}
                         <i class="bi bi-dot ms-auto active-indicator"></i>
                     {% endif %}
                 </a>
-            {% endif %}
-        </div>
-    {% endif %}
-    {% endif %}
+                {% if user|has_nav_permission:'accounts.change_customuser' %}
+                    {% is_active_nav 'user_update' as is_user_update_active %}
+                    <a href="{% get_nav_url 'user_update' user_id=nav_context.user_obj.pk %}"
+                       class="nav-link child-link contextual-link{% if is_user_update_active %} active{% endif %}"
+                       title="Edit User">
+                        <i class="bi bi-pencil"></i>
+                        <span class="nav-text">Edit User</span>
+                        {% if is_user_update_active %}
+                            <i class="bi bi-dot ms-auto active-indicator"></i>
+                        {% endif %}
+                    </a>
+                {% endif %}
+            </div>
+        {% endif %}
+        {% endif %}
+    </div>
 </div>
 
 <!-- Overlay for mobile -->
 <div class="sidebar-overlay d-md-none" id="sidebarOverlay"></div>
 
+
 <style>
-    /* Hamburger Button Styles */
-    .hamburger-btn {
-        position: fixed;
-        top: 1rem;
-        left: 1rem;
-        z-index: 1050;
-        background: var(--bg-primary);
-        border: 1px solid var(--border-color);
-        border-radius: 0.5rem;
-        padding: 0.75rem;
-        display: flex;
-        flex-direction: column;
-        gap: 0.35rem;
-        cursor: pointer;
-        transition: all 0.3s ease;
-        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-    }
+    /* CSS Variables for Theming */
+:root {
+    --primary-25: rgba(59, 130, 246, 0.05);
+    --primary-50: rgba(59, 130, 246, 0.1);
+    --primary-75: rgba(59, 130, 246, 0.15);
+    --primary-100: rgba(59, 130, 246, 0.2);
+    --primary-500: #3b82f6;
+    --primary-600: #2563eb;
+    --primary-700: #1d4ed8;
+    --text-primary: #1f2937;
+    --text-secondary: #4b5563;
+    --text-muted: #9ca3af;
+    --bg-primary: #ffffff;
+    --bg-secondary: #f9fafb;
+    --bg-tertiary: #f3f4f6;
+    --border-color: #e5e7eb;
+    --shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+}
 
-    .hamburger-btn:hover {
-        background: var(--primary-50);
-        border-color: var(--primary-500);
-    }
+[data-theme="dark"] {
+    --primary-25: rgba(59, 130, 246, 0.1);
+    --primary-50: rgba(59, 130, 246, 0.15);
+    --primary-75: rgba(59, 130, 246, 0.2);
+    --primary-100: rgba(59, 130, 246, 0.25);
+    --text-primary: #f9fafb;
+    --text-secondary: #d1d5db;
+    --text-muted: #9ca3af;
+    --bg-primary: #111827;
+    --bg-secondary: #1f2937;
+    --bg-tertiary: #374151;
+    --border-color: #4b5563;
+}
 
-    .hamburger-btn:focus {
-        outline: 2px solid var(--primary-500);
-        outline-offset: 2px;
-    }
+/* Hamburger Button Styles */
+.hamburger-btn {
+    position: fixed;
+    top: 1rem;
+    left: 1rem;
+    z-index: 1050;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 0.5rem;
+    padding: 0.75rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    box-shadow: var(--shadow);
+}
 
-    .hamburger-line {
-        width: 24px;
-        height: 2px;
-        background: var(--text-primary);
-        border-radius: 2px;
-        transition: all 0.3s ease;
-    }
+.hamburger-btn:hover {
+    background: var(--primary-50);
+    border-color: var(--primary-500);
+    transform: translateY(-1px);
+}
 
-    .hamburger-btn.active .hamburger-line:nth-child(1) {
-        transform: translateY(7px) rotate(45deg);
-    }
+.hamburger-btn:focus {
+    outline: 2px solid var(--primary-500);
+    outline-offset: 2px;
+}
 
-    .hamburger-btn.active .hamburger-line:nth-child(2) {
-        opacity: 0;
-    }
+.hamburger-line {
+    width: 24px;
+    height: 2px;
+    background: var(--text-primary);
+    border-radius: 2px;
+    transition: all 0.3s ease;
+}
 
-    .hamburger-btn.active .hamburger-line:nth-child(3) {
-        transform: translateY(-7px) rotate(-45deg);
-    }
+.hamburger-btn.active .hamburger-line:nth-child(1) {
+    transform: translateY(7px) rotate(45deg);
+}
 
-    /* Sidebar Close Button */
-    .sidebar-close {
-        position: absolute;
-        top: 1rem;
-        right: 1rem;
-        background: transparent;
-        border: none;
-        font-size: 1.5rem;
-        color: var(--text-secondary);
-        cursor: pointer;
-        padding: 0.5rem;
-        line-height: 1;
-        transition: color 0.3s ease;
-        z-index: 1001;
-    }
+.hamburger-btn.active .hamburger-line:nth-child(2) {
+    opacity: 0;
+}
 
-    .sidebar-close:hover {
-        color: var(--primary-600);
-    }
+.hamburger-btn.active .hamburger-line:nth-child(3) {
+    transform: translateY(-7px) rotate(-45deg);
+}
 
-    /* Navigation Sidebar */
+/* Sidebar Close Button */
+.sidebar-close {
+    position: absolute;
+    top: 1rem;
+    right: 1rem;
+    background: transparent;
+    border: none;
+    font-size: 1.5rem;
+    color: var(--text-secondary);
+    cursor: pointer;
+    padding: 0.5rem;
+    line-height: 1;
+    transition: color 0.3s ease;
+    z-index: 1001;
+    border-radius: 0.25rem;
+}
+
+.sidebar-close:hover {
+    color: var(--primary-600);
+    background: var(--primary-25);
+}
+
+/* Navigation Sidebar */
+.navigation-sidebar {
+    position: relative;
+    background: var(--bg-primary);
+    border-right: 1px solid var(--border-color);
+    height: 100%;
+    transition: all 0.3s ease;
+}
+
+.navigation-content {
+    padding: 1rem 0.5rem;
+    height: 100%;
+    overflow-y: auto;
+}
+
+/* Mobile Sidebar Overlay */
+.sidebar-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 1040;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.3s ease, visibility 0.3s ease;
+}
+
+.sidebar-overlay.active {
+    opacity: 1;
+    visibility: visible;
+}
+
+/* Mobile Styles - CRITICAL FIXES */
+@media (max-width: 767.98px) {
     .navigation-sidebar {
-        position: relative;
-    }
-
-    /* Mobile Sidebar Overlay */
-    .sidebar-overlay {
         position: fixed;
         top: 0;
+        left: -100%;
+        width: 280px;
+        height: 100vh;
+        background: var(--bg-primary);
+        z-index: 1045;
+        overflow-y: auto;
+        transition: left 0.3s ease;
+        box-shadow: 2px 0 12px rgba(0, 0, 0, 0.15);
+        display: block !important; /* Force display */
+        visibility: visible !important;
+    }
+
+    .navigation-sidebar.active {
         left: 0;
+    }
+
+    .navigation-content {
+        padding: 3rem 0.75rem 1rem 0.75rem;
+    }
+
+    /* Prevent body scroll when sidebar is open */
+    body.sidebar-open {
+        overflow: hidden;
+        position: fixed;
         width: 100%;
         height: 100%;
-        background: rgba(0, 0, 0, 0.5);
-        z-index: 1040;
-        opacity: 0;
-        visibility: hidden;
-        transition: opacity 0.3s ease, visibility 0.3s ease;
     }
 
-    .sidebar-overlay.active {
-        opacity: 1;
-        visibility: visible;
+    /* Adjust hamburger button when sidebar is open */
+    .hamburger-btn.active {
+        left: 1rem;
+        z-index: 1051;
+    }
+}
+
+/* Desktop Styles */
+@media (min-width: 768px) {
+    .hamburger-btn,
+    .sidebar-close,
+    .sidebar-overlay {
+        display: none !important;
     }
 
-    /* Mobile Styles */
-    @media (max-width: 767px) {
-        .navigation-sidebar {
-            position: fixed;
-            top: 0;
-            left: -280px;
-            width: 280px;
-            height: 100vh;
-            background: var(--bg-primary);
-            z-index: 1045;
-            overflow-y: auto;
-            padding: 4rem 1rem 1rem 1rem;
-            transition: left 0.3s ease;
-            box-shadow: 2px 0 12px rgba(0, 0, 0, 0.15);
-        }
-
-        .navigation-sidebar.active {
-            left: 0;
-        }
-
-        /* Prevent body scroll when sidebar is open */
-        body.sidebar-open {
-            overflow: hidden;
-        }
-
-        /* Adjust hamburger button when sidebar is open */
-        .hamburger-btn.active {
-            left: 1rem;
-        }
+    .navigation-sidebar {
+        position: relative;
+        left: 0 !important;
+        width: 100%;
+        height: auto;
     }
+}
 
-    /* Desktop - hide hamburger and show sidebar normally */
-    @media (min-width: 768px) {
-        .hamburger-btn,
-        .sidebar-close,
-        .sidebar-overlay {
-            display: none !important;
-        }
+/* Base Navigation Styles */
+.nav-section {
+    margin-bottom: 0.25rem;
+}
 
-        .navigation-sidebar {
-            position: relative;
-            left: 0 !important;
-        }
-    }
+.btn-toggle,
+.nav-link {
+    display: flex;
+    align-items: center;
+    padding: 0.875rem 1rem;
+    color: var(--text-secondary);
+    background-color: transparent;
+    border: none;
+    border-radius: 0.5rem;
+    text-decoration: none;
+    transition: all 0.3s ease;
+    position: relative;
+    width: 100%;
+    text-align: left;
+    font-size: 0.9rem;
+    gap: 0.75rem;
+    min-height: 44px; /* Minimum touch target */
+    cursor: pointer;
+}
 
-    /* Base Navigation Styles */
-    .nav-section {
-        margin-bottom: 0.25rem;
-    }
+.btn-toggle:hover,
+.nav-link:hover {
+    color: var(--primary-600);
+    background-color: var(--primary-50);
+    text-decoration: none;
+    transform: translateX(2px);
+}
 
+.nav-link.active {
+    color: var(--primary-700);
+    background-color: var(--primary-100);
+    font-weight: 600;
+    border-left: 3px solid var(--primary-500);
+}
+
+/* Icon Styles */
+.btn-toggle i,
+.nav-link i {
+    font-size: 1.1rem;
+    width: 20px;
+    text-align: center;
+    flex-shrink: 0;
+}
+
+/* Navigation Text */
+.nav-text {
+    flex: 1;
+    font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* Toggle Icons */
+.toggle-icon {
+    font-size: 0.75rem;
+    transition: transform 0.3s ease;
+    opacity: 0.7;
+}
+
+.btn-toggle[aria-expanded="true"] .toggle-icon {
+    transform: rotate(180deg);
+}
+
+/* Active Indicator */
+.active-indicator {
+    color: var(--primary-500);
+    font-size: 1.2rem;
+    margin-left: auto;
+    animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.7; }
+}
+
+/* Child Navigation Styles */
+.nav-children {
+    padding-left: 0.5rem;
+    margin-top: 0.25rem;
+}
+
+.child-link {
+    padding: 0.75rem 1rem 0.75rem 2.5rem;
+    font-size: 0.9rem;
+    position: relative;
+}
+
+.child-link::before {
+    content: '';
+    position: absolute;
+    left: 1.75rem;
+    top: 50%;
+    width: 4px;
+    height: 4px;
+    background: var(--text-muted);
+    border-radius: 50%;
+    transform: translateY(-50%);
+    transition: background-color 0.3s ease;
+}
+
+.child-link:hover::before,
+.child-link.active::before {
+    background: var(--primary-500);
+}
+
+/* Nested Navigation Styles */
+.nested-toggle {
+    padding: 0.625rem 1rem 0.625rem 2.5rem;
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+}
+
+.nested-children {
+    padding-left: 1rem;
+}
+
+.nested-link {
+    padding: 0.625rem 1rem 0.625rem 3.5rem;
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    position: relative;
+}
+
+.nested-link::before {
+    content: '';
+    position: absolute;
+    left: 3rem;
+    top: 50%;
+    width: 3px;
+    height: 3px;
+    background: var(--text-muted);
+    border-radius: 50%;
+    transform: translateY(-50%);
+    transition: background-color 0.3s ease;
+}
+
+.nested-link:hover,
+.nested-link.active {
+    color: var(--primary-600);
+    background-color: var(--primary-50);
+}
+
+.nested-link:hover::before,
+.nested-link.active::before {
+    background: var(--primary-500);
+}
+
+/* Contextual Navigation Styles */
+.nav-divider {
+    margin: 1.5rem 0 1rem 0;
+    padding: 0 1rem;
+}
+
+.nav-hr {
+    border-color: var(--border-color);
+    margin: 0.5rem 0;
+}
+
+.contextual-section {
+    background-color: var(--bg-secondary);
+    border-radius: 0.5rem;
+    margin: 0.75rem 0;
+    padding: 0.5rem 0;
+    border: 1px solid var(--border-color);
+}
+
+.contextual-header {
+    display: flex;
+    align-items: center;
+    padding: 0.75rem 1rem;
+    color: var(--text-primary);
+    font-weight: 600;
+    font-size: 0.85rem;
+    gap: 0.5rem;
+    border-bottom: 1px solid var(--border-color);
+    margin-bottom: 0.25rem;
+}
+
+.contextual-link {
+    background-color: transparent;
+    margin: 0 0.25rem;
+}
+
+.contextual-link:hover {
+    background-color: var(--primary-25);
+}
+
+.contextual-link.active {
+    background-color: var(--primary-75);
+    border-left: 3px solid var(--primary-500);
+}
+
+/* Empty State */
+.nav-empty-state {
+    text-align: center;
+    padding: 2rem 1rem;
+    color: var(--text-muted);
+}
+
+/* Focus States for Accessibility */
+.nav-link:focus,
+.btn-toggle:focus {
+    outline: 2px solid var(--primary-500);
+    outline-offset: -2px;
+    z-index: 1;
+}
+
+/* Collapse Animation Improvements */
+.collapse {
+    transition: height 0.35s ease;
+}
+
+.collapsing {
+    transition: height 0.35s ease;
+}
+
+/* Scrollbar Styling */
+.navigation-content::-webkit-scrollbar {
+    width: 6px;
+}
+
+.navigation-content::-webkit-scrollbar-track {
+    background: var(--bg-secondary);
+}
+
+.navigation-content::-webkit-scrollbar-thumb {
+    background: var(--border-color);
+    border-radius: 3px;
+}
+
+.navigation-content::-webkit-scrollbar-thumb:hover {
+    background: var(--text-muted);
+}
+
+/* Reduced Motion Support */
+@media (prefers-reduced-motion: reduce) {
+    .toggle-icon,
+    .active-indicator,
+    .hamburger-line,
+    .navigation-sidebar,
+    .sidebar-overlay,
     .btn-toggle,
     .nav-link {
-        display: flex;
-        align-items: center;
-        padding: 0.875rem 1rem;
-        color: var(--text-secondary);
-        background-color: transparent;
-        border: none;
-        border-radius: 0.5rem;
-        text-decoration: none;
-        transition: all 0.3s ease;
-        position: relative;
-        width: 100%;
-        text-align: left;
-        font-size: 0.9rem;
-        gap: 0.75rem;
+        animation: none !important;
+        transition: none !important;
+    }
+
+    .collapse {
+        transition: none !important;
+    }
+}
+
+/* High Contrast Support */
+@media (prefers-contrast: high) {
+    .nav-link.active {
+        outline: 2px solid currentColor;
+        outline-offset: -2px;
     }
 
     .btn-toggle:hover,
     .nav-link:hover {
-        color: var(--primary-600);
-        background-color: var(--primary-50);
-        text-decoration: none;
+        background-color: var(--bg-tertiary);
     }
+}
 
-    .nav-link.active {
-        color: var(--primary-700);
-        background-color: var(--primary-100);
-        font-weight: 600;
-    }
+/* Loading Animation */
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
 
-    /* Icon Styles */
-    .btn-toggle i,
-    .nav-link i {
-        font-size: 1.1rem;
-        width: 20px;
-        text-align: center;
-        flex-shrink: 0;
-    }
-
-    /* Navigation Text */
-    .nav-text {
-        flex: 1;
-        font-weight: 500;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-    }
-
-    /* Toggle Icons */
-    .toggle-icon {
-        font-size: 0.75rem;
-        transition: transform 0.3s ease;
-        opacity: 0.7;
-    }
-
-    .btn-toggle[aria-expanded="true"] .toggle-icon {
-        transform: rotate(180deg);
-    }
-
-    /* Active Indicator */
-    .active-indicator {
-        color: var(--primary-500);
-        font-size: 1.2rem;
-        margin-left: auto;
-        animation: pulse 2s infinite;
-    }
-
-    @keyframes pulse {
-        0%, 100% { opacity: 1; }
-        50% { opacity: 0.5; }
-    }
-
-    /* Child Navigation Styles */
-    .nav-children {
-        padding-left: 0.5rem;
-        margin-top: 0.25rem;
-    }
-
-    .child-link {
-        padding: 0.75rem 1rem 0.75rem 2.5rem;
-        font-size: 0.9rem;
-        position: relative;
-    }
-
-    .child-link::before {
-        content: '';
-        position: absolute;
-        left: 1.75rem;
-        top: 50%;
-        width: 4px;
-        height: 4px;
-        background: var(--text-muted);
-        border-radius: 50%;
-        transform: translateY(-50%);
-        transition: background-color 0.3s ease;
-    }
-
-    .child-link:hover::before,
-    .child-link.active::before {
-        background: var(--primary-500);
-    }
-
-    /* Nested Navigation Styles */
-    .nested-toggle {
-        padding: 0.625rem 1rem 0.625rem 2.5rem;
-        font-size: 0.85rem;
-        color: var(--text-secondary);
-    }
-
-    .nested-children {
-        padding-left: 1rem;
-    }
-
-    .nested-link {
-        padding: 0.625rem 1rem 0.625rem 3.5rem;
-        font-size: 0.85rem;
-        color: var(--text-muted);
-        position: relative;
-    }
-
-    .nested-link::before {
-        content: '';
-        position: absolute;
-        left: 3rem;
-        top: 50%;
-        width: 3px;
-        height: 3px;
-        background: var(--text-muted);
-        border-radius: 50%;
-        transform: translateY(-50%);
-        transition: background-color 0.3s ease;
-    }
-
-    .nested-link:hover,
-    .nested-link.active {
-        color: var(--primary-600);
-        background-color: var(--primary-50);
-    }
-
-    .nested-link:hover::before,
-    .nested-link.active::before {
-        background: var(--primary-500);
-    }
-
-    /* Contextual Navigation Styles */
-    .nav-divider {
-        margin: 1rem 0 0.5rem 0;
-        padding: 0 1rem;
-    }
-
-    .nav-hr {
-        border-color: var(--border-color);
-        margin: 0.5rem 0;
-    }
-
-    .contextual-section {
-        background-color: var(--bg-secondary);
-        border-radius: 0.5rem;
-        margin: 0.5rem 0;
-        padding: 0.5rem 0;
-    }
-
-    .contextual-header {
-        display: flex;
-        align-items: center;
-        padding: 0.5rem 1rem;
-        color: var(--text-primary);
-        font-weight: 600;
-        font-size: 0.85rem;
-        gap: 0.5rem;
-        border-bottom: 1px solid var(--border-color);
-        margin-bottom: 0.25rem;
-    }
-
-    .contextual-link {
-        background-color: transparent;
-    }
-
-    .contextual-link:hover {
-        background-color: var(--primary-25);
-    }
-
-    .contextual-link.active {
-        background-color: var(--primary-75);
-        border-left: 3px solid var(--primary-500);
-    }
-
-    /* Empty State */
-    .nav-empty-state {
-        text-align: center;
-        padding: 2rem 1rem;
-    }
-
-    /* Focus States for Accessibility */
-    .nav-link:focus,
-    .btn-toggle:focus {
-        outline: 2px solid var(--primary-500);
-        outline-offset: -2px;
-        z-index: 1;
-    }
-
-    /* CSS Variables for theming */
-    :root {
-        --primary-25: rgba(59, 130, 246, 0.05);
-        --primary-50: rgba(59, 130, 246, 0.1);
-        --primary-75: rgba(59, 130, 246, 0.15);
-        --primary-100: rgba(59, 130, 246, 0.2);
-        --primary-500: #3b82f6;
-        --primary-600: #2563eb;
-        --primary-700: #1d4ed8;
-        --text-primary: #1f2937;
-        --text-secondary: #4b5563;
-        --text-muted: #9ca3af;
-        --bg-primary: #ffffff;
-        --bg-secondary: #f9fafb;
-        --bg-tertiary: #f3f4f6;
-        --border-color: #e5e7eb;
-    }
-
-    /* Dark Theme */
-    [data-theme="dark"] {
-        --primary-25: rgba(59, 130, 246, 0.1);
-        --primary-50: rgba(59, 130, 246, 0.15);
-        --primary-75: rgba(59, 130, 246, 0.2);
-        --primary-100: rgba(59, 130, 246, 0.25);
-        --text-primary: #f9fafb;
-        --text-secondary: #d1d5db;
-        --text-muted: #9ca3af;
-        --bg-primary: #111827;
-        --bg-secondary: #1f2937;
-        --bg-tertiary: #374151;
-        --border-color: #4b5563;
-    }
-
-    [data-theme="dark"] .child-link::before,
-    [data-theme="dark"] .nested-link::before {
-        background: var(--text-muted);
-    }
-
-    [data-theme="dark"] .child-link:hover::before,
-    [data-theme="dark"] .child-link.active::before,
-    [data-theme="dark"] .nested-link:hover::before,
-    [data-theme="dark"] .nested-link.active::before {
-        background: var(--primary-500);
-    }
-
-    [data-theme="dark"] .contextual-section {
-        background-color: rgba(31, 41, 55, 0.5);
-    }
-
-    /* Animation for expanding/collapsing */
-    .collapse {
-        transition: height 0.35s ease;
-    }
-
-    .collapsing {
-        transition: height 0.35s ease;
-    }
-
-    /* Reduced motion */
-    @media (prefers-reduced-motion: reduce) {
-        .toggle-icon,
-        .active-indicator,
-        .hamburger-line,
-        .navigation-sidebar,
-        .sidebar-overlay {
-            animation: none !important;
-            transition: none !important;
-        }
-
-        .collapse {
-            transition: none !important;
-        }
-    }
-
-    @keyframes spin {
-        to { transform: rotate(360deg); }
-    }
+.loading {
+    animation: spin 1s linear infinite;
+}
 </style>
 
 <script>
-    document.addEventListener('DOMContentLoaded', function() {
-        initEnhancedNavigation();
-        initMobileMenu();
+    class NavigationSidebar {
+    constructor() {
+        this.elements = {};
+        this.isInitialized = false;
+        this.resizeTimeout = null;
 
-        function initMobileMenu() {
-            const hamburgerBtn = document.getElementById('sidebarToggle');
-            const sidebar = document.getElementById('navigationSidebar');
-            const overlay = document.getElementById('sidebarOverlay');
-            const closeBtn = document.getElementById('sidebarClose');
+        this.init();
+    }
 
-            if (!hamburgerBtn || !sidebar || !overlay) return;
+    init() {
+        if (this.isInitialized) return;
 
-            // Open sidebar
-            function openSidebar() {
-                sidebar.classList.add('active');
-                overlay.classList.add('active');
-                hamburgerBtn.classList.add('active');
-                hamburgerBtn.setAttribute('aria-expanded', 'true');
-                document.body.classList.add('sidebar-open');
+        this.cacheElements();
+        this.initMobileMenu();
+        this.initEnhancedFeatures();
+        this.bindEvents();
 
-                // Focus first focusable element in sidebar
-                const firstFocusable = sidebar.querySelector('.nav-link, .btn-toggle');
-                if (firstFocusable) {
-                    setTimeout(() => firstFocusable.focus(), 100);
-                }
+        this.isInitialized = true;
+        console.log('✅ Navigation sidebar initialized');
+    }
+
+    cacheElements() {
+        this.elements = {
+            hamburgerBtn: document.getElementById('sidebarToggle'),
+            sidebar: document.getElementById('navigationSidebar'),
+            sidebarContent: document.getElementById('navigationContent'),
+            overlay: document.getElementById('sidebarOverlay'),
+            closeBtn: document.getElementById('sidebarClose'),
+            body: document.body
+        };
+
+        // Validate critical elements
+        if (!this.elements.sidebar || !this.elements.hamburgerBtn) {
+            console.error('❌ Critical navigation elements not found');
+            return;
+        }
+    }
+
+    initMobileMenu() {
+        const { hamburgerBtn, sidebar, overlay, closeBtn, body } = this.elements;
+
+        // Open sidebar
+        this.openSidebar = () => {
+            if (!sidebar || !overlay) return;
+
+            sidebar.classList.add('active');
+            overlay.classList.add('active');
+            hamburgerBtn.classList.add('active');
+            hamburgerBtn.setAttribute('aria-expanded', 'true');
+            body.classList.add('sidebar-open');
+
+            // Force content visibility
+            this.ensureContentVisibility();
+
+            // Focus management
+            this.focusFirstElement();
+        };
+
+        // Close sidebar
+        this.closeSidebar = () => {
+            if (!sidebar || !overlay) return;
+
+            sidebar.classList.remove('active');
+            overlay.classList.remove('active');
+            hamburgerBtn.classList.remove('active');
+            hamburgerBtn.setAttribute('aria-expanded', 'false');
+            body.classList.remove('sidebar-open');
+
+            // Return focus to hamburger button
+            hamburgerBtn.focus();
+        };
+
+        // Toggle sidebar
+        this.toggleSidebar = () => {
+            if (sidebar.classList.contains('active')) {
+                this.closeSidebar();
+            } else {
+                this.openSidebar();
             }
+        };
 
-            // Close sidebar
-            function closeSidebar() {
-                sidebar.classList.remove('active');
-                overlay.classList.remove('active');
-                hamburgerBtn.classList.remove('active');
-                hamburgerBtn.setAttribute('aria-expanded', 'false');
-                document.body.classList.remove('sidebar-open');
-                hamburgerBtn.focus();
-            }
-
-            // Toggle sidebar
-            hamburgerBtn.addEventListener('click', function() {
-                if (sidebar.classList.contains('active')) {
-                    closeSidebar();
-                } else {
-                    openSidebar();
-                }
-            });
-
-            // Close button
-            if (closeBtn) {
-                closeBtn.addEventListener('click', closeSidebar);
-            }
-
-            // Overlay click
-            overlay.addEventListener('click', closeSidebar);
-
-            // Close on nav link click (mobile only)
-            const navLinks = sidebar.querySelectorAll('.nav-link');
-            navLinks.forEach(link => {
-                link.addEventListener('click', function() {
-                    if (window.innerWidth < 768) {
-                        closeSidebar();
-                    }
-                });
-            });
-
-            // ESC key to close
-            document.addEventListener('keydown', function(e) {
-                if (e.key === 'Escape' && sidebar.classList.contains('active')) {
-                    closeSidebar();
-                }
-            });
-
-            // Close on window resize to desktop
-            let resizeTimer;
-            window.addEventListener('resize', function() {
-                clearTimeout(resizeTimer);
-                resizeTimer = setTimeout(function() {
-                    if (window.innerWidth >= 768 && sidebar.classList.contains('active')) {
-                        closeSidebar();
-                    }
-                }, 250);
-            });
+        // Bind mobile menu events
+        if (hamburgerBtn) {
+            hamburgerBtn.addEventListener('click', this.toggleSidebar.bind(this));
         }
 
-        function initEnhancedNavigation() {
-            expandActiveNavigation();
-            enhanceCollapseAnimations();
-            addKeyboardNavigation();
-            initNavigationTooltips();
+        if (closeBtn) {
+            closeBtn.addEventListener('click', this.closeSidebar.bind(this));
         }
 
-        function expandActiveNavigation() {
-            const activeLinks = document.querySelectorAll('.nav-link.active');
+        if (overlay) {
+            overlay.addEventListener('click', this.closeSidebar.bind(this));
+        }
+    }
 
-            activeLinks.forEach(link => {
-                let parent = link.closest('.collapse');
-                while (parent) {
-                    const button = document.querySelector(`[data-bs-target="#${parent.id}"]`);
-                    if (button && !parent.classList.contains('show')) {
+    ensureContentVisibility() {
+        const { sidebar, sidebarContent } = this.elements;
+
+        if (!sidebar || !sidebarContent) return;
+
+        // Force content to be visible
+        sidebar.style.display = 'block';
+        sidebarContent.style.display = 'block';
+
+        // Trigger reflow
+        sidebar.offsetHeight;
+
+        console.log('📱 Mobile sidebar content check:', {
+            sidebarVisible: sidebar.classList.contains('active'),
+            hasContent: sidebarContent.children.length > 0,
+            navSections: sidebarContent.querySelectorAll('.nav-section').length
+        });
+    }
+
+    focusFirstElement() {
+        const { sidebar } = this.elements;
+        if (!sidebar) return;
+
+        const firstFocusable = sidebar.querySelector('.nav-link, .btn-toggle');
+        if (firstFocusable) {
+            setTimeout(() => firstFocusable.focus(), 100);
+        }
+    }
+
+    initEnhancedFeatures() {
+        this.expandActiveNavigation();
+        this.enhanceCollapseAnimations();
+        this.addKeyboardNavigation();
+        this.initNavigationTooltips();
+        this.addLoadingStates();
+    }
+
+    expandActiveNavigation() {
+        const activeLinks = document.querySelectorAll('.nav-link.active');
+
+        activeLinks.forEach(link => {
+            let parent = link.closest('.collapse');
+            while (parent) {
+                const button = document.querySelector(`[data-bs-target="#${parent.id}"]`);
+                if (button && !parent.classList.contains('show')) {
+                    // Use Bootstrap Collapse if available
+                    if (typeof bootstrap !== 'undefined' && bootstrap.Collapse) {
+                        const collapse = new bootstrap.Collapse(parent, {
+                            toggle: false
+                        });
+                        collapse.show();
+                    } else {
+                        // Fallback
                         parent.classList.add('show');
-                        button.setAttribute('aria-expanded', 'true');
                     }
-                    parent = parent.parentElement?.closest('.collapse');
+                    button.setAttribute('aria-expanded', 'true');
                 }
-            });
-        }
-
-        function enhanceCollapseAnimations() {
-            const collapseElements = document.querySelectorAll('.collapse');
-
-            collapseElements.forEach(element => {
-                element.addEventListener('show.bs.collapse', function() {
-                    this.style.height = '0px';
-                    this.style.height = this.scrollHeight + 'px';
-                });
-
-                element.addEventListener('shown.bs.collapse', function() {
-                    this.style.height = '';
-                });
-
-                element.addEventListener('hide.bs.collapse', function() {
-                    this.style.height = this.scrollHeight + 'px';
-                    this.offsetHeight;
-                    this.style.height = '0px';
-                });
-
-                element.addEventListener('hidden.bs.collapse', function() {
-                    this.style.height = '';
-                });
-            });
-        }
-
-        function addKeyboardNavigation() {
-            const navElements = document.querySelectorAll('.nav-link, .btn-toggle');
-
-            navElements.forEach((element, index) => {
-                element.addEventListener('keydown', (e) => {
-                    switch(e.key) {
-                        case 'ArrowDown':
-                            e.preventDefault();
-                            const nextElement = navElements[index + 1];
-                            if (nextElement) nextElement.focus();
-                            break;
-
-                        case 'ArrowUp':
-                            e.preventDefault();
-                            const prevElement = navElements[index - 1];
-                            if (prevElement) prevElement.focus();
-                            break;
-
-                        case 'Enter':
-                        case ' ':
-                            if (element.classList.contains('btn-toggle')) {
-                                e.preventDefault();
-                                element.click();
-                            }
-                            break;
-
-                        case 'Home':
-                            e.preventDefault();
-                            navElements[0]?.focus();
-                            break;
-
-                        case 'End':
-                            e.preventDefault();
-                            navElements[navElements.length - 1]?.focus();
-                            break;
-                    }
-                });
-            });
-        }
-
-        function initNavigationTooltips() {
-            const navTexts = document.querySelectorAll('.nav-text');
-
-            navTexts.forEach(text => {
-                if (text.scrollWidth > text.clientWidth) {
-                    text.setAttribute('title', text.textContent.trim());
-                    text.setAttribute('data-bs-toggle', 'tooltip');
-                    text.setAttribute('data-bs-placement', 'right');
-                }
-            });
-
-            if (typeof bootstrap !== 'undefined' && bootstrap.Tooltip) {
-                const tooltipTriggerList = document.querySelectorAll('[data-bs-toggle="tooltip"]');
-                [...tooltipTriggerList].map(tooltipTriggerEl => new bootstrap.Tooltip(tooltipTriggerEl));
+                parent = parent.parentElement?.closest('.collapse');
             }
-        }
+        });
+    }
 
-        // Add loading states for navigation links
+    enhanceCollapseAnimations() {
+        const collapseElements = document.querySelectorAll('.collapse');
+
+        collapseElements.forEach(element => {
+            element.addEventListener('show.bs.collapse', function() {
+                this.style.height = '0px';
+                this.style.overflow = 'hidden';
+            });
+
+            element.addEventListener('shown.bs.collapse', function() {
+                this.style.height = '';
+                this.style.overflow = '';
+            });
+
+            element.addEventListener('hide.bs.collapse', function() {
+                this.style.height = this.scrollHeight + 'px';
+                this.style.overflow = 'hidden';
+            });
+
+            element.addEventListener('hidden.bs.collapse', function() {
+                this.style.height = '';
+                this.style.overflow = '';
+            });
+        });
+    }
+
+    addKeyboardNavigation() {
+        const navElements = document.querySelectorAll('.nav-link, .btn-toggle');
+
+        navElements.forEach((element, index) => {
+            element.addEventListener('keydown', (e) => {
+                switch(e.key) {
+                    case 'ArrowDown':
+                        e.preventDefault();
+                        const nextElement = navElements[index + 1];
+                        if (nextElement) nextElement.focus();
+                        break;
+
+                    case 'ArrowUp':
+                        e.preventDefault();
+                        const prevElement = navElements[index - 1];
+                        if (prevElement) prevElement.focus();
+                        break;
+
+                    case 'Enter':
+                    case ' ':
+                        if (element.classList.contains('btn-toggle')) {
+                            e.preventDefault();
+                            element.click();
+                        }
+                        break;
+
+                    case 'Home':
+                        e.preventDefault();
+                        navElements[0]?.focus();
+                        break;
+
+                    case 'End':
+                        e.preventDefault();
+                        navElements[navElements.length - 1]?.focus();
+                        break;
+
+                    case 'Escape':
+                        if (this.elements.sidebar.classList.contains('active')) {
+                            e.preventDefault();
+                            this.closeSidebar();
+                        }
+                        break;
+                }
+            });
+        });
+    }
+
+    initNavigationTooltips() {
+        const navTexts = document.querySelectorAll('.nav-text');
+
+        navTexts.forEach(text => {
+            if (text.scrollWidth > text.clientWidth) {
+                text.setAttribute('title', text.textContent.trim());
+                text.setAttribute('data-bs-toggle', 'tooltip');
+                text.setAttribute('data-bs-placement', 'right');
+            }
+        });
+
+        // Initialize Bootstrap tooltips if available
+        if (typeof bootstrap !== 'undefined' && bootstrap.Tooltip) {
+            const tooltipTriggerList = document.querySelectorAll('[data-bs-toggle="tooltip"]');
+            [...tooltipTriggerList].map(tooltipTriggerEl => new bootstrap.Tooltip(tooltipTriggerEl));
+        }
+    }
+
+    addLoadingStates() {
         const navLinks = document.querySelectorAll('.nav-link[href]:not([href="#"])');
+
         navLinks.forEach(link => {
-            link.addEventListener('click', function() {
+            link.addEventListener('click', function(e) {
+                // Skip external links or anchor links
                 if (this.hostname !== window.location.hostname || this.hash) {
                     return;
                 }
@@ -841,62 +957,133 @@
                 const icon = this.querySelector('i:not(.active-indicator):not(.toggle-icon)');
                 if (icon) {
                     const originalClass = icon.className;
-                    icon.className = 'bi bi-arrow-clockwise';
-                    icon.style.animation = 'spin 1s linear infinite';
+                    icon.className = 'bi bi-arrow-clockwise loading';
 
+                    // Auto-reset after 3 seconds
                     setTimeout(() => {
-                        if (icon.style.animation.includes('spin')) {
+                        if (icon.className.includes('loading')) {
                             icon.className = originalClass;
-                            icon.style.animation = '';
                         }
                     }, 3000);
                 }
-            });
+
+                // Close mobile sidebar on navigation
+                if (window.innerWidth < 768) {
+                    this.closeSidebar();
+                }
+            }.bind(this));
         });
-    });
+    }
 
-    // Utility functions
-    window.NavigationUtils = {
-        expandAll: function() {
-            document.querySelectorAll('.collapse').forEach(collapse => {
-                collapse.classList.add('show');
-                const button = document.querySelector(`[data-bs-target="#${collapse.id}"]`);
-                if (button) button.setAttribute('aria-expanded', 'true');
-            });
-        },
-
-        collapseAll: function() {
-            document.querySelectorAll('.collapse').forEach(collapse => {
-                collapse.classList.remove('show');
-                const button = document.querySelector(`[data-bs-target="#${collapse.id}"]`);
-                if (button) button.setAttribute('aria-expanded', 'false');
-            });
-        },
-
-        highlightActive: function() {
-            document.querySelectorAll('.nav-link.active').forEach(link => {
-                link.style.animation = 'pulse 1s ease-in-out 3';
-            });
-        },
-
-        refreshNavigation: function() {
-            initEnhancedNavigation();
-            initMobileMenu();
-        },
-
-        closeMobileSidebar: function() {
-            const sidebar = document.getElementById('navigationSidebar');
-            const overlay = document.getElementById('sidebarOverlay');
-            const hamburgerBtn = document.getElementById('sidebarToggle');
-
-            if (sidebar && overlay && hamburgerBtn) {
-                sidebar.classList.remove('active');
-                overlay.classList.remove('active');
-                hamburgerBtn.classList.remove('active');
-                hamburgerBtn.setAttribute('aria-expanded', 'false');
-                document.body.classList.remove('sidebar-open');
+    bindEvents() {
+        // ESC key to close sidebar
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && this.elements.sidebar.classList.contains('active')) {
+                this.closeSidebar();
             }
+        });
+
+        // Close on window resize to desktop
+        window.addEventListener('resize', () => {
+            clearTimeout(this.resizeTimeout);
+            this.resizeTimeout = setTimeout(() => {
+                if (window.innerWidth >= 768 && this.elements.sidebar.classList.contains('active')) {
+                    this.closeSidebar();
+                }
+            }, 250);
+        });
+
+        // Close sidebar when clicking on regular nav links (mobile)
+        const navLinks = this.elements.sidebar?.querySelectorAll('.nav-link[href]');
+        if (navLinks) {
+            navLinks.forEach(link => {
+                link.addEventListener('click', () => {
+                    if (window.innerWidth < 768) {
+                        this.closeSidebar();
+                    }
+                });
+            });
         }
-    };
+    }
+
+    // Public methods
+    refresh() {
+        this.initEnhancedFeatures();
+        console.log('🔄 Navigation refreshed');
+    }
+
+    expandAll() {
+        document.querySelectorAll('.collapse').forEach(collapse => {
+            if (typeof bootstrap !== 'undefined' && bootstrap.Collapse) {
+                const bsCollapse = new bootstrap.Collapse(collapse, { toggle: false });
+                bsCollapse.show();
+            } else {
+                collapse.classList.add('show');
+            }
+            const button = document.querySelector(`[data-bs-target="#${collapse.id}"]`);
+            if (button) button.setAttribute('aria-expanded', 'true');
+        });
+    }
+
+    collapseAll() {
+        document.querySelectorAll('.collapse').forEach(collapse => {
+            if (typeof bootstrap !== 'undefined' && bootstrap.Collapse) {
+                const bsCollapse = new bootstrap.Collapse(collapse, { toggle: false });
+                bsCollapse.hide();
+            } else {
+                collapse.classList.remove('show');
+            }
+            const button = document.querySelector(`[data-bs-target="#${collapse.id}"]`);
+            if (button) button.setAttribute('aria-expanded', 'false');
+        });
+    }
+
+    destroy() {
+        // Cleanup event listeners
+        if (this.elements.hamburgerBtn) {
+            this.elements.hamburgerBtn.removeEventListener('click', this.toggleSidebar);
+        }
+        if (this.elements.closeBtn) {
+            this.elements.closeBtn.removeEventListener('click', this.closeSidebar);
+        }
+        if (this.elements.overlay) {
+            this.elements.overlay.removeEventListener('click', this.closeSidebar);
+        }
+
+        this.isInitialized = false;
+        console.log('🗑️ Navigation sidebar destroyed');
+    }
+}
+
+// Initialize when DOM is ready
+document.addEventListener('DOMContentLoaded', function() {
+    // Wait a bit to ensure all content is loaded
+    setTimeout(() => {
+        window.navigationSidebar = new NavigationSidebar();
+    }, 100);
 });
+
+// Export for global access
+window.NavigationUtils = {
+    expandAll: function() {
+        if (window.navigationSidebar) {
+            window.navigationSidebar.expandAll();
+        }
+    },
+    collapseAll: function() {
+        if (window.navigationSidebar) {
+            window.navigationSidebar.collapseAll();
+        }
+    },
+    refresh: function() {
+        if (window.navigationSidebar) {
+            window.navigationSidebar.refresh();
+        }
+    },
+    closeMobile: function() {
+        if (window.navigationSidebar) {
+            window.navigationSidebar.closeSidebar();
+        }
+    }
+};
 </script>

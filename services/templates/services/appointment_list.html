@@ -1,174 +1,191 @@
-{% extends "services/base.html" %}
+<!-- 
+=============================================================================
+SERVICES APP - REMAINING HTML TEMPLATES
+All remaining templates for views.py - No repetition from previous artifacts
+=============================================================================
+-->
 
-{% block title %}Appointments{% endblock %}
-{% block page_title %}Appointment Management{% endblock %}
+<!-- 
+=============================================================================
+FILE: services/templates/services/appointment_list.html
+=============================================================================
+-->
+{% extends "base.html" %}
+{% load static %}
+{% load i18n %}
+
+{% block title %}{% trans "Appointments" %} | {{ block.super }}{% endblock %}
+
+{% block breadcrumb_items %}
+<li class="breadcrumb-item"><a href="{% url 'user_dashboard' %}">{% trans "Home" %}</a></li>
+<li class="breadcrumb-item"><a href="{% url 'services:dashboard' %}">{% trans "Services" %}</a></li>
+<li class="breadcrumb-item active">{% trans "Appointments" %}</li>
+{% endblock %}
 
 {% block content %}
-<div class="card">
-    <div class="card-header d-flex justify-content-between align-items-center">
-        <h5 class="mb-0"><i class="fas fa-calendar-check"></i> All Appointments</h5>
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4">
         <div>
-            <a href="{% url 'services:appointment_calendar' %}" class="btn btn-info btn-sm me-2">
-                <i class="fas fa-calendar"></i> Calendar View
+            <h1 class="h3 mb-1">{% trans "Appointments" %}</h1>
+            <p class="text-muted mb-0">{% trans "Manage service appointments" %}</p>
+        </div>
+        <div>
+            <a href="{% url 'services:appointment_calendar' %}" class="btn btn-outline-primary me-2">
+                <i class="bi bi-calendar3 me-2"></i>{% trans "Calendar View" %}
             </a>
-            <a href="{% url 'services:appointment_create' %}" class="btn btn-primary btn-sm">
-                <i class="fas fa-plus"></i> New Appointment
+            <a href="{% url 'services:appointment_create' %}" class="btn btn-primary">
+                <i class="bi bi-plus-circle me-2"></i>{% trans "New Appointment" %}
             </a>
         </div>
     </div>
-    <div class="card-body">
-        <!-- Filters -->
-        <form method="get" class="row g-3 mb-4">
-            <div class="col-md-2">
-                <select name="status" class="form-select">
-                    <option value="">All Status</option>
-                    {% for value, label in status_choices %}
-                    <option value="{{ value }}">{{ label }}</option>
-                    {% endfor %}
-                </select>
-            </div>
-            <div class="col-md-2">
-                <input type="date" name="date_from" class="form-control" placeholder="From Date">
-            </div>
-            <div class="col-md-2">
-                <input type="date" name="date_to" class="form-control" placeholder="To Date">
-            </div>
-            <div class="col-md-3">
-                <select name="service" class="form-select">
-                    <option value="">All Services</option>
-                    {% for service in services %}
-                    <option value="{{ service.id }}">{{ service.name }}</option>
-                    {% endfor %}
-                </select>
-            </div>
-            <div class="col-md-3">
-                <button type="submit" class="btn btn-primary w-100">
-                    <i class="fas fa-filter"></i> Filter
-                </button>
-            </div>
-        </form>
 
-        <!-- Appointments Table -->
-        <div class="table-responsive">
-            <table class="table table-hover">
-                <thead>
-                    <tr>
-                        <th>Appointment #</th>
-                        <th>Date & Time</th>
-                        <th>Service</th>
-                        <th>Customer</th>
-                        <th>Staff</th>
-                        <th>Amount</th>
-                        <th>Status</th>
-                        <th>Actions</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for appointment in page_obj %}
-                    <tr>
-                        <td><strong>{{ appointment.appointment_number }}</strong></td>
-                        <td>
-                            {{ appointment.scheduled_date|date:"M d, Y" }}<br>
-                            <small class="text-muted">{{ appointment.scheduled_time|time:"g:i A" }}</small>
-                        </td>
-                        <td>{{ appointment.service.name }}</td>
-                        <td>
-                            {{ appointment.customer_name }}<br>
-                            <small class="text-muted">{{ appointment.customer_phone }}</small>
-                        </td>
-                        <td>{{ appointment.assigned_staff.get_full_name|default:"Not assigned" }}</td>
-                        <td>${{ appointment.total_amount }}</td>
-                        <td>
-                            <span class="badge status-{{ appointment.status }}">
-                                {{ appointment.get_status_display }}
-                            </span>
-                        </td>
-                        <td>
-                            <div class="btn-group btn-group-sm">
-                                <a href="{% url 'services:appointment_detail' appointment.pk %}"
-                                   class="btn btn-outline-info" title="View">
-                                    <i class="fas fa-eye"></i>
-                                </a>
-                                {% if appointment.status == 'scheduled' %}
-                                <button type="button" class="btn btn-outline-success"
-                                        onclick="updateStatus({{ appointment.pk }}, 'confirmed')" title="Confirm">
-                                    <i class="fas fa-check"></i>
-                                </button>
-                                {% endif %}
-                                {% if appointment.status in 'scheduled,confirmed' %}
-                                <button type="button" class="btn btn-outline-primary"
-                                        onclick="updateStatus({{ appointment.pk }}, 'in_progress')" title="Start">
-                                    <i class="fas fa-play"></i>
-                                </button>
-                                {% endif %}
-                                {% if appointment.status == 'in_progress' %}
-                                <button type="button" class="btn btn-outline-success"
-                                        onclick="updateStatus({{ appointment.pk }}, 'completed')" title="Complete">
-                                    <i class="fas fa-check-double"></i>
-                                </button>
-                                {% endif %}
-                            </div>
-                        </td>
-                    </tr>
-                    {% empty %}
-                    <tr>
-                        <td colspan="8" class="text-center text-muted py-4">No appointments found</td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
+    <!-- Filters -->
+    <div class="card border-0 mb-4">
+        <div class="card-body">
+            <form method="get" class="row g-3">
+                <div class="col-md-2">
+                    <label class="form-label">{% trans "Status" %}</label>
+                    <select name="status" class="form-select">
+                        <option value="">{% trans "All Statuses" %}</option>
+                        {% for value, label in status_choices %}
+                        <option value="{{ value }}">{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label">{% trans "Date From" %}</label>
+                    <input type="date" name="date_from" class="form-control">
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label">{% trans "Date To" %}</label>
+                    <input type="date" name="date_to" class="form-control">
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label">{% trans "Service" %}</label>
+                    <select name="service" class="form-select">
+                        <option value="">{% trans "All Services" %}</option>
+                        {% for service in services %}
+                        <option value="{{ service.id }}">{{ service.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label">{% trans "Store" %}</label>
+                    <select name="store" class="form-select">
+                        <option value="">{% trans "All Stores" %}</option>
+                        {% for store in stores %}
+                        <option value="{{ store.id }}">{{ store.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-2 d-flex align-items-end">
+                    <button type="submit" class="btn btn-primary w-100">
+                        <i class="bi bi-search me-2"></i>{% trans "Filter" %}
+                    </button>
+                </div>
+            </form>
         </div>
+    </div>
 
-        <!-- Pagination -->
-        {% if page_obj.has_other_pages %}
-        <nav>
-            <ul class="pagination justify-content-center">
-                {% if page_obj.has_previous %}
-                <li class="page-item">
-                    <a class="page-link" href="?page={{ page_obj.previous_page_number }}">Previous</a>
-                </li>
-                {% endif %}
+    <!-- Appointments Table -->
+    <div class="card border-0">
+        <div class="card-body">
+            {% if page_obj %}
+            <div class="table-responsive">
+                <table class="table table-hover align-middle">
+                    <thead class="table-light">
+                        <tr>
+                            <th>{% trans "Appointment #" %}</th>
+                            <th>{% trans "Date & Time" %}</th>
+                            <th>{% trans "Service" %}</th>
+                            <th>{% trans "Customer" %}</th>
+                            <th>{% trans "Staff" %}</th>
+                            <th>{% trans "Store" %}</th>
+                            <th>{% trans "Status" %}</th>
+                            <th>{% trans "Amount" %}</th>
+                            <th>{% trans "Actions" %}</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for appointment in page_obj %}
+                        <tr>
+                            <td><strong>{{ appointment.appointment_number }}</strong></td>
+                            <td>
+                                <div>{{ appointment.scheduled_date|date:"M d, Y" }}</div>
+                                <small class="text-muted">{{ appointment.scheduled_time|time:"g:i A" }}</small>
+                            </td>
+                            <td>
+                                <div>{{ appointment.service.name }}</div>
+                                <small class="text-muted">{{ appointment.duration_minutes }} {% trans "mins" %}</small>
+                            </td>
+                            <td>
+                                <div>{{ appointment.customer.name }}</div>
+                                <small class="text-muted">{{ appointment.customer.phone }}</small>
+                            </td>
+                            <td>
+                                {% if appointment.assigned_staff %}
+                                {{ appointment.assigned_staff.get_full_name|default:appointment.assigned_staff.username }}
+                                {% else %}
+                                <span class="text-muted">{% trans "Unassigned" %}</span>
+                                {% endif %}
+                            </td>
+                            <td>{{ appointment.store.name }}</td>
+                            <td>
+                                <span class="badge status-{{ appointment.status }}">
+                                    {{ appointment.get_status_display }}
+                                </span>
+                            </td>
+                            <td><strong>UGX {{ appointment.total_amount|floatformat:0 }}</strong></td>
+                            <td>
+                                <a href="{% url 'services:appointment_detail' appointment.pk %}" 
+                                   class="btn btn-sm btn-outline-primary"
+                                   title="{% trans 'View Details' %}">
+                                    <i class="bi bi-eye"></i>
+                                </a>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
 
-                <li class="page-item active">
-                    <span class="page-link">{{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
-                </li>
+            <!-- Pagination -->
+            {% if page_obj.has_other_pages %}
+            <nav aria-label="{% trans 'Page navigation' %}" class="mt-4">
+                <ul class="pagination justify-content-center">
+                    {% if page_obj.has_previous %}
+                    <li class="page-item">
+                        <a class="page-link" href="?page={{ page_obj.previous_page_number }}">
+                            <i class="bi bi-chevron-left"></i>
+                        </a>
+                    </li>
+                    {% endif %}
+                    <li class="page-item active">
+                        <span class="page-link">{{ page_obj.number }} / {{ page_obj.paginator.num_pages }}</span>
+                    </li>
+                    {% if page_obj.has_next %}
+                    <li class="page-item">
+                        <a class="page-link" href="?page={{ page_obj.next_page_number }}">
+                            <i class="bi bi-chevron-right"></i>
+                        </a>
+                    </li>
+                    {% endif %}
+                </ul>
+            </nav>
+            {% endif %}
 
-                {% if page_obj.has_next %}
-                <li class="page-item">
-                    <a class="page-link" href="?page={{ page_obj.next_page_number }}">Next</a>
-                </li>
-                {% endif %}
-            </ul>
-        </nav>
-        {% endif %}
+            {% else %}
+            <div class="text-center py-5">
+                <i class="bi bi-calendar-x text-muted" style="font-size: 4rem;"></i>
+                <h4 class="mt-3">{% trans "No Appointments Found" %}</h4>
+                <p class="text-muted">{% trans "Start by creating your first appointment" %}</p>
+                <a href="{% url 'services:appointment_create' %}" class="btn btn-primary mt-3">
+                    <i class="bi bi-plus-circle me-2"></i>{% trans "Create Appointment" %}
+                </a>
+            </div>
+            {% endif %}
+        </div>
     </div>
 </div>
 {% endblock %}
 
-{% block extra_js %}
-<script>
-function updateStatus(appointmentId, newStatus) {
-    if (!confirm('Are you sure you want to update the appointment status?')) {
-        return;
-    }
-
-    $.ajax({
-        url: `/services/appointments/${appointmentId}/update-status/`,
-        method: 'POST',
-        data: {
-            status: newStatus,
-            csrfmiddlewaretoken: '{{ csrf_token }}'
-        },
-        success: function(response) {
-            if (response.success) {
-                alert(response.message);
-                location.reload();
-            }
-        },
-        error: function() {
-            alert('Error updating appointment status');
-        }
-    });
-}
-</script>
-{% endblock %}

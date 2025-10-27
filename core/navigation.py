@@ -104,7 +104,7 @@ NAVIGATION_ITEMS = [
             NavigationItem(
                 name="Roles",
                 url_name="role_list",
-                icon="bi-person-badge",
+                icon="bi bi-person-badge",
                 permission="auth.view_group"
             ),
             NavigationItem(
@@ -116,7 +116,7 @@ NAVIGATION_ITEMS = [
             NavigationItem(
                 name="Bulk Assign",
                 url_name="role_bulk_assignment",
-                icon="bi-shield-lock",
+                icon="bi bi-shield-lock",
                 permission="accounts.assign_role_users"
             ),
             NavigationItem(
@@ -125,7 +125,6 @@ NAVIGATION_ITEMS = [
                 icon="bi bi-graph-up",
                 permission="accounts.view_customuser"
             ),
-
         ]
     ),
 
@@ -138,13 +137,6 @@ NAVIGATION_ITEMS = [
                 url_name="companies:dashboard",
                 icon="bi bi-speedometer2",
                 permission="companies.view_company",
-            ),
-            NavigationItem(
-                name="Company Details",
-                url_name="companies:company_detail",
-                icon="bi bi-building-fill",
-                permission="companies.view_company",
-                url_params=["company_id"]
             ),
             NavigationItem(
                 name="Add Branch",
@@ -219,7 +211,7 @@ NAVIGATION_ITEMS = [
 
     NavigationItem(
         name="Inventory",
-        icon="fas fa-boxes",
+        icon="bi bi-boxes",
         permission="inventory.view_product",
         children=[
             NavigationItem(
@@ -255,7 +247,7 @@ NAVIGATION_ITEMS = [
             NavigationItem(
                 name="Suppliers",
                 url_name="inventory:supplier_list",
-                icon="fas fa-truck",
+                icon="bi bi-truck",
                 permission="inventory.view_supplier"
             ),
             NavigationItem(
@@ -266,7 +258,7 @@ NAVIGATION_ITEMS = [
             ),
             NavigationItem(
                 name="Stock Management",
-                icon="fas fa-warehouse",
+                icon="bi bi-warehouse",
                 permission="inventory.view_stock",
                 children=[
                     NavigationItem(
@@ -284,39 +276,96 @@ NAVIGATION_ITEMS = [
                     NavigationItem(
                         name="Stock Movements",
                         url_name="inventory:movement_list",
-                        icon="fas fa-exchange-alt",
+                        icon="bi bi-arrow-left-right",
                         permission="inventory.view_stockmovement"
                     ),
                 ]
             ),
             NavigationItem(
                 name="Reports",
-                icon="fas fa-chart-bar",
+                icon="bi bi-graph-up",
                 permission="inventory.view_product",
                 children=[
                     NavigationItem(
                         name="Low Stock Report",
                         url_name="stores:low_stock_alert",
-                        icon="fas fa-exclamation-triangle",
+                        icon="bi bi-exclamation-triangle",
                         css_class="text-warning"
                     ),
                     NavigationItem(
                         name="Inventory Valuation",
                         url_name="inventory:valuation_report",
-                        icon="fas fa-calculator"
+                        icon="bi bi-calculator"
                     ),
                     NavigationItem(
                         name="Movement Analytics",
                         url_name="inventory:movement_analytics",
-                        icon="fas fa-chart-line"
+                        icon="bi bi-graph-up-arrow"
                     ),
                 ]
             ),
             NavigationItem(
                 name="Bulk Import",
                 url_name="inventory:bulk_import",
-                icon="fas fa-upload",
+                icon="bi bi-upload",
                 permission="inventory.add_product"
+            ),
+        ]
+    ),
+
+    NavigationItem(
+        name="Services",
+        icon="bi bi-tools",
+        permission="services.view_service",
+        children=[
+            NavigationItem(
+                name="Services Dashboard",
+                url_name="services:dashboard",
+                icon="bi bi-speedometer2",
+                permission="services.view_service"
+            ),
+            NavigationItem(
+                name="Services",
+                url_name="services:service_list",
+                icon="bi bi-tools",
+                permission="services.view_service"
+            ),
+            NavigationItem(
+                name="Appointments",
+                url_name="services:appointment_list",
+                icon="bi bi-calendar-check",
+                permission="services.view_appointment"
+            ),
+            NavigationItem(
+                name="Calendar",
+                url_name="services:appointment_calendar",
+                icon="bi bi-calendar",
+                permission="services.view_appointment"
+            ),
+            NavigationItem(
+                name="Service Order",
+                url_name="services:execution_list",
+                icon="bi bi-clipboard-check",
+                permission="services.view_serviceexecution"
+            ),
+            NavigationItem(
+                name="Report Management",
+                icon="bi bi-clipboard-data",
+                permission="services.view_report",
+                children=[
+                    NavigationItem(
+                        name="Packages",
+                        url_name="services:package_list",
+                        icon="bi bi-box",
+                        permission="services.view_package"
+                    ),
+                    NavigationItem(
+                        name="Service Reports",
+                        url_name="services:reports_dashboard",
+                        icon="bi bi-graph-up",
+                        permission="services.view_report"
+                    ),
+                ]
             ),
         ]
     ),
@@ -341,7 +390,7 @@ NAVIGATION_ITEMS = [
             NavigationItem(
                 name="Sales Analytics",
                 url_name="sales:analytics",
-                icon="fas fa-chart-line",
+                icon="bi bi-graph-up",
                 permission="sales.view_sale"
             ),
         ]
@@ -355,32 +404,38 @@ NAVIGATION_ITEMS = [
             NavigationItem(
                 name="Customers Dashboard",
                 url_name="customers:dashboard",
-                icon="bi bi-graph-up"
+                icon="bi bi-graph-up",
+                permission="customers.view_customer"
             ),
             NavigationItem(
                 name="All Customers",
                 url_name="customers:list",
-                icon="bi bi-people-fill"
+                icon="bi bi-people-fill",
+                permission="customers.view_customer"
             ),
             NavigationItem(
                 name="Customer Groups",
                 url_name="customers:group_list",
-                icon="bi bi-list"
+                icon="bi bi-collection",
+                permission="customers.view_customergroup"
             ),
             NavigationItem(
                 name="Add Customer",
                 url_name="customers:create",
-                icon="bi bi-person-plus"
+                icon="bi bi-person-plus",
+                permission="customers.add_customer"
             ),
             NavigationItem(
                 name="Add Group",
                 url_name="customers:group_create",
-                icon="bi bi-people-fill"
+                icon="bi bi-people-fill",
+                permission="customers.add_customergroup"
             ),
             NavigationItem(
                 name="Add Many Customers Once",
                 url_name="customers:customer_import",
-                icon="bi bi-upload"
+                icon="bi bi-upload",
+                permission="customers.add_customer"
             ),
         ]
     ),
@@ -393,7 +448,8 @@ NAVIGATION_ITEMS = [
             NavigationItem(
                 name="Dashboard",
                 url_name="invoices:dashboard",
-                icon="bi bi-speedometer2"
+                icon="bi bi-speedometer2",
+                permission="invoices.view_invoice"
             ),
             NavigationItem(
                 name="All Invoices",
@@ -442,7 +498,8 @@ NAVIGATION_ITEMS = [
             NavigationItem(
                 name="Dashboard",
                 url_name="reports:dashboard",
-                icon="bi bi-speedometer2"
+                icon="bi bi-speedometer2",
+                permission="reports.view_report"
             ),
             NavigationItem(
                 name="Saved Reports",
@@ -471,7 +528,7 @@ NAVIGATION_ITEMS = [
             NavigationItem(
                 name="Analytics",
                 url_name="reports:analytics",
-                icon="fas fa-chart-line",
+                icon="bi bi-graph-up",
                 permission="reports.view_report"
             ),
         ]
@@ -494,12 +551,12 @@ NAVIGATION_ITEMS = [
             NavigationItem(
                 name="Privacy Settings",
                 url_name="privacy_settings",
-                icon="bi bi-pen"
+                icon="bi bi-shield"
             ),
             NavigationItem(
                 name="Activity",
                 url_name="user_activity_log",
-                icon="bi bi-shield-lock"
+                icon="bi bi-clock-history"
             ),
         ]
     ),
@@ -523,7 +580,7 @@ NAVIGATION_ITEMS = [
             NavigationItem(
                 name="Security",
                 url="user_security_settings",
-                icon="bi bi-lock"
+                icon="bi bi-shield-lock"
             ),
         ]
     ),

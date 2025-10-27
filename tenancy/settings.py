@@ -18,13 +18,6 @@ load_dotenv(dotenv_path=env_path, override=True)
 DEBUG_VALUE = os.getenv('DEBUG', 'True')  # Default to True if not set
 DEBUG = DEBUG_VALUE.strip().lower() in ('true', '1', 'yes', 'on')
 
-# Print for verification
-print("=" * 50)
-print(f"Environment file: {env_path}")
-print(f"DEBUG env value: '{DEBUG_VALUE}'")
-print(f"DEBUG mode: {DEBUG}")
-print(f"Database: {os.getenv('DB_NAME', 'NOT SET')}")
-print("=" * 50)
 
 # =============================================================================
 # DEVELOPMENT vs PRODUCTION CONFIGURATION

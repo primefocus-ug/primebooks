@@ -1,125 +1,142 @@
-{% extends "services/base.html" %}
+{% extends "base.html" %}
+{% load static %}
+{% load i18n %}
 
-{% block title %}{{ action }} Appointment{% endblock %}
-{% block page_title %}{{ action }} Appointment{% endblock %}
+{% block title %}{% trans "Book Appointment" %} | {{ block.super }}{% endblock %}
+
+{% block breadcrumb_items %}
+<li class="breadcrumb-item"><a href="{% url 'user_dashboard' %}">{% trans "Home" %}</a></li>
+<li class="breadcrumb-item"><a href="{% url 'services:dashboard' %}">{% trans "Services" %}</a></li>
+<li class="breadcrumb-item"><a href="{% url 'services:appointment_list' %}">{% trans "Appointments" %}</a></li>
+<li class="breadcrumb-item active">{{ action }}</li>
+{% endblock %}
 
 {% block content %}
-<div class="row justify-content-center">
-    <div class="col-lg-8">
-        <div class="card">
-            <div class="card-header">
-                <h5 class="mb-0">{{ action }} Appointment</h5>
+<div class="container-fluid">
+    <div class="row justify-content-center">
+        <div class="col-lg-8">
+            <div class="mb-4">
+                <h1 class="h3 mb-1">{{ action }} {% trans "Appointment" %}</h1>
+                <p class="text-muted mb-0">{% trans "Fill in the appointment details" %}</p>
             </div>
-            <div class="card-body">
-                <form method="post" id="appointmentForm">
-                    {% csrf_token %}
 
-                    <div class="mb-3">
-                        <label class="form-label">Service *</label>
-                        {{ form.service }}
+            <form method="post" id="appointmentForm">
+                {% csrf_token %}
+
+                <div class="card border-0 mb-4">
+                    <div class="card-header bg-transparent">
+                        <h5 class="mb-0">
+                            <i class="bi bi-calendar-check text-primary me-2"></i>{% trans "Appointment Details" %}
+                        </h5>
                     </div>
+                    <div class="card-body">
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label for="{{ form.service.id_for_label }}" class="form-label">
+                                    {% trans "Service" %} <span class="text-danger">*</span>
+                                </label>
+                                {{ form.service }}
+                                {% if form.service.errors %}
+                                <div class="invalid-feedback d-block">{{ form.service.errors }}</div>
+                                {% endif %}
+                            </div>
 
-                    <div class="mb-3" id="tierSection" style="display:none;">
-                        <label class="form-label">Pricing Tier</label>
-                        {{ form.pricing_tier }}
-                    </div>
+                            <div class="col-md-6">
+                                <label for="{{ form.pricing_tier.id_for_label }}" class="form-label">
+                                    {% trans "Pricing Tier" %}
+                                </label>
+                                {{ form.pricing_tier }}
+                            </div>
 
-                    <h6 class="mt-4 mb-3">Customer Information</h6>
-                    <div class="row">
-                        <div class="col-md-6 mb-3">
-                            <label class="form-label">Customer Name *</label>
-                            {{ form.customer_name }}
+                            <div class="col-md-6">
+                                <label for="{{ form.customer.id_for_label }}" class="form-label">
+                                    {% trans "Customer" %} <span class="text-danger">*</span>
+                                </label>
+                                {{ form.customer }}
+                                {% if form.customer.errors %}
+                                <div class="invalid-feedback d-block">{{ form.customer.errors }}</div>
+                                {% endif %}
+                            </div>
+
+                            <div class="col-md-6">
+                                <label for="{{ form.store.id_for_label }}" class="form-label">
+                                    {% trans "Store" %} <span class="text-danger">*</span>
+                                </label>
+                                {{ form.store }}
+                                {% if form.store.errors %}
+                                <div class="invalid-feedback d-block">{{ form.store.errors }}</div>
+                                {% endif %}
+                            </div>
+
+                            <div class="col-md-4">
+                                <label for="{{ form.scheduled_date.id_for_label }}" class="form-label">
+                                    {% trans "Date" %} <span class="text-danger">*</span>
+                                </label>
+                                {{ form.scheduled_date }}
+                                {% if form.scheduled_date.errors %}
+                                <div class="invalid-feedback d-block">{{ form.scheduled_date.errors }}</div>
+                                {% endif %}
+                            </div>
+
+                            <div class="col-md-4">
+                                <label for="{{ form.scheduled_time.id_for_label }}" class="form-label">
+                                    {% trans "Time" %} <span class="text-danger">*</span>
+                                </label>
+                                {{ form.scheduled_time }}
+                                {% if form.scheduled_time.errors %}
+                                <div class="invalid-feedback d-block">{{ form.scheduled_time.errors }}</div>
+                                {% endif %}
+                            </div>
+
+                            <div class="col-md-4">
+                                <label for="{{ form.duration_minutes.id_for_label }}" class="form-label">
+                                    {% trans "Duration (mins)" %} <span class="text-danger">*</span>
+                                </label>
+                                {{ form.duration_minutes }}
+                                {% if form.duration_minutes.errors %}
+                                <div class="invalid-feedback d-block">{{ form.duration_minutes.errors }}</div>
+                                {% endif %}
+                            </div>
+
+                            <div class="col-md-12">
+                                <label for="{{ form.assigned_staff.id_for_label }}" class="form-label">
+                                    {% trans "Assigned Staff" %}
+                                </label>
+                                {{ form.assigned_staff }}
+                            </div>
+
+                            <div class="col-12">
+                                <label for="{{ form.notes.id_for_label }}" class="form-label">
+                                    {% trans "Notes" %}
+                                </label>
+                                {{ form.notes }}
+                            </div>
                         </div>
-                        <div class="col-md-6 mb-3">
-                            <label class="form-label">Phone</label>
-                            {{ form.customer_phone }}
+                    </div>
+                </div>
+
+                <div class="card border-0 mb-4">
+                    <div class="card-body">
+                        <div class="d-flex gap-2">
+                            <button type="submit" class="btn btn-primary">
+                                <i class="bi bi-check-circle me-2"></i>{% trans "Book Appointment" %}
+                            </button>
+                            <a href="{% url 'services:appointment_list' %}" class="btn btn-outline-secondary">
+                                <i class="bi bi-x-circle me-2"></i>{% trans "Cancel" %}
+                            </a>
                         </div>
                     </div>
-
-                    <div class="mb-3">
-                        <label class="form-label">Email</label>
-                        {{ form.customer_email }}
-                    </div>
-
-                    <h6 class="mt-4 mb-3">Appointment Details</h6>
-                    <div class="row">
-                        <div class="col-md-6 mb-3">
-                            <label class="form-label">Date *</label>
-                            {{ form.scheduled_date }}
-                        </div>
-                        <div class="col-md-6 mb-3">
-                            <label class="form-label">Time *</label>
-                            {{ form.scheduled_time }}
-                        </div>
-                    </div>
-
-                    <div class="row">
-                        <div class="col-md-6 mb-3">
-                            <label class="form-label">Duration (minutes) *</label>
-                            {{ form.duration_minutes }}
-                        </div>
-                        <div class="col-md-6 mb-3">
-                            <label class="form-label">Assigned Staff</label>
-                            {{ form.assigned_staff }}
-                        </div>
-                    </div>
-
-                    <div class="mb-3">
-                        <label class="form-label">Notes</label>
-                        {{ form.notes }}
-                    </div>
-
-                    <div class="alert alert-info" id="priceInfo" style="display:none;">
-                        <h6>Price Calculation</h6>
-                        <p class="mb-1"><strong>Service Price:</strong> $<span id="servicePrice">0.00</span></p>
-                        <p class="mb-1"><strong>Tax:</strong> $<span id="taxAmount">0.00</span></p>
-                        <h5 class="mt-2"><strong>Total:</strong> $<span id="totalAmount">0.00</span></h5>
-                    </div>
-
-                    <div class="d-flex justify-content-between mt-4">
-                        <a href="{% url 'services:appointment_list' %}" class="btn btn-secondary">
-                            <i class="fas fa-times"></i> Cancel
-                        </a>
-                        <button type="submit" class="btn btn-primary">
-                            <i class="fas fa-save"></i> {{ action }} Appointment
-                        </button>
-                    </div>
-                </form>
-            </div>
+                </div>
+            </form>
         </div>
     </div>
 </div>
-{% endblock %}
 
-{% block extra_js %}
 <script>
-$(document).ready(function() {
-    const serviceSelect = $('#id_service');
-    const durationInput = $('#id_duration_minutes');
-
-    serviceSelect.change(function() {
-        const serviceId = $(this).val();
-        if (serviceId) {
-            loadServiceDetails(serviceId);
-        }
-    });
-
-    function loadServiceDetails(serviceId) {
-        $.ajax({
-            url: `/services/ajax/service/${serviceId}/price/`,
-            success: function(data) {
-                durationInput.val(data.calculated_price / data.base_price * 60 || 60);
-                updatePriceDisplay(data);
-            }
-        });
-    }
-
-    function updatePriceDisplay(data) {
-        $('#servicePrice').text(data.calculated_price.toFixed(2));
-        $('#taxAmount').text(data.tax_amount.toFixed(2));
-        $('#totalAmount').text(data.total.toFixed(2));
-        $('#priceInfo').show();
-    }
+document.addEventListener('DOMContentLoaded', function() {
+    const formControls = document.querySelectorAll('#appointmentForm input:not([type="checkbox"]), #appointmentForm select, #appointmentForm textarea');
+    formControls.forEach(field => field.classList.add('form-control'));
 });
 </script>
 {% endblock %}
+

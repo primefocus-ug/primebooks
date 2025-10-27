@@ -2,6 +2,7 @@ from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
 from django.db.models import Q, Count, Sum, Avg
+from django.db import transaction
 from django.http import JsonResponse
 from django.utils import timezone
 from django.core.paginator import Paginator
@@ -25,29 +26,41 @@ def services_dashboard(request):
     """Main services dashboard - tenant-aware"""
     today = timezone.now().date()
 
-    # Get today's appointments for this tenant
+    # Get user's accessible stores
+    from stores.models import Store
+    if request.user.is_superuser:
+        stores = Store.objects.filter(company=request.user.company, is_active=True)
+    else:
+        stores = request.user.stores.filter(is_active=True)
+
+    # Get today's appointments for user's stores
     today_appointments = ServiceAppointment.objects.filter(
+        store__in=stores,
         scheduled_date=today
-    ).select_related('service', 'assigned_staff')
+    ).select_related('service', 'assigned_staff', 'customer', 'store')
 
     # Statistics
-    total_services = Service.objects.filter(is_active=True).count()
+    total_services = Service.objects.filter(store__in=stores, is_active=True).count()
     active_appointments = ServiceAppointment.objects.filter(
+        store__in=stores,
         status__in=['scheduled', 'confirmed', 'in_progress']
     ).count()
     completed_today = ServiceAppointment.objects.filter(
+        store__in=stores,
         scheduled_date=today,
         status='completed'
     ).count()
 
     # Revenue today
     revenue_today = ServiceAppointment.objects.filter(
+        store__in=stores,
         scheduled_date=today,
         status='completed'
     ).aggregate(total=Sum('total_amount'))['total'] or 0
 
     # Upcoming appointments
     upcoming = ServiceAppointment.objects.filter(
+        store__in=stores,
         scheduled_date__gte=today,
         status__in=['scheduled', 'confirmed']
     ).order_by('scheduled_date', 'scheduled_time')[:10]
@@ -55,6 +68,7 @@ def services_dashboard(request):
     # Top services this month
     start_of_month = today.replace(day=1)
     top_services = Service.objects.filter(
+        store__in=stores,
         appointments__scheduled_date__gte=start_of_month,
         appointments__status='completed'
     ).annotate(
@@ -69,6 +83,7 @@ def services_dashboard(request):
         'revenue_today': revenue_today,
         'upcoming': upcoming,
         'top_services': top_services,
+        'stores': stores,
     }
 
     return render(request, 'services/dashboard.html', context)
@@ -78,19 +93,34 @@ def services_dashboard(request):
 @login_required
 def service_list(request):
     """List all services - tenant-aware"""
-    services = Service.objects.filter(is_active=True).select_related(
-        'category', 'service_type'
-    )
+    from stores.models import Store
+
+    # Get user's accessible stores
+    if request.user.is_superuser:
+        stores = Store.objects.filter(
+            company=request.user.company,
+            is_active=True
+        )
+    else:
+        stores = request.user.stores.filter(is_active=True)
+
+    services = Service.objects.filter(
+        store__in=stores,
+        is_active=True
+    ).select_related('category', 'service_type', 'store')
 
     # Filtering
     category_id = request.GET.get('category')
     service_type_id = request.GET.get('service_type')
+    store_id = request.GET.get('store')
     search = request.GET.get('search')
 
     if category_id:
         services = services.filter(category_id=category_id)
     if service_type_id:
         services = services.filter(service_type_id=service_type_id)
+    if store_id:
+        services = services.filter(store_id=store_id)
     if search:
         services = services.filter(
             Q(name__icontains=search) |
@@ -110,8 +140,10 @@ def service_list(request):
         'page_obj': page_obj,
         'categories': categories,
         'service_types': service_types,
+        'stores': stores,
         'selected_category': category_id,
         'selected_type': service_type_id,
+        'selected_store': store_id,
         'search_query': search,
     }
 
@@ -121,13 +153,24 @@ def service_list(request):
 @login_required
 def service_detail(request, pk):
     """Service detail view - tenant-aware"""
-    service = get_object_or_404(Service, pk=pk)
+    from stores.models import Store
+
+    # Get user's accessible stores
+    if request.user.is_superuser:
+        stores = Store.objects.filter(
+            company=request.user.company,
+            is_active=True
+        )
+    else:
+        stores = request.user.stores.filter(is_active=True)
+
+    service = get_object_or_404(Service, pk=pk, store__in=stores)
 
     # Get pricing tiers
     pricing_tiers = service.pricing_tiers.filter(is_active=True)
 
     # Get resources
-    resources = service.resources.all()
+    resources = service.resources.select_related('product').all()
 
     # Get reviews
     reviews = service.reviews.filter(is_published=True).order_by('-created_at')[:10]
@@ -166,11 +209,30 @@ def service_create(request):
         if form.is_valid():
             service = form.save(commit=False)
             service.created_by = request.user
+
+            # Validate store belongs to user's company
+            if not request.user.is_superuser:
+                if service.store not in request.user.stores.all():
+                    messages.error(request, "You don't have permission for this store")
+                    return redirect('services:service_list')
+
             service.save()
             messages.success(request, f'Service "{service.name}" created successfully!')
             return redirect('services:service_detail', pk=service.pk)
     else:
         form = ServiceForm()
+
+        # Pre-filter stores for current user
+        from stores.models import Store
+        if request.user.is_superuser:
+            stores = Store.objects.filter(
+                company=request.user.company,
+                is_active=True
+            )
+        else:
+            stores = request.user.stores.filter(is_active=True)
+
+        form.fields['store'].queryset = stores
 
     context = {'form': form, 'action': 'Create'}
     return render(request, 'services/service_form.html', context)
@@ -179,7 +241,17 @@ def service_create(request):
 @login_required
 def service_update(request, pk):
     """Update service - tenant-aware"""
-    service = get_object_or_404(Service, pk=pk)
+    from stores.models import Store
+
+    if request.user.is_superuser:
+        stores = Store.objects.filter(
+            company=request.user.company,
+            is_active=True
+        )
+    else:
+        stores = request.user.stores.filter(is_active=True)
+
+    service = get_object_or_404(Service, pk=pk, store__in=stores)
 
     if request.method == 'POST':
         form = ServiceForm(request.POST, request.FILES, instance=service)
@@ -189,6 +261,7 @@ def service_update(request, pk):
             return redirect('services:service_detail', pk=service.pk)
     else:
         form = ServiceForm(instance=service)
+        form.fields['store'].queryset = stores
 
     context = {'form': form, 'service': service, 'action': 'Update'}
     return render(request, 'services/service_form.html', context)
@@ -213,8 +286,20 @@ def service_delete(request, pk):
 @login_required
 def appointment_list(request):
     """List appointments - tenant-aware"""
-    appointments = ServiceAppointment.objects.select_related(
-        'service', 'assigned_staff'
+    from stores.models import Store
+
+    if request.user.is_superuser:
+        stores = Store.objects.filter(
+            company=request.user.company,
+            is_active=True
+        )
+    else:
+        stores = request.user.stores.filter(is_active=True)
+
+    appointments = ServiceAppointment.objects.filter(
+        store__in=stores
+    ).select_related(
+        'service', 'assigned_staff', 'customer', 'store'
     ).order_by('-scheduled_date', '-scheduled_time')
 
     # Filtering
@@ -223,6 +308,7 @@ def appointment_list(request):
     date_to = request.GET.get('date_to')
     service_id = request.GET.get('service')
     staff_id = request.GET.get('staff')
+    store_id = request.GET.get('store')
 
     if status:
         appointments = appointments.filter(status=status)
@@ -234,17 +320,24 @@ def appointment_list(request):
         appointments = appointments.filter(service_id=service_id)
     if staff_id:
         appointments = appointments.filter(assigned_staff_id=staff_id)
+    if store_id:
+        appointments = appointments.filter(store_id=store_id)
 
     # Pagination
     paginator = Paginator(appointments, 20)
     page_number = request.GET.get('page')
     page_obj = paginator.get_page(page_number)
 
-    services = Service.objects.filter(is_active=True, requires_appointment=True)
+    services = Service.objects.filter(
+        store__in=stores,
+        is_active=True,
+        requires_appointment=True
+    )
 
     context = {
         'page_obj': page_obj,
         'services': services,
+        'stores': stores,
         'status_choices': ServiceAppointment.STATUS_CHOICES,
     }
 
@@ -292,12 +385,25 @@ def appointment_calendar(request):
 def appointment_create(request):
     """Create appointment - tenant-aware"""
     if request.method == 'POST':
-        form = ServiceAppointmentForm(request.POST)
+        form = ServiceAppointmentForm(request.POST, user=request.user)
         if form.is_valid():
             appointment = form.save(commit=False)
             appointment.created_by = request.user
+
+            # Calculate totals
+            price = appointment.service.calculate_price(
+                duration_minutes=appointment.duration_minutes,
+                tier_level=appointment.pricing_tier.tier_level if appointment.pricing_tier else None
+            )
+            appointment.price = price - appointment.discount_amount
+            appointment.tax_amount = appointment.service.calculate_tax(appointment.price)
+            appointment.total_amount = appointment.price + appointment.tax_amount
+
             appointment.save()
-            messages.success(request, f'Appointment {appointment.appointment_number} created!')
+            messages.success(
+                request,
+                f'Appointment {appointment.appointment_number} created!'
+            )
             return redirect('services:appointment_detail', pk=appointment.pk)
     else:
         # Pre-fill with service if provided
@@ -305,7 +411,7 @@ def appointment_create(request):
         initial = {}
         if service_id:
             initial['service'] = service_id
-        form = ServiceAppointmentForm(initial=initial)
+        form = ServiceAppointmentForm(initial=initial, user=request.user)
 
     context = {'form': form, 'action': 'Create'}
     return render(request, 'services/appointment_form.html', context)
@@ -314,7 +420,21 @@ def appointment_create(request):
 @login_required
 def appointment_detail(request, pk):
     """Appointment detail view - tenant-aware"""
-    appointment = get_object_or_404(ServiceAppointment, pk=pk)
+    from stores.models import Store
+
+    if request.user.is_superuser:
+        stores = Store.objects.filter(
+            company=request.user.company,
+            is_active=True
+        )
+    else:
+        stores = request.user.stores.filter(is_active=True)
+
+    appointment = get_object_or_404(
+        ServiceAppointment,
+        pk=pk,
+        store__in=stores
+    )
 
     # Get execution if exists
     execution = None
@@ -328,12 +448,27 @@ def appointment_detail(request, pk):
 
     return render(request, 'services/appointment_detail.html', context)
 
-
 @login_required
+@transaction.atomic
 def appointment_update_status(request, pk):
     """Update appointment status - AJAX endpoint"""
     if request.method == 'POST':
-        appointment = get_object_or_404(ServiceAppointment, pk=pk)
+        from stores.models import Store
+
+        if request.user.is_superuser:
+            stores = Store.objects.filter(
+                company=request.user.company,
+                is_active=True
+            )
+        else:
+            stores = request.user.stores.filter(is_active=True)
+
+        appointment = get_object_or_404(
+            ServiceAppointment,
+            pk=pk,
+            store__in=stores
+        )
+
         new_status = request.POST.get('status')
 
         if new_status in dict(ServiceAppointment.STATUS_CHOICES):
@@ -376,9 +511,15 @@ def appointment_update_status(request, pk):
                 'new_status': new_status
             })
 
-        return JsonResponse({'success': False, 'message': 'Invalid status'}, status=400)
+        return JsonResponse(
+            {'success': False, 'message': 'Invalid status'},
+            status=400
+        )
 
-    return JsonResponse({'success': False, 'message': 'Invalid request'}, status=400)
+    return JsonResponse(
+        {'success': False, 'message': 'Invalid request'},
+        status=400
+    )
 
 
 # ==================== Service Execution ====================
@@ -468,22 +609,43 @@ def package_detail(request, pk):
 @login_required
 def reports_dashboard(request):
     """Reports dashboard - tenant-aware"""
+    from stores.models import Store
+    from accounts.models import CustomUser
+
+    if request.user.is_superuser:
+        stores = Store.objects.filter(
+            company=request.user.company,
+            is_active=True
+        )
+    else:
+        stores = request.user.stores.filter(is_active=True)
+
     today = timezone.now().date()
-    start_date = request.GET.get('start_date', (today - timedelta(days=30)).strftime('%Y-%m-%d'))
+    start_date = request.GET.get(
+        'start_date',
+        (today - timedelta(days=30)).strftime('%Y-%m-%d')
+    )
     end_date = request.GET.get('end_date', today.strftime('%Y-%m-%d'))
 
     # Revenue statistics
     appointments = ServiceAppointment.objects.filter(
+        store__in=stores,
         scheduled_date__range=[start_date, end_date],
         status='completed'
     )
 
-    total_revenue = appointments.aggregate(Sum('total_amount'))['total_amount__sum'] or 0
+    total_revenue = appointments.aggregate(
+        Sum('total_amount')
+    )['total_amount__sum'] or 0
     total_appointments = appointments.count()
-    avg_appointment_value = total_revenue / total_appointments if total_appointments > 0 else 0
+    avg_appointment_value = (
+        total_revenue / total_appointments
+        if total_appointments > 0 else 0
+    )
 
     # Service performance
     service_stats = Service.objects.filter(
+        store__in=stores,
         appointments__scheduled_date__range=[start_date, end_date],
         appointments__status='completed'
     ).annotate(
@@ -492,9 +654,8 @@ def reports_dashboard(request):
     ).order_by('-revenue')[:10]
 
     # Staff performance
-    from django.contrib.auth import get_user_model
-    User = get_user_model()
-    staff_stats = User.objects.filter(
+    staff_stats = CustomUser.objects.filter(
+        service_appointments__store__in=stores,
         service_appointments__scheduled_date__range=[start_date, end_date],
         service_appointments__status='completed'
     ).annotate(
@@ -520,6 +681,7 @@ def reports_dashboard(request):
         'service_stats': service_stats,
         'staff_stats': staff_stats,
         'daily_revenue': list(daily_revenue),
+        'stores': stores,
     }
 
     return render(request, 'services/reports_dashboard.html', context)
@@ -529,7 +691,17 @@ def reports_dashboard(request):
 @login_required
 def get_service_price(request, pk):
     """Get service price with calculations - AJAX"""
-    service = get_object_or_404(Service, pk=pk)
+    from stores.models import Store
+
+    if request.user.is_superuser:
+        stores = Store.objects.filter(
+            company=request.user.company,
+            is_active=True
+        )
+    else:
+        stores = request.user.stores.filter(is_active=True)
+
+    service = get_object_or_404(Service, pk=pk, store__in=stores)
     duration = request.GET.get('duration_minutes')
     tier = request.GET.get('tier_level')
 
@@ -539,15 +711,14 @@ def get_service_price(request, pk):
     )
 
     tax = service.calculate_tax(price)
-    total = price + tax if not service.is_tax_inclusive else price
+    total = price + tax
 
     return JsonResponse({
         'base_price': float(service.base_price),
         'calculated_price': float(price),
         'tax_amount': float(tax),
         'total': float(total),
-        'tax_rate': float(service.tax_rate),
-        'is_tax_inclusive': service.is_tax_inclusive
+        'tax_rate': service.tax_rate,
     })
 
 
