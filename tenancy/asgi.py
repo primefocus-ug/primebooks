@@ -3,7 +3,10 @@ from django.core.asgi import get_asgi_application
 from channels.routing import ProtocolTypeRouter, URLRouter
 from channels.auth import AuthMiddlewareStack
 from channels.security.websocket import AllowedHostsOriginValidator
-
+from pathlib import Path
+from dotenv import load_dotenv
+env_path = Path(__file__).resolve().parent.parent / '.env'
+load_dotenv(dotenv_path=env_path)
 # Relative import of project-level websocket_urlpatterns
 from . import routing
 
