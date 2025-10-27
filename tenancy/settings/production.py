@@ -2,17 +2,27 @@
 Production settings with tenant-specific email and invoice configurations
 """
 from .base import *
+import os
+from pathlib import Path
+from dotenv import load_dotenv
 import sentry_sdk
-from sentry_sdk.integrations.django import DjangoIntegration
-from sentry_sdk.integrations.celery import CeleryIntegration
+from sentry_sdk.integrations.django import DjangoIntegration, CeleryIntegration
 
+# Load .env early
+env_path = Path(__file__).resolve().parent.parent / '.env'
+load_dotenv(dotenv_path=env_path)
+
+# SECURITY
 DEBUG = False
 SECRET_KEY = os.getenv('SECRET_KEY')
-
 if not SECRET_KEY:
     raise ValueError("SECRET_KEY environment variable must be set in production")
 
-ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', 'primebooks.sale').split(',')
+# Clean host lists
+ALLOWED_HOSTS = [h.strip() for h in os.getenv('ALLOWED_HOSTS', 'primebooks.sale').split(',')]
+CSRF_TRUSTED_ORIGINS = [h.strip() for h in os.getenv('CSRF_TRUSTED_ORIGINS', '').split(',')]
+CORS_ALLOWED_ORIGINS = [h.strip() for h in os.getenv('CORS_ALLOWED_ORIGINS', '').split(',')]
+WEBSOCKET_ALLOWED_ORIGINS = [h.strip() for h in os.getenv('WEBSOCKET_ALLOWED_ORIGINS', '').split(',')]
 
 # Database
 DATABASES = {
@@ -42,19 +52,15 @@ CELERY_TIMEZONE = TIME_ZONE
 CELERY_TASK_ALWAYS_EAGER = False
 CELERY_TASK_EAGER_PROPAGATES = False
 
-# Channel Layers
+# Channels
 CHANNEL_LAYERS = {
     'default': {
         'BACKEND': 'channels_redis.core.RedisChannelLayer',
-        'CONFIG': {
-            "hosts": [REDIS_URL],
-            "capacity": 1500,
-            "expiry": 10,
-        },
+        'CONFIG': {"hosts": [REDIS_URL], "capacity": 1500, "expiry": 10},
     },
 }
 
-# Cache
+# Caches
 CACHES = {
     'default': {
         'BACKEND': 'django_redis.cache.RedisCache',
@@ -63,43 +69,34 @@ CACHES = {
             'CLIENT_CLASS': 'django_redis.client.DefaultClient',
             'SOCKET_CONNECT_TIMEOUT': 5,
             'SOCKET_TIMEOUT': 5,
-            'CONNECTION_POOL_KWARGS': {
-                'max_connections': 50,
-                'retry_on_timeout': True
-            }
+            'CONNECTION_POOL_KWARGS': {'max_connections': 50, 'retry_on_timeout': True},
         },
         'KEY_PREFIX': 'tenant',
         'VERSION': 1,
     }
 }
 
-# Tenant-Specific Email Backend
+# Email
 EMAIL_BACKEND = 'company.email.TenantAwareEmailBackend'
-
-# Default Email Configuration (fallback)
 EMAIL_HOST = os.getenv('EMAIL_HOST', 'smtp.gmail.com')
 EMAIL_PORT = int(os.getenv('EMAIL_PORT', 587))
 EMAIL_USE_TLS = os.getenv('EMAIL_USE_TLS', 'True') == 'True'
 EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER', '')
 EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD', '')
-DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', 'noreply@yourdomain.com')
-
-# Support Email
+DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', 'noreply@primebooks.sale')
 SUPPORT_EMAIL = os.getenv('SUPPORT_EMAIL', 'support.primebooks@gmail.com')
-FRONTEND_URL = os.getenv('FRONTEND_URL', 'https://primeboooks.sale')
+FRONTEND_URL = os.getenv('FRONTEND_URL', 'https://primebooks.sale')
 SITE_NAME = os.getenv('SITE_NAME', 'Prime Books')
 
-# Static files (with WhiteNoise)
+# Static & media
 STATIC_URL = '/static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
 STATICFILES_DIRS = [BASE_DIR / 'static']
 STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
-
-
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
 
-# Security Settings
+# Security
 SECURE_BROWSER_XSS_FILTER = True
 SECURE_CONTENT_TYPE_NOSNIFF = True
 X_FRAME_OPTIONS = 'DENY'
@@ -111,21 +108,11 @@ CSRF_COOKIE_SECURE = True
 SECURE_SSL_REDIRECT = True
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 
-# CORS
-CORS_ALLOWED_ORIGINS = os.getenv('CORS_ALLOWED_ORIGINS', '').split(',')
-CORS_ALLOW_CREDENTIALS = True
-
-# WebSocket
-WEBSOCKET_ALLOWED_ORIGINS = os.getenv('WEBSOCKET_ALLOWED_ORIGINS', '').split(',')
-
-# Sentry Integration
+# Sentry
 if os.getenv('SENTRY_DSN'):
     sentry_sdk.init(
         dsn=os.getenv('SENTRY_DSN'),
-        integrations=[
-            DjangoIntegration(),
-            CeleryIntegration(),
-        ],
+        integrations=[DjangoIntegration(), CeleryIntegration()],
         traces_sample_rate=float(os.getenv('SENTRY_TRACES_SAMPLE_RATE', '0.1')),
         send_default_pii=False,
         environment=os.getenv('ENVIRONMENT', 'production'),
@@ -134,7 +121,6 @@ if os.getenv('SENTRY_DSN'):
 # Logging
 LOG_DIR = BASE_DIR / 'logs'
 os.makedirs(LOG_DIR, exist_ok=True)
-
 LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,
@@ -219,19 +205,13 @@ LOGGING = {
         'level': 'WARNING',
     },
 }
+# REST Framework throttling
+REST_FRAMEWORK['DEFAULT_THROTTLE_RATES'] = {'user': '5000/day', 'anon': '500/day'}
 
-# REST Framework - Production throttling
-REST_FRAMEWORK['DEFAULT_THROTTLE_RATES'] = {
-    'user': '5000/day',
-    'anon': '500/day',
-}
-
-# Session configuration
-SESSION_COOKIE_AGE = 1209600  # 2 weeks
+# Session & CSRF
+SESSION_COOKIE_AGE = 1209600
 SESSION_COOKIE_HTTPONLY = True
 SESSION_COOKIE_SAMESITE = 'Lax'
-
-# CSRF
 CSRF_COOKIE_HTTPONLY = True
 CSRF_COOKIE_SAMESITE = 'Lax'
-CSRF_TRUSTED_ORIGINS = os.getenv('CSRF_TRUSTED_ORIGINS', '').split(',')
+
