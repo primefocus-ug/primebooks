@@ -10,14 +10,21 @@ from dotenv import load_dotenv
 # Build paths
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-# Load .env file
+# Load .env file - MUST happen before any other imports or logic
 env_path = BASE_DIR / '.env'
-load_dotenv(dotenv_path=env_path)
+load_dotenv(dotenv_path=env_path, override=True)
 
 # CRITICAL: Determine DEBUG mode first
-#DEBUG = os.getenv('DEBUG', 'True') == 'True'
-DEBUG = os.getenv('DEBUG', 'False').lower() in ('true', '1', 'yes')
+DEBUG_VALUE = os.getenv('DEBUG', 'True')  # Default to True if not set
+DEBUG = DEBUG_VALUE.strip().lower() in ('true', '1', 'yes', 'on')
 
+# Print for verification
+print("=" * 50)
+print(f"Environment file: {env_path}")
+print(f"DEBUG env value: '{DEBUG_VALUE}'")
+print(f"DEBUG mode: {DEBUG}")
+print(f"Database: {os.getenv('DB_NAME', 'NOT SET')}")
+print("=" * 50)
 
 # =============================================================================
 # DEVELOPMENT vs PRODUCTION CONFIGURATION
