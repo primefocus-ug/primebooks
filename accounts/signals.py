@@ -330,12 +330,15 @@ def create_default_roles_on_migrate(sender, **kwargs):
         logger.info(f"Creating default roles during migration for {tenant.schema_name}")
         create_default_roles_for_tenant(Company, tenant, created=True)
 
-@receiver(pre_save, sender=CustomUser)
-def assign_role_and_staff_status(sender, instance: CustomUser, **kwargs):
+@receiver(post_save, sender=CustomUser)
+def assign_role_and_staff_status(sender, instance: CustomUser, created, **kwargs):
     """
-    Assign group permissions based on user_type before saving the user.
-    Avoid recursion by using pre_save and not calling instance.save().
+    Assign group permissions based on user_type after saving the user.
+    Only runs on new users (created=True).
     """
+    if not created:
+        return  # Only assign roles when user is first created
+
     role_name = USER_TYPE_TO_ROLE.get(instance.user_type)
     if not role_name:
         logger.warning(f"No role mapping defined for user_type '{instance.user_type}'")
@@ -347,13 +350,12 @@ def assign_role_and_staff_status(sender, instance: CustomUser, **kwargs):
         logger.warning(f"Role '{role_name}' does not exist. Cannot assign group.")
         return
 
-    # Set the user's groups to this role's group
-    # Use set() instead of clear() + add() to avoid multiple queries
+    # Safe to assign M2M now, user.id exists
     instance.groups.set([role.group])
 
     # Optionally set is_staff based on user_type
     instance.is_staff = instance.user_type in ['SUPER_ADMIN', 'MANAGER']
-
+    instance.save(update_fields=['is_staff'])
 
 
 # Connect the migration signal (optional)

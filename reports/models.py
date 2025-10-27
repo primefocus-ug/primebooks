@@ -138,15 +138,13 @@ class SavedReport(models.Model):
         return f"{self.name} ({self.get_report_type_display()})"
 
     def get_cache_key(self, user_id, **kwargs):
-        """Generate cache key for report results"""
-        # Convert non-serializable objects to strings
         serializable_kwargs = {}
         for key, value in kwargs.items():
             if isinstance(value, (date, datetime)):
                 serializable_kwargs[key] = value.isoformat()
             elif isinstance(value, Decimal):
                 serializable_kwargs[key] = float(value)
-            elif hasattr(value, 'id'):  # Django model instance
+            elif hasattr(value, 'id'):
                 serializable_kwargs[key] = value.id
             else:
                 serializable_kwargs[key] = value
@@ -157,10 +155,14 @@ class SavedReport(models.Model):
         return f"report:{hashlib.md5(hash_input.encode()).hexdigest()}"
 
     def increment_execution_count(self):
-        """Increment execution counter"""
+        """Increment execution counter safely, even for new instances"""
         self.execution_count += 1
         self.last_executed = timezone.now()
-        self.save(update_fields=['execution_count', 'last_executed'])
+
+        if self.pk:  # Only force update if instance exists in DB
+            self.save(update_fields=['execution_count', 'last_executed'])
+        else:
+            self.save()
 
     def invalidate_cache(self, user_id=None):
         """Invalidate cached report results"""
@@ -169,7 +171,8 @@ class SavedReport(models.Model):
             cache.delete(cache_key)
         else:
             # Clear all cache entries for this report
-            cache.delete_pattern(f"report:{self.id}:*")
+            if self.pk:  # Ensure instance has a primary key
+                cache.delete_pattern(f"report:{self.id}:*")
 
 
 class ReportSchedule(models.Model):
