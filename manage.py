@@ -1,5 +1,3 @@
-#!/usr/bin/env python
-"""Django's command-line utility for administrative tasks."""
 import os
 import sys
 from pathlib import Path
@@ -12,6 +10,7 @@ def main():
     env_path = Path(__file__).resolve().parent / '.env'
     load_dotenv(dotenv_path=env_path)
 
+    # Set Django settings module
     os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'tenancy.settings')
 
     try:
@@ -22,6 +21,7 @@ def main():
             "available on your PYTHONPATH environment variable? Did you "
             "forget to activate a virtual environment?"
         ) from exc
+
     execute_from_command_line(sys.argv)
 
 

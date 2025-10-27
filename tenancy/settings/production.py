@@ -6,7 +6,8 @@ import os
 from pathlib import Path
 from dotenv import load_dotenv
 import sentry_sdk
-from sentry_sdk.integrations.django import DjangoIntegration, CeleryIntegration
+from sentry_sdk.integrations.django import DjangoIntegration
+from sentry_sdk.integrations.celery import CeleryIntegration
 
 # Load .env early
 env_path = Path(__file__).resolve().parent.parent / '.env'

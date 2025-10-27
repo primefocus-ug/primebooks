@@ -7,19 +7,220 @@ import os
 # Load environment variables
 from dotenv import load_dotenv
 
-load_dotenv()
-
 # Build paths
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-# SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = os.getenv('SECRET_KEY', 'django-insecure-9mghr4buf3l(sinf2(lez20c&*=2)lha_qkdyrxeu1#14@p&(%')
+# Load .env file
+env_path = BASE_DIR / '.env'
+load_dotenv(dotenv_path=env_path)
 
-# SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = os.getenv('DEBUG', 'False') == 'False'
+# CRITICAL: Determine DEBUG mode first
+#DEBUG = os.getenv('DEBUG', 'True') == 'True'
+DEBUG = os.getenv('DEBUG', 'False').lower() in ('true', '1', 'yes')
 
-# Hosts
-ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', '*').split(',') if not DEBUG else ['*']
+
+# =============================================================================
+# DEVELOPMENT vs PRODUCTION CONFIGURATION
+# =============================================================================
+
+if DEBUG:
+    # =========================================================================
+    # DEVELOPMENT MODE - Uses hardcoded values
+    # =========================================================================
+    print("=" * 50)
+    print("🔧 RUNNING IN DEVELOPMENT MODE")
+    print("=" * 50)
+
+    SECRET_KEY = 'django-insecure-9mghr4buf3l(sinf2(lez20c&*=2)lha_qkdyrxeu1#14@p&(%'
+    ALLOWED_HOSTS = ['*']
+
+    # Database
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django_tenants.postgresql_backend',
+            'NAME': 'mbalei',
+            'USER': 'postgres',
+            'PASSWORD': '@Developer25',
+            'HOST': 'localhost',
+            'PORT': '5432',
+        }
+    }
+
+    # Redis
+    REDIS_URL = 'redis://127.0.0.1:6379'
+
+    # Email - Console backend for development
+    EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
+    EMAIL_HOST = 'smtp.gmail.com'
+    EMAIL_PORT = 587
+    EMAIL_USE_TLS = True
+    EMAIL_HOST_USER = ''
+    EMAIL_HOST_PASSWORD = ''
+    DEFAULT_FROM_EMAIL = 'noreply@yourdomain.com'
+    SUPPORT_EMAIL = 'support@yourdomain.com'
+
+    # Site
+    FRONTEND_URL = 'http://localhost:8000'
+    SITE_NAME = 'Prime Books'
+    BASE_DOMAIN = 'localhost'
+
+    # CORS
+    CORS_ALLOW_ALL_ORIGINS = True
+
+    # Security - Disabled for development
+    SECURE_BROWSER_XSS_FILTER = False
+    SECURE_CONTENT_TYPE_NOSNIFF = False
+    X_FRAME_OPTIONS = 'SAMEORIGIN'
+    SECURE_HSTS_SECONDS = 0
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = False
+    SECURE_HSTS_PRELOAD = False
+    SESSION_COOKIE_SECURE = False
+    CSRF_COOKIE_SECURE = False
+    SECURE_SSL_REDIRECT = False
+    SECURE_PROXY_SSL_HEADER = None
+
+    # Static files - No WhiteNoise in development
+    STATICFILES_STORAGE = 'django.contrib.staticfiles.storage.StaticFilesStorage'
+
+    # Sessions
+    SESSION_COOKIE_AGE = 86400  # 1 day
+    SESSION_COOKIE_HTTPONLY = True
+    SESSION_COOKIE_SAMESITE = 'Lax'
+
+    # Celery
+    CELERY_TASK_ALWAYS_EAGER = True
+    CELERY_TASK_EAGER_PROPAGATES = True
+
+    # REST Framework
+    REST_FRAMEWORK_THROTTLE_RATES = {
+        'user': '1000/day',
+        'anon': '100/day',
+    }
+
+    # Logging
+    LOG_LEVEL = 'DEBUG'
+    CONSOLE_LOG_LEVEL = 'DEBUG'
+    FILE_LOG_FORMATTER = 'simple'
+    MAX_LOG_BYTES = 5 * 1024 * 1024
+    LOG_BACKUP_COUNT = 3
+
+    # Cache settings
+    CACHE_OPTIONS = {}
+
+    # Celery beat schedule intervals
+    ANALYTICS_UPDATE_INTERVAL = 60.0
+
+else:
+    # =========================================================================
+    # PRODUCTION MODE - Loads from .env
+    # =========================================================================
+    print("=" * 50)
+    print("🚀 RUNNING IN PRODUCTION MODE")
+    print("=" * 50)
+
+    SECRET_KEY = os.getenv('SECRET_KEY')
+    if not SECRET_KEY:
+        raise ValueError("SECRET_KEY environment variable must be set in production")
+
+    # Clean and parse host lists
+    ALLOWED_HOSTS = [h.strip() for h in os.getenv('ALLOWED_HOSTS', 'primebooks.sale').split(',')]
+
+    # Database
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django_tenants.postgresql_backend',
+            'NAME': os.getenv('DB_NAME'),
+            'USER': os.getenv('DB_USER'),
+            'PASSWORD': os.getenv('DB_PASSWORD'),
+            'HOST': os.getenv('DB_HOST'),
+            'PORT': os.getenv('DB_PORT', '5432'),
+            'CONN_MAX_AGE': 600,
+            'OPTIONS': {
+                'connect_timeout': 10,
+                'sslmode': os.getenv('DB_SSLMODE', 'require'),
+            }
+        }
+    }
+
+    # Redis
+    REDIS_URL = os.getenv('REDIS_URL', 'redis://localhost:6379')
+
+    # Email - Tenant-aware backend for production
+    EMAIL_BACKEND = 'company.email.TenantAwareEmailBackend'
+    EMAIL_HOST = os.getenv('EMAIL_HOST', 'smtp.gmail.com')
+    EMAIL_PORT = int(os.getenv('EMAIL_PORT', 587))
+    EMAIL_USE_TLS = os.getenv('EMAIL_USE_TLS', 'True') == 'True'
+    EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER', '')
+    EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD', '')
+    DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', 'noreply@primebooks.sale')
+    SUPPORT_EMAIL = os.getenv('SUPPORT_EMAIL', 'support.primebooks@gmail.com')
+
+    # Site
+    FRONTEND_URL = os.getenv('FRONTEND_URL', 'https://primebooks.sale')
+    SITE_NAME = os.getenv('SITE_NAME', 'Prime Books')
+    BASE_DOMAIN = os.getenv('BASE_DOMAIN', 'primebooks.sale')
+
+    # CORS
+    CORS_ALLOW_ALL_ORIGINS = False
+    CORS_ALLOWED_ORIGINS = [h.strip() for h in os.getenv('CORS_ALLOWED_ORIGINS', '').split(',') if h.strip()]
+    CORS_ALLOW_CREDENTIALS = True
+
+    # Security - Enabled for production
+    SECURE_BROWSER_XSS_FILTER = True
+    SECURE_CONTENT_TYPE_NOSNIFF = True
+    X_FRAME_OPTIONS = 'DENY'
+    SECURE_HSTS_SECONDS = 31536000
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+    SECURE_HSTS_PRELOAD = True
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    SECURE_SSL_REDIRECT = True
+    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+    CSRF_TRUSTED_ORIGINS = [h.strip() for h in os.getenv('CSRF_TRUSTED_ORIGINS', '').split(',') if h.strip()]
+
+    # Static files - WhiteNoise for production
+    STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
+
+    # Sessions
+    SESSION_COOKIE_AGE = 1209600  # 2 weeks
+    SESSION_COOKIE_HTTPONLY = True
+    SESSION_COOKIE_SAMESITE = 'Lax'
+    CSRF_COOKIE_HTTPONLY = True
+    CSRF_COOKIE_SAMESITE = 'Lax'
+
+    # Celery
+    CELERY_TASK_ALWAYS_EAGER = False
+    CELERY_TASK_EAGER_PROPAGATES = False
+
+    # REST Framework
+    REST_FRAMEWORK_THROTTLE_RATES = {
+        'user': '5000/day',
+        'anon': '500/day',
+    }
+
+    # Logging
+    LOG_LEVEL = 'INFO'
+    CONSOLE_LOG_LEVEL = 'WARNING'
+    FILE_LOG_FORMATTER = 'json'
+    MAX_LOG_BYTES = 10 * 1024 * 1024
+    LOG_BACKUP_COUNT = 10
+
+    # Cache settings
+    CACHE_OPTIONS = {
+        'SOCKET_CONNECT_TIMEOUT': 5,
+        'SOCKET_TIMEOUT': 5,
+        'CONNECTION_POOL_KWARGS': {
+            'max_connections': 50,
+            'retry_on_timeout': True
+        }
+    }
+
+    # Celery beat schedule intervals
+    ANALYTICS_UPDATE_INTERVAL = 300.0
+
+# =============================================================================
+# SHARED CONFIGURATION (Common to both modes)
+# =============================================================================
 
 # Application definition
 SHARED_APPS = [
@@ -67,12 +268,13 @@ TENANT_APPS = [
 
 INSTALLED_APPS = list(SHARED_APPS) + [app for app in TENANT_APPS if app not in SHARED_APPS]
 
+# Middleware
 MIDDLEWARE = [
     'django_tenants.middleware.main.TenantMainMiddleware',
     'django.middleware.security.SecurityMiddleware',
 ]
 
-# Add WhiteNoise for production static files
+# Add WhiteNoise for production only
 if not DEBUG:
     MIDDLEWARE.append('whitenoise.middleware.WhiteNoiseMiddleware')
 
@@ -129,31 +331,9 @@ TEMPLATES = [
 WSGI_APPLICATION = 'tenancy.wsgi.application'
 ASGI_APPLICATION = 'tenancy.asgi.application'
 
-# Database
-DATABASES = {
-    'default': {
-        'ENGINE': 'django_tenants.postgresql_backend',
-        'NAME': os.getenv('DB_NAME', 'mbalei'),
-        'USER': os.getenv('DB_USER', 'postgres'),
-        'PASSWORD': os.getenv('DB_PASSWORD', '@Developer25'),
-        'HOST': os.getenv('DB_HOST', 'localhost'),
-        'PORT': os.getenv('DB_PORT', '5432'),
-    }
-}
-
-# Production database optimization
-if not DEBUG:
-    DATABASES['default']['CONN_MAX_AGE'] = 600
-    DATABASES['default']['OPTIONS'] = {
-        'connect_timeout': 10,
-        'sslmode': os.getenv('DB_SSLMODE', 'require'),
-    }
-
 DATABASE_ROUTERS = ('django_tenants.routers.TenantSyncRouter',)
 
-# Redis/Cache/Celery Configuration
-REDIS_URL = os.getenv('REDIS_URL', 'redis://127.0.0.1:6379')
-
+# Channel Layers
 CHANNEL_LAYERS = {
     'default': {
         'BACKEND': 'channels_redis.core.RedisChannelLayer',
@@ -165,28 +345,19 @@ CHANNEL_LAYERS = {
     },
 }
 
+# Caches
 CACHES = {
     'default': {
         'BACKEND': 'django_redis.cache.RedisCache',
         'LOCATION': f'{REDIS_URL}/1',
         'OPTIONS': {
             'CLIENT_CLASS': 'django_redis.client.DefaultClient',
+            **CACHE_OPTIONS
         },
         'KEY_PREFIX': 'tenant',
         'VERSION': 1,
     }
 }
-
-# Production cache optimization
-if not DEBUG:
-    CACHES['default']['OPTIONS'].update({
-        'SOCKET_CONNECT_TIMEOUT': 5,
-        'SOCKET_TIMEOUT': 5,
-        'CONNECTION_POOL_KWARGS': {
-            'max_connections': 50,
-            'retry_on_timeout': True
-        }
-    })
 
 # Celery Configuration
 CELERY_BROKER_URL = f'{REDIS_URL}/0'
@@ -195,8 +366,6 @@ CELERY_ACCEPT_CONTENT = ['json']
 CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'
 CELERY_TIMEZONE = 'Africa/Kampala'
-CELERY_TASK_ALWAYS_EAGER = DEBUG  # Run tasks synchronously in development
-CELERY_TASK_EAGER_PROPAGATES = DEBUG
 
 CELERY_BEAT_SCHEDULE = {
     'check-company-access': {
@@ -217,7 +386,7 @@ CELERY_BEAT_SCHEDULE = {
     },
     'analytics-update': {
         'task': 'company.tasks.send_periodic_analytics_update',
-        'schedule': 300.0 if not DEBUG else 60.0,
+        'schedule': ANALYTICS_UPDATE_INTERVAL,
     },
     'efris-daily-maintenance': {
         'task': 'efris.tasks.daily_efris_maintenance',
@@ -229,23 +398,9 @@ CELERY_BEAT_SCHEDULE = {
     },
 }
 
-# Email Configuration
-if DEBUG:
-    EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
-else:
-    EMAIL_BACKEND = 'company.email.TenantAwareEmailBackend'
-
-EMAIL_HOST = os.getenv('EMAIL_HOST', 'smtp.gmail.com')
-EMAIL_PORT = int(os.getenv('EMAIL_PORT', 587))
-EMAIL_USE_TLS = os.getenv('EMAIL_USE_TLS', 'True') == 'True'
-EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER', '')
-EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD', '')
-DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', 'noreply@yourdomain.com')
-SUPPORT_EMAIL = os.getenv('SUPPORT_EMAIL', 'support@yourdomain.com')
-
-# Site Configuration
-SITE_NAME = os.getenv('SITE_NAME', 'Prime Books')
-FRONTEND_URL = os.getenv('FRONTEND_URL', 'http://localhost:8000' if DEBUG else 'https://primebooks.sale')
+# WebSocket
+WEBSOCKET_ALLOWED_ORIGINS = os.getenv('WEBSOCKET_ALLOWED_ORIGINS',
+                                      'http://localhost:8000' if DEBUG else 'wss://primebooks.sale').split(',')
 
 # Password validation
 AUTH_PASSWORD_VALIDATORS = [
@@ -275,12 +430,6 @@ LOCALE_PATHS = [BASE_DIR / 'locale']
 # Session configuration
 SESSION_ENGINE = 'django.contrib.sessions.backends.cache'
 SESSION_CACHE_ALIAS = 'default'
-
-if not DEBUG:
-    SESSION_COOKIE_AGE = 1209600  # 2 weeks
-    SESSION_COOKIE_HTTPONLY = True
-    SESSION_COOKIE_SECURE = True
-    SESSION_COOKIE_SAMESITE = 'Lax'
 
 # Authentication
 AUTH_USER_MODEL = 'accounts.CustomUser'
@@ -316,7 +465,6 @@ SOCIALACCOUNT_PROVIDERS = {
 TENANT_MODEL = "company.Company"
 TENANT_DOMAIN_MODEL = "company.Domain"
 TENANT_HEADER = 'X-Company-ID'
-BASE_DOMAIN = os.getenv('BASE_DOMAIN', 'localhost')
 PUBLIC_SCHEMA_NAME = 'public'
 
 # Static files
@@ -324,38 +472,9 @@ STATIC_URL = '/static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
 STATICFILES_DIRS = [BASE_DIR / 'static']
 
-if not DEBUG:
-    STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
-
 # Media files
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
-
-
-# CORS
-if DEBUG:
-    CORS_ALLOW_ALL_ORIGINS = True
-else:
-    CORS_ALLOWED_ORIGINS = os.getenv('CORS_ALLOWED_ORIGINS', '').split(',')
-    CORS_ALLOW_CREDENTIALS = True
-
-# WebSocket
-WEBSOCKET_ALLOWED_ORIGINS = os.getenv('WEBSOCKET_ALLOWED_ORIGINS', 'http://localhost:8000').split(',')
-
-# Security Settings (Production only)
-if not DEBUG:
-    SECURE_BROWSER_XSS_FILTER = True
-    SECURE_CONTENT_TYPE_NOSNIFF = True
-    X_FRAME_OPTIONS = 'DENY'
-    SECURE_HSTS_SECONDS = 31536000
-    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
-    SECURE_HSTS_PRELOAD = True
-    CSRF_COOKIE_SECURE = True
-    CSRF_COOKIE_HTTPONLY = True
-    CSRF_COOKIE_SAMESITE = 'Lax'
-    SECURE_SSL_REDIRECT = True
-    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
-    CSRF_TRUSTED_ORIGINS = os.getenv('CSRF_TRUSTED_ORIGINS', '').split(',')
 
 # EFRIS Settings
 EFRIS_WEBSOCKET_SETTINGS = {
@@ -419,10 +538,7 @@ REST_FRAMEWORK = {
         'rest_framework.throttling.UserRateThrottle',
         'rest_framework.throttling.AnonRateThrottle',
     ],
-    'DEFAULT_THROTTLE_RATES': {
-        'user': '1000/day' if DEBUG else '5000/day',
-        'anon': '100/day' if DEBUG else '500/day',
-    },
+    'DEFAULT_THROTTLE_RATES': REST_FRAMEWORK_THROTTLE_RATES,
 }
 
 # JWT Settings
@@ -451,36 +567,43 @@ LOGGING = {
             'format': '{levelname} {message}',
             'style': '{',
         },
+        'json': {
+            'class': 'pythonjsonlogger.jsonlogger.JsonFormatter',
+            'format': '%(asctime)s %(name)s %(levelname)s %(message)s'
+        } if not DEBUG else {
+            'format': '{levelname} {message}',
+            'style': '{',
+        },
     },
     'handlers': {
         'console': {
-            'level': 'DEBUG' if DEBUG else 'WARNING',
+            'level': CONSOLE_LOG_LEVEL,
             'class': 'logging.StreamHandler',
             'formatter': 'simple' if DEBUG else 'verbose',
         },
         'tenant_file': {
-            'level': 'DEBUG' if DEBUG else 'INFO',
+            'level': LOG_LEVEL,
             'class': 'logging.handlers.RotatingFileHandler',
             'filename': LOG_DIR / 'companies.log',
-            'maxBytes': 5 * 1024 * 1024 if DEBUG else 10 * 1024 * 1024,
-            'backupCount': 3 if DEBUG else 10,
-            'formatter': 'verbose',
+            'maxBytes': MAX_LOG_BYTES,
+            'backupCount': LOG_BACKUP_COUNT,
+            'formatter': FILE_LOG_FORMATTER if not DEBUG else 'verbose',
         },
         'tenant_general_file': {
             'level': 'INFO',
             'class': 'logging.handlers.RotatingFileHandler',
             'filename': LOG_DIR / 'tenant.log',
-            'maxBytes': 10 * 1024 * 1024,
-            'backupCount': 5 if DEBUG else 10,
-            'formatter': 'verbose',
+            'maxBytes': MAX_LOG_BYTES,
+            'backupCount': LOG_BACKUP_COUNT,
+            'formatter': FILE_LOG_FORMATTER if not DEBUG else 'verbose',
         },
         'invoice_file': {
             'level': 'INFO',
             'class': 'logging.handlers.RotatingFileHandler',
             'filename': LOG_DIR / 'invoices.log',
-            'maxBytes': 10 * 1024 * 1024,
-            'backupCount': 5 if DEBUG else 10,
-            'formatter': 'verbose',
+            'maxBytes': MAX_LOG_BYTES,
+            'backupCount': LOG_BACKUP_COUNT,
+            'formatter': FILE_LOG_FORMATTER if not DEBUG else 'verbose',
         },
     },
     'loggers': {
@@ -491,12 +614,12 @@ LOGGING = {
         },
         'company': {
             'handlers': ['tenant_file', 'console'],
-            'level': 'DEBUG' if DEBUG else 'INFO',
+            'level': LOG_LEVEL,
             'propagate': False,
         },
         'tenant_middleware': {
             'handlers': ['tenant_general_file', 'console'],
-            'level': 'DEBUG' if DEBUG else 'INFO',
+            'level': LOG_LEVEL,
             'propagate': False,
         },
         'invoices': {
@@ -517,22 +640,12 @@ if not DEBUG:
         'level': 'WARNING',
         'class': 'logging.handlers.RotatingFileHandler',
         'filename': LOG_DIR / 'security.log',
-        'maxBytes': 10 * 1024 * 1024,
-        'backupCount': 10,
-        'formatter': 'verbose',
+        'maxBytes': MAX_LOG_BYTES,
+        'backupCount': LOG_BACKUP_COUNT,
+        'formatter': 'json',
     }
     LOGGING['loggers']['django.security'] = {
         'handlers': ['security_file', 'console'],
         'level': 'WARNING',
         'propagate': False,
     }
-
-# Print mode on startup
-if DEBUG:
-    print("=" * 50)
-    print("🔧 RUNNING IN DEVELOPMENT MODE")
-    print("=" * 50)
-else:
-    print("=" * 50)
-    print("🚀 RUNNING IN PRODUCTION MODE")
-    print("=" * 50)
