@@ -1,0 +1,306 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}{{ title }} - PrimeBooks{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-12">
+            <div class="page-header d-flex justify-content-between align-items-center mb-4">
+                <h1 class="h2 mb-0">
+                    <i class="bi bi-tag me-2"></i>{{ title }}
+                </h1>
+                <a href="{% url 'expenses:category_list' %}" class="btn btn-outline-secondary">
+                    <i class="bi bi-arrow-left me-1"></i>Back to Categories
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-lg-8">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">Category Details</h5>
+                </div>
+                <div class="card-body">
+                    <form method="post" id="categoryForm">
+                        {% csrf_token %}
+                        
+                        {% if form.non_field_errors %}
+                            <div class="alert alert-danger">
+                                {% for error in form.non_field_errors %}
+                                    {{ error }}
+                                {% endfor %}
+                            </div>
+                        {% endif %}
+
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="{{ form.name.id_for_label }}" class="form-label">
+                                        Category Name *
+                                    </label>
+                                    {{ form.name }}
+                                    {% if form.name.errors %}
+                                        <div class="text-danger small">{{ form.name.errors }}</div>
+                                    {% endif %}
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="{{ form.code.id_for_label }}" class="form-label">
+                                        Code *
+                                    </label>
+                                    {{ form.code }}
+                                    {% if form.code.errors %}
+                                        <div class="text-danger small">{{ form.code.errors }}</div>
+                                    {% endif %}
+                                    <div class="form-text">{{ form.fields.code.help_text }}</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="{{ form.description.id_for_label }}" class="form-label">
+                                Description
+                            </label>
+                            {{ form.description }}
+                            {% if form.description.errors %}
+                                <div class="text-danger small">{{ form.description.errors }}</div>
+                            {% endif %}
+                        </div>
+
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="{{ form.gl_account.id_for_label }}" class="form-label">
+                                        GL Account
+                                    </label>
+                                    {{ form.gl_account }}
+                                    {% if form.gl_account.errors %}
+                                        <div class="text-danger small">{{ form.gl_account.errors }}</div>
+                                    {% endif %}
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="{{ form.sort_order.id_for_label }}" class="form-label">
+                                        Sort Order
+                                    </label>
+                                    {{ form.sort_order }}
+                                    {% if form.sort_order.errors %}
+                                        <div class="text-danger small">{{ form.sort_order.errors }}</div>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="{{ form.monthly_budget.id_for_label }}" class="form-label">
+                                        Monthly Budget
+                                    </label>
+                                    {{ form.monthly_budget }}
+                                    {% if form.monthly_budget.errors %}
+                                        <div class="text-danger small">{{ form.monthly_budget.errors }}</div>
+                                    {% endif %}
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="{{ form.color_code.id_for_label }}" class="form-label">
+                                        Color
+                                    </label>
+                                    <div class="d-flex align-items-center">
+                                        {{ form.color_code }}
+                                        <span class="ms-2 color-preview" 
+                                              style="width: 30px; height: 30px; border-radius: 4px; background-color: {{ form.color_code.value|default:'#6c757d' }};"></span>
+                                    </div>
+                                    {% if form.color_code.errors %}
+                                        <div class="text-danger small">{{ form.color_code.errors }}</div>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="{{ form.icon.id_for_label }}" class="form-label">
+                                        Icon
+                                    </label>
+                                    {{ form.icon }}
+                                    {% if form.icon.errors %}
+                                        <div class="text-danger small">{{ form.icon.errors }}</div>
+                                    {% endif %}
+                                    <div class="form-text">{{ form.fields.icon.help_text }}</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="card bg-light mt-4">
+                            <div class="card-body">
+                                <h6 class="card-title">Approval Settings</h6>
+                                
+                                <div class="mb-3">
+                                    <div class="form-check form-switch">
+                                        {{ form.requires_approval }}
+                                        <label class="form-check-label" for="{{ form.requires_approval.id_for_label }}">
+                                            Requires Approval
+                                        </label>
+                                    </div>
+                                </div>
+
+                                <div class="mb-3" id="approvalThresholdSection">
+                                    <label for="{{ form.approval_threshold.id_for_label }}" class="form-label">
+                                        Auto-approve Below Amount
+                                    </label>
+                                    {{ form.approval_threshold }}
+                                    {% if form.approval_threshold.errors %}
+                                        <div class="text-danger small">{{ form.approval_threshold.errors }}</div>
+                                    {% endif %}
+                                    <div class="form-text">{{ form.fields.approval_threshold.help_text }}</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="mb-3 mt-4">
+                            <div class="form-check form-switch">
+                                {{ form.is_active }}
+                                <label class="form-check-label" for="{{ form.is_active.id_for_label }}">
+                                    Active Category
+                                </label>
+                            </div>
+                            <div class="form-text">Inactive categories won't be available for new expenses.</div>
+                        </div>
+
+                        <div class="d-flex justify-content-between mt-4">
+                            <a href="{% url 'expenses:category_list' %}" class="btn btn-outline-secondary">
+                                Cancel
+                            </a>
+                            <button type="submit" class="btn btn-primary">
+                                {% if form.instance.pk %}Update Category{% else %}Create Category{% endif %}
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-lg-4">
+            <div class="card">
+                <div class="card-header">
+                    <h6 class="card-title mb-0">Tips & Guidelines</h6>
+                </div>
+                <div class="card-body">
+                    <div class="alert alert-info">
+                        <h6 class="alert-heading">
+                            <i class="bi bi-lightbulb me-2"></i>Category Setup
+                        </h6>
+                        <ul class="mb-0 ps-3">
+                            <li>Use clear, descriptive names</li>
+                            <li>Assign unique codes for reporting</li>
+                            <li>Set realistic monthly budgets</li>
+                            <li>Configure approval rules appropriately</li>
+                        </ul>
+                    </div>
+
+                    <div class="alert alert-warning">
+                        <h6 class="alert-heading">
+                            <i class="bi bi-exclamation-triangle me-2"></i>Approval Settings
+                        </h6>
+                        <p class="mb-0">
+                            Expenses below the threshold will be auto-approved when submitted. 
+                            Set this carefully to balance control and efficiency.
+                        </p>
+                    </div>
+
+                    {% if form.instance.pk and form.instance.expenses.exists %}
+                    <div class="alert alert-warning">
+                        <h6 class="alert-heading">
+                            <i class="bi bi-archive me-2"></i>Existing Expenses
+                        </h6>
+                        <p class="mb-0">
+                            This category has {{ form.instance.expenses.count }} expenses. 
+                            Changes will affect all existing expenses in this category.
+                        </p>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+
+            <!-- Icon Preview -->
+            <div class="card mt-4">
+                <div class="card-header">
+                    <h6 class="card-title mb-0">Icon Preview</h6>
+                </div>
+                <div class="card-body text-center">
+                    <div id="iconPreview" class="display-4 text-muted mb-3">
+                        <i class="bi bi-tag"></i>
+                    </div>
+                    <small class="text-muted">Icon will appear here</small>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const form = document.getElementById('categoryForm');
+    const colorInput = document.getElementById('{{ form.color_code.id_for_label }}');
+    const colorPreview = document.querySelector('.color-preview');
+    const iconInput = document.getElementById('{{ form.icon.id_for_label }}');
+    const iconPreview = document.getElementById('iconPreview');
+    const requiresApproval = document.getElementById('{{ form.requires_approval.id_for_label }}');
+    const approvalThresholdSection = document.getElementById('approvalThresholdSection');
+
+    // Color preview
+    if (colorInput && colorPreview) {
+        colorInput.addEventListener('input', function() {
+            colorPreview.style.backgroundColor = this.value;
+        });
+    }
+
+    // Icon preview
+    if (iconInput && iconPreview) {
+        iconInput.addEventListener('input', function() {
+            const iconClass = this.value.trim();
+            if (iconClass) {
+                iconPreview.innerHTML = `<i class="${iconClass}"></i>`;
+            } else {
+                iconPreview.innerHTML = '<i class="bi bi-tag"></i>';
+            }
+        });
+    }
+
+    // Toggle approval threshold section
+    function toggleApprovalThreshold() {
+        if (approvalThresholdSection) {
+            approvalThresholdSection.style.display = requiresApproval.checked ? 'block' : 'none';
+        }
+    }
+
+    if (requiresApproval) {
+        requiresApproval.addEventListener('change', toggleApprovalThreshold);
+        toggleApprovalThreshold(); // Initial state
+    }
+
+    // Form submission handling
+    if (form) {
+        form.addEventListener('submit', function() {
+            const submitButton = form.querySelector('button[type="submit"]');
+            if (submitButton) {
+                submitButton.disabled = true;
+                submitButton.innerHTML = '<i class="bi bi-hourglass-split me-1"></i>Saving...';
+            }
+        });
+    }
+});
+</script>
+{% endblock %}

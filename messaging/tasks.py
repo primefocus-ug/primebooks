@@ -246,11 +246,18 @@ def generate_message_analytics():
     today = timezone.now().date()
     yesterday = today - timedelta(days=1)
 
-    # ✅ iterate through all active tenants
-    for company in Company.objects.filter(is_active=True):
+    # ✅ Filter out invalid schema names like 'public'
+    for company in Company.objects.filter(is_active=True).exclude(schema_name='public'):
         try:
             # ✅ apply schema context per tenant
             with schema_context(company.schema_name):
+                # Check if the messaging_messages table exists for this tenant
+                try:
+                    # Test if the table exists by doing a simple query
+                    Message.objects.exists()
+                except ProgrammingError:
+                    logger.warning(f"Schema {company.schema_name} missing messaging tables, skipping")
+                    continue
 
                 message_count = Message.objects.filter(
                     created_at__date=yesterday
@@ -271,18 +278,16 @@ def generate_message_analytics():
                     'date': yesterday.isoformat(),
                 }
 
-                # ✅ Log analytics
                 logger.info(
                     f"[{company.schema_name}] Analytics for {yesterday}: "
                     f"{message_count} messages – {active_conversations} conversations – "
                     f"{active_users} users"
                 )
 
-                # ✅ Store in cache using schema_name to isolate tenants
                 cache.set(
                     f'messaging_analytics_{company.schema_name}_{yesterday}',
                     analytics,
-                    timeout=86400 * 30  # store for 30 days
+                    timeout=86400 * 30
                 )
 
         except Exception as e:
@@ -290,8 +295,6 @@ def generate_message_analytics():
                 f"Error generating analytics for tenant {company.schema_name}: {e}",
                 exc_info=True
             )
-
-
 
 @shared_task
 def archive_old_messages(days=365):

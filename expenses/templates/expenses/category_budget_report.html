@@ -1,0 +1,250 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Budget Report - PrimeBooks{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- Header -->
+    <div class="row">
+        <div class="col-12">
+            <div class="page-header d-flex justify-content-between align-items-center mb-4">
+                <h1 class="h2 mb-0">
+                    <i class="bi bi-graph-up me-2"></i>Budget Utilization Report
+                </h1>
+                <a href="{% url 'expenses:category_list' %}" class="btn btn-outline-secondary">
+                    <i class="bi bi-arrow-left me-1"></i>Back to Categories
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Overall Summary -->
+    <div class="row">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-body">
+                    <div class="row text-center">
+                        <div class="col-md-3">
+                            <h3 class="text-primary">{{ budget_data|length }}</h3>
+                            <p class="text-muted mb-0">Categories with Budget</p>
+                        </div>
+                        <div class="col-md-3">
+                            <h3 class="text-info">{{ total_budget|floatformat:2 }}</h3>
+                            <p class="text-muted mb-0">Total Budget</p>
+                        </div>
+                        <div class="col-md-3">
+                            <h3 class="text-warning">{{ total_spent|floatformat:2 }}</h3>
+                            <p class="text-muted mb-0">Total Spent</p>
+                        </div>
+                        <div class="col-md-3">
+                            <h3 class="{% if overall_percentage > 100 %}text-danger{% elif overall_percentage > 80 %}text-warning{% else %}text-success{% endif %}">
+                                {{ overall_percentage|floatformat:1 }}%
+                            </h3>
+                            <p class="text-muted mb-0">Overall Utilization</p>
+                        </div>
+                    </div>
+
+                    <!-- Overall Progress -->
+                    <div class="mt-4">
+                        <h6>Overall Budget Utilization</h6>
+                        <div class="progress" style="height: 25px;">
+                            <div class="progress-bar {% if overall_percentage > 100 %}bg-danger{% elif overall_percentage > 80 %}bg-warning{% else %}bg-success{% endif %}" 
+                                 role="progressbar" 
+                                 style="width: {{ overall_percentage }}%;"
+                                 aria-valuenow="{{ overall_percentage }}" 
+                                 aria-valuemin="0" 
+                                 aria-valuemax="100">
+                                {{ overall_percentage|floatformat:1 }}%
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Over Budget Warning -->
+    {% if over_budget_categories %}
+    <div class="row mt-4">
+        <div class="col-12">
+            <div class="alert alert-danger">
+                <h5 class="alert-heading">
+                    <i class="bi bi-exclamation-triangle-fill me-2"></i>
+                    Over Budget Categories
+                </h5>
+                <p class="mb-0">
+                    The following categories have exceeded their monthly budget:
+                    {% for item in over_budget_categories %}
+                    <strong>{{ item.category.name }}</strong>{% if not forloop.last %}, {% endif %}
+                    {% endfor %}
+                </p>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Category Budget Details -->
+    <div class="row mt-4">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">Category Budget Details</h5>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Category</th>
+                                    <th>Budget</th>
+                                    <th>Spent</th>
+                                    <th>Remaining</th>
+                                    <th>Utilization</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for item in budget_data %}
+                                <tr>
+                                    <td>
+                                        <div class="d-flex align-items-center">
+                                            <span class="color-indicator me-2" 
+                                                  style="background-color: {{ item.category.color_code }}; width: 16px; height: 16px; border-radius: 50%;"></span>
+                                            {% if item.category.icon %}
+                                            <i class="{{ item.category.icon }} me-2"></i>
+                                            {% endif %}
+                                            <strong>{{ item.category.name }}</strong>
+                                        </div>
+                                    </td>
+                                    <td>
+                                        <strong>{{ item.budget|floatformat:2 }}</strong>
+                                    </td>
+                                    <td>
+                                        {{ item.spent|floatformat:2 }}
+                                    </td>
+                                    <td>
+                                        <strong class="{% if item.remaining < 0 %}text-danger{% else %}text-success{% endif %}">
+                                            {{ item.remaining|floatformat:2 }}
+                                        </strong>
+                                    </td>
+                                    <td>
+                                        <div class="d-flex align-items-center">
+                                            <div class="progress flex-grow-1 me-2" style="height: 8px;">
+                                                <div class="progress-bar {% if item.percentage > 100 %}bg-danger{% elif item.percentage > 80 %}bg-warning{% else %}bg-success{% endif %}" 
+                                                     role="progressbar" 
+                                                     style="width: {{ item.percentage }}%;"
+                                                     aria-valuenow="{{ item.percentage }}" 
+                                                     aria-valuemin="0" 
+                                                     aria-valuemax="100">
+                                                </div>
+                                            </div>
+                                            <span class="text-muted" style="font-size: 0.875rem;">
+                                                {{ item.percentage|floatformat:1 }}%
+                                            </span>
+                                        </div>
+                                    </td>
+                                    <td>
+                                        {% if item.percentage > 100 %}
+                                        <span class="badge bg-danger">Over Budget</span>
+                                        {% elif item.percentage > 80 %}
+                                        <span class="badge bg-warning">Near Limit</span>
+                                        {% else %}
+                                        <span class="badge bg-success">Within Budget</span>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Budget Utilization Chart -->
+    <div class="row mt-4">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">Budget Utilization Visualization</h5>
+                </div>
+                <div class="card-body">
+                    <canvas id="budgetChart" width="400" height="200"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const ctx = document.getElementById('budgetChart').getContext('2d');
+    
+    const categories = [{% for item in budget_data %}'{{ item.category.name }}',{% endfor %}];
+    const budgets = [{% for item in budget_data %}{{ item.budget }},{% endfor %}];
+    const spent = [{% for item in budget_data %}{{ item.spent }},{% endfor %}];
+    const backgroundColors = [{% for item in budget_data %}'{{ item.category.color_code }}',{% endfor %}];
+
+    const chart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: categories,
+            datasets: [
+                {
+                    label: 'Budget',
+                    data: budgets,
+                    backgroundColor: backgroundColors,
+                    borderColor: backgroundColors,
+                    borderWidth: 1
+                },
+                {
+                    label: 'Spent',
+                    data: spent,
+                    backgroundColor: backgroundColors.map(color => color + '80'), // Add transparency
+                    borderColor: backgroundColors,
+                    borderWidth: 1
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            scales: {
+                x: {
+                    title: {
+                        display: true,
+                        text: 'Categories'
+                    }
+                },
+                y: {
+                    title: {
+                        display: true,
+                        text: 'Amount'
+                    },
+                    beginAtZero: true
+                }
+            },
+            plugins: {
+                legend: {
+                    display: true,
+                    position: 'top'
+                },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            const label = context.dataset.label || '';
+                            const value = context.parsed.y;
+                            return `${label}: ${value.toFixed(2)}`;
+                        }
+                    }
+                }
+            }
+        }
+    });
+});
+</script>
+{% endblock %}

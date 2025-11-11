@@ -158,16 +158,15 @@ class Category(models.Model):
         """Validate category data before saving"""
         super().clean()
 
-        # Validate EFRIS commodity category if provided
-        if self.efris_commodity_category_code:
+        # Only validate EFRIS commodity category if provided AND sync is enabled
+        if self.efris_commodity_category_code and self.efris_auto_sync:
             from company.models import EFRISCommodityCategory
             try:
                 efris_cat = EFRISCommodityCategory.objects.get(
                     commodity_category_code=self.efris_commodity_category_code
                 )
 
-                # ✅ NEW: Validate it's a leaf node (CRITICAL REQUIREMENT)
-                # EFRIS only allows leaf nodes to be used for products/services
+                # ✅ Validate it's a leaf node (CRITICAL REQUIREMENT)
                 if efris_cat.is_leaf_node != '101':
                     raise ValidationError({
                         'efris_commodity_category_code':
@@ -175,8 +174,7 @@ class Category(models.Model):
                               "Only leaf nodes (terminal categories) can be used for products and services.")
                     })
 
-                # ✅ NEW: Validate type matches (product vs service)
-                # serviceMark: '101' = Product, '102' = Service
+                # ✅ Validate type matches (product vs service)
                 efris_type = 'service' if efris_cat.service_mark == '102' else 'product'
                 if self.category_type != efris_type:
                     raise ValidationError({
@@ -190,7 +188,6 @@ class Category(models.Model):
                     'efris_commodity_category_code':
                         _("Invalid EFRIS commodity category code. This code does not exist in the system.")
                 })
-
     # Properties that fetch from shared EFRIS data
     @property
     def efris_commodity_category(self):
@@ -287,6 +284,23 @@ class Category(models.Model):
             raise ValueError(
                 f"Category '{self.name}' must have an EFRIS commodity category assigned before enabling EFRIS sync."
             )
+        
+        # Validate the EFRIS category before enabling sync
+        if self.efris_commodity_category_code:
+            from company.models import EFRISCommodityCategory
+            efris_cat = EFRISCommodityCategory.objects.get(
+                commodity_category_code=self.efris_commodity_category_code
+            )
+            
+            # Validate it's a leaf node
+            if efris_cat.is_leaf_node != '101':
+                raise ValueError("Selected EFRIS category is not a leaf node.")
+            
+            # Validate type matches
+            efris_type = 'service' if efris_cat.service_mark == '102' else 'product'
+            if self.category_type != efris_type:
+                raise ValueError(f"EFRIS category type ({efris_type}) doesn't match category type ({self.category_type})")
+        
         self.efris_auto_sync = True
         self.save(update_fields=['efris_auto_sync'])
 

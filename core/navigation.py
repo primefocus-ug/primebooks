@@ -440,233 +440,24 @@ NAVIGATION_ITEMS = [
         ]
     ),
     NavigationItem(
-        name="Finance",
+        name="Finance & Expenses",
         icon="bi bi-cash-stack",
         children=[
             NavigationItem(
                 name="Dashboard",
-                url_name="finance:dashboard",
+                url_name="expenses:dashboard",
                 icon="bi bi-speedometer2",
             ),
-
-            # 💱 Currency & Exchange
             NavigationItem(
-                name="Currencies & Rates",
-                icon="bi bi-currency-exchange",
-                children=[
-                    NavigationItem(
-                        name="Currencies",
-                        url_name="finance:currency_list",
-                        icon="bi bi-coin",
-                    ),
-                    NavigationItem(
-                        name="Add Currency",
-                        url_name="finance:currency_create",
-                        icon="bi bi-plus-circle",
-                    ),
-                    NavigationItem(
-                        name="Exchange Rates",
-                        url_name="finance:exchange_rate_list",
-                        icon="bi bi-graph-up",
-                    ),
-                    NavigationItem(
-                        name="Fetch Exchange Rates",
-                        url_name="finance:fetch_exchange_rates",
-                        icon="bi bi-cloud-arrow-down",
-                    ),
-                ],
+                name="Expense List",
+                url_name="expenses:expense_list",
+                icon="bi bi-coin",
             ),
-
-            # 📘 Chart of Accounts
-            NavigationItem(
-                name="Chart of Accounts",
-                icon="bi bi-journal-bookmark",
-                children=[
-                    NavigationItem(
-                        name="View Accounts",
-                        url_name="finance:chart_of_accounts_list",
-                        icon="bi bi-list-ul",
-                    ),
-                    NavigationItem(
-                        name="Add Account",
-                        url_name="finance:chart_of_accounts_create",
-                        icon="bi bi-plus-circle",
-                    ),
-                ],
-            ),
-
-            # 🧾 Journal Entries
-            NavigationItem(
-                name="Journals",
-                icon="bi bi-book",
-                children=[
-                    NavigationItem(
-                        name="Journal Entries",
-                        url_name="finance:journal_entry_list",
-                        icon="bi bi-journal",
-                    ),
-                    NavigationItem(
-                        name="Create Entry",
-                        url_name="finance:journal_entry_create",
-                        icon="bi bi-plus-circle",
-                    ),
-                    NavigationItem(
-                        name="Recurring Entries",
-                        url_name="finance:recurring_entry_list",
-                        icon="bi bi-arrow-repeat",
-                    ),
-                ],
-            ),
-
-            # 🏦 Banking
-            NavigationItem(
-                name="Banking",
-                icon="bi bi-bank",
-                children=[
-                    NavigationItem(
-                        name="Bank Accounts",
-                        url_name="finance:bank_account_list",
-                        icon="bi bi-credit-card-2-front",
-                    ),
-                    NavigationItem(
-                        name="Reconciliation",
-                        url_name="finance:bank_reconciliation_list",
-                        icon="bi bi-journal-check",
-                    ),
-                    NavigationItem(
-                        name="Transactions",
-                        url_name="finance:transaction_list",
-                        icon="bi bi-arrow-left-right",
-                    ),
-                ],
-            ),
-
-            # 💼 Budgets
-            NavigationItem(
-                name="Budgets",
-                icon="bi bi-wallet2",
-                children=[
-                    NavigationItem(
-                        name="All Budgets",
-                        url_name="finance:budget_list",
-                        icon="bi bi-list-task",
-                    ),
-                    NavigationItem(
-                        name="Create Budget",
-                        url_name="finance:budget_create",
-                        icon="bi bi-plus-circle",
-                    ),
-                ],
-            ),
-
-            # 🧱 Fixed Assets
-            NavigationItem(
-                name="Fixed Assets",
-                icon="bi bi-hdd-stack",
-                children=[
-                    NavigationItem(
-                        name="All Assets",
-                        url_name="finance:fixed_asset_list",
-                        icon="bi bi-box-seam",
-                    ),
-                    NavigationItem(
-                        name="Add Asset",
-                        url_name="finance:fixed_asset_create",
-                        icon="bi bi-plus-circle",
-                    ),
-                ],
-            ),
-
-            # 📅 Fiscal Management
-            NavigationItem(
-                name="Fiscal Management",
-                icon="bi bi-calendar-check",
-                children=[
-                    NavigationItem(
-                        name="Fiscal Years",
-                        url_name="finance:fiscal_year_list",
-                        icon="bi bi-calendar3",
-                    ),
-                    NavigationItem(
-                        name="Dimensions",
-                        url_name="finance:dimension_list",
-                        icon="bi bi-diagram-3",
-                    ),
-                ],
-            ),
-
-            # 🧾 Expenses
-            NavigationItem(
-                name="Expenses",
-                icon="bi bi-receipt",
-                children=[
-                    NavigationItem(
-                        name="Expense Dashboard",
-                        url_name="finance:expense_dashboard",
-                        icon="bi bi-speedometer2",
-                    ),
-                    NavigationItem(
-                        name="All Expenses",
-                        url_name="finance:expense_list",
-                        icon="bi bi-list-ul",
-                    ),
-                    NavigationItem(
-                        name="Add Expense",
-                        url_name="finance:expense_create",
-                        icon="bi bi-plus-circle",
-                    ),
-                    NavigationItem(
-                        name="Expense Categories",
-                        url_name="finance:expense_category_list",
-                        icon="bi bi-tags",
-                    ),
-                    NavigationItem(
-                        name="Petty Cash",
-                        url_name="finance:petty_cash_list",
-                        icon="bi bi-cash",
-                    ),
-                ],
-            ),
-
-            # 🧮 Reports
             NavigationItem(
                 name="Reports",
-                icon="bi bi-bar-chart",
-                children=[
-                    NavigationItem(
-                        name="Financial Reports",
-                        url_name="finance:financial_reports_dashboard",
-                        icon="bi bi-clipboard-data",
-                    ),
-                    NavigationItem(
-                        name="Balance Sheet",
-                        url_name="finance:generate_balance_sheet",
-                        icon="bi bi-journal-richtext",
-                    ),
-                    NavigationItem(
-                        name="Income Statement",
-                        url_name="finance:generate_income_statement",
-                        icon="bi bi-graph-up",
-                    ),
-                    NavigationItem(
-                        name="Trial Balance",
-                        url_name="finance:generate_trial_balance",
-                        icon="bi bi-clipboard-check",
-                    ),
-                    NavigationItem(
-                        name="Cash Flow",
-                        url_name="finance:generate_cash_flow",
-                        icon="bi bi-cash-coin",
-                    ),
-                    NavigationItem(
-                        name="Tax Reports",
-                        url_name="finance:tax_report",
-                        icon="bi bi-file-earmark-bar-graph",
-                    ),
-                ],
-            ),
-        ],
-    ),
+                url_name="expense:expense_create",
+                icon="bbi bi-plus-circle",
+            ),],),
     NavigationItem(
         name="Customers",
         icon="bi bi-people",

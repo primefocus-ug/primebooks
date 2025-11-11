@@ -433,11 +433,13 @@ class CategoryForm(forms.ModelForm):
             )
 
     def clean_efris_commodity_category_code(self):
-        """Validate EFRIS commodity category"""
+        """Validate EFRIS commodity category - only if provided"""
         code = self.cleaned_data.get('efris_commodity_category_code')
         category_type = self.cleaned_data.get('category_type')
+        efris_auto_sync = self.cleaned_data.get('efris_auto_sync', False)
 
-        if not code:
+        # Only validate if code is provided AND EFRIS sync is enabled
+        if not code or not efris_auto_sync:
             return code
 
         try:
@@ -469,17 +471,17 @@ class CategoryForm(forms.ModelForm):
         """Additional cross-field validation"""
         cleaned_data = super().clean()
 
-        efris_auto_sync = cleaned_data.get('efris_auto_sync')
+        efris_auto_sync = cleaned_data.get('efris_auto_sync', False)
         efris_code = cleaned_data.get('efris_commodity_category_code')
 
-        # If auto-sync enabled, EFRIS category is required
+        # Only require EFRIS category if auto-sync is enabled
         if efris_auto_sync and not efris_code:
-            raise ValidationError(
-                "EFRIS Commodity Category is required when auto-sync is enabled."
-            )
+            raise ValidationError({
+                'efris_commodity_category_code': 
+                    "EFRIS Commodity Category is required when auto-sync is enabled."
+            })
 
         return cleaned_data
-
 
 class QuickCategoryForm(forms.ModelForm):
     """
@@ -693,11 +695,22 @@ class ProductForm(forms.ModelForm):
             'excise_duty_rate': forms.NumberInput(attrs={'class': 'form-control', 'step': '0.01', 'min': '0', 'value': '0'}),
             'unit_of_measure': forms.Select(attrs={'class': 'form-select'}),
             'min_stock_level': forms.NumberInput(attrs={'class': 'form-control', 'min': '0', 'value': '5'}),
-            'is_active': forms.CheckboxInput(attrs={'class': 'form-check-input', 'checked': True}),
+            'is_active': forms.CheckboxInput(attrs={'class': 'form-check-input'}),  # Removed 'checked': True
             'image': forms.FileInput(attrs={'class': 'form-control'}),
-            'efris_auto_sync_enabled': forms.CheckboxInput(attrs={'class': 'form-check-input', 'checked': True}),
+            'efris_auto_sync_enabled': forms.CheckboxInput(attrs={'class': 'form-check-input'}),  # Removed 'checked': True
             'efris_excise_duty_code': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Enter EFRIS excise duty code'}),
         }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        
+        # Set default values for new instances only
+        if not self.instance.pk:  # New product
+            self.fields['is_active'].initial = True
+            self.fields['efris_auto_sync_enabled'].initial = False  # Default to False for safety
+            self.fields['discount_percentage'].initial = 0
+            self.fields['excise_duty_rate'].initial = 0
+            self.fields['min_stock_level'].initial = 5
 
     def clean(self):
         cleaned_data = super().clean()
@@ -705,22 +718,99 @@ class ProductForm(forms.ModelForm):
         efris_auto_sync = cleaned_data.get('efris_auto_sync_enabled')
         cost_price = cleaned_data.get('cost_price')
         selling_price = cleaned_data.get('selling_price')
+        tax_rate = cleaned_data.get('tax_rate')
+        excise_duty_rate = cleaned_data.get('excise_duty_rate')
 
-        # Validate EFRIS configuration if auto sync is enabled
-        if efris_auto_sync and category:
-            if not category.efris_commodity_category_code:
+        # Validate EFRIS configuration ONLY if auto sync is explicitly enabled
+        if efris_auto_sync:  # This will be True only if user checked the box
+            if not category:
                 raise ValidationError({
-                    'category': f"Category '{category.name}' must have an EFRIS commodity category assigned before enabling EFRIS sync."
+                    'efris_auto_sync_enabled': 'Please select a category before enabling EFRIS auto-sync.'
+                })
+            
+            if not hasattr(category, 'efris_commodity_category_code') or not category.efris_commodity_category_code:
+                raise ValidationError({
+                    'efris_auto_sync_enabled': f"Category '{category.name}' must have an EFRIS commodity category assigned before enabling EFRIS sync. Please update the category first or disable auto-sync."
                 })
 
         # Validate pricing
-        if cost_price and selling_price and cost_price > selling_price:
-            raise ValidationError({
-                'selling_price': 'Selling price cannot be less than cost price.'
-            })
+        if cost_price is not None and selling_price is not None:
+            if cost_price > selling_price:
+                raise ValidationError({
+                    'selling_price': 'Selling price cannot be less than cost price.'
+                })
+            
+            if cost_price < 0:
+                raise ValidationError({
+                    'cost_price': 'Cost price must be a positive number.'
+                })
+            
+            if selling_price < 0:
+                raise ValidationError({
+                    'selling_price': 'Selling price must be a positive number.'
+                })
+
+        # Validate excise duty rate is provided when tax rate is 'E' (Excise Duty)
+        if tax_rate == 'E':
+            if not excise_duty_rate or excise_duty_rate <= 0:
+                raise ValidationError({
+                    'excise_duty_rate': 'Excise duty rate is required when tax rate is set to "E - Excise Duty".'
+                })
 
         return cleaned_data
 
+    def clean_sku(self):
+        """Ensure SKU is unique"""
+        sku = self.cleaned_data.get('sku')
+        if sku:
+            sku = sku.strip().upper()
+            # Check for duplicate SKU, excluding current instance if updating
+            queryset = Product.objects.filter(sku=sku)
+            if self.instance.pk:
+                queryset = queryset.exclude(pk=self.instance.pk)
+            
+            if queryset.exists():
+                raise ValidationError(f'Product with SKU "{sku}" already exists.')
+        
+        return sku
+
+    def clean_barcode(self):
+        """Ensure barcode is unique if provided"""
+        barcode = self.cleaned_data.get('barcode')
+        if barcode:
+            barcode = barcode.strip()
+            # Check for duplicate barcode, excluding current instance if updating
+            queryset = Product.objects.filter(barcode=barcode)
+            if self.instance.pk:
+                queryset = queryset.exclude(pk=self.instance.pk)
+            
+            if queryset.exists():
+                raise ValidationError(f'Product with barcode "{barcode}" already exists.')
+        
+        return barcode
+
+    def clean_discount_percentage(self):
+        """Validate discount percentage is within valid range"""
+        discount = self.cleaned_data.get('discount_percentage')
+        if discount is not None:
+            if discount < 0 or discount > 100:
+                raise ValidationError('Discount percentage must be between 0 and 100.')
+        return discount or 0
+
+    def save(self, commit=True):
+        """Override save to handle EFRIS category inheritance"""
+        product = super().save(commit=False)
+        
+        # Inherit EFRIS commodity category from category
+        if product.category and hasattr(product.category, 'efris_commodity_category_code'):
+            product.efris_commodity_category_id = product.category.efris_commodity_category_code
+            product.efris_commodity_category_name = product.category.efris_commodity_category_name
+        
+        if commit:
+            product.save()
+            self.save_m2m()
+        
+        return product
 
 class StockForm(forms.ModelForm):
     """Form for creating and updating stock records"""

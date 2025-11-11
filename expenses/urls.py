@@ -10,24 +10,35 @@ urlpatterns = [
     path('create/', views.expense_create, name='expense_create'),
     path('<int:pk>/', views.expense_detail, name='expense_detail'),
     path('<int:pk>/edit/', views.expense_edit, name='expense_edit'),
+    path('<int:pk>/delete/', views.expense_delete, name='expense_delete'),
     path('<int:pk>/submit/', views.expense_submit, name='expense_submit'),
     path('<int:pk>/approve/', views.expense_approve, name='expense_approve'),
     path('<int:pk>/reject/', views.expense_reject, name='expense_reject'),
     path('<int:pk>/pay/', views.expense_mark_paid, name='expense_mark_paid'),
     path('<int:pk>/comment/', views.expense_add_comment, name='add_comment'),
     path('<int:pk>/attachment/<int:attachment_id>/delete/', views.expense_delete_attachment, name='delete_attachment'),
-
+    
+    # Bulk actions
+    path('bulk-action/', views.expense_bulk_action, name='bulk_action'),
+    
     # Reports and exports
     path('reports/', views.expense_reports, name='reports'),
     path('export/', views.expense_export, name='export'),
 
-    # API endpoints
-    path('api/stats/', api_views.expense_stats_api, name='api_stats'),
-    path('api/category-stats/', api_views.expense_category_stats_api, name='api_category_stats'),
-    path('api/chart-data/', api_views.expense_chart_data_api, name='api_chart_data'),
-    path('api/search/', api_views.expense_search_api, name='api_search'),
-    path('api/budget-utilization/', api_views.budget_utilization_api, name='api_budget_utilization'),
-    path('api/<int:pk>/quick-approve/', api_views.quick_approve_api, name='api_quick_approve'),
-    path('api/bulk-action/', api_views.bulk_action_api, name='api_bulk_action'),
-    path('api/check-number/', api_views.check_expense_number_api, name='api_check_number'),
+    path('categories/', views.ExpenseCategoryListView.as_view(), name='category_list'),
+    path('categories/create/', views.ExpenseCategoryCreateView.as_view(), name='category_create'),
+    path('categories/<int:pk>/edit/', views.ExpenseCategoryUpdateView.as_view(), name='category_edit'),
+    path('categories/<int:pk>/delete/', views.ExpenseCategoryDeleteView.as_view(), name='category_delete'),
+    path('categories/<int:pk>/toggle-active/', views.category_toggle_active, name='category_toggle_active'),
+    path('categories/<int:pk>/expenses/', views.category_expenses, name='category_expenses'),
+    path('categories/budget-report/', views.category_budget_report, name='category_budget_report'),
+
+    # Category API endpoints
+    path('api/categories/', views.category_list_api, name='api_category_list'),
+    path('api/categories/<int:pk>/budget-utilization/', views.category_budget_utilization_api, name='api_category_budget_utilization'),
+    
+        
+    # New API endpoints
+    path('api/quick-stats/', views.expense_quick_stats, name='api_quick_stats'),
+    path('api/category-summary/', views.expense_category_summary, name='api_category_summary'),
 ]

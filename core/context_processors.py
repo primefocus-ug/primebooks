@@ -87,3 +87,35 @@ class NavigationContextMixin:
         Override this method to provide navigation context
         """
         return {}
+    
+def efris_context(request):
+    """
+    Add EFRIS-related context to all templates
+    Add to settings.py:
+    TEMPLATES[0]['OPTIONS']['context_processors'].append('core.context_processors.efris_context')
+    """
+    context = {
+        'EFRIS_ENABLED': False,
+        'EFRIS_ACTIVE': False,
+        'EFRIS_REGISTERED': False,
+        'EFRIS_STATUS': 'Disabled',
+        'EFRIS_MODE': 'offline',
+        'EFRIS_IS_PRODUCTION': False,
+    }
+    
+    if hasattr(request, 'tenant') and request.tenant:
+        tenant = request.tenant
+        context.update({
+            'EFRIS_ENABLED': tenant.efris_enabled,
+            'EFRIS_ACTIVE': tenant.efris_is_active,
+            'EFRIS_REGISTERED': tenant.efris_is_registered,
+            'EFRIS_STATUS': tenant.efris_status_display,
+            'EFRIS_MODE': tenant.efris_integration_mode,
+            'EFRIS_IS_PRODUCTION': tenant.efris_is_production,
+            'EFRIS_LAST_SYNC': tenant.efris_last_sync,
+            'EFRIS_AUTO_FISCALIZE': tenant.efris_auto_fiscalize_sales,
+            'EFRIS_AUTO_SYNC_PRODUCTS': tenant.efris_auto_sync_products,
+        })
+    
+    return context
+

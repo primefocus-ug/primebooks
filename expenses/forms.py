@@ -364,3 +364,116 @@ class BulkExpenseActionForm(forms.Form):
             except ValueError:
                 raise ValidationError(_("Invalid expense IDs"))
         return []
+    
+
+class CategoryBudgetForm(forms.Form):
+    categories = forms.ModelMultipleChoiceField(
+        queryset=ExpenseCategory.objects.all(),
+        widget=forms.CheckboxSelectMultiple,
+        required=False
+    )
+    budget_amount = forms.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        min_value=0,
+        widget=forms.NumberInput(attrs={'class': 'form-control'})
+    )
+    
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['categories'].queryset = ExpenseCategory.objects.filter(is_active=True)
+        
+class ExpenseSearchForm(forms.Form):
+    query = forms.CharField(
+        required=False,
+        widget=forms.TextInput(attrs={
+            'placeholder': 'Search by title, description, vendor...',
+            'class': 'form-control'
+        })
+    )
+    category = forms.ModelChoiceField(
+        queryset=ExpenseCategory.objects.filter(is_active=True),
+        required=False,
+        widget=forms.Select(attrs={'class': 'form-select'})
+    )
+    status = forms.ChoiceField(
+        choices=[('', 'All Statuses')] + Expense.STATUS_CHOICES,
+        required=False,
+        widget=forms.Select(attrs={'class': 'form-select'})
+    )
+    date_from = forms.DateField(
+        required=False,
+        widget=forms.DateInput(attrs={'type': 'date', 'class': 'form-control'})
+    )
+    date_to = forms.DateField(
+        required=False,
+        widget=forms.DateInput(attrs={'type': 'date', 'class': 'form-control'})
+    )
+
+class ExpenseCommentForm(forms.ModelForm):
+    class Meta:
+        model = ExpenseComment
+        fields = ['comment', 'is_internal']
+        widgets = {
+            'comment': forms.Textarea(attrs={
+                'rows': 3,
+                'class': 'form-control',
+                'placeholder': 'Add your comment here...'
+            }),
+            'is_internal': forms.CheckboxInput(attrs={
+                'class': 'form-check-input'
+            })
+        }
+    
+    def __init__(self, *args, **kwargs):
+        self.user = kwargs.pop('user', None)
+        super().__init__(*args, **kwargs)
+        
+        # Only show internal checkbox for users with approval permissions
+        if not self.user or not self.user.has_perm('expenses.approve_expense'):
+            self.fields.pop('is_internal')
+
+class BulkExpenseActionForm(forms.Form):
+    ACTION_CHOICES = [
+        ('submit', 'Submit for Approval'),
+        ('delete', 'Delete'),
+    ]
+    
+    expense_ids = forms.CharField(widget=forms.HiddenInput())
+    action = forms.ChoiceField(choices=ACTION_CHOICES, widget=forms.Select(attrs={'class': 'form-select'}))
+    
+    def clean_expense_ids(self):
+        expense_ids = self.cleaned_data['expense_ids']
+        try:
+            return [int(id) for id in expense_ids.split(',') if id.strip()]
+        except (ValueError, AttributeError):
+            raise ValidationError('Invalid expense IDs')
+
+class ExpenseReportForm(forms.Form):
+    REPORT_TYPE_CHOICES = [
+        ('summary', 'Expense Summary'),
+        ('category', 'Category Breakdown'),
+        ('vendor', 'Vendor Analysis'),
+        ('approval', 'Approval Timeline'),
+    ]
+    
+    report_type = forms.ChoiceField(
+        choices=REPORT_TYPE_CHOICES,
+        widget=forms.Select(attrs={'class': 'form-select'})
+    )
+    date_from = forms.DateField(
+        widget=forms.DateInput(attrs={'type': 'date', 'class': 'form-control'})
+    )
+    date_to = forms.DateField(
+        widget=forms.DateInput(attrs={'type': 'date', 'class': 'form-control'})
+    )
+    category = forms.ModelChoiceField(
+        queryset=ExpenseCategory.objects.filter(is_active=True),
+        required=False,
+        widget=forms.Select(attrs={'class': 'form-select'})
+    )
+    format = forms.ChoiceField(
+        choices=[('pdf', 'PDF'), ('excel', 'Excel')],
+        initial='pdf',
+        widget=forms.Select(attrs={'class': 'form-select'})
+    )

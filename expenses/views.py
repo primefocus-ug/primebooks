@@ -5,11 +5,14 @@ from django.http import JsonResponse, HttpResponse
 from django.db.models import Sum, Q, Count, Avg
 from django.utils import timezone
 from datetime import timedelta
+from datetime import datetime
 from decimal import Decimal
 from django.core.paginator import Paginator, EmptyPage, PageNotAnInteger
 from django.views.decorators.http import require_http_methods
 from django.db import transaction
-
+from django.contrib.auth.mixins import PermissionRequiredMixin
+from django.views.generic import ListView, CreateView, UpdateView, DeleteView
+from django.urls import reverse_lazy
 from .models import Expense, ExpenseCategory, ExpenseAttachment, ExpenseComment
 from .forms import (
     ExpenseForm, ExpenseApprovalForm, ExpensePaymentForm,
@@ -598,3 +601,498 @@ def send_comment_notification(expense, comment):
             'timestamp': timezone.now().isoformat()
         }
     )
+
+# Add these to existing views.py
+
+@login_required
+def expense_edit(request, pk):
+    """Edit existing expense"""
+    expense = get_object_or_404(Expense, pk=pk, created_by=request.user)
+    
+    if expense.status != 'DRAFT':
+        messages.error(request, "Only draft expenses can be edited.")
+        return redirect('expenses:expense_detail', pk=pk)
+    
+    if request.method == 'POST':
+        form = ExpenseForm(request.POST, request.FILES, instance=expense, user=request.user)
+        if form.is_valid():
+            expense = form.save()
+            
+            # Handle new attachments
+            files = request.FILES.getlist('attachments')
+            for file in files:
+                ExpenseAttachment.objects.create(
+                    expense=expense,
+                    file=file,
+                    uploaded_by=request.user
+                )
+            
+            log_action(request, 'expense_updated', f'Updated expense: {expense.expense_number}', content_object=expense)
+            messages.success(request, 'Expense updated successfully!')
+            return redirect('expenses:expense_detail', pk=pk)
+    else:
+        form = ExpenseForm(instance=expense, user=request.user)
+    
+    context = {
+        'form': form,
+        'expense': expense,
+        'categories': ExpenseCategory.objects.filter(is_active=True).order_by('sort_order', 'name')
+    }
+    return render(request, 'expenses/expense_form.html', context)
+
+@login_required
+@require_http_methods(["POST"])
+def expense_delete(request, pk):
+    """Delete expense (only drafts)"""
+    expense = get_object_or_404(Expense, pk=pk, created_by=request.user)
+    
+    if expense.status != 'DRAFT':
+        messages.error(request, "Only draft expenses can be deleted.")
+        return redirect('expenses:expense_detail', pk=pk)
+    
+    expense_number = expense.expense_number
+    expense.delete()
+    
+    log_action(request, 'expense_deleted', f'Deleted expense: {expense_number}')
+    messages.success(request, f'Expense {expense_number} deleted successfully!')
+    
+    return redirect('expenses:expense_list')
+
+@login_required
+def expense_bulk_action(request):
+    """Handle bulk actions for expenses"""
+    if request.method == 'POST':
+        form = BulkExpenseActionForm(request.POST, user=request.user)
+        if form.is_valid():
+            expense_ids = form.cleaned_data['expense_ids']
+            action = form.cleaned_data['action']
+            
+            expenses = Expense.objects.filter(
+                id__in=expense_ids,
+                created_by=request.user
+            )
+            
+            success_count = 0
+            errors = []
+            
+            with transaction.atomic():
+                for expense in expenses:
+                    try:
+                        if action == 'submit':
+                            if expense.status == 'DRAFT':
+                                expense.submit_for_approval()
+                                success_count += 1
+                            else:
+                                errors.append(f"{expense.expense_number}: Already submitted")
+                        elif action == 'delete':
+                            if expense.status == 'DRAFT':
+                                expense.delete()
+                                success_count += 1
+                            else:
+                                errors.append(f"{expense.expense_number}: Cannot delete submitted expense")
+                    except Exception as e:
+                        errors.append(f"{expense.expense_number}: {str(e)}")
+            
+            if success_count > 0:
+                messages.success(request, f'Successfully processed {success_count} expenses')
+            if errors:
+                messages.warning(request, f'Some actions failed: {", ".join(errors[:5])}')
+            
+            return redirect('expenses:expense_list')
+    
+    return redirect('expenses:expense_list')
+
+# API Views for AJAX calls
+@login_required
+def expense_quick_stats(request):
+    """Get quick stats for dashboard widgets"""
+    today = timezone.now().date()
+    start_of_month = today.replace(day=1)
+    
+    user_expenses = Expense.objects.filter(created_by=request.user)
+    month_expenses = user_expenses.filter(
+        expense_date__gte=start_of_month,
+        expense_date__lte=today
+    )
+    
+    stats = {
+        'total_this_month': float(month_expenses.aggregate(Sum('amount'))['amount__sum'] or 0),
+        'pending_approval': user_expenses.filter(status='SUBMITTED').count(),
+        'approved_unpaid': user_expenses.filter(status='APPROVED').count(),
+        'recent_submissions': user_expenses.filter(
+            submitted_at__gte=timezone.now() - timedelta(days=7)
+        ).count()
+    }
+    
+    return JsonResponse(stats)
+
+@login_required
+def expense_category_summary(request):
+    """Get category-wise summary for charts"""
+    date_from = request.GET.get('date_from')
+    date_to = request.GET.get('date_to')
+    
+    expenses = Expense.objects.filter(created_by=request.user)
+    
+    if date_from:
+        expenses = expenses.filter(expense_date__gte=date_from)
+    if date_to:
+        expenses = expenses.filter(expense_date__lte=date_to)
+    
+    summary = expenses.values(
+        'category__name', 'category__color_code'
+    ).annotate(
+        total=Sum('amount'),
+        count=Count('id')
+    ).order_by('-total')
+    
+    data = {
+        'labels': [item['category__name'] for item in summary],
+        'datasets': [{
+            'data': [float(item['total']) for item in summary],
+            'backgroundColor': [item['category__color_code'] for item in summary],
+        }]
+    }
+    
+    return JsonResponse(data)
+
+
+
+# Category Management Views
+class ExpenseCategoryListView(PermissionRequiredMixin, ListView):
+    model = ExpenseCategory
+    template_name = 'expenses/category_list.html'
+    context_object_name = 'categories'
+    permission_required = 'expenses.view_expensecategory'
+    
+    def get_queryset(self):
+        return ExpenseCategory.objects.all().order_by('sort_order', 'name')
+    
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context['active_categories'] = self.get_queryset().filter(is_active=True)
+        context['inactive_categories'] = self.get_queryset().filter(is_active=False)
+        return context
+
+class ExpenseCategoryCreateView(PermissionRequiredMixin, CreateView):
+    model = ExpenseCategory
+    template_name = 'expenses/category_form.html'
+    fields = [
+        'name', 'code', 'description', 'gl_account', 'monthly_budget',
+        'requires_approval', 'approval_threshold', 'color_code', 'icon',
+        'is_active', 'sort_order'
+    ]
+    permission_required = 'expenses.add_expensecategory'
+    success_url = reverse_lazy('expenses:category_list')
+    
+    def form_valid(self, form):
+        response = super().form_valid(form)
+        log_action(
+            self.request,
+            'category_created',
+            f'Created expense category: {self.object.name}',
+            content_object=self.object
+        )
+        messages.success(self.request, f'Category "{self.object.name}" created successfully!')
+        return response
+    
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context['title'] = 'Create Category'
+        return context
+
+class ExpenseCategoryUpdateView(PermissionRequiredMixin, UpdateView):
+    model = ExpenseCategory
+    template_name = 'expenses/category_form.html'
+    fields = [
+        'name', 'code', 'description', 'gl_account', 'monthly_budget',
+        'requires_approval', 'approval_threshold', 'color_code', 'icon',
+        'is_active', 'sort_order'
+    ]
+    permission_required = 'expenses.change_expensecategory'
+    success_url = reverse_lazy('expenses:category_list')
+    
+    def form_valid(self, form):
+        response = super().form_valid(form)
+        log_action(
+            self.request,
+            'category_updated',
+            f'Updated expense category: {self.object.name}',
+            content_object=self.object
+        )
+        messages.success(self.request, f'Category "{self.object.name}" updated successfully!')
+        return response
+    
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context['title'] = 'Edit Category'
+        return context
+
+class ExpenseCategoryDeleteView(PermissionRequiredMixin, DeleteView):
+    model = ExpenseCategory
+    template_name = 'expenses/category_confirm_delete.html'
+    permission_required = 'expenses.delete_expensecategory'
+    success_url = reverse_lazy('expenses:category_list')
+    
+    def delete(self, request, *args, **kwargs):
+        category = self.get_object()
+        
+        # Check if category has expenses
+        if category.expenses.exists():
+            messages.error(
+                request, 
+                f'Cannot delete category "{category.name}" because it has associated expenses. '
+                f'You can deactivate it instead.'
+            )
+            return redirect('expenses:category_list')
+        
+        response = super().delete(request, *args, **kwargs)
+        log_action(
+            request,
+            'category_deleted',
+            f'Deleted expense category: {category.name}'
+        )
+        messages.success(request, f'Category "{category.name}" deleted successfully!')
+        return response
+
+@login_required
+@permission_required('expenses.change_expensecategory')
+def category_toggle_active(request, pk):
+    """Toggle category active status"""
+    category = get_object_or_404(ExpenseCategory, pk=pk)
+    
+    category.is_active = not category.is_active
+    category.save()
+    
+    action = 'activated' if category.is_active else 'deactivated'
+    log_action(
+        request,
+        'category_updated',
+        f'{action.capitalize()} expense category: {category.name}',
+        content_object=category
+    )
+    
+    messages.success(request, f'Category "{category.name}" {action} successfully!')
+    return redirect('expenses:category_list')
+
+@login_required
+def category_expenses(request, pk):
+    """View expenses for a specific category"""
+    category = get_object_or_404(ExpenseCategory, pk=pk)
+    
+    # Check permissions - users can only see their own expenses unless they have view_all permission
+    if request.user.has_perm('expenses.view_all_expenses'):
+        expenses = Expense.objects.filter(category=category)
+    else:
+        expenses = Expense.objects.filter(category=category, created_by=request.user)
+    
+    # Apply filters
+    status_filter = request.GET.get('status')
+    date_from = request.GET.get('date_from')
+    date_to = request.GET.get('date_to')
+    
+    if status_filter:
+        expenses = expenses.filter(status=status_filter)
+    if date_from:
+        expenses = expenses.filter(expense_date__gte=date_from)
+    if date_to:
+        expenses = expenses.filter(expense_date__lte=date_to)
+    
+    # Pagination
+    paginator = Paginator(expenses.order_by('-expense_date'), 20)
+    page = request.GET.get('page')
+    
+    try:
+        expenses_page = paginator.page(page)
+    except PageNotAnInteger:
+        expenses_page = paginator.page(1)
+    except EmptyPage:
+        expenses_page = paginator.page(paginator.num_pages)
+    
+    # Statistics
+    stats = {
+        'total_expenses': expenses.count(),
+        'total_amount': expenses.aggregate(Sum('amount'))['amount__sum'] or Decimal('0'),
+        'approved_amount': expenses.filter(status='APPROVED').aggregate(Sum('amount'))['amount__sum'] or Decimal('0'),
+        'paid_amount': expenses.filter(status='PAID').aggregate(Sum('amount'))['amount__sum'] or Decimal('0'),
+    }
+    
+    # Budget utilization
+    budget_utilization = None
+    if category.monthly_budget:
+        current_month_spent = category.get_monthly_spent()
+        budget_utilization = {
+            'spent': current_month_spent,
+            'budget': category.monthly_budget,
+            'percentage': (current_month_spent / category.monthly_budget * 100) if category.monthly_budget > 0 else 0,
+            'remaining': category.monthly_budget - current_month_spent
+        }
+    
+    context = {
+        'category': category,
+        'expenses': expenses_page,
+        'stats': stats,
+        'budget_utilization': budget_utilization,
+        'status_choices': Expense.STATUS_CHOICES,
+    }
+    
+    return render(request, 'expenses/category_expenses.html', context)
+
+@login_required
+@permission_required('expenses.view_expensecategory')
+def category_budget_report(request):
+    """Budget utilization report across all categories"""
+    categories = ExpenseCategory.objects.filter(
+        monthly_budget__isnull=False,
+        monthly_budget__gt=0
+    ).order_by('sort_order', 'name')
+    
+    # Calculate utilization for each category
+    budget_data = []
+    for category in categories:
+        spent = category.get_monthly_spent()
+        budget = category.monthly_budget
+        percentage = (spent / budget * 100) if budget > 0 else 0
+        
+        budget_data.append({
+            'category': category,
+            'spent': spent,
+            'budget': budget,
+            'percentage': percentage,
+            'remaining': budget - spent,
+            'is_over_budget': spent > budget
+        })
+    
+    # Overall statistics
+    total_budget = sum(item['budget'] for item in budget_data)
+    total_spent = sum(item['spent'] for item in budget_data)
+    overall_percentage = (total_spent / total_budget * 100) if total_budget > 0 else 0
+    
+    context = {
+        'budget_data': budget_data,
+        'total_budget': total_budget,
+        'total_spent': total_spent,
+        'overall_percentage': overall_percentage,
+        'over_budget_categories': [item for item in budget_data if item['is_over_budget']],
+    }
+    
+    return render(request, 'expenses/category_budget_report.html', context)
+
+
+
+@login_required
+@require_http_methods(["GET"])
+def category_list_api(request):
+    """Get list of categories for dropdowns"""
+    categories = ExpenseCategory.objects.filter(is_active=True).order_by('sort_order', 'name')
+    
+    data = [
+        {
+            'id': category.id,
+            'name': category.name,
+            'code': category.code,
+            'color_code': category.color_code,
+            'icon': category.icon,
+            'monthly_budget': float(category.monthly_budget) if category.monthly_budget else None,
+            'requires_approval': category.requires_approval,
+            'approval_threshold': float(category.approval_threshold) if category.approval_threshold else None,
+        }
+        for category in categories
+    ]
+    
+    return JsonResponse({'categories': data})
+
+@login_required
+@require_http_methods(["GET"])
+def category_budget_utilization_api(request, pk):
+    """Get budget utilization data for a specific category"""
+    category = get_object_or_404(ExpenseCategory, pk=pk)
+    
+    # Get date range from request (default to current month)
+    year = request.GET.get('year', timezone.now().year)
+    month = request.GET.get('month', timezone.now().month)
+    
+    try:
+        year = int(year)
+        month = int(month)
+    except (ValueError, TypeError):
+        return JsonResponse({'error': 'Invalid year or month'}, status=400)
+    
+    # Calculate spent amount for the specified month
+    spent = category.expenses.filter(
+        expense_date__year=year,
+        expense_date__month=month,
+        status='PAID'  # Only count paid expenses
+    ).aggregate(total=Sum('amount'))['total'] or 0
+    
+    budget = category.monthly_budget or 0
+    utilization_percentage = (float(spent) / float(budget) * 100) if budget > 0 else 0
+    
+    data = {
+        'category': {
+            'id': category.id,
+            'name': category.name,
+            'budget': float(budget),
+        },
+        'period': {
+            'year': year,
+            'month': month,
+            'month_name': datetime(year, month, 1).strftime('%B')
+        },
+        'utilization': {
+            'spent': float(spent),
+            'remaining': float(budget - spent),
+            'percentage': utilization_percentage,
+            'is_over_budget': spent > budget
+        }
+    }
+    
+    return JsonResponse(data)
+
+@login_required
+@permission_required('expenses.view_expensecategory')
+def category_usage_stats_api(request):
+    """Get category usage statistics"""
+    date_from = request.GET.get('date_from')
+    date_to = request.GET.get('date_to')
+    
+    # Build base queryset
+    expenses = Expense.objects.all()
+    
+    if not request.user.has_perm('expenses.view_all_expenses'):
+        expenses = expenses.filter(created_by=request.user)
+    
+    if date_from:
+        expenses = expenses.filter(expense_date__gte=date_from)
+    if date_to:
+        expenses = expenses.filter(expense_date__lte=date_to)
+    
+    # Get category statistics
+    category_stats = expenses.values(
+        'category__id', 'category__name', 'category__color_code'
+    ).annotate(
+        total_amount=Sum('amount'),
+        expense_count=Count('id'),
+        avg_amount=Avg('amount')
+    ).order_by('-total_amount')
+    
+    data = {
+        'categories': [
+            {
+                'id': stat['category__id'],
+                'name': stat['category__name'],
+                'color_code': stat['category__color_code'],
+                'total_amount': float(stat['total_amount'] or 0),
+                'expense_count': stat['expense_count'],
+                'avg_amount': float(stat['avg_amount'] or 0),
+            }
+            for stat in category_stats
+        ],
+        'summary': {
+            'total_categories': len(category_stats),
+            'total_amount': float(sum(stat['total_amount'] or 0 for stat in category_stats)),
+            'total_expenses': sum(stat['expense_count'] for stat in category_stats)
+        }
+    }
+    
+    return JsonResponse(data)

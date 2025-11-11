@@ -1,0 +1,95 @@
+
+# ============================================================================
+# FILE: templates/base.html (Add to <body> tag)
+# ============================================================================
+<body data-efris-enabled="{{ EFRIS_ENABLED|yesno:'true,false' }}" 
+      data-efris-active="{{ EFRIS_ACTIVE|yesno:'true,false' }}"
+      data-theme="{% if request.user.is_authenticated %}{{ request.user.theme_preference }}{% else %}light{% endif %}">
+
+
+# ============================================================================
+# FILE: core/mixins.py
+# ============================================================================
+
+# ============================================================================
+# FILE: Example usage in template
+# ============================================================================
+"""
+{% load efris_tags %}
+
+<!-- Method 1: Using template tag -->
+{% efris_enabled as is_efris %}
+{% if is_efris %}
+    <div class="efris-content">
+        EFRIS content here
+    </div>
+{% endif %}
+
+<!-- Method 2: Using context variable -->
+{% if EFRIS_ENABLED %}
+    <div class="alert alert-info">
+        EFRIS is enabled for your company
+    </div>
+{% endif %}
+
+<!-- Method 3: Using CSS classes -->
+<div class="{% efris_show_class %}">
+    This only shows when EFRIS is enabled
+</div>
+
+<!-- Method 4: Using custom field wrapper -->
+{% efris_field form.efris_commodity_code "EFRIS Commodity Code" "Select EFRIS category" required=True %}
+
+<!-- Method 5: Inline conditional -->
+<span class="efris-only">EFRIS Active</span>
+<span class="efris-inline">{{ EFRIS_STATUS }}</span>
+
+<!-- Method 6: Status badge -->
+{% efris_status_badge %}
+
+<!-- Method 7: Conditional attributes -->
+<input type="text" {% efris_attr 'readonly' 'readonly' '' %}>
+
+<!-- Method 8: Show/hide sections -->
+<div class="card efris-content" data-efris-required="true">
+    <div class="card-body">
+        <!-- This entire card is hidden when EFRIS is disabled -->
+    </div>
+</div>
+"""
+
+
+# ============================================================================
+# FILE: Example usage in views
+# ============================================================================
+"""
+# Function-based view
+from core.decorators import efris_required, efris_active_required
+
+@login_required
+@efris_required(redirect_url='dashboard')
+def efris_sync_view(request):
+    # This view requires EFRIS to be enabled
+    return render(request, 'efris/sync.html')
+
+@login_required
+@efris_active_required(redirect_url='efris:settings')
+def fiscalize_invoice_view(request, invoice_id):
+    # This view requires EFRIS to be enabled AND active
+    return render(request, 'invoices/fiscalize.html')
+
+
+# Class-based view
+from core.mixins import EFRISRequiredMixin
+
+class EFRISSyncView(LoginRequiredMixin, EFRISRequiredMixin, TemplateView):
+    template_name = 'efris/sync.html'
+    efris_required = True
+    efris_redirect_url = 'dashboard'
+
+class FiscalizeInvoiceView(LoginRequiredMixin, EFRISRequiredMixin, UpdateView):
+    template_name = 'invoices/fiscalize.html'
+    efris_required = True
+    efris_active_required = True  # Requires active + configured
+    efris_redirect_url = 'efris:settings'
+"""

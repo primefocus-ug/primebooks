@@ -5,6 +5,17 @@ from django.contrib.auth import get_user_model
 from datetime import timedelta
 from decimal import Decimal
 import logging
+from celery import shared_task
+from django.core.mail import send_mail
+from django.template.loader import render_to_string
+from django.conf import settings
+from django.utils import timezone
+from datetime import timedelta
+import logging
+import pandas as pd
+from io import BytesIO
+import os
+
 
 from .models import Expense, ExpenseCategory
 from notifications.models import Notification
@@ -293,3 +304,211 @@ def process_recurring_expenses():
 
     logger.info(f"Processed {created_count} recurring expenses")
     return f"Created {created_count} recurring expenses"
+
+
+
+@shared_task
+def export_expenses_to_csv(user_id, filters=None):
+    """Export expenses to CSV file asynchronously"""
+    from django.contrib.auth import get_user_model
+    from .models import Expense
+    from .utils import generate_export_filename
+    
+    User = get_user_model()
+    
+    try:
+        user = User.objects.get(id=user_id)
+        filters = filters or {}
+        
+        # Build queryset based on filters
+        expenses = Expense.objects.filter(created_by=user)
+        
+        if filters.get('status'):
+            expenses = expenses.filter(status=filters['status'])
+        if filters.get('category'):
+            expenses = expenses.filter(category_id=filters['category'])
+        if filters.get('date_from'):
+            expenses = expenses.filter(expense_date__gte=filters['date_from'])
+        if filters.get('date_to'):
+            expenses = expenses.filter(expense_date__lte=filters['date_to'])
+        
+        # Prepare data for export
+        data = []
+        for expense in expenses.select_related('category', 'store'):
+            data.append({
+                'Expense Number': expense.expense_number,
+                'Title': expense.title,
+                'Category': expense.category.name,
+                'Amount': float(expense.amount),
+                'Tax Amount': float(expense.tax_amount),
+                'Total Amount': float(expense.total_amount),
+                'Currency': expense.currency,
+                'Expense Date': expense.expense_date.isoformat(),
+                'Vendor': expense.vendor_name,
+                'Status': expense.get_status_display(),
+                'Store': expense.store.name if expense.store else '',
+                'Description': expense.description,
+                'Submitted At': expense.submitted_at.isoformat() if expense.submitted_at else '',
+                'Approved At': expense.approved_at.isoformat() if expense.approved_at else '',
+                'Paid At': expense.paid_at.isoformat() if expense.paid_at else '',
+            })
+        
+        # Create DataFrame and export to CSV
+        df = pd.DataFrame(data)
+        
+        # Generate filename and path
+        filename = generate_export_filename(user, 'csv')
+        filepath = os.path.join(settings.MEDIA_ROOT, 'exports', filename)
+        
+        # Ensure directory exists
+        os.makedirs(os.path.dirname(filepath), exist_ok=True)
+        
+        # Save CSV
+        df.to_csv(filepath, index=False)
+        
+        # Send notification email with download link
+        send_export_notification.delay(user_id, filename, len(data))
+        
+        return f"Exported {len(data)} expenses to {filename}"
+        
+    except Exception as e:
+        logger.error(f"Export failed: {str(e)}")
+        # Notify user of failure
+        send_export_failure_notification.delay(user_id, str(e))
+        raise
+
+@shared_task
+def send_export_notification(user_id, filename, record_count):
+    """Send email notification when export is ready"""
+    from django.contrib.auth import get_user_model
+    
+    User = get_user_model()
+    
+    try:
+        user = User.objects.get(id=user_id)
+        
+        subject = f"Your expense export is ready"
+        download_url = f"{settings.SITE_URL}/media/exports/{filename}"
+        
+        context = {
+            'user': user,
+            'filename': filename,
+            'record_count': record_count,
+            'download_url': download_url,
+            'expiry_hours': 24  # Link expires in 24 hours
+        }
+        
+        html_message = render_to_string('expenses/emails/export_ready.html', context)
+        plain_message = render_to_string('expenses/emails/export_ready.txt', context)
+        
+        send_mail(
+            subject=subject,
+            message=plain_message,
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            recipient_list=[user.email],
+            html_message=html_message
+        )
+        
+    except Exception as e:
+        logger.error(f"Failed to send export notification: {str(e)}")
+
+@shared_task
+def send_export_failure_notification(user_id, error_message):
+    """Send email notification when export fails"""
+    from django.contrib.auth import get_user_model
+    
+    User = get_user_model()
+    
+    try:
+        user = User.objects.get(id=user_id)
+        
+        subject = "Expense export failed"
+        
+        context = {
+            'user': user,
+            'error_message': error_message,
+        }
+        
+        html_message = render_to_string('expenses/emails/export_failed.html', context)
+        plain_message = render_to_string('expenses/emails/export_failed.txt', context)
+        
+        send_mail(
+            subject=subject,
+            message=plain_message,
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            recipient_list=[user.email],
+            html_message=html_message
+        )
+        
+    except Exception as e:
+        logger.error(f"Failed to send export failure notification: {str(e)}")
+
+@shared_task
+def send_expense_reminders():
+    """Send reminders for pending expenses"""
+    from .models import Expense
+    
+    # Find expenses that need reminders
+    pending_expenses = Expense.objects.filter(
+        status='SUBMITTED',
+        submitted_at__lte=timezone.now() - timedelta(days=2)  # After 2 days
+    )
+    
+    for expense in pending_expenses:
+        # Send reminder to approvers
+        send_pending_approval_reminder.delay(expense.id)
+
+@shared_task
+def send_pending_approval_reminder(expense_id):
+    """Send reminder for specific pending expense"""
+    from .models import Expense
+    from django.contrib.auth.models import User
+    
+    try:
+        expense = Expense.objects.get(id=expense_id)
+        approvers = User.objects.filter(
+            groups__permissions__codename='approve_expense'
+        ).distinct()
+        
+        subject = f"Reminder: Expense pending approval - {expense.expense_number}"
+        
+        for approver in approvers:
+            context = {
+                'approver': approver,
+                'expense': expense,
+                'days_pending': expense.days_pending,
+            }
+            
+            html_message = render_to_string('expenses/emails/approval_reminder.html', context)
+            plain_message = render_to_string('expenses/emails/approval_reminder.txt', context)
+            
+            send_mail(
+                subject=subject,
+                message=plain_message,
+                from_email=settings.DEFAULT_FROM_EMAIL,
+                recipient_list=[approver.email],
+                html_message=html_message
+            )
+            
+    except Expense.DoesNotExist:
+        logger.warning(f"Expense {expense_id} not found for reminder")
+
+@shared_task
+def cleanup_temp_files():
+    """Clean up temporary export files older than 24 hours"""
+    import os
+    import glob
+    from datetime import datetime, timedelta
+    
+    exports_dir = os.path.join(settings.MEDIA_ROOT, 'exports')
+    cutoff_time = datetime.now() - timedelta(hours=24)
+    
+    if os.path.exists(exports_dir):
+        for file_path in glob.glob(os.path.join(exports_dir, '*.csv')):
+            file_time = datetime.fromtimestamp(os.path.getctime(file_path))
+            if file_time < cutoff_time:
+                try:
+                    os.remove(file_path)
+                    logger.info(f"Cleaned up old export file: {file_path}")
+                except OSError as e:
+                    logger.error(f"Failed to clean up {file_path}: {str(e)}")
