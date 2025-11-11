@@ -6,10 +6,11 @@ from django.http import JsonResponse, HttpResponse
 from django.views.generic import ListView, DetailView
 from django.views.decorators.http import require_POST, require_http_methods
 from django.views.decorators.csrf import csrf_exempt
-from django.db.models import Q, Sum, Count, Avg, F
+from django.db.models import Q, Sum, Count, Avg, F,Min
 from django.db import transaction, IntegrityError
 from django.utils import timezone
 from django.core.mail import EmailMessage
+from django.http import HttpResponseServerError
 from django.conf import settings
 from django.core.exceptions import ValidationError, PermissionDenied
 from decimal import Decimal, InvalidOperation
@@ -109,8 +110,6 @@ def create_customer_ajax(request):
     except Exception as e:
         logger.error(f"❌ Error creating customer: {e}", exc_info=True)
         return JsonResponse({'success': False, 'error': str(e)})
-
-
 
 
 class SalesListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
@@ -1885,70 +1884,482 @@ def store_sales_api(request):
             'details': str(e)
         }, status=500)
 
+
 @login_required
-@permission_required('sales.view_sale',raise_exception=True)
+@permission_required('sales.view_sale', raise_exception=True)
 def sales_analytics(request):
-    """Sales analytics dashboard"""
-    # Date range filtering
-    date_from = request.GET.get('date_from')
-    date_to = request.GET.get('date_to')
+    """Advanced sales analytics dashboard with comprehensive metrics"""
+    try:
+        # Date range filtering with validation
+        date_from = request.GET.get('date_from')
+        date_to = request.GET.get('date_to')
+        store_id = request.GET.get('store')
 
-    if not date_from:
-        date_from = timezone.now().date() - timedelta(days=30)
-    else:
-        date_from = datetime.strptime(date_from, '%Y-%m-%d').date()
+        # Set default date range (last 30 days)
+        if not date_from:
+            date_from = timezone.now().date() - timedelta(days=30)
+        else:
+            date_from = datetime.strptime(date_from, '%Y-%m-%d').date()
 
-    if not date_to:
-        date_to = timezone.now().date()
-    else:
-        date_to = datetime.strptime(date_to, '%Y-%m-%d').date()
+        if not date_to:
+            date_to = timezone.now().date()
+        else:
+            date_to = datetime.strptime(date_to, '%Y-%m-%d').date()
 
-    # Base queryset
-    sales = Sale.objects.filter(
-        created_at__date__gte=date_from,
-        created_at__date__lte=date_to,
-        transaction_type='SALE'
-    )
+        # Validate date range
+        if date_from > date_to:
+            date_from, date_to = date_to, date_from
 
-    # Calculate metrics
-    total_sales = sales.count()
-    total_revenue = sales.aggregate(Sum('total_amount'))['total_amount__sum'] or 0
-    avg_sale_value = sales.aggregate(Avg('total_amount'))['total_amount__avg'] or 0
+        # Base queryset with optimizations
+        sales_qs = Sale.objects.filter(
+            created_at__date__gte=date_from,
+            created_at__date__lte=date_to,
+            transaction_type='SALE',
+            is_voided=False
+        ).select_related('store', 'customer').prefetch_related('items', 'payments')
 
-    # Sales by payment method
-    payment_methods = sales.values('payment_method').annotate(
-        count=Count('id'),
-        total=Sum('total_amount')
-    ).order_by('-total')
+        # Filter by store if specified
+        if store_id and store_id != '':
+            sales_qs = sales_qs.filter(store_id=store_id)
 
-    # Daily sales trend
-    daily_sales = sales.extra(
-        select={'day': 'DATE(created_at)'}
-    ).values('day').annotate(
-        count=Count('id'),
-        total=Sum('total_amount')
-    ).order_by('day')
+        # Get user's accessible stores for filter dropdown
+        if request.user.is_superuser:
+            stores = Store.objects.filter(is_active=True).order_by('name')
+        else:
+            stores = Store.objects.filter(
+                Q(staff=request.user) | Q(company__staff=request.user),
+                is_active=True
+            ).distinct().order_by('name')
 
-    # Top products
-    top_products = SaleItem.objects.filter(
-        sale__in=sales
-    ).values('product__name').annotate(
-        quantity_sold=Sum('quantity'),
-        revenue=Sum('total_price')
-    ).order_by('-revenue')[:10]
+        # Calculate core metrics
+        total_sales = sales_qs.count()
+        total_revenue = sales_qs.aggregate(Sum('total_amount'))['total_amount__sum'] or Decimal('0')
+        avg_sale_value = sales_qs.aggregate(Avg('total_amount'))['total_amount__avg'] or Decimal('0')
 
-    context = {
-        'date_from': date_from,
-        'date_to': date_to,
-        'total_sales': total_sales,
-        'total_revenue': total_revenue,
-        'avg_sale_value': avg_sale_value,
-        'payment_methods': payment_methods,
-        'daily_sales': list(daily_sales),
-        'top_products': top_products,
-    }
+        # Calculate total customers (distinct customers)
+        total_customers = sales_qs.values('customer').distinct().count()
+        if total_customers == 0:  # If no customers, use sale count as fallback
+            total_customers = total_sales
 
-    return render(request, 'sales/analytics.html', context)
+        # Sales by payment method with enhanced data
+        payment_methods_data = sales_qs.values('payment_method').annotate(
+            count=Count('id'),
+            total=Sum('total_amount')
+        ).order_by('-total')
+
+        # Enhanced payment methods with percentages
+        payment_methods = []
+        for method in payment_methods_data:
+            percentage = (method['total'] / total_revenue * 100) if total_revenue > 0 else 0
+            payment_methods.append({
+                'payment_method': method['payment_method'],
+                'count': method['count'],
+                'total': method['total'],
+                'percentage': round(percentage, 1)
+            })
+
+        # Daily sales trend with growth calculation
+        daily_sales_data = sales_qs.extra(
+            select={'day': 'DATE(created_at)'}
+        ).values('day').annotate(
+            count=Count('id'),
+            total=Sum('total_amount')
+        ).order_by('day')
+
+        # Process daily sales with growth rates
+        daily_sales = []
+        previous_total = None
+        for day_data in daily_sales_data:
+            day_total = day_data['total'] or Decimal('0')
+            day_count = day_data['count'] or 0
+
+            # Calculate growth percentage
+            growth = None
+            if previous_total is not None and previous_total > 0:
+                growth_percentage = ((day_total - previous_total) / previous_total) * 100
+                growth = f"{growth_percentage:+.1f}%"
+            else:
+                growth = "+0.0%"
+
+            # Calculate average sale value for the day
+            avg_day_value = day_total / day_count if day_count > 0 else Decimal('0')
+
+            daily_sales.append({
+                'day': day_data['day'],
+                'count': day_count,
+                'total': day_total,
+                'avg_value': avg_day_value,
+                'growth': growth
+            })
+            previous_total = day_total
+
+        # Top products by revenue
+        top_products = SaleItem.objects.filter(
+            sale__in=sales_qs
+        ).select_related('product').values(
+            'product__id', 'product__name', 'product__sku'
+        ).annotate(
+            quantity_sold=Sum('quantity'),
+            revenue=Sum('total_price'),
+            sale_count=Count('sale', distinct=True)
+        ).order_by('-revenue')[:10]
+
+        # Enhanced top products with performance metrics
+        enhanced_top_products = []
+        max_revenue = top_products[0]['revenue'] if top_products else Decimal('1')
+
+        for product in top_products:
+            performance_percentage = (product['revenue'] / max_revenue * 100) if max_revenue > 0 else 0
+            enhanced_top_products.append({
+                'product__id': product['product__id'],
+                'product__name': product['product__name'],
+                'product__sku': product['product__sku'],
+                'quantity_sold': product['quantity_sold'] or 0,
+                'revenue': product['revenue'] or Decimal('0'),
+                'sale_count': product['sale_count'],
+                'performance_percentage': round(performance_percentage, 1)
+            })
+
+        # Hourly sales pattern
+        hourly_sales = sales_qs.extra(
+            select={'hour': 'EXTRACT(HOUR FROM created_at)'}
+        ).values('hour').annotate(
+            count=Count('id'),
+            total=Sum('total_amount')
+        ).order_by('hour')
+
+        # Process hourly data
+        hourly_data = []
+        for hour in range(24):
+            hour_data = next((h for h in hourly_sales if h['hour'] == hour), None)
+            if hour_data:
+                hourly_data.append({
+                    'hour': hour,
+                    'count': hour_data['count'],
+                    'total': hour_data['total'] or Decimal('0')
+                })
+            else:
+                hourly_data.append({
+                    'hour': hour,
+                    'count': 0,
+                    'total': Decimal('0')
+                })
+
+        # Additional insights calculations
+        # Sales growth vs previous period
+        previous_period_start = date_from - (date_to - date_from) - timedelta(days=1)
+        previous_period_end = date_from - timedelta(days=1)
+
+        previous_sales = Sale.objects.filter(
+            created_at__date__gte=previous_period_start,
+            created_at__date__lte=previous_period_end,
+            transaction_type='SALE',
+            is_voided=False
+        )
+
+        if store_id and store_id != '':
+            previous_sales = previous_sales.filter(store_id=store_id)
+
+        previous_revenue = previous_sales.aggregate(Sum('total_amount'))['total_amount__sum'] or Decimal('0')
+
+        if previous_revenue > 0:
+            sales_growth = ((total_revenue - previous_revenue) / previous_revenue) * 100
+            sales_growth_display = f"{sales_growth:+.1f}%"
+        else:
+            sales_growth_display = "+0.0%"
+
+        # New customers calculation
+        new_customers = sales_qs.filter(
+            customer__isnull=False
+        ).values('customer').annotate(
+            first_sale=Min('created_at')
+        ).filter(
+            first_sale__date__gte=date_from,
+            first_sale__date__lte=date_to
+        ).count()
+
+        # Return rate calculation (simplified - in real scenario you'd have return data)
+        refunded_sales = Sale.objects.filter(
+            created_at__date__gte=date_from,
+            created_at__date__lte=date_to,
+            transaction_type='REFUND'
+        )
+
+        if store_id and store_id != '':
+            refunded_sales = refunded_sales.filter(store_id=store_id)
+
+        refund_amount = refunded_sales.aggregate(Sum('total_amount'))['total_amount__sum'] or Decimal('0')
+
+        if total_revenue > 0:
+            return_rate = (abs(refund_amount) / total_revenue) * 100
+            return_rate_display = f"{return_rate:.1f}%"
+        else:
+            return_rate_display = "0.0%"
+
+        # Store performance (if multiple stores)
+        store_performance = sales_qs.values('store__id', 'store__name').annotate(
+            sales_count=Count('id'),
+            total_revenue=Sum('total_amount'),
+            avg_sale_value=Avg('total_amount')
+        ).order_by('-total_revenue')
+
+        # Payment method efficiency (average transaction value by method)
+        payment_efficiency = sales_qs.values('payment_method').annotate(
+            avg_amount=Avg('total_amount'),
+            count=Count('id')
+        ).order_by('-avg_amount')
+
+        context = {
+            # Date range
+            'date_from': date_from,
+            'date_to': date_to,
+
+            # Core metrics
+            'total_sales': total_sales,
+            'total_revenue': total_revenue,
+            'avg_sale_value': avg_sale_value,
+            'total_customers': total_customers,
+
+            # Charts data
+            'payment_methods': payment_methods,
+            'daily_sales': daily_sales,
+            'top_products': enhanced_top_products,
+            'hourly_sales': hourly_data,
+
+            # Additional insights
+            'sales_growth': sales_growth_display,
+            'new_customers': new_customers,
+            'return_rate': return_rate_display,
+
+            # Filter options
+            'stores': stores,
+            'selected_store': store_id,
+
+            # Additional analytics
+            'store_performance': store_performance,
+            'payment_efficiency': payment_efficiency,
+
+            # Period information
+            'period_days': (date_to - date_from).days + 1,
+        }
+
+        # Handle exports
+        export_format = request.GET.get('export')
+        if export_format in ['csv', 'excel']:
+            return export_analytics_data(context, export_format)
+
+        return render(request, 'sales/analytics.html', context)
+
+    except Exception as e:
+        logger.error(f"Error in sales analytics: {str(e)}", exc_info=True)
+        messages.error(request, f"An error occurred while generating analytics: {str(e)}")
+
+        # Return basic context with default values even on error
+        default_date_from = timezone.now().date() - timedelta(days=30)
+        default_date_to = timezone.now().date()
+
+        # Get stores for the filter dropdown even on error
+        if request.user.is_superuser:
+            stores = Store.objects.filter(is_active=True).order_by('name')
+        else:
+            stores = Store.objects.filter(
+                Q(staff=request.user) | Q(company__staff=request.user),
+                is_active=True
+            ).distinct().order_by('name')
+
+        return render(request, 'sales/analytics.html', {
+            'date_from': default_date_from,
+            'date_to': default_date_to,
+            'stores': stores,
+            'selected_store': request.GET.get('store'),
+
+            # Provide default values for all required template variables
+            'total_sales': 0,
+            'total_revenue': Decimal('0'),
+            'avg_sale_value': Decimal('0'),
+            'total_customers': 0,
+            'payment_methods': [],
+            'daily_sales': [],
+            'top_products': [],
+            'hourly_sales': [],
+            'sales_growth': '+0.0%',
+            'new_customers': 0,
+            'return_rate': '0.0%',
+            'store_performance': [],
+            'payment_efficiency': [],
+            'period_days': 30,
+            'error': True
+        })
+
+
+def export_analytics_data(context, format_type):
+    """Export analytics data to CSV or Excel"""
+    try:
+        if format_type == 'csv':
+            response = HttpResponse(content_type='text/csv')
+            response[
+                'Content-Disposition'] = f'attachment; filename="sales_analytics_{timezone.now().strftime("%Y%m%d_%H%M%S")}.csv"'
+
+            writer = csv.writer(response)
+
+            # Write header
+            writer.writerow(['Sales Analytics Export', f"Period: {context['date_from']} to {context['date_to']}"])
+            writer.writerow([])
+
+            # Key Metrics
+            writer.writerow(['Key Metrics'])
+            writer.writerow(['Total Sales', context['total_sales']])
+            writer.writerow(['Total Revenue', float(context['total_revenue'])])
+            writer.writerow(['Average Sale Value', float(context['avg_sale_value'])])
+            writer.writerow(['Total Customers', context['total_customers']])
+            writer.writerow(['Sales Growth', context['sales_growth']])
+            writer.writerow([])
+
+            # Daily Sales
+            writer.writerow(['Daily Sales Trend'])
+            writer.writerow(['Date', 'Sales Count', 'Total Revenue', 'Average Value', 'Growth'])
+            for day in context['daily_sales']:
+                writer.writerow([
+                    day['day'],
+                    day['count'],
+                    float(day['total']),
+                    float(day['avg_value']),
+                    day['growth']
+                ])
+            writer.writerow([])
+
+            # Top Products
+            writer.writerow(['Top Products'])
+            writer.writerow(['Product', 'Quantity Sold', 'Revenue', 'Performance %'])
+            for product in context['top_products']:
+                writer.writerow([
+                    product['product__name'],
+                    product['quantity_sold'],
+                    float(product['revenue']),
+                    product['performance_percentage']
+                ])
+
+            return response
+
+        elif format_type == 'excel':
+            output = BytesIO()
+            workbook = xlsxwriter.Workbook(output)
+            worksheet = workbook.add_worksheet('Sales Analytics')
+
+            # Add formats
+            header_format = workbook.add_format({'bold': True, 'bg_color': '#366092', 'color': 'white'})
+            metric_format = workbook.add_format({'bold': True, 'num_format': '#,##0.00'})
+
+            # Key Metrics
+            worksheet.write(0, 0, 'Sales Analytics Dashboard', header_format)
+            worksheet.write(1, 0, f"Period: {context['date_from']} to {context['date_to']}")
+
+            row = 3
+            worksheet.write(row, 0, 'Key Metrics', header_format)
+            metrics = [
+                ('Total Sales', context['total_sales']),
+                ('Total Revenue', float(context['total_revenue'])),
+                ('Average Sale Value', float(context['avg_sale_value'])),
+                ('Total Customers', context['total_customers']),
+                ('Sales Growth', context['sales_growth'])
+            ]
+
+            for metric, value in metrics:
+                row += 1
+                worksheet.write(row, 0, metric)
+                if isinstance(value, (int, float)):
+                    worksheet.write(row, 1, value, metric_format)
+                else:
+                    worksheet.write(row, 1, value)
+
+            # Daily Sales Trend
+            row += 2
+            worksheet.write(row, 0, 'Daily Sales Trend', header_format)
+            row += 1
+            headers = ['Date', 'Sales Count', 'Total Revenue', 'Average Value', 'Growth']
+            for col, header in enumerate(headers):
+                worksheet.write(row, col, header, header_format)
+
+            for day_data in context['daily_sales']:
+                row += 1
+                worksheet.write(row, 0, day_data['day'].strftime('%Y-%m-%d'))
+                worksheet.write(row, 1, day_data['count'])
+                worksheet.write(row, 2, float(day_data['total']), metric_format)
+                worksheet.write(row, 3, float(day_data['avg_value']), metric_format)
+                worksheet.write(row, 4, day_data['growth'])
+
+            workbook.close()
+            output.seek(0)
+
+            response = HttpResponse(
+                output.read(),
+                content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+            )
+            response[
+                'Content-Disposition'] = f'attachment; filename="sales_analytics_{timezone.now().strftime("%Y%m%d_%H%M%S")}.xlsx"'
+
+            return response
+
+    except Exception as e:
+        logger.error(f"Error exporting analytics data: {str(e)}")
+        return HttpResponseServerError("Error generating export")
+
+@login_required
+def analytics_day_details(request):
+    """AJAX endpoint for day details in analytics"""
+    try:
+        date_str = request.GET.get('date')
+        store_id = request.GET.get('store')
+
+        if not date_str:
+            return JsonResponse({'success': False, 'error': 'Date parameter required'})
+
+        target_date = datetime.strptime(date_str, '%Y-%m-%d').date()
+
+        # Get sales for the specific day
+        sales_qs = Sale.objects.filter(
+            created_at__date=target_date,
+            transaction_type='SALE',
+            is_voided=False
+        ).select_related('store', 'customer').prefetch_related('items__product', 'payments')
+
+        if store_id and store_id != '':
+            sales_qs = sales_qs.filter(store_id=store_id)
+
+        sales_data = []
+        for sale in sales_qs:
+            sales_data.append({
+                'invoice_number': sale.invoice_number,
+                'customer': sale.customer.name if sale.customer else 'Walk-in',
+                'total_amount': float(sale.total_amount),
+                'payment_method': sale.get_payment_method_display(),
+                'created_at': sale.created_at.strftime('%H:%M'),
+                'item_count': sale.items.count(),
+                'is_fiscalized': sale.is_fiscalized
+            })
+
+        # Calculate day statistics
+        day_stats = sales_qs.aggregate(
+            total_sales=Count('id'),
+            total_revenue=Sum('total_amount'),
+            avg_sale=Avg('total_amount')
+        )
+
+        html_content = render_to_string('sales/includes/day_details.html', {
+            'date': target_date,
+            'sales': sales_data,
+            'stats': day_stats
+        })
+
+        return JsonResponse({
+            'success': True,
+            'html': html_content
+        })
+
+    except Exception as e:
+        logger.error(f"Error fetching day details: {str(e)}")
+        return JsonResponse({'success': False, 'error': str(e)})
+
 
 @login_required
 @permission_required('sales.change_sale', raise_exception=True)

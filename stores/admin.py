@@ -166,7 +166,7 @@ class StoreAdmin(admin.ModelAdmin):
     def company_link(self, obj):
         if obj.company:
             try:
-                url = reverse('admin:company_company_change', args=[obj.company.id])
+                url = reverse('admin:company_company_change', args=[obj.company.company_id])
                 return format_html('<a href="{}">{}</a>', url, obj.company.display_name)
             except:
                 return obj.company.display_name

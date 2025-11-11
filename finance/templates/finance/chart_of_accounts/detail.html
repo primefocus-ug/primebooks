@@ -1,0 +1,362 @@
+{% extends 'base.html' %}
+{% load i18n %}
+{% load static %}
+
+{% block title %}{{ account.name }} | {{ block.super }}{% endblock %}
+
+{% block breadcrumb_items %}
+<li class="breadcrumb-item"><a href="{% url 'finance:dashboard' %}">{% trans "Finance" %}</a></li>
+<li class="breadcrumb-item"><a href="{% url 'finance:chart_of_accounts_list' %}">{% trans "Chart of Accounts" %}</a></li>
+<li class="breadcrumb-item active">{{ account.code }}</li>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+    .account-header {
+        background: linear-gradient(135deg, var(--primary-600), var(--primary-700));
+        color: white;
+        border-radius: var(--border-radius);
+        padding: 2rem;
+        margin-bottom: 2rem;
+    }
+
+    .balance-chart {
+        height: 300px;
+    }
+
+    .transaction-row:hover {
+        background-color: var(--primary-50);
+        cursor: pointer;
+    }
+
+    [data-theme="dark"] .transaction-row:hover {
+        background-color: rgba(59, 130, 246, 0.1);
+    }
+
+    .account-code-badge {
+        font-family: 'Courier New', monospace;
+        font-size: 1.2rem;
+        font-weight: 700;
+        padding: 0.5rem 1rem;
+        background: rgba(255, 255, 255, 0.2);
+        border-radius: var(--border-radius-sm);
+    }
+
+    .child-account-item {
+        padding: 0.75rem;
+        border-left: 3px solid var(--primary-500);
+        background-color: var(--bg-secondary);
+        border-radius: var(--border-radius-sm);
+        margin-bottom: 0.5rem;
+        transition: all 0.3s ease;
+    }
+
+    .child-account-item:hover {
+        transform: translateX(5px);
+        background-color: var(--primary-50);
+    }
+
+    [data-theme="dark"] .child-account-item:hover {
+        background-color: rgba(59, 130, 246, 0.1);
+    }
+
+    @media (max-width: 767.98px) {
+        .account-header {
+            padding: 1.5rem;
+        }
+
+        .balance-chart {
+            height: 250px;
+        }
+
+        .account-code-badge {
+            font-size: 1rem;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- Account Header -->
+    <div class="account-header shadow-lg">
+        <div class="row align-items-center">
+            <div class="col-12 col-md-8">
+                <div class="d-flex align-items-center mb-3">
+                    <span class="account-code-badge me-3">{{ account.code }}</span>
+                    {% if account.is_header %}
+                    <span class="badge bg-warning">
+                        <i class="bi bi-folder-fill me-1"></i>{% trans "Header Account" %}
+                    </span>
+                    {% endif %}
+                    {% if not account.is_active %}
+                    <span class="badge bg-secondary ms-2">{% trans "Inactive" %}</span>
+                    {% endif %}
+                </div>
+                <h2 class="mb-2">{{ account.name }}</h2>
+                <p class="mb-0 opacity-75">
+                    <i class="bi bi-tag me-2"></i>{{ account.get_account_type_display }}
+                    {% if account.parent %}
+                    | <i class="bi bi-diagram-3 me-2"></i>
+                    {% trans "Parent:" %} {{ account.parent.code }} - {{ account.parent.name }}
+                    {% endif %}
+                </p>
+            </div>
+            <div class="col-12 col-md-4 mt-3 mt-md-0 text-md-end">
+                <p class="mb-1 opacity-75">{% trans "Current Balance" %}</p>
+                <h1 class="mb-0">{{ current_balance|floatformat:2 }}</h1>
+                <small class="opacity-75">{{ account.currency }}</small>
+            </div>
+        </div>
+    </div>
+
+    <!-- Action Buttons -->
+    <div class="d-flex flex-wrap gap-2 mb-4">
+        {% if perms.finance.change_chartofaccounts %}
+        <a href="{% url 'finance:chart_of_accounts_update' account.id %}" class="btn btn-primary">
+            <i class="bi bi-pencil me-1"></i>{% trans "Edit Account" %}
+        </a>
+        {% endif %}
+        {% if perms.finance.add_chartofaccounts %}
+        <a href="{% url 'finance:chart_of_accounts_create' %}?parent={{ account.id }}" class="btn btn-outline-primary">
+            <i class="bi bi-plus-circle me-1"></i>{% trans "Add Child Account" %}
+        </a>
+        {% endif %}
+        {% if perms.finance.view_financialreport %}
+        <a href="{% url 'finance:general_ledger' %}?account={{ account.id }}" class="btn btn-outline-success">
+            <i class="bi bi-journal-text me-1"></i>{% trans "View Ledger" %}
+        </a>
+        {% endif %}
+    </div>
+
+    <div class="row">
+        <!-- Account Information -->
+        <div class="col-12 col-lg-4 mb-4">
+            <div class="card shadow-sm h-100">
+                <div class="card-header bg-light">
+                    <h5 class="mb-0">
+                        <i class="bi bi-info-circle me-2"></i>{% trans "Account Information" %}
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div class="mb-3">
+                        <label class="text-muted small">{% trans "Account Code" %}</label>
+                        <p class="fw-bold mb-0">{{ account.code }}</p>
+                    </div>
+                    <div class="mb-3">
+                        <label class="text-muted small">{% trans "Account Name" %}</label>
+                        <p class="fw-bold mb-0">{{ account.name }}</p>
+                    </div>
+                    <div class="mb-3">
+                        <label class="text-muted small">{% trans "Account Type" %}</label>
+                        <p class="mb-0">
+                            <span class="badge bg-primary">{{ account.get_account_type_display }}</span>
+                        </p>
+                    </div>
+                    <div class="mb-3">
+                        <label class="text-muted small">{% trans "Currency" %}</label>
+                        <p class="fw-bold mb-0">{{ account.currency }}</p>
+                    </div>
+                    {% if account.tax_code %}
+                    <div class="mb-3">
+                        <label class="text-muted small">{% trans "Tax Code" %}</label>
+                        <p class="mb-0">{{ account.tax_code.code }} - {{ account.tax_code.name }}</p>
+                    </div>
+                    {% endif %}
+                    {% if account.description %}
+                    <div class="mb-3">
+                        <label class="text-muted small">{% trans "Description" %}</label>
+                        <p class="mb-0">{{ account.description }}</p>
+                    </div>
+                    {% endif %}
+                    <div class="mb-3">
+                        <label class="text-muted small">{% trans "Created" %}</label>
+                        <p class="mb-0">{{ account.created_at|date:"M d, Y H:i" }}</p>
+                    </div>
+                    {% if account.created_by %}
+                    <div class="mb-3">
+                        <label class="text-muted small">{% trans "Created By" %}</label>
+                        <p class="mb-0">{{ account.created_by.get_full_name|default:account.created_by.username }}</p>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Balance History Chart -->
+        <div class="col-12 col-lg-8 mb-4">
+            <div class="card shadow-sm h-100">
+                <div class="card-header bg-light">
+                    <h5 class="mb-0">
+                        <i class="bi bi-graph-up me-2"></i>{% trans "Balance History (12 Months)" %}
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <canvas id="balanceChart" class="balance-chart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Child Accounts -->
+    {% if account.children.exists %}
+    <div class="card shadow-sm mb-4">
+        <div class="card-header bg-light">
+            <h5 class="mb-0">
+                <i class="bi bi-diagram-3 me-2"></i>{% trans "Child Accounts" %}
+            </h5>
+        </div>
+        <div class="card-body">
+            <div class="row">
+                {% for child in account.children.all %}
+                <div class="col-12 col-md-6 col-lg-4 mb-3">
+                    <div class="child-account-item">
+                        <div class="d-flex justify-content-between align-items-start">
+                            <div>
+                                <h6 class="mb-1">
+                                    <a href="{% url 'finance:chart_of_accounts_detail' child.id %}" class="text-decoration-none">
+                                        {{ child.code }}
+                                    </a>
+                                </h6>
+                                <p class="mb-1 small">{{ child.name }}</p>
+                                <small class="text-muted">{{ child.get_account_type_display }}</small>
+                            </div>
+                            <div class="text-end">
+                                <p class="mb-0 fw-bold text-primary">{{ child.current_balance|floatformat:2 }}</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Recent Transactions -->
+    <div class="card shadow-sm">
+        <div class="card-header bg-light d-flex justify-content-between align-items-center">
+            <h5 class="mb-0">
+                <i class="bi bi-clock-history me-2"></i>{% trans "Recent Transactions" %}
+            </h5>
+            {% if perms.finance.view_financialreport %}
+            <a href="{% url 'finance:general_ledger' %}?account={{ account.id }}" class="btn btn-sm btn-outline-primary">
+                {% trans "View All" %} <i class="bi bi-arrow-right ms-1"></i>
+            </a>
+            {% endif %}
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead class="bg-light">
+                        <tr>
+                            <th>{% trans "Date" %}</th>
+                            <th>{% trans "Reference" %}</th>
+                            <th>{% trans "Description" %}</th>
+                            <th class="text-end">{% trans "Debit" %}</th>
+                            <th class="text-end">{% trans "Credit" %}</th>
+                            <th class="text-center">{% trans "Status" %}</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for line in recent_lines %}
+                        <tr class="transaction-row" onclick="window.location='{% url 'finance:journal_entry_detail' line.journal_entry.id %}'">
+                            <td>{{ line.journal_entry.posting_date|date:"M d, Y" }}</td>
+                            <td>
+                                <a href="{% url 'finance:journal_entry_detail' line.journal_entry.id %}">
+                                    {{ line.journal_entry.reference }}
+                                </a>
+                            </td>
+                            <td>{{ line.description|default:line.journal_entry.description|truncatewords:10 }}</td>
+                            <td class="text-end">
+                                {% if line.debit_amount > 0 %}
+                                    {{ line.debit_amount|floatformat:2 }}
+                                {% else %}
+                                    <span class="text-muted">-</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-end">
+                                {% if line.credit_amount > 0 %}
+                                    {{ line.credit_amount|floatformat:2 }}
+                                {% else %}
+                                    <span class="text-muted">-</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-center">
+                                <span class="badge bg-{{ line.journal_entry.status|lower }}">
+                                    {{ line.journal_entry.get_status_display }}
+                                </span>
+                            </td>
+                        </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="6" class="text-center text-muted py-4">
+                                <i class="bi bi-inbox fs-1 d-block mb-2"></i>
+                                {% trans "No transactions found" %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Balance History Chart
+    const ctx = document.getElementById('balanceChart');
+    if (ctx) {
+        const balanceHistory = {{ balance_history|safe }};
+
+        const labels = balanceHistory.map(item => item.date);
+        const data = balanceHistory.map(item => item.balance);
+
+        new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: '{% trans "Balance" %}',
+                    data: data,
+                    borderColor: 'rgb(59, 130, 246)',
+                    backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                    tension: 0.4,
+                    fill: true
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        display: false
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                return '{% trans "Balance" %}: ' + context.parsed.y.toFixed(2);
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: false,
+                        ticks: {
+                            callback: function(value) {
+                                return value.toFixed(2);
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    }
+});
+</script>
+{% endblock %}

@@ -1,0 +1,389 @@
+{% extends 'base.html' %}
+{% load static %}
+{% load i18n %}
+
+{% block title %}{% trans "Journal Entry" %} #{{ entry.entry_number }} - {{ block.super }}{% endblock %}
+
+{% block breadcrumb_items %}
+<li class="breadcrumb-item"><a href="{% url 'finance:dashboard' %}">{% trans "Finance" %}</a></li>
+<li class="breadcrumb-item"><a href="{% url 'finance:journal_entry_list' %}">{% trans "Journal Entries" %}</a></li>
+<li class="breadcrumb-item active">{{ entry.entry_number }}</li>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+    @media print {
+        .no-print { display: none !important; }
+        .card { box-shadow: none !important; border: 1px solid #dee2e6 !important; }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- Page Header -->
+    <div class="d-flex justify-content-between align-items-center mb-4 no-print">
+        <div>
+            <h1 class="h3 mb-2 text-primary">
+                <i class="bi bi-journal-text me-2"></i>{% trans "Journal Entry" %} #{{ entry.entry_number }}
+            </h1>
+            <p class="text-muted mb-0">
+                {% trans "Created by" %} {{ entry.created_by.get_full_name|default:entry.created_by.username }}
+                {% trans "on" %} {{ entry.created_at|date:"M d, Y" }}
+            </p>
+        </div>
+        <div>
+            {% if entry.status == 'DRAFT' %}
+            <a href="{% url 'finance:journal_entry_update' entry.pk %}" class="btn btn-primary">
+                <i class="bi bi-pencil me-2"></i>{% trans "Edit" %}
+            </a>
+            <form method="post" action="{% url 'finance:journal_entry_post' entry.pk %}" class="d-inline">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-success" onclick="return confirm('{% trans "Are you sure you want to post this entry?" %}')">
+                    <i class="bi bi-check-circle me-2"></i>{% trans "Post Entry" %}
+                </button>
+            </form>
+            {% elif entry.status == 'POSTED' %}
+            <form method="post" action="{% url 'finance:journal_entry_reverse' entry.pk %}" class="d-inline">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-warning" onclick="return confirm('{% trans "Are you sure you want to reverse this entry?" %}')">
+                    <i class="bi bi-arrow-counterclockwise me-2"></i>{% trans "Reverse" %}
+                </button>
+            </form>
+            {% endif %}
+            <button onclick="window.print()" class="btn btn-outline-secondary">
+                <i class="bi bi-printer me-2"></i>{% trans "Print" %}
+            </button>
+            <a href="{% url 'finance:journal_entry_list' %}" class="btn btn-outline-secondary">
+                <i class="bi bi-arrow-left me-2"></i>{% trans "Back" %}
+            </a>
+        </div>
+    </div>
+
+    <div class="row">
+        <!-- Entry Details -->
+        <div class="col-lg-8">
+            <!-- Main Information Card -->
+            <div class="card shadow-sm mb-4">
+                <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">
+                        <i class="bi bi-info-circle me-2"></i>{% trans "Entry Information" %}
+                    </h5>
+                    {% if entry.status == 'DRAFT' %}
+                    <span class="badge bg-secondary">{% trans "Draft" %}</span>
+                    {% elif entry.status == 'PENDING' %}
+                    <span class="badge bg-warning">{% trans "Pending" %}</span>
+                    {% elif entry.status == 'POSTED' %}
+                    <span class="badge bg-success">{% trans "Posted" %}</span>
+                    {% elif entry.status == 'REVERSED' %}
+                    <span class="badge bg-danger">{% trans "Reversed" %}</span>
+                    {% endif %}
+                </div>
+                <div class="card-body">
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label class="text-muted small mb-1">{% trans "Entry Number" %}</label>
+                                <div class="fw-semibold">{{ entry.entry_number }}</div>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label class="text-muted small mb-1">{% trans "Entry Date" %}</label>
+                                <div class="fw-semibold">{{ entry.entry_date|date:"F d, Y" }}</div>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label class="text-muted small mb-1">{% trans "Journal" %}</label>
+                                <div class="fw-semibold">
+                                    <span class="badge bg-info bg-opacity-10 text-info">
+                                        {{ entry.journal.name }}
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label class="text-muted small mb-1">{% trans "Reference" %}</label>
+                                <div class="fw-semibold">{{ entry.reference|default:"—" }}</div>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label class="text-muted small mb-1">{% trans "Currency" %}</label>
+                                <div class="fw-semibold">{{ entry.currency }}</div>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label class="text-muted small mb-1">{% trans "Fiscal Period" %}</label>
+                                <div class="fw-semibold">
+                                    {% if entry.fiscal_period %}
+                                    {{ entry.fiscal_period.name }}
+                                    {% else %}
+                                    —
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </div>
+                        {% if entry.posting_date %}
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label class="text-muted small mb-1">{% trans "Posting Date" %}</label>
+                                <div class="fw-semibold">{{ entry.posting_date|date:"F d, Y" }}</div>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label class="text-muted small mb-1">{% trans "Posted By" %}</label>
+                                <div class="fw-semibold">
+                                    {{ entry.posted_by.get_full_name|default:entry.posted_by.username }}
+                                </div>
+                            </div>
+                        </div>
+                        {% endif %}
+                        <div class="col-12">
+                            <div class="mb-0">
+                                <label class="text-muted small mb-1">{% trans "Description" %}</label>
+                                <div class="fw-semibold">{{ entry.description|default:"—" }}</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Journal Entry Lines -->
+            <div class="card shadow-sm mb-4">
+                <div class="card-header bg-secondary text-white">
+                    <h5 class="mb-0">
+                        <i class="bi bi-list-ul me-2"></i>{% trans "Entry Lines" %}
+                    </h5>
+                </div>
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table table-hover align-middle mb-0">
+                            <thead class="bg-light">
+                                <tr>
+                                    <th class="ps-3">#</th>
+                                    <th>{% trans "Account" %}</th>
+                                    <th>{% trans "Description" %}</th>
+                                    <th>{% trans "Cost Center" %}</th>
+                                    <th class="text-end">{% trans "Debit" %}</th>
+                                    <th class="text-end pe-3">{% trans "Credit" %}</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for line in entry.lines.all %}
+                                <tr>
+                                    <td class="ps-3">{{ forloop.counter }}</td>
+                                    <td>
+                                        <div class="fw-semibold">{{ line.account.code }}</div>
+                                        <div class="small text-muted">{{ line.account.name }}</div>
+                                    </td>
+                                    <td>{{ line.description|default:"—" }}</td>
+                                    <td>
+                                        {% if line.cost_center %}
+                                        <span class="badge bg-secondary bg-opacity-10 text-secondary">
+                                            {{ line.cost_center.name }}
+                                        </span>
+                                        {% else %}
+                                        —
+                                        {% endif %}
+                                    </td>
+                                    <td class="text-end">
+                                        {% if line.debit_amount %}
+                                        <span class="text-success fw-semibold">{{ line.debit_amount|floatformat:2 }}</span>
+                                        {% else %}
+                                        —
+                                        {% endif %}
+                                    </td>
+                                    <td class="text-end pe-3">
+                                        {% if line.credit_amount %}
+                                        <span class="text-danger fw-semibold">{{ line.credit_amount|floatformat:2 }}</span>
+                                        {% else %}
+                                        —
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                {% empty %}
+                                <tr>
+                                    <td colspan="6" class="text-center py-4 text-muted">
+                                        {% trans "No lines found" %}
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                            <tfoot class="bg-light border-top border-2">
+                                <tr>
+                                    <th colspan="4" class="ps-3 text-end">{% trans "Total" %}:</th>
+                                    <th class="text-end">
+                                        <span class="text-success fw-bold">{{ entry.total_debit|floatformat:2 }}</span>
+                                    </th>
+                                    <th class="text-end pe-3">
+                                        <span class="text-danger fw-bold">{{ entry.total_credit|floatformat:2 }}</span>
+                                    </th>
+                                </tr>
+                            </tfoot>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Sidebar -->
+        <div class="col-lg-4">
+            <!-- Balance Status Card -->
+            <div class="card shadow-sm mb-4">
+                <div class="card-header bg-light">
+                    <h5 class="mb-0">
+                        <i class="bi bi-calculator me-2"></i>{% trans "Balance Status" %}
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div class="row g-3 text-center">
+                        <div class="col-6">
+                            <div class="p-3 bg-success bg-opacity-10 rounded">
+                                <div class="text-muted small mb-1">{% trans "Total Debit" %}</div>
+                                <h4 class="mb-0 text-success">{{ entry.total_debit|floatformat:2 }}</h4>
+                            </div>
+                        </div>
+                        <div class="col-6">
+                            <div class="p-3 bg-danger bg-opacity-10 rounded">
+                                <div class="text-muted small mb-1">{% trans "Total Credit" %}</div>
+                                <h4 class="mb-0 text-danger">{{ entry.total_credit|floatformat:2 }}</h4>
+                            </div>
+                        </div>
+                        <div class="col-12">
+                            {% if entry.is_balanced %}
+                            <div class="alert alert-success mb-0 d-flex align-items-center">
+                                <i class="bi bi-check-circle-fill me-2 fs-4"></i>
+                                <div>
+                                    <strong>{% trans "Balanced" %}</strong><br>
+                                    <small>{% trans "Debits equal credits" %}</small>
+                                </div>
+                            </div>
+                            {% else %}
+                            <div class="alert alert-danger mb-0 d-flex align-items-center">
+                                <i class="bi bi-exclamation-triangle-fill me-2 fs-4"></i>
+                                <div>
+                                    <strong>{% trans "Unbalanced" %}</strong><br>
+                                    <small>{% trans "Difference" %}: {{ entry.balance_difference|floatformat:2 }}</small>
+                                </div>
+                            </div>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Timeline Card -->
+            <div class="card shadow-sm mb-4">
+                <div class="card-header bg-light">
+                    <h5 class="mb-0">
+                        <i class="bi bi-clock-history me-2"></i>{% trans "Timeline" %}
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div class="timeline">
+                        <div class="timeline-item mb-3">
+                            <div class="d-flex">
+                                <div class="flex-shrink-0">
+                                    <div class="rounded-circle bg-primary p-2 text-white">
+                                        <i class="bi bi-plus-circle"></i>
+                                    </div>
+                                </div>
+                                <div class="flex-grow-1 ms-3">
+                                    <h6 class="mb-1">{% trans "Created" %}</h6>
+                                    <p class="text-muted small mb-0">
+                                        {{ entry.created_at|date:"M d, Y H:i" }}<br>
+                                        {% trans "by" %} {{ entry.created_by.get_full_name|default:entry.created_by.username }}
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+
+                        {% if entry.posting_date %}
+                        <div class="timeline-item mb-3">
+                            <div class="d-flex">
+                                <div class="flex-shrink-0">
+                                    <div class="rounded-circle bg-success p-2 text-white">
+                                        <i class="bi bi-check-circle"></i>
+                                    </div>
+                                </div>
+                                <div class="flex-grow-1 ms-3">
+                                    <h6 class="mb-1">{% trans "Posted" %}</h6>
+                                    <p class="text-muted small mb-0">
+                                        {{ entry.posting_date|date:"M d, Y H:i" }}<br>
+                                        {% trans "by" %} {{ entry.posted_by.get_full_name|default:entry.posted_by.username }}
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                        {% endif %}
+
+                        {% if entry.status == 'REVERSED' and entry.reversal_entry %}
+                        <div class="timeline-item mb-3">
+                            <div class="d-flex">
+                                <div class="flex-shrink-0">
+                                    <div class="rounded-circle bg-warning p-2 text-white">
+                                        <i class="bi bi-arrow-counterclockwise"></i>
+                                    </div>
+                                </div>
+                                <div class="flex-grow-1 ms-3">
+                                    <h6 class="mb-1">{% trans "Reversed" %}</h6>
+                                    <p class="text-muted small mb-0">
+                                        {% trans "Reversal entry" %}:
+                                        <a href="{% url 'finance:journal_entry_detail' entry.reversal_entry.pk %}">
+                                            {{ entry.reversal_entry.entry_number }}
+                                        </a>
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+
+            <!-- Related Documents Card -->
+            {% if entry.reversing_entry or entry.attachments.exists %}
+            <div class="card shadow-sm">
+                <div class="card-header bg-light">
+                    <h5 class="mb-0">
+                        <i class="bi bi-paperclip me-2"></i>{% trans "Related Documents" %}
+                    </h5>
+                </div>
+                <div class="card-body">
+                    {% if entry.reversing_entry %}
+                    <div class="mb-3">
+                        <label class="text-muted small">{% trans "This is a reversal of" %}:</label>
+                        <div>
+                            <a href="{% url 'finance:journal_entry_detail' entry.reversing_entry.pk %}" class="text-decoration-none">
+                                <i class="bi bi-journal-text me-1"></i>{{ entry.reversing_entry.entry_number }}
+                            </a>
+                        </div>
+                    </div>
+                    {% endif %}
+
+                    {% if entry.attachments.exists %}
+                    <div>
+                        <label class="text-muted small">{% trans "Attachments" %}:</label>
+                        <ul class="list-unstyled mb-0">
+                            {% for attachment in entry.attachments.all %}
+                            <li class="mb-1">
+                                <a href="{{ attachment.file.url }}" target="_blank" class="text-decoration-none">
+                                    <i class="bi bi-file-earmark me-1"></i>{{ attachment.filename }}
+                                </a>
+                            </li>
+                            {% endfor %}
+                        </ul>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}

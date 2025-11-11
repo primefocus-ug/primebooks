@@ -12,7 +12,9 @@ urlpatterns = [
     path('api/token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
     path('api/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     path('api/company/',include('company.api_urls')),
+    path('notifications/', include('notifications.urls')),
     path('i18n/', include('django.conf.urls.i18n')),
+    path('api/messaging/', include('messaging.api_urls')),
 ]
 error_patterns = [
     path('403/', views.error_403_view, name='error_403'),
@@ -32,17 +34,20 @@ if settings.DEBUG:
 
 urlpatterns += i18n_patterns(
     path('prime-book/', include('company.urls')),
+    path('legal/',include('company.legal')),
     path('invoices/', include('invoices.urls')),
     path('accounts/', include('accounts.urls')),
+    path('accounts/', include('public_router.urls')),
     path('accounts/', include('allauth.urls')),
+    path('accounts/social/', include('allauth.socialaccount.urls')),
     path('inventory/', include('inventory.urls')),
     path('sales/', include('sales.urls')),
     path('stores/', include('stores.urls')),
+    path('alerts/',include('notifications.urls')),
     path('customers/', include('customers.urls')),
-    path('notifications/', include('notifications.urls')),
     path('reports/', include('reports.urls')),
+    path('messaging/', include('messaging.urls')),
     path('expenses/', include('expenses.urls')),
-    path('services/', include('services.urls')),
     path('efris-man/',include('efris.ford')),
     path('efris/',include('efris.urls')),
     path('errors/', include((error_patterns, 'errors'), namespace='errors')),

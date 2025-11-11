@@ -1,0 +1,571 @@
+{% extends "base.html" %}
+{% load static humanize %}
+{% load custom_filters %}
+
+{% block title %}Subscription Dashboard - {{ company.display_name }}{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'company/css/company.css' %}">
+<style>
+    .plan-card {
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+        border: none;
+        border-radius: 12px;
+    }
+    .plan-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 25px rgba(0,0,0,0.1);
+    }
+    .usage-card {
+        border-left: 4px solid;
+        transition: all 0.3s ease;
+    }
+    .usage-card:hover {
+        transform: translateX(5px);
+    }
+    .progress-thin {
+        height: 6px;
+        border-radius: 3px;
+    }
+    .status-badge {
+        font-size: 0.75rem;
+        padding: 0.35em 0.65em;
+    }
+    .feature-icon {
+        width: 24px;
+        height: 24px;
+        background: var(--bs-primary);
+        border-radius: 50%;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        margin-right: 8px;
+    }
+    .gradient-bg {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    }
+    .stat-number {
+        font-size: 2rem;
+        font-weight: 700;
+        line-height: 1;
+    }
+    .upgrade-card {
+        border: 2px solid transparent;
+        transition: all 0.3s ease;
+    }
+    .upgrade-card.recommended {
+        border-color: var(--bs-primary);
+        position: relative;
+        overflow: hidden;
+    }
+    .recommended-badge {
+        position: absolute;
+        top: 10px;
+        right: -30px;
+        background: var(--bs-primary);
+        color: white;
+        padding: 5px 30px;
+        transform: rotate(45deg);
+        font-size: 0.7rem;
+        font-weight: 600;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <!-- Header with Breadcrumb -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <nav aria-label="breadcrumb">
+                <ol class="breadcrumb">
+                    <li class="breadcrumb-item"><a href="{% url 'companies:subscription_dashboard' %}">Dashboard</a></li>
+                    <li class="breadcrumb-item active">Subscription</li>
+                </ol>
+            </nav>
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <h1 class="h3 mb-2">Subscription Management</h1>
+                    <p class="text-muted mb-0">Monitor usage, manage your plan, and explore upgrade options</p>
+                </div>
+                <div class="d-flex gap-2">
+                    <a href="{% url 'companies:subscription_plans' %}" class="btn btn-outline-primary">
+                        <i class="bi bi-grid-3x3 me-2"></i>Compare Plans
+                    </a>
+                    <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#billingModal">
+                        <i class="bi bi-credit-card me-2"></i>Billing
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Status Alert Banner -->
+    {% if status_info.days_until_expiry <= 7 or recommendations %}
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="alert alert-{% if status_info.days_until_expiry <= 3 %}danger{% else %}warning{% endif %} d-flex align-items-center">
+                <i class="bi bi-exclamation-triangle-fill me-3 fs-4"></i>
+                <div class="flex-grow-1">
+                    <strong>
+                        {% if status_info.is_trial %}
+                            Trial expires in {{ status_info.days_until_expiry }} day{{ status_info.days_until_expiry|pluralize }}
+                        {% else %}
+                            Subscription renews in {{ status_info.days_until_expiry }} day{{ status_info.days_until_expiry|pluralize }}
+                        {% endif %}
+                    </strong>
+                    <div class="small">
+                        {% if status_info.is_trial %}
+                            Upgrade to a paid plan to continue uninterrupted service
+                        {% else %}
+                            Ensure your payment method is up to date
+                        {% endif %}
+                    </div>
+                </div>
+                <a href="{% url 'companies:subscription_plans' %}" class="btn btn-sm btn-{% if status_info.days_until_expiry <= 3 %}danger{% else %}warning{% endif %}">
+                    Take Action
+                </a>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Current Plan & Quick Stats -->
+    <div class="row mb-4">
+        <!-- Current Plan Card -->
+        <div class="col-lg-8 mb-4">
+            <div class="card plan-card gradient-bg text-white">
+                <div class="card-body p-4">
+                    <div class="row align-items-center">
+                        <div class="col-md-8">
+                            <div class="d-flex align-items-center mb-3">
+                                <h2 class="mb-0 me-3">{{ current_plan.display_name }}</h2>
+                                <span class="badge status-badge bg-{% if status_info.is_active %}success{% else %}warning{% endif %}">
+                                    {{ company.status|title }}
+                                </span>
+                            </div>
+                            <p class="mb-4 opacity-75">{{ current_plan.description }}</p>
+
+                            <div class="row">
+                                <div class="col-sm-4 mb-3">
+                                    <div class="text-white-50 small">Billing Cycle</div>
+                                    <div class="fw-semibold">{{ current_plan.get_billing_cycle_display }}</div>
+                                </div>
+                                <div class="col-sm-4 mb-3">
+                                    <div class="text-white-50 small">{% if status_info.is_trial %}Trial Ends{% else %}Next Billing{% endif %}</div>
+                                    <div class="fw-semibold">
+                                        {% if status_info.is_trial %}
+                                            {{ status_info.trial_ends_at|date:"M d, Y" }}
+                                        {% else %}
+                                            {{ status_info.next_billing_date|date:"M d, Y" }}
+                                        {% endif %}
+                                    </div>
+                                </div>
+                                <div class="col-sm-4 mb-3">
+                                    <div class="text-white-50 small">Days Remaining</div>
+                                    <div class="fw-semibold">{{ status_info.days_until_expiry }}</div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-4 text-center">
+                            <div class="stat-number mb-1">${{ current_plan.price }}</div>
+                            <div class="opacity-75">per {{ current_plan.get_billing_cycle_display|lower }}</div>
+                            {% if not status_info.is_trial %}
+                            <button class="btn btn-light btn-sm mt-3" data-bs-toggle="modal" data-bs-target="#cancelModal">
+                                Cancel Plan
+                            </button>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Quick Stats -->
+        <div class="col-lg-4 mb-4">
+            <div class="card h-100">
+                <div class="card-body">
+                    <h6 class="card-title text-muted mb-3">Quick Overview</h6>
+
+                    <div class="d-flex justify-content-between align-items-center mb-3 pb-2 border-bottom">
+                        <div>
+                            <div class="small text-muted">Monthly Cost</div>
+                            <div class="fw-semibold">${{ current_plan.price }}</div>
+                        </div>
+                        <i class="bi bi-currency-dollar text-primary"></i>
+                    </div>
+
+                    <div class="d-flex justify-content-between align-items-center mb-3 pb-2 border-bottom">
+                        <div>
+                            <div class="small text-muted">Plan Tier</div>
+                            <div class="fw-semibold">{{ current_plan.plan_type|title }}</div>
+                        </div>
+                        <i class="bi bi-award text-success"></i>
+                    </div>
+
+                    <div class="d-flex justify-content-between align-items-center mb-3 pb-2 border-bottom">
+                        <div>
+                            <div class="small text-muted">Users Active</div>
+                            <div class="fw-semibold">{{ usage_data.users.current }}/{{ usage_data.users.limit }}</div>
+                        </div>
+                        <i class="bi bi-people text-info"></i>
+                    </div>
+
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <div class="small text-muted">Storage Used</div>
+                            <div class="fw-semibold">{{ usage_data.storage.current_gb }}GB/{{ usage_data.storage.limit_gb }}GB</div>
+                        </div>
+                        <i class="bi bi-hdd text-warning"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Usage Analytics -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">Usage Analytics</h5>
+                    <small class="text-muted">Updated just now</small>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <!-- Users -->
+                        <div class="col-xl-3 col-md-6 mb-4">
+                            <div class="card usage-card border-left-primary h-100">
+                                <div class="card-body">
+                                    <div class="d-flex justify-content-between align-items-start mb-3">
+                                        <div>
+                                            <h6 class="text-muted mb-1">Team Members</h6>
+                                            <h3 class="mb-0">{{ usage_data.users.current|intcomma }}</h3>
+                                            <small class="text-muted">of {{ usage_data.users.limit|intcomma }} limit</small>
+                                        </div>
+                                        <i class="bi bi-people-fill text-primary fs-2 opacity-50"></i>
+                                    </div>
+                                    <div class="progress progress-thin mb-2">
+                                        <div class="progress-bar bg-primary" style="width: {{ usage_data.users.percentage }}%"></div>
+                                    </div>
+                                    <small class="text-muted d-flex justify-content-between">
+                                        <span>{{ usage_data.users.percentage|floatformat:0 }}% utilized</span>
+                                        <span>{{ usage_data.users.limit|subtract:usage_data.users.current }} remaining</span>
+                                    </small>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Branches -->
+                        <div class="col-xl-3 col-md-6 mb-4">
+                            <div class="card usage-card border-left-success h-100">
+                                <div class="card-body">
+                                    <div class="d-flex justify-content-between align-items-start mb-3">
+                                        <div>
+                                            <h6 class="text-muted mb-1">Business Locations</h6>
+                                            <h3 class="mb-0">{{ usage_data.branches.current|intcomma }}</h3>
+                                            <small class="text-muted">of {{ usage_data.branches.limit|intcomma }} limit</small>
+                                        </div>
+                                        <i class="bi bi-shop text-success fs-2 opacity-50"></i>
+                                    </div>
+                                    <div class="progress progress-thin mb-2">
+                                        <div class="progress-bar bg-success" style="width: {{ usage_data.branches.percentage }}%"></div>
+                                    </div>
+                                    <small class="text-muted d-flex justify-content-between">
+                                        <span>{{ usage_data.branches.percentage|floatformat:0 }}% utilized</span>
+                                        <span>{{ usage_data.branches.limit|subtract:usage_data.branches.current }} remaining</span>
+                                    </small>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Storage -->
+                        <div class="col-xl-3 col-md-6 mb-4">
+                            <div class="card usage-card border-left-warning h-100">
+                                <div class="card-body">
+                                    <div class="d-flex justify-content-between align-items-start mb-3">
+                                        <div>
+                                            <h6 class="text-muted mb-1">Storage</h6>
+                                            <h3 class="mb-0">{{ usage_data.storage.current_gb }}<small>GB</small></h3>
+                                            <small class="text-muted">of {{ usage_data.storage.limit_gb }}GB limit</small>
+                                        </div>
+                                        <i class="bi bi-hdd-stack text-warning fs-2 opacity-50"></i>
+                                    </div>
+                                    <div class="progress progress-thin mb-2">
+                                        <div class="progress-bar bg-warning" style="width: {{ usage_data.storage.percentage }}%"></div>
+                                    </div>
+                                    <small class="text-muted d-flex justify-content-between">
+                                        <span>{{ usage_data.storage.percentage|floatformat:0 }}% utilized</span>
+                                        <span>{{ usage_data.storage.limit_gb|floatformat:0|subtract:usage_data.storage.current_gb|floatformat:0 }}GB free</span>
+                                    </small>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- API Calls -->
+                        <div class="col-xl-3 col-md-6 mb-4">
+                            <div class="card usage-card border-left-info h-100">
+                                <div class="card-body">
+                                    <div class="d-flex justify-content-between align-items-start mb-3">
+                                        <div>
+                                            <h6 class="text-muted mb-1">API Requests</h6>
+                                            <h3 class="mb-0">{{ usage_data.api_calls.current|intcomma }}</h3>
+                                            <small class="text-muted">of {{ usage_data.api_calls.limit|intcomma }}/month</small>
+                                        </div>
+                                        <i class="bi bi-lightning-charge text-info fs-2 opacity-50"></i>
+                                    </div>
+                                    <div class="progress progress-thin mb-2">
+                                        <div class="progress-bar bg-info" style="width: {{ usage_data.api_calls.percentage }}%"></div>
+                                    </div>
+                                    <small class="text-muted d-flex justify-content-between">
+                                        <span>{{ usage_data.api_calls.percentage|floatformat:0 }}% utilized</span>
+                                        <span>{{ usage_data.api_calls.limit|subtract:usage_data.api_calls.current }} remaining</span>
+                                    </small>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Recommendations & Upgrade Options -->
+    <div class="row">
+        <!-- Recommendations -->
+        {% if recommendations %}
+        <div class="col-lg-6 mb-4">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0">Action Required</h5>
+                </div>
+                <div class="card-body">
+                    {% for rec in recommendations %}
+                    <div class="alert alert-{{ rec.type }} alert-dismissible fade show mb-3" role="alert">
+                        <div class="d-flex">
+                                                        <i class="bi bi-{% if rec.type == 'urgent' %}exclamation-triangle{% else %}info-circle{% endif %}-fill me-3 mt-1"></i>
+                            <div>
+                                <strong class="d-block mb-1">{{ rec.message }}</strong>
+                                <small class="d-block">{{ rec.action }}</small>
+                                {% if rec.category == 'users' and usage_data.users.percentage > 80 %}
+                                <a href="{% url 'companies:subscription_plans' %}" class="btn btn-sm btn-{{ rec.type }} mt-2">
+                                    Upgrade Plan
+                                </a>
+                                {% endif %}
+                            </div>
+                        </div>
+                        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Upgrade Options -->
+        <div class="col-lg-{% if recommendations %}6{% else %}12{% endif %}">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">Upgrade Options</h5>
+                    <span class="badge bg-primary">Recommended</span>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        {% for plan in available_plans %}
+                        {% if plan.id != current_plan.id %}
+                        <div class="col-md-{% if recommendations %}12{% else %}6{% endif %} mb-3">
+                            <div class="card upgrade-card {% if plan.recommended %}recommended{% endif %} h-100">
+                                {% if plan.recommended %}
+                                <div class="recommended-badge">BEST VALUE</div>
+                                {% endif %}
+                                <div class="card-body">
+                                    <div class="text-center mb-3">
+                                        <h6 class="card-title mb-1">{{ plan.display_name }}</h6>
+                                        <div class="text-muted small">{{ plan.get_plan_type_display }}</div>
+                                    </div>
+
+                                    <div class="text-center mb-3">
+                                        <span class="h3 text-primary">${{ plan.price }}</span>
+                                        <span class="text-muted">/{{ plan.get_billing_cycle_display|lower }}</span>
+                                    </div>
+
+                                    <!-- Plan Comparison -->
+                                    <div class="mb-3">
+                                        <div class="d-flex justify-content-between small mb-1">
+                                            <span>Users:</span>
+                                            <span>{{ plan.max_users }} <small class="text-success">+{{ plan.max_users|subtract:current_plan.max_users }}</small></span>
+                                        </div>
+                                        <div class="d-flex justify-content-between small mb-1">
+                                            <span>Branches:</span>
+                                            <span>{{ plan.max_branches }} <small class="text-success">+{{ plan.max_branches|subtract:current_plan.max_branches }}</small></span>
+                                        </div>
+                                        <div class="d-flex justify-content-between small mb-1">
+                                            <span>Storage:</span>
+                                            <span>{{ plan.max_storage_gb }}GB <small class="text-success">+{{ plan.max_storage_gb|subtract:current_plan.max_storage_gb }}GB</small></span>
+                                        </div>
+                                        <div class="d-flex justify-content-between small">
+                                            <span>API Calls:</span>
+                                            <span>{{ plan.max_api_calls_per_month|intcomma }} <small class="text-success">+{{ plan.max_api_calls_per_month|subtract:current_plan.max_api_calls_per_month }}</small></span>
+                                        </div>
+                                    </div>
+
+                                    <button class="btn btn-{% if plan.recommended %}primary{% else %}outline-primary{% endif %} w-100 select-plan-btn"
+                                            data-plan-id="{{ plan.id }}"
+                                            data-plan-name="{{ plan.display_name }}"
+                                            data-action="{% if plan.price > current_plan.price %}upgrade{% else %}downgrade{% endif %}">
+                                        {% if plan.price > current_plan.price %}
+                                            Upgrade Now
+                                        {% else %}
+                                            Switch to Plan
+                                        {% endif %}
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                        {% endif %}
+                        {% empty %}
+                        <div class="col-12 text-center py-4">
+                            <i class="bi bi-info-circle fs-1 text-muted mb-3 d-block"></i>
+                            <p class="text-muted">No upgrade options available at the moment.</p>
+                        </div>
+                        {% endfor %}
+                    </div>
+
+                    {% if available_plans|length > 3 %}
+                    <div class="text-center mt-3">
+                        <a href="{% url 'companies:subscription_plans' %}" class="btn btn-link">
+                            View All {{ available_plans|length }} Plans <i class="bi bi-arrow-right"></i>
+                        </a>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Features & Additional Information -->
+    <div class="row mt-4">
+        <!-- Plan Features -->
+        <div class="col-lg-8">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0">Included Features</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        {% for feature in features_list %}
+                        <div class="col-md-6 mb-3">
+                            <div class="d-flex align-items-center">
+                                <span class="feature-icon">
+                                    <i class="bi bi-check text-white" style="font-size: 12px;"></i>
+                                </span>
+                                <span class="fw-medium">{{ feature }}</span>
+                            </div>
+                        </div>
+                        {% empty %}
+                        <div class="col-12 text-center py-3">
+                            <p class="text-muted mb-0">No features listed for this plan.</p>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Support & Resources -->
+        <div class="col-lg-4">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0">Support & Resources</h5>
+                </div>
+                <div class="card-body">
+                    <div class="d-grid gap-2">
+                        <a href="#" class="btn btn-outline-primary text-start">
+                            <i class="bi bi-question-circle me-2"></i>Help Center
+                        </a>
+                        <a href="#" class="btn btn-outline-primary text-start">
+                            <i class="bi bi-file-text me-2"></i>Documentation
+                        </a>
+                        <a href="#" class="btn btn-outline-primary text-start">
+                            <i class="bi bi-chat-dots me-2"></i>Contact Support
+                        </a>
+                        <a href="#" class="btn btn-outline-primary text-start">
+                            <i class="bi bi-download me-2"></i>Download Invoice
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modals -->
+<div class="modal fade" id="billingModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Billing Information</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p>Billing management interface would be displayed here.</p>
+                <!-- Add billing form elements as needed -->
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="cancelModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Cancel Subscription</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p>Are you sure you want to cancel your subscription? Your access will continue until the end of your billing period.</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Keep Plan</button>
+                <button type="button" class="btn btn-danger">Cancel Subscription</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"></script>
+<script src="{% static 'company/js/subscription.js' %}"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Plan selection handling
+    document.querySelectorAll('.select-plan-btn').forEach(button => {
+        button.addEventListener('click', function() {
+            const planId = this.dataset.planId;
+            const planName = this.dataset.planName;
+            const action = this.dataset.action;
+
+            if (confirm(`Are you sure you want to ${action} to ${planName}?`)) {
+                // Implement plan change logic here
+                console.log(`Changing plan to: ${planName} (ID: ${planId})`);
+
+                // Show loading state
+                this.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Processing...';
+                this.disabled = true;
+
+                // Simulate API call
+                setTimeout(() => {
+                    alert('Plan change request submitted successfully!');
+                    location.reload();
+                }, 1500);
+            }
+        });
+    });
+
+    // Initialize charts if needed
+    const usageData = {{ usage_data|safe }};
+    // You can initialize Chart.js charts here with the usage data
+});
+</script>
+{% endblock %}

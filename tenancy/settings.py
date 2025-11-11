@@ -38,7 +38,7 @@ if DEBUG:
     DATABASES = {
         'default': {
             'ENGINE': 'django_tenants.postgresql_backend',
-            'NAME': 'mbalei',
+            'NAME': 'data',
             'USER': 'postgres',
             'PASSWORD': '@Developer25',
             'HOST': 'localhost',
@@ -50,12 +50,12 @@ if DEBUG:
     REDIS_URL = 'redis://127.0.0.1:6379'
 
     # Email - Console backend for development
-    EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
+    EMAIL_BACKEND = 'company.email.TenantAwareEmailBackend'
     EMAIL_HOST = 'smtp.gmail.com'
     EMAIL_PORT = 587
     EMAIL_USE_TLS = True
-    EMAIL_HOST_USER = ''
-    EMAIL_HOST_PASSWORD = ''
+    EMAIL_HOST_USER = 'kondenationafrica@gmail.com'
+    EMAIL_HOST_PASSWORD = 'ckpbealacabdnyal'
     DEFAULT_FROM_EMAIL = 'noreply@yourdomain.com'
     SUPPORT_EMAIL = 'support@yourdomain.com'
 
@@ -76,6 +76,7 @@ if DEBUG:
     SECURE_HSTS_PRELOAD = False
     SESSION_COOKIE_SECURE = False
     CSRF_COOKIE_SECURE = False
+    CSRF_COOKIE_SAMESITE = 'Lax'
     SECURE_SSL_REDIRECT = False
     SECURE_PROXY_SSL_HEADER = None
 
@@ -224,6 +225,7 @@ else:
 
 # Application definition
 SHARED_APPS = [
+    'daphne',
     'django_tenants',
     'company',
     'django.contrib.contenttypes',
@@ -233,7 +235,11 @@ SHARED_APPS = [
     'django.contrib.humanize',
     'rest_framework',
     'django_countries',
+    'django_celery_beat',
+    'django_celery_results',
     'channels',
+    'django_extensions',
+    'public_router',
     'channels_redis',
     'widget_tweaks',
     'django_filters',
@@ -255,12 +261,12 @@ TENANT_APPS = [
     'stores',
     'inventory',
     'sales',
+    'messaging',
+    'expenses',
     'reports',
     'invoices',
-    'expenses',
     'customers',
     'core',
-    'services',
     'notifications',
     'efris',
     'errors',
@@ -288,12 +294,17 @@ MIDDLEWARE.extend([
     'django.contrib.messages.middleware.MessageMiddleware',
     'django_otp.middleware.OTPMiddleware',
     'company.middleware.CompanyAccessMiddleware',
+    'company.middleware.PlanLimitsMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
     'tenancy.middleware.TenantAwareMiddleware',
     'accounts.middleware.SaaSAdminAccessMiddleware',
     'accounts.middleware.HiddenUserMiddleware',
     'accounts.middleware.SaaSAdminContextMiddleware',
+    'accounts.middleware.AuditMiddleware',
     'errors.middleware.CustomErrorMiddleware',
+    'messaging.middleware.EncryptionKeyMiddleware',
+    'messaging.middleware.MessageAuditMiddleware',
+    'accounts.middleware.RefreshPermissionsMiddleware',
 ])
 
 # Crispy Forms
@@ -318,11 +329,15 @@ TEMPLATES = [
                 'django.contrib.messages.context_processors.messages',
                 'core.context_processors.navigation_context_processor',
                 'notifications.context_processors.notifications_context',
+                'notifications.context_processors.notification_context',
                 'company.context_processors.current_company',
-                'branches.context_processors.current_branch',
+                'branches.context_processors.current_store',
                 'stores.context_processors.current_store',
                 'accounts.context_processors.saas_admin_context',
-                'errors.context_processors.error_context_processor'
+                'accounts.context_processors.user_role_context',
+                'errors.context_processors.error_context_processor',
+                'messaging.context_processors.messaging_context',
+                'expenses.context_processors.expense_context',
             ],
         },
     },
@@ -345,6 +360,16 @@ CHANNEL_LAYERS = {
     },
 }
 
+EXPENSE_ATTACHMENT_ALLOWED_TYPES = [
+    'image/jpeg', 'image/png', 'image/gif',
+    'application/pdf',
+    'application/msword',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'application/vnd.ms-excel',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+]
+
+EXPENSE_ATTACHMENT_MAX_SIZE = 5 * 1024 * 1024
 # Caches
 CACHES = {
     'default': {
@@ -388,13 +413,20 @@ CELERY_BEAT_SCHEDULE = {
         'task': 'company.tasks.send_periodic_analytics_update',
         'schedule': ANALYTICS_UPDATE_INTERVAL,
     },
-    'efris-daily-maintenance': {
-        'task': 'efris.tasks.daily_efris_maintenance',
-        'schedule': crontab(hour=2, minute=0),
+    'generate-daily-statistics': {
+        'task': 'messaging.tasks.generate_message_analytics',
+        'schedule': crontab(hour=0, minute=5),  # Daily at 00:05
     },
-    'efris-process-sync-queue': {
-        'task': 'efris.tasks.process_efris_sync_queue',
-        'schedule': 300.0,
+
+    'cleanup-old-statistics': {
+        'task': 'messaging.tasks.cleanup_old_statistics',
+        'schedule': crontab(hour=2, minute=0, day_of_week=0),  # Weekly on Sunday at 2am
+    },
+
+    'send-admin-digest': {
+        'task': 'messaging.tasks.send_admin_digest_email',
+        'schedule': crontab(hour=8, minute=0),  # Daily at 8am
+        'args': (1,),  # Replace with actual admin user ID
     },
 }
 
@@ -435,6 +467,7 @@ SESSION_CACHE_ALIAS = 'default'
 AUTH_USER_MODEL = 'accounts.CustomUser'
 AUTHENTICATION_BACKENDS = [
     'company.authentication.CompanyAwareAuthBackend',
+    'accounts.backends.RoleBasedAuthBackend',
     'django.contrib.auth.backends.ModelBackend',
     'allauth.account.auth_backends.AuthenticationBackend',
 ]
@@ -445,6 +478,7 @@ ACCOUNT_SIGNUP_FIELDS = ['email*', 'password1*', 'password2*']
 ACCOUNT_EMAIL_VERIFICATION = 'optional'
 ACCOUNT_UNIQUE_EMAIL = True
 SOCIALACCOUNT_AUTO_SIGNUP = True
+SOCIALACCOUNT_LOGIN_ON_GET = True
 SOCIALACCOUNT_EMAIL_VERIFICATION = 'optional'
 SOCIALACCOUNT_ADAPTER = 'accounts.adapters.CustomSocialAccountAdapter'
 
@@ -457,7 +491,8 @@ SOCIALACCOUNT_PROVIDERS = {
             'client_id': os.getenv('GOOGLE_OAUTH_CLIENT_ID', ''),
             'secret': os.getenv('GOOGLE_OAUTH_CLIENT_SECRET', ''),
             'key': ''
-        }
+        },
+        'REDIRECT_URI': 'http://localhost:8000/accounts/google/login/callback/',
     }
 }
 

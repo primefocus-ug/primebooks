@@ -82,50 +82,42 @@ class PasswordChangeSerializer(serializers.Serializer):
 
 
 class UserSerializer(serializers.ModelSerializer):
-    full_name = serializers.CharField(source='get_full_name', read_only=True)
+    primary_role = serializers.SerializerMethodField()
+    roles = serializers.SerializerMethodField()
+    role_display = serializers.CharField(source='display_role', read_only=True)
+
+    def get_primary_role(self, obj):
+        if not obj.primary_role:
+            return None
+        return {
+            'id': obj.primary_role.id,
+            'name': obj.primary_role.group.name,
+            'priority': obj.primary_role.priority,
+            'color': obj.primary_role.color_code
+        }
+
+    def get_roles(self, obj):
+        return [
+            {
+                'id': role.id,
+                'name': role.group.name,
+                'priority': role.priority,
+                'color': role.color_code
+            }
+            for role in obj.all_roles
+        ]
 
     class Meta:
         model = CustomUser
-        fields = [
-            'id', 'email', 'username', 'first_name', 'last_name',
-            'full_name', 'user_type', 'phone_number', 'is_active',
-            'is_staff', 'company_admin', 'is_device_operator',
-            'date_joined', 'last_login_ip'
-        ]
-        read_only_fields = [
-            'id', 'date_joined', 'last_login_ip', 'is_staff', 'company_admin'
-        ]
-
-    def to_representation(self, instance):
-        data = super().to_representation(instance)
-        # Hide sensitive fields for non-admin users
-        request = self.context.get('request')
-        if request and hasattr(request, 'user'):
-            user = request.user
-            if not (user.is_superuser or user.company_admin or user == instance):
-                data.pop('last_login_ip', None)
-                data.pop('is_staff', None)
-        return data
-
+        fields = ['id', 'email', 'primary_role', 'roles', 'role_display']
 
 class UserUpdateSerializer(serializers.ModelSerializer):
     class Meta:
         model = CustomUser
         fields = [
-            'first_name', 'last_name', 'phone_number', 'user_type', 'is_active'
+            'first_name', 'last_name', 'phone_number', 'is_active'
         ]
-    
-    def validate_user_type(self, value):
-        request = self.context.get('request')
-        if request and hasattr(request, 'user'):
-            user = request.user
-            # Only company admins and superusers can change user types
-            if not (user.is_superuser or user.company_admin):
-                if self.instance and self.instance.user_type != value:
-                    raise serializers.ValidationError(
-                        "You don't have permission to change user types."
-                    )
-        return value
+
 
 
 class UserSignatureSerializer(serializers.ModelSerializer):
@@ -156,11 +148,11 @@ class UserProfileSerializer(serializers.ModelSerializer):
         model = CustomUser
         fields = [
             'id', 'email', 'username', 'first_name', 'last_name',
-            'full_name', 'user_type', 'phone_number',
+            'full_name',  'phone_number',
             'date_joined', 'signature'
         ]
         read_only_fields = [
-            'id', 'email', 'user_type', 'date_joined'
+            'id', 'email',  'date_joined'
         ]
 
 
@@ -170,7 +162,7 @@ class UserListSerializer(serializers.ModelSerializer):
     class Meta:
         model = CustomUser
         fields = [
-            'id', 'email', 'username', 'full_name', 'user_type',
+            'id', 'email', 'username', 'full_name',
             'is_active', 'date_joined'
         ]
         read_only_fields = fields

@@ -2,50 +2,140 @@ from django import forms
 from django.utils.translation import gettext_lazy as _
 from django.core.exceptions import ValidationError
 from decimal import Decimal
-
-from .models import (
-    Expense, ExpenseCategory, Vendor, Budget, RecurringExpense,
-    PettyCash, PettyCashTransaction, EmployeeReimbursement,
-    ReimbursementItem, ExpenseAttachment, ExpenseSplit
-)
+from .models import Expense, ExpenseCategory, ExpenseAttachment, ExpenseComment
 
 
 class ExpenseForm(forms.ModelForm):
-    """Form for creating/editing expenses"""
+    """Form for creating and editing expenses"""
+
+    attachments = forms.FileField(
+        required=False,
+        widget=forms.ClearableFileInput(attrs={
+            'class': 'form-control',
+            'accept': 'image/*,.pdf,.doc,.docx,.xls,.xlsx'
+        }),
+        label=_("Attachments"),
+        help_text=_("You can upload files (images, PDFs, documents)")
+    )
 
     class Meta:
         model = Expense
         fields = [
-            'category', 'expense_type', 'vendor', 'description',
-            'expense_date', 'amount', 'tax_rate', 'tax_amount',
-            'due_date', 'invoice_number', 'purchase_order',
-            'payment_method', 'is_recurring', 'notes'
+            'title', 'description', 'category', 'amount', 'currency',
+            'tax_rate', 'expense_date', 'due_date', 'vendor_name',
+            'vendor_phone', 'vendor_email', 'vendor_tin', 'reference_number',
+            'is_reimbursable', 'is_recurring', 'is_billable', 'notes'
         ]
         widgets = {
-            'expense_date': forms.DateInput(attrs={'type': 'date', 'class': 'form-control'}),
-            'due_date': forms.DateInput(attrs={'type': 'date', 'class': 'form-control'}),
-            'description': forms.Textarea(attrs={'rows': 3, 'class': 'form-control'}),
-            'notes': forms.Textarea(attrs={'rows': 3, 'class': 'form-control'}),
-            'category': forms.Select(attrs={'class': 'form-control'}),
-            'expense_type': forms.Select(attrs={'class': 'form-control'}),
-            'vendor': forms.Select(attrs={'class': 'form-control'}),
-            'amount': forms.NumberInput(attrs={'class': 'form-control', 'step': '0.01'}),
-            'tax_rate': forms.NumberInput(attrs={'class': 'form-control', 'step': '0.01'}),
-            'tax_amount': forms.NumberInput(attrs={'class': 'form-control', 'step': '0.01', 'readonly': True}),
-            'invoice_number': forms.TextInput(attrs={'class': 'form-control'}),
-            'purchase_order': forms.TextInput(attrs={'class': 'form-control'}),
-            'payment_method': forms.Select(attrs={'class': 'form-control'}),
+            'title': forms.TextInput(attrs={
+                'class': 'form-control',
+                'placeholder': _('Enter expense title'),
+                'required': True
+            }),
+            'description': forms.Textarea(attrs={
+                'class': 'form-control',
+                'rows': 4,
+                'placeholder': _('Describe the expense in detail'),
+                'required': True
+            }),
+            'category': forms.Select(attrs={
+                'class': 'form-select',
+                'required': True
+            }),
+            'amount': forms.NumberInput(attrs={
+                'class': 'form-control',
+                'step': '0.01',
+                'min': '0.01',
+                'placeholder': '0.00',
+                'required': True
+            }),
+            'currency': forms.Select(attrs={
+                'class': 'form-select'
+            }),
+            'tax_rate': forms.NumberInput(attrs={
+                'class': 'form-control',
+                'step': '0.01',
+                'min': '0',
+                'max': '100',
+                'placeholder': '0.00'
+            }),
+            'expense_date': forms.DateInput(attrs={
+                'class': 'form-control',
+                'type': 'date',
+                'required': True
+            }),
+            'due_date': forms.DateInput(attrs={
+                'class': 'form-control',
+                'type': 'date'
+            }),
+            'vendor_name': forms.TextInput(attrs={
+                'class': 'form-control',
+                'placeholder': _('Vendor/Supplier name')
+            }),
+            'vendor_phone': forms.TextInput(attrs={
+                'class': 'form-control',
+                'placeholder': _('Phone number')
+            }),
+            'vendor_email': forms.EmailInput(attrs={
+                'class': 'form-control',
+                'placeholder': _('Email address')
+            }),
+            'vendor_tin': forms.TextInput(attrs={
+                'class': 'form-control',
+                'placeholder': _('Tax Identification Number')
+            }),
+            'reference_number': forms.TextInput(attrs={
+                'class': 'form-control',
+                'placeholder': _('Receipt or invoice number')
+            }),
+            'notes': forms.Textarea(attrs={
+                'class': 'form-control',
+                'rows': 3,
+                'placeholder': _('Additional notes')
+            }),
+            'is_reimbursable': forms.CheckboxInput(attrs={
+                'class': 'form-check-input'
+            }),
+            'is_recurring': forms.CheckboxInput(attrs={
+                'class': 'form-check-input'
+            }),
+            'is_billable': forms.CheckboxInput(attrs={
+                'class': 'form-check-input'
+            }),
         }
+
+    def __init__(self, *args, **kwargs):
+        self.user = kwargs.pop('user', None)
+        super().__init__(*args, **kwargs)
+
+        # Filter active categories only
+        self.fields['category'].queryset = ExpenseCategory.objects.filter(
+            is_active=True
+        ).order_by('sort_order', 'name')
+
+        # Set currency choices
+        self.fields['currency'].choices = [
+            ('UGX', _('UGX - Uganda Shilling')),
+            ('USD', _('USD - US Dollar')),
+            ('EUR', _('EUR - Euro')),
+            ('GBP', _('GBP - British Pound')),
+        ]
+
+    def clean_amount(self):
+        amount = self.cleaned_data.get('amount')
+        if amount and amount <= 0:
+            raise ValidationError(_("Amount must be greater than zero"))
+        return amount
 
     def clean(self):
         cleaned_data = super().clean()
-        amount = cleaned_data.get('amount')
-        tax_rate = cleaned_data.get('tax_rate')
-        tax_amount = cleaned_data.get('tax_amount')
+        expense_date = cleaned_data.get('expense_date')
+        due_date = cleaned_data.get('due_date')
 
-        # Auto-calculate tax if not provided
-        if amount and tax_rate and not tax_amount:
-            cleaned_data['tax_amount'] = (amount * tax_rate / Decimal('100')).quantize(Decimal('0.01'))
+        if expense_date and due_date and due_date < expense_date:
+            raise ValidationError({
+                'due_date': _("Due date cannot be before expense date")
+            })
 
         return cleaned_data
 
@@ -54,301 +144,223 @@ class ExpenseFilterForm(forms.Form):
     """Form for filtering expenses"""
 
     status = forms.ChoiceField(
-        choices=[('', 'All Statuses')] + Expense.STATUS_CHOICES,
         required=False,
-        widget=forms.Select(attrs={'class': 'form-control'})
+        choices=[('', _('All Statuses'))] + Expense.STATUS_CHOICES,
+        widget=forms.Select(attrs={'class': 'form-select'})
     )
 
     category = forms.ModelChoiceField(
+        required=False,
         queryset=ExpenseCategory.objects.filter(is_active=True),
-        required=False,
-        empty_label='All Categories',
-        widget=forms.Select(attrs={'class': 'form-control'})
+        empty_label=_('All Categories'),
+        widget=forms.Select(attrs={'class': 'form-select'})
     )
 
-    vendor = forms.ModelChoiceField(
-        queryset=Vendor.objects.filter(is_active=True),
+    date_from = forms.DateField(
         required=False,
-        empty_label='All Vendors',
-        widget=forms.Select(attrs={'class': 'form-control'})
+        widget=forms.DateInput(attrs={
+            'class': 'form-control',
+            'type': 'date'
+        }),
+        label=_("From Date")
     )
 
-    start_date = forms.DateField(
+    date_to = forms.DateField(
         required=False,
-        widget=forms.DateInput(attrs={'type': 'date', 'class': 'form-control'})
-    )
-
-    end_date = forms.DateField(
-        required=False,
-        widget=forms.DateInput(attrs={'type': 'date', 'class': 'form-control'})
+        widget=forms.DateInput(attrs={
+            'class': 'form-control',
+            'type': 'date'
+        }),
+        label=_("To Date")
     )
 
     search = forms.CharField(
         required=False,
         widget=forms.TextInput(attrs={
             'class': 'form-control',
-            'placeholder': 'Search expenses...'
-        })
+            'placeholder': _('Search expenses...')
+        }),
+        label=_("Search")
     )
 
 
 class ExpenseApprovalForm(forms.Form):
-    """Form for approving/rejecting expenses"""
+    """Form for approving or rejecting expenses"""
 
-    notes = forms.CharField(
-        required=False,
-        widget=forms.Textarea(attrs={
-            'rows': 3,
-            'class': 'form-control',
-            'placeholder': 'Add approval notes (optional)...'
-        })
+    action = forms.ChoiceField(
+        choices=[
+            ('approve', _('Approve')),
+            ('reject', _('Reject'))
+        ],
+        widget=forms.RadioSelect(attrs={'class': 'form-check-input'}),
+        label=_("Action")
     )
 
+    rejection_reason = forms.CharField(
+        required=False,
+        widget=forms.Textarea(attrs={
+            'class': 'form-control',
+            'rows': 3,
+            'placeholder': _('Enter reason for rejection')
+        }),
+        label=_("Rejection Reason")
+    )
 
-class ExpenseCategoryForm(forms.ModelForm):
-    """Form for creating/editing expense categories"""
-
-    class Meta:
-        model = ExpenseCategory
-        fields = [
-            'name', 'code', 'parent', 'category_type', 'description',
-            'is_active', 'requires_approval', 'approval_limit',
-            'is_taxable', 'default_tax_rate', 'budget_allocation',
-            'color_code', 'icon', 'sort_order'
-        ]
-        widgets = {
-            'name': forms.TextInput(attrs={'class': 'form-control'}),
-            'code': forms.TextInput(attrs={'class': 'form-control'}),
-            'parent': forms.Select(attrs={'class': 'form-control'}),
-            'category_type': forms.Select(attrs={'class': 'form-control'}),
-            'description': forms.Textarea(attrs={'rows': 3, 'class': 'form-control'}),
-            'approval_limit': forms.NumberInput(attrs={'class': 'form-control', 'step': '0.01'}),
-            'default_tax_rate': forms.NumberInput(attrs={'class': 'form-control', 'step': '0.01'}),
-            'budget_allocation': forms.NumberInput(attrs={'class': 'form-control', 'step': '0.01'}),
-            'color_code': forms.TextInput(attrs={'type': 'color', 'class': 'form-control'}),
-            'icon': forms.TextInput(attrs={'class': 'form-control'}),
-            'sort_order': forms.NumberInput(attrs={'class': 'form-control'}),
-        }
-
-
-class VendorForm(forms.ModelForm):
-    """Form for creating/editing vendors"""
-
-    class Meta:
-        model = Vendor
-        fields = [
-            'name', 'vendor_type', 'contact_person', 'email', 'phone', 'address',
-            'tin', 'is_registered_for_vat', 'payment_terms', 'custom_payment_days',
-            'credit_limit', 'bank_name', 'account_number', 'account_name',
-            'mobile_money_number', 'is_active', 'is_approved', 'rating', 'notes'
-        ]
-        widgets = {
-            'name': forms.TextInput(attrs={'class': 'form-control'}),
-            'vendor_type': forms.Select(attrs={'class': 'form-control'}),
-            'contact_person': forms.TextInput(attrs={'class': 'form-control'}),
-            'email': forms.EmailInput(attrs={'class': 'form-control'}),
-            'phone': forms.TextInput(attrs={'class': 'form-control'}),
-            'address': forms.Textarea(attrs={'rows': 3, 'class': 'form-control'}),
-            'tin': forms.TextInput(attrs={'class': 'form-control'}),
-            'payment_terms': forms.Select(attrs={'class': 'form-control'}),
-            'custom_payment_days': forms.NumberInput(attrs={'class': 'form-control'}),
-            'credit_limit': forms.NumberInput(attrs={'class': 'form-control', 'step': '0.01'}),
-            'bank_name': forms.TextInput(attrs={'class': 'form-control'}),
-            'account_number': forms.TextInput(attrs={'class': 'form-control'}),
-            'account_name': forms.TextInput(attrs={'class': 'form-control'}),
-            'mobile_money_number': forms.TextInput(attrs={'class': 'form-control'}),
-            'rating': forms.NumberInput(attrs={'class': 'form-control', 'step': '0.01', 'min': '0', 'max': '5'}),
-            'notes': forms.Textarea(attrs={'rows': 3, 'class': 'form-control'}),
-        }
-
-
-class BudgetForm(forms.ModelForm):
-    """Form for creating/editing budgets"""
-
-    class Meta:
-        model = Budget
-        fields = [
-            'name', 'category', 'store', 'budget_period',
-            'start_date', 'end_date', 'allocated_amount',
-            'warning_threshold', 'critical_threshold',
-            'is_active', 'notes'
-        ]
-        widgets = {
-            'name': forms.TextInput(attrs={'class': 'form-control'}),
-            'category': forms.Select(attrs={'class': 'form-control'}),
-            'store': forms.Select(attrs={'class': 'form-control'}),
-            'budget_period': forms.Select(attrs={'class': 'form-control'}),
-            'start_date': forms.DateInput(attrs={'type': 'date', 'class': 'form-control'}),
-            'end_date': forms.DateInput(attrs={'type': 'date', 'class': 'form-control'}),
-            'allocated_amount': forms.NumberInput(attrs={'class': 'form-control', 'step': '0.01'}),
-            'warning_threshold': forms.NumberInput(attrs={'class': 'form-control', 'min': '0', 'max': '100'}),
-            'critical_threshold': forms.NumberInput(attrs={'class': 'form-control', 'min': '0', 'max': '100'}),
-            'notes': forms.Textarea(attrs={'rows': 3, 'class': 'form-control'}),
-        }
+    admin_notes = forms.CharField(
+        required=False,
+        widget=forms.Textarea(attrs={
+            'class': 'form-control',
+            'rows': 2,
+            'placeholder': _('Internal notes (optional)')
+        }),
+        label=_("Admin Notes")
+    )
 
     def clean(self):
         cleaned_data = super().clean()
-        start_date = cleaned_data.get('start_date')
-        end_date = cleaned_data.get('end_date')
+        action = cleaned_data.get('action')
+        rejection_reason = cleaned_data.get('rejection_reason')
 
-        if start_date and end_date and end_date < start_date:
-            raise ValidationError(_('End date must be after start date'))
-
-        warning = cleaned_data.get('warning_threshold', 0)
-        critical = cleaned_data.get('critical_threshold', 0)
-
-        if warning > critical:
-            raise ValidationError(_('Warning threshold must be less than critical threshold'))
+        if action == 'reject' and not rejection_reason:
+            raise ValidationError({
+                'rejection_reason': _("Rejection reason is required when rejecting an expense")
+            })
 
         return cleaned_data
 
 
-class RecurringExpenseForm(forms.ModelForm):
-    """Form for creating/editing recurring expenses"""
+class ExpensePaymentForm(forms.Form):
+    """Form for marking expenses as paid"""
+
+    payment_method = forms.ChoiceField(
+        choices=Expense.PAYMENT_METHODS,
+        widget=forms.Select(attrs={'class': 'form-select'}),
+        label=_("Payment Method")
+    )
+
+    payment_reference = forms.CharField(
+        required=False,
+        widget=forms.TextInput(attrs={
+            'class': 'form-control',
+            'placeholder': _('Transaction ID or reference number')
+        }),
+        label=_("Payment Reference")
+    )
+
+    payment_notes = forms.CharField(
+        required=False,
+        widget=forms.Textarea(attrs={
+            'class': 'form-control',
+            'rows': 2,
+            'placeholder': _('Additional payment notes')
+        }),
+        label=_("Payment Notes")
+    )
+
+
+class ExpenseCommentForm(forms.ModelForm):
+    """Form for adding comments to expenses"""
 
     class Meta:
-        model = RecurringExpense
+        model = ExpenseComment
+        fields = ['comment', 'is_internal']
+        widgets = {
+            'comment': forms.Textarea(attrs={
+                'class': 'form-control',
+                'rows': 3,
+                'placeholder': _('Add your comment...'),
+                'required': True
+            }),
+            'is_internal': forms.CheckboxInput(attrs={
+                'class': 'form-check-input'
+            })
+        }
+
+
+class ExpenseCategoryForm(forms.ModelForm):
+    """Form for creating and editing expense categories"""
+
+    class Meta:
+        model = ExpenseCategory
         fields = [
-            'name', 'description', 'store', 'category', 'expense_type',
-            'vendor', 'frequency', 'amount', 'tax_rate', 'start_date',
-            'end_date', 'next_occurrence', 'auto_approve', 'auto_pay',
-            'payment_method', 'is_active'
+            'name', 'code', 'description', 'monthly_budget',
+            'requires_approval', 'approval_threshold', 'color_code',
+            'icon', 'is_active', 'sort_order'
         ]
         widgets = {
-            'name': forms.TextInput(attrs={'class': 'form-control'}),
-            'description': forms.Textarea(attrs={'rows': 3, 'class': 'form-control'}),
-            'store': forms.Select(attrs={'class': 'form-control'}),
-            'category': forms.Select(attrs={'class': 'form-control'}),
-            'expense_type': forms.Select(attrs={'class': 'form-control'}),
-            'vendor': forms.Select(attrs={'class': 'form-control'}),
-            'frequency': forms.Select(attrs={'class': 'form-control'}),
-            'amount': forms.NumberInput(attrs={'class': 'form-control', 'step': '0.01'}),
-            'tax_rate': forms.NumberInput(attrs={'class': 'form-control', 'step': '0.01'}),
-            'start_date': forms.DateInput(attrs={'type': 'date', 'class': 'form-control'}),
-            'end_date': forms.DateInput(attrs={'type': 'date', 'class': 'form-control'}),
-            'next_occurrence': forms.DateInput(attrs={'type': 'date', 'class': 'form-control'}),
-            'payment_method': forms.Select(attrs={'class': 'form-control'}),
-        }
-
-
-class PettyCashForm(forms.ModelForm):
-    """Form for creating/editing petty cash accounts"""
-
-    class Meta:
-        model = PettyCash
-        fields = [
-            'store', 'opening_balance', 'current_balance',
-            'maximum_limit', 'minimum_balance', 'custodian', 'is_active'
-        ]
-        widgets = {
-            'store': forms.Select(attrs={'class': 'form-control'}),
-            'opening_balance': forms.NumberInput(attrs={'class': 'form-control', 'step': '0.01'}),
-            'current_balance': forms.NumberInput(attrs={'class': 'form-control', 'step': '0.01'}),
-            'maximum_limit': forms.NumberInput(attrs={'class': 'form-control', 'step': '0.01'}),
-            'minimum_balance': forms.NumberInput(attrs={'class': 'form-control', 'step': '0.01'}),
-            'custodian': forms.Select(attrs={'class': 'form-control'}),
-        }
-
-
-class PettyCashTransactionForm(forms.ModelForm):
-    """Form for petty cash transactions"""
-
-    class Meta:
-        model = PettyCashTransaction
-        fields = ['transaction_type', 'amount', 'expense', 'notes']
-        widgets = {
-            'transaction_type': forms.Select(attrs={'class': 'form-control'}),
-            'amount': forms.NumberInput(attrs={'class': 'form-control', 'step': '0.01'}),
-            'expense': forms.Select(attrs={'class': 'form-control'}),
-            'notes': forms.Textarea(attrs={'rows': 3, 'class': 'form-control'}),
-        }
-
-
-class ReimbursementForm(forms.ModelForm):
-    """Form for creating employee reimbursement claims"""
-
-    class Meta:
-        model = EmployeeReimbursement
-        fields = [
-            'employee', 'store', 'claim_date', 'description',
-            'total_amount', 'status', 'notes'
-        ]
-        widgets = {
-            'employee': forms.Select(attrs={'class': 'form-control'}),
-            'store': forms.Select(attrs={'class': 'form-control'}),
-            'claim_date': forms.DateInput(attrs={'type': 'date', 'class': 'form-control'}),
-            'description': forms.Textarea(attrs={'rows': 3, 'class': 'form-control'}),
-            'total_amount': forms.NumberInput(attrs={'class': 'form-control', 'step': '0.01'}),
-            'status': forms.Select(attrs={'class': 'form-control'}),
-            'notes': forms.Textarea(attrs={'rows': 3, 'class': 'form-control'}),
-        }
-
-
-class ReimbursementItemForm(forms.ModelForm):
-    """Form for reimbursement items"""
-
-    class Meta:
-        model = ReimbursementItem
-        fields = [
-            'category', 'description', 'expense_date',
-            'amount', 'receipt_number'
-        ]
-        widgets = {
-            'category': forms.Select(attrs={'class': 'form-control'}),
-            'description': forms.TextInput(attrs={'class': 'form-control'}),
-            'expense_date': forms.DateInput(attrs={'type': 'date', 'class': 'form-control'}),
-            'amount': forms.NumberInput(attrs={'class': 'form-control', 'step': '0.01'}),
-            'receipt_number': forms.TextInput(attrs={'class': 'form-control'}),
-        }
-
-
-class ExpenseAttachmentForm(forms.ModelForm):
-    """Form for uploading expense attachments"""
-
-    class Meta:
-        model = ExpenseAttachment
-        fields = ['attachment_type', 'file', 'description']
-        widgets = {
-            'attachment_type': forms.Select(attrs={'class': 'form-control'}),
-            'file': forms.FileInput(attrs={'class': 'form-control'}),
-            'description': forms.Textarea(attrs={'rows': 2, 'class': 'form-control'}),
-        }
-
-
-class ExpenseSplitForm(forms.ModelForm):
-    """Form for splitting expenses across stores"""
-
-    class Meta:
-        model = ExpenseSplit
-        fields = ['store', 'allocation_percentage', 'notes']
-        widgets = {
-            'store': forms.Select(attrs={'class': 'form-control'}),
-            'allocation_percentage': forms.NumberInput(attrs={
+            'name': forms.TextInput(attrs={
+                'class': 'form-control',
+                'placeholder': _('Category name'),
+                'required': True
+            }),
+            'code': forms.TextInput(attrs={
+                'class': 'form-control',
+                'placeholder': _('Unique code'),
+                'required': True
+            }),
+            'description': forms.Textarea(attrs={
+                'class': 'form-control',
+                'rows': 3,
+                'placeholder': _('Category description')
+            }),
+            'monthly_budget': forms.NumberInput(attrs={
                 'class': 'form-control',
                 'step': '0.01',
                 'min': '0',
-                'max': '100'
+                'placeholder': '0.00'
             }),
-            'notes': forms.Textarea(attrs={'rows': 2, 'class': 'form-control'}),
+            'approval_threshold': forms.NumberInput(attrs={
+                'class': 'form-control',
+                'step': '0.01',
+                'min': '0',
+                'placeholder': '0.00'
+            }),
+            'color_code': forms.TextInput(attrs={
+                'class': 'form-control',
+                'type': 'color'
+            }),
+            'icon': forms.TextInput(attrs={
+                'class': 'form-control',
+                'placeholder': _('e.g., bi-cart, fa-shopping-cart')
+            }),
+            'requires_approval': forms.CheckboxInput(attrs={
+                'class': 'form-check-input'
+            }),
+            'is_active': forms.CheckboxInput(attrs={
+                'class': 'form-check-input'
+            }),
+            'sort_order': forms.NumberInput(attrs={
+                'class': 'form-control',
+                'min': '0'
+            })
         }
 
 
-# Formsets for inline editing
-from django.forms import inlineformset_factory
+class BulkExpenseActionForm(forms.Form):
+    """Form for bulk actions on expenses"""
 
-ReimbursementItemFormSet = inlineformset_factory(
-    EmployeeReimbursement,
-    ReimbursementItem,
-    form=ReimbursementItemForm,
-    extra=1,
-    can_delete=True
-)
+    action = forms.ChoiceField(
+        choices=[
+            ('', _('Select Action')),
+            ('approve', _('Approve Selected')),
+            ('reject', _('Reject Selected')),
+            ('delete', _('Delete Selected')),
+            ('export', _('Export Selected'))
+        ],
+        widget=forms.Select(attrs={'class': 'form-select'}),
+        label=_("Bulk Action")
+    )
 
-ExpenseSplitFormSet = inlineformset_factory(
-    Expense,
-    ExpenseSplit,
-    form=ExpenseSplitForm,
-    extra=1,
-    can_delete=True,
-    max_num=10
-)
+    expense_ids = forms.CharField(
+        widget=forms.HiddenInput(),
+        required=False
+    )
+
+    def clean_expense_ids(self):
+        ids = self.cleaned_data.get('expense_ids', '')
+        if ids:
+            try:
+                return [int(id.strip()) for id in ids.split(',') if id.strip()]
+            except ValueError:
+                raise ValidationError(_("Invalid expense IDs"))
+        return []

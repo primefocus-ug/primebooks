@@ -1,21 +1,15 @@
 from django.contrib.auth import get_user_model
 from django.core.exceptions import PermissionDenied
 from functools import wraps
+from user_agents import parse
+import requests
+from django.core.cache import cache
+import time
 
 User = get_user_model()
 
 
 def get_visible_users(queryset=None, company=None):
-    """
-    Get only visible users (excluding hidden SaaS admins)
-
-    Args:
-        queryset: Optional base queryset to filter
-        company: Optional company to filter by
-
-    Returns:
-        QuerySet of visible users
-    """
     if queryset is None:
         queryset = User.objects.all()
 
@@ -30,16 +24,6 @@ def get_visible_users(queryset=None, company=None):
 
 
 def get_company_user_count(company, active_only=True):
-    """
-    Get user count for a company excluding hidden users
-
-    Args:
-        company: Company instance
-        active_only: Whether to count only active users
-
-    Returns:
-        int: Number of visible users
-    """
     queryset = User.objects.filter(company=company, is_hidden=False)
 
     if active_only:
@@ -49,15 +33,6 @@ def get_company_user_count(company, active_only=True):
 
 
 def get_accessible_companies(user):
-    """
-    Get companies accessible to a user
-
-    Args:
-        user: User instance
-
-    Returns:
-        QuerySet of companies the user can access
-    """
     from company.models import Company
 
     if not user.is_authenticated:
@@ -74,16 +49,6 @@ def get_accessible_companies(user):
 
 
 def can_access_company(user, company):
-    """
-    Check if a user can access a specific company
-
-    Args:
-        user: User instance
-        company: Company instance
-
-    Returns:
-        bool: True if user can access the company
-    """
     if not user.is_authenticated:
         return False
 
@@ -94,21 +59,12 @@ def can_access_company(user, company):
         return True
 
     if hasattr(user, 'company') and user.company:
-        return user.company.id == company.id
+        return user.company.company_id == company.company_id
 
     return False
 
 
 def require_saas_admin(view_func):
-    """
-    Decorator to require SaaS admin permissions
-
-    Usage:
-        @require_saas_admin
-        def my_view(request):
-            # Only SaaS admins can access this view
-            pass
-    """
 
     @wraps(view_func)
     def wrapper(request, *args, **kwargs):
@@ -124,19 +80,6 @@ def require_saas_admin(view_func):
 
 
 def require_company_access(company_param='company_id'):
-    """
-    Decorator to check if user can access a specific company
-
-    Args:
-        company_param: Name of the parameter containing company ID
-
-    Usage:
-        @require_company_access('company_id')
-        def my_view(request, company_id):
-            # User must have access to the company
-            pass
-    """
-
     def decorator(view_func):
         @wraps(view_func)
         def wrapper(request, *args, **kwargs):
@@ -167,17 +110,6 @@ def require_company_access(company_param='company_id'):
 
 
 def create_company_default_admin(company, admin_email=None, admin_password=None):
-    """
-    Create a default admin user for a new company
-
-    Args:
-        company: Company instance
-        admin_email: Optional email for the admin
-        admin_password: Optional password for the admin
-
-    Returns:
-        User instance of the created admin
-    """
     if not admin_email:
         admin_email = f"admin@{company.schema_name}.com"
 
@@ -188,7 +120,6 @@ def create_company_default_admin(company, admin_email=None, admin_password=None)
     # Check if admin already exists
     existing_admin = User.objects.filter(
         company=company,
-        user_type='COMPANY_ADMIN'
     ).first()
 
     if existing_admin:
@@ -202,7 +133,6 @@ def create_company_default_admin(company, admin_email=None, admin_password=None)
         first_name="Company",
         last_name="Admin",
         company=company,
-        user_type='COMPANY_ADMIN',
         company_admin=True,
         is_staff=True
     )
@@ -242,3 +172,251 @@ def ensure_saas_admin_exists():
         print(f"Could not create SaaS admin: {str(e)}")
         return None
 
+
+
+def get_client_ip(request):
+    """
+    Extract client IP address from request
+    """
+    x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
+    if x_forwarded_for:
+        ip = x_forwarded_for.split(',')[0]
+    else:
+        ip = request.META.get('REMOTE_ADDR')
+    return ip
+
+
+def parse_user_agent(user_agent_string):
+    """
+    Parse user agent string to extract browser, OS, and device info
+    """
+    user_agent = parse(user_agent_string)
+
+    return {
+        'browser': f"{user_agent.browser.family} {user_agent.browser.version_string}",
+        'os': f"{user_agent.os.family} {user_agent.os.version_string}",
+        'device_type': 'Mobile' if user_agent.is_mobile else ('Tablet' if user_agent.is_tablet else 'Desktop'),
+        'device_brand': user_agent.device.brand or '',
+        'device_model': user_agent.device.model or ''
+    }
+
+
+def get_location_from_ip(ip_address):
+    """
+    Get approximate location from IP address using free API
+    Cache results to avoid repeated API calls
+    """
+    # Check cache first
+    cache_key = f'ip_location_{ip_address}'
+    cached_location = cache.get(cache_key)
+
+    if cached_location:
+        return cached_location
+
+    # Skip for local/private IPs
+    if ip_address in ['127.0.0.1', 'localhost'] or ip_address.startswith('192.168.'):
+        return None
+
+    try:
+        # Using ip-api.com (free tier: 45 requests/minute)
+        response = requests.get(
+            f'http://ip-api.com/json/{ip_address}',
+            timeout=3
+        )
+
+        if response.status_code == 200:
+            data = response.json()
+
+            if data.get('status') == 'success':
+                location_data = {
+                    'city': data.get('city', ''),
+                    'region': data.get('regionName', ''),
+                    'country': data.get('country', ''),
+                    'latitude': data.get('lat'),
+                    'longitude': data.get('lon'),
+                    'timezone': data.get('timezone', ''),
+                    'isp': data.get('isp', '')
+                }
+
+                # Cache for 24 hours
+                cache.set(cache_key, location_data, 86400)
+                return location_data
+
+    except Exception as e:
+        # Log error but don't fail
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.warning(f"Failed to get location for IP {ip_address}: {e}")
+
+    return None
+
+
+def log_action(request, action, description, **kwargs):
+
+    from .models import AuditLog
+
+    return AuditLog.objects.create(
+        user=request.user if request.user.is_authenticated else None,
+        action=action,
+        action_description=description,
+        ip_address=get_client_ip(request),
+        user_agent=request.META.get('HTTP_USER_AGENT', ''),
+        request_path=request.path,
+        request_method=request.method,
+        duration_ms=getattr(request, '_audit_duration', None),
+        company=getattr(request.user, 'company', None) if request.user.is_authenticated else None,
+        store=getattr(request, 'store', None),
+        **kwargs
+    )
+
+
+def track_model_changes(old_instance, new_instance, fields=None):
+
+    changes = {}
+
+    if fields is None:
+        fields = [f.name for f in new_instance._meta.fields
+                  if not f.name in ['id', 'created_at', 'updated_at']]
+
+    for field in fields:
+        old_value = getattr(old_instance, field, None)
+        new_value = getattr(new_instance, field, None)
+
+        if old_value != new_value:
+            changes[field] = {
+                'old': str(old_value),
+                'new': str(new_value)
+            }
+
+    return changes
+
+
+class AuditLogDecorator:
+    def __init__(self, action, description_template):
+        self.action = action
+        self.description_template = description_template
+
+    def __call__(self, func):
+        def wrapper(request, *args, **kwargs):
+            from .models import AuditLog
+            import time
+
+            start_time = time.time()
+            error = None
+            result = None
+
+            try:
+                result = func(request, *args, **kwargs)
+                return result
+            except Exception as e:
+                error = str(e)
+                raise
+            finally:
+                duration = int((time.time() - start_time) * 1000)
+
+                # Create audit log
+                try:
+                    description = self.description_template.format(
+                        **kwargs,
+                        user=request.user.get_full_name() if request.user.is_authenticated else 'Anonymous'
+                    )
+                except:
+                    description = self.description_template
+
+                AuditLog.objects.create(
+                    user=request.user if request.user.is_authenticated else None,
+                    action=self.action,
+                    action_description=description,
+                    ip_address=get_client_ip(request),
+                    user_agent=request.META.get('HTTP_USER_AGENT', ''),
+                    request_path=request.path,
+                    request_method=request.method,
+                    duration_ms=duration,
+                    success=error is None,
+                    error_message=error or '',
+                    company=getattr(request.user, 'company', None) if request.user.is_authenticated else None
+                )
+
+        return wrapper
+
+
+
+class audit_context:
+
+    def __init__(self, request, action, description):
+        self.request = request
+        self.action = action
+        self.description = description
+        self.metadata = {}
+        self.start_time = None
+        self.audit_log = None
+
+    def __enter__(self):
+        self.start_time = time.time()
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        from .models import AuditLog
+
+        duration = int((time.time() - self.start_time) * 1000)
+        success = exc_type is None
+        error_message = str(exc_val) if exc_val else ''
+
+        self.audit_log = AuditLog.objects.create(
+            user=self.request.user if self.request.user.is_authenticated else None,
+            action=self.action,
+            action_description=self.description,
+            ip_address=get_client_ip(self.request),
+            user_agent=self.request.META.get('HTTP_USER_AGENT', ''),
+            request_path=self.request.path,
+            request_method=self.request.method,
+            duration_ms=duration,
+            success=success,
+            error_message=error_message,
+            metadata=self.metadata,
+            company=getattr(self.request.user, 'company', None) if self.request.user.is_authenticated else None
+        )
+
+        return False  # Don't suppress exceptions
+
+    def add_metadata(self, key, value):
+        """Add metadata to the audit log"""
+        self.metadata[key] = value
+
+
+
+def export_audit_logs(queryset, format='csv'):
+    import csv
+    import io
+    from django.utils import timezone
+
+    if format == 'csv':
+        output = io.StringIO()
+        writer = csv.writer(output)
+
+        # Write header
+        writer.writerow([
+            'Timestamp', 'User', 'Action', 'Description',
+            'Resource', 'IP Address', 'Success', 'Duration (ms)'
+        ])
+
+        # Write data
+        for log in queryset:
+            writer.writerow([
+                log.timestamp.strftime('%Y-%m-%d %H:%M:%S'),
+                log.user.get_full_name() if log.user else 'System',
+                log.get_action_display(),
+                log.action_description,
+                log.resource_name,
+                log.ip_address,
+                'Yes' if log.success else 'No',
+                log.duration_ms or ''
+            ])
+
+        return output.getvalue()
+
+    elif format == 'excel':
+        # Implement Excel export using openpyxl or xlsxwriter
+        pass
+
+    return None

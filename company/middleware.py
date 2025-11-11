@@ -7,9 +7,116 @@ from channels.layers import get_channel_layer
 from asgiref.sync import async_to_sync
 from django.core.cache import cache
 import logging
+from django.shortcuts import redirect
+from django.contrib import messages
+from django.urls import reverse
+from django.utils.translation import gettext as _
 
 logger = logging.getLogger(__name__)
 
+
+class PlanLimitsMiddleware:
+    '''
+    Middleware to enforce plan limits across the application
+    '''
+
+    # URLs that should always be accessible even when limits exceeded
+    EXEMPT_URLS = [
+        '/accounts/logout/',
+        '/companies/subscription/',
+        '/companies/billing/',
+        '/companies/profile/',
+        '/companies/expired/',  # ADD THIS
+        '/companies/suspended/',  # ADD THIS
+        '/admin/',
+        '/api/',
+        '/static/',
+        '/media/',
+    ]
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        # Skip for anonymous users
+        if not request.user.is_authenticated:
+            return self.get_response(request)
+
+        # Skip for SaaS admins
+        if getattr(request.user, 'is_saas_admin', False):
+            return self.get_response(request)
+
+        # Skip exempt URLs
+        if any(request.path.startswith(url) for url in self.EXEMPT_URLS):
+            return self.get_response(request)
+
+        # Get user's company
+        company = getattr(request.user, 'company', None)
+        if not company:
+            return self.get_response(request)
+
+        # Check if company has active access
+        if not company.has_active_access:
+            messages.warning(
+                request,
+                _('Your subscription has expired. Please renew to continue using the system.')
+            )
+            return redirect('companies:subscription_dashboard')
+
+        # Add company limits to request for easy access in views
+        request.plan_limits = {
+            'users': {
+                'current': self._get_user_count(company),
+                'limit': company.plan.max_users if company.plan else 0,
+                'available': self._get_available_users(company),
+                'exceeded': self._check_users_exceeded(company),
+            },
+            'branches': {
+                'current': company.branches_count,
+                'limit': company.plan.max_branches if company.plan else 0,
+                'available': self._get_available_branches(company),
+                'exceeded': self._check_branches_exceeded(company),
+            },
+            'storage': {
+                'current_mb': company.storage_used_mb,
+                'limit_gb': company.plan.max_storage_gb if company.plan else 0,
+                'percentage': company.storage_usage_percentage,
+                'exceeded': self._check_storage_exceeded(company),
+            },
+        }
+
+        response = self.get_response(request)
+        return response
+
+    def _get_user_count(self, company):
+        from accounts.models import CustomUser
+        return CustomUser.objects.filter(company=company, is_hidden=False).count()
+
+    def _get_available_users(self, company):
+        if not company.plan:
+            return 0
+        current = self._get_user_count(company)
+        return max(0, company.plan.max_users - current)
+
+    def _check_users_exceeded(self, company):
+        if not company.plan:
+            return False
+        return self._get_user_count(company) >= company.plan.max_users
+
+    def _get_available_branches(self, company):
+        if not company.plan:
+            return 0
+        return max(0, company.plan.max_branches - company.branches_count)
+
+    def _check_branches_exceeded(self, company):
+        if not company.plan:
+            return False
+        return company.branches_count >= company.plan.max_branches
+
+    def _check_storage_exceeded(self, company):
+        if not company.plan:
+            return False
+        return company.storage_usage_percentage >= 100
 
 class CompanyAccessMiddleware:
     """
@@ -25,7 +132,9 @@ class CompanyAccessMiddleware:
             '/accounts/logout/',
             '/companies/suspended/',
             '/companies/expired/',
-            '/billing/',
+            'expired/',
+            '/companies/billing/',
+            '/companies/subscription/',
             '/api/webhooks/',
         ]
 
@@ -36,7 +145,6 @@ class CompanyAccessMiddleware:
 
         # Process authenticated users
         if request.user.is_authenticated and hasattr(request.user, 'company'):
-            # FIXED: Get fresh company instance from database instead of using cached one
             company = self._get_fresh_company(request.user)
 
             if company:
@@ -52,11 +160,57 @@ class CompanyAccessMiddleware:
 
         return self.get_response(request)
 
+    def _is_exempt_url(self, path):
+        """Check if URL should be accessible regardless of company status"""
+        return any(path.startswith(exempt) for exempt in self.exempt_urls)
+
+    def _handle_company_status(self, request, company):
+        """Handle different company statuses"""
+        # FIXED: Use the actual URL paths and correct URL names
+        if company.status == 'EXPIRED':
+            # Check if we're already on an exempt URL (including expired page)
+            exempt_paths = ['/companies/expired/', '/companies/billing/', '/companies/subscription/']
+            if not any(request.path.startswith(path) for path in exempt_paths):
+                messages.error(
+                    request,
+                    f"Your {company.plan.get_name_display().lower()} subscription has expired. "
+                    "Please renew to continue using the service."
+                )
+                return redirect('companies:company_expired')  # FIXED: Use correct URL name
+
+        elif company.status == 'SUSPENDED':
+            # Check if we're already on suspended page
+            if not request.path.startswith('/companies/suspended/'):
+                if company.is_in_grace_period:
+                    messages.warning(
+                        request,
+                        f"Your subscription expired on {company.subscription_ends_at}. "
+                        f"You have until {company.grace_period_ends_at} to renew."
+                    )
+                    return redirect('companies:company_grace_period')  # Make sure this URL exists
+                else:
+                    messages.error(
+                        request,
+                        "Your company account has been suspended. Please contact support."
+                    )
+                    return redirect('companies:company_suspended')  # FIXED: Use correct URL name
+
+        elif not company.is_active:
+            # Company manually deactivated
+            if not request.path.startswith('/companies/deactivated/'):
+                messages.error(
+                    request,
+                    "Your company account has been deactivated. Please contact support."
+                )
+                logout(request)
+                return redirect('companies:company_deactivated')  # FIXED: Use correct URL name
+
+        return None
+
     def _get_fresh_company(self, user):
         """Get fresh company instance from database, with caching for performance"""
         try:
             # Use a short-lived cache (30 seconds) to avoid hitting DB on every request
-            # but ensure we get fresh data after reactivation
             cache_key = f'user_{user.id}_company_fresh'
             company = cache.get(cache_key)
 
@@ -78,56 +232,13 @@ class CompanyAccessMiddleware:
                     company = user.company
 
                 if company:
-                    # Cache for 30 seconds only - short enough that reactivation takes effect quickly
+                    # Cache for 30 seconds only
                     cache.set(cache_key, company, 30)
 
             return company
         except Exception as e:
             logger.error(f"Error getting fresh company for user {user.id}: {e}")
             return None
-
-    def _is_exempt_url(self, path):
-        """Check if URL should be accessible regardless of company status"""
-        return any(path.startswith(exempt) for exempt in self.exempt_urls)
-
-    def _handle_company_status(self, request, company):
-        """Handle different company statuses"""
-        if company.status == 'EXPIRED':
-            if not request.path.startswith('/company/expired/'):
-                messages.error(
-                    request,
-                    f"Your {company.plan.get_name_display().lower()} subscription has expired. "
-                    "Please renew to continue using the service."
-                )
-                return redirect('companies:company_expired')
-
-        elif company.status == 'SUSPENDED':
-            if not request.path.startswith('/company/suspended/'):
-                if company.is_in_grace_period:
-                    messages.warning(
-                        request,
-                        f"Your subscription expired on {company.subscription_ends_at}. "
-                        f"You have until {company.grace_period_ends_at} to renew."
-                    )
-                    return redirect('company_grace_period')
-                else:
-                    messages.error(
-                        request,
-                        "Your company account has been suspended. Please contact support."
-                    )
-                    return redirect('companies:company_suspended')
-
-        elif not company.is_active:
-            # Company manually deactivated
-            if not request.path.startswith('/company/deactivated/'):
-                messages.error(
-                    request,
-                    "Your company account has been deactivated. Please contact support."
-                )
-                logout(request)
-                return redirect('companies:company_deactivated')
-
-        return None
 
 
 class WebSocketNotificationMiddleware(MiddlewareMixin):

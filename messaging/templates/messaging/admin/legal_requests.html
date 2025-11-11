@@ -1,0 +1,363 @@
+{% extends 'base.html' %}
+{% load static %}
+{% load i18n %}
+
+{% block title %}{% trans "Legal Access Requests" %} | {{ block.super }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h1 class="mb-2">
+                <i class="bi bi-shield-lock me-2"></i>
+                {% trans "Legal Access Requests" %}
+            </h1>
+            <p class="text-muted mb-0">
+                {% trans "Manage law enforcement and legal requests for message access" %}
+            </p>
+        </div>
+        <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#newRequestModal">
+            <i class="bi bi-plus-lg me-2"></i>
+            {% trans "New Request" %}
+        </button>
+    </div>
+
+    <!-- Status Cards -->
+    <div class="row g-3 mb-4">
+        <div class="col-md-3">
+            <div class="card bg-warning-subtle">
+                <div class="card-body">
+                    <h5 class="card-title">Pending Review</h5>
+                    <h2>{{ pending_count|default:0 }}</h2>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card bg-success-subtle">
+                <div class="card-body">
+                    <h5 class="card-title">Approved</h5>
+                    <h2>{{ approved_count|default:0 }}</h2>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card bg-info-subtle">
+                <div class="card-body">
+                    <h5 class="card-title">Fulfilled</h5>
+                    <h2>{{ fulfilled_count|default:0 }}</h2>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card bg-danger-subtle">
+                <div class="card-body">
+                    <h5 class="card-title">Denied</h5>
+                    <h2>{{ denied_count|default:0 }}</h2>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Requests Table -->
+    <div class="card">
+        <div class="card-header">
+            <h5 class="mb-0">All Requests</h5>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead>
+                        <tr>
+                            <th>Request #</th>
+                            <th>Type</th>
+                            <th>Authority</th>
+                            <th>Target User</th>
+                            <th>Status</th>
+                            <th>Created</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for request in requests %}
+                        <tr>
+                            <td><strong>{{ request.request_number }}</strong></td>
+                            <td>
+                                <span class="badge bg-primary">
+                                    {{ request.get_request_type_display }}
+                                </span>
+                            </td>
+                            <td>{{ request.authority_name }}</td>
+                            <td>{{ request.target_user.username }}</td>
+                            <td>
+                                {% if request.status == 'pending' %}
+                                    <span class="badge bg-warning">Pending</span>
+                                {% elif request.status == 'approved' %}
+                                    <span class="badge bg-success">Approved</span>
+                                {% elif request.status == 'fulfilled' %}
+                                    <span class="badge bg-info">Fulfilled</span>
+                                {% elif request.status == 'denied' %}
+                                    <span class="badge bg-danger">Denied</span>
+                                {% endif %}
+                            </td>
+                            <td>{{ request.created_at|date:"Y-m-d H:i" }}</td>
+                            <td>
+                                <div class="btn-group btn-group-sm">
+                                    <button class="btn btn-outline-primary"
+                                            onclick="viewRequest({{ request.id }})">
+                                        <i class="bi bi-eye"></i>
+                                    </button>
+                                    {% if request.status == 'pending' %}
+                                    <button class="btn btn-outline-success"
+                                            onclick="approveRequest({{ request.id }})">
+                                        <i class="bi bi-check-lg"></i>
+                                    </button>
+                                    <button class="btn btn-outline-danger"
+                                            onclick="denyRequest({{ request.id }})">
+                                        <i class="bi bi-x-lg"></i>
+                                    </button>
+                                    {% endif %}
+                                    {% if request.status == 'approved' %}
+                                    <button class="btn btn-outline-info"
+                                            onclick="exportMessages({{ request.id }})">
+                                        <i class="bi bi-download"></i>
+                                    </button>
+                                    {% endif %}
+                                    {% if request.status == 'fulfilled' %}
+                                    <button class="btn btn-outline-secondary"
+                                            onclick="downloadExport({{ request.id }})">
+                                        <i class="bi bi-file-earmark-zip"></i>
+                                    </button>
+                                    {% endif %}
+                                </div>
+                            </td>
+                        </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="7" class="text-center text-muted py-4">
+                                No legal access requests
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Warning Notice -->
+    <div class="alert alert-danger mt-4">
+        <h5 class="alert-heading">
+            <i class="bi bi-exclamation-triangle me-2"></i>
+            {% trans "CRITICAL SECURITY NOTICE" %}
+        </h5>
+        <ul class="mb-0">
+            <li>All access requests must have valid legal documentation</li>
+            <li>Only approve requests with proper court orders, subpoenas, or warrants</li>
+            <li>Every action is logged and audited</li>
+            <li>Improper access may result in legal liability</li>
+            <li>Always verify the requesting authority's credentials</li>
+        </ul>
+    </div>
+</div>
+
+<!-- New Request Modal -->
+<div class="modal fade" id="newRequestModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">New Legal Access Request</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form method="post" enctype="multipart/form-data">
+                {% csrf_token %}
+                <div class="modal-body">
+                    <div class="alert alert-warning">
+                        <strong>Warning:</strong> Only create requests backed by valid legal documentation.
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Request Number *</label>
+                            <input type="text" name="request_number" class="form-control" required>
+                        </div>
+
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Request Type *</label>
+                            <select name="request_type" class="form-select" required>
+                                <option value="court_order">Court Order</option>
+                                <option value="subpoena">Subpoena</option>
+                                <option value="warrant">Search Warrant</option>
+                                <option value="law_enforcement">Law Enforcement</option>
+                                <option value="regulatory">Regulatory</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Requesting Authority *</label>
+                        <input type="text" name="authority_name" class="form-control" required
+                               placeholder="e.g., FBI, Local Police Department">
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Contact Email *</label>
+                            <input type="email" name="authority_contact" class="form-control" required>
+                        </div>
+
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Badge/ID Number</label>
+                            <input type="text" name="badge_number" class="form-control">
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Target User *</label>
+                        <select name="target_user" class="form-select" required>
+                            <option value="">Select user...</option>
+                            {% for user in all_users %}
+                            <option value="{{ user.id }}">{{ user.username }} ({{ user.email }})</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Date Range Start</label>
+                            <input type="datetime-local" name="date_range_start" class="form-control">
+                        </div>
+
+                        <div class="col-md-6 mb-3">
+                            <label class="form-label">Date Range End</label>
+                            <input type="datetime-local" name="date_range_end" class="form-control">
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Legal Document *</label>
+                        <input type="file" name="legal_document" class="form-control" required
+                               accept=".pdf,.doc,.docx">
+                        <small class="text-muted">Upload court order, subpoena, or warrant (PDF/DOC)</small>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Request Description *</label>
+                        <textarea name="request_description" class="form-control" rows="4" required
+                                  placeholder="Describe what is being requested and why..."></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-danger">
+                        <i class="bi bi-shield-lock me-2"></i>
+                        Create Request
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function viewRequest(requestId) {
+    window.location.href = `/en/messaging/admin/legal-requests/${requestId}/`;
+}
+
+function approveRequest(requestId) {
+    if (!confirm('Are you sure you want to APPROVE this legal access request?\n\n' +
+                 'This will allow decryption and export of messages.\n\n' +
+                 'Verify legal documentation before approving.')) {
+        return;
+    }
+
+    fetch(`/api/messaging/legal-requests/${requestId}/approve/`, {
+        method: 'POST',
+        headers: {
+            'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value,
+            'Content-Type': 'application/json'
+        },
+        credentials: 'include'
+    })
+    .then(response => response.json())
+    .then(data => {
+        window.showAlert('Request approved successfully', 'success');
+        location.reload();
+    })
+    .catch(error => {
+        window.showAlert('Error approving request: ' + error.message, 'danger');
+    });
+}
+
+function denyRequest(requestId) {
+    const reason = prompt('Enter reason for denial:');
+    if (!reason) return;
+
+    fetch(`/api/messaging/legal-requests/${requestId}/deny/`, {
+        method: 'POST',
+        headers: {
+            'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value,
+            'Content-Type': 'application/json'
+        },
+        credentials: 'include',
+        body: JSON.stringify({ reason: reason })
+    })
+    .then(response => response.json())
+    .then(data => {
+        window.showAlert('Request denied', 'info');
+        location.reload();
+    })
+    .catch(error => {
+        window.showAlert('Error denying request: ' + error.message, 'danger');
+    });
+}
+
+function exportMessages(requestId) {
+    if (!confirm('Export decrypted messages for this legal request?\n\n' +
+                 'This will create a password-protected ZIP file containing:\n' +
+                 '- Decrypted message content\n' +
+                 '- Conversation metadata\n' +
+                 '- Timestamps and participants\n\n' +
+                 'This action is logged and audited.')) {
+        return;
+    }
+
+    window.showAlert('Exporting messages... This may take a few minutes.', 'info', 0);
+
+    fetch(`/api/messaging/legal-requests/${requestId}/export/`, {
+        method: 'POST',
+        headers: {
+            'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+        },
+        credentials: 'include'
+    })
+    .then(response => response.json())
+    .then(data => {
+        alert(`Export complete!\n\nPassword: ${data.password}\n\n` +
+              `IMPORTANT: Save this password separately and securely.\n` +
+              `The export file is now available for download.`);
+        location.reload();
+    })
+    .catch(error => {
+        window.showAlert('Error exporting messages: ' + error.message, 'danger');
+    });
+}
+
+function downloadExport(requestId) {
+    // Log the download access
+    fetch(`/api/messaging/legal-requests/${requestId}/log-access/`, {
+        method: 'POST',
+        headers: {
+            'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value,
+            'Content-Type': 'application/json'
+        },
+        credentials: 'include',
+        body: JSON.stringify({ action: 'download_export' })
+    });
+
+    // Download file
+    window.location.href = `/api/messaging/legal-requests/${requestId}/download/`;
+}
+</script>
+{% endblock %}

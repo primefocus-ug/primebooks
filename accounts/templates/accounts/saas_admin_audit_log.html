@@ -1,0 +1,428 @@
+{% extends 'base.html' %}
+{% load i18n %}
+{% load static %}
+
+{% block title %}{% trans "System Audit Logs" %} | {{ block.super }}{% endblock %}
+
+{% block breadcrumb_items %}
+<li class="breadcrumb-item"><a href="{% url 'user_dashboard' %}">{% trans "Dashboard" %}</a></li>
+<li class="breadcrumb-item active">{% trans "Audit Logs" %}</li>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+    .audit-stats {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 1rem;
+        margin-bottom: 2rem;
+    }
+
+    .stat-card {
+        background: var(--bg-primary);
+        border: 1px solid var(--border-color);
+        border-radius: var(--border-radius);
+        padding: 1.5rem;
+        text-align: center;
+        transition: all 0.3s ease;
+    }
+
+    .stat-card:hover {
+        transform: translateY(-2px);
+        box-shadow: var(--shadow-md);
+    }
+
+    .stat-value {
+        font-size: 2rem;
+        font-weight: 700;
+        color: var(--primary-600);
+    }
+
+    .stat-label {
+        font-size: 0.875rem;
+        color: var(--text-secondary);
+        margin-top: 0.5rem;
+    }
+
+    .severity-badge {
+        padding: 0.25rem 0.75rem;
+        border-radius: 999px;
+        font-size: 0.75rem;
+        font-weight: 600;
+    }
+
+    .severity-info { background: var(--primary-100); color: var(--primary-700); }
+    .severity-warning { background: var(--amber-100); color: var(--amber-700); }
+    .severity-error { background: var(--red-100); color: var(--red-700); }
+    .severity-critical { background: var(--red-200); color: var(--red-800); }
+
+    .status-badge {
+        padding: 0.25rem 0.75rem;
+        border-radius: 999px;
+        font-size: 0.75rem;
+        font-weight: 600;
+    }
+
+    .status-success { background: var(--green-100); color: var(--green-700); }
+    .status-failed { background: var(--red-100); color: var(--red-700); }
+
+    .filter-section {
+        background: var(--bg-primary);
+        border: 1px solid var(--border-color);
+        border-radius: var(--border-radius);
+        padding: 1.5rem;
+        margin-bottom: 2rem;
+    }
+
+    .audit-table {
+        width: 100%;
+        background: var(--bg-primary);
+        border-radius: var(--border-radius);
+        overflow: hidden;
+    }
+
+    .audit-table th {
+        background: var(--bg-tertiary);
+        color: var(--text-primary);
+        font-weight: 600;
+        padding: 1rem;
+        text-align: left;
+        border-bottom: 2px solid var(--border-color);
+    }
+
+    .audit-table td {
+        padding: 1rem;
+        border-bottom: 1px solid var(--border-color);
+        color: var(--text-primary);
+    }
+
+    .audit-table tr:hover {
+        background: var(--bg-secondary);
+    }
+
+    .action-buttons {
+        display: flex;
+        gap: 0.5rem;
+    }
+
+    .top-users-list {
+        list-style: none;
+        padding: 0;
+    }
+
+    .top-users-list li {
+        padding: 0.5rem;
+        border-bottom: 1px solid var(--border-color);
+        display: flex;
+        justify-content: space-between;
+    }
+
+    [data-theme="dark"] .severity-info { background: rgba(59, 130, 246, 0.2); color: var(--primary-400); }
+    [data-theme="dark"] .severity-warning { background: rgba(245, 158, 11, 0.2); color: var(--amber-400); }
+    [data-theme="dark"] .severity-error { background: rgba(239, 68, 68, 0.2); color: var(--red-400); }
+    [data-theme="dark"] .severity-critical { background: rgba(239, 68, 68, 0.3); color: var(--red-300); }
+    [data-theme="dark"] .status-success { background: rgba(16, 185, 129, 0.2); color: var(--green-400); }
+    [data-theme="dark"] .status-failed { background: rgba(239, 68, 68, 0.2); color: var(--red-400); }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- Page Header -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1 class="h3 mb-0">
+            <i class="bi bi-shield-check me-2"></i>{% trans "System Audit Logs" %}
+        </h1>
+        <div class="d-flex gap-2">
+            <a href="" class="btn btn-outline-primary">
+                <i class="bi bi-graph-up me-2"></i>{% trans "Dashboard" %}
+            </a>
+            <div class="dropdown">
+                <button class="btn btn-primary dropdown-toggle" type="button" data-bs-toggle="dropdown">
+                    <i class="bi bi-download me-2"></i>{% trans "Export" %}
+                </button>
+                <ul class="dropdown-menu">
+                    <li><a class="dropdown-item" href="?export=csv&{{ request.GET.urlencode }}">
+                        <i class="bi bi-filetype-csv me-2"></i>{% trans "Export as CSV" %}
+                    </a></li>
+                    <li><a class="dropdown-item" href="?export=excel&{{ request.GET.urlencode }}">
+                        <i class="bi bi-file-earmark-excel me-2"></i>{% trans "Export as Excel" %}
+                    </a></li>
+                    <li><a class="dropdown-item" href="?export=pdf&{{ request.GET.urlencode }}">
+                        <i class="bi bi-file-pdf me-2"></i>{% trans "Export as PDF" %}
+                    </a></li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <!-- Statistics -->
+    <div class="audit-stats">
+        <div class="stat-card">
+            <div class="stat-value">{{ stats.total_logs|default:0 }}</div>
+            <div class="stat-label">{% trans "Total Logs" %}</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value text-danger">{{ stats.failed_actions|default:0 }}</div>
+            <div class="stat-label">{% trans "Failed Actions" %}</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value text-warning">{{ stats.critical_alerts|default:0 }}</div>
+            <div class="stat-label">{% trans "Critical Alerts" %}</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value text-info">{{ stats.pending_review|default:0 }}</div>
+            <div class="stat-label">{% trans "Pending Review" %}</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value">{{ stats.avg_duration|floatformat:0|default:"N/A" }}ms</div>
+            <div class="stat-label">{% trans "Avg Duration" %}</div>
+        </div>
+    </div>
+
+    <!-- Filters -->
+    <div class="filter-section">
+        <form method="get" class="row g-3">
+            <div class="col-md-3">
+                {{ form.date_from.label_tag }}
+                {{ form.date_from }}
+            </div>
+            <div class="col-md-3">
+                {{ form.date_to.label_tag }}
+                {{ form.date_to }}
+            </div>
+            <div class="col-md-3">
+                {{ form.action_type.label_tag }}
+                {{ form.action_type }}
+            </div>
+            <div class="col-md-3">
+                {{ form.severity.label_tag }}
+                {{ form.severity }}
+            </div>
+            <div class="col-md-3">
+                {{ form.user.label_tag }}
+                {{ form.user }}
+            </div>
+            <div class="col-md-3">
+                {{ form.company.label_tag }}
+                {{ form.company }}
+            </div>
+            <div class="col-md-3">
+                {{ form.success.label_tag }}
+                {{ form.success }}
+            </div>
+            <div class="col-md-3 d-flex align-items-end">
+                <div class="form-check">
+                    {{ form.requires_review }}
+                    {{ form.requires_review.label_tag }}
+                </div>
+            </div>
+            <div class="col-md-9">
+                {{ form.search.label_tag }}
+                {{ form.search }}
+            </div>
+            <div class="col-md-3 d-flex align-items-end gap-2">
+                <button type="submit" class="btn btn-primary flex-grow-1">
+                    <i class="bi bi-search me-2"></i>{% trans "Filter" %}
+                </button>
+                <a href="{% url 'saas_admin_audit_log' %}" class="btn btn-outline-secondary">
+                    <i class="bi bi-x-circle me-2"></i>{% trans "Clear" %}
+                </a>
+            </div>
+        </form>
+    </div>
+
+    <!-- Audit Logs Table -->
+    <div class="card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <h5 class="mb-0">{% trans "Audit Log Entries" %}</h5>
+            <span class="badge bg-primary">{{ logs.paginator.count }} {% trans "entries" %}</span>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="audit-table table table-hover mb-0">
+                    <thead>
+                        <tr>
+                            <th>{% trans "Timestamp" %}</th>
+                            <th>{% trans "User" %}</th>
+                            <th>{% trans "Action" %}</th>
+                            <th>{% trans "Description" %}</th>
+                            <th>{% trans "Severity" %}</th>
+                            <th>{% trans "Status" %}</th>
+                            <th>{% trans "Duration" %}</th>
+                            <th>{% trans "Actions" %}</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for log in logs %}
+                        <tr>
+                            <td>
+                                <small>{{ log.timestamp|date:"Y-m-d H:i:s" }}</small>
+                            </td>
+                            <td>
+                                {% if log.user %}
+                                    <strong>{{ log.user.get_full_name|default:log.user.email }}</strong>
+                                    {% if log.impersonated_by %}
+                                        <br><small class="text-warning">
+                                            <i class="bi bi-person-badge"></i> {% trans "via" %} {{ log.impersonated_by.get_full_name }}
+                                        </small>
+                                    {% endif %}
+                                {% else %}
+                                    <em>{% trans "System" %}</em>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <span class="badge bg-secondary">{{ log.get_action_display }}</span>
+                            </td>
+                            <td>
+                                {{ log.action_description|truncatewords:15 }}
+                                {% if log.requires_review and not log.reviewed %}
+                                    <span class="badge bg-warning ms-2">
+                                        <i class="bi bi-exclamation-triangle"></i> {% trans "Review" %}
+                                    </span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <span class="severity-badge severity-{{ log.severity }}">
+                                    {{ log.get_severity_display }}
+                                </span>
+                            </td>
+                            <td>
+                                {% if log.success %}
+                                    <span class="status-badge status-success">
+                                        <i class="bi bi-check-circle"></i> {% trans "Success" %}
+                                    </span>
+                                {% else %}
+                                    <span class="status-badge status-failed">
+                                        <i class="bi bi-x-circle"></i> {% trans "Failed" %}
+                                    </span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if log.duration_ms %}
+                                    {{ log.duration_ms }}ms
+                                {% else %}
+                                    -
+                                {% endif %}
+                            </td>
+                            <td>
+                                <div class="action-buttons">
+                                    <a href="{% url 'audit_log_detail' log.id %}"
+                                       class="btn btn-sm btn-outline-primary"
+                                       title="{% trans 'View Details' %}">
+                                        <i class="bi bi-eye"></i>
+                                    </a>
+                                    {% if log.requires_review and not log.reviewed %}
+                                        <a href="{% url 'review_audit_log' log.id %}"
+                                           class="btn btn-sm btn-outline-warning"
+                                           title="{% trans 'Review' %}">
+                                            <i class="bi bi-clipboard-check"></i>
+                                        </a>
+                                    {% endif %}
+                                </div>
+                            </td>
+                        </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="8" class="text-center py-4">
+                                <i class="bi bi-inbox fs-1 text-muted d-block mb-2"></i>
+                                <p class="text-muted">{% trans "No audit logs found" %}</p>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Pagination -->
+        {% if logs.has_other_pages %}
+        <div class="card-footer">
+            <nav aria-label="{% trans 'Page navigation' %}">
+                <ul class="pagination justify-content-center mb-0">
+                    {% if logs.has_previous %}
+                        <li class="page-item">
+                            <a class="page-link" href="?page={{ logs.previous_page_number }}&{{ request.GET.urlencode }}">
+                                <i class="bi bi-chevron-left"></i> {% trans "Previous" %}
+                            </a>
+                        </li>
+                    {% endif %}
+
+                    <li class="page-item active">
+                        <span class="page-link">
+                            {% trans "Page" %} {{ logs.number }} {% trans "of" %} {{ logs.paginator.num_pages }}
+                        </span>
+                    </li>
+
+                    {% if logs.has_next %}
+                        <li class="page-item">
+                            <a class="page-link" href="?page={{ logs.next_page_number }}&{{ request.GET.urlencode }}">
+                                {% trans "Next" %} <i class="bi bi-chevron-right"></i>
+                            </a>
+                        </li>
+                    {% endif %}
+                </ul>
+            </nav>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Recent Errors & Top Users Side by Side -->
+    <div class="row mt-4">
+        <!-- Recent Errors -->
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0">
+                        <i class="bi bi-exclamation-triangle text-danger me-2"></i>
+                        {% trans "Recent Errors" %}
+                    </h5>
+                </div>
+                <div class="card-body">
+                    {% if stats.recent_errors %}
+                        <ul class="list-unstyled mb-0">
+                            {% for error in stats.recent_errors %}
+                            <li class="border-bottom pb-2 mb-2">
+                                <div class="d-flex justify-content-between">
+                                    <strong>{{ error.get_action_display }}</strong>
+                                    <small class="text-muted">{{ error.timestamp|timesince }} {% trans "ago" %}</small>
+                                </div>
+                                <small class="text-muted">{{ error.error_message|truncatewords:10 }}</small>
+                            </li>
+                            {% endfor %}
+                        </ul>
+                    {% else %}
+                        <p class="text-muted text-center mb-0">{% trans "No recent errors" %}</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Top Users -->
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0">
+                        <i class="bi bi-people text-primary me-2"></i>
+                        {% trans "Most Active Users" %}
+                    </h5>
+                </div>
+                <div class="card-body">
+                    {% if stats.top_users %}
+                        <ul class="top-users-list">
+                            {% for user in stats.top_users %}
+                            <li>
+                                <span>{{ user.user__email }}</span>
+                                <span class="badge bg-primary">{{ user.count }}</span>
+                            </li>
+                            {% endfor %}
+                        </ul>
+                    {% else %}
+                        <p class="text-muted text-center mb-0">{% trans "No user activity" %}</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

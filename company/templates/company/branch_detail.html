@@ -1,515 +1,389 @@
 {% extends "base.html" %}
-{% load i18n %}
+{% load i18n  %}
 {% load static %}
 
 {% block title %}{{ branch.name }} - {{ company.trading_name|default:company.name}}{% endblock %}
 
 {% block extra_css %}
+<link rel="stylesheet" href="{% static 'css/company_branch_detail.css' %}">
+<link rel="stylesheet" href="{% static 'themes.css' %}">
 <style>
-:root {
-    --primary-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    --success-gradient: linear-gradient(135deg, #28a745 0%, #20c997 100%);
-    --warning-gradient: linear-gradient(135deg, #ffc107 0%, #fd7e14 100%);
-    --danger-gradient: linear-gradient(135deg, #dc3545 0%, #e83e8c 100%);
+    [data-theme="dark"] {
+    /* Ensure the default background of the entire content area is dark */
+    background-color: #1a1a1a; 
+    color: #e2e8f0;
 }
 
+/* 1. Branch Information Section (Top left - looks like a list or card) */
+/* We need to assume this is a card or a block that inherits a white background */
+[data-theme="dark"] .card,
+[data-theme="dark"] .card-body {
+    background-color: #1f1f1f; /* Use a dark card background */
+    color: #ffffffff;
+    border-color: #333333; /* Dark border for cards */
+}
+/* Ensure the text inside the branch info is light */
+[data-theme="dark"] .card-text,
+[data-theme="dark"] .card-title {
+    color: #e2e8f0;
+}
+
+/* 2. Overriding Bootstrap's Light Table/List Styles */
+
+/* Target the main table at the bottom of the page */
+[data-theme="dark"] .table {
+    background-color: #9f0808ff !important; /* Use the same dark color as the container card */
+    color: #e2e8f0;
+    border-color: #333333;
+}
+
+/* Ensure all table data and headers are visible light text */
+[data-theme="dark"] .table th,
+[data-theme="dark"] .table td {
+    color: #e2e8f0;
+    background:#333333!important;
+    border-top-color: #333333; /* Dark line between rows */
+}
+
+/* Fix for table rows that might have a background utility class (e.g., table-light) */
+[data-theme="dark"] .table-light,
+[data-theme="dark"] .table-light > th,
+[data-theme="dark"] .table-light > td {
+    background-color: #2a2a2a !important; /* Slightly different shade for zebra striping */
+    color: #e2e8f0;
+}
+
+/* 3. Handling List Groups/Details (If Branch Info uses list-group) */
+[data-theme="dark"] .list-group-item {
+    background-color: #1f1f1f;
+    color: #e2e8f0;
+    border-color: #333333;
+}
+
+/* 4. Fix for text that might be intentionally 'muted' or black */
+[data-theme="dark"] .text-muted {
+    color: #a0a0a0 !important; /* Light gray for subtle text/labels */
+}
 .analytics-card {
-    transition: all 0.3s ease-in-out;
-    border-left: 4px solid var(--bs-primary);
-    background: white;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    transition: transform 0.2s ease-in-out;
+    border-left: 4px solid var(--primary-color);
 }
-
 .analytics-card:hover {
-    transform: translateY(-5px);
-    box-shadow: 0 8px 25px rgba(0,0,0,0.15);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(0,0,0,0.1);
 }
-
 .stat-icon {
-    font-size: 2.8rem;
-    opacity: 0.9;
-    text-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    font-size: 2.5rem;
+    opacity: 0.8;
 }
-
 .chart-container {
     position: relative;
-    height: 350px;
-    padding: 10px;
+    height: 300px;
 }
-
+.progress-bar-animated {
+    animation: progress-bar-stripes 1s linear infinite;
+}
 .store-card {
-    border: none;
-    border-radius: 12px;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    border-left: 4px solid #28a745;
     transition: all 0.3s ease;
-    overflow: hidden;
-    position: relative;
 }
-
-.store-card::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    height: 4px;
-    background: var(--success-gradient);
-    transform: scaleX(0);
-    transform-origin: left;
-    transition: transform 0.3s ease;
-}
-
-.store-card:hover::before {
-    transform: scaleX(1);
-}
-
 .store-card:hover {
-    transform: translateY(-8px);
-    box-shadow: 0 12px 30px rgba(0,0,0,0.2);
+    transform: translateY(-3px);
+    box-shadow: 0 6px 20px rgba(0,0,0,0.15);
 }
-
 .store-status {
     position: absolute;
-    top: 15px;
-    right: 15px;
-    z-index: 10;
+    top: 10px;
+    right: 10px;
 }
-
 .metric-card {
-    background: var(--primary-gradient);
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
     color: white;
-    border-radius: 15px;
-    border: none;
-    box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
-    transition: transform 0.3s ease;
+    border-radius: 12px;
 }
-
-.metric-card:hover {
-    transform: translateY(-3px);
-}
-
 .trend-up {
     color: #28a745;
-    font-weight: 600;
 }
-
 .trend-down {
     color: #dc3545;
-    font-weight: 600;
 }
-
 .overview-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
     gap: 1.5rem;
-    margin-top: 1rem;
 }
 
-.performance-badge {
-    border-radius: 20px;
-    padding: 8px 16px;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    font-size: 0.75rem;
-}
-
-.loading-skeleton {
-    background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
-    background-size: 200% 100%;
-    animation: loading 1.5s infinite;
-}
-
-@keyframes loading {
-    0% { background-position: 200% 0; }
-    100% { background-position: -200% 0; }
-}
-
-.activity-item {
-    border-left: 3px solid transparent;
-    padding-left: 15px;
-    margin-left: 8px;
-    transition: all 0.3s ease;
-}
-
-.activity-item:hover {
-    border-left-color: var(--bs-primary);
-    background-color: rgba(102, 126, 234, 0.05);
-}
-
-.chart-legend {
-    display: flex;
-    justify-content: center;
-    flex-wrap: wrap;
-    gap: 15px;
-    margin-top: 15px;
-}
-
-.legend-item {
-    display: flex;
-    align-items: center;
-    font-size: 0.875rem;
-}
-
-.legend-color {
-    width: 12px;
-    height: 12px;
-    border-radius: 2px;
-    margin-right: 6px;
-}
-
-.tab-content {
-    background: white;
-    border-radius: 0 0 8px 8px;
-    box-shadow: 0 2px 10px rgba(0,0,0,0.08);
-}
-
-.nav-tabs .nav-link {
-    border-radius: 8px 8px 0 0;
-    margin-right: 2px;
-    font-weight: 500;
-    color: #6c757d;
-    transition: all 0.3s ease;
-}
-
-.nav-tabs .nav-link:hover {
-    color: var(--bs-primary);
-    background-color: rgba(102, 126, 234, 0.1);
-}
-
-.nav-tabs .nav-link.active {
-    background: var(--primary-gradient);
-    color: white;
-    border-color: transparent;
-}
-
-.branch-header {
-    background: var(--primary-gradient);
-    color: white;
-    padding: 2rem 0;
-    margin-bottom: 2rem;
-    border-radius: 12px;
-}
-
-.info-card {
-    background: rgba(255, 255, 255, 0.95);
-    backdrop-filter: blur(10px);
-    border: none;
-    border-radius: 12px;
-    box-shadow: 0 4px 20px rgba(0,0,0,0.1);
-}
-
-.alert-custom {
-    border: none;
-    border-radius: 10px;
-    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-}
-
-.btn-custom {
-    border-radius: 8px;
-    font-weight: 500;
-    letter-spacing: 0.5px;
-    transition: all 0.3s ease;
-}
-
-.btn-custom:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(0,0,0,0.2);
-}
-
-.table-modern {
-    border-radius: 8px;
-    overflow: hidden;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-}
-
-.table-modern thead th {
-    background: var(--primary-gradient);
-    color: white;
-    border: none;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    font-size: 0.8rem;
-}
-
-.table-modern tbody tr:hover {
-    background-color: rgba(102, 126, 234, 0.05);
-}
-
-.store-logo {
-    width: 50px;
-    height: 50px;
-    object-fit: cover;
-    border-radius: 8px;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-}
-
-.store-logo-placeholder {
-    width: 50px;
-    height: 50px;
-    background: var(--primary-gradient);
-    color: white;
-    border-radius: 8px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
-}
-
-.quick-stat {
-    text-align: center;
-    padding: 10px 5px;
-    border-radius: 8px;
-    background-color: rgba(248, 249, 250, 0.8);
-    transition: background-color 0.3s ease;
-}
-
-.quick-stat:hover {
-    background-color: rgba(102, 126, 234, 0.1);
-}
-
-@media (max-width: 768px) {
-    .overview-grid {
-        grid-template-columns: 1fr;
-    }
-
-    .chart-container {
-        height: 250px;
-    }
-
-    .metric-card .card-body {
-        padding: 1rem;
-    }
-
-    .metric-card h4 {
-        font-size: 1.5rem;
-    }
-}
-
-.loading-overlay {
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: rgba(255, 255, 255, 0.9);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 1000;
-    border-radius: inherit;
-}
-
-.error-state {
-    text-align: center;
-    padding: 2rem;
-    color: #6c757d;
-}
-
-.success-pulse {
-    animation: pulse-success 2s infinite;
-}
-
-@keyframes pulse-success {
-    0% { box-shadow: 0 0 0 0 rgba(40, 167, 69, 0.7); }
-    70% { box-shadow: 0 0 0 10px rgba(40, 167, 69, 0); }
-    100% { box-shadow: 0 0 0 0 rgba(40, 167, 69, 0); }
-}
 </style>
 {% endblock %}
 
 {% block content %}
-<div class="container-fluid mt-4">
-    <!-- Enhanced Header Section -->
-    <div class="branch-header">
-        <div class="container">
-            <div class="row align-items-center">
-                <div class="col-lg-8">
-                    <h1 class="display-6 mb-2">
-                        {{ branch.name }}
-                        <span class="badge bg-light text-primary ms-2">{{ branch.code }}</span>
-                    </h1>
-                    <p class="mb-0 opacity-90">
-                        <i class="bi bi-geo-alt me-2"></i>{{ branch.location }}
-                        <span class="mx-3">•</span>
-                        <i class="bi bi-shop me-2"></i>{{ branch.stores.count }} Store{{ branch.stores.count|pluralize }}
-                        {% if branch.is_main_branch %}
-                        <span class="mx-3">•</span>
-                        <span class="badge bg-warning text-dark">
-                            <i class="bi bi-star-fill me-1"></i>{% trans "Main Branch" %}
-                        </span>
-                        {% endif %}
-                    </p>
-                </div>
-                <div class="col-lg-4 text-end">
-                    <div class="btn-group">
-                        {% if perms.branches.change_companybranch %}
-                        <a href="{% url 'companies:branch_update' branch.pk %}" class="btn btn-light btn-custom">
-                            <i class="bi bi-pencil me-2"></i>{% trans "Edit Branch" %}
-                        </a>
-                        {% endif %}
-                        <div class="dropdown">
-                            <button class="btn btn-outline-light dropdown-toggle btn-custom" type="button" data-bs-toggle="dropdown">
-                                <i class="bi bi-gear me-2"></i>{% trans "Actions" %}
-                            </button>
-                            <ul class="dropdown-menu shadow">
-                                <li>
-                                    <a class="dropdown-item" href="#" onclick="exportBranchData()">
-                                        <i class="bi bi-download me-2 text-primary"></i>{% trans "Export Data" %}
-                                    </a>
-                                </li>
-                                <li>
-                                    <a class="dropdown-item" href="#" onclick="generateReport()">
-                                        <i class="bi bi-file-earmark-text me-2 text-success"></i>{% trans "Generate Report" %}
-                                    </a>
-                                </li>
-                                <li><hr class="dropdown-divider"></li>
-                                {% if perms.branches.delete_companybranch %}
-                                <li>
-                                    <a class="dropdown-item text-danger" href="{% url 'companies:branch_delete' branch.pk %}">
-                                        <i class="bi bi-trash me-2"></i>{% trans "Delete Branch" %}
-                                    </a>
-                                </li>
-                                {% endif %}
-                            </ul>
-                        </div>
-                    </div>
-                </div>
+<div class="container mt-4">
+    <!-- Header -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h2 class="mb-1">{{ branch.name }} <small class="text-muted">({{ branch.code }})</small></h2>
+            <p class="text-muted mb-0">{{ branch.location }} • {{ branch.stores.count }} Store{{ branch.stores.count|pluralize }}</p>
+        </div>
+        <div class="btn-group">
+            {% if perms.branches.change_companybranch %}
+            <a href="{% url 'companies:branch_update' branch.pk %}" class="btn btn-primary">
+                <i class="bi bi-pencil"></i> {% trans "Edit Branch" %}
+            </a>
+            {% endif %}
+            <div class="dropdown">
+                <button class="btn btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown">
+                    <i class="bi bi-gear"></i> {% trans "Actions" %}
+                </button>
+                <ul class="dropdown-menu">
+                    <li><a class="dropdown-item" href="#" onclick="exportBranchData()">
+                        <i class="bi bi-download me-2"></i>{% trans "Export Data" %}
+                    </a></li>
+                    <li><a class="dropdown-item" href="#" onclick="generateReport()">
+                        <i class="bi bi-file-earmark-text me-2"></i>{% trans "Generate Report" %}
+                    </a></li>
+                    <li><hr class="dropdown-divider"></li>
+                    {% if perms.branches.delete_companybranch %}
+                    <li><a class="dropdown-item text-danger" href="{% url 'companies:branch_delete' branch.pk %}">
+                        <i class="bi bi-trash me-2"></i>{% trans "Delete Branch" %}
+                    </a></li>
+                    {% endif %}
+                </ul>
             </div>
         </div>
     </div>
 
-    <div class="container">
-        <!-- Branch Information and Quick Stats -->
-        <div class="row mb-4">
-            <div class="col-lg-7">
-                <div class="info-card card">
-                    <div class="card-header bg-transparent border-0 pb-0">
-                        <h5 class="mb-0">
-                            <i class="bi bi-info-circle me-2 text-primary"></i>{% trans "Branch Information" %}
-                        </h5>
-                    </div>
-                    <div class="card-body">
-                        <div class="row">
-                            <div class="col-md-6">
-                                <div class="mb-3">
-                                    <label class="text-muted small">{% trans "Company" %}</label>
-                                    <div class="fw-semibold">{{ branch.company.name }}</div>
-                                </div>
-                                <div class="mb-3">
-                                    <label class="text-muted small">{% trans "Location" %}</label>
-                                    <div class="fw-semibold">{{ branch.location }}</div>
-                                </div>
-                                <div class="mb-3">
-                                    <label class="text-muted small">{% trans "Contact" %}</label>
-                                    <div class="fw-semibold">
-                                        {% if branch.phone %}
-                                            <a href="tel:{{ branch.phone }}" class="text-decoration-none">
-                                                <i class="bi bi-phone me-1"></i>{{ branch.phone }}
-                                            </a>
+    <!-- Branch Information Cards -->
+    <div class="row mb-4">
+        <div class="col-lg-6">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="bi bi-info-circle me-2"></i>{% trans "Branch Information" %}</h5>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <table class="table table-borderless table-sm">
+                                <tr><td class="text-muted">{% trans "Company" %}:</td><td>{{ branch.company.name }}</td></tr>
+                                <tr><td class="text-muted">{% trans "Location" %}:</td><td>{{ branch.location }}</td></tr>
+                                <tr><td class="text-muted">{% trans "Phone" %}:</td><td>{{ branch.phone|default:"-" }}</td></tr>
+                                <tr><td class="text-muted">{% trans "Email" %}:</td><td>{{ branch.email|default:"-" }}</td></tr>
+                            </table>
+                        </div>
+                        <div class="col-md-6">
+                            <table class="table table-borderless table-sm">
+                                <tr><td class="text-muted">{% trans "TIN" %}:</td><td>{{ branch.tin|default:"-" }}</td></tr>
+                                <tr><td class="text-muted">{% trans "EFRIS Device" %}:</td><td>{{ branch.efris_device_number|default:"-" }}</td></tr>
+                                <tr>
+                                    <td class="text-muted">{% trans "Main Branch" %}:</td>
+                                    <td>
+                                        {% if branch.is_main_branch %}
+                                            <span class="badge bg-success">{% trans "Yes" %}</span>
                                         {% else %}
-                                            <span class="text-muted">{% trans "Not provided" %}</span>
+                                            <span class="badge bg-secondary">{% trans "No" %}</span>
                                         {% endif %}
-                                    </div>
-                                    {% if branch.email %}
-                                    <div class="mt-1">
-                                        <a href="mailto:{{ branch.email }}" class="text-decoration-none">
-                                            <i class="bi bi-envelope me-1"></i>{{ branch.email }}
-                                        </a>
-                                    </div>
-                                    {% endif %}
-                                </div>
-                            </div>
-                            <div class="col-md-6">
-                                <div class="mb-3">
-                                    <label class="text-muted small">{% trans "Tax Information" %}</label>
-                                    <div class="fw-semibold">
-                                        {% if branch.tin %}
-                                            <span class="badge bg-light text-dark">TIN: {{ branch.tin }}</span>
-                                        {% else %}
-                                            <span class="text-muted">{% trans "TIN not provided" %}</span>
-                                        {% endif %}
-                                    </div>
-                                </div>
-                                <div class="mb-3">
-                                    <label class="text-muted small">{% trans "EFRIS Device" %}</label>
-                                    <div class="fw-semibold">
-                                        {% if branch.efris_device_number %}
-                                            <span class="badge bg-info">{{ branch.efris_device_number }}</span>
-                                        {% else %}
-                                            <span class="text-muted">{% trans "Not configured" %}</span>
-                                        {% endif %}
-                                    </div>
-                                </div>
-                                <div class="mb-3">
-                                    <label class="text-muted small">{% trans "Status" %}</label>
-                                    <div>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td class="text-muted">{% trans "Status" %}:</td>
+                                    <td>
                                         {% if branch.is_active %}
-                                            <span class="badge bg-success success-pulse">
-                                                <i class="bi bi-check-circle me-1"></i>{% trans "Active" %}
-                                            </span>
+                                            <span class="badge bg-success">{% trans "Active" %}</span>
                                         {% else %}
-                                            <span class="badge bg-danger">
-                                                <i class="bi bi-x-circle me-1"></i>{% trans "Inactive" %}
-                                            </span>
+                                            <span class="badge bg-danger">{% trans "Inactive" %}</span>
                                         {% endif %}
-                                    </div>
-                                </div>
+                                    </td>
+                                </tr>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Quick Stats -->
+        <div class="col-lg-6">
+            <div class="row">
+                <div class="col-6">
+                    <div class="card analytics-card h-100">
+                        <div class="card-body text-center totall">
+                            <div class="stat-icon text-primary mb-2">
+                                <i class="bi bi-shop"></i>
+                            </div>
+                            <h3 class="mb-0" id="totalStores">{{ branch.stores.count }}</h3>
+                            <p class="text-muted mb-0 totall">{% trans "Total Stores" %}</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-6">
+                    <div class="card analytics-card h-100 totall">
+                        <div class="card-body text-center totall">
+                            <div class="stat-icon text-success mb-2">
+                                <i class="bi bi-graph-up totall"></i>
+                            </div>
+                            <h3 class="mb-0" id="activeStores" >{{ active_store_count }}</h3>
+                            <p class="text-muted mb-0 totall">{% trans "Active Stores" %}</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Tabs -->
+    <ul class="nav nav-tabs mb-3" id="branchTabs" role="tablist">
+        <li class="nav-item" role="presentation">
+            <button class="nav-link active" id="overview-tab" data-bs-toggle="tab" data-bs-target="#overview" type="button" role="tab">
+                <i class="bi bi-speedometer2 me-1"></i>{% trans "Overview & Analytics" %}
+            </button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="stores-tab" data-bs-toggle="tab" data-bs-target="#stores" type="button" role="tab">
+                <i class="bi bi-shop me-1"></i>{% trans "Stores Management" %} <span class="badge bg-secondary ms-1">{{ branch.stores.count }}</span>
+            </button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="performance-tab" data-bs-toggle="tab" data-bs-target="#performance" type="button" role="tab">
+                <i class="bi bi-graph-up me-1"></i>{% trans "Performance" %}
+            </button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="employees-tab" data-bs-toggle="tab" data-bs-target="#employees" type="button" role="tab">
+                <i class="bi bi-people me-1"></i>{% trans "Staff Overview" %}
+            </button>
+        </li>
+    </ul>
+
+    <div class="tab-content" id="branchTabsContent">
+        <!-- Overview & Analytics -->
+        <div class="tab-pane fade show active" id="overview" role="tabpanel">
+            <!-- Key Metrics Row -->
+            <div class="row mb-4">
+                <div class="col-lg-3 col-md-6 mb-3">
+                    <div class="card metric-card h-100">
+                        <div class="card-body d-flex align-items-center">
+                            <div class="me-3">
+                                <i class="bi bi-currency-dollar fs-1"></i>
+                            </div>
+                            <div>
+                                <h6 class="card-title mb-1">{% trans "Total Revenue" %}</h6>
+                                <h4 class="mb-0" id="totalRevenue">0 UGX</h4>
+                                <small class="opacity-75"><i class="bi bi-arrow-up trend-up"></i> <span id="revenueGrowth">0%</span> vs last month</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-lg-3 col-md-6 mb-3">
+                    <div class="card metric-card h-100">
+                        <div class="card-body d-flex align-items-center">
+                            <div class="me-3">
+                                <i class="bi bi-receipt fs-1"></i>
+                            </div>
+                            <div>
+                                <h6 class="card-title mb-1">{% trans "Total Sales" %}</h6>
+                                <h4 class="mb-0" id="totalSales">0</h4>
+                                <small class="opacity-75"><i class="bi bi-arrow-up trend-up"></i> <span id="salesGrowth">0%</span> this month</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-lg-3 col-md-6 mb-3">
+                    <div class="card metric-card h-100">
+                        <div class="card-body d-flex align-items-center">
+                            <div class="me-3">
+                                <i class="bi bi-people fs-1"></i>
+                            </div>
+                            <div>
+                                <h6 class="card-title mb-1">{% trans "Customers" %}</h6>
+                                <h4 class="mb-0" id="totalCustomers">0</h4>
+                                <small class="opacity-75"><i class="bi bi-arrow-up trend-up"></i> <span id="customerGrowth">0%</span> new this month</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-lg-3 col-md-6 mb-3">
+                    <div class="card metric-card h-100">
+                        <div class="card-body d-flex align-items-center">
+                            <div class="me-3">
+                                <i class="bi bi-box fs-1"></i>
+                            </div>
+                            <div>
+                                <h6 class="card-title mb-1">{% trans "Products" %}</h6>
+                                <h4 class="mb-0" id="totalProducts">0</h4>
+                                <small class="opacity-75"><span id="lowStockCount">0</span> low stock items</small>
                             </div>
                         </div>
                     </div>
                 </div>
             </div>
 
-            <!-- Enhanced Quick Stats -->
-            <div class="col-lg-5">
-                <div class="row h-100">
-                    <div class="col-6 mb-3">
-                        <div class="analytics-card card h-100">
-                            <div class="card-body text-center d-flex flex-column justify-content-center">
-                                <div class="stat-icon text-primary mb-3">
-                                    <i class="bi bi-shop"></i>
-                                </div>
-                                <h2 class="mb-2 fw-bold text-primary" id="totalStores">{{ branch.stores.count }}</h2>
-                                <p class="text-muted mb-0 small text-uppercase fw-semibold">{% trans "Total Stores" %}</p>
+            <!-- Charts and Analytics -->
+            <div class="row mb-4">
+                <div class="col-lg-8">
+                    <div class="card">
+                        <div class="card-header d-flex justify-content-between align-items-center">
+                            <h5 class="mb-0"><i class="bi bi-graph-up me-2"></i>{% trans "Revenue Trends" %}</h5>
+                            <div class="btn-group btn-group-sm">
+                                <input type="radio" class="btn-check" name="revenueRange" id="revenue7d" autocomplete="off" checked>
+                                <label class="btn btn-outline-primary" for="revenue7d">7D</label>
+                                <input type="radio" class="btn-check" name="revenueRange" id="revenue30d" autocomplete="off">
+                                <label class="btn btn-outline-primary" for="revenue30d">30D</label>
+                                <input type="radio" class="btn-check" name="revenueRange" id="revenue90d" autocomplete="off">
+                                <label class="btn btn-outline-primary" for="revenue90d">90D</label>
+                            </div>
+                        </div>
+                        <div class="card-body">
+                            <div class="chart-container">
+                                <canvas id="revenueChart"></canvas>
                             </div>
                         </div>
                     </div>
-                    <div class="col-6 mb-3">
-                        <div class="analytics-card card h-100">
-                            <div class="card-body text-center d-flex flex-column justify-content-center">
-                                <div class="stat-icon text-success mb-3">
-                                    <i class="bi bi-graph-up"></i>
-                                </div>
-                                <h2 class="mb-2 fw-bold text-success" id="activeStores">{{ active_store_count|default:0 }}</h2>
-                                <p class="text-muted mb-0 small text-uppercase fw-semibold">{% trans "Active Stores" %}</p>
+                </div>
+                <div class="col-lg-4">
+                    <div class="card h-100">
+                        <div class="card-header">
+                            <h5 class="mb-0"><i class="bi bi-pie-chart me-2"></i>{% trans "Store Performance" %}</h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="chart-container">
+                                <canvas id="storePerformanceChart"></canvas>
                             </div>
                         </div>
                     </div>
-                    <div class="col-12">
-                        <div class="analytics-card card">
-                            <div class="card-body">
-                                <div class="row text-center">
-                                    <div class="col-4">
-                                        <div class="quick-stat">
-                                            <div class="fw-bold text-info" id="staffCount">0</div>
-                                            <small class="text-muted">{% trans "Staff" %}</small>
-                                        </div>
-                                    </div>
-                                    <div class="col-4">
-                                        <div class="quick-stat">
-                                            <div class="fw-bold text-warning" id="deviceCount">0</div>
-                                            <small class="text-muted">{% trans "Devices" %}</small>
-                                        </div>
-                                    </div>
-                                    <div class="col-4">
-                                        <div class="quick-stat">
-                                            <div class="fw-bold text-primary" id="monthlySales">0</div>
-                                            <small class="text-muted">{% trans "Monthly Sales" %}</small>
-                                        </div>
-                                    </div>
-                                </div>
+                </div>
+            </div>
+
+            <!-- Store Performance Summary -->
+            <div class="row">
+                <div class="col-12">
+                    <div class="card">
+                        <div class="card-header">
+                            <h5 class="mb-0"><i class="bi bi-list-check me-2"></i>{% trans "Store Performance Summary" %}</h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="table-responsive">
+                                <table class="table table-hover" id="storePerformanceTable">
+                                    <thead class="table-light">
+                                        <tr>
+                                            <th>{% trans "Store" %}</th>
+                                            <th>{% trans "Revenue (30D)" %}</th>
+                                            <th>{% trans "Sales Count" %}</th>
+                                            <th>{% trans "Avg. Sale" %}</th>
+                                            <th>{% trans "Performance" %}</th>
+                                            <th>{% trans "Status" %}</th>
+                                            <th>{% trans "Actions" %}</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        <tr>
+                                            <td colspan="7" class="text-center py-4">
+                                                <div class="spinner-border text-primary" role="status">
+                                                    <span class="visually-hidden">Loading...</span>
+                                                </div>
+                                                <p class="mb-0 mt-2">{% trans "Loading performance data..." %}</p>
+                                            </td>
+                                        </tr>
+                                    </tbody>
+                                </table>
                             </div>
                         </div>
                     </div>
@@ -517,576 +391,229 @@
             </div>
         </div>
 
-        <!-- Enhanced Navigation Tabs -->
-        <ul class="nav nav-tabs mb-0" id="branchTabs" role="tablist">
-            <li class="nav-item" role="presentation">
-                <button class="nav-link active" id="overview-tab" data-bs-toggle="tab" data-bs-target="#overview" type="button" role="tab">
-                    <i class="bi bi-speedometer2 me-2"></i>{% trans "Analytics Dashboard" %}
-                </button>
-            </li>
-            <li class="nav-item" role="presentation">
-                <button class="nav-link" id="stores-tab" data-bs-toggle="tab" data-bs-target="#stores" type="button" role="tab">
-                    <i class="bi bi-shop me-2"></i>{% trans "Store Management" %}
-                    <span class="badge bg-secondary ms-1">{{ branch.stores.count }}</span>
-                </button>
-            </li>
-            <li class="nav-item" role="presentation">
-                <button class="nav-link" id="performance-tab" data-bs-toggle="tab" data-bs-target="#performance" type="button" role="tab">
-                    <i class="bi bi-graph-up me-2"></i>{% trans "Performance Analysis" %}
-                </button>
-            </li>
-            <li class="nav-item" role="presentation">
-                <button class="nav-link" id="employees-tab" data-bs-toggle="tab" data-bs-target="#employees" type="button" role="tab">
-                    <i class="bi bi-people me-2"></i>{% trans "Staff Overview" %}
-                </button>
-            </li>
-        </ul>
-
-        <div class="tab-content p-4" id="branchTabsContent">
-            <!-- Enhanced Analytics Dashboard -->
-            <div class="tab-pane fade show active" id="overview" role="tabpanel">
-                <!-- Key Metrics with Enhanced Design -->
-                <div class="row mb-4">
-                    <div class="col-lg-3 col-md-6 mb-3">
-                        <div class="metric-card card h-100">
-                            <div class="card-body d-flex align-items-center">
-                                <div class="me-3">
-                                    <i class="bi bi-currency-dollar" style="font-size: 3rem;"></i>
-                                </div>
-                                <div class="flex-grow-1">
-                                    <h6 class="card-title mb-1 opacity-90">{% trans "Monthly Revenue" %}</h6>
-                                    <h3 class="mb-1 fw-bold" id="totalRevenue">
-                                        <span class="loading-skeleton" style="width: 100px; height: 24px; display: inline-block; border-radius: 4px;"></span>
-                                    </h3>
-                                    <small class="opacity-75">
-                                        <i class="bi bi-arrow-up trend-up"></i>
-                                        <span id="revenueGrowth">0%</span> vs last month
-                                    </small>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="col-lg-3 col-md-6 mb-3">
-                        <div class="metric-card card h-100" style="background: var(--success-gradient);">
-                            <div class="card-body d-flex align-items-center">
-                                <div class="me-3">
-                                    <i class="bi bi-receipt" style="font-size: 3rem;"></i>
-                                </div>
-                                <div class="flex-grow-1">
-                                    <h6 class="card-title mb-1 opacity-90">{% trans "Total Sales" %}</h6>
-                                    <h3 class="mb-1 fw-bold" id="totalSales">
-                                        <span class="loading-skeleton" style="width: 60px; height: 24px; display: inline-block; border-radius: 4px;"></span>
-                                    </h3>
-                                    <small class="opacity-75">
-                                        <i class="bi bi-arrow-up trend-up"></i>
-                                        <span id="salesGrowth">0%</span> this month
-                                    </small>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="col-lg-3 col-md-6 mb-3">
-                        <div class="metric-card card h-100" style="background: var(--warning-gradient);">
-                            <div class="card-body d-flex align-items-center">
-                                <div class="me-3">
-                                    <i class="bi bi-people" style="font-size: 3rem;"></i>
-                                </div>
-                                <div class="flex-grow-1">
-                                    <h6 class="card-title mb-1 opacity-90">{% trans "Customers" %}</h6>
-                                    <h3 class="mb-1 fw-bold" id="totalCustomers">
-                                        <span class="loading-skeleton" style="width: 50px; height: 24px; display: inline-block; border-radius: 4px;"></span>
-                                    </h3>
-                                    <small class="opacity-75">
-                                        <i class="bi bi-arrow-up trend-up"></i>
-                                        <span id="customerGrowth">0%</span> new
-                                    </small>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="col-lg-3 col-md-6 mb-3">
-                        <div class="metric-card card h-100" style="background: var(--danger-gradient);">
-                            <div class="card-body d-flex align-items-center">
-                                <div class="me-3">
-                                    <i class="bi bi-box" style="font-size: 3rem;"></i>
-                                </div>
-                                <div class="flex-grow-1">
-                                    <h6 class="card-title mb-1 opacity-90">{% trans "Products" %}</h6>
-                                    <h3 class="mb-1 fw-bold" id="totalProducts">
-                                        <span class="loading-skeleton" style="width: 40px; height: 24px; display: inline-block; border-radius: 4px;"></span>
-                                    </h3>
-                                    <small class="opacity-75">
-                                        <i class="bi bi-exclamation-triangle"></i>
-                                        <span id="lowStockCount">0</span> low stock
-                                    </small>
-                                </div>
-                            </div>
-                        </div>
+        <!-- Stores Management -->
+        <div class="tab-pane fade" id="stores" role="tabpanel">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h5>{% trans "Stores in this Branch" %}</h5>
+                <div class="d-flex gap-2">
+                    {% if perms.stores.add_store %}
+                    <a href="{% url 'stores:store_create' %}?branch={{ branch.pk }}" class="btn btn-primary">
+                        <i class="bi bi-plus me-1"></i>{% trans "Add Store" %}
+                    </a>
+                    {% endif %}
+                    <div class="dropdown">
+                        <button class="btn btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown">
+                            <i class="bi bi-gear"></i> {% trans "Bulk Actions" %}
+                        </button>
+                        <ul class="dropdown-menu">
+                            <li><a class="dropdown-item" href="#" onclick="exportStoresData()">
+                                <i class="bi bi-download me-2"></i>{% trans "Export Stores" %}
+                            </a></li>
+                            <li><a class="dropdown-item" href="#" onclick="bulkToggleStatus()">
+                                <i class="bi bi-toggle-on me-2"></i>{% trans "Toggle Status" %}
+                            </a></li>
+                        </ul>
                     </div>
                 </div>
+            </div>
 
-                <!-- Enhanced Charts Section -->
-                <div class="row mb-4">
-                    <div class="col-lg-8">
-                        <div class="card shadow-sm">
-                            <div class="card-header bg-white border-0 d-flex justify-content-between align-items-center">
-                                <h5 class="mb-0">
-                                    <i class="bi bi-graph-up me-2 text-primary"></i>{% trans "Revenue Trends" %}
-                                </h5>
-                                <div class="btn-group btn-group-sm" role="group">
-                                    <input type="radio" class="btn-check" name="revenueRange" id="revenue7d" autocomplete="off" checked>
-                                    <label class="btn btn-outline-primary" for="revenue7d">7D</label>
-                                    <input type="radio" class="btn-check" name="revenueRange" id="revenue30d" autocomplete="off">
-                                    <label class="btn btn-outline-primary" for="revenue30d">30D</label>
-                                    <input type="radio" class="btn-check" name="revenueRange" id="revenue90d" autocomplete="off">
-                                    <label class="btn btn-outline-primary" for="revenue90d">90D</label>
-                                </div>
-                            </div>
-                            <div class="card-body">
-                                <div class="chart-container position-relative">
-                                    <canvas id="revenueChart"></canvas>
-                                    <div class="loading-overlay d-none" id="revenueChartLoader">
-                                        <div class="text-center">
-                                            <div class="spinner-border text-primary mb-2" role="status"></div>
-                                            <p class="mb-0 small">{% trans "Loading chart data..." %}</p>
-                                        </div>
-                                    </div>
-                                </div>
+            <!-- Store Filter and Search -->
+            <div class="card mb-4">
+                <div class="card-body">
+                    <div class="row g-3">
+                        <div class="col-md-4">
+                            <label class="form-label">{% trans "Search Stores" %}</label>
+                            <div class="input-group">
+                                <span class="input-group-text"><i class="bi bi-search"></i></span>
+                                <input type="text" class="form-control" id="storeSearch" placeholder="{% trans 'Search by name, code, or location...' %}">
                             </div>
                         </div>
-                    </div>
-                    <div class="col-lg-4">
-                        <div class="card shadow-sm h-100">
-                            <div class="card-header bg-white border-0">
-                                <h5 class="mb-0">
-                                    <i class="bi bi-pie-chart me-2 text-success"></i>{% trans "Store Performance" %}
-                                </h5>
-                            </div>
-                            <div class="card-body">
-                                <div class="chart-container position-relative">
-                                    <canvas id="storePerformanceChart"></canvas>
-                                    <div class="loading-overlay d-none" id="performanceChartLoader">
-                                        <div class="spinner-border text-success" role="status"></div>
-                                    </div>
-                                </div>
-                            </div>
+                        <div class="col-md-3">
+                            <label class="form-label">{% trans "Status Filter" %}</label>
+                            <select class="form-select" id="statusFilter">
+                                <option value="">{% trans "All Statuses" %}</option>
+                                <option value="active">{% trans "Active" %}</option>
+                                <option value="inactive">{% trans "Inactive" %}</option>
+                            </select>
                         </div>
-                    </div>
-                </div>
-
-                <!-- Enhanced Performance Summary Table -->
-                <div class="row">
-                    <div class="col-12">
-                        <div class="card shadow-sm">
-                            <div class="card-header bg-white border-0">
-                                <div class="row align-items-center">
-                                    <div class="col">
-                                        <h5 class="mb-0">
-                                            <i class="bi bi-list-check me-2 text-info"></i>{% trans "Store Performance Summary" %}
-                                        </h5>
-                                    </div>
-                                    <div class="col-auto">
-                                        <div class="btn-group btn-group-sm">
-                                            <button class="btn btn-outline-secondary" onclick="refreshPerformanceData()">
-                                                <i class="bi bi-arrow-clockwise me-1"></i>{% trans "Refresh" %}
-                                            </button>
-                                            <button class="btn btn-outline-primary" onclick="exportPerformanceData()">
-                                                <i class="bi bi-download me-1"></i>{% trans "Export" %}
-                                            </button>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="card-body p-0">
-                                <div class="table-responsive">
-                                    <table class="table table-modern table-hover mb-0" id="storePerformanceTable">
-                                        <thead>
-                                            <tr>
-                                                <th class="text-start">{% trans "Store" %}</th>
-                                                <th class="text-end">{% trans "Revenue (30D)" %}</th>
-                                                <th class="text-center">{% trans "Sales" %}</th>
-                                                <th class="text-end">{% trans "Avg. Sale" %}</th>
-                                                <th class="text-center">{% trans "Performance" %}</th>
-                                                <th class="text-center">{% trans "Status" %}</th>
-                                                <th class="text-center">{% trans "Actions" %}</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            <tr id="loadingRow">
-                                                <td colspan="7" class="text-center py-5">
-                                                    <div class="d-flex flex-column align-items-center">
-                                                        <div class="spinner-border text-primary mb-3" role="status">
-                                                            <span class="visually-hidden">Loading...</span>
-                                                        </div>
-                                                        <p class="mb-0 text-muted">{% trans "Loading performance data..." %}</p>
-                                                        <small class="text-muted">{% trans "This may take a few moments" %}</small>
-                                                    </div>
-                                                </td>
-                                            </tr>
-                                        </tbody>
-                                    </table>
-                                </div>
-                            </div>
+                        <div class="col-md-3">
+                            <label class="form-label">{% trans "EFRIS Status" %}</label>
+                            <select class="form-select" id="efrisFilter">
+                                <option value="">{% trans "All" %}</option>
+                                <option value="enabled">{% trans "EFRIS Enabled" %}</option>
+                                <option value="disabled">{% trans "EFRIS Disabled" %}</option>
+                            </select>
+                        </div>
+                        <div class="col-md-2 d-flex align-items-end">
+                            <button class="btn btn-outline-secondary w-100" onclick="resetFilters()">
+                                <i class="bi bi-arrow-clockwise me-1"></i>{% trans "Reset" %}
+                            </button>
                         </div>
                     </div>
                 </div>
             </div>
 
-            <!-- Enhanced Stores Management Tab -->
-            <div class="tab-pane fade" id="stores" role="tabpanel">
-                <div class="d-flex justify-content-between align-items-center mb-4">
-                    <div>
-                        <h4 class="mb-1">{% trans "Store Management" %}</h4>
-                        <p class="text-muted mb-0">{% trans "Manage all stores within this branch" %}</p>
+            <!-- Stores Grid -->
+            <div class="overview-grid" id="storesGrid">
+                {% for store in branch.stores.all %}
+                <div class="store-card card h-100" data-store-id="{{ store.id }}">
+                    <div class="store-status">
+                        {% if store.is_active %}
+                            <span class="badge bg-success">{% trans "Active" %}</span>
+                        {% else %}
+                            <span class="badge bg-secondary">{% trans "Inactive" %}</span>
+                        {% endif %}
+                        {% if store.efris_enabled %}
+                            <span class="badge bg-info ms-1">{% trans "EFRIS" %}</span>
+                        {% endif %}
                     </div>
-                    <div class="d-flex gap-2">
+                    <div class="card-body">
+                        <div class="d-flex align-items-start mb-3">
+                            {% if store.logo %}
+                                <img src="{{ store.logo.url }}" class="rounded me-3" width="50" height="50" alt="{{ store.name }}">
+                            {% else %}
+                                <div class="bg-primary text-white rounded d-flex align-items-center justify-content-center me-3" style="width: 50px; height: 50px;">
+                                    <i class="bi bi-shop fs-5"></i>
+                                </div>
+                            {% endif %}
+                            <div class="flex-grow-1">
+                                <h6 class="card-title mb-1">{{ store.name }}</h6>
+                                <small class="text-muted">{{ store.code }}</small>
+                            </div>
+                        </div>
+
+                        <div class="mb-3">
+                            <small class="text-muted d-block"><i class="bi bi-geo-alt me-1"></i>{{ store.physical_address|truncatechars:50 }}</small>
+                            {% if store.phone %}
+                            <small class="text-muted d-block"><i class="bi bi-phone me-1"></i>{{ store.phone }}</small>
+                            {% endif %}
+                            {% if store.email %}
+                            <small class="text-muted d-block"><i class="bi bi-envelope me-1"></i>{{ store.email }}</small>
+                            {% endif %}
+                        </div>
+
+                        <!-- Store Quick Stats -->
+                        <div class="row text-center mb-3">
+                            <div class="col-4">
+                                <small class="text-muted d-block">{% trans "Staff" %}</small>
+                                <strong>{{ store.staff.count }}</strong>
+                            </div>
+                            <div class="col-4">
+                                <small class="text-muted d-block">{% trans "Devices" %}</small>
+                                <strong>{{ store.devices.count }}</strong>
+                            </div>
+                            <div class="col-4">
+                                <small class="text-muted d-block">{% trans "Sales" %}</small>
+                                <strong class="store-sales-count" data-store-id="{{ store.id }}">0</strong>
+                            </div>
+                        </div>
+
+                        <div class="d-flex gap-2">
+                            <a href="{% url 'stores:store_detail' store.pk %}" class="btn btn-outline-primary btn-sm flex-grow-1">
+                                <i class="bi bi-eye me-1"></i>{% trans "View" %}
+                            </a>
+                            {% if perms.stores.change_store %}
+                            <a href="{% url 'stores:store_edit' store.pk %}" class="btn btn-outline-secondary btn-sm">
+                                <i class="bi bi-pencil"></i>
+                            </a>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+                {% empty %}
+                <div class="col-12">
+                    <div class="text-center py-5">
+                        <i class="bi bi-shop fs-1 text-muted"></i>
+                        <h5 class="mt-3 mb-2">{% trans "No Stores Found" %}</h5>
+                        <p class="text-muted mb-3">{% trans "This branch doesn't have any stores yet." %}</p>
                         {% if perms.stores.add_store %}
-                        <a href="{% url 'stores:store_create' %}?branch={{ branch.pk }}" class="btn btn-primary btn-custom">
-                            <i class="bi bi-plus me-2"></i>{% trans "Add New Store" %}
+                        <a href="{% url 'stores:store_create' %}?branch={{ branch.pk }}" class="btn btn-primary">
+                            <i class="bi bi-plus me-1"></i>{% trans "Create First Store" %}
                         </a>
                         {% endif %}
-                        <div class="dropdown">
-                            <button class="btn btn-outline-secondary dropdown-toggle btn-custom" data-bs-toggle="dropdown">
-                                <i class="bi bi-gear me-1"></i> {% trans "Bulk Actions" %}
-                            </button>
-                            <ul class="dropdown-menu shadow">
-                                <li>
-                                    <a class="dropdown-item" href="#" onclick="exportStoresData()">
-                                        <i class="bi bi-download me-2 text-success"></i>{% trans "Export All Stores" %}
-                                    </a>
-                                </li>
-                                <li>
-                                    <a class="dropdown-item" href="#" onclick="bulkToggleStatus()">
-                                        <i class="bi bi-toggle-on me-2 text-warning"></i>{% trans "Bulk Status Toggle" %}
-                                    </a>
-                                </li>
-                                <li><hr class="dropdown-divider"></li>
-                                <li>
-                                    <a class="dropdown-item" href="#" onclick="syncAllStores()">
-                                        <i class="bi bi-arrow-repeat me-2 text-info"></i>{% trans "Sync All Stores" %}
-                                    </a>
-                                </li>
-                            </ul>
-                        </div>
                     </div>
                 </div>
+                {% endfor %}
+            </div>
+        </div>
 
-                <!-- Enhanced Store Filters -->
-                <div class="card mb-4 shadow-sm">
-                    <div class="card-header bg-light">
-                        <h6 class="mb-0">
-                            <i class="bi bi-funnel me-2"></i>{% trans "Filter & Search Stores" %}
-                        </h6>
-                    </div>
-                    <div class="card-body">
-                        <div class="row g-3">
-                            <div class="col-lg-4 col-md-6">
-                                <label class="form-label fw-semibold">{% trans "Search Stores" %}</label>
-                                <div class="input-group">
-                                    <span class="input-group-text bg-light">
-                                        <i class="bi bi-search text-muted"></i>
-                                    </span>
-                                    <input type="text" class="form-control" id="storeSearch"
-                                           placeholder="{% trans 'Search by name, code, or location...' %}">
-                                </div>
-                            </div>
-                            <div class="col-lg-2 col-md-3">
-                                <label class="form-label fw-semibold">{% trans "Status" %}</label>
-                                <select class="form-select" id="statusFilter">
-                                    <option value="">{% trans "All Statuses" %}</option>
-                                    <option value="active">{% trans "Active" %}</option>
-                                    <option value="inactive">{% trans "Inactive" %}</option>
-                                </select>
-                            </div>
-                            <div class="col-lg-2 col-md-3">
-                                <label class="form-label fw-semibold">{% trans "EFRIS" %}</label>
-                                <select class="form-select" id="efrisFilter">
-                                    <option value="">{% trans "All" %}</option>
-                                    <option value="enabled">{% trans "Enabled" %}</option>
-                                    <option value="disabled">{% trans "Disabled" %}</option>
-                                </select>
-                            </div>
-                            <div class="col-lg-2 col-md-6">
-                                <label class="form-label fw-semibold">{% trans "Sort By" %}</label>
-                                <select class="form-select" id="sortFilter">
-                                    <option value="name">{% trans "Name" %}</option>
-                                    <option value="created">{% trans "Date Created" %}</option>
-                                    <option value="performance">{% trans "Performance" %}</option>
-                                </select>
-                            </div>
-                            <div class="col-lg-2 col-md-6 d-flex align-items-end">
-                                <button class="btn btn-outline-secondary w-100 btn-custom" onclick="resetFilters()">
-                                    <i class="bi bi-arrow-clockwise me-1"></i>{% trans "Reset" %}
-                                </button>
-                            </div>
+        <!-- Performance Tab -->
+        <div class="tab-pane fade" id="performance" role="tabpanel">
+            <div class="row mb-4">
+                <div class="col-md-6">
+                    <div class="card">
+                        <div class="card-header">
+                            <h5 class="mb-0"><i class="bi bi-trophy me-2"></i>{% trans "Top Performing Stores" %}</h5>
                         </div>
-                    </div>
-                </div>
-
-                <!-- Enhanced Stores Grid -->
-                <div class="overview-grid" id="storesGrid">
-                    {% for store in branch.stores.all %}
-                    <div class="store-card card" data-store-id="{{ store.id }}"
-                         data-active="{{ store.is_active|yesno:'true,false' }}"
-                         data-efris="{{ store.efris_enabled|yesno:'true,false' }}">
-                        <div class="store-status">
-                            {% if store.is_active %}
-                                <span class="badge bg-success">
-                                    <i class="bi bi-check-circle me-1"></i>{% trans "Active" %}
-                                </span>
-                            {% else %}
-                                <span class="badge bg-secondary">
-                                    <i class="bi bi-pause-circle me-1"></i>{% trans "Inactive" %}
-                                </span>
-                            {% endif %}
-                            {% if store.efris_enabled %}
-                                <span class="badge bg-info ms-1">
-                                    <i class="bi bi-shield-check me-1"></i>{% trans "EFRIS" %}
-                                </span>
-                            {% endif %}
-                        </div>
-
                         <div class="card-body">
-                            <!-- Store Header -->
-                            <div class="d-flex align-items-start mb-3">
-                                {% if store.logo %}
-                                    <img src="{{ store.logo.url }}" class="store-logo me-3" alt="{{ store.name }}">
-                                {% else %}
-                                    <div class="store-logo-placeholder me-3">
-                                        <i class="bi bi-shop fs-5"></i>
-                                    </div>
-                                {% endif %}
-                                <div class="flex-grow-1">
-                                    <h6 class="card-title mb-1 fw-bold">{{ store.name }}</h6>
-                                    <span class="badge bg-light text-dark">{{ store.code }}</span>
-                                    {% if store.region %}
-                                        <span class="badge bg-outline-secondary ms-1">{{ store.region }}</span>
-                                    {% endif %}
-                                </div>
-                            </div>
-
-                            <!-- Store Details -->
-                            <div class="mb-3">
-                                <div class="text-muted small mb-1">
-                                    <i class="bi bi-geo-alt me-1"></i>
-                                    {{ store.physical_address|truncatechars:60 }}
-                                </div>
-                                {% if store.phone %}
-                                <div class="text-muted small mb-1">
-                                    <i class="bi bi-phone me-1"></i>
-                                    <a href="tel:{{ store.phone }}" class="text-decoration-none">{{ store.phone }}</a>
-                                </div>
-                                {% endif %}
-                                {% if store.email %}
-                                <div class="text-muted small">
-                                    <i class="bi bi-envelope me-1"></i>
-                                    <a href="mailto:{{ store.email }}" class="text-decoration-none">{{ store.email }}</a>
-                                </div>
-                                {% endif %}
-                            </div>
-
-                            <!-- Enhanced Store Metrics -->
-                            <div class="row text-center mb-3">
-                                <div class="col-4">
-                                    <div class="quick-stat">
-                                        <div class="fw-bold text-info fs-5">{{ store.staff.count }}</div>
-                                        <small class="text-muted text-uppercase fw-semibold">{% trans "Staff" %}</small>
-                                    </div>
-                                </div>
-                                <div class="col-4">
-                                    <div class="quick-stat">
-                                        <div class="fw-bold text-warning fs-5">{{ store.devices.count }}</div>
-                                        <small class="text-muted text-uppercase fw-semibold">{% trans "Devices" %}</small>
-                                    </div>
-                                </div>
-                                <div class="col-4">
-                                    <div class="quick-stat">
-                                        <div class="fw-bold text-primary fs-5 store-sales-count" data-store-id="{{ store.id }}">
-                                            <div class="spinner-border spinner-border-sm" role="status"></div>
-                                        </div>
-                                        <small class="text-muted text-uppercase fw-semibold">{% trans "Sales" %}</small>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <!-- Performance Indicator -->
-                            <div class="mb-3">
-                                <div class="d-flex justify-content-between align-items-center mb-1">
-                                    <small class="text-muted fw-semibold">{% trans "Performance" %}</small>
-                                    <small class="store-performance-score fw-bold" data-store-id="{{ store.id }}">--</small>
-                                </div>
-                                <div class="progress" style="height: 6px;">
-                                    <div class="progress-bar store-performance-bar" data-store-id="{{ store.id }}"
-                                         style="width: 0%"></div>
-                                </div>
-                            </div>
-
-                            <!-- Action Buttons -->
-                            <div class="d-grid gap-2">
-                                <div class="btn-group">
-                                    <a href="{% url 'stores:store_detail' store.pk %}"
-                                       class="btn btn-outline-primary btn-sm btn-custom flex-grow-1">
-                                        <i class="bi bi-eye me-1"></i>{% trans "View Details" %}
-                                    </a>
-                                    {% if perms.stores.change_store %}
-                                    <a href="{% url 'stores:store_edit' store.pk %}"
-                                       class="btn btn-outline-secondary btn-sm btn-custom">
-                                        <i class="bi bi-pencil"></i>
-                                    </a>
-                                    {% endif %}
-                                </div>
-                                <div class="btn-group btn-group-sm">
-                                    <a href="#" class="btn btn-outline-info btn-custom"
-                                       onclick="viewStoreAnalytics('{{ store.id }}')">
-                                        <i class="bi bi-graph-up me-1"></i>{% trans "Analytics" %}
-                                    </a>
-                                    <a href="#" class="btn btn-outline-success btn-custom"
-                                       onclick="viewStoreSales('{{ store.id }}')">
-                                        <i class="bi bi-receipt me-1"></i>{% trans "Sales" %}
-                                    </a>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                    {% empty %}
-                    <div class="col-12" id="emptyStoresState">
-                        <div class="error-state">
-                            <i class="bi bi-shop display-1 text-muted mb-3"></i>
-                            <h4 class="text-muted mb-3">{% trans "No Stores Found" %}</h4>
-                            <p class="text-muted mb-4">{% trans "This branch doesn't have any stores yet. Get started by creating your first store." %}</p>
-                            {% if perms.stores.add_store %}
-                            <a href="{% url 'stores:store_create' %}?branch={{ branch.pk }}"
-                               class="btn btn-primary btn-lg btn-custom">
-                                <i class="bi bi-plus me-2"></i>{% trans "Create Your First Store" %}
-                            </a>
-                            {% endif %}
-                        </div>
-                    </div>
-                    {% endfor %}
-                </div>
-            </div>
-
-            <!-- Enhanced Performance Analysis Tab -->
-            <div class="tab-pane fade" id="performance" role="tabpanel">
-                <div class="row mb-4">
-                    <div class="col-md-6">
-                        <div class="card shadow-sm h-100">
-                            <div class="card-header bg-light">
-                                <h5 class="mb-0">
-                                    <i class="bi bi-trophy me-2 text-warning"></i>{% trans "Top Performers" %}
-                                </h5>
-                            </div>
-                            <div class="card-body">
-                                <div id="topStoresList">
-                                    <div class="text-center py-4">
-                                        <div class="spinner-border text-warning mb-3" role="status"></div>
-                                        <p class="mb-0 text-muted">{% trans "Analyzing top performers..." %}</p>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="col-md-6">
-                        <div class="card shadow-sm h-100">
-                            <div class="card-header bg-light">
-                                <h5 class="mb-0">
-                                    <i class="bi bi-exclamation-triangle me-2 text-danger"></i>{% trans "Needs Attention" %}
-                                </h5>
-                            </div>
-                            <div class="card-body">
-                                <div id="attentionStoresList">
-                                    <div class="text-center py-4">
-                                        <div class="spinner-border text-danger mb-3" role="status"></div>
-                                        <p class="mb-0 text-muted">{% trans "Checking for issues..." %}</p>
-                                    </div>
+                            <div id="topStoresList">
+                                <div class="text-center py-4">
+                                    <div class="spinner-border text-primary" role="status"></div>
+                                    <p class="mb-0 mt-2">{% trans "Loading top performers..." %}</p>
                                 </div>
                             </div>
                         </div>
                     </div>
                 </div>
-
-                <!-- Performance Trends Chart -->
-                <div class="card shadow-sm">
-                    <div class="card-header bg-light">
-                        <div class="row align-items-center">
-                            <div class="col">
-                                <h5 class="mb-0">
-                                    <i class="bi bi-graph-down me-2 text-info"></i>{% trans "Performance Trends" %}
-                                </h5>
-                                <small class="text-muted">{% trans "Daily performance metrics over the last week" %}</small>
-                            </div>
-                            <div class="col-auto">
-                                <button class="btn btn-outline-secondary btn-sm btn-custom" onclick="refreshTrendData()">
-                                    <i class="bi bi-arrow-clockwise me-1"></i>{% trans "Refresh" %}
-                                </button>
-                            </div>
+                <div class="col-md-6">
+                    <div class="card">
+                        <div class="card-header">
+                            <h5 class="mb-0"><i class="bi bi-exclamation-triangle me-2"></i>{% trans "Needs Attention" %}</h5>
                         </div>
-                    </div>
-                    <div class="card-body">
-                        <div class="chart-container">
-                            <canvas id="performanceTrendChart"></canvas>
+                        <div class="card-body">
+                            <div id="attentionStoresList">
+                                <div class="text-center py-4">
+                                    <div class="spinner-border text-warning" role="status"></div>
+                                    <p class="mb-0 mt-2">{% trans "Analyzing performance..." %}</p>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
             </div>
 
-            <!-- Enhanced Staff Overview Tab -->
-            <div class="tab-pane fade" id="employees" role="tabpanel">
-                <div class="row mb-4">
-                    <div class="col-md-8">
-                        <h4 class="mb-1">{% trans "Branch Staff Overview" %}</h4>
-                        <p class="text-muted mb-0">{% trans "Complete overview of staff members across all stores in this branch" %}</p>
-                    </div>
-                    <div class="col-md-4 text-end">
-                        <div class="btn-group">
-                            <a href="#" class="btn btn-outline-primary btn-custom">
-                                <i class="bi bi-people me-1"></i>{% trans "Manage Staff" %}
-                            </a>
-                            <a href="#" class="btn btn-outline-success btn-custom">
-                                <i class="bi bi-person-plus me-1"></i>{% trans "Add Staff" %}
-                            </a>
-                        </div>
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="bi bi-graph-down me-2"></i>{% trans "Performance Trends" %}</h5>
+                </div>
+                <div class="card-body">
+                    <div class="chart-container">
+                        <canvas id="performanceTrendChart"></canvas>
                     </div>
                 </div>
+            </div>
+        </div>
 
-                <div class="row" id="staffOverview">
-                    <div class="col-12">
-                        <div class="text-center py-5">
-                            <div class="spinner-border text-primary mb-3" role="status"></div>
-                            <p class="mb-0 text-muted">{% trans "Loading staff information..." %}</p>
-                        </div>
-                    </div>
+        <!-- Staff Overview -->
+        <div class="tab-pane fade" id="employees" role="tabpanel">
+            <div class="row mb-4">
+                <div class="col-md-8">
+                    <h5>{% trans "Branch Staff Overview" %}</h5>
+                    <p class="text-muted">{% trans "Staff members across all stores in this branch" %}</p>
                 </div>
+                <div class="col-md-4 text-end">
+                    <a href="#" class="btn btn-outline-primary">
+                        <i class="bi bi-people me-1"></i>{% trans "Manage All Staff" %}
+                    </a>
+                </div>
+            </div>
+
+            <div class="row" id="staffOverview">
+                <!-- Staff summary cards will be populated here -->
             </div>
         </div>
     </div>
 </div>
 
-<!-- Enhanced Modals -->
-<div class="modal fade" id="loadingModal" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
+<!-- Loading Modal -->
+<div class="modal fade" id="loadingModal" tabindex="-1" data-bs-backdrop="static">
     <div class="modal-dialog modal-dialog-centered modal-sm">
-        <div class="modal-content border-0 shadow">
+        <div class="modal-content">
             <div class="modal-body text-center py-4">
-                <div class="spinner-border text-primary mb-3" style="width: 3rem; height: 3rem;" role="status"></div>
-                <h6 class="mb-2">{% trans "Processing..." %}</h6>
-                <p class="mb-0 text-muted small">{% trans "Please wait while we process your request" %}</p>
+                <div class="spinner-border text-primary mb-3" role="status"></div>
+                <p class="mb-0">{% trans "Processing..." %}</p>
             </div>
         </div>
-    </div>
-</div>
-
-<!-- Success Alert Template (Hidden) -->
-<div id="alertTemplate" class="d-none">
-    <div class="alert alert-custom alert-dismissible fade show position-fixed shadow"
-         style="top: 20px; right: 20px; z-index: 1060; min-width: 350px;">
-        <div class="d-flex align-items-center">
-            <i class="alert-icon me-3 fs-4"></i>
-            <div class="flex-grow-1">
-                <h6 class="alert-title mb-1"></h6>
-                <div class="alert-message small"></div>
-            </div>
-        </div>
-        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
     </div>
 </div>
 {% endblock %}
@@ -1094,582 +621,37 @@
 {% block extra_js %}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
 <script>
-// =============================================================================
-// WEBSOCKET CLIENT CLASS
-// =============================================================================
-class BranchAnalyticsWebSocket {
-    constructor(branchId, options = {}) {
-        this.branchId = branchId;
-        this.socket = null;
-        this.reconnectAttempts = 0;
-        this.maxReconnectAttempts = options.maxReconnectAttempts || 10;
-        this.reconnectDelay = options.reconnectDelay || 2000;
-        this.isConnected = false;
-        this.eventHandlers = {};
-        this.heartbeatInterval = null;
-        this.lastHeartbeat = null;
-
-        // Connection state callbacks
-        this.onConnected = options.onConnected || (() => {});
-        this.onDisconnected = options.onDisconnected || (() => {});
-        this.onError = options.onError || ((error) => console.error('WebSocket error:', error));
-
-        this.init();
-    }
-
-    init() {
-        this.connect();
-        this.setupHeartbeat();
-    }
-
-    connect() {
-        try {
-            // Determine WebSocket protocol based on current page protocol
-            const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-            const wsUrl = `${wsProtocol}//${window.location.host}/ws/branches/${this.branchId}/analytics/`;
-
-            console.log('Connecting to WebSocket:', wsUrl);
-
-            this.socket = new WebSocket(wsUrl);
-            this.setupEventListeners();
-
-        } catch (error) {
-            console.error('WebSocket connection error:', error);
-            this.handleReconnection();
-        }
-    }
-
-    setupEventListeners() {
-        this.socket.onopen = (event) => {
-            console.log('WebSocket connected');
-            this.isConnected = true;
-            this.reconnectAttempts = 0;
-            this.onConnected(event);
-        };
-
-        this.socket.onmessage = (event) => {
-            try {
-                const data = JSON.parse(event.data);
-                this.handleMessage(data);
-            } catch (error) {
-                console.error('Error parsing WebSocket message:', error);
-            }
-        };
-
-        this.socket.onclose = (event) => {
-            console.log('WebSocket closed:', event.code, event.reason);
-            this.isConnected = false;
-            this.onDisconnected(event);
-
-            // Handle reconnection for unexpected closures
-            if (event.code !== 1000) { // 1000 is normal closure
-                this.handleReconnection();
-            }
-        };
-
-        this.socket.onerror = (error) => {
-            console.error('WebSocket error:', error);
-            this.onError(error);
-        };
-    }
-
-    handleMessage(data) {
-        console.log('WebSocket message received:', data.type, data);
-
-        switch (data.type) {
-            case 'initial_data':
-                this.triggerEventHandler('initial_data', data.data);
-                break;
-            case 'analytics_update':
-                this.triggerEventHandler('analytics_update', data.data);
-                break;
-            case 'branch_update':
-                this.triggerEventHandler('branch_update', data.data);
-                break;
-            case 'store_update':
-                this.triggerEventHandler('store_update', data.data);
-                break;
-            case 'sale_created':
-                this.triggerEventHandler('sale_created', data.data);
-                break;
-            case 'performance_alert':
-                this.triggerEventHandler('performance_alert', { data: data.data, severity: data.severity });
-                break;
-            case 'error':
-                this.triggerEventHandler('error', data.message);
-                break;
-            case 'subscription_confirmed':
-                this.triggerEventHandler('subscription_confirmed', data.store_id);
-                break;
-            default:
-                this.triggerEventHandler(data.type, data);
-        }
-
-        // Update last heartbeat
-        this.lastHeartbeat = new Date();
-    }
-
-    handleReconnection() {
-        if (this.reconnectAttempts < this.maxReconnectAttempts) {
-            this.reconnectAttempts++;
-            const delay = this.reconnectDelay * Math.pow(2, Math.min(this.reconnectAttempts - 1, 5)); // Exponential backoff with cap
-
-            console.log(`Attempting to reconnect (${this.reconnectAttempts}/${this.maxReconnectAttempts}) in ${delay}ms`);
-
-            setTimeout(() => {
-                this.connect();
-            }, delay);
-        } else {
-            console.error('Max reconnection attempts reached');
-        }
-    }
-
-    setupHeartbeat() {
-        this.heartbeatInterval = setInterval(() => {
-            if (this.isConnected) {
-                this.send({ type: 'ping' });
-
-                // Check if we've received a response recently
-                if (this.lastHeartbeat && (new Date() - this.lastHeartbeat) > 60000) {
-                    console.warn('No heartbeat response, connection may be stale');
-                    this.reconnect();
-                }
-            }
-        }, 30000); // Send ping every 30 seconds
-    }
-
-    // Public methods
-    send(data) {
-        if (this.isConnected && this.socket.readyState === WebSocket.OPEN) {
-            try {
-                this.socket.send(JSON.stringify(data));
-                return true;
-            } catch (error) {
-                console.error('Error sending WebSocket message:', error);
-                return false;
-            }
-        } else {
-            console.warn('WebSocket not connected, cannot send message');
-            return false;
-        }
-    }
-
-    requestUpdate() {
-        return this.send({ type: 'request_update' });
-    }
-
-    subscribeToStore(storeId) {
-        return this.send({
-            type: 'subscribe_store',
-            store_id: storeId
-        });
-    }
-
-    unsubscribeFromStore(storeId) {
-        return this.send({
-            type: 'unsubscribe_store',
-            store_id: storeId
-        });
-    }
-
-    reconnect() {
-        if (this.socket) {
-            this.socket.close();
-        }
-        this.isConnected = false;
-        this.reconnectAttempts = 0;
-        this.connect();
-    }
-
-    disconnect() {
-        this.isConnected = false;
-        if (this.heartbeatInterval) {
-            clearInterval(this.heartbeatInterval);
-        }
-        if (this.socket) {
-            this.socket.close(1000, 'Manual disconnect');
-        }
-    }
-
-    // Event handler management
-    on(eventType, handler) {
-        if (!this.eventHandlers[eventType]) {
-            this.eventHandlers[eventType] = [];
-        }
-        this.eventHandlers[eventType].push(handler);
-    }
-
-    off(eventType, handler) {
-        if (this.eventHandlers[eventType]) {
-            const index = this.eventHandlers[eventType].indexOf(handler);
-            if (index > -1) {
-                this.eventHandlers[eventType].splice(index, 1);
-            }
-        }
-    }
-
-    triggerEventHandler(eventType, data) {
-        if (this.eventHandlers[eventType]) {
-            this.eventHandlers[eventType].forEach(handler => {
-                try {
-                    handler(data);
-                } catch (error) {
-                    console.error('Error in event handler:', error);
-                }
-            });
-        }
-    }
-}
-
-// =============================================================================
-// MAIN BRANCH ANALYTICS APPLICATION
-// =============================================================================
-
-// Global variables
-let chartInstances = {};
-let branchWebSocket = null;
-const branchId = {{ branch.id }};
-
 document.addEventListener('DOMContentLoaded', function() {
-    initializeApp();
-    initializeWebSocketConnection();
-});
-
-function initializeApp() {
+    // Initialize all functionality
+    initializeAnalytics();
     initializeCharts();
     initializeFilters();
-    initializeEventListeners();
-    loadInitialData();
-}
+    loadBranchData();
 
-function initializeWebSocketConnection() {
-    // Initialize WebSocket connection with enhanced options
-    branchWebSocket = new BranchAnalyticsWebSocket(branchId, {
-        maxReconnectAttempts: 10,
-        reconnectDelay: 2000,
-        onConnected: () => {
-            console.log('Branch analytics WebSocket connected');
-            showWebSocketStatus('connected');
-            addRealtimeIndicators();
-
-            // Subscribe to all stores in this branch
-            subscribeToAllStores();
-        },
-        onDisconnected: () => {
-            console.log('Branch analytics WebSocket disconnected');
-            showWebSocketStatus('disconnected');
-            removeRealtimeIndicators();
-        },
-        onError: (error) => {
-            console.error('Branch analytics WebSocket error:', error);
-            showWebSocketStatus('error');
-        }
-    });
-
-    setupWebSocketEventHandlers();
-}
-
-function setupWebSocketEventHandlers() {
-    if (!branchWebSocket) return;
-
-    // Handle real-time analytics updates
-    branchWebSocket.on('analytics_update', (data) => {
-        console.log('Real-time analytics update:', data);
-
-        // Update charts with new data
-        if (data.revenue_data && chartInstances.revenue) {
-            updateRevenueChart(data.revenue_data);
-        }
-
-        if (data.store_performance && chartInstances.performance) {
-            updateStorePerformanceChart(data.store_performance);
-        }
-
-        // Update performance table
-        if (data.store_details) {
-            updatePerformanceTable(data.store_details);
-        }
-
-        // Update metrics
-        if (data.metrics) {
-            updateMetrics(data.metrics);
-        }
-
-        // Show update notification
-        showRealtimeUpdateIndicator();
-    });
-
-    // Handle new sale notifications
-    branchWebSocket.on('sale_created', (data) => {
-        console.log('New sale notification:', data);
-
-        // Show sale notification
-        showSaleNotification(data);
-
-        // Update store card with flash effect
-        highlightStoreCard(data.store_id);
-
-        // Request fresh analytics data after short delay
-        setTimeout(() => {
-            branchWebSocket.requestUpdate();
-        }, 2000);
-    });
-
-    // Handle store updates
-    branchWebSocket.on('store_update', (data) => {
-        console.log('Store update:', data);
-        updateStoreCard(data);
-    });
-
-    // Handle performance alerts
-    branchWebSocket.on('performance_alert', ({ data, severity }) => {
-        console.log('Performance alert:', data, severity);
-
-        if (data.alert_type === 'low_stock') {
-            showLowStockAlert(data, severity);
-        }
-
-        // Update relevant metrics
-        setTimeout(() => {
-            branchWebSocket.requestUpdate();
-        }, 1000);
-    });
-
-    // Handle initial data load
-    branchWebSocket.on('initial_data', (data) => {
-        console.log('Initial WebSocket data received:', data);
-        addRealtimeIndicators();
-    });
-}
-
-function subscribeToAllStores() {
-    // Subscribe to updates for all stores in this branch
-    const storeCards = document.querySelectorAll('.store-card[data-store-id]');
-    storeCards.forEach(card => {
-        const storeId = card.getAttribute('data-store-id');
-        if (storeId && branchWebSocket) {
-            branchWebSocket.subscribeToStore(storeId);
-        }
-    });
-}
-
-function initializeEventListeners() {
     // Tab event listeners
     document.querySelectorAll('[data-bs-toggle="tab"]').forEach(tab => {
         tab.addEventListener('shown.bs.tab', function(e) {
             const target = e.target.getAttribute('data-bs-target');
-            handleTabSwitch(target);
+            if (target === '#overview') {
+                loadAnalyticsData();
+            } else if (target === '#performance') {
+                loadPerformanceData();
+            } else if (target === '#employees') {
+                loadStaffOverview();
+            }
         });
     });
+});
 
-    // Revenue range change handlers
-    document.addEventListener('change', function(e) {
-        if (e.target.name === 'revenueRange') {
-            const range = e.target.id.replace('revenue', '');
-            updateRevenueChartRange(range);
-        }
-    });
-
-    // Filter event listeners
-    const filters = ['storeSearch', 'statusFilter', 'efrisFilter', 'sortFilter'];
-    filters.forEach(filterId => {
-        const element = document.getElementById(filterId);
-        if (element) {
-            if (filterId === 'storeSearch') {
-                let searchTimeout;
-                element.addEventListener('input', function() {
-                    clearTimeout(searchTimeout);
-                    searchTimeout = setTimeout(() => filterStores(), 300);
-                });
-            } else {
-                element.addEventListener('change', filterStores);
-            }
-        }
-    });
-}
-
-function handleTabSwitch(target) {
-    switch(target) {
-        case '#overview':
-            loadAnalyticsData();
-            break;
-        case '#performance':
-            loadPerformanceData();
-            break;
-        case '#employees':
-            loadStaffOverview();
-            break;
-        case '#stores':
-            loadStoreStats();
-            break;
-    }
-}
-
-function initializeCharts() {
-    // Revenue Chart
-    const revenueCtx = document.getElementById('revenueChart')?.getContext('2d');
-    if (revenueCtx) {
-        chartInstances.revenue = new Chart(revenueCtx, {
-            type: 'line',
-            data: {
-                labels: [],
-                datasets: [{
-                    label: 'Revenue (UGX)',
-                    data: [],
-                    borderColor: '#667eea',
-                    backgroundColor: 'rgba(102, 126, 234, 0.1)',
-                    borderWidth: 3,
-                    fill: true,
-                    tension: 0.4,
-                    pointBackgroundColor: '#667eea',
-                    pointBorderColor: '#ffffff',
-                    pointBorderWidth: 2,
-                    pointRadius: 6,
-                    pointHoverRadius: 8
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                    legend: { display: false },
-                    tooltip: {
-                        backgroundColor: 'rgba(0, 0, 0, 0.8)',
-                        titleColor: '#ffffff',
-                        bodyColor: '#ffffff',
-                        cornerRadius: 8,
-                        callbacks: {
-                            label: function(context) {
-                                return `Revenue: ${formatCurrency(context.parsed.y)} UGX`;
-                            }
-                        }
-                    }
-                },
-                scales: {
-                    x: {
-                        grid: { display: false },
-                        ticks: { color: '#6c757d' }
-                    },
-                    y: {
-                        beginAtZero: true,
-                        grid: { color: 'rgba(0, 0, 0, 0.1)' },
-                        ticks: {
-                            color: '#6c757d',
-                            callback: function(value) {
-                                return formatCurrency(value);
-                            }
-                        }
-                    }
-                },
-                interaction: {
-                    intersect: false,
-                    mode: 'index'
-                }
-            }
-        });
-    }
-
-    // Store Performance Chart
-    const storeCtx = document.getElementById('storePerformanceChart')?.getContext('2d');
-    if (storeCtx) {
-        chartInstances.performance = new Chart(storeCtx, {
-            type: 'doughnut',
-            data: {
-                labels: [],
-                datasets: [{
-                    data: [],
-                    backgroundColor: [
-                        '#28a745', '#17a2b8', '#ffc107', '#dc3545', '#6f42c1',
-                        '#fd7e14', '#20c997', '#e83e8c', '#6610f2', '#007bff'
-                    ],
-                    borderWidth: 0,
-                    hoverOffset: 10
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                cutout: '60%',
-                plugins: {
-                    legend: {
-                        position: 'bottom',
-                        labels: {
-                            padding: 20,
-                            usePointStyle: true,
-                            font: { size: 12 }
-                        }
-                    },
-                    tooltip: {
-                        backgroundColor: 'rgba(0, 0, 0, 0.8)',
-                        titleColor: '#ffffff',
-                        bodyColor: '#ffffff',
-                        cornerRadius: 8,
-                        callbacks: {
-                            label: function(context) {
-                                const label = context.label || '';
-                                const value = formatCurrency(context.parsed);
-                                return `${label}: ${value} UGX`;
-                            }
-                        }
-                    }
-                }
-            }
-        });
-    }
-
-    // Performance Trend Chart
-    const trendCtx = document.getElementById('performanceTrendChart')?.getContext('2d');
-    if (trendCtx) {
-        chartInstances.trend = new Chart(trendCtx, {
-            type: 'bar',
-            data: {
-                labels: [],
-                datasets: [{
-                    label: 'Daily Performance',
-                    data: [],
-                    backgroundColor: 'rgba(102, 126, 234, 0.8)',
-                    borderColor: '#667eea',
-                    borderWidth: 1,
-                    borderRadius: 4,
-                    borderSkipped: false
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                    legend: { display: false },
-                    tooltip: {
-                        backgroundColor: 'rgba(0, 0, 0, 0.8)',
-                        titleColor: '#ffffff',
-                        bodyColor: '#ffffff',
-                        cornerRadius: 8
-                    }
-                },
-                scales: {
-                    x: {
-                        grid: { display: false },
-                        ticks: { color: '#6c757d' }
-                    },
-                    y: {
-                        beginAtZero: true,
-                        grid: { color: 'rgba(0, 0, 0, 0.1)' },
-                        ticks: { color: '#6c757d' }
-                    }
-                }
-            }
-        });
-    }
-}
-
-function loadInitialData() {
+// Analytics Initialization
+function initializeAnalytics() {
+    // Load initial analytics data
     loadAnalyticsData();
-    loadStoreStats();
 }
 
+// Load main analytics data
 function loadAnalyticsData() {
-    showLoader('revenueChartLoader');
-    showLoader('performanceChartLoader');
+    const branchId = {{ branch.id }};
 
     fetch(`/branches/${branchId}/analytics/`)
         .then(response => response.json())
@@ -1681,124 +663,145 @@ function loadAnalyticsData() {
         })
         .catch(error => {
             console.error('Error loading analytics:', error);
-            showAlert('error', 'Error', 'Failed to load analytics data');
-        })
-        .finally(() => {
-            hideLoader('revenueChartLoader');
-            hideLoader('performanceChartLoader');
+            showErrorMessage('Failed to load analytics data');
         });
 }
 
+// Update main metrics
 function updateMetrics(metrics) {
-    const updates = [
-        { id: 'totalRevenue', value: formatCurrency(metrics.total_revenue) + ' UGX', animate: true },
-        { id: 'totalSales', value: metrics.total_sales.toLocaleString(), animate: true },
-        { id: 'totalCustomers', value: metrics.total_customers.toLocaleString(), animate: true },
-        { id: 'totalProducts', value: metrics.total_products.toLocaleString(), animate: false },
-        { id: 'revenueGrowth', value: `${metrics.revenue_growth}%`, animate: false },
-        { id: 'salesGrowth', value: `${metrics.sales_growth}%`, animate: false },
-        { id: 'customerGrowth', value: `${metrics.customer_growth}%`, animate: false },
-        { id: 'lowStockCount', value: metrics.low_stock_items, animate: true }
-    ];
+    document.getElementById('totalRevenue').textContent = formatCurrency(metrics.total_revenue);
+    document.getElementById('totalSales').textContent = metrics.total_sales.toLocaleString();
+    document.getElementById('totalCustomers').textContent = metrics.total_customers.toLocaleString();
+    document.getElementById('totalProducts').textContent = metrics.total_products.toLocaleString();
 
-    updates.forEach(update => {
-        const element = document.getElementById(update.id);
-        if (element) {
-            // Check if value has changed for animation
-            const currentValue = element.textContent.replace(/[^\d]/g, '');
-            const newValue = String(update.value).replace(/[^\d]/g, '');
+    document.getElementById('revenueGrowth').textContent = `${metrics.revenue_growth}%`;
+    document.getElementById('salesGrowth').textContent = `${metrics.sales_growth}%`;
+    document.getElementById('customerGrowth').textContent = `${metrics.customer_growth}%`;
+    document.getElementById('lowStockCount').textContent = metrics.low_stock_items;
 
-            if (update.animate && currentValue !== newValue && branchWebSocket && branchWebSocket.isConnected) {
-                // Add update animation for real-time changes
-                element.classList.add('value-updated');
-                setTimeout(() => {
-                    element.classList.remove('value-updated');
-                }, 1000);
-            }
-
-            element.innerHTML = update.value;
-        }
-    });
-
+    // Update trend indicators
     updateTrendIndicators(metrics);
-
-    // Update quick stats
-    const staffCount = document.getElementById('staffCount');
-    const deviceCount = document.getElementById('deviceCount');
-    const monthlySales = document.getElementById('monthlySales');
-
-    if (staffCount) staffCount.textContent = metrics.total_staff || 0;
-    if (deviceCount) deviceCount.textContent = metrics.total_devices || 0;
-    if (monthlySales) monthlySales.textContent = metrics.total_sales || 0;
 }
 
-function updateTrendIndicators(metrics) {
-    const indicators = {
-        revenueGrowth: metrics.revenue_growth,
-        salesGrowth: metrics.sales_growth,
-        customerGrowth: metrics.customer_growth
-    };
-
-    Object.entries(indicators).forEach(([key, value]) => {
-        const element = document.getElementById(key);
-        if (element) {
-            const icon = element.parentElement.querySelector('.bi');
-            if (icon) {
-                if (value >= 0) {
-                    icon.className = 'bi bi-arrow-up trend-up';
-                    element.className = 'trend-up';
-                } else {
-                    icon.className = 'bi bi-arrow-down trend-down';
-                    element.className = 'trend-down';
+// Initialize Charts
+function initializeCharts() {
+    // Revenue Chart
+    const revenueCtx = document.getElementById('revenueChart').getContext('2d');
+    window.revenueChart = new Chart(revenueCtx, {
+        type: 'line',
+        data: {
+            labels: [],
+            datasets: [{
+                label: 'Revenue (UGX)',
+                data: [],
+                borderColor: '#667eea',
+                backgroundColor: 'rgba(102, 126, 234, 0.1)',
+                borderWidth: 2,
+                fill: true,
+                tension: 0.4
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    display: false
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    ticks: {
+                        callback: function(value) {
+                            return formatCurrency(value);
+                        }
+                    }
                 }
             }
         }
     });
+
+    // Store Performance Chart
+    const storeCtx = document.getElementById('storePerformanceChart').getContext('2d');
+    window.storePerformanceChart = new Chart(storeCtx, {
+        type: 'doughnut',
+        data: {
+            labels: [],
+            datasets: [{
+                data: [],
+                backgroundColor: [
+                    '#28a745',
+                    '#17a2b8',
+                    '#ffc107',
+                    '#dc3545',
+                    '#6f42c1'
+                ],
+                borderWidth: 0
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    position: 'bottom'
+                }
+            }
+        }
+    });
+
+    // Performance Trend Chart
+    const trendCtx = document.getElementById('performanceTrendChart');
+    if (trendCtx) {
+        window.performanceTrendChart = new Chart(trendCtx.getContext('2d'), {
+            type: 'bar',
+            data: {
+                labels: [],
+                datasets: [{
+                    label: 'Sales',
+                    data: [],
+                    backgroundColor: 'rgba(102, 126, 234, 0.8)',
+                    borderColor: '#667eea',
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        display: false
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true
+                    }
+                }
+            }
+        });
+    }
 }
 
+// Update Charts with Data
 function updateRevenueChart(data) {
-    if (!chartInstances.revenue || !data) return;
+    if (!window.revenueChart || !data) return;
 
-    // Smooth transition for real-time updates
-    if (branchWebSocket && branchWebSocket.isConnected) {
-        chartInstances.revenue.data.labels = data.labels;
-        chartInstances.revenue.data.datasets[0].data = data.values;
-        chartInstances.revenue.update('active');
-
-        // Flash chart border to indicate update
-        const chartContainer = document.getElementById('revenueChart').parentElement;
-        chartContainer.style.borderLeft = '3px solid #28a745';
-        setTimeout(() => {
-            chartContainer.style.borderLeft = '';
-        }, 2000);
-    } else {
-        chartInstances.revenue.data.labels = data.labels;
-        chartInstances.revenue.data.datasets[0].data = data.values;
-        chartInstances.revenue.update();
-    }
+    window.revenueChart.data.labels = data.labels;
+    window.revenueChart.data.datasets[0].data = data.values;
+    window.revenueChart.update();
 }
 
 function updateStorePerformanceChart(data) {
-    if (!chartInstances.performance || !data) return;
+    if (!window.storePerformanceChart || !data) return;
 
-    if (branchWebSocket && branchWebSocket.isConnected) {
-        chartInstances.performance.data.labels = data.labels;
-        chartInstances.performance.data.datasets[0].data = data.values;
-        chartInstances.performance.update('active');
-
-        // Flash chart container
-        const chartContainer = document.getElementById('storePerformanceChart').parentElement;
-        chartContainer.style.borderLeft = '3px solid #17a2b8';
-        setTimeout(() => {
-            chartContainer.style.borderLeft = '';
-        }, 2000);
-    } else {
-        chartInstances.performance.data.labels = data.labels;
-        chartInstances.performance.data.datasets[0].data = data.values;
-        chartInstances.performance.update();
-    }
+    window.storePerformanceChart.data.labels = data.labels;
+    window.storePerformanceChart.data.datasets[0].data = data.values;
+    window.storePerformanceChart.update();
 }
 
+// Update performance table
 function updatePerformanceTable(stores) {
     const tbody = document.querySelector('#storePerformanceTable tbody');
     if (!tbody || !stores) return;
@@ -1808,63 +811,53 @@ function updatePerformanceTable(stores) {
         const performanceClass = getPerformanceClass(store.performance_score);
         const statusClass = store.is_active ? 'success' : 'secondary';
         const statusText = store.is_active ? 'Active' : 'Inactive';
-        const efrisBadge = store.efris_enabled ? '<br><span class="badge bg-info mt-1">EFRIS</span>' : '';
 
         html += `
-            <tr class="store-row" data-store-id="${store.id}">
+            <tr>
                 <td>
                     <div class="d-flex align-items-center">
                         ${store.logo ?
-                            `<img src="${store.logo}" class="rounded me-3" width="40" height="40" alt="${store.name}">` :
-                            `<div class="store-logo-placeholder me-3" style="width: 40px; height: 40px;">
+                            `<img src="${store.logo}" class="rounded me-2" width="32" height="32" alt="${store.name}">` :
+                            `<div class="bg-primary text-white rounded d-flex align-items-center justify-content-center me-2" style="width: 32px; height: 32px;">
                                 <i class="bi bi-shop"></i>
                             </div>`
                         }
                         <div>
-                            <div class="fw-semibold">${store.name}</div>
-                            <small class="text-muted">${store.code}</small>
+                            <strong>${store.name}</strong>
+                            <br><small class="text-muted">${store.code}</small>
                         </div>
                     </div>
                 </td>
-                <td class="text-end">
-                    <div class="fw-semibold text-success">${formatCurrency(store.revenue_30d)} UGX</div>
-                    <small class="text-muted">
-                        <i class="bi bi-arrow-${store.revenue_growth >= 0 ? 'up text-success' : 'down text-danger'}"></i>
-                        ${store.revenue_growth >= 0 ? '+' : ''}${store.revenue_growth}%
-                    </small>
+                <td>
+                    <strong class="text-success">${formatCurrency(store.revenue_30d)} UGX</strong>
+                    <br><small class="text-muted">${store.revenue_growth >= 0 ? '+' : ''}${store.revenue_growth}% vs prev</small>
                 </td>
-                <td class="text-center">
-                    <div class="fw-semibold">${store.sales_count}</div>
-                    <small class="text-muted">
-                        <i class="bi bi-arrow-${store.sales_growth >= 0 ? 'up text-success' : 'down text-danger'}"></i>
-                        ${store.sales_growth >= 0 ? '+' : ''}${store.sales_growth}%
-                    </small>
+                <td>
+                    <strong>${store.sales_count}</strong>
+                    <br><small class="text-muted">${store.sales_growth >= 0 ? '+' : ''}${store.sales_growth}% growth</small>
                 </td>
-                <td class="text-end">
-                    <div class="fw-semibold">${formatCurrency(store.avg_sale)} UGX</div>
+                <td>
+                    <strong>${formatCurrency(store.avg_sale)} UGX</strong>
                 </td>
-                <td class="text-center">
-                    <div class="d-flex align-items-center justify-content-center">
-                        <div class="progress me-2" style="height: 8px; width: 60px;">
+                <td>
+                    <div class="d-flex align-items-center">
+                        <div class="progress flex-grow-1 me-2" style="height: 8px;">
                             <div class="progress-bar bg-${performanceClass}"
                                  style="width: ${store.performance_score}%"></div>
                         </div>
-                        <small class="fw-semibold">${store.performance_score}%</small>
+                        <small>${store.performance_score}%</small>
                     </div>
                 </td>
-                <td class="text-center">
+                <td>
                     <span class="badge bg-${statusClass}">${statusText}</span>
-                    ${efrisBadge}
+                    ${store.efris_enabled ? '<br><span class="badge bg-info mt-1">EFRIS</span>' : ''}
                 </td>
-                <td class="text-center">
+                <td>
                     <div class="btn-group btn-group-sm">
-                        <a href="/stores/${store.id}/" class="btn btn-outline-primary btn-custom"
-                           title="View Store" data-bs-toggle="tooltip">
+                        <a href="/stores/${store.id}/" class="btn btn-outline-primary" title="View Store">
                             <i class="bi bi-eye"></i>
                         </a>
-                        <a href="#" class="btn btn-outline-info btn-custom"
-                           onclick="viewStoreAnalytics('${store.id}')"
-                           title="Analytics" data-bs-toggle="tooltip">
+                        <a href="/stores/analytics/?store=${store.id}" class="btn btn-outline-info" title="Analytics">
                             <i class="bi bi-graph-up"></i>
                         </a>
                     </div>
@@ -1875,303 +868,58 @@ function updatePerformanceTable(stores) {
 
     tbody.innerHTML = html || `
         <tr>
-            <td colspan="7" class="text-center py-5">
-                <div class="error-state">
-                    <i class="bi bi-info-circle display-4 text-muted mb-3"></i>
-                    <h5 class="text-muted">No Performance Data Available</h5>
-                    <p class="text-muted">Performance data will appear here once stores start generating sales.</p>
-                </div>
+            <td colspan="7" class="text-center py-4 text-muted">
+                <i class="bi bi-info-circle fs-4 mb-2"></i>
+                <p class="mb-0">No performance data available</p>
             </td>
         </tr>
     `;
-
-    // Initialize tooltips
-    initializeTooltips();
 }
 
-function loadStoreStats() {
-    fetch(`/branches/${branchId}/store-stats/`)
-        .then(response => response.json())
-        .then(data => {
-            data.stores.forEach(store => {
-                const element = document.querySelector(`.store-sales-count[data-store-id="${store.id}"]`);
-                if (element) {
-                    element.innerHTML = store.sales_count;
-                }
-            });
-        })
-        .catch(error => {
-            console.error('Error loading store stats:', error);
-            // Update all sales counts to show error state
-            document.querySelectorAll('.store-sales-count').forEach(el => {
-                el.innerHTML = '<i class="bi bi-exclamation-triangle text-warning"></i>';
-            });
-        });
-}
-
-function loadPerformanceData() {
-    fetch(`/branches/${branchId}/performance/`)
-        .then(response => response.json())
-        .then(data => {
-            updateTopStores(data.top_stores);
-            updateAttentionStores(data.attention_stores);
-            updatePerformanceTrend(data.trend_data);
-        })
-        .catch(error => {
-            console.error('Error loading performance data:', error);
-            showAlert('error', 'Error', 'Failed to load performance data');
-        });
-}
-
-function updateTopStores(stores) {
-    const container = document.getElementById('topStoresList');
-    if (!container) return;
-
-    if (!stores || stores.length === 0) {
-        container.innerHTML = `
-            <div class="error-state">
-                <i class="bi bi-trophy display-4 text-muted mb-3"></i>
-                <h6 class="text-muted">No Performance Data</h6>
-                <p class="text-muted small">Top performers will appear here once sales data is available.</p>
-            </div>
-        `;
-        return;
-    }
-
-    let html = '';
-    stores.forEach((store, index) => {
-        const medalClass = index === 0 ? 'text-warning' : index === 1 ? 'text-secondary' : 'text-warning';
-        const medalIcon = index === 0 ? 'trophy-fill' : index === 1 ? 'award-fill' : 'star-fill';
-        const rankBadge = index < 3 ? `<span class="badge bg-${index === 0 ? 'warning' : index === 1 ? 'secondary' : 'success'} me-2">#${index + 1}</span>` : '';
-
-        html += `
-            <div class="d-flex align-items-center mb-3 p-3 bg-light rounded border-start border-${index === 0 ? 'warning' : index === 1 ? 'secondary' : 'success'} border-3">
-                <div class="me-3">
-                    <i class="bi bi-${medalIcon} ${medalClass} fs-3"></i>
-                </div>
-                <div class="flex-grow-1">
-                    <div class="d-flex align-items-center mb-1">
-                        ${rankBadge}
-                        <span class="fw-semibold">${store.name}</span>
-                    </div>
-                    <div class="text-muted small">
-                        <i class="bi bi-currency-dollar me-1"></i>${formatCurrency(store.revenue)} UGX revenue
-                        <span class="mx-2">•</span>
-                        <i class="bi bi-receipt me-1"></i>${store.sales_count || 0} sales
-                    </div>
-                </div>
-                <div class="text-end">
-                    <span class="badge bg-success fs-6">${store.performance_score}%</span>
-                </div>
-            </div>
-        `;
-    });
-
-    container.innerHTML = html;
-}
-
-function updateAttentionStores(stores) {
-    const container = document.getElementById('attentionStoresList');
-    if (!container) return;
-
-    if (!stores || stores.length === 0) {
-        container.innerHTML = `
-            <div class="error-state text-center">
-                <i class="bi bi-check-circle display-4 text-success mb-3"></i>
-                <h6 class="text-success">All Good!</h6>
-                <p class="text-muted small">All stores are performing well. No immediate attention needed.</p>
-            </div>
-        `;
-        return;
-    }
-
-    let html = '';
-    stores.forEach(store => {
-        const issueConfig = getIssueConfig(store.issue);
-
-        html += `
-            <div class="d-flex align-items-center mb-3 p-3 bg-light rounded border-start border-${issueConfig.color} border-3">
-                <div class="me-3">
-                    <i class="bi bi-${issueConfig.icon} text-${issueConfig.color} fs-4"></i>
-                </div>
-                <div class="flex-grow-1">
-                    <div class="fw-semibold mb-1">${store.name}</div>
-                    <div class="text-muted small">${store.issue_description}</div>
-                    ${store.performance_score ? `<div class="mt-1"><span class="badge bg-outline-${issueConfig.color} small">Score: ${store.performance_score}%</span></div>` : ''}
-                </div>
-                <div class="text-end">
-                    <a href="/stores/${store.id}/" class="btn btn-outline-${issueConfig.color} btn-sm btn-custom">
-                        <i class="bi bi-arrow-right"></i>
-                    </a>
-                </div>
-            </div>
-        `;
-    });
-
-    container.innerHTML = html;
-}
-
-function loadStaffOverview() {
-    fetch(`/branches/${branchId}/staff-overview/`)
-        .then(response => response.json())
-        .then(data => {
-            updateStaffOverview(data);
-        })
-        .catch(error => {
-            console.error('Error loading staff overview:', error);
-            showAlert('error', 'Error', 'Failed to load staff overview');
-        });
-}
-
-function updateStaffOverview(data) {
-    const container = document.getElementById('staffOverview');
-    if (!container) return;
-
-    let html = `
-        <div class="row mb-4">
-            <div class="col-lg-3 col-md-6 mb-3">
-                <div class="analytics-card card">
-                    <div class="card-body text-center">
-                        <i class="bi bi-people stat-icon text-primary mb-3"></i>
-                        <h2 class="fw-bold text-primary">${data.total_staff}</h2>
-                        <p class="text-muted mb-0 small text-uppercase fw-semibold">Total Staff</p>
-                    </div>
-                </div>
-            </div>
-            <div class="col-lg-3 col-md-6 mb-3">
-                <div class="analytics-card card">
-                    <div class="card-body text-center">
-                        <i class="bi bi-person-check stat-icon text-success mb-3"></i>
-                        <h2 class="fw-bold text-success">${data.active_staff}</h2>
-                        <p class="text-muted mb-0 small text-uppercase fw-semibold">Active Staff</p>
-                    </div>
-                </div>
-            </div>
-            <div class="col-lg-3 col-md-6 mb-3">
-                <div class="analytics-card card">
-                    <div class="card-body text-center">
-                        <i class="bi bi-person-badge stat-icon text-info mb-3"></i>
-                        <h2 class="fw-bold text-info">${data.managers}</h2>
-                        <p class="text-muted mb-0 small text-uppercase fw-semibold">Managers</p>
-                    </div>
-                </div>
-            </div>
-            <div class="col-lg-3 col-md-6 mb-3">
-                <div class="analytics-card card">
-                    <div class="card-body text-center">
-                        <i class="bi bi-cash-coin stat-icon text-warning mb-3"></i>
-                        <h2 class="fw-bold text-warning">${data.cashiers}</h2>
-                        <p class="text-muted mb-0 small text-uppercase fw-semibold">Cashiers</p>
-                    </div>
-                </div>
-            </div>
-        </div>
-    `;
-
-    if (data.recent_activities && data.recent_activities.length > 0) {
-        html += `
-            <div class="card shadow-sm">
-                <div class="card-header bg-light">
-                    <div class="d-flex justify-content-between align-items-center">
-                        <h6 class="mb-0">
-                            <i class="bi bi-activity me-2"></i>Recent Staff Activities
-                        </h6>
-                        <small class="text-muted">Last 10 activities</small>
-                    </div>
-                </div>
-                <div class="card-body p-0">
-                    <div class="list-group list-group-flush">
-        `;
-
-        data.recent_activities.forEach((activity, index) => {
-            html += `
-                <div class="list-group-item activity-item">
-                    <div class="d-flex align-items-center">
-                        <div class="me-3">
-                            ${activity.avatar ?
-                                `<img src="${activity.avatar}" class="rounded-circle" width="40" height="40">` :
-                                `<div class="bg-secondary text-white rounded-circle d-flex align-items-center justify-content-center" style="width: 40px; height: 40px;">
-                                    <i class="bi bi-person fs-6"></i>
-                                </div>`
-                            }
-                        </div>
-                        <div class="flex-grow-1">
-                            <div class="d-flex align-items-start justify-content-between">
-                                <div>
-                                    <div class="fw-semibold">${activity.user_name}</div>
-                                    <div class="text-muted small">${activity.action}</div>
-                                </div>
-                                <div class="text-end text-muted small">
-                                    <div>${activity.time_ago}</div>
-                                    <div class="fw-semibold">${activity.store_name}</div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            `;
-        });
-
-        html += `
-                    </div>
-                </div>
-                <div class="card-footer bg-light text-center">
-                    <a href="#" class="btn btn-outline-primary btn-sm btn-custom">
-                        <i class="bi bi-clock-history me-1"></i>View All Activities
-                    </a>
-                </div>
-            </div>
-        `;
-    } else {
-        html += `
-            <div class="card shadow-sm">
-                <div class="card-body">
-                    <div class="error-state">
-                        <i class="bi bi-activity display-4 text-muted mb-3"></i>
-                        <h6 class="text-muted">No Recent Activities</h6>
-                        <p class="text-muted small">Staff activities will appear here once they start using the system.</p>
-                    </div>
-                </div>
-            </div>
-        `;
-    }
-
-    container.innerHTML = html;
-}
-
-function updatePerformanceTrend(data) {
-    if (!chartInstances.trend || !data) return;
-
-    chartInstances.trend.data.labels = data.labels;
-    chartInstances.trend.data.datasets[0].data = data.values;
-    chartInstances.trend.update('active');
-}
-
+// Initialize Filters
 function initializeFilters() {
-    // Store search and filtering logic is already handled in event listeners
+    const storeSearch = document.getElementById('storeSearch');
+    const statusFilter = document.getElementById('statusFilter');
+    const efrisFilter = document.getElementById('efrisFilter');
+
+    if (storeSearch) {
+        let searchTimeout;
+        storeSearch.addEventListener('input', function() {
+            clearTimeout(searchTimeout);
+            searchTimeout = setTimeout(() => {
+                filterStores();
+            }, 300);
+        });
+    }
+
+    if (statusFilter) {
+        statusFilter.addEventListener('change', filterStores);
+    }
+
+    if (efrisFilter) {
+        efrisFilter.addEventListener('change', filterStores);
+    }
 }
 
+// Filter stores functionality
 function filterStores() {
     const searchTerm = document.getElementById('storeSearch')?.value.toLowerCase() || '';
     const statusFilter = document.getElementById('statusFilter')?.value || '';
     const efrisFilter = document.getElementById('efrisFilter')?.value || '';
-    const sortFilter = document.getElementById('sortFilter')?.value || 'name';
 
-    const storeCards = document.querySelectorAll('.store-card[data-store-id]');
-    let visibleStores = [];
+    const storeCards = document.querySelectorAll('.store-card');
+    let visibleCount = 0;
 
     storeCards.forEach(card => {
         const storeName = card.querySelector('.card-title')?.textContent.toLowerCase() || '';
-        const storeCode = card.querySelector('.badge')?.textContent.toLowerCase() || '';
-        const storeAddress = card.querySelector('.text-muted')?.textContent.toLowerCase() || '';
-        const isActive = card.dataset.active === 'true';
-        const hasEfris = card.dataset.efris === 'true';
+        const storeCode = card.querySelector('.text-muted')?.textContent.toLowerCase() || '';
+        const isActive = card.querySelector('.badge.bg-success');
+        const hasEfris = card.querySelector('.badge.bg-info');
 
         let shouldShow = true;
 
         // Search filter
-        if (searchTerm && !storeName.includes(searchTerm) &&
-            !storeCode.includes(searchTerm) && !storeAddress.includes(searchTerm)) {
+        if (searchTerm && !storeName.includes(searchTerm) && !storeCode.includes(searchTerm)) {
             shouldShow = false;
         }
 
@@ -2190,345 +938,245 @@ function filterStores() {
         }
 
         card.style.display = shouldShow ? 'block' : 'none';
-        if (shouldShow) {
-            visibleStores.push(card);
-        }
+        if (shouldShow) visibleCount++;
     });
 
-    // Apply sorting
-    if (visibleStores.length > 0) {
-        const container = document.getElementById('storesGrid');
-        const sortedStores = sortStores(visibleStores, sortFilter);
-        sortedStores.forEach(store => container.appendChild(store));
-    }
-
-    // Update empty state
-    updateEmptyState(visibleStores.length === 0);
-}
-
-function sortStores(stores, sortBy) {
-    return stores.sort((a, b) => {
-        switch(sortBy) {
-            case 'name':
-                const nameA = a.querySelector('.card-title').textContent;
-                const nameB = b.querySelector('.card-title').textContent;
-                return nameA.localeCompare(nameB);
-            case 'created':
-                // Would need created date in data attributes
-                return 0;
-            case 'performance':
-                // Would need performance score in data attributes
-                return 0;
-            default:
-                return 0;
-        }
-    });
-}
-
-function updateEmptyState(isEmpty) {
-    let emptyState = document.getElementById('emptyStoresState');
-
-    if (isEmpty && !emptyState) {
-        emptyState = document.createElement('div');
-        emptyState.id = 'filteredEmptyState';
-        emptyState.className = 'col-12';
+    // Show/hide empty state
+    const emptyState = document.querySelector('#storesGrid .col-12');
+    if (emptyState && visibleCount === 0) {
+        emptyState.style.display = 'block';
         emptyState.innerHTML = `
-            <div class="error-state">
-                <i class="bi bi-search display-1 text-muted mb-3"></i>
-                <h4 class="text-muted mb-3">No Stores Match Your Filters</h4>
-                <p class="text-muted mb-4">Try adjusting your search criteria or filters to find what you're looking for.</p>
-                <button class="btn btn-outline-primary btn-custom" onclick="resetFilters()">
-                    <i class="bi bi-arrow-clockwise me-2"></i>Reset All Filters
+            <div class="text-center py-5">
+                <i class="bi bi-search fs-1 text-muted"></i>
+                <h5 class="mt-3 mb-2">No Stores Match Your Filters</h5>
+                <p class="text-muted mb-3">Try adjusting your search criteria</p>
+                <button class="btn btn-outline-primary" onclick="resetFilters()">
+                    <i class="bi bi-arrow-clockwise me-1"></i>Reset Filters
                 </button>
             </div>
         `;
-        document.getElementById('storesGrid').appendChild(emptyState);
-    } else if (!isEmpty && document.getElementById('filteredEmptyState')) {
-        document.getElementById('filteredEmptyState').remove();
+    } else if (emptyState) {
+        emptyState.style.display = 'none';
     }
 }
 
+// Reset filters
 function resetFilters() {
-    const filters = ['storeSearch', 'statusFilter', 'efrisFilter', 'sortFilter'];
-    filters.forEach(filterId => {
-        const element = document.getElementById(filterId);
-        if (element) {
-            element.value = filterId === 'sortFilter' ? 'name' : '';
-        }
-    });
+    document.getElementById('storeSearch').value = '';
+    document.getElementById('statusFilter').value = '';
+    document.getElementById('efrisFilter').value = '';
     filterStores();
 }
 
-function updateRevenueChartRange(range) {
-    showLoader('revenueChartLoader');
+// Load branch data
+function loadBranchData() {
+    const branchId = {{ branch.id }};
 
-    fetch(`/branches/${branchId}/revenue-data/?range=${range}`)
+    // Load store sales counts
+    fetch(`/branches/${branchId}/store-stats/`)
         .then(response => response.json())
         .then(data => {
-            updateRevenueChart(data);
+            data.stores.forEach(store => {
+                const element = document.querySelector(`[data-store-id="${store.id}"]`);
+                if (element) {
+                    element.textContent = store.sales_count;
+                }
+            });
+        })
+        .catch(error => console.error('Error loading store stats:', error));
+}
+
+// Load performance data
+function loadPerformanceData() {
+    const branchId = {{ branch.id }};
+
+    fetch(`/branches/${branchId}/performance/`)
+        .then(response => response.json())
+        .then(data => {
+            updateTopStores(data.top_stores);
+            updateAttentionStores(data.attention_stores);
+            updatePerformanceTrend(data.trend_data);
         })
         .catch(error => {
-            console.error('Error updating revenue chart:', error);
-            showAlert('error', 'Error', 'Failed to update revenue chart');
-        })
-        .finally(() => {
-            hideLoader('revenueChartLoader');
+            console.error('Error loading performance data:', error);
+            showErrorMessage('Failed to load performance data');
         });
 }
 
+// Update top performing stores
+function updateTopStores(stores) {
+    const container = document.getElementById('topStoresList');
+    if (!container) return;
 
-function showWebSocketStatus(status) {
-    let statusElement = document.getElementById('websocket-status');
+    let html = '';
+    stores.forEach((store, index) => {
+        const medalClass = index === 0 ? 'text-warning' : index === 1 ? 'text-secondary' : 'text-danger';
+        const medalIcon = index === 0 ? 'trophy-fill' : index === 1 ? 'award-fill' : 'star-fill';
 
-    if (!statusElement) {
-        statusElement = document.createElement('div');
-        statusElement.id = 'websocket-status';
-        statusElement.className = 'position-fixed';
-        statusElement.style.cssText = 'top: 15px; right: 15px; z-index: 1070; border-radius: 20px; padding: 8px 12px; font-size: 0.75rem; font-weight: 600; letter-spacing: 0.5px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);';
-        document.body.appendChild(statusElement);
+        html += `
+            <div class="d-flex align-items-center mb-3 p-2 bg-light rounded">
+                <i class="bi bi-${medalIcon} ${medalClass} fs-4 me-3"></i>
+                <div class="flex-grow-1">
+                    <strong>${store.name}</strong>
+                    <br><small class="text-muted">${formatCurrency(store.revenue)} UGX revenue</small>
+                </div>
+                <span class="badge bg-success">${store.performance_score}%</span>
+            </div>
+        `;
+    });
+
+    container.innerHTML = html || '<p class="text-muted text-center py-4">No performance data available</p>';
+}
+
+// Update stores needing attention
+function updateAttentionStores(stores) {
+    const container = document.getElementById('attentionStoresList');
+    if (!container) return;
+
+    let html = '';
+    stores.forEach(store => {
+        const issueClass = store.issue === 'low_sales' ? 'warning' :
+                          store.issue === 'inactive' ? 'danger' : 'info';
+
+        html += `
+            <div class="d-flex align-items-center mb-3 p-2 border-start border-${issueClass} border-3 bg-light">
+                <i class="bi bi-exclamation-triangle text-${issueClass} fs-5 me-3"></i>
+                <div class="flex-grow-1">
+                    <strong>${store.name}</strong>
+                    <br><small class="text-muted">${store.issue_description}</small>
+                </div>
+                <a href="/stores/${store.id}/" class="btn btn-outline-${issueClass} btn-sm">
+                    <i class="bi bi-arrow-right"></i>
+                </a>
+            </div>
+        `;
+    });
+
+    container.innerHTML = html || '<p class="text-success text-center py-4"><i class="bi bi-check-circle me-2"></i>All stores performing well!</p>';
+}
+
+// Load staff overview
+function loadStaffOverview() {
+    const branchId = {{ branch.id }};
+
+    fetch(`/branches/${branchId}/staff-overview/`)
+        .then(response => response.json())
+        .then(data => {
+            updateStaffOverview(data);
+        })
+        .catch(error => {
+            console.error('Error loading staff overview:', error);
+            showErrorMessage('Failed to load staff overview');
+        });
+}
+
+// Update staff overview
+function updateStaffOverview(data) {
+    const container = document.getElementById('staffOverview');
+    if (!container) return;
+
+    let html = `
+        <div class="col-lg-3 col-md-6 mb-3">
+            <div class="card analytics-card">
+                <div class="card-body text-center">
+                    <i class="bi bi-people fs-1 text-primary mb-2"></i>
+                    <h3>${data.total_staff}</h3>
+                    <p class="text-muted mb-0">Total Staff</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-3 col-md-6 mb-3">
+            <div class="card analytics-card">
+                <div class="card-body text-center">
+                    <i class="bi bi-person-check fs-1 text-success mb-2"></i>
+                    <h3>${data.active_staff}</h3>
+                    <p class="text-muted mb-0">Active Staff</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-3 col-md-6 mb-3">
+            <div class="card analytics-card">
+                <div class="card-body text-center">
+                    <i class="bi bi-person-badge fs-1 text-info mb-2"></i>
+                    <h3>${data.managers}</h3>
+                    <p class="text-muted mb-0">Managers</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-3 col-md-6 mb-3">
+            <div class="card analytics-card">
+                <div class="card-body text-center">
+                    <i class="bi bi-cash-coin fs-1 text-warning mb-2"></i>
+                    <h3>${data.cashiers}</h3>
+                    <p class="text-muted mb-0">Cashiers</p>
+                </div>
+            </div>
+        </div>
+    `;
+
+    if (data.recent_activities && data.recent_activities.length > 0) {
+        html += `
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header">
+                        <h6 class="mb-0">Recent Staff Activities</h6>
+                    </div>
+                    <div class="card-body">
+                        <div class="list-group list-group-flush">
+        `;
+
+        data.recent_activities.forEach(activity => {
+            html += `
+                <div class="list-group-item d-flex align-items-center">
+                    <div class="me-3">
+                        ${activity.avatar ?
+                            `<img src="${activity.avatar}" class="rounded-circle" width="40" height="40">` :
+                            `<div class="bg-secondary text-white rounded-circle d-flex align-items-center justify-content-center" style="width: 40px; height: 40px;">
+                                <i class="bi bi-person"></i>
+                            </div>`
+                        }
+                    </div>
+                    <div class="flex-grow-1">
+                        <strong>${activity.user_name}</strong> <small class="text-muted">${activity.action}</small>
+                        <br><small class="text-muted">${activity.store_name} • ${activity.time_ago}</small>
+                    </div>
+                </div>
+            `;
+        });
+
+        html += `
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
     }
 
-    const statusConfig = {
-        connected: {
-            class: 'bg-success text-white',
-            icon: 'wifi',
-            text: 'LIVE',
-            pulse: true
-        },
-        disconnected: {
-            class: 'bg-secondary text-white',
-            icon: 'wifi-off',
-            text: 'OFFLINE',
-            pulse: false
-        },
-        reconnecting: {
-            class: 'bg-warning text-dark',
-            icon: 'arrow-repeat',
-            text: 'CONNECTING...',
-            pulse: true
-        },
-        error: {
-            class: 'bg-danger text-white',
-            icon: 'exclamation-triangle',
-            text: 'ERROR',
-            pulse: false
-        }
+    container.innerHTML = html;
+}
+
+// Utility functions
+function updateTrendIndicators(metrics) {
+    const indicators = {
+        revenueGrowth: metrics.revenue_growth,
+        salesGrowth: metrics.sales_growth,
+        customerGrowth: metrics.customer_growth
     };
 
-    const config = statusConfig[status] || statusConfig.disconnected;
-    statusElement.className = `position-fixed ${config.class} ${config.pulse ? 'connection-pulse' : ''}`;
-    statusElement.style.display = 'block';
-    statusElement.innerHTML = `<i class="bi bi-${config.icon} me-1"></i>${config.text}`;
-
-    // Auto-hide for successful connections after 5 seconds
-    if (status === 'connected') {
-        setTimeout(() => {
-            if (statusElement && statusElement.parentNode) {
-                statusElement.style.opacity = '0.7';
-                statusElement.style.transform = 'scale(0.9)';
-            }
-        }, 5000);
-    } else {
-        statusElement.style.opacity = '1';
-        statusElement.style.transform = 'scale(1)';
-    }
-}
-
-function addRealtimeIndicators() {
-    // Add live indicators to key metrics
-    const indicators = [
-        { selector: '#totalRevenue', text: 'LIVE' },
-        { selector: '#totalSales', text: 'LIVE' },
-        { selector: '#totalCustomers', text: 'LIVE' }
-    ];
-
-    indicators.forEach(({ selector, text }) => {
-        const element = document.querySelector(selector);
-        if (element && !element.querySelector('.realtime-indicator')) {
-            const indicator = document.createElement('span');
-            indicator.className = 'realtime-indicator ms-2';
-            indicator.innerHTML = `<i class="bi bi-broadcast me-1"></i>${text}`;
-            element.appendChild(indicator);
-        }
-    });
-
-    // Add live indicator to chart titles
-    const chartTitles = document.querySelectorAll('.card-header h5');
-    chartTitles.forEach(title => {
-        if (title.textContent.includes('Revenue Trends') || title.textContent.includes('Store Performance')) {
-            if (!title.querySelector('.realtime-badge')) {
-                const badge = document.createElement('span');
-                badge.className = 'badge bg-success ms-2 realtime-badge';
-                badge.innerHTML = '<i class="bi bi-broadcast me-1"></i>LIVE';
-                badge.style.fontSize = '0.65rem';
-                title.appendChild(badge);
-            }
-        }
-    });
-}
-
-function removeRealtimeIndicators() {
-    const indicators = document.querySelectorAll('.realtime-indicator, .realtime-badge');
-    indicators.forEach(indicator => indicator.remove());
-}
-
-function showRealtimeUpdateIndicator() {
-    // Flash the live indicators briefly
-    const indicators = document.querySelectorAll('.realtime-indicator, .realtime-badge');
-    indicators.forEach(indicator => {
-        indicator.style.animation = 'realtimeFlash 0.8s ease-in-out';
-        setTimeout(() => {
-            indicator.style.animation = '';
-        }, 800);
-    });
-}
-
-function showSaleNotification(saleData) {
-    // Create enhanced sale notification
-    const notification = document.createElement('div');
-    notification.className = 'alert alert-success alert-dismissible fade show position-fixed sale-notification';
-    notification.style.cssText = `
-        top: 80px; right: 20px; z-index: 1060;
-        min-width: 350px; max-width: 400px;
-        border-left: 4px solid #28a745;
-        box-shadow: 0 4px 15px rgba(40, 167, 69, 0.3);
-        animation: slideInRight 0.3s ease-out;
-    `;
-
-    notification.innerHTML = `
-        <div class="d-flex align-items-center">
-            <div class="me-3">
-                <i class="bi bi-cash-coin fs-3 text-success"></i>
-            </div>
-            <div class="flex-grow-1">
-                <div class="fw-bold">New Sale!</div>
-                <div class="small text-muted mb-1">${saleData.store_name}</div>
-                <div class="fs-5 text-success fw-bold">${formatCurrency(saleData.total_amount)} UGX</div>
-                ${saleData.invoice_number ? `<div class="small text-muted">Invoice: ${saleData.invoice_number}</div>` : ''}
-            </div>
-        </div>
-        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-    `;
-
-    document.body.appendChild(notification);
-
-    // Play notification sound
-    playNotificationSound();
-
-    // Auto-remove after 8 seconds
-    setTimeout(() => {
-        if (notification.parentNode) {
-            notification.style.animation = 'slideOutRight 0.3s ease-in';
-            setTimeout(() => notification.remove(), 300);
-        }
-    }, 8000);
-}
-
-function highlightStoreCard(storeId) {
-    const storeCard = document.querySelector(`.store-card[data-store-id="${storeId}"]`);
-    if (storeCard) {
-        storeCard.classList.add('sale-flash');
-        setTimeout(() => {
-            storeCard.classList.remove('sale-flash');
-        }, 3000);
-    }
-}
-
-function updateStoreCard(storeData) {
-    const storeCard = document.querySelector(`.store-card[data-store-id="${storeData.store_id || storeData.id}"]`);
-    if (!storeCard) return;
-
-    // Update store status with animation
-    if (storeData.is_active !== undefined) {
-        const statusBadge = storeCard.querySelector('.store-status .badge.bg-success, .store-status .badge.bg-secondary');
-        if (statusBadge) {
-            statusBadge.style.transition = 'all 0.3s ease';
-
-            if (storeData.is_active) {
-                statusBadge.className = 'badge bg-success';
-                statusBadge.innerHTML = '<i class="bi bi-check-circle me-1"></i>Active';
+    Object.entries(indicators).forEach(([key, value]) => {
+        const element = document.getElementById(key);
+        if (element) {
+            const icon = element.previousElementSibling;
+            if (value >= 0) {
+                icon.className = 'bi bi-arrow-up trend-up';
+                element.className = 'trend-up';
             } else {
-                statusBadge.className = 'badge bg-secondary';
-                statusBadge.innerHTML = '<i class="bi bi-pause-circle me-1"></i>Inactive';
+                icon.className = 'bi bi-arrow-down trend-down';
+                element.className = 'trend-down';
             }
-
-            // Flash animation
-            statusBadge.style.transform = 'scale(1.1)';
-            setTimeout(() => {
-                statusBadge.style.transform = 'scale(1)';
-            }, 200);
         }
-    }
+    });
 }
-
-function showLowStockAlert(alertData, severity) {
-    const notification = document.createElement('div');
-    notification.className = 'alert alert-warning alert-dismissible fade show position-fixed low-stock-alert';
-    notification.style.cssText = `
-        top: 140px; right: 20px; z-index: 1060;
-        min-width: 350px; max-width: 400px;
-        border-left: 4px solid #ffc107;
-        box-shadow: 0 4px 15px rgba(255, 193, 7, 0.3);
-        animation: slideInRight 0.3s ease-out;
-    `;
-
-    notification.innerHTML = `
-        <div class="d-flex align-items-center">
-            <div class="me-3">
-                <i class="bi bi-exclamation-triangle fs-3 text-warning"></i>
-            </div>
-            <div class="flex-grow-1">
-                <div class="fw-bold text-warning">Low Stock Alert</div>
-                <div class="small text-muted mb-1">${alertData.store_name}</div>
-                <div class="fw-semibold">${alertData.product_name}</div>
-                <div class="small text-danger">Only ${alertData.quantity} remaining</div>
-            </div>
-        </div>
-        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-    `;
-
-    document.body.appendChild(notification);
-
-    // Auto-remove after 10 seconds
-    setTimeout(() => {
-        if (notification.parentNode) {
-            notification.style.animation = 'slideOutRight 0.3s ease-in';
-            setTimeout(() => notification.remove(), 300);
-        }
-    }, 10000);
-}
-
-function playNotificationSound() {
-    try {
-        // Create a subtle notification sound using Web Audio API
-        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-        const oscillator = audioContext.createOscillator();
-        const gainNode = audioContext.createGain();
-
-        oscillator.connect(gainNode);
-        gainNode.connect(audioContext.destination);
-
-        oscillator.frequency.setValueAtTime(800, audioContext.currentTime);
-        oscillator.frequency.setValueAtTime(600, audioContext.currentTime + 0.1);
-
-        gainNode.gain.setValueAtTime(0, audioContext.currentTime);
-        gainNode.gain.linearRampToValueAtTime(0.1, audioContext.currentTime + 0.01);
-        gainNode.gain.linearRampToValueAtTime(0, audioContext.currentTime + 0.2);
-
-        oscillator.start(audioContext.currentTime);
-        oscillator.stop(audioContext.currentTime + 0.2);
-    } catch (error) {
-        // Fallback: Try HTML5 audio with data URI
-        try {
-            const audio = new Audio('data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbq2EcBj+a2/LDciUFLIHO8tiJNwgZaLvt559NEAxQp+PwtmMcBjiR1/LMeSwFJHfH8N2QQAoUXrTp66hVFApGn+L1w20fAzuE0fPTgjMGTH7J8eKZSgwOVrfp66hVFApGn+L1w20fAzuE0fPTgjMGCLIHO8tiJNwgZaLvt');
-            audio.volume = 0.05;
-            audio.play().catch(() => {});
-        } catch (e) {
-            // Silent fallback
-        }
-    }
-}
-
 
 function getPerformanceClass(score) {
     if (score >= 80) return 'success';
@@ -2537,574 +1185,109 @@ function getPerformanceClass(score) {
     return 'danger';
 }
 
-function getIssueConfig(issue) {
-    const configs = {
-        'low_performance': { color: 'warning', icon: 'speedometer2' },
-        'no_sales': { color: 'danger', icon: 'receipt' },
-        'inactive': { color: 'secondary', icon: 'pause-circle' },
-        'data_error': { color: 'info', icon: 'exclamation-circle' },
-        'low_sales': { color: 'warning', icon: 'graph-down' }
-    };
-    return configs[issue] || { color: 'warning', icon: 'exclamation-triangle' };
-}
-
 function formatCurrency(amount) {
-    if (typeof amount !== 'number') amount = parseFloat(amount) || 0;
     return new Intl.NumberFormat('en-UG', {
         minimumFractionDigits: 0,
         maximumFractionDigits: 0
-    }).format(amount);
+    }).format(amount || 0);
 }
 
-function showLoader(loaderId) {
-    const loader = document.getElementById(loaderId);
-    if (loader) loader.classList.remove('d-none');
-}
-
-function hideLoader(loaderId) {
-    const loader = document.getElementById(loaderId);
-    if (loader) loader.classList.add('d-none');
-}
-
-function showAlert(type, title, message) {
-    const template = document.getElementById('alertTemplate');
-    if (!template) {
-        // Create a simple alert if template doesn't exist
-        const alert = document.createElement('div');
-        alert.className = `alert alert-${type === 'error' ? 'danger' : type} alert-dismissible fade show position-fixed`;
-        alert.style.cssText = 'top: 20px; right: 20px; z-index: 1060; min-width: 300px;';
-
-        const iconMap = {
-            success: 'check-circle-fill',
-            error: 'exclamation-triangle-fill',
-            warning: 'exclamation-triangle-fill',
-            info: 'info-circle-fill'
-        };
-
-        alert.innerHTML = `
-            <div class="d-flex align-items-center">
-                <i class="bi bi-${iconMap[type] || iconMap.info} me-2"></i>
-                <div class="flex-grow-1">
-                    <strong>${title}</strong><br>
-                    ${message}
-                </div>
-            </div>
-            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-        `;
-
-        document.body.appendChild(alert);
-
-        // Auto-remove after 5 seconds
-        setTimeout(() => {
-            if (alert.parentNode) alert.remove();
-        }, 5000);
-
-        return;
-    }
-
-    const alert = template.firstElementChild.cloneNode(true);
-    const iconMap = {
-        success: 'check-circle-fill',
-        error: 'exclamation-triangle-fill',
-        warning: 'exclamation-triangle-fill',
-        info: 'info-circle-fill'
-    };
-
-    alert.className = alert.className.replace('alert-custom', `alert-${type === 'error' ? 'danger' : type}`);
-    alert.querySelector('.alert-icon').className = `alert-icon me-3 fs-4 bi bi-${iconMap[type] || iconMap.info}`;
-    alert.querySelector('.alert-title').textContent = title;
-    alert.querySelector('.alert-message').textContent = message;
+function showErrorMessage(message) {
+    // Create a temporary error alert
+    const alert = document.createElement('div');
+    alert.className = 'alert alert-danger alert-dismissible fade show position-fixed';
+    alert.style.cssText = 'top: 20px; right: 20px; z-index: 1060; min-width: 300px;';
+    alert.innerHTML = `
+        <i class="bi bi-exclamation-triangle me-2"></i>${message}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    `;
 
     document.body.appendChild(alert);
 
-    // Auto-remove after 5 seconds
     setTimeout(() => {
-        if (alert.parentNode) alert.remove();
+        if (alert.parentNode) {
+            alert.remove();
+        }
     }, 5000);
 }
 
-function initializeTooltips() {
-    const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
-    tooltipTriggerList.map(function(tooltipTriggerEl) {
-        return new bootstrap.Tooltip(tooltipTriggerEl);
-    });
+// Export and bulk action functions
+function exportBranchData() {
+    const branchId = {{ branch.id }};
+    window.open(`/branches/${branchId}/export/`, '_blank');
 }
 
-
-function exportBranchData() {
-    const loadingModal = new bootstrap.Modal(document.getElementById('loadingModal'));
-    loadingModal.show();
-
-    fetch(`/branches/${branchId}/export/`)
-        .then(response => {
-            if (!response.ok) throw new Error('Export failed');
-            return response.blob();
-        })
-        .then(blob => {
-            const url = window.URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `branch_${branchId}_data.csv`;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            window.URL.revokeObjectURL(url);
-            showAlert('success', 'Success', 'Branch data exported successfully');
-        })
-        .catch(error => {
-            console.error('Export error:', error);
-            showAlert('error', 'Error', 'Failed to export branch data');
-        })
-        .finally(() => loadingModal.hide());
+function exportStoresData() {
+    const branchId = {{ branch.id }};
+    window.open(`/stores/export/?branch=${branchId}`, '_blank');
 }
 
 function generateReport() {
+    const branchId = {{ branch.id }};
     const loadingModal = new bootstrap.Modal(document.getElementById('loadingModal'));
     loadingModal.show();
 
     fetch(`/branches/${branchId}/generate-report/`, {
         method: 'POST',
         headers: {
-            'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]')?.value || '',
+            'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value,
             'Content-Type': 'application/json',
         }
     })
-    .then(response => {
-        if (!response.ok) throw new Error('Report generation failed');
-        return response.json();
-    })
-    .then(data => {
-        showAlert('success', 'Report Generated', 'Branch report has been prepared successfully');
-        console.log('Report data:', data);
+    .then(response => response.blob())
+    .then(blob => {
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `branch_${branchId}_report.pdf`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        window.URL.revokeObjectURL(url);
     })
     .catch(error => {
-        console.error('Report generation error:', error);
-        showAlert('error', 'Error', 'Failed to generate branch report');
+        console.error('Error generating report:', error);
+        showErrorMessage('Failed to generate report');
     })
-    .finally(() => loadingModal.hide());
-}
-
-function refreshPerformanceData() {
-    document.getElementById('loadingRow').style.display = 'table-row';
-    loadAnalyticsData();
-}
-
-function exportPerformanceData() {
-    exportBranchData(); // Reuse the branch export functionality
-}
-
-function viewStoreAnalytics(storeId) {
-    window.open(`/stores/${storeId}/analytics/`, '_blank');
-}
-
-function viewStoreSales(storeId) {
-    window.open(`/stores/${storeId}/sales/`, '_blank');
-}
-
-function refreshTrendData() {
-    loadPerformanceData();
-}
-
-function exportStoresData() {
-    window.open(`/stores/export/?branch=${branchId}`, '_blank');
+    .finally(() => {
+        loadingModal.hide();
+    });
 }
 
 function bulkToggleStatus() {
-    if (confirm('Toggle status for all visible stores? This action cannot be undone.')) {
-        showAlert('info', 'Feature Coming Soon', 'Bulk status toggle functionality will be available in the next update.');
+    if (confirm('Toggle status for all visible stores?')) {
+        // Implementation for bulk status toggle
+        console.log('Bulk toggle status functionality');
     }
 }
 
-function syncAllStores() {
-    const loadingModal = new bootstrap.Modal(document.getElementById('loadingModal'));
-    loadingModal.show();
+// Revenue range change handlers
+document.addEventListener('change', function(e) {
+    if (e.target.name === 'revenueRange') {
+        const range = e.target.id.replace('revenue', '');
+        updateRevenueChartRange(range);
+    }
+});
 
-    // Simulate sync process
-    setTimeout(() => {
-        loadingModal.hide();
-        showAlert('success', 'Sync Complete', 'All stores have been synchronized successfully.');
-        loadStoreStats(); // Refresh store data
-    }, 2000);
+function updateRevenueChartRange(range) {
+    const branchId = {{ branch.id }};
+
+    fetch(`/branches/${branchId}/revenue-data/?range=${range}`)
+        .then(response => response.json())
+        .then(data => {
+            updateRevenueChart(data);
+        })
+        .catch(error => {
+            console.error('Error updating revenue chart:', error);
+        });
 }
 
+function updatePerformanceTrend(data) {
+    if (!window.performanceTrendChart || !data) return;
 
-function setupWebSocketHealthCheck() {
-    setInterval(() => {
-        if (branchWebSocket && !branchWebSocket.isConnected) {
-            console.log('WebSocket disconnected, attempting to reconnect...');
-            showWebSocketStatus('reconnecting');
-            branchWebSocket.reconnect();
-        }
-    }, 60000); // Check every minute
+    window.performanceTrendChart.data.labels = data.labels;
+    window.performanceTrendChart.data.datasets[0].data = data.values;
+    window.performanceTrendChart.update();
 }
-
-function cleanupWebSocket() {
-    if (branchWebSocket) {
-        branchWebSocket.disconnect();
-        branchWebSocket = null;
-    }
-    removeRealtimeIndicators();
-
-    // Remove status indicator
-    const statusElement = document.getElementById('websocket-status');
-    if (statusElement) {
-        statusElement.remove();
-    }
-
-    // Remove all notifications
-    const notifications = document.querySelectorAll('.sale-notification, .low-stock-alert');
-    notifications.forEach(notification => notification.remove());
-}
-
-
-// Enhanced page visibility handling
-document.addEventListener('visibilitychange', function() {
-    if (document.hidden) {
-        // Page is hidden, reduce WebSocket activity
-        if (branchWebSocket) {
-            console.log('Page hidden, reducing WebSocket activity');
-        }
-    } else {
-        // Page is visible again, resume normal activity
-        if (branchWebSocket && branchWebSocket.isConnected) {
-            console.log('Page visible, resuming normal WebSocket activity');
-            branchWebSocket.requestUpdate();
-        } else if (branchWebSocket && !branchWebSocket.isConnected) {
-            // Try to reconnect
-            branchWebSocket.reconnect();
-        }
-    }
-});
-
-// Window focus/blur handling
-window.addEventListener('focus', function() {
-    if (branchWebSocket && branchWebSocket.isConnected) {
-        branchWebSocket.requestUpdate();
-    }
-});
-
-// Auto-cleanup on page unload
-window.addEventListener('beforeunload', cleanupWebSocket);
-
-// Connection retry on network change
-window.addEventListener('online', function() {
-    if (branchWebSocket && !branchWebSocket.isConnected) {
-        setTimeout(() => {
-            branchWebSocket.reconnect();
-        }, 1000);
-    }
-});
-
-window.addEventListener('offline', function() {
-    showWebSocketStatus('disconnected');
-});
-
-// Initialize health check after initial load
-document.addEventListener('DOMContentLoaded', function() {
-    setTimeout(() => {
-        setupWebSocketHealthCheck();
-    }, 5000); // Start health check after 5 seconds
-
-    // Initialize tooltips
-    initializeTooltips();
-});
-
-// Export global references for external access
-window.branchWebSocket = branchWebSocket;
-window.cleanupWebSocket = cleanupWebSocket;
-window.BranchAnalyticsWebSocket = BranchAnalyticsWebSocket;
 </script>
-
-<!-- CSS Styles for WebSocket Animations -->
-<style>
-/* WebSocket Animation Styles */
-@keyframes slideInRight {
-    from {
-        transform: translateX(100%);
-        opacity: 0;
-    }
-    to {
-        transform: translateX(0);
-        opacity: 1;
-    }
-}
-
-@keyframes slideOutRight {
-    from {
-        transform: translateX(0);
-        opacity: 1;
-    }
-    to {
-        transform: translateX(100%);
-        opacity: 0;
-    }
-}
-
-@keyframes realtimeFlash {
-    0%, 100% {
-        background-color: transparent;
-        transform: scale(1);
-    }
-    50% {
-        background-color: rgba(40, 167, 69, 0.2);
-        transform: scale(1.05);
-    }
-}
-
-.realtime-indicator {
-    font-size: 0.65rem;
-    color: #28a745;
-    font-weight: 600;
-    letter-spacing: 0.5px;
-    text-transform: uppercase;
-    animation: realtimePulse 2s infinite;
-}
-
-.realtime-badge {
-    animation: realtimePulse 2s infinite;
-}
-
-@keyframes realtimePulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.7; }
-}
-
-.value-updated {
-    animation: valueFlash 1s ease-in-out;
-    position: relative;
-}
-
-@keyframes valueFlash {
-    0% {
-        background-color: rgba(40, 167, 69, 0.3);
-        transform: scale(1);
-    }
-    50% {
-        background-color: rgba(40, 167, 69, 0.1);
-        transform: scale(1.02);
-    }
-    100% {
-        background-color: transparent;
-        transform: scale(1);
-    }
-}
-
-.sale-flash {
-    animation: saleFlash 3s ease-in-out;
-    position: relative;
-    z-index: 2;
-}
-
-@keyframes saleFlash {
-    0%, 100% {
-        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-        transform: scale(1);
-        border-color: transparent;
-    }
-    25% {
-        box-shadow: 0 8px 30px rgba(40, 167, 69, 0.4);
-        transform: scale(1.02);
-        border-color: rgba(40, 167, 69, 0.5);
-    }
-    75% {
-        box-shadow: 0 4px 20px rgba(40, 167, 69, 0.2);
-        transform: scale(1.01);
-        border-color: rgba(40, 167, 69, 0.3);
-    }
-}
-
-.connection-pulse {
-    animation: connectionPulse 2s infinite;
-}
-
-@keyframes connectionPulse {
-    0%, 100% { opacity: 1; transform: scale(1); }
-    50% { opacity: 0.8; transform: scale(0.95); }
-}
-
-#websocket-status {
-    transition: all 0.3s ease;
-    backdrop-filter: blur(10px);
-    -webkit-backdrop-filter: blur(10px);
-}
-
-.sale-notification, .low-stock-alert {
-    backdrop-filter: blur(10px);
-    -webkit-backdrop-filter: blur(10px);
-    border-radius: 12px;
-}
-
-.chart-container.live-updating {
-    position: relative;
-}
-
-.chart-container.live-updating::after {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    height: 2px;
-    background: linear-gradient(90deg, transparent, #28a745, transparent);
-    animation: chartUpdateIndicator 2s ease-in-out;
-}
-
-@keyframes chartUpdateIndicator {
-    0% { opacity: 0; transform: translateX(-100%); }
-    50% { opacity: 1; transform: translateX(0); }
-    100% { opacity: 0; transform: translateX(100%); }
-}
-
-/* Trend indicators */
-.trend-up {
-    color: #28a745 !important;
-}
-
-.trend-down {
-    color: #dc3545 !important;
-}
-
-/* Performance progress bars */
-.progress {
-    border-radius: 10px;
-    overflow: hidden;
-}
-
-.progress-bar {
-    transition: width 0.6s ease;
-}
-
-/* Store card enhancements */
-.store-card {
-    transition: all 0.3s ease;
-    border: 1px solid rgba(0,0,0,0.125);
-}
-
-.store-card:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 4px 15px rgba(0,0,0,0.1);
-}
-
-/* Button enhancements */
-.btn-custom {
-    transition: all 0.3s ease;
-}
-
-.btn-custom:hover {
-    transform: translateY(-1px);
-    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-}
-
-/* Analytics card styling */
-.analytics-card {
-    transition: all 0.3s ease;
-    border: 1px solid rgba(0,0,0,0.1);
-}
-
-.analytics-card:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 4px 20px rgba(0,0,0,0.1);
-}
-
-.stat-icon {
-    font-size: 2.5rem !important;
-}
-
-/* Error state styling */
-.error-state {
-    text-align: center;
-    padding: 3rem 2rem;
-}
-
-.error-state i {
-    opacity: 0.5;
-}
-
-/* Loading states */
-.skeleton-loader {
-    background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
-    background-size: 200% 100%;
-    animation: loading 1.5s infinite;
-}
-
-@keyframes loading {
-    0% { background-position: 200% 0; }
-    100% { background-position: -200% 0; }
-}
-
-/* Responsive adjustments */
-@media (max-width: 768px) {
-    .sale-notification, .low-stock-alert {
-        right: 10px;
-        left: 10px;
-        max-width: none;
-        min-width: auto;
-    }
-
-    #websocket-status {
-        top: 10px;
-        right: 10px;
-        font-size: 0.7rem;
-        padding: 6px 10px;
-    }
-
-    .analytics-card {
-        margin-bottom: 1rem;
-    }
-}
-
-/* Dark mode support */
-@media (prefers-color-scheme: dark) {
-    .analytics-card {
-        background-color: #2d3748;
-        border-color: #4a5568;
-    }
-
-    .error-state {
-        color: #a0aec0;
-    }
-
-    .skeleton-loader {
-        background: linear-gradient(90deg, #2d3748 25%, #4a5568 50%, #2d3748 75%);
-        background-size: 200% 100%;
-    }
-}
-
-/* Performance optimizations */
-.chart-container {
-    contain: layout style paint;
-}
-
-/* Accessibility improvements */
-@media (prefers-reduced-motion: reduce) {
-    .realtime-indicator,
-    .realtime-badge,
-    .value-updated,
-    .sale-flash,
-    .connection-pulse,
-    .btn-custom,
-    .analytics-card,
-    .store-card {
-        animation: none !important;
-        transition: none !important;
-    }
-}
-
-/* Focus styles for better accessibility */
-.btn-custom:focus {
-    outline: 2px solid #007bff;
-    outline-offset: 2px;
-}
-
-/* High contrast mode support */
-@media (prefers-contrast: high) {
-    .analytics-card {
-        border-width: 2px;
-    }
-
-    .badge {
-        border: 1px solid currentColor;
-    }
-}
-</style>
 {% endblock %}

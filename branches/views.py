@@ -25,10 +25,9 @@ from company.forms import SearchForm
 @require_http_methods(["GET"])
 def branch_analytics(request, branch_id):
     """
-    Branch analytics view - now using Store model.
-    branch_id parameter kept for backward compatibility with URLs.
+    Store analytics view (backward compatible with branch_id parameter).
     """
-    # Get store (previously branch)
+    # Get store using branch_id for backward compatibility
     store = get_object_or_404(Store, id=branch_id)
 
     # Updated permission check
@@ -38,7 +37,6 @@ def branch_analytics(request, branch_id):
     today = timezone.now().date()
     thirty_days_ago = today - timedelta(days=30)
     sixty_days_ago = today - timedelta(days=60)
-    seven_days_ago = today - timedelta(days=7)
 
     # For company-wide analytics, get all stores for the company
     company = store.company
@@ -161,13 +159,12 @@ def branch_analytics(request, branch_id):
 
 @login_required
 @require_http_methods(["GET"])
-def branch_store_stats(request, branch_id):
+def branch_store_stats(request, store_id):
     """
     Return basic statistics for stores.
-    For company-wide view: pass main store's ID
-    For single store view: pass that store's ID
+    Parameter renamed to store_id but maintains backward compatibility.
     """
-    store = get_object_or_404(Store, id=branch_id)
+    store = get_object_or_404(Store, id=store_id)
 
     if not request.user.has_perm('stores.view_store'):
         return JsonResponse({'error': 'Permission denied'}, status=403)
@@ -243,17 +240,17 @@ def branch_performance(request, branch_id):
             performance_score = 0
             if sales_count > 0:
                 # Base score on sales volume (0-40 points)
-                sales_score = min(40, (sales_count / 10) * 5)  # 10 sales = 5 points, max 40
+                sales_score = min(40, (sales_count / 10) * 5)
 
                 # Add revenue component (0-40 points)
-                revenue_score = min(40, (revenue / 100000) * 10)  # 100k = 10 points, max 40
+                revenue_score = min(40, (revenue / 100000) * 10)
 
                 # Add average sale amount component (0-20 points)
-                avg_score = min(20, (avg_sale_amount / 10000) * 5)  # 10k avg = 5 points, max 20
+                avg_score = min(20, (avg_sale_amount / 10000) * 5)
 
                 performance_score = sales_score + revenue_score + avg_score
 
-            performance_score = min(100, performance_score)  # Cap at 100
+            performance_score = min(100, performance_score)
 
             store_data = {
                 'id': current_store.id,
@@ -287,7 +284,6 @@ def branch_performance(request, branch_id):
                 top_stores.append(store_data)
 
         except Exception as e:
-            # Handle case where there's an error with queries
             attention_stores.append({
                 'id': current_store.id,
                 'name': current_store.name,
@@ -301,7 +297,7 @@ def branch_performance(request, branch_id):
 
     # Sort top stores by performance score
     top_stores.sort(key=lambda x: x['performance_score'], reverse=True)
-    top_stores = top_stores[:5]  # Top 5 performers
+    top_stores = top_stores[:5]
 
     # Generate trend data
     trend_data = generate_performance_trend_data(stores)
@@ -331,7 +327,7 @@ def branch_staff_overview(request, branch_id):
     for current_store in stores:
         staff_ids.extend(current_store.staff.values_list('id', flat=True))
 
-    # Remove duplicates (staff might work in multiple stores)
+    # Remove duplicates
     unique_staff_ids = list(set(staff_ids))
 
     # Get staff statistics
@@ -340,23 +336,22 @@ def branch_staff_overview(request, branch_id):
     if unique_staff_ids:
         staff_queryset = CustomUser.objects.filter(
             id__in=unique_staff_ids,
-            is_hidden=False  # Exclude hidden users
+            is_hidden=False
         )
 
         active_staff = staff_queryset.filter(is_active=True).count()
         managers = staff_queryset.filter(
-            user_type__in=['MANAGER', 'COMPANY_ADMIN'],
-            is_active=True
-        ).count()
-        cashiers = staff_queryset.filter(
-            user_type='CASHIER',
+            primary_role__name__in=['Manager', 'Company Admin'],
             is_active=True
         ).count()
 
+        cashiers = staff_queryset.filter(
+            primary_role__name='Cashier',
+            is_active=True
+        ).count()
         # Get recent activities from device logs
         recent_activities = []
         try:
-            # Get recent device operator logs for stores
             logs = DeviceOperatorLog.objects.filter(
                 user_id__in=unique_staff_ids,
                 store__in=stores
@@ -383,7 +378,7 @@ def branch_staff_overview(request, branch_id):
                     'avatar': log.user.avatar.url if log.user.avatar else None,
                 })
 
-        except Exception as e:
+        except Exception:
             recent_activities = []
     else:
         active_staff = 0
@@ -436,7 +431,6 @@ def generate_revenue_data(store_ids, days=7):
         date = timezone.now().date() - timedelta(days=days - 1 - i)
         labels.append(date.strftime('%m/%d'))
 
-        # Get actual daily revenue from Sales
         try:
             daily_revenue = Sale.objects.filter(
                 store_id__in=store_ids,
@@ -461,11 +455,10 @@ def generate_store_performance_data(stores):
     values = []
     thirty_days_ago = timezone.now().date() - timedelta(days=30)
 
-    for store in stores[:5]:  # Top 5 stores for pie chart
+    for store in stores[:5]:
         labels.append(store.name)
 
         try:
-            # Get actual performance value based on revenue
             performance_value = Sale.objects.filter(
                 store=store,
                 created_at__date__gte=thirty_days_ago,
@@ -503,7 +496,7 @@ def generate_store_details(stores):
                 avg_sale=Avg('total_amount')
             )
 
-            # Previous period metrics for comparison
+            # Previous period metrics
             prev_metrics = Sale.objects.filter(
                 store=store,
                 created_at__date__range=[sixty_days_ago, thirty_days_ago],
@@ -573,7 +566,6 @@ def generate_performance_trend_data(stores):
         labels.append(date.strftime('%m/%d'))
 
         try:
-            # Calculate daily performance based on total sales across all stores
             daily_sales = Sale.objects.filter(
                 store__in=stores,
                 created_at__date=date,
@@ -581,8 +573,7 @@ def generate_performance_trend_data(stores):
                 is_completed=True
             ).count()
 
-            # Convert to a performance score (adjust logic as needed)
-            daily_performance = min(100, daily_sales * 2)  # 50 sales = 100 performance
+            daily_performance = min(100, daily_sales * 2)
             values.append(daily_performance)
         except Exception:
             values.append(0)
@@ -592,10 +583,11 @@ def generate_performance_trend_data(stores):
         'values': values
     }
 
+
 @login_required
 @require_http_methods(["GET"])
 def export_branch_data(request, branch_id):
-    """Export store/branch data as CSV."""
+    """Export store data as CSV."""
     store = get_object_or_404(Store, id=branch_id)
 
     if not request.user.has_perm('stores.view_store'):
@@ -651,7 +643,7 @@ def export_branch_data(request, branch_id):
 @login_required
 @require_http_methods(["POST"])
 def generate_branch_report(request, branch_id):
-    """Generate comprehensive store/branch report as PDF."""
+    """Generate comprehensive store report."""
     store = get_object_or_404(Store, id=branch_id)
 
     if not request.user.has_perm('stores.view_store'):
@@ -715,13 +707,10 @@ def generate_branch_report(request, branch_id):
 # Class-based views
 
 class BranchListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
-    """
-    List all stores (previously branches).
-    Template and context names kept for backward compatibility.
-    """
+    """List all stores (backward compatible as branches)."""
     model = Store
-    template_name = 'company/branch_list.html'  # Keep same template
-    context_object_name = 'branches'  # Keep same context name for template compatibility
+    template_name = 'company/branch_list.html'
+    context_object_name = 'branches'
     permission_required = 'stores.view_store'
     paginate_by = 25
 
@@ -754,15 +743,15 @@ class BranchListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
         context = super().get_context_data(**kwargs)
         context['search_form'] = SearchForm(self.request.GET)
         context['companies'] = Company.objects.filter(is_active=True)
-        context['stores'] = context['branches']  # Add stores alias
+        context['stores'] = context['branches']
         return context
 
 
 class BranchDetailView(LoginRequiredMixin, PermissionRequiredMixin, DetailView):
-    """Store detail view (previously branch)."""
+    """Store detail view (backward compatible as branch)."""
     model = Store
-    template_name = 'company/branch_detail.html'  # Keep same template
-    context_object_name = 'branch'  # Keep same context name for template compatibility
+    template_name = 'company/branch_detail.html'
+    context_object_name = 'branch'
     permission_required = 'stores.view_store'
 
     def get_queryset(self):
@@ -772,10 +761,7 @@ class BranchDetailView(LoginRequiredMixin, PermissionRequiredMixin, DetailView):
         context = super().get_context_data(**kwargs)
         store = self.get_object()
 
-        # Backward compatibility: add store as 'branch'
         context['store'] = store
-
-        # For displaying "other stores" in the same company (like branches under a branch)
         context["active_store_count"] = Store.objects.filter(
             company=store.company,
             is_active=True
@@ -785,11 +771,10 @@ class BranchDetailView(LoginRequiredMixin, PermissionRequiredMixin, DetailView):
 
 
 class BranchCreateView(LoginRequiredMixin, PermissionRequiredMixin, CreateView):
-    """Create new store (previously branch)."""
+    """Create new store (backward compatible as branch)."""
     model = Store
-    template_name = 'company/branch_form.html'  # Keep same template
+    template_name = 'company/branch_form.html'
     permission_required = 'stores.add_store'
-    # Updated fields for Store model
     fields = [
         'company', 'name', 'code', 'location', 'physical_address',
         'phone', 'email', 'tin', 'nin', 'is_main_branch',
@@ -800,7 +785,6 @@ class BranchCreateView(LoginRequiredMixin, PermissionRequiredMixin, CreateView):
     def get_form(self, form_class=None):
         form = super().get_form(form_class)
 
-        # Restrict company field to only current user's company
         current_user = self.request.user
         if hasattr(current_user, 'company') and current_user.company:
             company = current_user.company
@@ -818,11 +802,10 @@ class BranchCreateView(LoginRequiredMixin, PermissionRequiredMixin, CreateView):
 
 
 class BranchUpdateView(LoginRequiredMixin, PermissionRequiredMixin, UpdateView):
-    """Update store (previously branch)."""
+    """Update store (backward compatible as branch)."""
     model = Store
-    template_name = 'company/branch_form.html'  # Keep same template
+    template_name = 'company/branch_form.html'
     permission_required = 'stores.change_store'
-    # Updated fields for Store model
     fields = [
         'company', 'name', 'code', 'location', 'physical_address',
         'phone', 'email', 'tin', 'nin', 'is_main_branch',
@@ -834,7 +817,6 @@ class BranchUpdateView(LoginRequiredMixin, PermissionRequiredMixin, UpdateView):
     def get_form(self, form_class=None):
         form = super().get_form(form_class)
 
-        # Restrict company field to only current user's company
         current_user = self.request.user
         if hasattr(current_user, 'company') and current_user.company:
             company = current_user.company
@@ -846,25 +828,30 @@ class BranchUpdateView(LoginRequiredMixin, PermissionRequiredMixin, UpdateView):
 
         return form
 
+    def form_valid(self, form):
+        messages.success(self.request, _('Store updated successfully.'))
+        return super().form_valid(form)
+
 
 class BranchDeleteView(LoginRequiredMixin, PermissionRequiredMixin, DeleteView):
-    """Delete branch."""
+    """Delete store (backward compatible as branch)."""
     model = Store
     template_name = 'company/branch_confirm_delete.html'
-    permission_required = 'branches.delete_companybranch'
+    permission_required = 'stores.delete_store'
     success_url = reverse_lazy('companies:branch_list')
 
     def delete(self, request, *args, **kwargs):
-        branch_name = self.get_object().name
+        store_name = self.get_object().name
         result = super().delete(request, *args, **kwargs)
-        messages.success(request, _('Branch "%s" deleted successfully.') % branch_name)
+        messages.success(request, _('Store "%s" deleted successfully.') % store_name)
         return result
 
 
-# AJAX Views for dynamic forms
+# AJAX Views
+
 class GetBranchesAjaxView(LoginRequiredMixin, View):
-    """Get branches for a specific company via AJAX."""
-    
+    """Get stores for a specific company via AJAX (backward compatible)."""
+
     def get(self, request, *args, **kwargs):
         company_id = request.GET.get('company_id')
         if company_id:
@@ -874,35 +861,35 @@ class GetBranchesAjaxView(LoginRequiredMixin, View):
 
 
 class GetCompanyBranchesView(LoginRequiredMixin, View):
-    """Get branches for a company in JSON format."""
-    
+    """Get stores for a company in JSON format (backward compatible)."""
+
     def get(self, request, *args, **kwargs):
         company_id = request.GET.get('company_id')
         branches = Store.objects.filter(company_id=company_id).values('id', 'name', 'code')
         return JsonResponse({'branches': list(branches)})
-    
+
 
 class ExportBranchesView(LoginRequiredMixin, PermissionRequiredMixin, View):
-    """Export branches to CSV."""
-    permission_required = 'branches.view_companybranch'
-    
+    """Export stores to CSV (backward compatible as branches)."""
+    permission_required = 'stores.view_store'
+
     def get(self, request, *args, **kwargs):
         response = HttpResponse(content_type='text/csv')
         response['Content-Disposition'] = 'attachment; filename="branches.csv"'
-        
+
         writer = csv.writer(response)
         writer.writerow([
             'Company', 'Branch Name', 'Code', 'Location', 'Phone', 'Email',
             'TIN', 'Is Active', 'Is Main Branch', 'Created At'
         ])
-        
+
         branches = Store.objects.select_related('company')
-        
+
         # Apply filters
         company_id = request.GET.get('company')
         if company_id:
             branches = branches.filter(company_id=company_id)
-            
+
         search_query = request.GET.get('q')
         if search_query:
             branches = branches.filter(
@@ -910,10 +897,10 @@ class ExportBranchesView(LoginRequiredMixin, PermissionRequiredMixin, View):
                 Q(code__icontains=search_query) |
                 Q(location__icontains=search_query)
             )
-        
+
         for branch in branches:
             writer.writerow([
-                branch.company.name,
+                branch.company.name if branch.company else '',
                 branch.name,
                 branch.code or '',
                 branch.location or '',
@@ -924,8 +911,5 @@ class ExportBranchesView(LoginRequiredMixin, PermissionRequiredMixin, View):
                 'Yes' if branch.is_main_branch else 'No',
                 branch.created_at.strftime('%Y-%m-%d %H:%M:%S') if hasattr(branch, 'created_at') else '',
             ])
-        
+
         return response
-
-
-

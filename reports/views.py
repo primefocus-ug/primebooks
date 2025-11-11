@@ -44,6 +44,15 @@ def get_client_ip(request):
     return ip
 
 
+def user_can_access_all_stores(user):
+    """Check if user can access all stores (SaaS admin or high-priority role)"""
+    return (
+        getattr(user, 'is_saas_admin', False) or
+        user.is_superuser or
+        (user.primary_role and user.primary_role.priority >= 90)
+    )
+
+
 @login_required
 @permission_required('reports.view_savedreport')
 def report_dashboard(request):
@@ -53,7 +62,7 @@ def report_dashboard(request):
     month_ago = today - timedelta(days=30)
 
     # Get user's accessible stores
-    if request.user.is_superuser or request.user.user_type == 'SUPER_ADMIN':
+    if user_can_access_all_stores(request.user):
         stores = Store.objects.filter(is_active=True)
     else:
         stores = request.user.stores.filter(is_active=True)
@@ -192,11 +201,6 @@ def get_current_schema():
     return connection.schema_name
 
 
-# ============================================
-# Update log_report_access calls throughout views
-# ============================================
-
-# Example: In sales_summary_report view
 @login_required
 @permission_required('sales.view_sale')
 def sales_summary_report(request):
@@ -204,7 +208,7 @@ def sales_summary_report(request):
     form = SalesReportForm(request.GET or None, user=request.user)
 
     # Get user's accessible stores
-    if request.user.is_superuser or request.user.user_type == 'SUPER_ADMIN':
+    if user_can_access_all_stores(request.user):
         stores = Store.objects.filter(is_active=True)
     else:
         stores = request.user.stores.filter(is_active=True)
@@ -294,7 +298,7 @@ def product_performance_report(request):
     """Enhanced product performance report"""
     form = ReportFilterForm(request.GET or None, user=request.user)
 
-    if request.user.is_superuser or request.user.user_type == 'SUPER_ADMIN':
+    if user_can_access_all_stores(request.user):
         stores = Store.objects.filter(is_active=True)
     else:
         stores = request.user.stores.filter(is_active=True)
@@ -353,7 +357,7 @@ def inventory_status_report(request):
     """Enhanced inventory status report with real-time alerts"""
     form = InventoryReportForm(request.GET or None, user=request.user)
 
-    if request.user.is_superuser or request.user.user_type == 'SUPER_ADMIN':
+    if user_can_access_all_stores(request.user):
         stores = Store.objects.filter(is_active=True)
     else:
         stores = request.user.stores.filter(is_active=True)
@@ -410,7 +414,6 @@ def inventory_status_report(request):
     return render(request, 'reports/inventory_status.html', context)
 
 
-
 logger = logging.getLogger(__name__)
 from django.db import connection
 
@@ -422,7 +425,7 @@ def generate_report(request, report_id):
     report = get_object_or_404(SavedReport, id=report_id)
 
     # Check permissions
-    if not (request.user.is_superuser or request.user.user_type == 'SUPER_ADMIN' or
+    if not (user_can_access_all_stores(request.user) or
             report.created_by == request.user or report.is_shared):
         raise PermissionDenied
 
@@ -512,7 +515,7 @@ def tax_report(request):
     form = ReportFilterForm(request.GET or None, user=request.user)
 
     # Get user's accessible stores
-    if request.user.is_superuser or request.user.user_type == 'SUPER_ADMIN':
+    if user_can_access_all_stores(request.user):
         stores = Store.objects.filter(is_active=True)
     else:
         stores = request.user.stores.filter(is_active=True)
@@ -562,7 +565,7 @@ def tax_report(request):
 def analytics_dashboard(request):
     """Advanced analytics dashboard with charts and KPIs."""
     # Get user's accessible stores
-    if request.user.is_superuser or request.user.user_type == 'SUPER_ADMIN':
+    if user_can_access_all_stores(request.user):
         stores = Store.objects.filter(is_active=True)
     else:
         stores = request.user.stores.filter(is_active=True)
@@ -679,7 +682,7 @@ def export_report(request, report_type):
     schema_name = connection.schema_name
 
     # Get user's accessible stores
-    if request.user.is_superuser or request.user.user_type == 'SUPER_ADMIN':
+    if user_can_access_all_stores(request.user):
         stores = Store.objects.filter(is_active=True)
     else:
         stores = request.user.stores.filter(is_active=True)
@@ -731,8 +734,6 @@ def export_report(request, report_type):
     return response
 
 
-
-
 @login_required
 @permission_required('view_savedreport')
 def save_report(request):
@@ -764,12 +765,11 @@ def save_report(request):
     return JsonResponse({'success': False, 'message': 'Invalid request method'})
 
 
-
 @login_required
 @permission_required('reports.view_savedreport')
 def saved_reports_list(request):
     """List all saved reports with search and filters"""
-    if request.user.is_superuser or request.user.user_type == 'SUPER_ADMIN':
+    if user_can_access_all_stores(request.user):
         saved_reports = SavedReport.objects.all()
     else:
         saved_reports = SavedReport.objects.filter(
@@ -852,7 +852,7 @@ def edit_saved_report(request, report_id):
     saved_report = get_object_or_404(SavedReport, id=report_id)
 
     # Check permissions
-    if not (request.user.is_superuser or request.user.user_type == 'SUPER_ADMIN' or
+    if not (user_can_access_all_stores(request.user) or
             saved_report.created_by == request.user):
         raise PermissionDenied
 
@@ -882,42 +882,12 @@ def edit_saved_report(request, report_id):
 
 @login_required
 @permission_required('reports.view_savedreport')
-def save_report(request):
-    """Save current report configuration for future use."""
-    if request.method == 'POST':
-        report_name = request.POST.get('report_name')
-        report_type = request.POST.get('report_type')
-        filters = request.POST.get('filters', '{}')
-
-        try:
-            saved_report = SavedReport.objects.create(
-                name=report_name,
-                report_type=report_type,
-                created_by=request.user,
-                filters=json.loads(filters)
-            )
-
-            return JsonResponse({
-                'success': True,
-                'message': 'Report saved successfully',
-                'report_id': saved_report.id
-            })
-        except Exception as e:
-            return JsonResponse({
-                'success': False,
-                'message': f'Error saving report: {str(e)}'
-            })
-
-    return JsonResponse({'success': False, 'message': 'Invalid request method'})
-
-@login_required
-@permission_required('reports.view_savedreport')
 def view_saved_report(request, report_id):
     """View a saved report configuration."""
     saved_report = get_object_or_404(SavedReport, id=report_id)
 
     # Check permissions
-    if not (request.user.is_superuser or request.user.user_type == 'SUPER_ADMIN' or
+    if not (user_can_access_all_stores(request.user) or
             saved_report.created_by == request.user or saved_report.is_shared):
         raise PermissionDenied
 
@@ -934,7 +904,7 @@ def delete_saved_report(request, report_id):
     """Delete a saved report"""
     saved_report = get_object_or_404(SavedReport, id=report_id)
 
-    if not (request.user.is_superuser or request.user.user_type == 'SUPER_ADMIN' or
+    if not (user_can_access_all_stores(request.user) or
             saved_report.created_by == request.user):
         raise PermissionDenied
 
@@ -957,7 +927,7 @@ def run_saved_report(request, report_id):
     saved_report = get_object_or_404(SavedReport, id=report_id)
 
     # Check permissions
-    if not (request.user.is_superuser or request.user.user_type == 'SUPER_ADMIN' or
+    if not (user_can_access_all_stores(request.user) or
             saved_report.created_by == request.user or saved_report.is_shared):
         raise PermissionDenied
 
@@ -988,7 +958,7 @@ def run_saved_report(request, report_id):
 @permission_required('reports.view_reportschedule')
 def report_schedules_list(request):
     """List all report schedules."""
-    if request.user.is_superuser or request.user.user_type == 'SUPER_ADMIN':
+    if user_can_access_all_stores(request.user):
         schedules = ReportSchedule.objects.all()
     else:
         schedules = ReportSchedule.objects.filter(
@@ -1039,7 +1009,7 @@ def edit_schedule(request, schedule_id):
     schedule = get_object_or_404(ReportSchedule, id=schedule_id)
 
     # Check permissions
-    if not (request.user.is_superuser or request.user.user_type == 'SUPER_ADMIN' or
+    if not (user_can_access_all_stores(request.user) or
             schedule.report.created_by == request.user):
         raise PermissionDenied
 
@@ -1070,7 +1040,7 @@ def delete_schedule(request, schedule_id):
     schedule = get_object_or_404(ReportSchedule, id=schedule_id)
 
     # Check permissions
-    if not (request.user.is_superuser or request.user.user_type == 'SUPER_ADMIN' or
+    if not (user_can_access_all_stores(request.user) or
             schedule.report.created_by == request.user):
         raise PermissionDenied
 
@@ -1094,7 +1064,7 @@ def toggle_schedule(request, schedule_id):
     schedule = get_object_or_404(ReportSchedule, id=schedule_id)
 
     # Check permissions
-    if not (request.user.is_superuser or request.user.user_type == 'SUPER_ADMIN' or
+    if not (user_can_access_all_stores(request.user) or
             schedule.report.created_by == request.user):
         return JsonResponse({'success': False, 'error': 'Permission denied'}, status=403)
 
@@ -1107,6 +1077,7 @@ def toggle_schedule(request, schedule_id):
         'message': f"Schedule {'activated' if schedule.is_active else 'deactivated'}"
     })
 
+
 @login_required
 @permission_required('reports.change_savedreport')
 @require_http_methods(["POST"])
@@ -1114,7 +1085,7 @@ def toggle_favorite_report(request, report_id):
     """Toggle report favorite status"""
     saved_report = get_object_or_404(SavedReport, id=report_id)
 
-    if not (request.user.is_superuser or request.user.user_type == 'SUPER_ADMIN' or
+    if not (user_can_access_all_stores(request.user) or
             saved_report.created_by == request.user or saved_report.is_shared):
         return JsonResponse({'success': False, 'error': 'Permission denied'}, status=403)
 
@@ -1127,11 +1098,12 @@ def toggle_favorite_report(request, report_id):
         'message': f"Report {'added to' if saved_report.is_favorite else 'removed from'} favorites"
     })
 
+
 @login_required
 @permission_required('reports.view_generatereport')
 def generated_reports_history(request):
     """View history of generated reports with filtering"""
-    if request.user.is_superuser or request.user.user_type == 'SUPER_ADMIN':
+    if user_can_access_all_stores(request.user):
         reports = GeneratedReport.objects.all()
     else:
         reports = GeneratedReport.objects.filter(
@@ -1175,7 +1147,7 @@ def download_generated_report(request, report_id):
     report = get_object_or_404(GeneratedReport, id=report_id)
 
     # Check permissions
-    if not (request.user.is_superuser or request.user.user_type == 'SUPER_ADMIN' or
+    if not (user_can_access_all_stores(request.user) or
             report.generated_by == request.user or report.report.created_by == request.user):
         raise PermissionDenied
 
@@ -1215,7 +1187,7 @@ def download_generated_report(request, report_id):
 def delete_generated_report(request, report_id):
     report = get_object_or_404(GeneratedReport, id=report_id)
 
-    if not (request.user.is_superuser or request.user.user_type == 'SUPER_ADMIN' or
+    if not (user_can_access_all_stores(request.user) or
             report.generated_by == request.user):
         raise PermissionDenied
 
@@ -1234,14 +1206,13 @@ def delete_generated_report(request, report_id):
     return render(request, 'reports/confirm_delete_generated.html', context)
 
 
-
 @login_required
 def get_chart_data(request):
     """AJAX endpoint for chart data."""
     chart_type = request.GET.get('type', 'sales_trend')
 
     # Get user's accessible stores
-    if request.user.is_superuser or request.user.user_type == 'SUPER_ADMIN':
+    if user_can_access_all_stores(request.user):
         stores = Store.objects.filter(is_active=True)
     else:
         stores = request.user.stores.filter(is_active=True)
@@ -1288,7 +1259,7 @@ def get_chart_data(request):
 def get_quick_stats(request):
     """AJAX endpoint for dashboard quick stats."""
     # Get user's accessible stores
-    if request.user.is_superuser or request.user.user_type == 'SUPER_ADMIN':
+    if user_can_access_all_stores(request.user):
         stores = Store.objects.filter(is_active=True)
     else:
         stores = request.user.stores.filter(is_active=True)
@@ -1329,7 +1300,7 @@ def get_filter_options(request):
     filter_type = request.GET.get('type')
 
     # Get user's accessible stores
-    if request.user.is_superuser or request.user.user_type == 'SUPER_ADMIN':
+    if user_can_access_all_stores(request.user):
         stores = Store.objects.filter(is_active=True)
     else:
         stores = request.user.stores.filter(is_active=True)
@@ -1352,7 +1323,7 @@ def z_report(request):
     form = ReportFilterForm(request.GET or None, user=request.user)
 
     # Get user's accessible stores
-    if request.user.is_superuser or request.user.user_type == 'SUPER_ADMIN':
+    if user_can_access_all_stores(request.user):
         stores = Store.objects.filter(is_active=True)
     else:
         stores = request.user.stores.filter(is_active=True)
@@ -1422,7 +1393,7 @@ def efris_compliance_report(request):
 
     form = ReportFilterForm(request.GET or None, user=request.user)
 
-    if request.user.is_superuser or request.user.user_type == 'SUPER_ADMIN':
+    if user_can_access_all_stores(request.user):
         stores = Store.objects.filter(is_active=True)
     else:
         stores = request.user.stores.filter(is_active=True)
@@ -1468,7 +1439,7 @@ def price_lookup_report(request):
     category_filter = request.GET.get('category')
 
     # Get user's accessible stores
-    if request.user.is_superuser or request.user.user_type == 'SUPER_ADMIN':
+    if user_can_access_all_stores(request.user):
         stores = Store.objects.filter(is_active=True)
     else:
         stores = request.user.stores.filter(is_active=True)
@@ -1525,18 +1496,20 @@ def cashier_performance_report(request):
     form = ReportFilterForm(request.GET or None, user=request.user)
 
     # Get user's accessible stores
-    if request.user.is_superuser or request.user.user_type == 'SUPER_ADMIN':
+    if user_can_access_all_stores(request.user):
         stores = Store.objects.filter(is_active=True)
+        # Get all active users (could be filtered by role if needed)
         cashiers = CustomUser.objects.filter(
-            user_type__in=['CASHIER', 'MANAGER', 'EMPLOYEE'],
-            is_active=True
+            is_active=True,
+            is_hidden=False
         )
     else:
         stores = request.user.stores.filter(is_active=True)
         store_ids = stores.values_list('id', flat=True)
         cashiers = CustomUser.objects.filter(
             stores__id__in=store_ids,
-            is_active=True
+            is_active=True,
+            is_hidden=False
         ).distinct()
 
     performance_data = []
@@ -1602,6 +1575,7 @@ def print_tax_report(request):
     # Implementation for print view
     pass  # Implement based on your specific printing requirements
 
+
 @login_required
 def get_dashboard_stats_ajax(request):
     """Get current dashboard statistics via AJAX"""
@@ -1610,7 +1584,7 @@ def get_dashboard_stats_ajax(request):
 
     if not stats:
         # Regenerate stats (same logic as dashboard view)
-        if request.user.is_superuser or request.user.user_type == 'SUPER_ADMIN':
+        if user_can_access_all_stores(request.user):
             stores = Store.objects.filter(is_active=True)
         else:
             stores = request.user.stores.filter(is_active=True)
@@ -1647,7 +1621,7 @@ def get_report_progress_ajax(request, report_id):
     """Get report generation progress via AJAX"""
     report = get_object_or_404(GeneratedReport, id=report_id)
 
-    if not (request.user.is_superuser or report.generated_by == request.user):
+    if not (user_can_access_all_stores(request.user) or report.generated_by == request.user):
         return JsonResponse({'error': 'Permission denied'}, status=403)
 
     return JsonResponse({
@@ -1667,7 +1641,7 @@ def cancel_report_generation_ajax(request, report_id):
 
     report = get_object_or_404(GeneratedReport, id=report_id)
 
-    if not (request.user.is_superuser or report.generated_by == request.user):
+    if not (user_can_access_all_stores(request.user) or report.generated_by == request.user):
         return JsonResponse({'error': 'Permission denied'}, status=403)
 
     if report.status in ['PENDING', 'PROCESSING']:
@@ -1688,7 +1662,7 @@ def cancel_report_generation_ajax(request, report_id):
 @login_required
 def get_stock_alerts_ajax(request):
     """Get current stock alerts via AJAX"""
-    if request.user.is_superuser or request.user.user_type == 'SUPER_ADMIN':
+    if user_can_access_all_stores(request.user):
         stores = Store.objects.filter(is_active=True)
     else:
         stores = request.user.stores.filter(is_active=True)

@@ -1,4 +1,4 @@
-from django.urls import path
+from django.urls import path, include
 from . import views
 from . import view
 from . import saas
@@ -26,8 +26,16 @@ saas_admin_patterns = [
 
 urlpatterns = [
     path('login/', views.custom_login, name='login'),
+    path('social/', include([
+            path('connections/', views.manage_social_connections, name='manage_social_connections'),
+            path('set-password/', views.set_password_after_social_login, name='set_password_after_social'),
+            path('check-account/', views.check_social_account, name='check_social_account'),
+        ])),
+    path('social/callback/', views.social_login_callback, name='social_login_callback'),
+    path('social/check-account/', views.check_social_account, name='check_social_account'),
+    path('check-social-account/', views.check_social_account, name='api_check_social_account'),
     path('logout/', views.custom_logout, name='custom_logout'),
-    
+
     path('users/', views.UserListView.as_view(), name='user_list'),
     path('users/create/', views.UserCreateView.as_view(), name='user_create'),
     path('users/<int:pk>/', views.UserDetailView.as_view(), name='user_detail'),
@@ -86,6 +94,7 @@ urlpatterns = [
     path('roles/assign-users/', views.UserRoleAssignView.as_view(), name='assign_role_users'),
 
     # Advanced role management
+    path('debug-permissions/',view.debug_permissions),
     path('roles/bulk-assignment/', views.RoleBulkAssignmentView.as_view(), name='role_bulk_assignment'),
     path('roles/<int:pk>/analytics/', views.RoleAnalyticsView.as_view(), name='role_analytics'),
     path('roles/<int:pk>/history/', views.RoleHistoryView.as_view(), name='role_history'),
@@ -107,15 +116,35 @@ account_management_urls = [
     path('profile/privacy/', views.privacy_settings, name='privacy_settings'),
     path('profile/data-export/', views.export_all_data, name='export_all_data'),
     path('profile/delete-account/', views.delete_account_request, name='delete_account_request'),
+    path('audit/logs/', views.saas_admin_audit_log, name='saas_admin_audit_log'),
+    path('audit/dashboard/', views.audit_dashboard, name='audit_dashboard'),
+    path('audit/log/<int:log_id>/', views.audit_log_detail, name='audit_log_detail'),
+    path('audit/log/<int:log_id>/review/', views.review_audit_log, name='review_audit_log'),
+    path('audit/bulk-review/', views.bulk_review_audit_logs, name='bulk_review_audit_logs'),
+    path('audit/export/dashboard/', views.export_audit_dashboard_data, name='export_audit_dashboard_data'),
+
+    # User Activity URLs
+    path('activity/', views.user_activity_log, name='user_activity_log'),
+    path('activity/login-history/', views.login_history_view, name='login_history_view'),
+    path('activity/security/', views.security_overview, name='security_overview'),
+    path('activity/exports/', views.data_export_history, name='data_export_history'),
+    path('security/session/<int:session_id>/revoke/', views.revoke_session, name='revoke_session'),
+    path('audit/statistics/', views.audit_statistics, name='audit_statistics'),
 
     # Activity and sessions
-    path('profile/activity/', views.user_activity_log, name='user_activity_log'),
     path('profile/sessions/', views.active_sessions, name='active_sessions'),
     path('profile/revoke-session/<int:session_id>/', views.revoke_session, name='revoke_session'),
 
     # API tokens and integrations
     path('profile/api-tokens/', views.api_tokens, name='api_tokens'),
     path('profile/integrations/', views.user_integrations, name='user_integrations'),
+    path('invite/', views.invite_user, name='invite_user'),
+    path('company/<slug:company_id>/bulk-invite/', views.bulk_invite_users, name='bulk_invite_users'),
+    path('company/toggle-admin/<int:user_id>/', views.toggle_company_admin,
+         name='toggle_company_admin'),
+    path('company/remove-user/<int:user_id>/', views.remove_user_from_company,
+         name='remove_user_from_company'),
+    path('company/users/', views.company_user_list, name='company_user_list'),
 ]
 
 urlpatterns += account_management_urls

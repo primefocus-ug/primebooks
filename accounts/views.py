@@ -23,6 +23,15 @@ from allauth.account.views import LoginView as AllauthLoginView, LogoutView as A
 from django.views.generic import (
     ListView, DetailView, CreateView, UpdateView, DeleteView, FormView
 )
+
+from django.utils.translation import gettext as _
+from .utils import (
+    require_saas_admin,
+    export_audit_logs,
+    get_client_ip,
+    parse_user_agent,
+    get_location_from_ip
+)
 from django.views.decorators.http import require_http_methods, require_POST
 from django.core.mail import send_mail
 from django.conf import settings
@@ -30,7 +39,7 @@ import qrcode
 from django.contrib.auth import logout
 from django.template.loader import render_to_string
 from django.contrib.sessions.models import Session
-from django.db.models import Q
+from django.db.models import Q, Avg
 import json
 import secrets
 import zipfile
@@ -38,18 +47,28 @@ from io import BytesIO
 from datetime import datetime
 from .utils import (
     get_visible_users,
+    export_audit_logs,
     get_company_user_count,
     can_access_company,
     get_accessible_companies,
     require_saas_admin,
     require_company_access
 )
-
-
-
+from django.core.exceptions import ValidationError
+from django.contrib.sites.shortcuts import get_current_site
+from django_tenants.utils import schema_context
+from django.db import transaction
+from django.core.exceptions import PermissionDenied
+from django.contrib import messages
+from django.shortcuts import render, redirect, get_object_or_404
+import secrets, string, logging
+from django.utils.encoding import force_str
+from company.decorator import check_user_limit
+from django.utils.decorators import method_decorator
 # Models for API tokens and sessions
 from django.db import models
-
+from django.db import connection
+from django_tenants.utils import tenant_context
 # For PDF generation
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
@@ -66,11 +85,15 @@ from openpyxl.styles import Font, PatternFill
 import csv
 from datetime import timedelta
 import logging
-from .models import CustomUser, UserSignature,Role, RoleHistory
+
+from .models import CustomUser, UserSignature,Role, RoleHistory, AuditLog, LoginHistory, DataExportLog
+from django.views.decorators.csrf import csrf_protect
+from django.views.decorators.cache import never_cache
 from company.models import Company, SubscriptionPlan
+from company.email import send_tenant_email
 from .forms import (
     CustomUserCreationForm, CustomUserChangeForm, CustomAuthenticationForm,UserRoleAssignForm,
-    UserProfileForm, PasswordChangeForm, UserSignatureForm, UserSearchForm,
+    UserProfileForm, PasswordChangeForm, UserSignatureForm, UserSearchForm,UserNotificationForm,UserPreferencesForm,
     BulkUserActionForm, TwoFactorSetupForm,RoleForm, BulkRoleAssignmentForm,BulkUserRoleAssignForm, RoleFilterForm
 )
 
@@ -84,6 +107,16 @@ DASHBOARD_MAPPING = [
     {'permission': 'reports.view_savedreport', 'url_name': 'reports:dashboard'},
 ]
 
+def get_client_ip(request):
+    """
+    Get client IP address from request
+    """
+    x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
+    if x_forwarded_for:
+        ip = x_forwarded_for.split(',')[0]
+    else:
+        ip = request.META.get('REMOTE_ADDR')
+    return ip
 
 def get_dashboard_url(user):
     """Return the correct dashboard URL for the user."""
@@ -146,6 +179,11 @@ def custom_login(request):
                         else:
                             request.session.set_expiry(0)
 
+                        # Record successful login
+                        user.record_login_attempt(success=True, ip_address=get_client_ip(request))
+                        user.last_activity_at = timezone.now()
+                        user.save(update_fields=['last_activity_at'])
+
                         next_url = request.GET.get('next') or get_dashboard_url(user)
                         message = (
                             f'Welcome SaaS Admin: {user.get_short_name()}!'
@@ -161,6 +199,7 @@ def custom_login(request):
                         })
                     else:
                         logger.error(f"Invalid 2FA code for user: {user.email}")
+                        user.record_login_attempt(success=False, ip_address=get_client_ip(request))
                         return JsonResponse({
                             'success': False,
                             'error': 'Invalid 2FA code'
@@ -178,6 +217,11 @@ def custom_login(request):
                 request.session.set_expiry(60 * 60 * 24 * 30)
             else:
                 request.session.set_expiry(0)
+
+            # Record successful login
+            user.record_login_attempt(success=True, ip_address=get_client_ip(request))
+            user.last_activity_at = timezone.now()
+            user.save(update_fields=['last_activity_at'])
 
             next_url = request.GET.get('next') or get_dashboard_url(user)
             message = (
@@ -197,11 +241,51 @@ def custom_login(request):
             # Non-AJAX POST
             if form.is_valid():
                 user = form.get_user()
+
+                # Check for 2FA in non-AJAX flow
+                two_factor_enabled = TOTPDevice.objects.filter(user=user, confirmed=True).exists()
+                code = form.cleaned_data.get('code')
+
+                if two_factor_enabled and not code:
+                    # Show 2FA form
+                    context = {
+                        'form': form,
+                        'show_2fa': True,
+                        'show_google_login': True,
+                    }
+                    return render(request, 'accounts/login.html', context)
+
+                if two_factor_enabled and code:
+                    try:
+                        device = TOTPDevice.objects.get(user=user, confirmed=True)
+                        if not device.verify_token(code):
+                            messages.error(request, 'Invalid 2FA code')
+                            context = {
+                                'form': form,
+                                'show_2fa': True,
+                                'show_google_login': True,
+                            }
+                            return render(request, 'accounts/login.html', context)
+                    except TOTPDevice.DoesNotExist:
+                        messages.error(request, '2FA device not found')
+                        context = {
+                            'form': form,
+                            'show_2fa': True,
+                            'show_google_login': True,
+                        }
+                        return render(request, 'accounts/login.html', context)
+
+                # Login successful
                 login(request, user)
                 if form.cleaned_data.get('remember_me'):
                     request.session.set_expiry(60 * 60 * 24 * 30)
                 else:
                     request.session.set_expiry(0)
+
+                # Record successful login
+                user.record_login_attempt(success=True, ip_address=get_client_ip(request))
+                user.last_activity_at = timezone.now()
+                user.save(update_fields=['last_activity_at'])
 
                 if getattr(user, 'is_saas_admin', False):
                     messages.success(request, f'Welcome SaaS Admin: {user.get_short_name()}!')
@@ -217,8 +301,26 @@ def custom_login(request):
     context = {
         'form': form,
         'show_google_login': True,
+        'show_2fa': False,
     }
     return render(request, 'accounts/login.html', context)
+
+
+def custom_logout(request):
+    """Instant logout without intermediate allauth page."""
+    if request.user.is_authenticated:
+        user = request.user
+        user.last_activity_at = timezone.now()
+        user.save(update_fields=['last_activity_at'])
+        logger.info(f"User {user.email} logged out")
+        user_name = user.get_short_name() or user.email.split('@')[0]
+        messages.info(request, f"Goodbye, {user_name}! You have been logged out.")
+    else:
+        logger.info("Anonymous user attempted logout")
+
+    # Use Django's built-in logout to immediately clear session
+    logout(request)
+    return redirect('login')
 
 
 def social_login_callback(request):
@@ -234,48 +336,62 @@ def social_login_callback(request):
 
     # Record the login
     client_ip = get_client_ip(request)
-    user.record_login_attempt(success=True, ip_address=client_ip)
 
-    # Update last activity
+    # Update user's last login and activity
+    user.last_login = timezone.now()
     user.last_activity_at = timezone.now()
-    user.save(update_fields=['last_activity_at'])
+    user.record_login_attempt(success=True, ip_address=client_ip)
+    user.save(update_fields=['last_login', 'last_activity_at'])
 
-    # Check if this is the user's first login (from social account)
+    # Check if this is the user's first social login
     social_account = SocialAccount.objects.filter(user=user).first()
-    if social_account and not user.last_login:
+    if social_account and social_account.date_joined.date() == timezone.now().date():
         messages.success(
             request,
-            f'Welcome to PrimeBooks! Your account has been created using {social_account.provider.title()}.'
+            f'Successfully connected your {social_account.provider.title()} account!'
         )
+        logger.info(f"New social account connected for user: {user.email}")
     else:
         messages.success(request, f'Welcome back, {user.get_short_name()}!')
+        logger.info(f"Social login successful for user: {user.email}")
+
+    # Check for 2FA requirement
+    two_factor_enabled = TOTPDevice.objects.filter(user=user, confirmed=True).exists()
+    if two_factor_enabled:
+        # Store user in session for 2FA verification
+        request.session['pending_2fa_user'] = user.id
+        messages.info(request, 'Please complete two-factor authentication.')
+        return redirect('two_factor:login')
 
     # Determine redirect URL
-    next_url = request.GET.get('next') or request.session.get('social_login_next') or get_dashboard_url(user)
-
-    # Clear the session variable if it exists
-    if 'social_login_next' in request.session:
-        del request.session['social_login_next']
+    next_url = request.GET.get('next') or request.session.pop('social_login_next', None) or get_dashboard_url(user)
 
     return redirect(next_url)
 
 
-def custom_logout(request):
-    """Enhanced logout view compatible with allauth"""
-    user_name = request.user.get_short_name() if request.user.is_authenticated else None
+def social_login_redirect(request, provider):
+    """
+    Custom social login redirect that integrates with your flow
+    """
+    # Store the next URL in session
+    next_url = request.GET.get('next')
+    if next_url:
+        request.session['social_login_next'] = next_url
 
-    if request.user.is_authenticated:
-        # Update last activity
-        request.user.last_activity_at = timezone.now()
-        request.user.save(update_fields=['last_activity_at'])
+    # Store any additional context you need
+    request.session['social_login_provider'] = provider
 
-    logout(request)
+    # Redirect to Allauth's provider login
+    if provider == 'google':
+        from allauth.socialaccount.providers.google.views import GoogleOAuth2Adapter
+        from allauth.socialaccount.providers.oauth2.views import OAuth2LoginView
+        adapter = GoogleOAuth2Adapter(request)
+        return OAuth2LoginView.adapter_view(adapter)(request)
 
-    if user_name:
-        messages.info(request, f'Goodbye, {user_name}! You have been logged out.')
-
-    return redirect('account_login')
-
+    # Add other providers as needed
+    else:
+        messages.error(request, f'Provider {provider} is not supported.')
+        return redirect('login')
 
 @require_http_methods(["GET"])
 def check_social_account(request):
@@ -288,7 +404,7 @@ def check_social_account(request):
     if not email:
         return JsonResponse({'error': 'Email is required'}, status=400)
 
-    # Check if user exists
+    # Check if user exists in current tenant
     try:
         user = CustomUser.objects.get(email=email)
         social_accounts = SocialAccount.objects.filter(user=user)
@@ -310,7 +426,7 @@ def check_social_account(request):
     except CustomUser.DoesNotExist:
         return JsonResponse({
             'exists': False,
-            'message': 'No account found with this email. You can sign up using Google or create a new account.'
+            'message': 'No account found with this email in this organization. Please contact your administrator.'
         })
 
 
@@ -346,6 +462,7 @@ def manage_social_connections(request):
 
                 social_account.delete()
                 messages.success(request, f'{provider.title()} account disconnected successfully!')
+                logger.info(f"User {request.user.email} disconnected {provider} account")
 
             except SocialAccount.DoesNotExist:
                 messages.error(request, f'No {provider.title()} account found.')
@@ -372,7 +489,6 @@ def manage_social_connections(request):
     }
 
     return render(request, 'accounts/manage_social_connections.html', context)
-
 
 @login_required
 def set_password_after_social_login(request):
@@ -404,6 +520,7 @@ def set_password_after_social_login(request):
                 request,
                 'Password set successfully! You can now sign in using your email and password.'
             )
+            logger.info(f"User {request.user.email} set a password after social login")
             return redirect('user_profile')
 
     context = {
@@ -413,6 +530,118 @@ def set_password_after_social_login(request):
 
     return render(request, 'accounts/set_password_after_social.html', context)
 
+
+@require_http_methods(["GET"])
+def auth_status(request):
+    """
+    Check authentication status and user info
+    """
+    if request.user.is_authenticated:
+        return JsonResponse({
+            'authenticated': True,
+            'user': {
+                'email': request.user.email,
+                'name': request.user.get_full_name() or request.user.get_short_name(),
+                'is_saas_admin': getattr(request.user, 'is_saas_admin', False),
+            },
+            'has_2fa': TOTPDevice.objects.filter(user=request.user, confirmed=True).exists(),
+            'has_social_accounts': SocialAccount.objects.filter(user=request.user).exists(),
+        })
+    else:
+        return JsonResponse({
+            'authenticated': False
+        })
+
+
+def handle_2fa_redirect(request, user):
+    """
+    Helper function to handle 2FA redirection
+    """
+    # Store user in session for 2FA verification
+    request.session['pending_2fa_user'] = user.id
+    request.session['pending_2fa_next'] = request.GET.get('next') or get_dashboard_url(user)
+
+    return redirect('login')
+
+
+
+@never_cache
+def token_login_complete(request):
+    """
+    Complete login using token from public router
+    This runs in tenant schema
+    """
+    from public_router.tenant_lookup import verify_login_token
+    from django.contrib.auth import login as auth_login
+
+    token = request.GET.get('token')
+
+    if not token:
+        messages.error(request, 'Invalid login link')
+        return redirect('login')
+
+    # Verify token
+    email, tenant_schema = verify_login_token(token)
+
+    if not email:
+        messages.error(request, 'Login link expired or invalid. Please try again.')
+        return redirect('login')
+
+    # Verify we're on correct tenant
+    current_schema = request.tenant.schema_name if hasattr(request, 'tenant') else 'public'
+
+    if current_schema != tenant_schema:
+        logger.error(f"Schema mismatch: expected {tenant_schema}, got {current_schema}")
+        messages.error(request, 'Authentication error. Please try again.')
+        # Redirect to public login
+        from django.conf import settings
+        base_url = f"http{'s' if settings.USE_HTTPS else ''}://{settings.BASE_DOMAIN}"
+        return redirect(f"{base_url}/accounts/login/")
+
+    # Get user from current tenant
+    try:
+        user = CustomUser.objects.get(email=email, is_active=True)
+    except CustomUser.DoesNotExist:
+        messages.error(request, 'User not found')
+        return redirect('login')
+
+    # Check for 2FA
+    from django_otp.plugins.otp_totp.models import TOTPDevice
+    two_factor_enabled = TOTPDevice.objects.filter(user=user, confirmed=True).exists()
+
+    if two_factor_enabled:
+        # Store for 2FA verification
+        request.session['pending_2fa_user'] = user.id
+        request.session['pending_2fa_email'] = user.email
+        messages.info(request, 'Please complete two-factor authentication.')
+        return redirect('login')  # Will show 2FA form
+
+    # Log user in
+    auth_login(request, user, backend='django.contrib.auth.backends.ModelBackend')
+
+    # Set remember me if it was set
+    remember_me = request.GET.get('remember')
+    if remember_me:
+        request.session.set_expiry(60 * 60 * 24 * 30)  # 30 days
+    else:
+        request.session.set_expiry(0)
+
+    # Record login
+    user.record_login_attempt(success=True, ip_address=get_client_ip(request))
+    user.last_activity_at = timezone.now()
+    user.save(update_fields=['last_activity_at'])
+
+    # Success message
+    if getattr(user, 'is_saas_admin', False):
+        messages.success(request, f'Welcome SaaS Admin: {user.get_short_name()}!')
+    else:
+        messages.success(request, f'Welcome back, {user.get_short_name()}!')
+
+    # Redirect
+    next_url = request.GET.get('next') or get_dashboard_url(user)
+    logger.info(f"User {user.email} logged in via token to tenant {tenant_schema}")
+
+    return redirect(next_url)
 
 @require_saas_admin
 def saas_admin_dashboard(request):
@@ -594,64 +823,183 @@ class UserRoleAssignView(LoginRequiredMixin, PermissionRequiredMixin, FormView):
     form_class = BulkUserRoleAssignForm
     permission_required = 'accounts.can_manage_users'
 
+    def dispatch(self, request, *args, **kwargs):
+        """Override to add better error handling"""
+        # Check if user has required permission
+        if not request.user.has_perm('accounts.can_manage_users'):
+            messages.error(request, "You don't have permission to assign user roles.")
+            return redirect('role_list')
+
+        # Check if user has a company
+        if not request.user.company and not getattr(request.user, 'is_saas_admin', False):
+            messages.error(request, "You must be associated with a company to assign roles.")
+            return redirect('role_list')
+
+        return super().dispatch(request, *args, **kwargs)
+
     def get_form_kwargs(self):
         kwargs = super().get_form_kwargs()
         kwargs['company'] = self.request.user.company
+        kwargs['requesting_user'] = self.request.user  # Pass current user for filtering
         return kwargs
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        company = self.request.user.company
+        current_user = self.request.user
+        company = current_user.company
 
-        # Get all roles with user counts
-        context['roles'] = Role.objects.filter(
-            Q(company=company) | Q(company__isnull=True, is_system_role=True)
-        ).select_related('group').annotate(
-            total_users=Count('group__user')
+        # Get accessible roles for this user
+        accessible_roles = Role.objects.accessible_by_user(current_user)
+
+        # Annotate with actual user counts (only active, non-hidden users)
+        roles_with_counts = accessible_roles.annotate(
+            active_user_count=Count(
+                'group__user',
+                filter=Q(
+                    group__user__is_hidden=False,
+                    group__user__is_active=True
+                ),
+                distinct=True
+            )
         ).order_by('-priority', 'group__name')
 
-        # Get all available users
-        context['available_users'] = CustomUser.objects.filter(
-            company=company,
-            is_hidden=False,
-            is_active=True
-        ).select_related('company').order_by('first_name', 'last_name')
+        # Create role list with computed properties
+        roles_list = []
+        for role in roles_with_counts:
+            # Calculate capacity info
+            capacity_percentage = 0
+            is_at_capacity = False
+            available_slots = None
 
-        # Get statistics
-        context['total_users'] = context['available_users'].count()
-        context['total_roles'] = context['roles'].count()
+            if role.max_users:
+                capacity_percentage = min(100, (role.active_user_count / role.max_users) * 100)
+                is_at_capacity = role.active_user_count >= role.max_users
+                available_slots = max(0, role.max_users - role.active_user_count)
+
+            # Add computed attributes to role object
+            role.computed_user_count = role.active_user_count
+            role.computed_capacity_percentage = round(capacity_percentage, 1)
+            role.computed_is_at_capacity = is_at_capacity
+            role.computed_available_slots = available_slots
+
+            roles_list.append(role)
+
+        # Get manageable users for current user
+        manageable_users = current_user.get_manageable_users().order_by('first_name', 'last_name')
+
+        # Prepare user list with display information
+        users_list = []
+        for user in manageable_users:
+            # Get user's primary role for display
+            primary_role = user.primary_role
+
+            # Add display attributes
+            user.computed_display_role = primary_role.group.name if primary_role else "No Role"
+            user.computed_role_count = user.groups.filter(role__isnull=False).count()
+            user.computed_role_priority = user.highest_role_priority
+
+            users_list.append(user)
+
+        # Statistics
+        context.update({
+            'roles': roles_list,
+            'available_users': users_list,
+            'total_users': len(users_list),
+            'total_roles': len(roles_list),
+            'company': company,
+            'is_saas_admin': getattr(current_user, 'is_saas_admin', False),
+            'can_create_roles': current_user.has_perm('auth.add_group'),
+        })
 
         return context
 
     def form_valid(self, form):
         users = form.cleaned_data['users']
         role = form.cleaned_data['role']
+        current_user = self.request.user
+
+        # Verify user has permission to assign this role
+        accessible_roles = Role.objects.accessible_by_user(current_user)
+        if role not in accessible_roles:
+            messages.error(
+                self.request,
+                f"You don't have permission to assign the role '{role.group.name}'."
+            )
+            return self.form_invalid(form)
 
         # Check role capacity
         if role.max_users:
-            current_count = role.user_count
-            new_count = current_count + users.count()
+            current_count = role.group.user_set.filter(
+                is_hidden=False,
+                is_active=True
+            ).count()
+            new_count = current_count + len(users)
 
             if new_count > role.max_users:
                 messages.error(
                     self.request,
-                    f"Cannot assign {users.count()} users. Role '{role.group.name}' "
+                    f"Cannot assign {len(users)} users. Role '{role.group.name}' "
                     f"has capacity for only {role.max_users - current_count} more users."
                 )
                 return self.form_invalid(form)
 
-        # Assign users to role
+        # Assign users to role with proper error handling
         success_count = 0
         already_assigned = []
+        errors = []
 
-        for user in users:
-            if not user.groups.filter(pk=role.group.pk).exists():
-                role.group.user_set.add(user)
-                success_count += 1
-            else:
-                already_assigned.append(user.get_full_name())
+        try:
+            with transaction.atomic():
+                for user in users:
+                    # Verify user is manageable
+                    if not current_user.can_manage_user(user):
+                        errors.append(f"{user.get_full_name()}: No permission to manage this user")
+                        continue
 
-        # Success message
+                    # Check if already assigned
+                    if user.groups.filter(pk=role.group.pk).exists():
+                        already_assigned.append(user.get_full_name())
+                        continue
+
+                    # Assign role
+                    try:
+                        role.group.user_set.add(user)
+                        success_count += 1
+
+                        # Log role assignment
+                        RoleHistory.objects.create(
+                            role=role,
+                            action='assigned',
+                            user=current_user,
+                            affected_user=user,
+                            notes=f"Role assigned via bulk assignment"
+                        )
+
+                        # Create audit log
+                        AuditLog.objects.create(
+                            user=current_user,
+                            action='user_updated',
+                            action_description=f"Assigned role '{role.group.name}' to user {user.email}",
+                            content_object=user,
+                            resource_name=user.get_full_name() or user.email,
+                            ip_address=get_client_ip(self.request),
+                            success=True,
+                            metadata={
+                                'role_id': role.id,
+                                'role_name': role.group.name,
+                                'assignment_type': 'bulk'
+                            }
+                        )
+                    except Exception as e:
+                        errors.append(f"{user.get_full_name()}: {str(e)}")
+                        logger.error(f"Error assigning role to user {user.id}: {e}")
+
+        except Exception as e:
+            logger.error(f"Error during bulk role assignment: {e}")
+            messages.error(self.request, f"An error occurred during assignment: {str(e)}")
+            return self.form_invalid(form)
+
+        # Success messages
         if success_count > 0:
             messages.success(
                 self.request,
@@ -660,36 +1008,36 @@ class UserRoleAssignView(LoginRequiredMixin, PermissionRequiredMixin, FormView):
 
         # Warning for already assigned users
         if already_assigned:
+            user_names = ', '.join(already_assigned[:3])
+            if len(already_assigned) > 3:
+                user_names += f" and {len(already_assigned) - 3} more"
             messages.warning(
                 self.request,
-                f"{len(already_assigned)} user(s) were already in this role: {', '.join(already_assigned[:3])}"
-                + ("..." if len(already_assigned) > 3 else "")
+                f"{len(already_assigned)} user(s) already had this role: {user_names}"
             )
 
-        # Record history if you have RoleHistory model
-        try:
-            from .models import RoleHistory
-            RoleHistory.objects.create(
-                role=role,
-                action='permissions_changed',
-                user=self.request.user,
-                changes={
-                    'action': 'bulk_user_assignment',
-                    'users_added': success_count,
-                    'user_ids': [u.id for u in users]
-                },
-                notes=f"Bulk assigned {success_count} users"
-            )
-        except:
-            pass
+        # Errors
+        if errors:
+            for error in errors[:5]:
+                messages.error(self.request, error)
+            if len(errors) > 5:
+                messages.warning(
+                    self.request,
+                    f"...and {len(errors) - 5} more errors. Check logs for details."
+                )
 
-        return redirect('role_detail', pk=role.pk)
+        # Redirect to role detail if successful, back to form if all failed
+        if success_count > 0:
+            return redirect('role_detail', pk=role.pk)
+        else:
+            return self.form_invalid(form)
 
     def form_invalid(self, form):
-        messages.error(
-            self.request,
-            "Please correct the errors below."
-        )
+        if form.errors:
+            messages.error(
+                self.request,
+                "Please correct the errors in the form."
+            )
         return super().form_invalid(form)
 
 class RoleCreateView(LoginRequiredMixin, PermissionRequiredMixin, CreateView):
@@ -829,73 +1177,31 @@ class RoleDeleteView(LoginRequiredMixin, PermissionRequiredMixin, DeleteView):
 
 
 class RoleBulkAssignmentView(LoginRequiredMixin, PermissionRequiredMixin, FormView):
-    """
-    Bulk role assignment functionality
-    """
+    permission_required = 'accounts.can_bulk_assign_roles'
     form_class = BulkRoleAssignmentForm
     template_name = 'accounts/roles/bulk_assignment.html'
-    permission_required = 'accounts.can_bulk_assign_roles'
     success_url = reverse_lazy('role_list')
+
+    def has_permission(self):
+        tenant = getattr(connection, 'tenant', None)
+        if not tenant or tenant.schema_name == 'public':
+            return False
+        with tenant_context(tenant):
+            return self.request.user.has_perm(self.permission_required)
+
+    def dispatch(self, request, *args, **kwargs):
+        tenant = getattr(connection, 'tenant', None)
+        if not tenant:
+            raise PermissionDenied("Not in tenant schema")
+        with tenant_context(tenant):
+            return super().dispatch(request, *args, **kwargs)
 
     def get_form_kwargs(self):
         kwargs = super().get_form_kwargs()
-        # If user has limited company access, pass it to form
-        if not self.request.user.is_superuser:
-            # Assuming user has a company field or related companies
-            kwargs['company'] = getattr(self.request.user, 'company', None)
+        tenant = getattr(connection, 'tenant', None)
+        if tenant:
+            kwargs['company'] = getattr(tenant, 'company', None)
         return kwargs
-
-    def form_valid(self, form):
-        users = form.cleaned_data['users']
-        role = form.cleaned_data['role']
-        action = form.cleaned_data['action']
-
-        success_count = 0
-        error_count = 0
-
-        for user in users:
-            try:
-                if action == 'add':
-                    if not user.groups.filter(pk=role.group.pk).exists():
-                        user.groups.add(role.group)
-                        success_count += 1
-                elif action == 'remove':
-                    if user.groups.filter(pk=role.group.pk).exists():
-                        user.groups.remove(role.group)
-                        success_count += 1
-                elif action == 'replace':
-                    user.groups.clear()
-                    user.groups.add(role.group)
-                    success_count += 1
-            except Exception:
-                error_count += 1
-
-        # Create history records
-        RoleHistory.objects.create(
-            role=role,
-            action='permissions_changed',
-            user=self.request.user,
-            changes={
-                'bulk_action': action,
-                'users_affected': success_count,
-                'errors': error_count
-            },
-            notes=f"Bulk {action} operation via web interface"
-        )
-
-        if success_count > 0:
-            messages.success(
-                self.request,
-                f'Successfully {action}ed role "{role.group.name}" for {success_count} user(s).'
-            )
-
-        if error_count > 0:
-            messages.warning(
-                self.request,
-                f'Failed to process {error_count} user(s) due to errors.'
-            )
-
-        return super().form_valid(form)
 
 
 class RoleAnalyticsView(LoginRequiredMixin, PermissionRequiredMixin, DetailView):
@@ -1283,7 +1589,6 @@ def user_dashboard(request):
         context.update({
             'owned_company': owned_company,
             'company_memberships': company_memberships,
-            'is_system_admin': user.user_type == 'SYSTEM_ADMIN',
         })
 
     # Add admin statistics if user has permissions
@@ -1302,201 +1607,220 @@ def user_dashboard(request):
 
 @login_required
 @permission_required('accounts.view_customuser', raise_exception=True)
-def company_user_list(request, company_id):
-    """List users for a specific company with SaaS admin support"""
-    logger.debug("Entered company_user_list view")
-    logger.debug("Request user: %s (ID=%s)", request.user, request.user.id)
+def company_user_list(request):
+    """List users for the current tenant company."""
+    company = getattr(request, 'tenant', None)
+    if not company:
+        raise PermissionDenied("No active tenant company found.")
 
-    try:
-        company = get_object_or_404(Company, id=company_id)
-        logger.debug("Company found: %s (ID=%s)", company, company.id)
-    except Exception as e:
-        logger.error("Error fetching company with id=%s: %s", company_id, e, exc_info=True)
-        raise
-
-    # Check if user has access to this company (includes SaaS admin check)
-    if not can_access_company(request.user, company):
-        logger.warning("Permission denied for user %s on company %s", request.user, company)
+    # SaaS admins can access any tenant; others only their own
+    if hasattr(request.user, 'company') and request.user.company != company and not getattr(request.user, 'is_saas_admin', False):
         raise PermissionDenied("You don't have access to this company.")
 
-    logger.debug("User %s has access to company %s", request.user, company)
+    with schema_context(company.schema_name):
+        if getattr(request.user, 'is_saas_admin', False):
+            company_users = CustomUser.objects.filter(company=company).order_by('-date_joined')
+        else:
+            company_users = get_visible_users().filter(company=company).order_by('-date_joined')
 
-    # Query company users - use visible users to exclude hidden SaaS admins
-    if getattr(request.user, 'is_saas_admin', False):
-        # SaaS admin can see all users in the company
-        company_users = CustomUser.objects.filter(company=company).order_by('-date_joined')
-    else:
-        # Regular users see only visible users
-        company_users = get_visible_users().filter(company=company).order_by('-date_joined')
+        # Search filter
+        search_query = request.GET.get('search', '')
+        if search_query:
+            company_users = company_users.filter(
+                Q(first_name__icontains=search_query) |
+                Q(last_name__icontains=search_query) |
+                Q(email__icontains=search_query) |
+                Q(username__icontains=search_query)
+            )
 
-    logger.debug("Initial company_users count: %s", company_users.count())
+        paginator = Paginator(company_users, 25)
+        page_number = request.GET.get('page')
+        page_obj = paginator.get_page(page_number)
 
-    # Apply search filter
-    search_query = request.GET.get('search', '')
-    if search_query:
-        logger.debug("Search query received: %s", search_query)
-        company_users = company_users.filter(
-            Q(first_name__icontains=search_query) |
-            Q(last_name__icontains=search_query) |
-            Q(email__icontains=search_query) |
-            Q(username__icontains=search_query)
-        )
-        logger.debug("Filtered company_users count: %s", company_users.count())
+        can_add_users = getattr(company, "can_add_employee", lambda: False)()
 
-    # Pagination
-    paginator = Paginator(company_users, 25)
-    page_number = request.GET.get('page')
-    page_obj = paginator.get_page(page_number)
-
-    # Check if can add users (use proper user count)
-    can_add_users = False
-    if hasattr(company, "can_add_employee"):
-        try:
-            can_add_users = company.can_add_employee()
-        except Exception as e:
-            logger.error("Error calling company.can_add_employee(): %s", e, exc_info=True)
-
-    context = {
-        'company': company,
-        'company_users': page_obj,
-        'search_query': search_query,
-        'can_add_users': can_add_users,
-        'is_saas_admin': getattr(request.user, 'is_saas_admin', False),
-        'visible_user_count': get_company_user_count(company),  # Accurate count
-    }
+        context = {
+            'company': company,
+            'company_users': page_obj,
+            'search_query': search_query,
+            'can_add_users': can_add_users,
+            'is_saas_admin': getattr(request.user, 'is_saas_admin', False),
+            'visible_user_count': get_company_user_count(company),
+            'user': request.user,
+        }
 
     return render(request, 'accounts/company_user_list.html', context)
 
 
 @login_required
-@permission_required('accounts.add_customuser')
-def assign_user_to_company(request, company_id):
-    """Assign existing user to company or create new user"""
-    company = get_object_or_404(Company, id=company_id)
+@permission_required('accounts.add_customuser', raise_exception=True)
+def assign_user_to_company(request):
+    """Assign existing user to the current tenant company."""
+    company = getattr(request, 'tenant', None)
+    if not company:
+        raise PermissionDenied("No active tenant company found.")
 
-    # Check if user has access to this company
-    if not _user_has_company_access(request.user, company):
-        raise PermissionDenied
-
-    # Check if company can add more users
     if hasattr(company, 'can_add_employee') and not company.can_add_employee():
-        messages.error(request, f'Company has reached the maximum user limit.')
-        return redirect('company_user_list', company_id=company_id)
+        messages.error(request, 'Company has reached the maximum user limit.')
+        return redirect('company_user_list')
 
-    if request.method == 'POST':
-        user_email = request.POST.get('user_email')
-        is_admin = request.POST.get('is_admin') == 'on'
+    with schema_context(company.schema_name):
+        if request.method == 'POST':
+            user_email = request.POST.get('user_email')
+            is_admin = request.POST.get('is_admin') == 'on'
 
-        try:
-            user = CustomUser.objects.get(email=user_email)
+            try:
+                user = CustomUser.objects.get(email=user_email)
 
-            # Check if user is already assigned to this company
-            if company in user.companies.all():
-                messages.error(request, f'User {user.get_full_name()} is already assigned to this company.')
-            else:
-                user.companies.add(company)
-                if is_admin:
-                    user.company_admin_for.add(company)
-                messages.success(request, f'User {user.get_full_name()} assigned to company successfully!')
+                if user.company:
+                    if user.company == company:
+                        messages.error(request, f'User {user.get_full_name()} is already in this company.')
+                    else:
+                        messages.error(request, f'User {user.get_full_name()} belongs to another company.')
+                else:
+                    user.company = company
+                    user.company_admin = is_admin
+                    user.save()
+                    messages.success(request, f'User {user.get_full_name()} assigned successfully.')
 
-        except CustomUser.DoesNotExist:
-            messages.error(request, 'User with this email does not exist.')
+            except CustomUser.DoesNotExist:
+                messages.error(request, 'User with this email does not exist.')
 
-        return redirect('company_user_list', company_id=company_id)
+            return redirect('company_user_list')
 
-    # Get users not already in this company
-    available_users = CustomUser.objects.exclude(
-        companies=company
-    ).filter(is_active=True)[:100]  # Limit for performance
+        available_users = CustomUser.objects.filter(company__isnull=True, is_active=True)[:100]
 
-    context = {
+    return render(request, 'accounts/assign_user_to_company.html', {
         'company': company,
         'available_users': available_users,
-    }
-
-    return render(request, 'accounts/assign_user_to_company.html', context)
+    })
 
 
 @login_required
-@permission_required('accounts.delete_customuser')
-def remove_user_from_company(request, company_id, user_id):
-    """Remove user from company"""
-    company = get_object_or_404(Company, id=company_id)
-    user = get_object_or_404(CustomUser, id=user_id)
+@permission_required('accounts.delete_customuser', raise_exception=True)
+def remove_user_from_company(request, user_id):
+    """Remove user from the current tenant company."""
+    company = getattr(request, 'tenant', None)
+    if not company:
+        raise PermissionDenied("No active tenant company found.")
 
-    # Check if user has access to this company
-    if not _user_has_company_access(request.user, company):
-        raise PermissionDenied
+    with schema_context(company.schema_name):
+        user = get_object_or_404(CustomUser, id=user_id)
 
-    # Don't allow removing company owner
-    if hasattr(company, 'owner') and company.owner == user:
-        messages.error(request, 'Cannot remove company owner from company.')
-        return redirect('company_user_list', company_id=company_id)
+        if user.company != company:
+            messages.error(request, 'User does not belong to this company.')
+            return redirect('company_user_list')
 
-    # Don't allow removing self if user is the only admin
-    if (request.user == user and
-            user.company_admin_for.filter(id=company_id).exists() and
-            company.admin_users.count() <= 1):
-        messages.error(request, 'Cannot remove yourself as you are the only admin.')
-        return redirect('company_user_list', company_id=company_id)
+        if hasattr(company, 'owner') and company.owner == user:
+            messages.error(request, 'Cannot remove company owner.')
+            return redirect('company_user_list')
 
-    if company in user.companies.all():
-        user.companies.remove(company)
-        user.company_admin_for.remove(company)
-        messages.success(request, f'User {user.get_full_name()} removed from company successfully!')
-    else:
-        messages.error(request, 'User is not assigned to this company.')
+        if request.user == user:
+            messages.error(request, 'Cannot remove yourself.')
+            return redirect('company_user_list')
 
-    return redirect('company_user_list', company_id=company_id)
+        if user.is_saas_admin and not getattr(request.user, 'is_saas_admin', False):
+            messages.error(request, 'Cannot remove SaaS administrators.')
+            return redirect('company_user_list')
+
+        try:
+            with transaction.atomic():
+                user_name = user.get_full_name() or user.email
+                user.company_admin = False
+                user.company = None
+                user.save()
+                logger.info(f"User {user_name} removed from company {company.name} by {request.user}")
+                messages.success(request, f'{user_name} removed successfully.')
+        except Exception as e:
+            logger.error(f"Error removing user: {e}")
+            messages.error(request, f'Error removing user: {str(e)}')
+
+    return redirect('company_user_list')
 
 
 @login_required
-@permission_required('accounts.can_manage_users')
-def toggle_company_admin(request, company_id, user_id):
-    """Toggle company admin status for user"""
-    company = get_object_or_404(Company, id=company_id)
-    user = get_object_or_404(CustomUser, id=user_id)
+@permission_required('accounts.can_manage_users', raise_exception=True)
+def toggle_company_admin(request, user_id):
+    """Toggle admin status for user in the current tenant company."""
+    company = getattr(request, 'tenant', None)
+    if not company:
+        raise PermissionDenied("No active tenant company found.")
 
-    # Check if user has access to this company
-    if not _user_has_company_access(request.user, company):
-        raise PermissionDenied
+    with schema_context(company.schema_name):
+        user = get_object_or_404(CustomUser, id=user_id)
 
-    # Don't allow removing admin status from company owner
-    if hasattr(company, 'owner') and company.owner == user and company in user.company_admin_for.all():
-        messages.error(request, 'Cannot remove admin status from company owner.')
-        return redirect('company_user_list', company_id=company_id)
+        if user.company != company:
+            messages.error(request, 'User does not belong to this company.')
+            return redirect('company_user_list')
 
-    # Don't allow removing admin status if user is the only admin
-    if (company in user.company_admin_for.all() and
-            company.admin_users.count() <= 1):
-        messages.error(request, 'Cannot remove admin status. At least one admin is required.')
-        return redirect('company_user_list', company_id=company_id)
+        if user.is_saas_admin and not getattr(request.user, 'is_saas_admin', False):
+            messages.error(request, 'Cannot modify SaaS admins.')
+            return redirect('company_user_list')
 
-    if company in user.company_admin_for.all():
-        user.company_admin_for.remove(company)
-        status = 'revoked'
-    else:
-        user.company_admin_for.add(company)
-        status = 'granted'
+        if request.user == user:
+            messages.error(request, 'Cannot modify your own admin status.')
+            return redirect('company_user_list')
 
-    messages.success(request, f'Admin status {status} for {user.get_full_name()}.')
-    return redirect('company_user_list', company_id=company_id)
+        try:
+            with transaction.atomic():
+                if user.company_admin:
+                    admin_count = CustomUser.objects.filter(
+                        company=company, company_admin=True, is_active=True
+                    ).exclude(id=user.id).count()
+                    if admin_count == 0:
+                        messages.error(request, 'At least one admin is required.')
+                        return redirect('company_user_list')
 
+                    user.company_admin = False
+                    action = 'removed'
+                else:
+                    user.company_admin = True
+                    action = 'granted'
+
+                user.save()
+                messages.success(request, f'Admin status {action} for {user.get_full_name()}.')
+
+        except Exception as e:
+            logger.error(f"Error toggling admin: {e}")
+            messages.error(request, f'Error updating admin status: {str(e)}')
+
+    return redirect('company_user_list')
 
 
 def _get_accessible_users(user):
     """
     Returns a queryset of users accessible by the current user.
-    SUPER_ADMIN: all users
-    COMPANY_ADMIN: users in the same company
-    Others: only themselves
+    UPDATED for your model structure.
     """
-    if user.user_type == 'SUPER_ADMIN':
+    if getattr(user, 'is_saas_admin', False):
+        # SaaS admins can see all users including hidden ones
         return CustomUser.objects.all()
-    elif user.user_type == 'COMPANY_ADMIN':
-        return CustomUser.objects.filter(company=user.company)
-    else:
-        return CustomUser.objects.filter(id=user.id)
+
+    if getattr(user, 'can_access_all_companies', False):
+        # Users with cross-company access
+        return CustomUser.objects.filter(is_hidden=False)
+
+    # Company-specific access
+    if hasattr(user, 'company'):
+        # Get users in same company, excluding hidden users
+        base_qs = CustomUser.objects.filter(company=user.company, is_hidden=False)
+
+        # Apply role hierarchy filtering
+        user_priority = user.highest_role_priority
+        if user_priority > 0:
+            # Filter out users with higher role priority
+            from django.db.models import Max, Q
+            base_qs = base_qs.annotate(
+                max_role_priority=Max('groups__role__priority')
+            ).filter(
+                Q(max_role_priority__lte=user_priority) | Q(max_role_priority__isnull=True)
+            )
+
+        return base_qs
+
+    # Default: only see themselves
+    return CustomUser.objects.filter(id=user.id)
+
 
 @login_required
 @permission_required('accounts.can_view_reports')
@@ -1521,12 +1845,32 @@ def user_analytics(request):
         })
         current_date += timedelta(days=1)
 
-    # User type distribution
-    user_type_data = list(
-        accessible_users.values('user_type')
-        .annotate(count=Count('user_type'))
-        .order_by('user_type')
-    )
+    role_stats = []
+    company = request.user.company if hasattr(request.user, 'company') else None
+
+    if company:
+        # Get role statistics for this company
+        from django.db.models import Count, Q
+        role_stats = list(
+            Role.objects.filter(
+                Q(company=company) | Q(is_system_role=True)
+            ).annotate(
+                user_count=Count(
+                    'group__user',
+                    filter=Q(
+                        group__user__in=accessible_users,
+                        group__user__is_hidden=False,
+                        group__user__is_active=True
+                    ),
+                    distinct=True
+                )
+            ).filter(user_count__gt=0).values(
+                'group__name',
+                'user_count',
+                'priority',
+                'color_code'
+            ).order_by('-priority')
+        )
 
     # Active vs Inactive users
     active_inactive_data = [
@@ -1534,30 +1878,33 @@ def user_analytics(request):
         {'status': 'Inactive', 'count': accessible_users.filter(is_active=False).count()},
     ]
 
-    # Company distribution (for SaaS admin and SUPER_ADMIN)
+    # Company distribution (for high-level admins)
     company_data = []
-    is_super_admin = request.user.user_type == 'SUPER_ADMIN' or getattr(request.user, 'is_saas_admin', False)
-    if is_super_admin:
+    is_high_level = (
+            (request.user.primary_role and request.user.primary_role.priority >= 90) or
+            getattr(request.user, 'is_saas_admin', False)
+    )
+
+    if is_high_level:
         from company.models import Company
-        company_data = []
-        for company in Company.objects.all()[:10]:
-            user_count = get_company_user_count(company)  # Use proper counting
+        for company_obj in Company.objects.all()[:10]:
+            user_count = get_company_user_count(company_obj)
             if user_count > 0:
                 company_data.append({
-                    'name': company.name,
+                    'name': company_obj.name,
                     'user_count': user_count
                 })
         company_data.sort(key=lambda x: x['user_count'], reverse=True)
 
     context = {
         'registration_data': json.dumps(registration_data),
-        'user_type_data': json.dumps(user_type_data),
+        'user_type_data': json.dumps(role_stats),  # Keep variable name for template compatibility
         'active_inactive_data': json.dumps(active_inactive_data),
         'company_data': json.dumps(company_data),
         'days': days,
         'total_users': accessible_users.count(),
         'new_users_period': accessible_users.filter(date_joined__gte=start_date).count(),
-        'is_super_admin': is_super_admin,
+        'is_super_admin': is_high_level,
         'is_saas_admin': getattr(request.user, 'is_saas_admin', False),
     }
 
@@ -1587,11 +1934,31 @@ def export_analytics_data(request):
         })
         current_date += timedelta(days=1)
 
-    user_type_data = list(
-        accessible_users.values('user_type')
-        .annotate(count=Count('user_type'))
-        .order_by('user_type')
-    )
+    company = request.user.company if hasattr(request.user, 'company') else None
+    role_stats = []
+
+    if company:
+        from django.db.models import Count, Q
+        role_stats = list(
+            Role.objects.filter(
+                Q(company=company) | Q(is_system_role=True)
+            ).annotate(
+                user_count=Count(
+                    'group__user',
+                    filter=Q(
+                        group__user__in=accessible_users,
+                        group__user__is_hidden=False,
+                        group__user__is_active=True
+                    ),
+                    distinct=True
+                )
+            ).filter(user_count__gt=0).values(
+                'group__name',
+                'user_count',
+                'priority',
+                'color_code'
+            ).order_by('-priority')
+        )
 
     active_inactive_data = [
         {'status': 'Active', 'count': accessible_users.filter(is_active=True).count()},
@@ -1602,7 +1969,7 @@ def export_analytics_data(request):
     if export_format == 'pdf':
         return generate_pdf_report(request, {
             'registration_data': registration_data,
-            'user_type_data': user_type_data,
+            'user_type_data': role_stats,  # Keep variable name for compatibility
             'active_inactive_data': active_inactive_data,
             'days': days,
             'total_users': accessible_users.count(),
@@ -1613,14 +1980,14 @@ def export_analytics_data(request):
     elif export_format == 'excel':
         return generate_excel_report(request, {
             'registration_data': registration_data,
-            'user_type_data': user_type_data,
+            'user_type_data': role_stats,
             'active_inactive_data': active_inactive_data,
             'days': days,
             'total_users': accessible_users.count(),
             'new_users_period': accessible_users.filter(date_joined__gte=start_date).count(),
         })
     elif export_format == 'csv':
-        return generate_csv_report(registration_data, user_type_data, active_inactive_data)
+        return generate_csv_report(registration_data, role_stats, active_inactive_data)
 
     return JsonResponse({'error': 'Invalid format'}, status=400)
 
@@ -1738,17 +2105,17 @@ def generate_pdf_report(request, data):
     elements.append(reg_table)
     elements.append(Spacer(1, 20))
 
-    # User Types Distribution
-    elements.append(Paragraph("User Types Distribution", heading_style))
+    # User Roles Distribution
+    elements.append(Paragraph("User Roles Distribution", heading_style))
 
-    user_types_data = [['User Type', 'Count', 'Percentage']]
-    total_typed_users = sum(item['count'] for item in data['user_type_data'])
+    user_types_data = [['Role', 'Count', 'Percentage']]
+    total_typed_users = sum(item.get('user_count', 0) for item in data['user_type_data'])
 
     for item in data['user_type_data']:
-        user_type = item['user_type'].replace('_', ' ').title()
-        count = item['count']
+        role_name = item.get('group__name', 'No Role')
+        count = item.get('user_count', 0)
         percentage = f"{(count / total_typed_users * 100):.1f}%" if total_typed_users > 0 else "0%"
-        user_types_data.append([user_type, str(count), percentage])
+        user_types_data.append([role_name, str(count), percentage])
 
     types_table = Table(user_types_data, colWidths=[2.5 * inch, 1.5 * inch, 1 * inch])
     types_table.setStyle(TableStyle([
@@ -1873,9 +2240,9 @@ def generate_excel_report(request, data):
         reg_ws[f'A{idx}'] = item['date']
         reg_ws[f'B{idx}'] = item['count']
 
-    # User Types Sheet
-    types_ws = wb.create_sheet("User Types")
-    types_ws['A1'] = "User Type"
+    # User Roles Sheet
+    types_ws = wb.create_sheet("User Roles")
+    types_ws['A1'] = "Role"
     types_ws['B1'] = "Count"
     types_ws['A1'].font = header_font
     types_ws['B1'].font = header_font
@@ -1883,8 +2250,8 @@ def generate_excel_report(request, data):
     types_ws['B1'].fill = header_fill
 
     for idx, item in enumerate(data['user_type_data'], start=2):
-        types_ws[f'A{idx}'] = item['user_type'].replace('_', ' ').title()
-        types_ws[f'B{idx}'] = item['count']
+        types_ws[f'A{idx}'] = item.get('group__name', 'No Role')
+        types_ws[f'B{idx}'] = item.get('user_count', 0)
 
     # Auto-adjust column widths
     for ws in wb.worksheets:
@@ -1934,11 +2301,11 @@ def generate_csv_report(registration_data, user_type_data, active_inactive_data)
         writer.writerow([item['date'], item['count']])
     writer.writerow([])
 
-    # User types
-    writer.writerow(['USER TYPES DISTRIBUTION'])
-    writer.writerow(['User Type', 'Count'])
+    # User roles
+    writer.writerow(['USER ROLES DISTRIBUTION'])
+    writer.writerow(['Role', 'Count'])
     for item in user_type_data:
-        writer.writerow([item['user_type'].replace('_', ' ').title(), item['count']])
+        writer.writerow([item.get('group__name', 'No Role'), item.get('user_count', 0)])
     writer.writerow([])
 
     # User status
@@ -2187,7 +2554,6 @@ def upload_avatar_ajax(request):
     }, status=400)
 
 
-# Additional utility functions for enhanced profile features
 
 @login_required
 def export_profile_data(request):
@@ -2217,15 +2583,18 @@ def export_profile_data(request):
             'last_login': request.user.last_login.isoformat() if request.user.last_login else None,
         },
         'account': {
-            'user_type': request.user.user_type,
+            'primary_role': request.user.display_role,  # ✅ FIXED
+            'all_roles': request.user.role_names,  # ✅ FIXED
+            'role_priority': request.user.highest_role_priority,  # ✅ ADDED
             'is_active': request.user.is_active,
-            'company': request.user.company.name if hasattr(request.user, 'company') else None,
+            'company': request.user.company.name if hasattr(request.user, 'company') and request.user.company else None,
         }
     }
 
     response = JsonResponse(user_data, json_dumps_params={'indent': 2})
     response['Content-Disposition'] = f'attachment; filename="profile_data_{request.user.username}.json"'
     return response
+
 
 
 @login_required
@@ -2758,8 +3127,33 @@ def disable_two_factor(request):
 @login_required
 @permission_required('accounts.can_manage_users')
 def user_quick_stats(request):
-    """Enhanced AJAX endpoint for user statistics with SaaS admin support"""
+    """Enhanced AJAX endpoint for user statistics"""
     accessible_users = _get_accessible_users(request.user)
+
+    company = request.user.company if hasattr(request.user, 'company') else None
+    role_stats = []
+
+    if company:
+        from django.db.models import Count, Q
+        role_stats = list(
+            Role.objects.filter(
+                Q(company=company) | Q(is_system_role=True)
+            ).annotate(
+                user_count=Count(
+                    'group__user',
+                    filter=Q(
+                        group__user__in=accessible_users,
+                        group__user__is_hidden=False,
+                        group__user__is_active=True
+                    ),
+                    distinct=True
+                )
+            ).filter(user_count__gt=0).values(
+                'group__name',
+                'user_count',
+                'priority'
+            ).order_by('-priority')
+        )
 
     stats = {
         'total_users': accessible_users.count(),
@@ -2770,11 +3164,7 @@ def user_quick_stats(request):
         'locked_users': accessible_users.filter(
             locked_until__gt=timezone.now()
         ).count(),
-        'user_types': list(
-            accessible_users.values('user_type')
-            .annotate(count=Count('user_type'))
-            .order_by('user_type')
-        ),
+        'user_types': role_stats,  # Keep variable name for API compatibility
         'is_saas_admin': getattr(request.user, 'is_saas_admin', False),
     }
 
@@ -2797,7 +3187,7 @@ def switch_tenant_view(request):
             company = get_object_or_404(Company, id=tenant_id)
 
             # Store the target company in session for the middleware to handle
-            request.session['saas_admin_target_company'] = company.id
+            request.session['saas_admin_target_company'] = company.company_id
 
             messages.success(request, f'Switching to {company.name}...')
             return JsonResponse({
@@ -2816,7 +3206,7 @@ def switch_tenant_view(request):
     accessible_companies = get_accessible_companies(request.user)
     companies_data = [
         {
-            'id': company.id,
+            'id': company.company_id,
             'name': company.name,
             'schema_name': getattr(company, 'schema_name', ''),
             'user_count': get_company_user_count(company),
@@ -2925,145 +3315,55 @@ def saas_admin_system_settings(request):
     return render(request, 'accounts/saas_admin_system_settings.html', context)
 
 
-@require_saas_admin
-def saas_admin_audit_log(request):
-    """View system audit logs"""
-    # In a real implementation, you'd have a proper audit log model
-    # For now, we'll create some sample data structure
-
-    # Filters
-    date_from = request.GET.get('date_from')
-    date_to = request.GET.get('date_to')
-    action_type = request.GET.get('action_type')
-    user_filter = request.GET.get('user')
-
-    # Sample audit log entries (replace with real audit log queries)
-    audit_entries = []
-
-    # You could create an AuditLog model to store these properly
-    # class AuditLog(models.Model):
-    #     user = models.ForeignKey(CustomUser, on_delete=models.SET_NULL, null=True)
-    #     action = models.CharField(max_length=100)
-    #     resource_type = models.CharField(max_length=50)
-    #     resource_id = models.CharField(max_length=100)
-    #     details = models.JSONField()
-    #     timestamp = models.DateTimeField(auto_now_add=True)
-    #     ip_address = models.GenericIPAddressField()
-
-    context = {
-        'audit_entries': audit_entries,
-        'filters': {
-            'date_from': date_from,
-            'date_to': date_to,
-            'action_type': action_type,
-            'user': user_filter,
-        },
-        'action_types': [
-            'user_created', 'user_updated', 'user_deleted',
-            'company_created', 'company_updated', 'company_deleted',
-            'login_success', 'login_failed', 'logout',
-            'password_changed', 'email_verified', 'impersonation_started'
-        ]
-    }
-
-    return render(request, 'accounts/saas_admin_audit_log.html', context)
-
-
-# Enhanced middleware integration functions
 
 def _user_has_company_access(user, company):
-    """Enhanced company access check with SaaS admin support"""
+    """Enhanced company access check with SaaS admin support - UPDATED"""
+    # SaaS admins have access to all companies
     if getattr(user, 'is_saas_admin', False):
         return True
 
-    if user.user_type == 'SYSTEM_ADMIN':
+    # Users with can_access_all_companies flag
+    if getattr(user, 'can_access_all_companies', False):
         return True
 
-    if hasattr(company, 'owner') and company.owner == user:
+    # Company owners/admins have access
+    if hasattr(user, 'company_admin') and user.company_admin and user.company == company:
         return True
 
-    if hasattr(user, 'company_admin_for'):
-        return company in user.company_admin_for.all()
+    # Regular users in the company have access
+    if hasattr(user, 'company') and user.company == company:
+        return True
 
     return False
 
-
 def _user_has_management_access(current_user, target_user):
-    """Enhanced management access check with SaaS admin support"""
+    """Enhanced management access check with SaaS admin support - UPDATED"""
     if getattr(current_user, 'is_saas_admin', False):
         return True
 
-    if current_user.user_type == 'SYSTEM_ADMIN':
-        # System admins can't manage hidden SaaS admin users
-        return not getattr(target_user, 'is_hidden', False)
+    # Users can't manage themselves
+    if current_user.id == target_user.id:
+        return False
 
-    if hasattr(current_user, 'owned_company'):
-        # Company owners can manage users in their company
-        return target_user.company == current_user.owned_company
+    # Users can only manage users in the same company
+    if current_user.company_id != target_user.company_id:
+        return False
 
-    # Regular users can only manage themselves
-    return current_user == target_user
+    # Check role hierarchy
+    current_priority = current_user.highest_role_priority
+    target_priority = target_user.highest_role_priority
 
-
-# Additional Helper Functions
-def _user_has_company_access(user, company):
-    """Check if user has access to manage company"""
-    if user.user_type == 'SYSTEM_ADMIN':
-        return True
-
-    if hasattr(company, 'owner') and company.owner == user:
-        return True
-
-    return company in user.company_admin_for.all()
+    return current_priority >= target_priority
 
 
-def get_client_ip(request):
-    """Helper function to get client IP address"""
-    x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
-    if x_forwarded_for:
-        ip = x_forwarded_for.split(',')[0]
-    else:
-        ip = request.META.get('REMOTE_ADDR')
-    return ip
-
-def _get_accessible_users(user):
-    """
-    Enhanced function to get users accessible by the current user.
-    Includes SaaS admin support and proper filtering of hidden users.
-    """
-    if getattr(user, 'is_saas_admin', False):
-        # SaaS admins can see all users including hidden ones
-        return CustomUser.objects.all()
-    elif user.user_type == 'SUPER_ADMIN':
-        # Super admins see all visible users
-        return get_visible_users()
-    elif user.user_type == 'COMPANY_ADMIN':
-        # Company admins see visible users in their company
-        return get_visible_users().filter(company=user.company)
-    else:
-        # Regular users see only themselves
-        return CustomUser.objects.filter(id=user.id)
-
-
-
-def _user_has_management_access(current_user, target_user):
-    """Check if current user can manage target user"""
-    if current_user.user_type == 'SYSTEM_ADMIN':
-        return True
-
-    if hasattr(current_user, 'owned_company'):
-        # Company owners can manage users in their company
-        return target_user.company == current_user.owned_company
-
-    # Regular users can only manage themselves
-    return current_user == target_user
-
-# System Admin Views
 @login_required
 def system_admin_dashboard(request):
     """System admin dashboard with global statistics"""
-    if request.user.user_type != 'SYSTEM_ADMIN':
+    # Check if user has system admin role (priority >= 90)
+    if not ((request.user.primary_role and request.user.primary_role.priority >= 90) or getattr(request.user, 'is_saas_admin', False)):
         raise PermissionDenied
+
+    from company.models import Company
 
     # Global statistics
     total_companies = Company.objects.count()
@@ -3111,7 +3411,7 @@ def system_admin_dashboard(request):
 
 
 class UserListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
-    """Enhanced user list view with SaaS admin support and proper filtering"""
+    """Enhanced user list view - UPDATED FOR YOUR MODEL STRUCTURE"""
     model = CustomUser
     template_name = 'accounts/user_list.html'
     context_object_name = 'users'
@@ -3121,24 +3421,8 @@ class UserListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
     def get_queryset(self):
         user = self.request.user
 
-        if getattr(user, 'is_saas_admin', False):
-            # SaaS admins can see all users including hidden ones
-            queryset = CustomUser.objects.select_related('company').prefetch_related('signature')
-        else:
-            # Regular users see only visible users
-            queryset = get_visible_users().select_related('company').prefetch_related('signature')
-
-            # Prevent listing SUPER_ADMIN users unless the current user is a SUPER_ADMIN
-            if user.user_type != 'SUPER_ADMIN':
-                queryset = queryset.exclude(user_type='SUPER_ADMIN')
-
-            if user.user_type not in ['SYSTEM_ADMIN', 'SUPER_ADMIN']:
-                if hasattr(user, 'owned_company'):
-                    queryset = queryset.filter(company=user.owned_company)
-                elif hasattr(user, 'company') and user.company:
-                    queryset = queryset.filter(company=user.company)
-                else:
-                    queryset = queryset.none()
+        # Use the updated accessible users function
+        queryset = _get_accessible_users(user)
 
         # Apply search filters
         search_form = UserSearchForm(self.request.GET)
@@ -3152,9 +3436,10 @@ class UserListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
                     Q(username__icontains=search_query)
                 )
 
-            user_type = search_form.cleaned_data.get('user_type')
-            if user_type:
-                queryset = queryset.filter(user_type=user_type)
+            # Filter by role
+            role_filter = search_form.cleaned_data.get('role')
+            if role_filter:
+                queryset = queryset.filter(groups__role=role_filter).distinct()
 
             is_active = search_form.cleaned_data.get('is_active')
             if is_active:
@@ -3171,14 +3456,14 @@ class UserListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
             if date_to:
                 queryset = queryset.filter(date_joined__date__lte=date_to)
 
-        return queryset.order_by('-date_joined')
+        return queryset.select_related('company').prefetch_related('groups__role').order_by('-date_joined')
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context['search_form'] = UserSearchForm(self.request.GET)
         context['bulk_form'] = BulkUserActionForm()
 
-        # User statistics (filtered by access and visibility)
+        # User statistics
         queryset = self.get_queryset()
         context['user_stats'] = {
             'total': queryset.count(),
@@ -3187,16 +3472,17 @@ class UserListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
             'locked': queryset.filter(locked_until__gt=timezone.now()).count(),
         }
 
-        # Add SaaS admin context
+        # Add context for template
         context.update({
             'is_saas_admin': getattr(self.request.user, 'is_saas_admin', False),
-            'is_system_admin': self.request.user.user_type == 'SYSTEM_ADMIN',
+            'is_company_admin': getattr(self.request.user, 'company_admin', False),
+            'available_roles': Role.objects.accessible_by_user(self.request.user),
         })
 
         return context
 
 class UserDetailView(LoginRequiredMixin, PermissionRequiredMixin, DetailView):
-    """Enhanced user detail view with social account info"""
+    """Enhanced user detail view - UPDATED FOR YOUR MODEL STRUCTURE"""
     model = CustomUser
     template_name = 'accounts/user_detail.html'
     context_object_name = 'user_profile'
@@ -3209,129 +3495,166 @@ class UserDetailView(LoginRequiredMixin, PermissionRequiredMixin, DetailView):
         return obj
 
     def _user_has_access(self, target_user):
-        """Enhanced access control including SaaS admin support"""
-        current_user = self.request.user
-        if getattr(current_user, 'is_saas_admin', False):
-            return True
-        if current_user.user_type == 'SYSTEM_ADMIN':
-            return not getattr(target_user, 'is_hidden', False)
-        if hasattr(current_user, 'owned_company') and current_user.owned_company:
-            return target_user.company == current_user.owned_company
-        if hasattr(current_user, 'company') and current_user.company:
-            return target_user.company == current_user.company
-        return False
+        return _user_has_management_access(self.request.user, target_user)
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         user_profile = self.get_object()
         current_user = self.request.user
 
-        # Get social accounts
-        social_accounts = SocialAccount.objects.filter(user=user_profile)
+        # Get user's roles
+        user_roles = user_profile.all_roles
 
-        can_edit = False
-        if getattr(current_user, 'is_saas_admin', False):
-            can_edit = True
-        elif current_user.user_type == 'SYSTEM_ADMIN':
-            can_edit = not getattr(user_profile, 'is_hidden', False)
-        elif hasattr(current_user, 'owned_company') and user_profile.company == current_user.owned_company:
-            can_edit = True
-        elif current_user == user_profile:
-            can_edit = True
+        can_edit = _user_has_management_access(current_user, user_profile)
 
         context.update({
             'account_age': (timezone.now() - user_profile.date_joined).days,
             'is_locked': user_profile.is_locked,
             'can_unlock': user_profile.is_locked and current_user.has_perm('accounts.can_manage_users'),
             'company': user_profile.company,
-            'owned_company': getattr(user_profile, 'owned_company', None),
+            'user_roles': user_roles,
             'can_edit': can_edit,
             'can_manage_users': current_user.has_perm('accounts.can_manage_users'),
             'is_saas_admin': getattr(current_user, 'is_saas_admin', False),
             'is_hidden_user': getattr(user_profile, 'is_hidden', False),
             'can_access_all_companies': getattr(user_profile, 'can_access_all_companies', False),
-            'social_accounts': social_accounts,  # Add social accounts to context
-            'has_password': user_profile.has_usable_password(),
+            'available_roles': Role.objects.accessible_by_user(current_user),
         })
 
         return context
 
-
 class UserCreateView(LoginRequiredMixin, PermissionRequiredMixin, CreateView):
-    """Enhanced user creation with company assignment and logging"""
+    """Enhanced user creation - UPDATED FOR YOUR MODEL STRUCTURE"""
     model = CustomUser
     form_class = CustomUserCreationForm
     template_name = 'accounts/user_create.html'
     permission_required = 'accounts.can_manage_users'
     success_url = reverse_lazy('user_list')
 
+    @method_decorator(check_user_limit)
+    def dispatch(self, *args, **kwargs):
+        return super().dispatch(*args, **kwargs)
+
     def get_form_kwargs(self):
-        """Pass request into the form for context"""
         kwargs = super().get_form_kwargs()
         kwargs['request'] = self.request
         return kwargs
 
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        # Add available roles to context
+        context['available_roles'] = Role.objects.accessible_by_user(self.request.user)
+        return context
+
     def form_valid(self, form):
         current_user = self.request.user
-        logger.debug(f"Attempting to create new user by {current_user} ({current_user.user_type})")
+        logger.debug(f"Attempting to create new user by {current_user}")
 
-        with transaction.atomic():
-            user = form.save(commit=False)
+        try:
+            # Set company automatically based on current user's company
+            if not form.instance.company:
+                form.instance.company = current_user.company
 
-            # Assign company if not system admin
-            if current_user.user_type != 'SYSTEM_ADMIN':
-                if hasattr(current_user, 'owned_company') and current_user.owned_company:
-                    user.company = current_user.owned_company
-                    logger.debug(f"Assigned company from owned_company: {user.company}")
-                elif hasattr(current_user, 'company') and current_user.company:
-                    user.company = current_user.company
-                    logger.debug(f"Assigned company from current_user.company: {user.company}")
+            user = form.save()
 
-            # Validate company assignment
-            if not user.company:
-                logger.error("❌ Company assignment failed. No company available.")
-                form.add_error('company', "Company must be assigned.")
-                return self.form_invalid(form)
+            # Handle role assignment if provided
+            role_id = self.request.POST.get('role')
+            if role_id:
+                try:
+                    role = Role.objects.get(id=role_id)
+                    if role in Role.objects.accessible_by_user(current_user):
+                        user.groups.add(role.group)
 
-            user.save()
-            form.save_m2m()
+                        # Log role assignment
+                        RoleHistory.objects.create(
+                            role=role,
+                            action='assigned',
+                            user=current_user,
+                            affected_user=user,
+                            notes=f"Role assigned during user creation"
+                        )
+                except Role.DoesNotExist:
+                    pass
 
-            messages.success(self.request, f'User {user.get_full_name() or user.email} created successfully!')
-            logger.info(f"✅ User {user} created in company {user.company}")
+            messages.success(
+                self.request,
+                f'User {user.get_full_name() or user.email} created successfully!'
+            )
+            logger.info(f"✅ User {user} created in company {user.company} by {current_user}")
 
             return super().form_valid(form)
 
-    def form_invalid(self, form):
-        """Extra logging when form is invalid"""
-        logger.error(f"❌ Form invalid. Errors: {form.errors.as_json()}")
-        return super().form_invalid(form)
+        except ValidationError as e:
+            logger.error(f"❌ Validation error during user creation: {str(e)}")
+            messages.error(self.request, f"Error creating user: {str(e)}")
+            return self.form_invalid(form)
+        except Exception as e:
+            logger.error(f"❌ Unexpected error during user creation: {str(e)}")
+            messages.error(self.request, "An unexpected error occurred while creating the user.")
+            return self.form_invalid(form)
 
 class UserUpdateView(LoginRequiredMixin, PermissionRequiredMixin, UpdateView):
-    """User update view, prevents editing SUPER_ADMIN users"""
+    """User update view with hierarchy checks"""
     model = CustomUser
     form_class = CustomUserChangeForm
     template_name = 'accounts/user_update.html'
     permission_required = 'accounts.can_manage_users'
 
     def get_queryset(self):
-        """Limit queryset to non-superusers"""
-        qs = super().get_queryset()
-        return qs.exclude(user_type='SUPER_ADMIN')
+        """Only show users this person can manage"""
+        return self.request.user.get_manageable_users()
 
     def get_object(self, queryset=None):
-        """Ensure only editable users are returned"""
-        queryset = queryset or self.get_queryset()
-        return super().get_object(queryset)
+        """Ensure user can manage this specific user"""
+        obj = super().get_object(queryset)
+
+        if not self.request.user.can_manage_user(obj):
+            raise PermissionDenied("You cannot edit this user.")
+
+        return obj
+
+    def get_form_kwargs(self):
+        """Pass request to form"""
+        kwargs = super().get_form_kwargs()
+        kwargs['request'] = self.request
+        return kwargs
 
     def get_success_url(self):
         return reverse('user_detail', kwargs={'pk': self.object.pk})
 
     def form_valid(self, form):
         response = super().form_valid(form)
-        messages.success(self.request, f'User {self.object.get_full_name()} updated successfully!')
+
+        # Log role changes if roles were modified
+        if 'roles' in form.changed_data:
+            old_roles = set(self.object.all_roles)
+            new_roles = set(form.cleaned_data.get('roles', []))
+
+            # Log removed roles
+            for role in old_roles - new_roles:
+                RoleHistory.objects.create(
+                    role=role,
+                    action='removed',
+                    user=self.request.user,
+                    affected_user=self.object,
+                    notes=f"Role removed during user update"
+                )
+
+            # Log added roles
+            for role in new_roles - old_roles:
+                RoleHistory.objects.create(
+                    role=role,
+                    action='assigned',
+                    user=self.request.user,
+                    affected_user=self.object,
+                    notes=f"Role assigned during user update"
+                )
+
+        messages.success(
+            self.request,
+            f'User {self.object.get_full_name()} updated successfully!'
+        )
         return response
-
-
 
 class UserDeleteView(LoginRequiredMixin, PermissionRequiredMixin, DeleteView):
     model = CustomUser
@@ -3347,11 +3670,11 @@ class UserDeleteView(LoginRequiredMixin, PermissionRequiredMixin, DeleteView):
 
     def _user_has_access(self, target_user):
         current_user = self.request.user
-        if current_user.user_type == 'SUPER_ADMIN':
+        if current_user.primary_role and current_user.primary_role.priority >= 90:
             return True
         if current_user == target_user:
             return True
-        if current_user.user_type == 'COMPANY_ADMIN' and current_user.company == target_user.company:
+        if current_user.primary_role and current_user.primary_role.priority >= 100 and current_user.company == target_user.company:
             return True
         return False
 
@@ -3502,7 +3825,9 @@ def download_user_data(request):
             'last_login': request.user.last_login.isoformat() if request.user.last_login else None,
             'timezone': request.user.timezone,
             'language': request.user.language,
-            'user_type': request.user.user_type,
+            'primary_role': request.user.display_role,  # ✅ FIXED
+            'all_roles': request.user.role_names,  # ✅ FIXED
+            'role_priority': request.user.highest_role_priority,  # ✅ ADDED
         },
         'preferences': request.user.metadata.get('preferences', {}),
         'notifications': request.user.metadata.get('notifications', {}),
@@ -3520,8 +3845,7 @@ def download_user_data(request):
 
     # Create JSON response
     response = JsonResponse(user_data, json_dumps_params={'indent': 2})
-    response[
-        'Content-Disposition'] = f'attachment; filename="user_data_{request.user.username}_{datetime.now().strftime("%Y%m%d")}.json"'
+    response['Content-Disposition'] = f'attachment; filename="user_data_{request.user.username}_{datetime.now().strftime("%Y%m%d")}.json"'
     return response
 
 
@@ -3578,6 +3902,46 @@ def privacy_settings(request):
     return render(request, 'accounts/privacy_settings.html', context)
 
 
+def get_role_statistics_for_company(company, users_queryset=None):
+    from django.db.models import Count, Q
+
+    if users_queryset is None:
+        users_queryset = CustomUser.objects.filter(
+            company=company,
+            is_hidden=False,
+            is_active=True
+        )
+
+    role_stats = Role.objects.filter(
+        Q(company=company) | Q(is_system_role=True)
+    ).annotate(
+        user_count=Count(
+            'group__user',
+            filter=Q(
+                group__user__in=users_queryset,
+                group__user__is_hidden=False
+            ),
+            distinct=True
+        )
+    ).filter(user_count__gt=0).values(
+        'id',
+        'group__name',
+        'user_count',
+        'priority',
+        'color_code',
+        'is_system_role'
+    ).order_by('-priority')
+
+    return list(role_stats)
+
+
+def get_user_type_display_from_role(user):
+    if not user.primary_role:
+        return "No Role Assigned"
+
+    # Direct return of role name (cleaner than mapping)
+    return user.primary_role.group.name
+
 @login_required
 def export_all_data(request):
     """
@@ -3588,7 +3952,7 @@ def export_all_data(request):
         zip_buffer = BytesIO()
 
         with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
-            # 1. Profile data as JSON
+            # 1. Profile data as JSON - ✅ FIXED
             profile_data = {
                 'username': request.user.username,
                 'email': request.user.email,
@@ -3601,7 +3965,9 @@ def export_all_data(request):
                 'last_login': request.user.last_login.isoformat() if request.user.last_login else None,
                 'timezone': request.user.timezone,
                 'language': request.user.language,
-                'user_type': request.user.user_type,
+                'primary_role': request.user.display_role,  # ✅ FIXED
+                'all_roles': request.user.role_names,  # ✅ FIXED
+                'role_priority': request.user.highest_role_priority,  # ✅ ADDED
                 'metadata': request.user.metadata,
             }
             zip_file.writestr('profile.json', json.dumps(profile_data, indent=2))
@@ -3787,7 +4153,7 @@ def active_sessions(request):
         'user': request.user,
     }
 
-    return render(request, 'accounts/active_sessions.html', context)
+    return render(request, 'accounts/user_sessions.html', context)
 
 
 @login_required
@@ -3960,6 +4326,132 @@ def user_integrations(request):
 
 
 @login_required
+@permission_required('accounts.can_manage_users', raise_exception=True)
+def bulk_invite_users(request, company_id):
+    """Bulk invite users via CSV upload"""
+    company = get_object_or_404(Company, company_id=company_id)
+
+    if not _user_has_company_access(request.user, company):
+        raise PermissionDenied("You don't have access to this company.")
+
+    if request.method == 'POST' and request.FILES.get('csv_file'):
+        csv_file = request.FILES['csv_file']
+
+        # Validate file type
+        if not csv_file.name.endswith('.csv'):
+            messages.error(request, 'Please upload a CSV file.')
+            return redirect('bulk_invite_users', company_id=company_id)
+
+        try:
+            import csv
+            from io import TextIOWrapper
+
+            # Process CSV file
+            csv_file_wrapper = TextIOWrapper(csv_file.file, encoding='utf-8')
+            reader = csv.DictReader(csv_file_wrapper)
+
+            required_columns = ['email']
+            optional_columns = ['first_name', 'last_name', 'phone_number', 'role_id']
+
+            # Validate CSV structure
+            if not all(col in reader.fieldnames for col in required_columns):
+                messages.error(request, f'CSV must contain columns: {", ".join(required_columns)}')
+                return redirect('bulk_invite_users', company_id=company_id)
+
+            success_count = 0
+            error_count = 0
+            errors = []
+
+            for row_num, row in enumerate(reader, start=2):  # start=2 to account for header
+                try:
+                    email = row['email'].strip()
+
+                    if not email:
+                        errors.append(f"Row {row_num}: Email is required")
+                        error_count += 1
+                        continue
+
+                    # Check if user exists
+                    existing_user = CustomUser.objects.filter(email=email).first()
+                    if existing_user:
+                        if existing_user.company == company:
+                            errors.append(f"Row {row_num}: User {email} already exists in company")
+                            error_count += 1
+                            continue
+                        else:
+                            # Update existing user's company
+                            existing_user.company = company
+                            existing_user.save()
+                    else:
+                        # Create new user
+                        import secrets
+                        import string
+
+                        temporary_password = ''.join(
+                            secrets.choice(string.ascii_letters + string.digits) for _ in range(12))
+
+                        # Generate username
+                        base_username = email.split('@')[0]
+                        username = base_username
+                        counter = 1
+                        while CustomUser.objects.filter(username=username).exists():
+                            username = f"{base_username}{counter}"
+                            counter += 1
+
+                        new_user = CustomUser.objects.create_user(
+                            email=email,
+                            username=username,
+                            password=temporary_password,
+                            company=company,
+                            first_name=row.get('first_name', ''),
+                            last_name=row.get('last_name', ''),
+                            phone_number=row.get('phone_number', ''),
+                            is_active=True
+                        )
+
+                    # Assign role if specified
+                    role_id = row.get('role_id')
+                    if role_id:
+                        try:
+                            role = Role.objects.get(id=role_id)
+                            if role in Role.objects.accessible_by_user(request.user):
+                                if existing_user:
+                                    existing_user.groups.add(role.group)
+                                else:
+                                    new_user.groups.add(role.group)
+                        except (Role.DoesNotExist, ValueError):
+                            pass
+
+                    success_count += 1
+
+                except Exception as e:
+                    errors.append(f"Row {row_num}: {str(e)}")
+                    error_count += 1
+
+            # Show results
+            if success_count > 0:
+                messages.success(request, f'Successfully processed {success_count} users.')
+            if error_count > 0:
+                messages.warning(request, f'Failed to process {error_count} users. Check the errors below.')
+                for error in errors[:10]:  # Show first 10 errors
+                    messages.error(request, error)
+                if len(errors) > 10:
+                    messages.info(request, f'... and {len(errors) - 10} more errors.')
+
+            return redirect('company_user_list', company_id=company_id)
+
+        except Exception as e:
+            messages.error(request, f'Error processing CSV file: {str(e)}')
+            return redirect('bulk_invite_users', company_id=company_id)
+
+    context = {
+        'company': company,
+        'available_roles': Role.objects.accessible_by_user(request.user),
+    }
+
+    return render(request, 'accounts/bulk_invite_users.html', context)
+
+@login_required
 @require_POST
 def revoke_session(request, session_id):
     """
@@ -4081,7 +4573,7 @@ def bulk_user_actions(request):
 @login_required
 @permission_required('accounts.can_export_data')
 def export_users(request, user_ids=None):
-    """Enhanced export users with SaaS admin support"""
+    """Enhanced export users with role information"""
     if user_ids:
         if isinstance(user_ids, str):
             user_ids_list = [int(uid) for uid in user_ids.split(',')]
@@ -4097,15 +4589,25 @@ def export_users(request, user_ids=None):
     )
 
     writer = csv.writer(response)
+
+    # ✅ FIXED: Replace 'User Type' with 'Primary Role' and 'All Roles'
     writer.writerow([
-        'ID', 'Email', 'Username', 'First Name', 'Last Name', 'User Type',
-        'Is Active', 'Email Verified', 'Phone Number', 'Date Joined', 'Last Login',
+        'ID', 'Email', 'Username', 'First Name', 'Last Name',
+        'Primary Role', 'All Roles', 'Role Priority',
+        'Is Active', 'Email Verified', 'Phone Number',
+        'Date Joined', 'Last Login',
         'Company', 'Is Company Admin', 'Is Hidden', 'Is SaaS Admin'
     ])
 
-    for user in users:
+    for user in users.select_related('company').prefetch_related('groups__role'):
         company = user.company
-        is_admin = hasattr(user, 'company_admin_for') and user.company_admin_for.filter(id=company.id).exists() if company else False
+        is_admin = getattr(user, 'company_admin', False)
+
+        # Get role information
+        primary_role = user.primary_role
+        primary_role_name = primary_role.group.name if primary_role else 'No Role'
+        all_roles = ', '.join(user.role_names) if user.role_names else 'No Roles'
+        role_priority = primary_role.priority if primary_role else 0
 
         writer.writerow([
             user.id,
@@ -4113,7 +4615,9 @@ def export_users(request, user_ids=None):
             user.username,
             user.first_name,
             user.last_name,
-            user.get_user_type_display() if hasattr(user, 'get_user_type_display') else '',
+            primary_role_name,
+            all_roles,
+            role_priority,
             user.is_active,
             getattr(user, 'email_verified', False),
             user.phone_number or '',
@@ -4126,7 +4630,6 @@ def export_users(request, user_ids=None):
         ])
 
     return response
-
 
 
 @login_required
@@ -4185,95 +4688,248 @@ def switch_company(request, company_id):
     return redirect('companies:dashboard')
 
 
-# User invitation system
 @login_required
-@permission_required('accounts.can_manage_users')
-def invite_user(request, company_id):
-    """Invite new user to company"""
-    company = get_object_or_404(Company, id=company_id)
+@permission_required('accounts.can_manage_users', raise_exception=True)
+def invite_user(request):
+    """
+    Invite a new user to the current tenant's company.
+    Uses tenant-aware email backend.
+    """
+    tenant = getattr(connection, 'tenant', None)
+    if not tenant or tenant.schema_name == 'public':
+        raise PermissionDenied("You must be in a tenant schema to invite users.")
 
-    # Check if user has access to this company
-    if not _user_has_company_access(request.user, company):
-        raise PermissionDenied
+    # Get company from tenant
+    company = getattr(tenant, 'company', None) or Company.objects.first()
+    if not company:
+        raise PermissionDenied("No company associated with this tenant.")
 
-    # Check if company can add more users
+    # Check subscription limit
     if hasattr(company, 'can_add_employee') and not company.can_add_employee():
-        messages.error(request, f'Company has reached the maximum user limit.')
-        return redirect('company_user_list', company_id=company_id)
+        messages.error(request, 'Company has reached the maximum user limit.')
+        return redirect('company_user_list')
+
+    # Get available roles WITHIN tenant context
+    with tenant_context(tenant):
+        available_roles = Role.objects.accessible_by_user(request.user)
 
     if request.method == 'POST':
         email = request.POST.get('email')
-        user_type = request.POST.get('user_type', 'EMPLOYEE')
+        role_id = request.POST.get('role')
         is_admin = request.POST.get('is_admin') == 'on'
+        first_name = request.POST.get('first_name', '')
+        last_name = request.POST.get('last_name', '')
+        phone_number = request.POST.get('phone_number', '')
 
-        # Check if user already exists
-        existing_user = CustomUser.objects.filter(email=email).first()
-        if existing_user:
-            # Check if already in company
-            if company in existing_user.companies.all():
-                messages.error(request, 'User is already a member of this company.')
-            else:
-                # Add existing user to company
-                existing_user.companies.add(company)
-                if is_admin:
-                    existing_user.company_admin_for.add(company)
-                messages.success(request, f'User {existing_user.get_full_name()} added to company.')
-        else:
-            # Create new user with temporary password
-            import secrets
-            import string
+        if not email:
+            messages.error(request, 'Email is required.')
+            return redirect('invite_user')
 
+        with tenant_context(tenant):
+            existing_user = CustomUser.objects.filter(email=email).first()
+
+            if existing_user:
+                # Update or skip
+                if existing_user.company == company:
+                    messages.error(request, 'User already belongs to this company.')
+                else:
+                    existing_user.company = company
+                    existing_user.first_name = first_name or existing_user.first_name
+                    existing_user.last_name = last_name or existing_user.last_name
+                    existing_user.phone_number = phone_number or existing_user.phone_number
+                    existing_user.company_admin = is_admin
+
+                    if role_id:
+                        try:
+                            role = Role.objects.get(id=role_id)
+                            if role in available_roles:
+                                existing_user.groups.add(role.group)
+                        except Role.DoesNotExist:
+                            pass
+
+                    existing_user.save()
+                    messages.success(request, f"User {existing_user.email} added to company.")
+                return redirect('company_user_list')
+
+            # Create new user
             temporary_password = ''.join(secrets.choice(string.ascii_letters + string.digits) for _ in range(12))
+            try:
+                with transaction.atomic():
+                    base_username = email.split('@')[0]
+                    username = base_username
+                    counter = 1
+                    while CustomUser.objects.filter(username=username).exists():
+                        username = f"{base_username}{counter}"
+                        counter += 1
 
-            with transaction.atomic():
-                new_user = CustomUser.objects.create_user(
-                    email=email,
-                    username=email.split('@')[0] + str(secrets.randbelow(1000)),
-                    password=temporary_password,
-                    user_type=user_type,
-                    is_active=True
-                )
+                    new_user = CustomUser.objects.create_user(
+                        email=email,
+                        username=username,
+                        password=temporary_password,
+                        company=company,
+                        first_name=first_name,
+                        last_name=last_name,
+                        phone_number=phone_number,
+                        company_admin=is_admin,
+                        is_active=True,
+                    )
 
-                new_user.companies.add(company)
-                if is_admin:
-                    new_user.company_admin_for.add(company)
+                    if role_id:
+                        try:
+                            role = Role.objects.get(id=role_id)
+                            if role in available_roles:
+                                new_user.groups.add(role.group)
+                                RoleHistory.objects.create(
+                                    role=role,
+                                    action='assigned',
+                                    user=request.user,
+                                    affected_user=new_user,
+                                    notes='Role assigned during invitation'
+                                )
+                        except Role.DoesNotExist:
+                            pass
 
-                # In a real implementation, send invitation email with temporary password
-                messages.success(
-                    request,
-                    f'User invited successfully. Temporary password: {temporary_password} (Send this securely to the user)'
-                )
+                    # Generate tenant-aware login URL
+                    if hasattr(tenant, 'domain_url') and tenant.domain_url:
+                        # Domain-based tenancy
+                        scheme = 'https' if request.is_secure() else 'http'
+                        login_url = f"{scheme}://{tenant.domain_url}{reverse('login')}"
+                    else:
+                        # Path-based tenancy or fallback
+                        current_site = get_current_site(request)
+                        scheme = 'https' if request.is_secure() else 'http'
+                        base_url = f"{scheme}://{current_site.domain}"
+                        login_url = f"{base_url}{reverse('login')}"
 
-        return redirect('company_user_list', company_id=company_id)
+                    # Send tenant-aware email invitation with professional design
+                    subject = f"Welcome to {company.name} PrimeBooks - Your Account is Ready!"
+
+                    plain_message = f"""
+Hello {first_name or 'there'},
+
+You've been invited to join {company.name} PrimeBooks!
+
+YOUR LOGIN CREDENTIALS:
+Email: {email}
+Temporary Password: {temporary_password}
+
+GET STARTED:
+Login URL: {login_url}
+
+SECURITY NOTES:
+• Please change your password immediately after logging in
+• Keep your credentials secure
+• Do not share your password with anyone
+
+If you have any questions, please contact your company administrator.
+
+Best regards,
+The {company.name}  Team | PrimeBooks - Prime Focus Ug Ltd
+"""
+
+                    html_message = f"""
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Welcome to {company.name} PrimeBooks - Prime Focus Ug Ltd</title>
+</head>
+<body style="margin: 0; padding: 0; font-family: 'Segoe UI', Arial, sans-serif; line-height: 1.6; color: #333; background-color: #f6f9fc;">
+    <div style="max-width: 600px; margin: 0 auto; background: #ffffff;">
+        <!-- Header -->
+        <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 40px 20px; text-align: center; color: white;">
+            <h1 style="margin: 0; font-size: 28px; font-weight: 300;">Welcome to {company.name} PrimeBooks - PFU ltd</h1>
+            <p style="margin: 10px 0 0 0; font-size: 16px; opacity: 0.9;">Your account has been created</p>
+        </div>
+
+        <!-- Content -->
+        <div style="padding: 40px 30px;">
+            <p style="margin: 0 0 20px 0;">Hello <strong>{first_name or 'there'}</strong>,</p>
+
+            <p style="margin: 0 0 25px 0;">You've been invited to join <strong style="color: #667eea;">{company.name}</strong>. We're excited to have you on board!</p>
+
+            <!-- Credentials Card -->
+            <div style="background: #f8f9fa; border-left: 4px solid #667eea; padding: 20px; margin: 25px 0; border-radius: 4px;">
+                <h3 style="margin: 0 0 15px 0; color: #2d3748; font-size: 18px;">🔐 Your Login Credentials</h3>
+                <table style="width: 100%; border-collapse: collapse;">
+                    <tr>
+                        <td style="padding: 8px 0; width: 120px; font-weight: 600; color: #4a5568;">Email:</td>
+                        <td style="padding: 8px 0; font-family: monospace; color: #2d3748;">{email}</td>
+                    </tr>
+                    <tr>
+                        <td style="padding: 8px 0; font-weight: 600; color: #4a5568;">Password:</td>
+                        <td style="padding: 8px 0; font-family: monospace; color: #2d3748;">{temporary_password}</td>
+                    </tr>
+                </table>
+            </div>
+
+            <!-- Action Button -->
+            <div style="text-align: center; margin: 35px 0;">
+                <a href="{login_url}" style="display: inline-block; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 14px 35px; text-decoration: none; border-radius: 5px; font-weight: 600; font-size: 16px; box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);">
+                    Get Started - Login Now
+                </a>
+            </div>
+
+            <!-- Alternative Link -->
+            <div style="text-align: center; margin: 20px 0;">
+                <p style="margin: 0; color: #718096; font-size: 14px;">
+                    Or copy and paste this link in your browser:<br>
+                    <code style="background: #f7fafc; padding: 8px 12px; border-radius: 3px; font-size: 12px; word-break: break-all;">{login_url}</code>
+                </p>
+            </div>
+
+            <!-- Security Notice -->
+            <div style="background: #fff5f5; border: 1px solid #fed7d7; padding: 15px; border-radius: 6px; margin: 25px 0;">
+                <h4 style="margin: 0 0 10px 0; color: #c53030; font-size: 14px;">⚠️ Security Notice</h4>
+                <ul style="margin: 0; padding-left: 20px; color: #744210; font-size: 13px;">
+                    <li>Change your password immediately after first login</li>
+                    <li>Keep your login credentials confidential</li>
+                    <li>Do not share your password with anyone</li>
+                </ul>
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <div style="background: #f8f9fa; padding: 25px 30px; text-align: center; border-top: 1px solid #e2e8f0;">
+            <p style="margin: 0 0 10px 0; color: #718096; font-size: 14px;">
+                If you have any questions, please contact your company administrator.
+            </p>
+            <p style="margin: 0; color: #a0aec0; font-size: 13px;">
+                Best regards,<br>
+                <strong>The {company.name} Team</strong>
+            </p>
+            <p style="margin: 0; color: #a0aec0; font-size: 13px;">
+                Prime Focus Uganda Limited,<br>
+                <strong>PRIMEBOOKS Team</strong>
+            </p>
+        </div>
+    </div>
+</body>
+</html>
+"""
+
+                    send_tenant_email(
+                        subject=subject,
+                        message=plain_message,
+                        recipient_list=[email],
+                        html_message=html_message,
+                        tenant=tenant
+                    )
+
+                    messages.success(request, f"Invitation sent to {email} successfully.")
+                    return redirect('company_user_list')
+
+            except Exception as e:
+                messages.error(request, f"Error creating user: {e}")
+                return redirect('invite_user')
 
     context = {
         'company': company,
-        'user_types': CustomUser.USER_TYPES,
+        'available_roles': available_roles,
     }
 
     return render(request, 'accounts/invite_user.html', context)
-
-
-# Enhanced Analytics Views
-@login_required
-def user_activity_log(request):
-    """View user's activity log"""
-    # In a real implementation, you would have an ActivityLog model
-    # For now, we'll show basic user information
-    context = {
-        'user': request.user,
-        'login_history': [
-            {
-                'date': request.user.last_login,
-                'ip': request.user.last_login_ip,
-                'success': True
-            }
-        ] if request.user.last_login else [],
-        'password_changed_at': request.user.password_changed_at,
-        'failed_attempts': request.user.failed_login_attempts,
-    }
-
-    return render(request, 'accounts/user_activity_log.html', context)
 
 
 @login_required
@@ -4336,3 +4992,1022 @@ def system_companies_list(request):
     }
 
     return render(request, "accounts/system_companies_list.html", context)
+
+
+
+@require_saas_admin
+def saas_admin_audit_log(request):
+    """Enhanced system audit logs with advanced filtering"""
+    logs = AuditLog.objects.select_related('user', 'company', 'store').all()
+
+    # Apply filters
+    date_from = request.GET.get('date_from')
+    date_to = request.GET.get('date_to')
+    action_type = request.GET.get('action_type')
+    user_id = request.GET.get('user')
+    company_id = request.GET.get('company')
+    severity = request.GET.get('severity')
+    success = request.GET.get('success')
+    search = request.GET.get('search')
+
+    if date_from:
+        logs = logs.filter(timestamp__gte=date_from)
+    if date_to:
+        logs = logs.filter(timestamp__lte=date_to)
+    if action_type:
+        logs = logs.filter(action=action_type)
+    if user_id:
+        logs = logs.filter(user_id=user_id)
+    if company_id:
+        logs = logs.filter(company_id=company_id)
+    if severity:
+        logs = logs.filter(severity=severity)
+    if success:
+        logs = logs.filter(success=success == 'true')
+    if search:
+        logs = logs.filter(
+            Q(action_description__icontains=search) |
+            Q(resource_name__icontains=search) |
+            Q(user__username__icontains=search) |
+            Q(user__email__icontains=search)
+        )
+
+    # Export functionality
+    if request.GET.get('export') == 'csv':
+        csv_data = export_audit_logs(logs, format='csv')
+        response = HttpResponse(csv_data, content_type='text/csv')
+        response['Content-Disposition'] = f'attachment; filename="audit_logs_{timezone.now().strftime("%Y%m%d_%H%M%S")}.csv"'
+        return response
+
+    # Statistics
+    stats = {
+        'total_logs': logs.count(),
+        'successful_actions': logs.filter(success=True).count(),
+        'failed_actions': logs.filter(success=False).count(),
+        'critical_actions': logs.filter(severity='critical').count(),
+        'requires_review': logs.filter(requires_review=True, reviewed=False).count(),
+    }
+
+    # Pagination
+    paginator = Paginator(logs.order_by('-timestamp'), 50)
+    page = request.GET.get('page', 1)
+    logs_page = paginator.get_page(page)
+
+    # Get filter options
+    from company.models import Company
+    companies = Company.objects.all()[:100]
+
+    context = {
+        'logs': logs_page,
+        'stats': stats,
+        'action_types': AuditLog.ACTION_TYPES,
+        'severity_levels': AuditLog.SEVERITY_LEVELS,
+        'users': CustomUser.objects.filter(is_hidden=False)[:100],
+        'companies': companies,
+        'filters': {
+            'date_from': date_from,
+            'date_to': date_to,
+            'action_type': action_type,
+            'user': user_id,
+            'company': company_id,
+            'severity': severity,
+            'success': success,
+            'search': search,
+        }
+    }
+
+    return render(request, 'accounts/saas_admin_audit_log.html', context)
+
+
+@login_required
+def user_activity_log(request):
+    """User's personal activity log"""
+    # Get user's audit logs
+    audit_logs = AuditLog.objects.filter(user=request.user).order_by('-timestamp')
+
+    # Apply date filter
+    date_from = request.GET.get('date_from')
+    date_to = request.GET.get('date_to')
+    action_type = request.GET.get('action_type')
+
+    if date_from:
+        audit_logs = audit_logs.filter(timestamp__gte=date_from)
+    if date_to:
+        audit_logs = audit_logs.filter(timestamp__lte=date_to)
+    if action_type:
+        audit_logs = audit_logs.filter(action=action_type)
+
+    # Pagination
+    paginator = Paginator(audit_logs, 20)
+    page = request.GET.get('page', 1)
+    logs_page = paginator.get_page(page)
+
+    # Get login history
+    login_history = LoginHistory.objects.filter(user=request.user).order_by('-timestamp')[:10]
+
+    # Calculate statistics
+    total_actions = audit_logs.count()
+    last_30_days = timezone.now() - timedelta(days=30)
+    recent_actions = audit_logs.filter(timestamp__gte=last_30_days).count()
+
+    stats = {
+        'total_actions': total_actions,
+        'recent_actions': recent_actions,
+        'successful_logins': LoginHistory.objects.filter(
+            user=request.user,
+            status='success'
+        ).count(),
+        'failed_logins': LoginHistory.objects.filter(
+            user=request.user,
+            status='failed'
+        ).count(),
+        'last_login': login_history.first() if login_history else None,
+        'most_common_action': audit_logs.values('action').annotate(
+            count=Count('action')
+        ).order_by('-count').first()
+    }
+
+    context = {
+        'audit_logs': logs_page,
+        'login_history': login_history,
+        'stats': stats,
+        'action_types': AuditLog.ACTION_TYPES,
+        'filters': {
+            'date_from': date_from,
+            'date_to': date_to,
+            'action_type': action_type,
+        }
+    }
+
+    return render(request, 'accounts/user_activity_log.html', context)
+
+
+@login_required
+def login_history_view(request):
+    """Detailed login history with security insights"""
+    login_history = LoginHistory.objects.filter(user=request.user).order_by('-timestamp')
+
+    # Apply filters
+    status = request.GET.get('status')
+    date_from = request.GET.get('date_from')
+    date_to = request.GET.get('date_to')
+
+    if status:
+        login_history = login_history.filter(status=status)
+    if date_from:
+        login_history = login_history.filter(timestamp__gte=date_from)
+    if date_to:
+        login_history = login_history.filter(timestamp__lte=date_to)
+
+    # Pagination
+    paginator = Paginator(login_history, 25)
+    page = request.GET.get('page', 1)
+    history_page = paginator.get_page(page)
+
+    # Security insights
+    last_30_days = timezone.now() - timedelta(days=30)
+    insights = {
+        'total_logins': login_history.count(),
+        'recent_logins': login_history.filter(timestamp__gte=last_30_days).count(),
+        'failed_attempts': login_history.filter(status='failed').count(),
+        'unique_locations': login_history.exclude(location='').values('location').distinct().count(),
+        'unique_devices': login_history.exclude(device_type='').values('device_type').distinct().count(),
+        'recent_failures': login_history.filter(
+            status='failed',
+            timestamp__gte=timezone.now() - timedelta(days=7)
+        ).count()
+    }
+
+    # Get unique locations for map visualization
+    locations = login_history.exclude(
+        latitude__isnull=True
+    ).values('location', 'latitude', 'longitude').distinct()[:20]
+
+    context = {
+        'login_history': history_page,
+        'insights': insights,
+        'locations': list(locations),
+        'status_choices': LoginHistory.STATUS_CHOICES,
+        'filters': {
+            'status': status,
+            'date_from': date_from,
+            'date_to': date_to,
+        }
+    }
+
+    return render(request, 'accounts/login_history.html', context)
+
+
+@login_required
+def data_export_history(request):
+    """View user's data export history"""
+    exports = DataExportLog.objects.filter(user=request.user).order_by('-timestamp')
+
+    # Apply filters
+    export_type = request.GET.get('export_type')
+    resource_type = request.GET.get('resource_type')
+    date_from = request.GET.get('date_from')
+
+    if export_type:
+        exports = exports.filter(export_type=export_type)
+    if resource_type:
+        exports = exports.filter(resource_type=resource_type)
+    if date_from:
+        exports = exports.filter(timestamp__gte=date_from)
+
+    # Pagination
+    paginator = Paginator(exports, 20)
+    page = request.GET.get('page', 1)
+    exports_page = paginator.get_page(page)
+
+    # Statistics
+    stats = {
+        'total_exports': exports.count(),
+        'total_records': exports.aggregate(total=Count('record_count'))['total'] or 0,
+        'most_exported': exports.values('resource_type').annotate(
+            count=Count('id')
+        ).order_by('-count').first(),
+    }
+
+    context = {
+        'exports': exports_page,
+        'stats': stats,
+        'export_types': DataExportLog.EXPORT_TYPES,
+        'filters': {
+            'export_type': export_type,
+            'resource_type': resource_type,
+            'date_from': date_from,
+        }
+    }
+
+    return render(request, 'accounts/data_export_history.html', context)
+
+
+@require_saas_admin
+def audit_log_detail(request, log_id):
+    """Detailed view of a specific audit log entry"""
+    log = get_object_or_404(
+        AuditLog.objects.select_related('user', 'company', 'store', 'impersonated_by'),
+        id=log_id
+    )
+
+    # Parse user agent if available
+    user_agent_info = None
+    if log.user_agent:
+        user_agent_info = parse_user_agent(log.user_agent)
+
+    # Get location info if available
+    location_info = None
+    if log.ip_address:
+        location_info = get_location_from_ip(log.ip_address)
+
+    context = {
+        'log': log,
+        'user_agent_info': user_agent_info,
+        'location_info': location_info,
+    }
+
+    return render(request, 'accounts/audit_log_detail.html', context)
+
+
+@require_saas_admin
+def mark_log_reviewed(request, log_id):
+    """Mark an audit log as reviewed"""
+    if request.method == 'POST':
+        log = get_object_or_404(AuditLog, id=log_id)
+        log.reviewed = True
+        log.reviewed_by = request.user
+        log.reviewed_at = timezone.now()
+        log.save()
+
+        messages.success(request, _('Audit log marked as reviewed'))
+        return redirect('accounts:audit_log_detail', log_id=log_id)
+
+    return redirect('accounts:saas_admin_audit_log')
+
+
+@login_required
+def security_dashboard(request):
+    """Security overview dashboard for user"""
+    # Recent login attempts
+    recent_logins = LoginHistory.objects.filter(
+        user=request.user
+    ).order_by('-timestamp')[:10]
+
+    # Failed login attempts in last 24 hours
+    last_24h = timezone.now() - timedelta(hours=24)
+    recent_failures = LoginHistory.objects.filter(
+        user=request.user,
+        status='failed',
+        timestamp__gte=last_24h
+    ).count()
+
+    # Recent critical actions
+    last_7_days = timezone.now() - timedelta(days=7)
+    critical_actions = AuditLog.objects.filter(
+        user=request.user,
+        severity='critical',
+        timestamp__gte=last_7_days
+    ).order_by('-timestamp')[:5]
+
+    # Suspicious activity
+    suspicious = AuditLog.objects.filter(
+        user=request.user,
+        action='suspicious_activity',
+        timestamp__gte=last_7_days
+    ).count()
+
+    # Active sessions (you may need to implement session tracking)
+    active_sessions = LoginHistory.objects.filter(
+        user=request.user,
+        status='success',
+        logout_timestamp__isnull=True
+    ).order_by('-timestamp')[:5]
+
+    context = {
+        'recent_logins': recent_logins,
+        'recent_failures': recent_failures,
+        'critical_actions': critical_actions,
+        'suspicious_count': suspicious,
+        'active_sessions': active_sessions,
+    }
+
+    return render(request, 'accounts/security_dashboard.html', context)
+
+@require_saas_admin
+def audit_statistics(request):
+    """Comprehensive audit statistics page"""
+    now = timezone.now()
+    period = request.GET.get('period', '7d')
+
+    # Determine date range
+    if period == '7d':
+        start_date = now - timedelta(days=7)
+    elif period == '30d':
+        start_date = now - timedelta(days=30)
+    elif period == '90d':
+        start_date = now - timedelta(days=90)
+    elif period == '1y':
+        start_date = now - timedelta(days=365)
+    else:
+        start_date = now - timedelta(days=7)
+
+    # Get logs for current period
+    current_logs = AuditLog.objects.filter(timestamp__gte=start_date)
+
+    # Calculate overview metrics
+    total_logs = current_logs.count()
+    successful_actions = current_logs.filter(success=True).count()
+    failed_actions = current_logs.filter(success=False).count()
+    success_rate = round((successful_actions / total_logs * 100) if total_logs > 0 else 0, 1)
+    failure_rate = round((failed_actions / total_logs * 100) if total_logs > 0 else 0, 1)
+
+    critical_events = current_logs.filter(severity='critical').count()
+
+    active_users = current_logs.values('user').distinct().count()
+
+    avg_response_time = current_logs.filter(
+        duration_ms__isnull=False
+    ).aggregate(avg=Avg('duration_ms'))['avg']
+    avg_response_time = round(avg_response_time) if avg_response_time else 0
+
+    # Calculate growth (compare to previous period)
+    previous_start = start_date - (now - start_date)
+    previous_logs_count = AuditLog.objects.filter(
+        timestamp__gte=previous_start,
+        timestamp__lt=start_date
+    ).count()
+
+    logs_growth = 0
+    if previous_logs_count > 0:
+        logs_growth = round(((total_logs - previous_logs_count) / previous_logs_count) * 100, 1)
+
+    # Activity over time (daily breakdown)
+    activity_labels = []
+    activity_data = []
+
+    days_range = (now - start_date).days
+    for i in range(days_range):
+        day = start_date + timedelta(days=i)
+        day_start = day.replace(hour=0, minute=0, second=0, microsecond=0)
+        day_end = day_start + timedelta(days=1)
+
+        count = AuditLog.objects.filter(
+            timestamp__gte=day_start,
+            timestamp__lt=day_end
+        ).count()
+
+        activity_labels.append(day.strftime('%Y-%m-%d'))
+        activity_data.append(count)
+
+    # Top actions
+    top_actions = current_logs.values('action').annotate(
+        count=Count('id')
+    ).order_by('-count')[:10]
+
+    # Add display names for actions
+    action_dict = dict(AuditLog.ACTION_TYPES)
+    for action in top_actions:
+        action['action_display'] = action_dict.get(action['action'], action['action'])
+
+    # Top users
+    top_users = current_logs.filter(
+        user__isnull=False
+    ).values('user__email').annotate(
+        action_count=Count('id')
+    ).order_by('-action_count')[:10]
+
+    # Format for template
+    top_users_list = [{'email': u['user__email'], 'action_count': u['action_count']} for u in top_users]
+
+    # Action distribution for pie chart
+    action_distribution = current_logs.values('action').annotate(
+        count=Count('id')
+    ).order_by('-count')[:5]
+
+    action_labels = [
+        force_str(action_dict.get(a['action'], a['action']))
+        for a in action_distribution
+    ]
+    action_data = [a['count'] for a in action_distribution]
+
+    # User activity for bar chart
+    user_activity = current_logs.filter(
+        user__isnull=False
+    ).values('user__email').annotate(
+        count=Count('id')
+    ).order_by('-count')[:10]
+
+    user_labels = [u['user__email'][:20] for u in user_activity]  # Truncate long emails
+    user_data = [u['count'] for u in user_activity]
+
+    # Error rate by action
+    actions_with_errors = []
+    for action_code, action_name in AuditLog.ACTION_TYPES[:10]:
+        total = current_logs.filter(action=action_code).count()
+        if total > 0:
+            failed = current_logs.filter(action=action_code, success=False).count()
+            error_rate = round((failed / total) * 100, 1)
+            if error_rate > 0:
+                actions_with_errors.append({
+                    'name': action_name,
+                    'error_rate': error_rate,
+                    'total': total,
+                    'failed': failed
+                })
+
+    actions_with_errors.sort(key=lambda x: x['error_rate'], reverse=True)
+
+    # Activity heatmap (last 7 days, hourly)
+    heatmap_data = []
+    days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+
+    for i in range(7):
+        day = now - timedelta(days=6 - i)
+        day_name = days[day.weekday()]
+        day_start = day.replace(hour=0, minute=0, second=0, microsecond=0)
+
+        hours = []
+        for hour in range(24):
+            hour_start = day_start + timedelta(hours=hour)
+            hour_end = hour_start + timedelta(hours=1)
+
+            count = AuditLog.objects.filter(
+                timestamp__gte=hour_start,
+                timestamp__lt=hour_end
+            ).count()
+
+            # Calculate intensity (0-5 scale)
+            intensity = min(5, count // 5) if count > 0 else 0
+
+            hours.append({
+                'hour': hour,
+                'count': count,
+                'intensity': intensity
+            })
+
+        heatmap_data.append({
+            'name': day_name[:3],  # Short name
+            'hours': hours
+        })
+
+    # Period comparison
+    current_period_logs = total_logs
+    last_period_logs = previous_logs_count
+
+    current_period_users = active_users
+    last_period_users = AuditLog.objects.filter(
+        timestamp__gte=previous_start,
+        timestamp__lt=start_date
+    ).values('user').distinct().count()
+
+    context = {
+        # Overview metrics
+        'total_logs': total_logs,
+        'successful_actions': successful_actions,
+        'failed_actions': failed_actions,
+        'success_rate': success_rate,
+        'failure_rate': failure_rate,
+        'critical_events': critical_events,
+        'active_users': active_users,
+        'avg_response_time': avg_response_time,
+        'logs_growth': logs_growth,
+
+        # Charts data
+        'activity_labels': json.dumps(activity_labels),
+        'activity_data': json.dumps(activity_data),
+        'action_labels': json.dumps(action_labels),
+        'action_data': json.dumps(action_data),
+        'user_labels': json.dumps(user_labels),
+        'user_data': json.dumps(user_data),
+
+        # Lists
+        'top_actions': top_actions,
+        'top_users': top_users_list,
+        'actions_with_errors': actions_with_errors,
+
+        # Heatmap
+        'heatmap_data': heatmap_data,
+
+        # Period comparison
+        'current_period_logs': current_period_logs,
+        'last_period_logs': last_period_logs,
+        'current_period_users': current_period_users,
+        'last_period_users': last_period_users,
+
+        # Settings
+        'selected_period': period,
+    }
+
+    return render(request, 'accounts/audit_statistics.html', context)
+
+@require_saas_admin
+def audit_dashboard(request):
+    """Dashboard showing audit statistics and insights"""
+    now = timezone.now()
+    last_24h = now - timedelta(hours=24)
+    last_7d = now - timedelta(days=7)
+    last_30d = now - timedelta(days=30)
+
+    # Key metrics
+    metrics = {
+        'total_logs': AuditLog.objects.count(),
+        'logs_24h': AuditLog.objects.filter(timestamp__gte=last_24h).count(),
+        'failed_actions_24h': AuditLog.objects.filter(
+            timestamp__gte=last_24h,
+            success=False
+        ).count(),
+        'critical_alerts': AuditLog.objects.filter(
+            severity='critical',
+            timestamp__gte=last_7d
+        ).count(),
+        'pending_reviews': AuditLog.objects.filter(
+            requires_review=True,
+            reviewed=False
+        ).count(),
+    }
+
+    # Activity by hour (last 24 hours)
+    activity_by_hour = []
+    for i in range(24):
+        hour = now - timedelta(hours=i)
+        hour_start = hour.replace(minute=0, second=0, microsecond=0)
+        hour_end = hour_start + timedelta(hours=1)
+        count = AuditLog.objects.filter(
+            timestamp__gte=hour_start,
+            timestamp__lt=hour_end
+        ).count()
+        activity_by_hour.append({
+            'hour': hour_start.isoformat(),
+            'count': count
+        })
+    activity_by_hour.reverse()
+
+    # Top actions (last 7 days)
+    top_actions = AuditLog.objects.filter(
+        timestamp__gte=last_7d
+    ).values('action').annotate(
+        count=Count('id')
+    ).order_by('-count')[:10]
+
+    # Top users (last 7 days)
+    top_users = AuditLog.objects.filter(
+        timestamp__gte=last_7d,
+        user__isnull=False
+    ).values(
+        'user__email', 'user__first_name', 'user__last_name'
+    ).annotate(
+        count=Count('id')
+    ).order_by('-count')[:10]
+
+    # Failed actions (last 24 hours)
+    failed_actions = AuditLog.objects.filter(
+        success=False,
+        timestamp__gte=last_24h
+    ).select_related('user', 'company').order_by('-timestamp')[:10]
+
+    # Security events (last 7 days)
+    security_events = AuditLog.objects.filter(
+        Q(action__in=[
+            'login_failed',
+            'suspicious_activity',
+            'account_locked',
+            'password_reset',
+            'impersonation_started'
+        ]) | Q(severity='critical'),
+        timestamp__gte=last_7d
+    ).select_related('user', 'company').order_by('-timestamp')[:10]
+
+    context = {
+        'metrics': metrics,
+        'activity_by_hour': json.dumps(activity_by_hour),
+        'top_actions': top_actions,
+        'top_users': top_users,
+        'failed_actions': failed_actions,
+        'security_events': security_events,
+        'action_types': AuditLog.ACTION_TYPES,
+    }
+
+    return render(request, 'accounts/audit_dashboard.html', context)
+
+
+@login_required
+def security_overview(request):
+    """Security overview for user's account"""
+    now = timezone.now()
+    last_30d = now - timedelta(days=30)
+    last_7d = now - timedelta(days=7)
+
+    # Recent security events
+    security_events = AuditLog.objects.filter(
+        user=request.user,
+        action__in=[
+            'login_success',
+            'login_failed',
+            'password_changed',
+            'password_reset',
+            '2fa_enabled',
+            '2fa_disabled',
+            'email_verified'
+        ],
+        timestamp__gte=last_30d
+    ).order_by('-timestamp')[:20]
+
+    # Login statistics
+    login_stats = {
+        'successful': LoginHistory.objects.filter(
+            user=request.user,
+            status='success',
+            timestamp__gte=last_30d
+        ).count(),
+        'failed': LoginHistory.objects.filter(
+            user=request.user,
+            status='failed',
+            timestamp__gte=last_30d
+        ).count(),
+        'unique_ips': LoginHistory.objects.filter(
+            user=request.user,
+            timestamp__gte=last_30d
+        ).values('ip_address').distinct().count(),
+    }
+
+    # Active sessions (from login history without logout)
+    active_sessions = LoginHistory.objects.filter(
+        user=request.user,
+        status='success',
+        logout_timestamp__isnull=True,
+        timestamp__gte=now - timedelta(days=7)  # Last 7 days
+    ).order_by('-timestamp')[:10]
+
+    # Recent failed login attempts
+    failed_attempts = LoginHistory.objects.filter(
+        user=request.user,
+        status='failed',
+        timestamp__gte=last_7d
+    ).order_by('-timestamp')[:5]
+
+    # Password last changed
+    password_changed = AuditLog.objects.filter(
+        user=request.user,
+        action='password_changed'
+    ).order_by('-timestamp').first()
+
+    # Two-factor authentication status
+    tfa_enabled = AuditLog.objects.filter(
+        user=request.user,
+        action='2fa_enabled'
+    ).exists()
+
+    tfa_disabled = AuditLog.objects.filter(
+        user=request.user,
+        action='2fa_disabled'
+    ).order_by('-timestamp').first()
+
+    # Check if 2FA is currently active
+    tfa_status = tfa_enabled and (
+            not tfa_disabled or
+            (password_changed and tfa_disabled.timestamp < password_changed.timestamp)
+    )
+
+    # Security score calculation
+    security_score = 0
+    security_recommendations = []
+
+    # Check password age
+    if password_changed:
+        days_since_change = (now - password_changed.timestamp).days
+        if days_since_change < 90:
+            security_score += 20
+        else:
+            security_recommendations.append(
+                _('Your password is over 90 days old. Consider changing it.')
+            )
+    else:
+        security_recommendations.append(
+            _('No password change recorded. Consider updating your password.')
+        )
+
+    # Check 2FA
+    if tfa_status:
+        security_score += 30
+    else:
+        security_recommendations.append(
+            _('Enable two-factor authentication for better security.')
+        )
+
+    # Check failed login attempts
+    if login_stats['failed'] == 0:
+        security_score += 25
+    elif login_stats['failed'] > 5:
+        security_recommendations.append(
+            _('Multiple failed login attempts detected. Review your login history.')
+        )
+    else:
+        security_score += 15
+
+    # Check login from multiple IPs
+    if login_stats['unique_ips'] <= 3:
+        security_score += 25
+    elif login_stats['unique_ips'] > 10:
+        security_recommendations.append(
+            _('Logins from many different locations detected. Ensure all sessions are yours.')
+        )
+    else:
+        security_score += 15
+
+    context = {
+        'security_events': security_events,
+        'login_stats': login_stats,
+        'active_sessions': active_sessions,
+        'failed_attempts': failed_attempts,
+        'password_changed': password_changed,
+        'tfa_status': tfa_status,
+        'security_score': min(security_score, 100),
+        'security_recommendations': security_recommendations,
+    }
+
+    return render(request, 'accounts/security_overview.html', context)
+
+
+@require_saas_admin
+def review_audit_log(request, log_id):
+    """Review flagged audit log"""
+    audit_log = get_object_or_404(AuditLog, id=log_id)
+
+    # Check if already reviewed
+    if audit_log.reviewed:
+        messages.info(
+            request,
+            _('This audit log has already been reviewed by %(user)s on %(date)s') % {
+                'user': audit_log.reviewed_by.get_full_name(),
+                'date': audit_log.reviewed_at.strftime('%Y-%m-%d %H:%M:%S')
+            }
+        )
+
+    if request.method == 'POST':
+        form = ReviewAuditLogForm(request.POST)
+        if form.is_valid():
+            # Mark as reviewed
+            audit_log.reviewed = True
+            audit_log.reviewed_by = request.user
+            audit_log.reviewed_at = timezone.now()
+
+            # Store review notes in metadata
+            if not audit_log.metadata:
+                audit_log.metadata = {}
+
+            audit_log.metadata['review_notes'] = form.cleaned_data['notes']
+            audit_log.metadata['review_action'] = form.cleaned_data.get('action', '')
+            audit_log.metadata['reviewed_by_email'] = request.user.email
+
+            audit_log.save()
+
+            # Log the review action
+            AuditLog.objects.create(
+                user=request.user,
+                action='other',
+                action_description=f'Reviewed audit log #{audit_log.id}',
+                ip_address=get_client_ip(request),
+                user_agent=request.META.get('HTTP_USER_AGENT', ''),
+                request_path=request.path,
+                request_method=request.method,
+                metadata={
+                    'reviewed_log_id': audit_log.id,
+                    'review_action': form.cleaned_data.get('action', '')
+                }
+            )
+
+            messages.success(request, _('Audit log reviewed successfully'))
+
+            # Redirect based on action
+            if form.cleaned_data.get('action') == 'investigate':
+                messages.warning(
+                    request,
+                    _('This entry has been marked for investigation')
+                )
+
+            return redirect('saas_admin_audit_log')
+    else:
+        # Pre-fill form if there are existing review notes
+        initial_data = {}
+        if audit_log.metadata and 'review_notes' in audit_log.metadata:
+            initial_data['notes'] = audit_log.metadata['review_notes']
+
+        form = ReviewAuditLogForm(initial=initial_data)
+
+    # Get related logs (same user, similar time)
+    related_logs = AuditLog.objects.filter(
+        user=audit_log.user,
+        timestamp__gte=audit_log.timestamp - timedelta(minutes=5),
+        timestamp__lte=audit_log.timestamp + timedelta(minutes=5)
+    ).exclude(id=audit_log.id).order_by('-timestamp')[:5]
+
+    # Get user's recent activity
+    user_recent_activity = None
+    if audit_log.user:
+        user_recent_activity = AuditLog.objects.filter(
+            user=audit_log.user,
+            timestamp__gte=audit_log.timestamp - timedelta(hours=1),
+            timestamp__lte=audit_log.timestamp
+        ).order_by('-timestamp')[:10]
+
+    # Parse user agent
+    user_agent_info = None
+    if audit_log.user_agent:
+        user_agent_info = parse_user_agent(audit_log.user_agent)
+
+    # Get location info
+    location_info = None
+    if audit_log.ip_address:
+        location_info = get_location_from_ip(audit_log.ip_address)
+
+    context = {
+        'audit_log': audit_log,
+        'form': form,
+        'related_logs': related_logs,
+        'user_recent_activity': user_recent_activity,
+        'user_agent_info': user_agent_info,
+        'location_info': location_info,
+    }
+
+    return render(request, 'accounts/review_audit_log.html', context)
+
+
+@require_saas_admin
+def bulk_review_audit_logs(request):
+    """Bulk review multiple audit logs"""
+    if request.method == 'POST':
+        log_ids = request.POST.getlist('log_ids')
+        review_notes = request.POST.get('review_notes', '')
+        review_action = request.POST.get('review_action', '')
+
+        if not log_ids:
+            messages.error(request, _('No logs selected for review'))
+            return redirect('saas_admin_audit_log')
+
+        # Update all selected logs
+        updated_count = 0
+        for log_id in log_ids:
+            try:
+                audit_log = AuditLog.objects.get(id=log_id)
+                audit_log.reviewed = True
+                audit_log.reviewed_by = request.user
+                audit_log.reviewed_at = timezone.now()
+
+                if not audit_log.metadata:
+                    audit_log.metadata = {}
+
+                audit_log.metadata['review_notes'] = review_notes
+                audit_log.metadata['review_action'] = review_action
+                audit_log.metadata['bulk_review'] = True
+                audit_log.save()
+
+                updated_count += 1
+            except AuditLog.DoesNotExist:
+                continue
+
+        messages.success(
+            request,
+            _('Successfully reviewed %(count)d audit logs') % {'count': updated_count}
+        )
+
+        return redirect('saas_admin_audit_log')
+
+    return redirect('saas_admin_audit_log')
+
+
+@login_required
+def revoke_session(request, session_id):
+    """Revoke/logout a specific session"""
+    try:
+        login_history = get_object_or_404(
+            LoginHistory,
+            id=session_id,
+            user=request.user
+        )
+
+        # Mark session as logged out
+        if not login_history.logout_timestamp:
+            login_history.logout_timestamp = timezone.now()
+            login_history.save()
+
+            # Log the action
+            AuditLog.objects.create(
+                user=request.user,
+                action='logout',
+                action_description=f'Session revoked manually',
+                ip_address=get_client_ip(request),
+                user_agent=request.META.get('HTTP_USER_AGENT', ''),
+                metadata={
+                    'revoked_session_id': session_id,
+                    'original_ip': login_history.ip_address
+                }
+            )
+
+            messages.success(request, _('Session revoked successfully'))
+        else:
+            messages.info(request, _('This session was already logged out'))
+
+    except Exception as e:
+        messages.error(request, _('Failed to revoke session: %(error)s') % {'error': str(e)})
+
+    return redirect('security_overview')
+
+
+@require_saas_admin
+def export_audit_dashboard_data(request):
+    """Export dashboard data as JSON for external analysis"""
+    now = timezone.now()
+    last_30d = now - timedelta(days=30)
+
+    # Compile dashboard data
+    data = {
+        'generated_at': now.isoformat(),
+        'period': '30_days',
+        'metrics': {
+            'total_logs': AuditLog.objects.count(),
+            'logs_30d': AuditLog.objects.filter(timestamp__gte=last_30d).count(),
+            'unique_users': AuditLog.objects.values('user').distinct().count(),
+            'failed_actions': AuditLog.objects.filter(success=False).count(),
+            'critical_events': AuditLog.objects.filter(severity='critical').count(),
+        },
+        'top_actions': list(
+            AuditLog.objects.filter(timestamp__gte=last_30d)
+            .values('action')
+            .annotate(count=Count('id'))
+            .order_by('-count')[:20]
+        ),
+        'daily_activity': [],
+    }
+
+    # Daily activity for last 30 days
+    for i in range(30):
+        day = now - timedelta(days=i)
+        day_start = day.replace(hour=0, minute=0, second=0, microsecond=0)
+        day_end = day_start + timedelta(days=1)
+
+        data['daily_activity'].append({
+            'date': day_start.date().isoformat(),
+            'total': AuditLog.objects.filter(
+                timestamp__gte=day_start,
+                timestamp__lt=day_end
+            ).count(),
+            'failed': AuditLog.objects.filter(
+                timestamp__gte=day_start,
+                timestamp__lt=day_end,
+                success=False
+            ).count(),
+        })
+
+    # Log the export
+    AuditLog.objects.create(
+        user=request.user,
+        action='report_exported',
+        action_description='Exported audit dashboard data',
+        ip_address=get_client_ip(request),
+        metadata={'export_format': 'json'}
+    )
+
+    response = JsonResponse(data)
+    response['Content-Disposition'] = f'attachment; filename="audit_dashboard_{now.strftime("%Y%m%d_%H%M%S")}.json"'
+    return response

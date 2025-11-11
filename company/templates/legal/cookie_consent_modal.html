@@ -1,0 +1,151 @@
+
+<div class="modal fade" id="cookieSettingsModal" tabindex="-1" aria-labelledby="cookieSettingsModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="cookieSettingsModalLabel">{% trans "Cookie Preferences" %}</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p>{% trans "We use cookies to enhance your experience. You can choose which types of cookies to allow:" %}</p>
+
+                <div class="cookie-preference-item">
+                    <div class="form-check form-switch">
+                        <input class="form-check-input" type="checkbox" id="essentialCookies" checked disabled>
+                        <label class="form-check-label" for="essentialCookies">
+                            <strong>{% trans "Essential Cookies" %}</strong>
+                            <span class="badge bg-success ms-2">{% trans "Always Active" %}</span>
+                        </label>
+                    </div>
+                    <p class="text-muted small mt-2">
+                        {% trans "These cookies are necessary for the website to function and cannot be disabled." %}
+                    </p>
+                </div>
+
+                <div class="cookie-preference-item mt-4">
+                    <div class="form-check form-switch">
+                        <input class="form-check-input" type="checkbox" id="functionalCookies">
+                        <label class="form-check-label" for="functionalCookies">
+                            <strong>{% trans "Functional Cookies" %}</strong>
+                        </label>
+                    </div>
+                    <p class="text-muted small mt-2">
+                        {% trans "Enable enhanced functionality and personalization features." %}
+                    </p>
+                </div>
+
+                <div class="cookie-preference-item mt-4">
+                    <div class="form-check form-switch">
+                        <input class="form-check-input" type="checkbox" id="analyticsCookies">
+                        <label class="form-check-label" for="analyticsCookies">
+                            <strong>{% trans "Analytics Cookies" %}</strong>
+                        </label>
+                    </div>
+                    <p class="text-muted small mt-2">
+                        {% trans "Help us understand how visitors interact with our website." %}
+                    </p>
+                </div>
+
+                <div class="cookie-preference-item mt-4">
+                    <div class="form-check form-switch">
+                        <input class="form-check-input" type="checkbox" id="marketingCookies">
+                        <label class="form-check-label" for="marketingCookies">
+                            <strong>{% trans "Marketing Cookies" %}</strong>
+                        </label>
+                    </div>
+                    <p class="text-muted small mt-2">
+                        {% trans "Used to deliver personalized advertisements and measure campaign effectiveness." %}
+                    </p>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" id="rejectAllBtn">
+                    {% trans "Reject All" %}
+                </button>
+                <button type="button" class="btn btn-primary" id="savePreferencesBtn">
+                    {% trans "Save Preferences" %}
+                </button>
+                <button type="button" class="btn btn-success" id="acceptAllModalBtn">
+                    {% trans "Accept All" %}
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Load saved preferences
+    const savedPreferences = JSON.parse(localStorage.getItem('cookiePreferences') || '{}');
+
+    if (savedPreferences.functional) document.getElementById('functionalCookies').checked = true;
+    if (savedPreferences.analytics) document.getElementById('analyticsCookies').checked = true;
+    if (savedPreferences.marketing) document.getElementById('marketingCookies').checked = true;
+
+    // Save preferences
+    document.getElementById('savePreferencesBtn').addEventListener('click', function() {
+        const preferences = {
+            essential: true,
+            functional: document.getElementById('functionalCookies').checked,
+            analytics: document.getElementById('analyticsCookies').checked,
+            marketing: document.getElementById('marketingCookies').checked
+        };
+
+        localStorage.setItem('cookiePreferences', JSON.stringify(preferences));
+        localStorage.setItem('cookieConsent', 'custom');
+
+        // Initialize services based on preferences
+        initializeServices(preferences);
+
+        // Close modal
+        bootstrap.Modal.getInstance(document.getElementById('cookieSettingsModal')).hide();
+    });
+
+    // Accept all
+    document.getElementById('acceptAllModalBtn').addEventListener('click', function() {
+        const preferences = {
+            essential: true,
+            functional: true,
+            analytics: true,
+            marketing: true
+        };
+
+        localStorage.setItem('cookiePreferences', JSON.stringify(preferences));
+        localStorage.setItem('cookieConsent', 'accepted');
+
+        initializeServices(preferences);
+        bootstrap.Modal.getInstance(document.getElementById('cookieSettingsModal')).hide();
+    });
+
+    // Reject all
+    document.getElementById('rejectAllBtn').addEventListener('click', function() {
+        const preferences = {
+            essential: true,
+            functional: false,
+            analytics: false,
+            marketing: false
+        };
+
+        localStorage.setItem('cookiePreferences', JSON.stringify(preferences));
+        localStorage.setItem('cookieConsent', 'rejected');
+
+        bootstrap.Modal.getInstance(document.getElementById('cookieSettingsModal')).hide();
+    });
+
+    function initializeServices(preferences) {
+        // Initialize Google Analytics
+        if (preferences.analytics && typeof gtag !== 'undefined') {
+            gtag('consent', 'update', {
+                'analytics_storage': 'granted'
+            });
+        }
+
+        // Initialize Marketing pixels
+        if (preferences.marketing) {
+            // Initialize Facebook Pixel, Google Ads, etc.
+        }
+
+        // You can add more service initializations here
+    }
+});
+</script>

@@ -231,8 +231,8 @@ def efris_status_dashboard(request):
     recent_audits = FiscalizationAudit.objects.select_related(
         'invoice', 'user'
     ).filter(
-        timestamp__gte=timezone.now() - timedelta(days=7)
-    ).order_by('-timestamp')[:20]
+        created_at__gte=timezone.now() - timedelta(days=7)
+    ).order_by('-created_at')[:20]
 
     context = {
         'date_from': date_from,

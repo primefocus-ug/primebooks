@@ -1,0 +1,583 @@
+{% extends 'base.html' %}
+{% load static %}
+{% load i18n %}
+
+{% block title %}{% if form.instance.pk %}{% trans "Edit Journal Entry" %}{% else %}{% trans "Create Journal Entry" %}{% endif %}{% endblock %}
+
+{% block breadcrumb_items %}
+<li class="breadcrumb-item"><a href="{% url 'user_dashboard' %}">{% trans "Home" %}</a></li>
+<li class="breadcrumb-item"><a href="{% url 'finance:dashboard' %}">{% trans "Finance" %}</a></li>
+<li class="breadcrumb-item"><a href="{% url 'finance:journal_entry_list' %}">{% trans "Journal Entries" %}</a></li>
+<li class="breadcrumb-item active">{% if form.instance.pk %}{% trans "Edit Entry" %}{% else %}{% trans "Create Entry" %}{% endif %}</li>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+    .line-item {
+        background: var(--bg-secondary);
+        border-radius: var(--border-radius);
+        padding: 1rem;
+        margin-bottom: 1rem;
+        border: 1px solid var(--border-color);
+        transition: all 0.3s ease;
+    }
+
+    .line-item:hover {
+        border-color: var(--primary);
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    }
+
+    .line-item-header {
+        display: flex;
+        justify-content: between;
+        align-items: center;
+        margin-bottom: 1rem;
+        padding-bottom: 0.5rem;
+        border-bottom: 1px solid var(--border-color-light);
+    }
+
+    .line-number {
+        font-weight: 600;
+        color: var(--text-primary);
+    }
+
+    .delete-line {
+        color: var(--danger);
+        background: none;
+        border: none;
+        padding: 0.25rem 0.5rem;
+        border-radius: var(--border-radius);
+        transition: all 0.2s ease;
+    }
+
+    .delete-line:hover {
+        background: var(--danger);
+        color: white;
+    }
+
+    .amount-input-group {
+        max-width: 200px;
+    }
+
+    .dimension-tags {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+        margin-top: 0.5rem;
+    }
+
+    .dimension-tag {
+        background: var(--primary-50);
+        color: var(--primary);
+        padding: 0.25rem 0.5rem;
+        border-radius: 1rem;
+        font-size: 0.75rem;
+        border: 1px solid var(--primary-100);
+    }
+
+    .balance-status {
+        padding: 1rem;
+        border-radius: var(--border-radius);
+        margin-bottom: 1rem;
+        font-weight: 600;
+    }
+
+    .balance-status.balanced {
+        background: rgba(16, 185, 129, 0.1);
+        color: var(--success);
+        border: 1px solid var(--success);
+    }
+
+    .balance-status.unbalanced {
+        background: rgba(239, 68, 68, 0.1);
+        color: var(--danger);
+        border: 1px solid var(--danger);
+    }
+
+    .form-section {
+        background: var(--bg-primary);
+        border-radius: var(--border-radius);
+        padding: 1.5rem;
+        border: 1px solid var(--border-color);
+        margin-bottom: 1.5rem;
+    }
+
+    .form-section-title {
+        font-size: 1.125rem;
+        font-weight: 600;
+        color: var(--text-primary);
+        margin-bottom: 1rem;
+        padding-bottom: 0.5rem;
+        border-bottom: 1px solid var(--border-color);
+    }
+
+    @media (max-width: 768px) {
+        .amount-input-group {
+            max-width: 100%;
+        }
+
+        .line-item {
+            padding: 0.75rem;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- Page Header -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h1 class="h3 mb-1 fw-bold">
+                {% if form.instance.pk %}
+                    {% trans "Edit Journal Entry" %}
+                {% else %}
+                    {% trans "Create Journal Entry" %}
+                {% endif %}
+            </h1>
+            <p class="text-muted mb-0">
+                {% if form.instance.pk %}
+                    {% trans "Update journal entry details" %}
+                {% else %}
+                    {% trans "Create a new journal entry with multiple lines" %}
+                {% endif %}
+            </p>
+        </div>
+        <div class="d-flex gap-2">
+            <a href="{% url 'finance:journal_entry_list' %}" class="btn btn-outline-secondary">
+                <i class="bi bi-arrow-left me-1"></i>
+                {% trans "Back to List" %}
+            </a>
+        </div>
+    </div>
+
+    <form method="post" id="journalEntryForm">
+        {% csrf_token %}
+
+        <!-- Header Section -->
+        <div class="form-section">
+            <h3 class="form-section-title">{% trans "Entry Details" %}</h3>
+            <div class="row g-3">
+                <div class="col-md-3">
+                    <label for="{{ form.journal.id_for_label }}" class="form-label">
+                        {% trans "Journal" %} *
+                    </label>
+                    {{ form.journal }}
+                    {% if form.journal.errors %}
+                    <div class="invalid-feedback d-block">
+                        {{ form.journal.errors }}
+                    </div>
+                    {% endif %}
+                </div>
+                <div class="col-md-3">
+                    <label for="{{ form.entry_date.id_for_label }}" class="form-label">
+                        {% trans "Entry Date" %} *
+                    </label>
+                    {{ form.entry_date }}
+                    {% if form.entry_date.errors %}
+                    <div class="invalid-feedback d-block">
+                        {{ form.entry_date.errors }}
+                    </div>
+                    {% endif %}
+                </div>
+                <div class="col-md-3">
+                    <label for="{{ form.currency.id_for_label }}" class="form-label">
+                        {% trans "Currency" %} *
+                    </label>
+                    {{ form.currency }}
+                    {% if form.currency.errors %}
+                    <div class="invalid-feedback d-block">
+                        {{ form.currency.errors }}
+                    </div>
+                    {% endif %}
+                </div>
+                <div class="col-md-3">
+                    <label for="{{ form.exchange_rate.id_for_label }}" class="form-label">
+                        {% trans "Exchange Rate" %}
+                    </label>
+                    {{ form.exchange_rate }}
+                    {% if form.exchange_rate.errors %}
+                    <div class="invalid-feedback d-block">
+                        {{ form.exchange_rate.errors }}
+                    </div>
+                    {% endif %}
+                </div>
+                <div class="col-12">
+                    <label for="{{ form.description.id_for_label }}" class="form-label">
+                        {% trans "Description" %} *
+                    </label>
+                    {{ form.description }}
+                    {% if form.description.errors %}
+                    <div class="invalid-feedback d-block">
+                        {{ form.description.errors }}
+                    </div>
+                    {% endif %}
+                </div>
+                <div class="col-md-6">
+                    <label for="{{ form.reference.id_for_label }}" class="form-label">
+                        {% trans "Reference" %}
+                    </label>
+                    {{ form.reference }}
+                    {% if form.reference.errors %}
+                    <div class="invalid-feedback d-block">
+                        {{ form.reference.errors }}
+                    </div>
+                    {% endif %}
+                </div>
+                <div class="col-md-6">
+                    <label for="{{ form.notes.id_for_label }}" class="form-label">
+                        {% trans "Notes" %}
+                    </label>
+                    {{ form.notes }}
+                    {% if form.notes.errors %}
+                    <div class="invalid-feedback d-block">
+                        {{ form.notes.errors }}
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Entry Lines Section -->
+        <div class="form-section">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h3 class="form-section-title mb-0">{% trans "Entry Lines" %}</h3>
+                <button type="button" class="btn btn-sm btn-outline-primary" id="addLine">
+                    <i class="bi bi-plus-circle me-1"></i>
+                    {% trans "Add Line" %}
+                </button>
+            </div>
+
+            <!-- Balance Status -->
+            <div id="balanceStatus" class="balance-status unbalanced d-none">
+                <i class="bi bi-exclamation-triangle me-2"></i>
+                <span id="balanceMessage">{% trans "Entry is not balanced" %}</span>
+                <div class="float-end">
+                    <strong id="balanceDifference">0.00</strong>
+                </div>
+            </div>
+
+            <!-- Lines Container -->
+            {{ formset.management_form }}
+            <div id="lines-container">
+                {% for form in formset %}
+                <div class="line-item" data-line-index="{{ forloop.counter0 }}">
+                    <div class="line-item-header">
+                        <span class="line-number">{% trans "Line" %} {{ forloop.counter }}</span>
+                        {% if formset.can_delete %}
+                        {{ form.DELETE }}
+                        <button type="button" class="delete-line btn btn-sm" title="{% trans 'Remove line' %}">
+                            <i class="bi bi-trash"></i>
+                        </button>
+                        {% endif %}
+                    </div>
+
+                    <div class="row g-3">
+                        <div class="col-md-4">
+                            <label class="form-label">{% trans "Account" %} *</label>
+                            {{ form.account }}
+                            {% if form.account.errors %}
+                            <div class="invalid-feedback d-block">
+                                {{ form.account.errors }}
+                            </div>
+                            {% endif %}
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">{% trans "Description" %}</label>
+                            {{ form.description }}
+                            {% if form.description.errors %}
+                            <div class="invalid-feedback d-block">
+                                {{ form.description.errors }}
+                            </div>
+                            {% endif %}
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label">{% trans "Currency" %}</label>
+                            {{ form.currency }}
+                            {% if form.currency.errors %}
+                            <div class="invalid-feedback d-block">
+                                {{ form.currency.errors }}
+                            </div>
+                            {% endif %}
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">{% trans "Debit Amount" %}</label>
+                            <div class="amount-input-group">
+                                {{ form.debit_amount }}
+                            </div>
+                            {% if form.debit_amount.errors %}
+                            <div class="invalid-feedback d-block">
+                                {{ form.debit_amount.errors }}
+                            </div>
+                            {% endif %}
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">{% trans "Credit Amount" %}</label>
+                            <div class="amount-input-group">
+                                {{ form.credit_amount }}
+                            </div>
+                            {% if form.credit_amount.errors %}
+                            <div class="invalid-feedback d-block">
+                                {{ form.credit_amount.errors }}
+                            </div>
+                            {% endif %}
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">{% trans "Dimensions" %}</label>
+                            {{ form.dimension_values }}
+                            <div class="dimension-tags" id="dimension-tags-{{ forloop.counter0 }}">
+                                <!-- Dimension tags will be populated here -->
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Hidden fields -->
+                    {{ form.id }}
+                    {{ form.journal_entry }}
+                </div>
+                {% endfor %}
+            </div>
+
+            <!-- Totals Summary -->
+            <div class="row mt-4">
+                <div class="col-md-6">
+                    <div class="card bg-light">
+                        <div class="card-body">
+                            <h6 class="card-title">{% trans "Totals" %}</h6>
+                            <div class="row">
+                                <div class="col-6">
+                                    <strong class="text-success">{% trans "Total Debit:" %}</strong>
+                                </div>
+                                <div class="col-6 text-end">
+                                    <span id="totalDebit" class="fw-bold">0.00</span>
+                                </div>
+                            </div>
+                            <div class="row">
+                                <div class="col-6">
+                                    <strong class="text-danger">{% trans "Total Credit:" %}</strong>
+                                </div>
+                                <div class="col-6 text-end">
+                                    <span id="totalCredit" class="fw-bold">0.00</span>
+                                </div>
+                            </div>
+                            <hr>
+                            <div class="row">
+                                <div class="col-6">
+                                    <strong>{% trans "Difference:" %}</strong>
+                                </div>
+                                <div class="col-6 text-end">
+                                    <span id="totalDifference" class="fw-bold">0.00</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Action Buttons -->
+        <div class="d-flex justify-content-between align-items-center mt-4">
+            <div>
+                <a href="{% url 'finance:journal_entry_list' %}" class="btn btn-outline-secondary">
+                    {% trans "Cancel" %}
+                </a>
+            </div>
+            <div class="d-flex gap-2">
+                <button type="submit" name="save_draft" value="true" class="btn btn-outline-primary">
+                    <i class="bi bi-save me-1"></i>
+                    {% trans "Save Draft" %}
+                </button>
+                <button type="submit" name="submit" value="true" class="btn btn-primary">
+                    <i class="bi bi-check-circle me-1"></i>
+                    {% trans "Submit for Approval" %}
+                </button>
+                {% if form.instance.pk and form.instance.status == 'DRAFT' %}
+                <button type="submit" name="auto_post" value="true" class="btn btn-success">
+                    <i class="bi bi-send-check me-1"></i>
+                    {% trans "Post Entry" %}
+                </button>
+                {% endif %}
+            </div>
+        </div>
+    </form>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Initialize formset management
+    const formsetContainer = document.getElementById('lines-container');
+    const totalForms = document.getElementById('id_lines-TOTAL_FORMS');
+    const addButton = document.getElementById('addLine');
+    let formCount = parseInt(totalForms.value);
+
+    // Add new line
+    addButton.addEventListener('click', function() {
+        const newForm = document.createElement('div');
+        newForm.className = 'line-item';
+        newForm.innerHTML = `
+            <div class="line-item-header">
+                <span class="line-number">{% trans "Line" %} ${formCount + 1}</span>
+                <button type="button" class="delete-line btn btn-sm" title="{% trans 'Remove line' %}">
+                    <i class="bi bi-trash"></i>
+                </button>
+            </div>
+            <div class="row g-3">
+                <div class="col-md-4">
+                    <label class="form-label">{% trans "Account" %} *</label>
+                    <select name="lines-${formCount}-account" class="form-select" required>
+                        <option value="">{% trans "Select Account" %}</option>
+                        {% for account in accounts %}
+                        <option value="{{ account.pk }}">{{ account.code }} - {{ account.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">{% trans "Description" %}</label>
+                    <input type="text" name="lines-${formCount}-description" class="form-control" maxlength="500">
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label">{% trans "Currency" %}</label>
+                    <select name="lines-${formCount}-currency" class="form-select">
+                        {% for currency in currencies %}
+                        <option value="{{ currency.pk }}" {% if currency.is_base %}selected{% endif %}>
+                            {{ currency.code }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">{% trans "Debit Amount" %}</label>
+                    <div class="amount-input-group">
+                        <input type="number" name="lines-${formCount}-debit_amount" class="form-control"
+                               step="0.01" min="0" value="0.00">
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">{% trans "Credit Amount" %}</label>
+                    <div class="amount-input-group">
+                        <input type="number" name="lines-${formCount}-credit_amount" class="form-control"
+                               step="0.01" min="0" value="0.00">
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">{% trans "Dimensions" %}</label>
+                    <select name="lines-${formCount}-dimension_values" class="form-select" multiple>
+                        {% for dimension in dimensions %}
+                        <optgroup label="{{ dimension.name }}">
+                            {% for value in dimension.values.all %}
+                            <option value="{{ value.pk }}">{{ value.code }} - {{ value.name }}</option>
+                            {% endfor %}
+                        </optgroup>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+            <input type="hidden" name="lines-${formCount}-id" value="">
+            <input type="hidden" name="lines-${formCount}-journal_entry" value="{{ form.instance.pk|default:'' }}">
+        `;
+
+        formsetContainer.appendChild(newForm);
+        formCount++;
+        totalForms.value = formCount;
+
+        // Add event listeners to new form
+        initializeLineEvents(newForm);
+        updateTotals();
+    });
+
+    // Initialize line events
+    function initializeLineEvents(lineElement) {
+        const debitInput = lineElement.querySelector('input[name$="-debit_amount"]');
+        const creditInput = lineElement.querySelector('input[name$="-credit_amount"]');
+        const deleteButton = lineElement.querySelector('.delete-line');
+
+        // Ensure only one amount field has value
+        [debitInput, creditInput].forEach(input => {
+            input.addEventListener('input', function() {
+                if (this.value > 0) {
+                    const otherInput = this === debitInput ? creditInput : debitInput;
+                    otherInput.value = '0.00';
+                }
+                updateTotals();
+            });
+        });
+
+        // Delete line
+        deleteButton.addEventListener('click', function() {
+            lineElement.style.opacity = '0';
+            setTimeout(() => {
+                lineElement.remove();
+                updateLineNumbers();
+                updateTotals();
+            }, 300);
+        });
+    }
+
+    // Update line numbers after deletion
+    function updateLineNumbers() {
+        const lineItems = formsetContainer.querySelectorAll('.line-item');
+        lineItems.forEach((item, index) => {
+            const lineNumber = item.querySelector('.line-number');
+            lineNumber.textContent = '{% trans "Line" %} ' + (index + 1);
+
+            // Update form indices
+            const inputs = item.querySelectorAll('input, select');
+            inputs.forEach(input => {
+                const name = input.name.replace(/lines-\d+-/, `lines-${index}-`);
+                input.name = name;
+            });
+        });
+        formCount = lineItems.length;
+        totalForms.value = formCount;
+    }
+
+    // Calculate and update totals
+    function updateTotals() {
+        let totalDebit = 0;
+        let totalCredit = 0;
+
+        const lineItems = formsetContainer.querySelectorAll('.line-item');
+        lineItems.forEach(item => {
+            const debitInput = item.querySelector('input[name$="-debit_amount"]');
+            const creditInput = item.querySelector('input[name$="-credit_amount"]');
+
+            totalDebit += parseFloat(debitInput.value) || 0;
+            totalCredit += parseFloat(creditInput.value) || 0;
+        });
+
+        const difference = Math.abs(totalDebit - totalCredit);
+        const isBalanced = difference < 0.01;
+
+        // Update display
+        document.getElementById('totalDebit').textContent = totalDebit.toFixed(2);
+        document.getElementById('totalCredit').textContent = totalCredit.toFixed(2);
+        document.getElementById('totalDifference').textContent = difference.toFixed(2);
+
+        // Update balance status
+        const balanceStatus = document.getElementById('balanceStatus');
+        const balanceMessage = document.getElementById('balanceMessage');
+        const balanceDifference = document.getElementById('balanceDifference');
+
+        if (isBalanced) {
+            balanceStatus.className = 'balance-status balanced';
+            balanceMessage.textContent = '{% trans "Entry is balanced" %}';
+            balanceDifference.textContent = '0.00';
+        } else {
+            balanceStatus.className = 'balance-status unbalanced';
+            balanceMessage.textContent = '{% trans "Entry is not balanced" %}';
+            balanceDifference.textContent = difference.toFixed(2);
+        }
+
+        balanceStatus.classList.remove('d-none');
+    }
+
+    // Initialize existing forms
+    document.querySelectorAll('.line-item').forEach(initializeLineEvents);
+
+    // Initial totals calculation
+    updateTotals();
+});
+</script>
+{% endblock %}

@@ -1,0 +1,658 @@
+{% extends 'base.html' %}
+{% load static %}
+{% load i18n %}
+
+{% block title %}
+{% if form.instance.pk %}
+    {% trans "Edit Service" %} - {{ form.instance.name }}
+{% else %}
+    {% trans "Add Service" %}
+{% endif %} | {{ block.super }}
+{% endblock %}
+
+{% block extra_css %}
+<style>
+    .form-section {
+        background: var(--bg-primary);
+        border: 1px solid var(--border-color);
+        border-radius: var(--border-radius);
+        padding: 1.5rem;
+        margin-bottom: 1.5rem;
+    }
+
+    .form-section-title {
+        font-size: 1.1rem;
+        font-weight: 600;
+        color: var(--text-primary);
+        margin-bottom: 1rem;
+        padding-bottom: 0.5rem;
+        border-bottom: 2px solid var(--primary-500);
+    }
+
+    .form-label {
+        font-weight: 500;
+        color: var(--text-primary);
+        margin-bottom: 0.5rem;
+    }
+
+    .required-field::after {
+        content: " *";
+        color: var(--red-500);
+    }
+
+    .form-control:focus,
+    .form-select:focus {
+        border-color: var(--primary-500);
+        box-shadow: 0 0 0 0.2rem rgba(59, 130, 246, 0.25);
+    }
+
+    .input-group-text {
+        background-color: var(--gray-100);
+        border-color: var(--border-color);
+    }
+
+    .form-switch .form-check-input {
+        cursor: pointer;
+        width: 3em;
+        height: 1.5em;
+    }
+
+    .form-switch .form-check-input:checked {
+        background-color: var(--primary-500);
+        border-color: var(--primary-500);
+    }
+
+    .is-invalid {
+        border-color: var(--red-500) !important;
+    }
+
+    .invalid-feedback {
+        display: block;
+        color: var(--red-600);
+        font-size: 0.875rem;
+        margin-top: 0.25rem;
+    }
+
+    .alert-info {
+        background-color: var(--primary-50);
+        border-color: var(--primary-200);
+        color: var(--primary-700);
+    }
+
+    .price-preview {
+        background: linear-gradient(135deg, var(--primary-50), var(--primary-100));
+        border: 2px solid var(--primary-300);
+        border-radius: var(--border-radius);
+        padding: 1rem;
+    }
+
+    .price-preview-label {
+        font-size: 0.875rem;
+        color: var(--text-secondary);
+        margin-bottom: 0.25rem;
+    }
+
+    .price-preview-value {
+        font-size: 1.5rem;
+        font-weight: 700;
+        color: var(--primary-600);
+    }
+</style>
+{% endblock %}
+
+{% block breadcrumb_items %}
+<li class="breadcrumb-item"><a href="{% url 'inventory:dashboard' %}">{% trans "Inventory" %}</a></li>
+<li class="breadcrumb-item"><a href="{% url 'inventory:service_list' %}">{% trans "Services" %}</a></li>
+<li class="breadcrumb-item active">
+    {% if form.instance.pk %}
+        {% trans "Edit Service" %}
+    {% else %}
+        {% trans "Add Service" %}
+    {% endif %}
+</li>
+{% endblock %}
+
+{% block page_header %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h2 class="mb-0">
+            <i class="bi bi-gear-fill text-primary me-2"></i>
+            {% if form.instance.pk %}
+                {% trans "Edit Service" %}
+            {% else %}
+                {% trans "Add Service" %}
+            {% endif %}
+        </h2>
+        <p class="text-muted mb-0">
+            {% if form.instance.pk %}
+                {% trans "Update service information and settings" %}
+            {% else %}
+                {% trans "Create a new service for your business" %}
+            {% endif %}
+        </p>
+    </div>
+    <div>
+        <a href="{% url 'inventory:service_list' %}" class="btn btn-outline-secondary">
+            <i class="bi bi-arrow-left me-1"></i>
+            {% trans "Back to Services" %}
+        </a>
+    </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<form method="post" enctype="multipart/form-data" id="serviceForm">
+    {% csrf_token %}
+
+    <div class="row">
+        <!-- Left Column - Form Fields -->
+        <div class="col-lg-8">
+            <!-- Basic Information Section -->
+            <div class="form-section">
+                <h5 class="form-section-title">
+                    <i class="bi bi-info-circle me-2"></i>
+                    {% trans "Basic Information" %}
+                </h5>
+
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label for="{{ form.name.id_for_label }}" class="form-label required-field">
+                            {{ form.name.label }}
+                        </label>
+                        {{ form.name }}
+                        {% if form.name.help_text %}
+                        <div class="form-text">{{ form.name.help_text }}</div>
+                        {% endif %}
+                        {% if form.name.errors %}
+                        <div class="invalid-feedback d-block">
+                            {{ form.name.errors|join:", " }}
+                        </div>
+                        {% endif %}
+                    </div>
+
+                    <div class="col-md-6 mb-3">
+                        <label for="{{ form.code.id_for_label }}" class="form-label required-field">
+                            {{ form.code.label }}
+                        </label>
+                        {{ form.code }}
+                        {% if form.code.help_text %}
+                        <div class="form-text">{{ form.code.help_text }}</div>
+                        {% endif %}
+                        {% if form.code.errors %}
+                        <div class="invalid-feedback d-block">
+                            {{ form.code.errors|join:", " }}
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <div class="mb-3">
+                    <label for="{{ form.category.id_for_label }}" class="form-label required-field">
+                        {{ form.category.label }}
+                    </label>
+                    {{ form.category }}
+                    {% if form.category.help_text %}
+                    <div class="form-text">{{ form.category.help_text }}</div>
+                    {% endif %}
+                    {% if form.category.errors %}
+                    <div class="invalid-feedback d-block">
+                        {{ form.category.errors|join:", " }}
+                    </div>
+                    {% endif %}
+                    <!-- EFRIS validation will be inserted here dynamically -->
+                    <div id="efris-validation-container"></div>
+                </div>
+
+                <div class="mb-3">
+                    <label for="{{ form.description.id_for_label }}" class="form-label">
+                        {{ form.description.label }}
+                    </label>
+                    {{ form.description }}
+                    {% if form.description.help_text %}
+                    <div class="form-text">{{ form.description.help_text }}</div>
+                    {% endif %}
+                    {% if form.description.errors %}
+                    <div class="invalid-feedback d-block">
+                        {{ form.description.errors|join:", " }}
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+
+            <!-- Pricing Section -->
+            <div class="form-section">
+                <h5 class="form-section-title">
+                    <i class="bi bi-currency-dollar me-2"></i>
+                    {% trans "Pricing" %}
+                </h5>
+
+                <div class="row">
+                    <div class="col-md-4 mb-3">
+                        <label for="{{ form.unit_price.id_for_label }}" class="form-label required-field">
+                            {{ form.unit_price.label }}
+                        </label>
+                        <div class="input-group">
+                            <span class="input-group-text">UGX</span>
+                            {{ form.unit_price }}
+                        </div>
+                        {% if form.unit_price.help_text %}
+                        <div class="form-text">{{ form.unit_price.help_text }}</div>
+                        {% endif %}
+                        {% if form.unit_price.errors %}
+                        <div class="invalid-feedback d-block">
+                            {{ form.unit_price.errors|join:", " }}
+                        </div>
+                        {% endif %}
+                    </div>
+
+                    <div class="col-md-4 mb-3">
+                        <label for="{{ form.discount_percentage.id_for_label }}" class="form-label">
+                            {{ form.discount_percentage.label }}
+                        </label>
+                        <div class="input-group">
+                            {{ form.discount_percentage }}
+                            <span class="input-group-text">%</span>
+                        </div>
+                        {% if form.discount_percentage.help_text %}
+                        <div class="form-text">{{ form.discount_percentage.help_text }}</div>
+                        {% endif %}
+                        {% if form.discount_percentage.errors %}
+                        <div class="invalid-feedback d-block">
+                            {{ form.discount_percentage.errors|join:", " }}
+                        </div>
+                        {% endif %}
+                    </div>
+
+                    <div class="col-md-4 mb-3">
+                        <label for="{{ form.unit_of_measure.id_for_label }}" class="form-label required-field">
+                            {{ form.unit_of_measure.label }}
+                        </label>
+                        {{ form.unit_of_measure }}
+                        {% if form.unit_of_measure.help_text %}
+                        <div class="form-text">{{ form.unit_of_measure.help_text }}</div>
+                        {% endif %}
+                        {% if form.unit_of_measure.errors %}
+                        <div class="invalid-feedback d-block">
+                            {{ form.unit_of_measure.errors|join:", " }}
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tax Information Section -->
+            <div class="form-section">
+                <h5 class="form-section-title">
+                    <i class="bi bi-receipt me-2"></i>
+                    {% trans "Tax Configuration" %}
+                </h5>
+
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label for="{{ form.tax_rate.id_for_label }}" class="form-label required-field">
+                            {{ form.tax_rate.label }}
+                        </label>
+                        {{ form.tax_rate }}
+                        {% if form.tax_rate.help_text %}
+                        <div class="form-text">{{ form.tax_rate.help_text }}</div>
+                        {% endif %}
+                        {% if form.tax_rate.errors %}
+                        <div class="invalid-feedback d-block">
+                            {{ form.tax_rate.errors|join:", " }}
+                        </div>
+                        {% endif %}
+                    </div>
+
+                    <div class="col-md-6 mb-3" id="excise-duty-group" style="display: none;">
+                        <label for="{{ form.excise_duty_rate.id_for_label }}" class="form-label">
+                            {{ form.excise_duty_rate.label }}
+                        </label>
+                        <div class="input-group">
+                            {{ form.excise_duty_rate }}
+                            <span class="input-group-text">%</span>
+                        </div>
+                        {% if form.excise_duty_rate.help_text %}
+                        <div class="form-text">{{ form.excise_duty_rate.help_text }}</div>
+                        {% endif %}
+                        {% if form.excise_duty_rate.errors %}
+                        <div class="invalid-feedback d-block">
+                            {{ form.excise_duty_rate.errors|join:", " }}
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+
+            <!-- Image Upload Section -->
+            <div class="form-section">
+                <h5 class="form-section-title">
+                    <i class="bi bi-image me-2"></i>
+                    {% trans "Service Image" %}
+                </h5>
+
+                <div class="mb-3">
+                    <label for="{{ form.image.id_for_label }}" class="form-label">
+                        {{ form.image.label }}
+                    </label>
+                    {{ form.image }}
+                    {% if form.instance.image %}
+                    <div class="mt-2">
+                        <p class="text-muted mb-1">{% trans "Current image:" %}</p>
+                        <img src="{{ form.instance.image.url }}" alt="Current image"
+                             class="img-thumbnail" style="max-width: 300px;">
+                    </div>
+                    {% endif %}
+                    {% if form.image.help_text %}
+                    <div class="form-text">{{ form.image.help_text }}</div>
+                    {% endif %}
+                    {% if form.image.errors %}
+                    <div class="invalid-feedback d-block">
+                        {{ form.image.errors|join:", " }}
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+
+            <!-- Settings Section -->
+            <div class="form-section">
+                <h5 class="form-section-title">
+                    <i class="bi bi-gear me-2"></i>
+                    {% trans "Settings" %}
+                </h5>
+
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <div class="form-check form-switch">
+                            {{ form.efris_auto_sync_enabled }}
+                            <label class="form-check-label" for="{{ form.efris_auto_sync_enabled.id_for_label }}">
+                                {{ form.efris_auto_sync_enabled.label }}
+                            </label>
+                        </div>
+                        {% if form.efris_auto_sync_enabled.help_text %}
+                        <div class="form-text">{{ form.efris_auto_sync_enabled.help_text }}</div>
+                        {% endif %}
+                    </div>
+
+                    <div class="col-md-6 mb-3">
+                        <div class="form-check form-switch">
+                            {{ form.is_active }}
+                            <label class="form-check-label" for="{{ form.is_active.id_for_label }}">
+                                {{ form.is_active.label }}
+                            </label>
+                        </div>
+                        {% if form.is_active.help_text %}
+                        <div class="form-text">{{ form.is_active.help_text }}</div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Right Column - Price Preview & Actions -->
+        <div class="col-lg-4">
+            <!-- Price Preview Card -->
+            <div class="card mb-4">
+                <div class="card-body">
+                    <h6 class="card-title mb-3">
+                        <i class="bi bi-calculator me-2"></i>
+                        {% trans "Price Preview" %}
+                    </h6>
+
+                    <div class="price-preview mb-3">
+                        <div class="price-preview-label">{% trans "Unit Price" %}</div>
+                        <div class="price-preview-value" id="display-unit-price">
+                            UGX 0.00
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <span class="text-muted">{% trans "Discount:" %}</span>
+                            <strong id="display-discount">0%</strong>
+                        </div>
+                    </div>
+
+                    <div class="price-preview">
+                        <div class="price-preview-label">{% trans "Final Price" %}</div>
+                        <div class="price-preview-value" id="display-final-price">
+                            UGX 0.00
+                        </div>
+                    </div>
+
+                    <hr>
+
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <span class="text-muted">{% trans "Tax Rate:" %}</span>
+                        <strong id="display-tax-rate">18%</strong>
+                    </div>
+
+                    <div class="d-flex justify-content-between align-items-center">
+                        <span class="text-muted">{% trans "Unit of Measure:" %}</span>
+                        <strong id="display-unit-measure">-</strong>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Form Actions Card -->
+            <div class="card">
+                <div class="card-body">
+                    <h6 class="card-title mb-3">
+                        <i class="bi bi-lightning me-2"></i>
+                        {% trans "Actions" %}
+                    </h6>
+
+                    <div class="d-grid gap-2">
+                        <button type="submit" class="btn btn-primary btn-lg">
+                            <i class="bi bi-check-circle me-1"></i>
+                            {% if form.instance.pk %}
+                                {% trans "Update Service" %}
+                            {% else %}
+                                {% trans "Create Service" %}
+                            {% endif %}
+                        </button>
+
+                        {% if form.instance.pk %}
+                        <button type="submit" name="save_and_continue" class="btn btn-outline-primary">
+                            <i class="bi bi-check2-all me-1"></i>
+                            {% trans "Save & Continue Editing" %}
+                        </button>
+                        {% else %}
+                        <button type="submit" name="save_and_add_another" class="btn btn-outline-primary">
+                            <i class="bi bi-plus-circle me-1"></i>
+                            {% trans "Save & Add Another" %}
+                        </button>
+                        {% endif %}
+
+                        <a href="{% url 'inventory:service_list' %}" class="btn btn-outline-secondary">
+                            <i class="bi bi-x-circle me-1"></i>
+                            {% trans "Cancel" %}
+                        </a>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Help Card -->
+            <div class="card mt-3">
+                <div class="card-body">
+                    <h6 class="card-title mb-3">
+                        <i class="bi bi-question-circle me-2"></i>
+                        {% trans "Need Help?" %}
+                    </h6>
+                    <ul class="list-unstyled small">
+                        <li class="mb-2">
+                            <i class="bi bi-check-circle text-success me-1"></i>
+                            {% trans "Services don't have stock/inventory" %}
+                        </li>
+                        <li class="mb-2">
+                            <i class="bi bi-check-circle text-success me-1"></i>
+                            {% trans "Choose a service category with leaf node EFRIS code" %}
+                        </li>
+                        <li class="mb-2">
+                            <i class="bi bi-check-circle text-success me-1"></i>
+                            {% trans "Enable EFRIS sync for automatic compliance" %}
+                        </li>
+                        <li>
+                            <i class="bi bi-check-circle text-success me-1"></i>
+                            {% trans "Unit of measure examples: Hours, Sessions, Days" %}
+                        </li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Hidden Fields -->
+    {{ form.efris_commodity_code }}
+</form>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+// Wait for jQuery to be ready
+if (typeof jQuery === 'undefined') {
+    console.error('jQuery is not loaded! Please ensure base.html includes jQuery.');
+} else {
+    $(document).ready(function() {
+        'use strict';
+
+        // ============================================
+        // PRICE CALCULATION
+        // ============================================
+
+        function updatePricePreview() {
+            const unitPrice = parseFloat($('#id_unit_price').val()) || 0;
+            const discount = parseFloat($('#id_discount_percentage').val()) || 0;
+            const finalPrice = unitPrice - (unitPrice * discount / 100);
+
+            $('#display-unit-price').text('UGX ' + unitPrice.toLocaleString('en-UG', {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2
+            }));
+
+            $('#display-discount').text(discount.toFixed(2) + '%');
+
+            $('#display-final-price').text('UGX ' + finalPrice.toLocaleString('en-UG', {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2
+            }));
+        }
+
+        $('#id_unit_price, #id_discount_percentage').on('input change', updatePricePreview);
+
+        // ============================================
+        // TAX RATE DISPLAY
+        // ============================================
+
+        function updateTaxRateDisplay() {
+            const taxRate = $('#id_tax_rate').val();
+            const taxRateText = $('#id_tax_rate option:selected').text();
+            $('#display-tax-rate').text(taxRateText);
+        }
+
+        $('#id_tax_rate').on('change', updateTaxRateDisplay);
+
+        // ============================================
+        // UNIT OF MEASURE DISPLAY
+        // ============================================
+
+        function updateUnitMeasureDisplay() {
+            const unitMeasure = $('#id_unit_of_measure option:selected').text();
+            $('#display-unit-measure').text(unitMeasure || '-');
+        }
+
+        $('#id_unit_of_measure').on('change', updateUnitMeasureDisplay);
+
+        // ============================================
+        // EXCISE DUTY FIELD TOGGLE
+        // ============================================
+
+        function toggleExciseDutyField() {
+            const taxRate = $('#id_tax_rate').val();
+            const exciseDutyGroup = $('#excise-duty-group');
+
+            if (taxRate === 'E') {
+                exciseDutyGroup.show();
+                $('#id_excise_duty_rate').prop('required', true);
+            } else {
+                exciseDutyGroup.hide();
+                $('#id_excise_duty_rate').prop('required', false).val('0');
+            }
+        }
+
+        $('#id_tax_rate').on('change', toggleExciseDutyField);
+
+        // ============================================
+        // EFRIS CATEGORY VALIDATION
+        // ============================================
+
+        $('#id_category').on('change', function() {
+            const categoryId = $(this).val();
+
+            if (!categoryId) {
+                $('#efris-validation-container').empty();
+                return;
+            }
+
+            $.ajax({
+                url: `/inventory/api/categories/${categoryId}/`,
+                type: 'GET',
+                success: function(data) {
+                    let message = '';
+                    let alertClass = '';
+
+                    if (!data.efris_commodity_category_code) {
+                        message = '<i class="bi bi-exclamation-triangle me-2"></i>' +
+                                 '{% trans "This category does not have an EFRIS commodity category assigned." %}';
+                        alertClass = 'alert-warning';
+                    } else if (!data.efris_is_leaf_node) {
+                        message = '<i class="bi bi-x-circle me-2"></i>' +
+                                 '{% trans "This category\'s EFRIS commodity category is not a leaf node. Services cannot use non-leaf nodes." %}';
+                        alertClass = 'alert-danger';
+                    } else if (data.category_type !== 'service') {
+                        message = '<i class="bi bi-x-circle me-2"></i>' +
+                                 '{% trans "This is not a service category. Please select a service category." %}';
+                        alertClass = 'alert-danger';
+                    } else {
+                        message = '<i class="bi bi-check-circle me-2"></i>' +
+                                 '{% trans "Valid EFRIS Category:" %} <strong>' + data.efris_commodity_category_name + '</strong>';
+                        alertClass = 'alert-success';
+                    }
+
+                    const alertHtml = `<div class="alert ${alertClass} mt-2">${message}</div>`;
+                    $('#efris-validation-container').html(alertHtml);
+                },
+                error: function() {
+                    console.error('Failed to validate EFRIS category');
+                }
+            });
+        });
+
+        // ============================================
+        // INITIALIZATION
+        // ============================================
+
+        // Initialize displays on page load
+        updatePricePreview();
+        updateTaxRateDisplay();
+        updateUnitMeasureDisplay();
+        toggleExciseDutyField();
+
+        // Trigger category validation if category is already selected
+        if ($('#id_category').val()) {
+            $('#id_category').trigger('change');
+        }
+
+        // ============================================
+        // FORM SUBMISSION
+        // ============================================
+
+        $('#serviceForm').on('submit', function() {
+            const submitBtn = $(this).find('[type="submit"]:focus');
+            submitBtn.prop('disabled', true).html('<i class="bi bi-hourglass-split me-1"></i> {% trans "Saving..." %}');
+        });
+    });
+}
+</script>
+{% endblock %}

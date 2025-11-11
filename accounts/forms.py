@@ -164,45 +164,46 @@ class SetPasswordForm(DjangoSetPasswordForm):
 
 
 class BulkUserRoleAssignForm(forms.Form):
-    """Form for bulk assigning users to roles"""
+    """Form for bulk assigning users to a role"""
 
     users = forms.ModelMultipleChoiceField(
-        queryset=None,  # Set in __init__
-        widget=forms.CheckboxSelectMultiple(attrs={
-            'class': 'form-check-input',
-        }),
+        queryset=CustomUser.objects.none(),
+        widget=forms.CheckboxSelectMultiple,
         required=True,
-        label='Select Users',
+        label="Select Users",
+        help_text="Select users to assign to the role"
     )
 
     role = forms.ModelChoiceField(
-        queryset=None,  # Set in __init__
-        widget=forms.Select(attrs={
-            'class': 'form-select',
-        }),
+        queryset=Role.objects.none(),
         required=True,
-        label='Assign to Role',
+        label="Select Role",
+        help_text="Role to assign to selected users"
     )
 
     def __init__(self, *args, **kwargs):
         company = kwargs.pop('company', None)
+        requesting_user = kwargs.pop('requesting_user', None)
         super().__init__(*args, **kwargs)
 
-        if company:
-            from .models import CustomUser
+        if requesting_user:
+            # Get manageable users
+            self.fields['users'].queryset = requesting_user.get_manageable_users()
 
-            # Only show visible users from this company
+            # Get accessible roles
+            self.fields['role'].queryset = Role.objects.accessible_by_user(requesting_user)
+        elif company:
+            # Fallback to company-based filtering
             self.fields['users'].queryset = CustomUser.objects.filter(
                 company=company,
                 is_hidden=False,
-                is_active=True,
+                is_active=True
             ).order_by('first_name', 'last_name')
 
-            # Only show active roles for this company
             self.fields['role'].queryset = Role.objects.filter(
-                company=company,
-                is_active=True,
-            ).select_related('group')
+                Q(company=company) | Q(is_system_role=True, company__isnull=True),
+                is_active=True
+            )
 
     def clean(self):
         cleaned_data = super().clean()
@@ -212,243 +213,25 @@ class BulkUserRoleAssignForm(forms.Form):
         if users and role:
             # Check if role has capacity
             if role.max_users:
-                current_count = role.user_count
-                new_count = current_count + users.count()
+                current_count = role.group.user_set.filter(
+                    is_hidden=False,
+                    is_active=True
+                ).count()
 
-                if new_count > role.max_users:
-                    raise ValidationError(
-                        f"Cannot assign {users.count()} users to '{role.group.name}'. "
-                        f"Role capacity: {current_count}/{role.max_users} users. "
-                        f"Available slots: {role.max_users - current_count}."
+                # Count how many selected users don't already have the role
+                new_assignments = sum(
+                    1 for user in users
+                    if not user.groups.filter(pk=role.group.pk).exists()
+                )
+
+                if current_count + new_assignments > role.max_users:
+                    raise forms.ValidationError(
+                        f"Role '{role.group.name}' can only accommodate "
+                        f"{role.max_users - current_count} more users. "
+                        f"You're trying to assign {new_assignments} new users."
                     )
 
-        return
-
-
-
-# class RoleForm(forms.ModelForm):
-#     """Advanced role creation/editing form with enhanced UX"""
-#
-#     name = forms.CharField(
-#         label="Role Name",
-#         max_length=150,
-#         widget=forms.TextInput(attrs={
-#             'class': 'form-control',
-#             'placeholder': 'Enter role name (e.g., Sales Manager)',
-#             'data-bs-toggle': 'tooltip',
-#             'data-bs-placement': 'top',
-#             'title': 'Choose a descriptive name for this role'
-#         }),
-#         help_text="A clear, descriptive name for this role"
-#     )
-#
-#     permissions = forms.ModelMultipleChoiceField(
-#         queryset=Permission.objects.select_related('content_type').all(),
-#         widget=forms.CheckboxSelectMultiple(attrs={'class': 'form-check-input'}),
-#         required=False,
-#         label="Permissions",
-#         help_text="Select the permissions this role should have"
-#     )
-#
-#     class Meta:
-#         model = Role
-#         fields = [
-#             'company', 'description', 'is_system_role', 'is_active',
-#             'priority', 'color_code', 'max_users'
-#         ]
-#         widgets = {
-#             'company': forms.Select(attrs={
-#                 'class': 'form-select',
-#                 'data-bs-toggle': 'tooltip',
-#                 'title': 'Select which company this role belongs to'
-#             }),
-#             'description': forms.Textarea(attrs={
-#                 'class': 'form-control',
-#                 'rows': 3,
-#                 'placeholder': 'Describe the responsibilities and purpose of this role...'
-#             }),
-#             'is_system_role': forms.CheckboxInput(attrs={
-#                 'class': 'form-check-input',
-#                 'data-bs-toggle': 'tooltip',
-#                 'title': 'System roles are built-in and have special restrictions'
-#             }),
-#             'is_active': forms.CheckboxInput(attrs={
-#                 'class': 'form-check-input',
-#                 'data-bs-toggle': 'tooltip',
-#                 'title': 'Only active roles can be assigned to users'
-#             }),
-#             'priority': forms.NumberInput(attrs={
-#                 'class': 'form-control',
-#                 'min': '0',
-#                 'max': '999',
-#                 'data-bs-toggle': 'tooltip',
-#                 'title': 'Higher priority roles appear first in lists (0-999)'
-#             }),
-#             'color_code': forms.TextInput(attrs={
-#                 'type': 'color',
-#                 'class': 'form-control form-control-color',
-#                 'data-bs-toggle': 'tooltip',
-#                 'title': 'Choose a color for role badges and UI elements'
-#             }),
-#             'max_users': forms.NumberInput(attrs={
-#                 'class': 'form-control',
-#                 'min': '1',
-#                 'placeholder': 'Leave empty for unlimited',
-#                 'data-bs-toggle': 'tooltip',
-#                 'title': 'Maximum number of users that can have this role'
-#             }),
-#         }
-#         help_texts = {
-#             'priority': 'Higher numbers appear first in role lists',
-#             'max_users': 'Leave empty for unlimited users',
-#         }
-#
-#     def __init__(self, *args, **kwargs):
-#         self.request = kwargs.pop('request', None)
-#         super().__init__(*args, **kwargs)
-#
-#         # Set initial values for existing role
-#         if self.instance and self.instance.pk and hasattr(self.instance, "group"):
-#             self.fields["name"].initial = self.instance.group.name
-#             self.fields["permissions"].initial = self.instance.group.permissions.all()
-#
-#         # Organize permissions by app for better UX
-#         self._organize_permissions()
-#
-#         # Customize form based on user permissions
-#         if self.request and self.request.user:
-#             self._customize_for_user()
-#
-#     def _organize_permissions(self):
-#         """Group permissions by app for better organization in template"""
-#         permissions = Permission.objects.select_related('content_type').order_by(
-#             'content_type__app_label', 'content_type__model', 'codename'
-#         )
-#
-#         grouped_permissions = defaultdict(list)
-#         for perm in permissions:
-#             app_name = perm.content_type.app_label.replace('_', ' ').title()
-#             grouped_permissions[app_name].append(perm)
-#
-#         self.grouped_permissions = dict(grouped_permissions)
-#
-#     def _customize_for_user(self):
-#         """Customize form fields based on user's permissions"""
-#         user = self.request.user
-#
-#         # Only superusers or users with specific permission can create system roles
-#         if not (user.is_superuser or user.has_perm('accounts.can_manage_system_roles')):
-#             self.fields['is_system_role'].widget = forms.HiddenInput()
-#             self.fields['is_system_role'].initial = False
-#
-#         # Filter companies based on user's access
-#         if not user.is_superuser:
-#             # Assuming user has access to specific companies
-#             accessible_companies = Company.objects.filter(
-#                 Q(users=user) | Q(created_by=user)
-#             ).distinct()
-#             self.fields['company'].queryset = accessible_companies
-#
-#     def clean_name(self):
-#         """Validate role name uniqueness"""
-#         name = self.cleaned_data['name']
-#         company = self.cleaned_data.get('company')
-#
-#         # Check for existing groups with same name
-#         existing_query = Group.objects.filter(name__iexact=name)
-#         if self.instance and self.instance.pk:
-#             existing_query = existing_query.exclude(pk=self.instance.group.pk)
-#
-#         if existing_query.exists():
-#             raise ValidationError(
-#                 f"A role with the name '{name}' already exists. Please choose a different name."
-#             )
-#
-#         return name
-#
-#     def clean_max_users(self):
-#         """Validate max_users doesn't conflict with current assignments"""
-#         max_users = self.cleaned_data.get('max_users')
-#
-#         if max_users and self.instance and self.instance.pk:
-#             current_users = self.instance.user_count
-#             if current_users > max_users:
-#                 raise ValidationError(
-#                     f"Cannot set maximum users to {max_users} because {current_users} "
-#                     f"users currently have this role. Either increase the limit or "
-#                     f"remove users from this role first."
-#                 )
-#
-#         return max_users
-#
-#     def clean(self):
-#         """Cross-field validation"""
-#         cleaned_data = super().clean()
-#         is_system_role = cleaned_data.get('is_system_role')
-#         company = cleaned_data.get('company')
-#
-#         # System roles cannot be company-specific
-#         if is_system_role and company:
-#             raise ValidationError({
-#                 'company': 'System roles cannot be assigned to a specific company.'
-#             })
-#
-#         return cleaned_data
-#
-#     def save(self, commit=True):
-#         """Enhanced save method with history tracking"""
-#         role = super().save(commit=False)
-#         is_new = not role.pk
-#
-#         # Handle the underlying Group
-#         if not hasattr(role, 'group') or not role.group:
-#             # Create new group
-#             role.group = Group.objects.create(name=self.cleaned_data["name"])
-#         else:
-#             # Update existing group name
-#             role.group.name = self.cleaned_data["name"]
-#             role.group.save()
-#
-#         # Set created_by for new roles
-#         if is_new and self.request and self.request.user:
-#             role.created_by = self.request.user
-#
-#         if commit:
-#             role.save()
-#
-#             # Assign permissions to the underlying Group
-#             selected_permissions = self.cleaned_data.get("permissions", [])
-#             role.group.permissions.set(selected_permissions)
-#
-#             # Create history record
-#             self._create_history_record(role, is_new)
-#
-#         return role
-#
-#     def _create_history_record(self, role, is_new):
-#         """Create a history record for audit purposes"""
-#         if not self.request or not self.request.user:
-#             return
-#
-#         action = 'created' if is_new else 'updated'
-#         changes = {}
-#
-#         if not is_new:
-#             # Track what changed
-#             for field_name in self.changed_data:
-#                 if field_name in self.cleaned_data:
-#                     changes[field_name] = {
-#                         'old': getattr(role, field_name, None),
-#                         'new': self.cleaned_data[field_name]
-#                     }
-#
-#         RoleHistory.objects.create(
-#             role=role,
-#             action=action,
-#             user=self.request.user,
-#             changes=changes,
-#             notes=f"Role {action} via web interface"
-#         )
+        return cleaned_data
 
 
 class BulkRoleAssignmentForm(forms.Form):
@@ -564,8 +347,12 @@ class RoleFilterForm(forms.Form):
         widget=forms.Select(attrs={'class': 'form-select'})
     )
 
+
 class CustomUserCreationForm(UserCreationForm):
-    """Enhanced user creation form with company handling"""
+    """
+    Enhanced user creation form - ROLE-BASED ONLY
+    No user_type field - users get roles directly
+    """
 
     first_name = forms.CharField(
         max_length=50,
@@ -599,19 +386,22 @@ class CustomUserCreationForm(UserCreationForm):
             'placeholder': '+256700000000'
         })
     )
-    user_type = forms.ChoiceField(
-        choices=CustomUser.USER_TYPES,
-        widget=forms.Select(attrs={
-            'class': 'form-select'
-        })
+
+    # ✅ ONLY ROLE SELECTION - NO USER_TYPE
+    roles = forms.ModelMultipleChoiceField(
+        queryset=Role.objects.none(),
+        required=True,
+        widget=forms.CheckboxSelectMultiple(attrs={
+            'class': 'form-check-input'
+        }),
+        help_text="Select one or more roles for this user. Roles determine permissions."
     )
 
     class Meta:
         model = CustomUser
         fields = (
             'email', 'username', 'first_name', 'last_name', 'middle_name',
-            'phone_number', 'user_type', 'password1', 'password2'
-            # 🔥 removed "company" here so it's not validated as required
+            'phone_number', 'roles', 'password1', 'password2'
         )
         widgets = {
             'email': forms.EmailInput(attrs={
@@ -628,14 +418,46 @@ class CustomUserCreationForm(UserCreationForm):
         self.request = kwargs.pop('request', None)
         super().__init__(*args, **kwargs)
 
-        # If system admin, allow selecting company
-        if self.request and getattr(self.request.user, "user_type", None) == 'SYSTEM_ADMIN':
+        if self.request and hasattr(self.request, 'user'):
+            current_user = self.request.user
+
+            # ✅ Filter roles based on user's hierarchy
+            accessible_roles = Role.get_accessible_roles_for_user(current_user)
+            self.fields['roles'].queryset = accessible_roles
+
+            logger.debug(
+                f"User {current_user.email} can assign {accessible_roles.count()} roles"
+            )
+
+        # If SAAS_ADMIN, allow selecting company
+        if self.request and getattr(self.request.user, "is_saas_admin", False):
             self.fields['company'] = forms.ModelChoiceField(
-                queryset=CustomUser.objects.none(),  # replace with Company.objects.all()
+                queryset=Company.objects.all(),
                 required=True,
                 widget=forms.Select(attrs={'class': 'form-select'})
             )
-            logger.debug("System admin detected — added company field to form")
+
+    def clean_roles(self):
+        """Validate that user can assign selected roles"""
+        roles = self.cleaned_data.get('roles')
+
+        if not roles:
+            raise ValidationError(_('At least one role must be selected'))
+
+        if not self.request or not hasattr(self.request, 'user'):
+            raise ValidationError(_('Invalid request context'))
+
+        current_user = self.request.user
+
+        # Check each role
+        for role in roles:
+            can_assign, reason = role.can_be_assigned_by(current_user)
+            if not can_assign:
+                raise ValidationError(
+                    _(f'Cannot assign role "{role.group.name}": {reason}')
+                )
+
+        return roles
 
     def clean_phone_number(self):
         """Validate phone number format"""
@@ -647,43 +469,63 @@ class CustomUserCreationForm(UserCreationForm):
                 raise ValidationError(_('Invalid phone number format'))
         return phone_number
 
-    def assign_company(self, user):
-        """
-        Utility to assign company from request.user if not system admin.
-        Called from view after form.save(commit=False).
-        """
-        if not self.request:
-            logger.warning("assign_company called without request")
-            return user
+    def save(self, commit=True):
+        user = super().save(commit=False)
 
-        current_user = self.request.user
-        if current_user.user_type != 'SYSTEM_ADMIN':
-            if hasattr(current_user, 'owned_company') and current_user.owned_company:
-                user.company = current_user.owned_company
-                logger.debug(f"Assigned company from owned_company: {user.company}")
-            elif hasattr(current_user, 'company') and current_user.company:
+        # Assign company
+        if self.request:
+            current_user = self.request.user
+
+            if hasattr(current_user, 'is_saas_admin') and current_user.is_saas_admin:
+                company = self.cleaned_data.get('company')
+                if company:
+                    user.company = company
+            elif hasattr(current_user, 'company'):
                 user.company = current_user.company
-                logger.debug(f"Assigned company from current_user.company: {user.company}")
-        else:
-            # System admin: use chosen company field
-            company = self.cleaned_data.get('company')
-            if not company:
-                raise ValidationError("System admin must select a company")
-            user.company = company
-            logger.debug(f"Assigned company from system admin selection: {user.company}")
+
+        if commit:
+            user.save()
+
+            # ✅ Assign roles (M2M must be done after save)
+            roles = self.cleaned_data.get('roles', [])
+            user.groups.set([role.group for role in roles])
+
+            # Log role assignments
+            for role in roles:
+                RoleHistory.objects.create(
+                    role=role,
+                    action='assigned',
+                    user=self.request.user if self.request else None,
+                    affected_user=user,
+                    notes="Role assigned during user creation"
+                )
+
+            logger.info(f"✅ Created user {user.email} with roles: {[r.group.name for r in roles]}")
 
         return user
 
 
 class CustomUserChangeForm(UserChangeForm):
-    """Enhanced user change form"""
+    """
+    Enhanced user change form - ROLE-BASED ONLY
+    """
 
-    password = None  # Remove password field from change form
+    password = None  # Remove password field
+
+    # ✅ Add roles field for editing
+    roles = forms.ModelMultipleChoiceField(
+        queryset=Role.objects.none(),
+        required=False,
+        widget=forms.CheckboxSelectMultiple(attrs={
+            'class': 'form-check-input'
+        }),
+        help_text="Select roles for this user"
+    )
 
     class Meta:
         model = CustomUser
         fields = ('email', 'username', 'first_name', 'last_name', 'middle_name',
-                  'phone_number', 'user_type', 'is_active', 'is_staff',
+                  'phone_number', 'roles', 'is_active', 'is_staff',
                   'avatar', 'bio', 'timezone', 'language')
         widgets = {
             'email': forms.EmailInput(attrs={'class': 'form-control'}),
@@ -692,7 +534,6 @@ class CustomUserChangeForm(UserChangeForm):
             'last_name': forms.TextInput(attrs={'class': 'form-control'}),
             'middle_name': forms.TextInput(attrs={'class': 'form-control'}),
             'phone_number': forms.TextInput(attrs={'class': 'form-control'}),
-            'user_type': forms.Select(attrs={'class': 'form-select'}),
             'avatar': forms.FileInput(attrs={'class': 'form-control'}),
             'bio': forms.Textarea(attrs={'class': 'form-control', 'rows': 3}),
             'timezone': forms.TextInput(attrs={'class': 'form-control'}),
@@ -701,9 +542,58 @@ class CustomUserChangeForm(UserChangeForm):
             'is_staff': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
         }
 
+    def __init__(self, *args, **kwargs):
+        self.request = kwargs.pop('request', None)
+        super().__init__(*args, **kwargs)
+
+        # ✅ Filter roles based on current user's permissions
+        if self.request and hasattr(self.request, 'user'):
+            current_user = self.request.user
+            accessible_roles = Role.get_accessible_roles_for_user(current_user)
+            self.fields['roles'].queryset = accessible_roles
+
+            # Set initial roles
+            if self.instance and self.instance.pk:
+                self.fields['roles'].initial = self.instance.all_roles
+
+    def save(self, commit=True):
+        user = super().save(commit=False)
+
+        if commit:
+            user.save()
+
+            # ✅ Update roles if changed
+            if 'roles' in self.cleaned_data:
+                new_roles = set(self.cleaned_data['roles'])
+                old_roles = set(user.all_roles)
+
+                # Roles to remove
+                for role in old_roles - new_roles:
+                    user.groups.remove(role.group)
+                    RoleHistory.objects.create(
+                        role=role,
+                        action='removed',
+                        user=self.request.user if self.request else None,
+                        affected_user=user,
+                        notes="Role removed during user update"
+                    )
+
+                # Roles to add
+                for role in new_roles - old_roles:
+                    user.groups.add(role.group)
+                    RoleHistory.objects.create(
+                        role=role,
+                        action='assigned',
+                        user=self.request.user if self.request else None,
+                        affected_user=user,
+                        notes="Role assigned during user update"
+                    )
+
+        return user
+
 
 class CustomAuthenticationForm(AuthenticationForm):
-    """Enhanced authentication form with security features and 2FA support"""
+    """Enhanced authentication form with 2FA support"""
 
     username = forms.EmailField(
         widget=forms.EmailInput(attrs={
@@ -748,7 +638,6 @@ class CustomAuthenticationForm(AuthenticationForm):
         code = self.cleaned_data.get('code')
 
         if username and password:
-            # Authenticate the user
             self.user_cache = authenticate(
                 self.request,
                 username=username,
@@ -756,7 +645,6 @@ class CustomAuthenticationForm(AuthenticationForm):
             )
 
             if self.user_cache is None:
-                # Record failed login attempt
                 try:
                     user = CustomUser.objects.get(email=username)
                     user.record_login_attempt(success=False, ip_address=self.get_client_ip())
@@ -764,20 +652,14 @@ class CustomAuthenticationForm(AuthenticationForm):
                     pass
                 raise self.get_invalid_login_error()
 
-            # Check if user is active
             if not self.user_cache.is_active:
                 raise forms.ValidationError(_('This account has been deactivated.'))
 
-            # Check if user is locked
             if self.user_cache.is_locked:
                 raise forms.ValidationError(
-                    _('Account is temporarily locked due to too many failed login attempts. Try again later.')
+                    _('Account is temporarily locked due to too many failed login attempts.')
                 )
 
-            # Since 2FA validation is handled in the view, we only record successful credential validation here
-            # Note: Do not call record_login_attempt(success=True) here, as it’s handled in the view after 2FA
-
-        # Validate OTP code format (if provided)
         if code and not code.isdigit():
             raise forms.ValidationError(_('The 2FA code must contain only numbers.'))
         if code and len(code) != 6:
@@ -1360,11 +1242,6 @@ class UserSearchForm(forms.Form):
             'class': 'form-control',
             'placeholder': 'Search by name, email, or username...'
         })
-    )
-    user_type = forms.ChoiceField(
-        required=False,
-        choices=[('', 'All Types')] + CustomUser.USER_TYPES,
-        widget=forms.Select(attrs={'class': 'form-select'})
     )
     is_active = forms.ChoiceField(
         required=False,

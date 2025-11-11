@@ -4,18 +4,23 @@ from channels.generic.websocket import AsyncWebsocketConsumer
 from channels.db import database_sync_to_async
 from django.contrib.auth.models import AnonymousUser
 from django.core.exceptions import ObjectDoesNotExist
-from .models import CompanyBranch
-from sales.models import Sale
 from stores.models import Store
+from sales.models import Sale
+from django_tenants.utils import schema_context
 
 
-class BranchAnalyticsConsumer(AsyncWebsocketConsumer):
-    """WebSocket consumer for branch analytics real-time updates."""
+
+class StoreAnalyticsConsumer(AsyncWebsocketConsumer):
+    """
+    WebSocket consumer for store analytics real-time updates.
+    Renamed from BranchAnalyticsConsumer to reflect Store model.
+    """
 
     async def connect(self):
-        # Get branch ID from URL route
-        self.branch_id = self.scope['url_route']['kwargs']['branch_id']
-        self.branch_group_name = f'branch_analytics_{self.branch_id}'
+        # Get store ID from URL route (can still use 'branch_id' in URL for compatibility)
+        self.store_id = self.scope['url_route']['kwargs'].get('store_id') or \
+                        self.scope['url_route']['kwargs'].get('branch_id')
+        self.store_group_name = f'store_analytics_{self.store_id}'
 
         # Check authentication and permissions
         user = self.scope["user"]
@@ -23,15 +28,15 @@ class BranchAnalyticsConsumer(AsyncWebsocketConsumer):
             await self.close(code=4001)
             return
 
-        # Check if user has permission to view branch
-        has_permission = await self.check_branch_permission(user, self.branch_id)
+        # Check if user has permission to view store
+        has_permission = await self.check_store_permission(user, self.store_id)
         if not has_permission:
             await self.close(code=4003)
             return
 
-        # Join branch group
+        # Join store group
         await self.channel_layer.group_add(
-            self.branch_group_name,
+            self.store_group_name,
             self.channel_name
         )
 
@@ -41,9 +46,9 @@ class BranchAnalyticsConsumer(AsyncWebsocketConsumer):
         await self.send_initial_data()
 
     async def disconnect(self, close_code):
-        # Leave branch group
+        # Leave store group
         await self.channel_layer.group_discard(
-            self.branch_group_name,
+            self.store_group_name,
             self.channel_name
         )
 
@@ -61,6 +66,8 @@ class BranchAnalyticsConsumer(AsyncWebsocketConsumer):
             elif message_type == 'unsubscribe_store':
                 store_id = text_data_json.get('store_id')
                 await self.unsubscribe_from_store(store_id)
+            elif message_type == 'ping':
+                await self.send(text_data=json.dumps({'type': 'pong'}))
 
         except json.JSONDecodeError:
             await self.send(text_data=json.dumps({
@@ -69,9 +76,9 @@ class BranchAnalyticsConsumer(AsyncWebsocketConsumer):
             }))
 
     async def send_initial_data(self):
-        """Send initial branch analytics data."""
+        """Send initial store analytics data."""
         try:
-            analytics_data = await self.get_branch_analytics()
+            analytics_data = await self.get_store_analytics()
             await self.send(text_data=json.dumps({
                 'type': 'initial_data',
                 'data': analytics_data
@@ -85,7 +92,7 @@ class BranchAnalyticsConsumer(AsyncWebsocketConsumer):
     async def send_analytics_update(self):
         """Send updated analytics data."""
         try:
-            analytics_data = await self.get_branch_analytics()
+            analytics_data = await self.get_store_analytics()
             await self.send(text_data=json.dumps({
                 'type': 'analytics_update',
                 'data': analytics_data,
@@ -125,14 +132,6 @@ class BranchAnalyticsConsumer(AsyncWebsocketConsumer):
         )
 
     # Group message handlers
-    async def branch_update(self, event):
-        """Handle branch update messages."""
-        await self.send(text_data=json.dumps({
-            'type': 'branch_update',
-            'data': event['data'],
-            'timestamp': event.get('timestamp', asyncio.get_event_loop().time())
-        }))
-
     async def store_update(self, event):
         """Handle store update messages."""
         await self.send(text_data=json.dumps({
@@ -149,6 +148,14 @@ class BranchAnalyticsConsumer(AsyncWebsocketConsumer):
             'timestamp': event.get('timestamp', asyncio.get_event_loop().time())
         }))
 
+    async def sale_update(self, event):
+        """Handle sale update notifications."""
+        await self.send(text_data=json.dumps({
+            'type': 'sale_update',
+            'data': event['data'],
+            'timestamp': event.get('timestamp', asyncio.get_event_loop().time())
+        }))
+
     async def performance_alert(self, event):
         """Handle performance alerts."""
         await self.send(text_data=json.dumps({
@@ -158,86 +165,107 @@ class BranchAnalyticsConsumer(AsyncWebsocketConsumer):
             'timestamp': event.get('timestamp', asyncio.get_event_loop().time())
         }))
 
+    async def inventory_update(self, event):
+        """Handle inventory updates."""
+        await self.send(text_data=json.dumps({
+            'type': 'inventory_update',
+            'data': event['data'],
+            'timestamp': event.get('timestamp', asyncio.get_event_loop().time())
+        }))
+
     @database_sync_to_async
-    def check_branch_permission(self, user, branch_id):
-        """Check if user has permission to view this branch."""
+    def check_store_permission(self, user, store_id):
+        """Check if user has permission to view this store."""
+        from company.models import Company
+
         try:
-            branch = CompanyBranch.objects.get(id=branch_id)
-            # Check if user belongs to the same company or is admin
-            return (user.company == branch.company or
-                    user.is_superuser or
-                    user.has_perm('branches.view_companybranch'))
-        except CompanyBranch.DoesNotExist:
+            schema_name = getattr(user.company, "schema_name", "public")
+            with schema_context(schema_name):
+                store = Store.objects.select_related('company').get(id=store_id)
+                # Check if user belongs to the same company or is admin
+                return (
+                        user.company == store.company
+                        or user.is_superuser
+                        or user.has_perm('stores.view_store')
+                        or user in store.staff.all()
+                )
+        except Store.DoesNotExist:
             return False
 
     @database_sync_to_async
-    def get_branch_analytics(self):
-        """Get current branch analytics data."""
+    def get_store_analytics(self):
+        """Get current store analytics data."""
         from django.utils import timezone
         from django.db.models import Sum, Count, Avg
         from datetime import timedelta
+        from company.models import Company
 
         try:
-            branch = CompanyBranch.objects.get(id=self.branch_id)
-            stores = branch.stores.all()
-            store_ids = stores.values_list('id', flat=True)
+            schema_name = getattr(self.scope["user"].company, "schema_name", "public")
+            with schema_context(schema_name):
+                store = Store.objects.select_related('company').get(id=self.store_id)
 
-            thirty_days_ago = timezone.now().date() - timedelta(days=30)
+                thirty_days_ago = timezone.now().date() - timedelta(days=30)
+                today = timezone.now().date()
 
-            # Get metrics
-            metrics = Sale.objects.filter(
-                store_id__in=store_ids,
-                created_at__date__gte=thirty_days_ago,
-                is_voided=False,
-                is_completed=True
-            ).aggregate(
-                total_revenue=Sum('total_amount'),
-                total_sales=Count('id'),
-                avg_sale=Avg('total_amount')
-            )
-
-            # Get store performance
-            store_performance = []
-            for store in stores:
-                store_metrics = Sale.objects.filter(
+                # Get 30-day metrics
+                metrics_30d = Sale.objects.filter(
                     store=store,
                     created_at__date__gte=thirty_days_ago,
                     is_voided=False,
                     is_completed=True
                 ).aggregate(
-                    revenue=Sum('total_amount'),
-                    sales=Count('id')
+                    total_revenue=Sum('total_amount'),
+                    total_sales=Count('id'),
+                    avg_sale=Avg('total_amount')
                 )
 
-                store_performance.append({
-                    'id': store.id,
-                    'name': store.name,
-                    'revenue': float(store_metrics['revenue'] or 0),
-                    'sales': store_metrics['sales'] or 0,
-                    'is_active': store.is_active
-                })
+                # Get today's metrics
+                today_metrics = Sale.objects.filter(
+                    store=store,
+                    created_at__date=today,
+                    is_voided=False,
+                    is_completed=True
+                ).aggregate(
+                    revenue=Sum('total_amount'),
+                    count=Count('id')
+                )
 
-            return {
-                'branch_id': self.branch_id,
-                'metrics': {
-                    'total_revenue': float(metrics['total_revenue'] or 0),
-                    'total_sales': metrics['total_sales'] or 0,
-                    'avg_sale': float(metrics['avg_sale'] or 0),
-                },
-                'stores': store_performance,
-                'last_updated': timezone.now().isoformat()
-            }
+                return {
+                    'store_id': self.store_id,
+                    'store_name': store.name,
+                    'store_code': store.code,
+                    'is_main_store': store.is_main_branch,
+                    'metrics_30d': {
+                        'total_revenue': float(metrics_30d['total_revenue'] or 0),
+                        'total_sales': metrics_30d['total_sales'] or 0,
+                        'avg_sale': float(metrics_30d['avg_sale'] or 0),
+                    },
+                    'today': {
+                        'revenue': float(today_metrics['revenue'] or 0),
+                        'sales': today_metrics['count'] or 0
+                    },
+                    'status': {
+                        'is_active': store.is_active,
+                        'efris_enabled': store.efris_enabled,
+                        'can_fiscalize': store.can_fiscalize,
+                    },
+                    'last_updated': timezone.now().isoformat()
+                }
 
         except Exception as e:
             return {'error': str(e)}
 
 
-class StoreAnalyticsConsumer(AsyncWebsocketConsumer):
-    """WebSocket consumer for individual store analytics."""
+class CompanyStoresConsumer(AsyncWebsocketConsumer):
+    """
+    WebSocket consumer for company-wide store analytics.
+    Monitors all stores belonging to a company.
+    """
 
     async def connect(self):
-        self.store_id = self.scope['url_route']['kwargs']['store_id']
-        self.store_group_name = f'store_analytics_{self.store_id}'
+        self.company_id = self.scope['url_route']['kwargs']['company_id']
+        self.company_group_name = f'company_stores_{self.company_id}'
 
         # Check authentication and permissions
         user = self.scope["user"]
@@ -245,22 +273,22 @@ class StoreAnalyticsConsumer(AsyncWebsocketConsumer):
             await self.close(code=4001)
             return
 
-        has_permission = await self.check_store_permission(user, self.store_id)
+        has_permission = await self.check_company_permission(user, self.company_id)
         if not has_permission:
             await self.close(code=4003)
             return
 
         await self.channel_layer.group_add(
-            self.store_group_name,
+            self.company_group_name,
             self.channel_name
         )
 
         await self.accept()
-        await self.send_initial_store_data()
+        await self.send_initial_company_data()
 
     async def disconnect(self, close_code):
         await self.channel_layer.group_discard(
-            self.store_group_name,
+            self.company_group_name,
             self.channel_name
         )
 
@@ -270,7 +298,7 @@ class StoreAnalyticsConsumer(AsyncWebsocketConsumer):
             message_type = text_data_json.get('type')
 
             if message_type == 'request_update':
-                await self.send_store_update()
+                await self.send_company_update()
             elif message_type == 'ping':
                 await self.send(text_data=json.dumps({'type': 'pong'}))
 
@@ -280,93 +308,138 @@ class StoreAnalyticsConsumer(AsyncWebsocketConsumer):
                 'message': 'Invalid JSON format'
             }))
 
-    async def send_initial_store_data(self):
-        """Send initial store data."""
+    async def send_initial_company_data(self):
+        """Send initial company-wide data."""
         try:
-            store_data = await self.get_store_analytics()
+            company_data = await self.get_company_analytics()
             await self.send(text_data=json.dumps({
                 'type': 'initial_data',
-                'data': store_data
+                'data': company_data
             }))
         except Exception as e:
             await self.send(text_data=json.dumps({
                 'type': 'error',
-                'message': f'Failed to load store data: {str(e)}'
+                'message': f'Failed to load company data: {str(e)}'
             }))
 
-    async def send_store_update(self):
-        """Send updated store data."""
+    async def send_company_update(self):
+        """Send updated company data."""
         try:
-            store_data = await self.get_store_analytics()
+            company_data = await self.get_company_analytics()
             await self.send(text_data=json.dumps({
-                'type': 'store_update',
-                'data': store_data,
+                'type': 'company_update',
+                'data': company_data,
                 'timestamp': asyncio.get_event_loop().time()
             }))
         except Exception as e:
             await self.send(text_data=json.dumps({
                 'type': 'error',
-                'message': f'Failed to update store data: {str(e)}'
+                'message': f'Failed to update company data: {str(e)}'
             }))
 
     # Group message handlers
-    async def store_sale_update(self, event):
-        """Handle store sale updates."""
+    async def store_update(self, event):
+        """Handle store updates."""
         await self.send(text_data=json.dumps({
-            'type': 'sale_update',
+            'type': 'store_update',
             'data': event['data']
         }))
 
-    async def inventory_update(self, event):
-        """Handle inventory updates."""
+    async def company_alert(self, event):
+        """Handle company-wide alerts."""
         await self.send(text_data=json.dumps({
-            'type': 'inventory_update',
-            'data': event['data']
+            'type': 'company_alert',
+            'data': event['data'],
+            'severity': event.get('severity', 'info')
         }))
 
     @database_sync_to_async
-    def check_store_permission(self, user, store_id):
-        """Check if user has permission to view this store."""
+    def check_company_permission(self, user, company_id):
+        """Check if user has permission to view this company."""
+        from company.models import Company
+
         try:
-            store = Store.objects.select_related('branch').get(id=store_id)
-            return (user.company == store.branch.company or
-                    user.is_superuser or
-                    user in store.staff.all())
-        except Store.DoesNotExist:
+            schema_name = getattr(user.company, "schema_name", "public")
+            with schema_context(schema_name):
+                company = Company.objects.get(id=company_id)
+                return (
+                        user.company == company
+                        or user.is_superuser
+                        or user.has_perm('company.view_company')
+                )
+        except Company.DoesNotExist:
             return False
 
     @database_sync_to_async
-    def get_store_analytics(self):
-        """Get current store analytics data."""
+    def get_company_analytics(self):
+        """Get company-wide analytics data."""
         from django.utils import timezone
-        from django.db.models import Sum, Count
+        from django.db.models import Sum, Count, Avg
         from datetime import timedelta
+        from company.models import Company
 
         try:
-            store = Store.objects.get(id=self.store_id)
-            today = timezone.now().date()
+            schema_name = getattr(self.scope["user"].company, "schema_name", "public")
+            with schema_context(schema_name):
+                company = Company.objects.get(id=self.company_id)
+                stores = Store.objects.filter(company=company, is_active=True)
 
-            # Today's sales
-            today_sales = Sale.objects.filter(
-                store=store,
-                created_at__date=today,
-                is_voided=False,
-                is_completed=True
-            ).aggregate(
-                revenue=Sum('total_amount'),
-                count=Count('id')
-            )
+                thirty_days_ago = timezone.now().date() - timedelta(days=30)
 
-            return {
-                'store_id': self.store_id,
-                'store_name': store.name,
-                'today_revenue': float(today_sales['revenue'] or 0),
-                'today_sales': today_sales['count'] or 0,
-                'is_active': store.is_active,
-                'last_updated': timezone.now().isoformat()
-            }
+                # Get company-wide metrics
+                store_ids = stores.values_list('id', flat=True)
+                metrics = Sale.objects.filter(
+                    store_id__in=store_ids,
+                    created_at__date__gte=thirty_days_ago,
+                    is_voided=False,
+                    is_completed=True
+                ).aggregate(
+                    total_revenue=Sum('total_amount'),
+                    total_sales=Count('id'),
+                    avg_sale=Avg('total_amount')
+                )
+
+                # Get per-store performance
+                store_performance = []
+                for store in stores:
+                    store_metrics = Sale.objects.filter(
+                        store=store,
+                        created_at__date__gte=thirty_days_ago,
+                        is_voided=False,
+                        is_completed=True
+                    ).aggregate(
+                        revenue=Sum('total_amount'),
+                        sales=Count('id')
+                    )
+
+                    store_performance.append({
+                        'id': store.id,
+                        'name': store.name,
+                        'code': store.code,
+                        'is_main_store': store.is_main_branch,
+                        'revenue': float(store_metrics['revenue'] or 0),
+                        'sales': store_metrics['sales'] or 0,
+                        'is_active': store.is_active,
+                        'efris_enabled': store.efris_enabled
+                    })
+
+                return {
+                    'company_id': self.company_id,
+                    'company_name': company.name,
+                    'metrics': {
+                        'total_revenue': float(metrics['total_revenue'] or 0),
+                        'total_sales': metrics['total_sales'] or 0,
+                        'avg_sale': float(metrics['avg_sale'] or 0),
+                        'active_stores': stores.count()
+                    },
+                    'stores': store_performance,
+                    'last_updated': timezone.now().isoformat()
+                }
 
         except Exception as e:
             return {'error': str(e)}
 
+
+# Backward compatibility alias
+BranchAnalyticsConsumer = StoreAnalyticsConsumer
 

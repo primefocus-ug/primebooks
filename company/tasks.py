@@ -22,7 +22,7 @@ from sales.models import Sale
 from stores.models import Store, DeviceOperatorLog
 from accounts.models import CustomUser
 from inventory.models import Stock
-from .services import CompanyEFRISService
+from .company_services import CompanyEFRISService
 
 logger = logging.getLogger(__name__)
 channel_layer = get_channel_layer()
@@ -32,32 +32,42 @@ channel_layer = get_channel_layer()
 def setup_efris_for_company(self, company_id):
     """Setup EFRIS integration for a company"""
     try:
+        from company.models import Company
+        from company.company_services import setup_efris_for_company as setup_efris_service
+
+        logger.info(f"Scheduling EFRIS setup for new company {company_id}")
+
         company = Company.objects.get(company_id=company_id)
 
         if not company.efris_enabled:
             logger.info(f"EFRIS disabled for company {company_id}, skipping setup")
             return "EFRIS disabled"
 
-        service = CompanyEFRISService(company)
-        success, message = service.setup_efris()
+        # Call the service function (returns a dictionary)
+        setup_result = setup_efris_service(company)
 
-        if success:
-            logger.info(f"EFRIS setup completed for company {company_id}")
-            return f"Setup successful: {message}"
+        if setup_result['success']:
+            logger.info(
+                f"EFRIS setup completed for company {company_id}: "
+                f"{len(setup_result['steps_completed'])} steps completed"
+            )
+            return setup_result.get('message', 'Setup successful')
         else:
-            logger.error(f"EFRIS setup failed for company {company_id}: {message}")
+            error_message = '; '.join(setup_result.get('errors', ['Unknown error']))
+            logger.error(f"EFRIS setup failed for company {company_id}: {error_message}")
 
             # Retry on certain errors
-            if "authentication" in message.lower() or "connection" in message.lower():
+            if any(keyword in error_message.lower() for keyword in ['authentication', 'connection', 'network']):
+                logger.warning(f"Retrying EFRIS setup for company {company_id} due to transient error")
                 raise self.retry(countdown=60 * (2 ** self.request.retries))
 
-            return f"Setup failed: {message}"
+            return f"Setup failed: {error_message}"
 
     except Company.DoesNotExist:
         logger.error(f"Company {company_id} not found for EFRIS setup")
         return "Company not found"
     except Exception as exc:
-        logger.error(f"EFRIS setup error for company {company_id}: {exc}")
+        logger.error(f"EFRIS setup error for company {company_id}: {exc}", exc_info=True)
         raise self.retry(exc=exc, countdown=60 * (2 ** self.request.retries))
 
 

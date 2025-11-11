@@ -95,7 +95,7 @@ class ReportFilterForm(forms.Form):
         super().__init__(*args, **kwargs)
 
         if user:
-            if user.is_superuser or user.user_type == 'SUPER_ADMIN':
+            if user.is_superuser or (user.primary_role and user.primary_role.priority >= 90):
                 self.fields['store'].queryset = Store.objects.filter(is_active=True)
                 self.fields['branch'].queryset = Store.objects.filter(is_active=True)
             else:
@@ -257,9 +257,10 @@ class SalesReportForm(ReportFilterForm):
         super().__init__(*args, **kwargs)
 
         if user:
-            if user.is_superuser or user.user_type == 'SUPER_ADMIN':
+            if user.is_superuser or (user.primary_role and user.primary_role.priority >= 90):
                 self.fields['cashier'].queryset = CustomUser.objects.filter(
-                    user_type__in=['CASHIER', 'MANAGER', 'EMPLOYEE'],
+                    primary_role__priority__gte=30,  # Cashier-level roles and above
+                    primary_role__priority__lte=80,  # But below admin level
                     is_active=True
                 )
             else:
@@ -462,7 +463,7 @@ class ReportScheduleForm(forms.ModelForm):
 
         if user:
             # Filter reports based on user permissions
-            if user.is_superuser or user.user_type == 'SUPER_ADMIN':
+            if user.is_superuser or (user.primary_role and user.primary_role.priority >= 90):
                 self.fields['report'].queryset = SavedReport.objects.all()
             else:
                 self.fields['report'].queryset = SavedReport.objects.filter(
@@ -615,7 +616,7 @@ class ReportComparisonForm(forms.ModelForm):
         super().__init__(*args, **kwargs)
 
         if user:
-            if user.is_superuser or user.user_type == 'SUPER_ADMIN':
+            if user.is_superuser or (user.primary_role and user.primary_role.priority >= 90):
                 self.fields['report'].queryset = SavedReport.objects.all()
             else:
                 self.fields['report'].queryset = SavedReport.objects.filter(

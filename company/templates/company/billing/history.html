@@ -1,0 +1,236 @@
+{% extends "base.html" %}
+{% load static i18n %}
+
+{% block title %}{% trans "Billing History" %} - {{ company.trading_name|default:company.name }}{% endblock %}
+
+{% block breadcrumb %}
+{{ block.super }}
+<li class="breadcrumb-item"><a href="{% url 'companies:billing_history' %}">{% trans "Billing" %}</a></li>
+<li class="breadcrumb-item active">{% trans "History" %}</li>
+{% endblock %}
+
+{% block page_header %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h1 class="h3 mb-1">{% trans "Billing History" %}</h1>
+        <p class="text-muted mb-0">{% trans "View your payment history and invoices" %}</p>
+    </div>
+    <div class="d-flex gap-2">
+        <a href="{% url 'companies:subscription_dashboard' %}" class="btn btn-outline-primary">
+            <i class="bi bi-arrow-left me-1"></i>{% trans "Back to Subscription" %}
+        </a>
+        <a href="{% url 'companies:payment_methods' %}" class="btn btn-primary">
+            <i class="bi bi-credit-card me-1"></i>{% trans "Payment Methods" %}
+        </a>
+    </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <div class="card border-0 shadow-sm">
+            <div class="card-header bg-transparent border-0">
+                <div class="d-flex justify-content-between align-items-center">
+                    <h5 class="card-title mb-0">{% trans "Invoice History" %}</h5>
+                    <div class="d-flex gap-2">
+                        <button class="btn btn-outline-secondary btn-sm" onclick="exportInvoices()">
+                            <i class="bi bi-download me-1"></i>{% trans "Export" %}
+                        </button>
+                        <div class="dropdown">
+                            <button class="btn btn-outline-secondary btn-sm dropdown-toggle" type="button" data-bs-toggle="dropdown">
+                                <i class="bi bi-filter me-1"></i>{% trans "Filter" %}
+                            </button>
+                            <ul class="dropdown-menu">
+                                <li><a class="dropdown-item" href="#" onclick="filterInvoices('all')">{% trans "All Invoices" %}</a></li>
+                                <li><a class="dropdown-item" href="#" onclick="filterInvoices('paid')">{% trans "Paid" %}</a></li>
+                                <li><a class="dropdown-item" href="#" onclick="filterInvoices('pending')">{% trans "Pending" %}</a></li>
+                                <li><a class="dropdown-item" href="#" onclick="filterInvoices('failed')">{% trans "Failed" %}</a></li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="card-body p-0">
+                {% if invoices %}
+                    <div class="table-responsive">
+                        <table class="table table-hover mb-0" id="invoicesTable">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>{% trans "Invoice #" %}</th>
+                                    <th>{% trans "Date" %}</th>
+                                    <th>{% trans "Description" %}</th>
+                                    <th>{% trans "Amount" %}</th>
+                                    <th>{% trans "Status" %}</th>
+                                    <th>{% trans "Payment Method" %}</th>
+                                    <th>{% trans "Actions" %}</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for invoice in invoices %}
+                                <tr class="invoice-row" data-status="{{ invoice.status|lower }}">
+                                    <td>
+                                        <strong>{{ invoice.id }}</strong>
+                                    </td>
+                                    <td>
+                                        {{ invoice.date|date:"M d, Y" }}
+                                    </td>
+                                    <td>
+                                        {{ invoice.description }}
+                                    </td>
+                                    <td>
+                                        <strong>${{ invoice.amount|floatformat:2 }}</strong>
+                                        <br>
+                                        <small class="text-muted">{{ company.preferred_currency }}</small>
+                                    </td>
+                                    <td>
+                                        <span class="badge {% if invoice.status == 'PAID' %}bg-success{% elif invoice.status == 'PENDING' %}bg-warning{% elif invoice.status == 'FAILED' %}bg-danger{% else %}bg-secondary{% endif %}">
+                                            {{ invoice.status }}
+                                        </span>
+                                    </td>
+                                    <td>
+                                        <small class="text-muted">
+                                            {% if invoice.payment_method %}
+                                                {{ invoice.payment_method|title }}
+                                            {% else %}
+                                                -
+                                            {% endif %}
+                                        </small>
+                                    </td>
+                                    <td>
+                                        <div class="btn-group btn-group-sm">
+                                            <a href="{% url 'companies:invoice_detail' invoice_id=invoice.id %}"
+                                               class="btn btn-outline-primary" title="{% trans 'View Details' %}">
+                                                <i class="bi bi-eye"></i>
+                                            </a>
+                                            <a href="{% url 'companies:invoice_download' invoice_id=invoice.id %}"
+                                               class="btn btn-outline-secondary" title="{% trans 'Download PDF' %}">
+                                                <i class="bi bi-download"></i>
+                                            </a>
+                                        </div>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- Pagination -->
+                    {% if is_paginated %}
+                    <div class="card-footer bg-transparent border-0">
+                        <nav aria-label="{% trans 'Invoice pagination' %}">
+                            <ul class="pagination justify-content-center mb-0">
+                                {% if page_obj.has_previous %}
+                                <li class="page-item">
+                                    <a class="page-link" href="?page={{ page_obj.previous_page_number }}">{% trans "Previous" %}</a>
+                                </li>
+                                {% endif %}
+
+                                {% for num in page_obj.paginator.page_range %}
+                                    {% if page_obj.number == num %}
+                                    <li class="page-item active">
+                                        <span class="page-link">{{ num }}</span>
+                                    </li>
+                                    {% else %}
+                                    <li class="page-item">
+                                        <a class="page-link" href="?page={{ num }}">{{ num }}</a>
+                                    </li>
+                                    {% endif %}
+                                {% endfor %}
+
+                                {% if page_obj.has_next %}
+                                <li class="page-item">
+                                    <a class="page-link" href="?page={{ page_obj.next_page_number }}">{% trans "Next" %}</a>
+                                </li>
+                                {% endif %}
+                            </ul>
+                        </nav>
+                    </div>
+                    {% endif %}
+                {% else %}
+                    <div class="text-center py-5">
+                        <i class="bi bi-receipt fs-1 text-muted mb-3"></i>
+                        <h5 class="text-muted">{% trans "No invoices found" %}</h5>
+                        <p class="text-muted mb-3">{% trans "You don't have any invoices yet." %}</p>
+                        <a href="{% url 'companies:subscription_plans' %}" class="btn btn-primary">
+                            <i class="bi bi-credit-card me-2"></i>{% trans "View Subscription Plans" %}
+                        </a>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Summary Card -->
+<div class="row mt-4">
+    <div class="col-md-4">
+        <div class="card border-0 shadow-sm">
+            <div class="card-body text-center">
+                <div class="text-primary mb-2">
+                    <i class="bi bi-currency-dollar fs-1"></i>
+                </div>
+                <h3 class="mb-1">${{ total_paid|floatformat:2 }}</h3>
+                <p class="text-muted mb-0">{% trans "Total Paid" %}</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card border-0 shadow-sm">
+            <div class="card-body text-center">
+                <div class="text-success mb-2">
+                    <i class="bi bi-check-circle fs-1"></i>
+                </div>
+                <h3 class="mb-1">{{ invoices|length }}</h3>
+                <p class="text-muted mb-0">{% trans "Total Invoices" %}</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card border-0 shadow-sm">
+            <div class="card-body text-center">
+                <div class="text-info mb-2">
+                    <i class="bi bi-calendar-check fs-1"></i>
+                </div>
+                <h5 class="mb-1">
+                    {% if next_billing_date %}
+                        {{ next_billing_date|date:"M d, Y" }}
+                    {% else %}
+                        -
+                    {% endif %}
+                </h5>
+                <p class="text-muted mb-0">{% trans "Next Billing Date" %}</p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function exportInvoices() {
+    window.location.href = "{% url 'companies:export_invoices' %}";
+}
+
+function filterInvoices(status) {
+    const rows = document.querySelectorAll('.invoice-row');
+
+    rows.forEach(row => {
+        if (status === 'all' || row.getAttribute('data-status') === status) {
+            row.style.display = '';
+        } else {
+            row.style.display = 'none';
+        }
+    });
+}
+
+// Initialize table sorting
+document.addEventListener('DOMContentLoaded', function() {
+    const table = document.getElementById('invoicesTable');
+    if (table) {
+        // Simple client-side sorting could be added here
+        // For now, we'll rely on server-side sorting
+    }
+});
+</script>
+{% endblock %}

@@ -1,0 +1,183 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}{{ company.display_name }} - Profile{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'company/css/company.css' %}">
+<style>
+    .stat-update {
+        animation: pulse 0.5s ease-in-out;
+    }
+
+    @keyframes pulse {
+        0%, 100% { transform: scale(1); }
+        50% { transform: scale(1.05); }
+    }
+
+    .btn-pulse {
+        animation: pulse-btn 2s infinite;
+    }
+
+    @keyframes pulse-btn {
+        0%, 100% { box-shadow: 0 0 0 0 rgba(13, 110, 253, 0.7); }
+        50% { box-shadow: 0 0 0 10px rgba(13, 110, 253, 0); }
+    }
+
+    .nav-tabs .nav-link {
+        border: none;
+        border-bottom: 3px solid transparent;
+        color: #6c757d;
+    }
+
+    .nav-tabs .nav-link.active {
+        border-bottom-color: #0d6efd;
+        color: #0d6efd;
+    }
+
+    .card-hover {
+        transition: transform 0.2s, box-shadow 0.2s;
+    }
+
+    .card-hover:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4" data-company-id="{{ company.company_id }}">
+    <!-- Header -->
+    <div class="row mb-4">
+        <div class="col-md-8">
+            <div class="d-flex align-items-center">
+                {% if company.logo %}
+                <img src="{{ company.logo.url }}" alt="{{ company.name }}" class="rounded me-3" style="width: 60px; height: 60px; object-fit: cover;">
+                {% endif %}
+                <div>
+                    <h2 class="mb-1 company-name-display">{{ company.display_name }}</h2>
+                    <div class="text-muted">
+                        <span class="me-3"><i class="bi bi-building me-1"></i> {{ company.company_id }}</span>
+                        <span id="company-status-badge" class="badge
+                            {% if company.status == 'ACTIVE' %}bg-success
+                            {% elif company.status == 'TRIAL' %}bg-info
+                            {% elif company.status == 'SUSPENDED' %}bg-warning
+                            {% elif company.status == 'EXPIRED' %}bg-danger
+                            {% endif %}">
+                            {{ company.access_status_display }}
+                        </span>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4 text-end">
+            {% if can_edit %}
+            <button type="button" id="save-company-btn" class="btn btn-primary d-none">
+                <i class="bi bi-check-lg me-2"></i>Save Changes
+            </button>
+            {% endif %}
+
+            <!-- Notifications Dropdown -->
+            <div class="dropdown d-inline-block ms-2">
+                <button class="btn btn-outline-secondary position-relative" type="button" data-bs-toggle="dropdown">
+                    <i class="bi bi-bell"></i>
+                    <span id="notification-badge" class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger d-none">
+                        0
+                    </span>
+                </button>
+                <div id="notifications-dropdown" class="dropdown-menu dropdown-menu-end" style="min-width: 350px; max-height: 400px; overflow-y: auto;">
+                    <div class="dropdown-item text-muted">Loading...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Alert for Restrictions -->
+    {% if has_restrictions %}
+    <div class="alert alert-warning alert-dismissible fade show" role="alert">
+        <i class="bi bi-exclamation-triangle-fill me-2"></i>
+        <strong>Access Restrictions:</strong>
+        <ul class="mb-0 mt-2">
+            {% for restriction in access_restrictions %}
+            <li>{{ restriction }}</li>
+            {% endfor %}
+        </ul>
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+    {% endif %}
+
+    <!-- Tabs Navigation -->
+    <ul class="nav nav-tabs mb-4" role="tablist">
+        <li class="nav-item">
+            <a class="nav-link {% if active_tab == 'overview' %}active{% endif %}"
+               href="#" data-tab="overview">
+                <i class="bi bi-speedometer2 me-2"></i>Overview
+            </a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link {% if active_tab == 'settings' %}active{% endif %}"
+               href="#" data-tab="settings">
+                <i class="bi bi-gear me-2"></i>Settings
+            </a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link {% if active_tab == 'team' %}active{% endif %}"
+               href="#" data-tab="team">
+                <i class="bi bi-people me-2"></i>Team
+            </a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link {% if active_tab == 'branches' %}active{% endif %}"
+               href="#" data-tab="branches">
+                <i class="bi bi-diagram-3 me-2"></i>Branches
+            </a>
+        </li>
+        {% if company.efris_enabled or is_saas_admin %}
+        <li class="nav-item">
+            <a class="nav-link {% if active_tab == 'efris' %}active{% endif %}"
+               href="#" data-tab="efris">
+                <i class="bi bi-shield-check me-2"></i>EFRIS
+            </a>
+        </li>
+        {% endif %}
+        <li class="nav-item">
+            <a class="nav-link {% if active_tab == 'subscription' %}active{% endif %}"
+               href="#" data-tab="subscription">
+                <i class="bi bi-credit-card me-2"></i>Subscription
+            </a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link {% if active_tab == 'activity' %}active{% endif %}"
+               href="#" data-tab="activity">
+                <i class="bi bi-clock-history me-2"></i>Activity
+            </a>
+        </li>
+    </ul>
+
+    <!-- Tab Content -->
+    <div id="tab-content">
+        {% if active_tab == 'overview' %}
+            {% include 'company/profile/tabs/overview.html' %}
+        {% elif active_tab == 'settings' %}
+            {% include 'company/profile/tabs/settings.html' %}
+        {% elif active_tab == 'team' %}
+            {% include 'company/profile/tabs/team.html' %}
+        {% elif active_tab == 'branches' %}
+            {% include 'company/profile/tabs/branches.html' %}
+        {% elif active_tab == 'efris' %}
+            {% include 'company/profile/tabs/efris.html' %}
+        {% elif active_tab == 'subscription' %}
+            {% include 'company/profile/tabs/subscription.html' %}
+        {% elif active_tab == 'activity' %}
+            {% include 'company/profile/tabs/activity.html' %}
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"></script>
+<script src="{% static 'company/js/company-profile.js' %}"></script>
+<script src="{% static 'company/js/subscription.js' %}"></script>
+{% endblock %}

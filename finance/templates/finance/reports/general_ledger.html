@@ -1,0 +1,172 @@
+{% extends 'base.html' %}
+{% load i18n %}
+
+{% block title %}{% trans "General Ledger" %} | {{ block.super }}{% endblock %}
+
+{% block breadcrumb_items %}
+<li class="breadcrumb-item"><a href="{% url 'finance:dashboard' %}">{% trans "Finance" %}</a></li>
+<li class="breadcrumb-item"><a href="{% url 'finance:financial_reports_dashboard' %}">{% trans "Reports" %}</a></li>
+<li class="breadcrumb-item active">{% trans "General Ledger" %}</li>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+    .ledger-line:hover {
+        background-color: var(--primary-50);
+    }
+    [data-theme="dark"] .ledger-line:hover {
+        background-color: rgba(59, 130, 246, 0.1);
+    }
+    .running-balance {
+        font-weight: 600;
+        color: var(--primary-600);
+    }
+    @media (max-width: 767.98px) {
+        .ledger-table { font-size: 0.8rem; }
+        .mobile-stack { display: block; margin-bottom: 0.5rem; }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center mb-4">
+        <div class="mb-3 mb-md-0">
+            <h1 class="h3 mb-2 text-primary">
+                <i class="bi bi-journal-text me-2"></i>{% trans "General Ledger" %}
+            </h1>
+            <p class="text-muted mb-0">{% trans "Detailed account transactions" %}</p>
+        </div>
+        {% if account and perms.finance.view_financialreport %}
+        <div class="d-flex flex-wrap gap-2">
+            <button onclick="window.print()" class="btn btn-outline-primary">
+                <i class="bi bi-printer me-1"></i>{% trans "Print" %}
+            </button>
+            <button onclick="exportLedger()" class="btn btn-outline-success">
+                <i class="bi bi-file-earmark-excel me-1"></i>{% trans "Export" %}
+            </button>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Filters -->
+    <div class="card shadow-sm mb-4">
+        <div class="card-header bg-light">
+            <h5 class="mb-0"><i class="bi bi-funnel me-2"></i>{% trans "Filters" %}</h5>
+        </div>
+        <div class="card-body">
+            <form method="get" class="row g-3">
+                <div class="col-12 col-md-6 col-lg-3">
+                    <label for="account" class="form-label">{% trans "Account" %} *</label>
+                    <select class="form-select" id="account" name="account" required>
+                        <option value="">{% trans "Select Account" %}</option>
+                        {% for acc in accounts %}
+                        <option value="{{ acc.id }}" {% if account and acc.id == account.id %}selected{% endif %}>
+                            {{ acc.code }} - {{ acc.name }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-12 col-md-6 col-lg-3">
+                    <label for="start_date" class="form-label">{% trans "Start Date" %}</label>
+                    <input type="date" class="form-control" id="start_date" name="start_date" value="{{ start_date|date:'Y-m-d' }}">
+                </div>
+                <div class="col-12 col-md-6 col-lg-3">
+                    <label for="end_date" class="form-label">{% trans "End Date" %}</label>
+                    <input type="date" class="form-control" id="end_date" name="end_date" value="{{ end_date|date:'Y-m-d' }}">
+                </div>
+                <div class="col-12 col-md-6 col-lg-3 d-flex align-items-end">
+                    <button type="submit" class="btn btn-primary w-100">
+                        <i class="bi bi-search me-1"></i>{% trans "View Ledger" %}
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    {% if account %}
+    <!-- Account Info -->
+    <div class="card shadow-sm mb-4">
+        <div class="card-body">
+            <div class="row">
+                <div class="col-12 col-md-4">
+                    <h5 class="text-primary">{{ account.code }}</h5>
+                    <p class="mb-0">{{ account.name }}</p>
+                    <small class="text-muted">{{ account.get_account_type_display }}</small>
+                </div>
+                <div class="col-12 col-md-4 mt-3 mt-md-0">
+                    <p class="text-muted mb-1">{% trans "Opening Balance" %}</p>
+                    <h4 class="mb-0">{{ opening_balance|floatformat:2 }}</h4>
+                </div>
+                <div class="col-12 col-md-4 mt-3 mt-md-0">
+                    <p class="text-muted mb-1">{% trans "Closing Balance" %}</p>
+                    <h4 class="mb-0">{{ closing_balance|floatformat:2 }}</h4>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Ledger Entries -->
+    <div class="card shadow-sm">
+        <div class="card-header bg-primary text-white">
+            <h4 class="mb-0">{% trans "Transaction History" %}</h4>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table ledger-table table-hover mb-0">
+                    <thead class="bg-light">
+                        <tr>
+                            <th>{% trans "Date" %}</th>
+                            <th>{% trans "Reference" %}</th>
+                            <th>{% trans "Description" %}</th>
+                            <th class="text-end">{% trans "Debit" %}</th>
+                            <th class="text-end">{% trans "Credit" %}</th>
+                            <th class="text-end">{% trans "Balance" %}</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for entry in ledger_entries %}
+                        <tr class="ledger-line">
+                            <td class="mobile-stack">{{ entry.line.journal_entry.posting_date|date:"Y-m-d" }}</td>
+                            <td class="mobile-stack">
+                                <a href="{% url 'finance:journal_entry_detail' entry.line.journal_entry.id %}">
+                                    {{ entry.line.journal_entry.reference }}
+                                </a>
+                            </td>
+                            <td>{{ entry.line.description|default:entry.line.journal_entry.description|truncatewords:10 }}</td>
+                            <td class="text-end">{{ entry.line.debit_amount|floatformat:2 }}</td>
+                            <td class="text-end">{{ entry.line.credit_amount|floatformat:2 }}</td>
+                            <td class="text-end running-balance">{{ entry.balance|floatformat:2 }}</td>
+                        </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="6" class="text-center text-muted py-4">
+                                <i class="bi bi-inbox fs-1 d-block mb-2"></i>
+                                {% trans "No transactions found for this period" %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    {% else %}
+    <div class="alert alert-info">
+        <i class="bi bi-info-circle me-2"></i>
+        {% trans "Please select an account to view its general ledger." %}
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function exportLedger() {
+    const params = new URLSearchParams(window.location.search);
+    params.append('export', 'excel');
+    window.location.href = '?' + params.toString();
+}
+</script>
+{% endblock %}
+

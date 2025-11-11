@@ -1,0 +1,250 @@
+{% load static %}
+
+<!-- Overview Tab Content -->
+<div class="row">
+    <!-- Quick Stats Cards -->
+    <div class="col-lg-3 col-md-6 mb-4">
+        <div class="card card-hover h-100">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <h6 class="text-muted mb-0">Total Revenue (30d)</h6>
+                    <i class="bi bi-currency-dollar text-success fs-4"></i>
+                </div>
+                <h3 class="mb-0" id="revenue-30d">
+                    {{ quick_stats.total_revenue_30d|floatformat:0 }}
+                </h3>
+                <small class="text-muted">
+                    <span id="sales-30d">{{ quick_stats.total_sales_30d }}</span> sales
+                </small>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-3 col-md-6 mb-4">
+        <div class="card card-hover h-100">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <h6 class="text-muted mb-0">Today's Revenue</h6>
+                    <i class="bi bi-graph-up text-primary fs-4"></i>
+                </div>
+                <h3 class="mb-0" id="today-revenue">0</h3>
+                <small class="text-muted">
+                    <span id="today-sales">0</span> sales today
+                </small>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-3 col-md-6 mb-4">
+        <div class="card card-hover h-100">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <h6 class="text-muted mb-0">Active Employees</h6>
+                    <i class="bi bi-people text-info fs-4"></i>
+                </div>
+                <h3 class="mb-0" id="total-employees">
+                    {{ quick_stats.active_employees }}/{{ quick_stats.total_employees }}
+                </h3>
+                <small class="text-muted">Team members</small>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-3 col-md-6 mb-4">
+        <div class="card card-hover h-100">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <h6 class="text-muted mb-0">Active Branches</h6>
+                    <i class="bi bi-diagram-3 text-warning fs-4"></i>
+                </div>
+                <h3 class="mb-0" id="total-branches">
+                    {{ quick_stats.active_branches }}/{{ quick_stats.total_branches }}
+                </h3>
+                <small class="text-muted">Locations</small>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <!-- Company Status -->
+    <div class="col-lg-8 mb-4">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">Company Status</h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <span class="text-muted">Subscription Status</span>
+                            <strong class="text-{% if company.status == 'ACTIVE' %}success{% elif company.status == 'TRIAL' %}info{% else %}danger{% endif %}">
+                                {{ company.access_status_display }}
+                            </strong>
+                        </div>
+                        <div class="progress" style="height: 5px;">
+                            <div class="progress-bar
+                                {% if quick_stats.days_until_expiry > 30 %}bg-success
+                                {% elif quick_stats.days_until_expiry > 7 %}bg-warning
+                                {% else %}bg-danger{% endif %}"
+                                style="width: {{ quick_stats.days_until_expiry|default:0 }}%">
+                            </div>
+                        </div>
+                        <small class="text-muted">
+                            {% if quick_stats.days_until_expiry > 0 %}
+                                {{ quick_stats.days_until_expiry }} days remaining
+                            {% else %}
+                                Expired
+                            {% endif %}
+                        </small>
+                    </div>
+
+                    <div class="col-md-6 mb-3">
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <span class="text-muted">Storage Usage</span>
+                            <strong>{{ quick_stats.storage_usage|floatformat:1 }}%</strong>
+                        </div>
+                        <div class="progress" style="height: 5px;">
+                            <div id="storage-progress"
+                                class="progress-bar {% if quick_stats.storage_usage >= 90 %}bg-danger{% elif quick_stats.storage_usage >= 75 %}bg-warning{% else %}bg-success{% endif %}"
+                                style="width: {{ quick_stats.storage_usage }}%">
+                            </div>
+                        </div>
+                        <small class="text-muted">
+                            {{ company.storage_used_mb }} MB used
+                        </small>
+                    </div>
+
+                    {% if company.plan %}
+                    <div class="col-md-6 mb-3">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <span class="text-muted">Current Plan</span>
+                            <strong>{{ company.plan.display_name }}</strong>
+                        </div>
+                    </div>
+
+                    <div class="col-md-6 mb-3">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <span class="text-muted">Next Billing</span>
+                            <strong>
+                                {% if company.next_billing_date %}
+                                    {{ company.next_billing_date|date:"M d, Y" }}
+                                {% else %}
+                                    N/A
+                                {% endif %}
+                            </strong>
+                        </div>
+                    </div>
+                    {% endif %}
+                </div>
+
+                {% if has_restrictions %}
+                <div class="alert alert-warning mb-0 mt-3">
+                    <strong>⚠️ Action Required:</strong>
+                    <ul class="mb-0 mt-2">
+                        {% for restriction in access_restrictions %}
+                        <li>{{ restriction }}</li>
+                        {% endfor %}
+                    </ul>
+                    <a href="?tab=subscription" class="btn btn-sm btn-warning mt-2">
+                        Review Subscription
+                    </a>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Inventory Alerts -->
+    <div class="col-lg-4 mb-4">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">Inventory Alerts</h5>
+            </div>
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <div>
+                        <i class="bi bi-exclamation-triangle text-warning fs-4"></i>
+                        <span class="ms-2">Low Stock</span>
+                    </div>
+                    <h4 class="mb-0 text-warning">{{ inventory_stats.low_stock }}</h4>
+                </div>
+
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <div>
+                        <i class="bi bi-x-circle text-danger fs-4"></i>
+                        <span class="ms-2">Out of Stock</span>
+                    </div>
+                    <h4 class="mb-0 text-danger">{{ inventory_stats.out_of_stock }}</h4>
+                </div>
+
+                <div id="inventory-alerts"></div>
+
+                <a href="{% url 'inventory:stock_list' %}" class="btn btn-sm btn-outline-primary w-100 mt-3">
+                    View Inventory
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Recent Activity -->
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">Quick Actions</h5>
+            </div>
+            <div class="card-body">
+                <div class="row text-center">
+                    <div class="col-md-3 mb-3">
+                        <a href="{% url 'companies:employee_create' company.company_id %}" class="text-decoration-none">
+                            <div class="p-3 border rounded hover-shadow">
+                                <i class="bi bi-person-plus fs-1 text-primary"></i>
+                                <p class="mb-0 mt-2">Add Employee</p>
+                            </div>
+                        </a>
+                    </div>
+
+                    <div class="col-md-3 mb-3">
+                        <a href="{% url 'stores:store_create' %}" class="text-decoration-none">
+                            <div class="p-3 border rounded hover-shadow">
+                                <i class="bi bi-shop fs-1 text-success"></i>
+                                <p class="mb-0 mt-2">Add Branch</p>
+                            </div>
+                        </a>
+                    </div>
+
+                    <div class="col-md-3 mb-3">
+                        <a href="?tab=subscription" class="text-decoration-none">
+                            <div class="p-3 border rounded hover-shadow">
+                                <i class="bi bi-arrow-up-circle fs-1 text-warning"></i>
+                                <p class="mb-0 mt-2">Upgrade Plan</p>
+                            </div>
+                        </a>
+                    </div>
+
+                    <div class="col-md-3 mb-3">
+                        <a href="?tab=settings" class="text-decoration-none">
+                            <div class="p-3 border rounded hover-shadow">
+                                <i class="bi bi-gear fs-1 text-info"></i>
+                                <p class="mb-0 mt-2">Settings</p>
+                            </div>
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.hover-shadow {
+    transition: all 0.3s ease;
+}
+
+.hover-shadow:hover {
+    box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+    transform: translateY(-2px);
+}
+</style>

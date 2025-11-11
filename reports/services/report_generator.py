@@ -25,7 +25,7 @@ class ReportGeneratorService:
     def get_accessible_stores(self):
         """Get stores accessible to the user"""
         from stores.models import Store
-        if self.user.is_superuser or self.user.user_type == 'SUPER_ADMIN':
+        if self.user.is_superuser or self.user.primary_role and user.primary_role.priority >= 90:
             return Store.objects.filter(is_active=True)
         return self.user.stores.filter(is_active=True)
 
@@ -935,7 +935,7 @@ class ReportGeneratorService:
             total_sales=Count('id'),
             fiscalized=Count('id', filter=Q(is_fiscalized=True)),
             pending=Count('id', filter=Q(is_fiscalized=False)),
-            failed=Count('id', filter=Q(fiscalization_failed=True)),
+            failed=Count('id', filter=Q(is_completed=False)),
         )
         compliance['compliance_rate'] = (
             (compliance['fiscalized'] / compliance['total_sales'] * 100)
@@ -949,7 +949,7 @@ class ReportGeneratorService:
             total=Count('id'),
             fiscalized=Count('id', filter=Q(is_fiscalized=True)),
             pending=Count('id', filter=Q(is_fiscalized=False)),
-            failed=Count('id', filter=Q(fiscalization_failed=True)),
+            failed=Count('id', filter=Q(is_completed=False)),
         ).order_by('-total'))
 
         for store in store_breakdown:
@@ -975,10 +975,10 @@ class ReportGeneratorService:
 
         # Failed fiscalization details
         failed_sales = list(queryset.filter(
-            fiscalization_failed=True
+            is_completed=False
         ).values(
-            'id', 'sale_number', 'store__name', 'total_amount',
-            'created_at', 'fiscalization_error'
+            'id', 'invoice_number', 'store__name', 'total_amount',
+            'created_at'
         ).order_by('-created_at')[:50])
 
         return {

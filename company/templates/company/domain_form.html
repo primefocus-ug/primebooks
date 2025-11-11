@@ -1,28 +1,42 @@
 {% extends 'base.html' %}
+{% load i18n %}
 {% load static %}
 {% load widget_tweaks %}
+{% load custom_filters %}
+
 
 {% block title %}{% if form.instance.pk %}Edit{% else %}Create{% endif %} Domain - {{ company.trading_name|default:company.name }}{% endblock %}
 {% block page_title %}{% if form.instance.pk %}Edit{% else %}Create{% endif %} Domain{% endblock %}
 
 {% block extra_css %}
-<link href="https://cdnjs.cloudflare.com/ajax/libs/select2/4.1.0-rc.0/css/select2.min.css" rel="stylesheet">
-<style>
-    .form-container {
-        background: white;
-        border-radius: 12px;
-        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-        padding: 2rem;
-        border: 1px solid #e5e7eb;
-    }
 
-    .form-section {
-        background: #f8fafc;
-        border-radius: 8px;
-        padding: 1.5rem;
-        margin-bottom: 1.5rem;
-        border: 1px solid #e5e7eb;
-    }
+<link rel="stylesheet" href="{% static 'themes.css' %}">
+<style>
+:root {
+  /* Default (Light) Theme */
+  --color-background: white;
+  --color-text: black;
+  --color-secondary-bg: #f8f9fa;
+  --color-border: #dee2e6;
+}
+
+[data-theme='dark'] {
+  /* Dark Theme Overrides */
+  --color-background: #1e1e1e; /* VSCode-like dark background */
+  --color-text: #e0e0e0;
+  --color-secondary-bg: #2d2d2d;
+  --color-border: #444444;
+}
+
+   .main-container {
+  background-color: var(--color-background);
+  color: var(--color-text);
+}
+
+.form-section {
+  background-color: var(--color-secondary-bg);
+  border: 1px solid var(--color-border);
+}
 
     .form-section h6 {
         color: #374151;
@@ -32,6 +46,8 @@
         align-items: center;
         gap: 0.5rem;
     }
+    
+
 
     .help-text {
         font-size: 0.875rem;
@@ -48,6 +64,9 @@
         border-radius: 6px;
         border: 1px solid #e5e7eb;
     }
+    [data-theme="dark"] .ssl-toggle{
+        background:black!important;
+    }
 
     .primary-toggle {
         display: flex;
@@ -58,6 +77,10 @@
         border-radius: 6px;
         border: 1px solid #bae6fd;
     }
+    [data-theme="dark"] .primary-toggle{
+        background:black!important;
+    }
+    
 </style>
 {% endblock %}
 
@@ -67,16 +90,16 @@
         {% csrf_token %}
 
         <div class="form-section">
-            <h6><i class="fas fa-globe text-primary"></i>Domain Information</h6>
+            <h6 class="totall"><i class="fas fa-globe text-primary "></i>{% trans "Domain Information" %}</h6>
 
             <div class="row mb-3">
                 <div class="col-md-6">
-                    <label class="form-label fw-bold">Domain Name</label>
+                    <label class="form-label fw-bold">{% trans "Domain Name" %}</label>
                     {% render_field form.domain class="form-control" placeholder="example.com" %}
                     {% if form.domain.errors %}
                         <div class="text-danger small">{{ form.domain.errors }}</div>
                     {% endif %}
-                    <div class="help-text">Enter the full domain name (e.g., company.com)</div>
+                    <div class="help-text">{% trans "Enter the full domain name (e.g., company.com)" %}</div>
                 </div>
 
                 <div class="col-md-6">
@@ -91,45 +114,45 @@
         </div>
 
         <div class="form-section">
-            <h6><i class="fas fa-cog text-primary"></i>Domain Settings</h6>
+            <h6 class="totall"><i class="fas fa-cog text-primary"></i>{% trans "Domain Settings" %}</h6>
 
             <div class="row mb-3">
                 <div class="col-md-6">
-                    <label class="form-label fw-bold d-block">SSL Configuration</label>
+                    <label class="form-label fw-bold d-block">{% trans "SSL Configuration" %}</label>
                     <div class="ssl-toggle">
                         {% render_field form.ssl_enabled class="form-check-input" %}
-                        <label class="form-check-label fw-normal">Enable SSL for this domain</label>
+                        <label class="form-check-label fw-normal">{% trans "Enable SSL for this domain" %}</label>
                     </div>
                     {% if form.ssl_enabled.errors %}
                         <div class="text-danger small">{{ form.ssl_enabled.errors }}</div>
                     {% endif %}
-                    <div class="help-text">Enable SSL certificate for secure connections</div>
+                    <div class="help-text">{% trans "Enable SSL certificate for secure connections" %}</div>
                 </div>
 
                 <div class="col-md-6">
-                    <label class="form-label fw-bold d-block">Primary Domain</label>
+                    <label class="form-label fw-bold d-block">{% trans "Primary Domain" %}</label>
                     <div class="primary-toggle">
                         {% render_field form.is_primary class="form-check-input" %}
-                        <label class="form-check-label fw-normal">Set as primary domain</label>
+                        <label class="form-check-label fw-normal">{% trans "Set as primary domain" %}</label>
                     </div>
                     {% if form.is_primary.errors %}
                         <div class="text-danger small">{{ form.is_primary.errors }}</div>
                     {% endif %}
-                    <div class="help-text">Primary domain will be used as the main access point</div>
+                    <div class="help-text">{% trans "Primary domain will be used as the main access point" %}</div>
                 </div>
             </div>
         </div>
 
         <div class="form-section">
-            <h6><i class="fas fa-info-circle text-primary"></i>Additional Information</h6>
+            <h6><i class="fas fa-info-circle text-primary"></i>{% trans "Additional Information" %}</h6>
 
             <div class="mb-3">
-                <label class="form-label fw-bold">Notes</label>
+                <label class="form-label fw-bold">{% trans "Notes" %}</label>
                 {% render_field form.notes class="form-control" rows="3" placeholder="Any additional notes about this domain..." %}
                 {% if form.notes.errors %}
                     <div class="text-danger small">{{ form.notes.errors }}</div>
                 {% endif %}
-                <div class="help-text">Optional notes for internal reference</div>
+                <div class="help-text">{% trans "Optional notes for internal reference" %}</div>
             </div>
         </div>
 
@@ -140,7 +163,7 @@
             </button>
             {% if perms.company.view_domain %}
             <a href="{% url 'companies:domain_list' %}" class="btn btn-secondary">
-                <i class="fas fa-times me-1"></i>Cancel
+                <i class="fas fa-times me-1"></i>{% trans " Cancel" %}
             </a>
             {% endif %}
         </div>

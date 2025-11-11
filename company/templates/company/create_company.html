@@ -1,0 +1,2001 @@
+{% extends "base.html" %}
+{% load static %}
+{% load i18n %}
+
+{% block title %}{% trans "Create New Company" %}{% endblock %}
+
+{% block breadcrumb_items %}
+    <li class="breadcrumb-item"><a href="{% url 'user_dashboard' %}">{% trans "Dashboard" %}</a></li>
+    <li class="breadcrumb-item"><a href="{% url 'companies:company_list' %}">{% trans "Companies" %}</a></li>
+    <li class="breadcrumb-item active">{% trans "Create Company" %}</li>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+    /* Add to your existing CSS */
+.form-control.is-invalid {
+    border-color: #dc3545;
+    background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' width='12' height='12' fill='none' stroke='%23dc3545'%3e%3ccircle cx='6' cy='6' r='4.5'/%3e%3cpath d='m5.8 3.6.4.4.4-.4'/%3e%3c/svg%3e");
+    background-repeat: no-repeat;
+    background-position: right calc(0.375em + 0.1875rem) center;
+    background-size: calc(0.75em + 0.375rem) calc(0.75em + 0.375rem);
+}
+
+.invalid-feedback {
+    display: block;
+    color: #dc3545;
+    font-size: 0.875rem;
+    margin-top: 0.25rem;
+}
+    /* Form Section Styles */
+    .form-section {
+        background: var(--bg-primary);
+        border: 1px solid var(--border-color);
+        border-radius: var(--border-radius);
+        margin-bottom: 1.5rem;
+        overflow: hidden;
+        transition: all 0.3s ease;
+    }
+
+    .form-section:hover {
+        box-shadow: var(--shadow-md);
+    }
+
+    .section-header {
+        background: var(--bg-tertiary);
+        padding: 1.25rem 1.5rem;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        border-bottom: 1px solid var(--border-color);
+        transition: all 0.3s ease;
+        user-select: none;
+    }
+
+    .section-header:hover {
+        background: var(--primary-50);
+    }
+
+    [data-theme="dark"] .section-header:hover {
+        background: rgba(59, 130, 246, 0.1);
+    }
+
+    .section-header.collapsed {
+        border-bottom: none;
+    }
+
+    .section-title {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        margin: 0;
+        font-size: 1.125rem;
+        font-weight: 600;
+        color: var(--text-primary);
+    }
+
+    .section-icon {
+        width: 36px;
+        height: 36px;
+        background: var(--primary-100);
+        border-radius: var(--border-radius-sm);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: var(--primary-600);
+        font-size: 1.125rem;
+    }
+
+    [data-theme="dark"] .section-icon {
+        background: rgba(59, 130, 246, 0.15);
+        color: var(--primary-500);
+    }
+
+    .section-description {
+        font-size: 0.875rem;
+        color: var(--text-secondary);
+        margin-top: 0.25rem;
+    }
+
+    .collapse-icon {
+        transition: transform 0.3s ease;
+        color: var(--text-secondary);
+        font-size: 1.25rem;
+    }
+
+    .section-header[aria-expanded="false"] .collapse-icon {
+        transform: rotate(-90deg);
+    }
+
+    .section-body {
+        padding: 1.5rem;
+    }
+
+    /* Form Field Enhancements */
+    .form-group {
+        margin-bottom: 1.25rem;
+    }
+
+    .form-label {
+        font-weight: 500;
+        color: var(--text-primary);
+        margin-bottom: 0.5rem;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
+    .required-indicator {
+        color: var(--red-500);
+        font-weight: 600;
+    }
+
+    .form-control:focus,
+    .form-select:focus {
+        border-color: var(--primary-500);
+        box-shadow: 0 0 0 0.2rem rgba(59, 130, 246, 0.25);
+    }
+
+    .form-text {
+        font-size: 0.875rem;
+        color: var(--text-muted);
+        margin-top: 0.25rem;
+    }
+
+    /* Validation Styles */
+    .is-invalid {
+        border-color: var(--red-500) !important;
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='%23dc2626' viewBox='0 0 16 16'%3E%3Cpath d='M8 15A7 7 0 1 1 8 1a7 7 0 0 1 0 14zm0 1A8 8 0 1 0 8 0a8 8 0 0 0 0 16z'/%3E%3Cpath d='M7.002 11a1 1 0 1 1 2 0 1 1 0 0 1-2 0zM7.1 4.995a.905.905 0 1 1 1.8 0l-.35 3.507a.552.552 0 0 1-1.1 0L7.1 4.995z'/%3E%3C/svg%3E");
+        background-repeat: no-repeat;
+        background-position: right calc(0.375em + 0.1875rem) center;
+        background-size: calc(0.75em + 0.375rem) calc(0.75em + 0.375rem);
+        padding-right: calc(1.5em + 0.75rem);
+    }
+
+    .is-valid {
+        border-color: var(--green-500) !important;
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='%2310b981' viewBox='0 0 16 16'%3E%3Cpath d='M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0zm-3.97-3.03a.75.75 0 0 0-1.08.022L7.477 9.417 5.384 7.323a.75.75 0 0 0-1.06 1.06L6.97 11.03a.75.75 0 0 0 1.079-.02l3.992-4.99a.75.75 0 0 0-.01-1.05z'/%3E%3C/svg%3E");
+        background-repeat: no-repeat;
+        background-position: right calc(0.375em + 0.1875rem) center;
+        background-size: calc(0.75em + 0.375rem) calc(0.75em + 0.375rem);
+        padding-right: calc(1.5em + 0.75rem);
+    }
+
+    .invalid-feedback {
+        display: block;
+        color: var(--red-600);
+        font-size: 0.875rem;
+        margin-top: 0.25rem;
+    }
+
+    .valid-feedback {
+        display: block;
+        color: var(--green-600);
+        font-size: 0.875rem;
+        margin-top: 0.25rem;
+    }
+
+    /* Preview Boxes */
+    .preview-box {
+        background: var(--bg-tertiary);
+        border: 1px solid var(--border-color);
+        border-radius: var(--border-radius-sm);
+        padding: 0.75rem 1rem;
+        margin-top: 0.5rem;
+        font-family: 'Courier New', monospace;
+        font-size: 0.875rem;
+        color: var(--primary-600);
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
+    [data-theme="dark"] .preview-box {
+        background: rgba(59, 130, 246, 0.1);
+        color: var(--primary-400);
+    }
+
+    .preview-label {
+        font-weight: 600;
+        color: var(--text-secondary);
+    }
+
+    .preview-value {
+        flex: 1;
+        font-weight: 500;
+    }
+
+    .preview-icon {
+        color: var(--primary-500);
+    }
+
+    /* Checkbox/Switch Styles */
+    .form-check {
+        padding-left: 2.5rem;
+        margin-bottom: 1rem;
+    }
+
+    .form-check-input {
+        width: 1.25rem;
+        height: 1.25rem;
+        margin-top: 0.125rem;
+        margin-left: -2.5rem;
+        cursor: pointer;
+    }
+
+    .form-check-label {
+        cursor: pointer;
+        user-select: none;
+        font-weight: 500;
+        color: var(--text-primary);
+    }
+
+    /* File Upload Enhancement */
+    .file-upload-wrapper {
+        position: relative;
+    }
+
+    .file-upload-label {
+        display: inline-block;
+        padding: 0.5rem 1rem;
+        background: var(--primary-600);
+        color: white;
+        border-radius: var(--border-radius-sm);
+        cursor: pointer;
+        transition: all 0.3s ease;
+        font-weight: 500;
+    }
+
+    .file-upload-label:hover {
+        background: var(--primary-700);
+        transform: translateY(-1px);
+    }
+
+    .file-name {
+        margin-left: 1rem;
+        color: var(--text-secondary);
+        font-size: 0.875rem;
+    }
+
+    /* Button Styles */
+    .btn-group-actions {
+        display: flex;
+        gap: 1rem;
+        margin-top: 2rem;
+        padding-top: 2rem;
+        border-top: 2px solid var(--border-color);
+    }
+
+    .btn-lg {
+        padding: 0.75rem 2rem;
+        font-size: 1rem;
+        font-weight: 600;
+    }
+
+    .btn-primary {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
+    .btn-outline-secondary {
+        border: 2px solid var(--border-color);
+        color: var(--text-primary);
+    }
+
+    .btn-outline-secondary:hover {
+        background: var(--bg-tertiary);
+        border-color: var(--primary-500);
+        color: var(--primary-600);
+    }
+
+    /* Loading Spinner */
+    .spinner-border-sm {
+        width: 1rem;
+        height: 1rem;
+        border-width: 0.15em;
+    }
+
+    /* Progress Indicator */
+    .form-progress {
+        background: var(--bg-tertiary);
+        border-radius: var(--border-radius);
+        padding: 1rem;
+        margin-bottom: 1.5rem;
+        display: none;
+    }
+
+    .form-progress.show {
+        display: block;
+    }
+
+    .progress {
+        height: 8px;
+        border-radius: 4px;
+        background: var(--bg-secondary);
+    }
+
+    .progress-bar {
+        background: var(--primary-600);
+        transition: width 0.3s ease;
+    }
+
+    /* Responsive Grid */
+    .form-row {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+        gap: 1.25rem;
+    }
+
+    @media (max-width: 768px) {
+        .form-row {
+            grid-template-columns: 1fr;
+        }
+
+        .section-body {
+            padding: 1rem;
+        }
+
+        .btn-group-actions {
+            flex-direction: column;
+        }
+
+        .btn-lg {
+            width: 100%;
+        }
+    }
+
+    /* Auto-generated badge */
+    .auto-badge {
+        display: inline-block;
+        padding: 0.25rem 0.5rem;
+        background: var(--amber-100);
+        color: var(--amber-700);
+        border-radius: var(--border-radius-sm);
+        font-size: 0.75rem;
+        font-weight: 600;
+        margin-left: 0.5rem;
+    }
+
+    [data-theme="dark"] .auto-badge {
+        background: rgba(245, 158, 11, 0.2);
+        color: var(--amber-500);
+    }
+
+    /* Collapsible Admin Section */
+    .admin-user-section {
+        border-top: 2px solid var(--border-color);
+        padding-top: 1.5rem;
+        margin-top: 1.5rem;
+    }
+
+    .admin-fields {
+        display: none;
+        margin-top: 1rem;
+        padding: 1rem;
+        background: var(--bg-tertiary);
+        border-radius: var(--border-radius-sm);
+    }
+
+    .admin-fields.show {
+        display: block;
+        animation: slideDown 0.3s ease;
+    }
+
+    @keyframes slideDown {
+        from {
+            opacity: 0;
+            transform: translateY(-10px);
+        }
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+
+    /* Sticky Submit Bar */
+    .sticky-submit-bar {
+        position: sticky;
+        bottom: 0;
+        background: var(--bg-primary);
+        border-top: 1px solid var(--border-color);
+        padding: 1rem;
+        margin: 0 -2rem -2rem;
+        box-shadow: 0 -4px 6px -1px rgba(0, 0, 0, 0.1);
+        z-index: 10;
+    }
+
+    @media (max-width: 768px) {
+        .sticky-submit-bar {
+            margin: 0 -1rem -1rem;
+        }
+    }
+
+    /* EFRIS Specific Styles */
+    .efris-configuration {
+        border-left: 4px solid var(--primary-500);
+        padding-left: 1rem;
+        margin-left: 0.5rem;
+    }
+
+    .efris-fields-wrapper {
+        background: var(--bg-tertiary);
+        border-radius: var(--border-radius);
+        padding: 1.5rem;
+        border: 1px solid var(--border-color);
+    }
+
+    .efris-settings {
+        background: rgba(59, 130, 246, 0.05) !important;
+        border: 1px solid rgba(59, 130, 246, 0.2);
+    }
+
+    .efris-test-connection {
+        border-top: 1px solid var(--border-color);
+        padding-top: 1rem;
+    }
+
+    /* Smooth transitions */
+    .efris-configuration,
+    #efrisDisabledMessage {
+        transition: all 0.3s ease-in-out;
+    }
+
+    /* Required indicator for EFRIS fields */
+    .efris-required {
+        color: var(--red-500);
+        font-weight: 600;
+    }
+
+    /* Form switch customization */
+    .form-switch .form-check-input:checked {
+        background-color: var(--primary-600);
+        border-color: var(--primary-600);
+    }
+
+    .form-switch .form-check-input:focus {
+        border-color: var(--primary-500);
+        box-shadow: 0 0 0 0.2rem rgba(59, 130, 246, 0.25);
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- Add this at the top of your form in create_company.html -->
+{% if form.errors %}
+<div class="alert alert-danger">
+    <h5 class="alert-heading">
+        <i class="bi bi-exclamation-triangle me-2"></i>
+        {% trans "Please correct the following errors:" %}
+    </h5>
+    <ul class="mb-0">
+        {% for field in form %}
+            {% for error in field.errors %}
+                <li><strong>{{ field.label }}:</strong> {{ error }}</li>
+            {% endfor %}
+        {% endfor %}
+        {% for error in form.non_field_errors %}
+            <li>{{ error }}</li>
+        {% endfor %}
+    </ul>
+</div>
+{% endif %}
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-12 col-lg-10 offset-lg-1 col-xl-8 offset-xl-2">
+            <!-- Page Header -->
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <div>
+                    <h1 class="h2 mb-1">
+                        <i class="bi bi-building-add me-2"></i>
+                        {% trans "Create New Company" %}
+                    </h1>
+                    <p class="text-muted mb-0">{% trans "Set up a new company tenant with complete configuration" %}</p>
+                </div>
+                <a href="{% url 'companies:company_list' %}" class="btn btn-outline-secondary">
+                    <i class="bi bi-arrow-left me-2"></i>{% trans "Back to List" %}
+                </a>
+            </div>
+
+            <!-- Progress Indicator -->
+            <div class="form-progress" id="formProgress">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <span class="text-muted small">{% trans "Form Completion" %}</span>
+                    <span class="text-primary fw-bold" id="progressPercentage">0%</span>
+                </div>
+                <div class="progress">
+                    <div class="progress-bar" role="progressbar" id="progressBar" style="width: 0%"></div>
+                </div>
+            </div>
+
+            <!-- Main Form -->
+            <form method="post" enctype="multipart/form-data" id="companyForm" novalidate>
+                {% csrf_token %}
+
+                <!-- Section 1: Basic Information -->
+                <div class="form-section">
+                    <div class="section-header" data-bs-toggle="collapse" data-bs-target="#basicInfoSection" aria-expanded="true">
+                        <div>
+                            <h3 class="section-title">
+                                <span class="section-icon"><i class="bi bi-info-circle"></i></span>
+                                {% trans "Basic Information" %}
+                                <span class="required-indicator">*</span>
+                            </h3>
+                            <p class="section-description">{% trans "Essential company details and identification" %}</p>
+                        </div>
+                        <i class="bi bi-chevron-down collapse-icon"></i>
+                    </div>
+                    <div class="collapse show" id="basicInfoSection">
+                        <div class="section-body">
+                            <div class="form-row">
+                                <!-- Legal Company Name -->
+                                <div class="form-group">
+                                    <label for="{{ form.name.id_for_label }}" class="form-label">
+                                        {{ form.name.label }}
+                                        <span class="required-indicator">*</span>
+                                    </label>
+                                    {{ form.name }}
+                                    {% if form.name.help_text %}
+                                        <small class="form-text">{{ form.name.help_text }}</small>
+                                    {% endif %}
+                                    <div class="invalid-feedback"></div>
+                                </div>
+
+                                <!-- Trading Name -->
+                                <div class="form-group">
+                                    <label for="{{ form.trading_name.id_for_label }}" class="form-label">
+                                        {{ form.trading_name.label }}
+                                    </label>
+                                    {{ form.trading_name }}
+                                    {% if form.trading_name.help_text %}
+                                        <small class="form-text">{{ form.trading_name.help_text }}</small>
+                                    {% endif %}
+                                </div>
+                            </div>
+
+                            <!-- Schema Name with Preview -->
+                            <div class="form-group">
+                                <label for="{{ form.schema_name.id_for_label }}" class="form-label">
+                                    {{ form.schema_name.label }}
+                                    <span class="auto-badge">{% trans "Auto-generated" %}</span>
+                                </label>
+                                {{ form.schema_name }}
+                                {% if form.schema_name.help_text %}
+                                    <small class="form-text">{{ form.schema_name.help_text }}</small>
+                                {% endif %}
+                                <div class="preview-box">
+                                    <i class="bi bi-database preview-icon"></i>
+                                    <span class="preview-label">{% trans "Schema:" %}</span>
+                                    <span class="preview-value" id="schemaPreview">---</span>
+                                </div>
+                                <div class="invalid-feedback"></div>
+                            </div>
+
+                            <!-- Description -->
+                            <div class="form-group">
+                                <label for="{{ form.description.id_for_label }}" class="form-label">
+                                    {{ form.description.label }}
+                                </label>
+                                {{ form.description }}
+                                {% if form.description.help_text %}
+                                    <small class="form-text">{{ form.description.help_text }}</small>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Section 2: Contact Information -->
+                <div class="form-section">
+                    <div class="section-header" data-bs-toggle="collapse" data-bs-target="#contactSection" aria-expanded="true">
+                        <div>
+                            <h3 class="section-title">
+                                <span class="section-icon"><i class="bi bi-telephone"></i></span>
+                                {% trans "Contact Information" %}
+                                <span class="required-indicator">*</span>
+                            </h3>
+                            <p class="section-description">{% trans "Communication details and addresses" %}</p>
+                        </div>
+                        <i class="bi bi-chevron-down collapse-icon"></i>
+                    </div>
+                    <div class="collapse show" id="contactSection">
+                        <div class="section-body">
+                            <!-- Physical Address -->
+                            <div class="form-group">
+                                <label for="{{ form.physical_address.id_for_label }}" class="form-label">
+                                    {{ form.physical_address.label }}
+                                    <span class="required-indicator">*</span>
+                                </label>
+                                {{ form.physical_address }}
+                                {% if form.physical_address.help_text %}
+                                    <small class="form-text">{{ form.physical_address.help_text }}</small>
+                                {% endif %}
+                                <div class="invalid-feedback"></div>
+                            </div>
+
+                            <div class="form-row">
+                                <!-- Postal Address -->
+                                <div class="form-group">
+                                    <label for="{{ form.postal_address.id_for_label }}" class="form-label">
+                                        {{ form.postal_address.label }}
+                                    </label>
+                                    {{ form.postal_address }}
+                                    {% if form.postal_address.help_text %}
+                                        <small class="form-text">{{ form.postal_address.help_text }}</small>
+                                    {% endif %}
+                                </div>
+
+                                <!-- Phone -->
+                                <div class="form-group">
+                                    <label for="{{ form.phone.id_for_label }}" class="form-label">
+                                        {{ form.phone.label }}
+                                    </label>
+                                    {{ form.phone }}
+                                    {% if form.phone.help_text %}
+                                        <small class="form-text">{{ form.phone.help_text }}</small>
+                                    {% endif %}
+                                    <div class="invalid-feedback"></div>
+                                </div>
+                            </div>
+
+                            <div class="form-row">
+                                <!-- Email -->
+                                <div class="form-group">
+                                    <label for="{{ form.email.id_for_label }}" class="form-label">
+                                        {{ form.email.label }}
+                                    </label>
+                                    {{ form.email }}
+                                    {% if form.email.help_text %}
+                                        <small class="form-text">{{ form.email.help_text }}</small>
+                                    {% endif %}
+                                    <div class="invalid-feedback"></div>
+                                </div>
+
+                                <!-- Website -->
+                                <div class="form-group">
+                                    <label for="{{ form.website.id_for_label }}" class="form-label">
+                                        {{ form.website.label }}
+                                    </label>
+                                    {{ form.website }}
+                                    {% if form.website.help_text %}
+                                        <small class="form-text">{{ form.website.help_text }}</small>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Section 3: Tax & Compliance -->
+                <div class="form-section">
+                    <div class="section-header" data-bs-toggle="collapse" data-bs-target="#taxSection" aria-expanded="false">
+                        <div>
+                            <h3 class="section-title">
+                                <span class="section-icon"><i class="bi bi-file-text"></i></span>
+                                {% trans "Tax & Compliance" %}
+                            </h3>
+                            <p class="section-description">{% trans "Tax identification and registration numbers" %}</p>
+                        </div>
+                        <i class="bi bi-chevron-down collapse-icon"></i>
+                    </div>
+                    <div class="collapse" id="taxSection">
+                        <div class="section-body">
+                            <div class="form-row">
+                                <!-- TIN -->
+                                <div class="form-group">
+                                    <label for="{{ form.tin.id_for_label }}" class="form-label">
+                                        {{ form.tin.label }}
+                                    </label>
+                                    {{ form.tin }}
+                                    {% if form.tin.help_text %}
+                                        <small class="form-text">{{ form.tin.help_text }}</small>
+                                    {% endif %}
+                                    <div class="invalid-feedback"></div>
+                                </div>
+
+                                <!-- BRN -->
+                                <div class="form-group">
+                                    <label for="{{ form.brn.id_for_label }}" class="form-label">
+                                        {{ form.brn.label }}
+                                    </label>
+                                    {{ form.brn }}
+                                    {% if form.brn.help_text %}
+                                        <small class="form-text">{{ form.brn.help_text }}</small>
+                                    {% endif %}
+                                </div>
+                            </div>
+
+                            <div class="form-row">
+                                <!-- NIN -->
+                                <div class="form-group">
+                                    <label for="{{ form.nin.id_for_label }}" class="form-label">
+                                        {{ form.nin.label }}
+                                    </label>
+                                    {{ form.nin }}
+                                    {% if form.nin.help_text %}
+                                        <small class="form-text">{{ form.nin.help_text }}</small>
+                                    {% endif %}
+                                </div>
+
+                                <!-- VAT Registration Number -->
+                                <div class="form-group">
+                                    <label for="{{ form.vat_registration_number.id_for_label }}" class="form-label">
+                                        {{ form.vat_registration_number.label }}
+                                    </label>
+                                    {{ form.vat_registration_number }}
+                                    {% if form.vat_registration_number.help_text %}
+                                        <small class="form-text">{{ form.vat_registration_number.help_text }}</small>
+                                    {% endif %}
+                                </div>
+                            </div>
+
+                            <!-- VAT Registration Date -->
+                            <div class="form-group">
+                                <label for="{{ form.vat_registration_date.id_for_label }}" class="form-label">
+                                    {{ form.vat_registration_date.label }}
+                                </label>
+                                {{ form.vat_registration_date }}
+                                {% if form.vat_registration_date.help_text %}
+                                    <small class="form-text">{{ form.vat_registration_date.help_text }}</small>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Section 4: Localization Settings -->
+                <div class="form-section">
+                    <div class="section-header" data-bs-toggle="collapse" data-bs-target="#localizationSection" aria-expanded="false">
+                        <div>
+                            <h3 class="section-title">
+                                <span class="section-icon"><i class="bi bi-globe"></i></span>
+                                {% trans "Localization Settings" %}
+                                <span class="required-indicator">*</span>
+                            </h3>
+                            <p class="section-description">{% trans "Regional preferences and formats" %}</p>
+                        </div>
+                        <i class="bi bi-chevron-down collapse-icon"></i>
+                    </div>
+                    <div class="collapse" id="localizationSection">
+                        <div class="section-body">
+                            <div class="form-row">
+                                <!-- Preferred Currency -->
+                                <div class="form-group">
+                                    <label for="{{ form.preferred_currency.id_for_label }}" class="form-label">
+                                        {{ form.preferred_currency.label }}
+                                    </label>
+                                    {{ form.preferred_currency }}
+                                    {% if form.preferred_currency.help_text %}
+                                        <small class="form-text">{{ form.preferred_currency.help_text }}</small>
+                                    {% endif %}
+                                </div>
+
+                                <!-- Time Zone -->
+                                <div class="form-group">
+                                    <label for="{{ form.time_zone.id_for_label }}" class="form-label">
+                                        {{ form.time_zone.label }}
+                                        <span class="required-indicator">*</span>
+                                    </label>
+                                    {{ form.time_zone }}
+                                    {% if form.time_zone.help_text %}
+                                        <small class="form-text">{{ form.time_zone.help_text }}</small>
+                                    {% endif %}
+                                    <div class="invalid-feedback"></div>
+                                </div>
+                            </div>
+
+                            <div class="form-row">
+                                <!-- Locale -->
+                                <div class="form-group">
+                                    <label for="{{ form.locale.id_for_label }}" class="form-label">
+                                        {{ form.locale.label }}
+                                        <span class="required-indicator">*</span>
+                                    </label>
+                                    {{ form.locale }}
+                                    {% if form.locale.help_text %}
+                                        <small class="form-text">{{ form.locale.help_text }}</small>
+                                    {% endif %}
+                                    <div class="invalid-feedback"></div>
+                                </div>
+
+                                <!-- Date Format -->
+                                <div class="form-group">
+                                    <label for="{{ form.date_format.id_for_label }}" class="form-label">
+                                        {{ form.date_format.label }}
+                                        <span class="required-indicator">*</span>
+                                    </label>
+                                    {{ form.date_format }}
+                                    {% if form.date_format.help_text %}
+                                        <small class="form-text">{{ form.date_format.help_text }}</small>
+                                    {% endif %}
+                                    <div class="invalid-feedback"></div>
+                                </div>
+                            </div>
+
+                            <!-- Time Format -->
+                            <div class="form-group">
+                                <label for="{{ form.time_format.id_for_label }}" class="form-label">
+                                    {{ form.time_format.label }}
+                                    <span class="required-indicator">*</span>
+                                </label>
+                                {{ form.time_format }}
+                                {% if form.time_format.help_text %}
+                                    <small class="form-text">{{ form.time_format.help_text }}</small>
+                                {% endif %}
+                                <div class="invalid-feedback"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Section 5: EFRIS Integration -->
+                <div class="form-section">
+                    <div class="section-header" data-bs-toggle="collapse" data-bs-target="#efrisSection" aria-expanded="false">
+                        <div>
+                            <h3 class="section-title">
+                                <span class="section-icon"><i class="bi bi-shield-check"></i></span>
+                                {% trans "EFRIS Integration" %}
+                            </h3>
+                            <p class="section-description">{% trans "Uganda Revenue Authority EFRIS configuration" %}</p>
+                        </div>
+                        <i class="bi bi-chevron-down collapse-icon"></i>
+                    </div>
+                    <div class="collapse" id="efrisSection">
+                        <div class="section-body">
+                            <!-- EFRIS Enabled Toggle -->
+                            <div class="form-check mb-3">
+                                {{ form.efris_enabled }}
+                                <label class="form-check-label" for="{{ form.efris_enabled.id_for_label }}">
+                                    {{ form.efris_enabled.label }}
+                                </label>
+                                {% if form.efris_enabled.help_text %}
+                                    <small class="form-text d-block">{{ form.efris_enabled.help_text }}</small>
+                                {% endif %}
+                            </div>
+
+                            <!-- EFRIS Configuration Fields (Hidden by default) -->
+                            <div id="efrisFields" class="efris-configuration" style="display: none;">
+                                <div class="efris-fields-wrapper">
+                                    <h5 class="mb-3 text-primary">
+                                        <i class="bi bi-gear me-2"></i>
+                                        {% trans "EFRIS Configuration" %}
+                                    </h5>
+
+                                    <!-- Environment and Mode -->
+                                    <div class="form-row">
+                                        <div class="form-group">
+                                            <label for="efris_environment" class="form-label">
+                                                {% trans "Environment" %}
+                                                <span class="required-indicator efris-required">*</span>
+                                            </label>
+                                            <select class="form-select" id="efris_environment" name="efris_environment">
+                                                <option value="sandbox">Sandbox/Testing</option>
+                                                <option value="production">Production</option>
+                                            </select>
+                                            <small class="form-text">{% trans "Use sandbox for testing, production for live data" %}</small>
+                                        </div>
+
+                                        <div class="form-group">
+                                            <label for="efris_mode" class="form-label">
+                                                {% trans "Mode" %}
+                                                <span class="required-indicator efris-required">*</span>
+                                            </label>
+                                            <select class="form-select" id="efris_mode" name="efris_mode">
+                                                <option value="online">Online Mode</option>
+                                                <option value="offline">Offline Mode</option>
+                                            </select>
+                                            <small class="form-text">{% trans "Online mode requires constant internet connection" %}</small>
+                                        </div>
+                                    </div>
+
+                                    <!-- Device Information -->
+                                    <div class="form-row">
+                                        <div class="form-group">
+                                            <label for="efris_device_number" class="form-label">
+                                                {% trans "Device Number" %}
+                                                <span class="required-indicator efris-required">*</span>
+                                            </label>
+                                            <input type="text" class="form-control" id="efris_device_number" name="efris_device_number"
+                                                   placeholder="{% trans 'e.g., 1026925503_01' %}">
+                                            <small class="form-text">{% trans "EFRIS registered device number" %}</small>
+                                        </div>
+
+                                        <div class="form-group">
+                                            <label for="efris_device_mac" class="form-label">
+                                                {% trans "Device MAC Address" %}
+                                            </label>
+                                            <input type="text" class="form-control" id="efris_device_mac" name="efris_device_mac"
+                                                   placeholder="{% trans 'FFFFFFFFFFFF' %}" value="FFFFFFFFFFFF">
+                                            <small class="form-text">{% trans "Device MAC address (default: FFFFFFFFFFFF)" %}</small>
+                                        </div>
+                                    </div>
+
+                                    <!-- API Configuration -->
+                                    <div class="form-group">
+                                        <label for="efris_api_base_url" class="form-label">
+                                            {% trans "API Base URL" %}
+                                        </label>
+                                        <input type="url" class="form-control" id="efris_api_base_url" name="efris_api_base_url"
+                                               placeholder="{% trans 'Leave empty for default EFRIS URLs' %}">
+                                        <small class="form-text">{% trans "Custom API URL (optional - uses URA defaults if empty)" %}</small>
+                                    </div>
+
+                                    <!-- Digital Certificates Section -->
+                                    <div class="certificate-section mt-4 p-3 bg-light rounded">
+                                        <h6 class="mb-3">
+                                            <i class="bi bi-key me-2"></i>
+                                            {% trans "Digital Certificates & Keys" %}
+                                        </h6>
+
+                                        <!-- Public Certificate -->
+                                        <div class="form-group">
+                                            <label for="efris_public_certificate" class="form-label">
+                                                {% trans "Public Certificate/Key" %}
+                                                <span class="required-indicator efris-required">*</span>
+                                            </label>
+                                            <textarea class="form-control" id="efris_public_certificate" name="efris_public_certificate"
+                                                      rows="4" placeholder="{% trans 'Paste X.509 certificate or public key (PEM format)' %}"></textarea>
+                                            <small class="form-text">
+                                                {% trans "X.509 Public Certificate or Public Key in PEM format" %}
+                                            </small>
+                                        </div>
+
+                                        <!-- Private Key -->
+                                        <div class="form-group">
+                                            <label for="efris_private_key" class="form-label">
+                                                {% trans "Private Key" %}
+                                            </label>
+                                            <textarea class="form-control" id="efris_private_key" name="efris_private_key"
+                                                      rows="4" placeholder="{% trans 'Paste private key (PEM format, optional)' %}"></textarea>
+                                            <small class="form-text">
+                                                {% trans "RSA Private Key in PEM format (required for signing)" %}
+                                            </small>
+                                        </div>
+
+                                        <!-- Key Password -->
+                                        <div class="form-group">
+                                            <label for="efris_key_password" class="form-label">
+                                                {% trans "Key Password" %}
+                                            </label>
+                                            <div class="input-group">
+                                                <input type="password" class="form-control" id="efris_key_password" name="efris_key_password"
+                                                       placeholder="{% trans 'Password for encrypted private key' %}">
+                                                <button class="btn btn-outline-secondary" type="button" id="toggleKeyPassword">
+                                                    <i class="bi bi-eye"></i>
+                                                </button>
+                                            </div>
+                                            <small class="form-text">{% trans "Password for encrypted private keys" %}</small>
+                                        </div>
+                                    </div>
+
+                                    <!-- Connection Settings -->
+                                    <div class="connection-settings mt-4 p-3 bg-light rounded">
+                                        <h6 class="mb-3">
+                                            <i class="bi bi-sliders me-2"></i>
+                                            {% trans "Connection Settings" %}
+                                        </h6>
+
+                                        <div class="form-row">
+                                            <div class="form-group">
+                                                <label for="efris_timeout_seconds" class="form-label">
+                                                    {% trans "Timeout (seconds)" %}
+                                                </label>
+                                                <input type="number" class="form-control" id="efris_timeout_seconds" name="efris_timeout_seconds"
+                                                       value="30" min="5" max="300">
+                                                <small class="form-text">{% trans "API request timeout in seconds" %}</small>
+                                            </div>
+
+                                            <div class="form-group">
+                                                <label for="efris_max_retry_attempts" class="form-label">
+                                                    {% trans "Max Retry Attempts" %}
+                                                </label>
+                                                <input type="number" class="form-control" id="efris_max_retry_attempts" name="efris_max_retry_attempts"
+                                                       value="3" min="1" max="10">
+                                                <small class="form-text">{% trans "Number of retry attempts for failed requests" %}</small>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <!-- Sync Settings -->
+                                    <div class="sync-settings mt-4 p-3 bg-light rounded">
+                                        <h6 class="mb-3">
+                                            <i class="bi bi-arrow-repeat me-2"></i>
+                                            {% trans "Sync Settings" %}
+                                        </h6>
+
+                                        <div class="form-row">
+                                            <div class="form-group">
+                                                <div class="form-check form-switch">
+                                                    <input class="form-check-input" type="checkbox" id="efris_auto_sync_enabled"
+                                                           name="efris_auto_sync_enabled" checked>
+                                                    <label class="form-check-label" for="efris_auto_sync_enabled">
+                                                        {% trans "Auto Sync Enabled" %}
+                                                    </label>
+                                                </div>
+                                                <small class="form-text">{% trans "Automatically sync with EFRIS periodically" %}</small>
+                                            </div>
+
+                                            <div class="form-group">
+                                                <div class="form-check form-switch">
+                                                    <input class="form-check-input" type="checkbox" id="efris_auto_fiscalize"
+                                                           name="efris_auto_fiscalize" checked>
+                                                    <label class="form-check-label" for="efris_auto_fiscalize">
+                                                        {% trans "Auto Fiscalize Sales" %}
+                                                    </label>
+                                                </div>
+                                                <small class="form-text">{% trans "Automatically fiscalize all sales transactions" %}</small>
+                                            </div>
+                                        </div>
+
+                                        <div class="form-group">
+                                            <label for="efris_sync_interval_minutes" class="form-label">
+                                                {% trans "Sync Interval (minutes)" %}
+                                            </label>
+                                            <input type="number" class="form-control" id="efris_sync_interval_minutes" name="efris_sync_interval_minutes"
+                                                   value="60" min="5" max="1440">
+                                            <small class="form-text">{% trans "How often to sync with EFRIS (in minutes)" %}</small>
+                                        </div>
+                                    </div>
+
+                                    <!-- Test Connection -->
+                                    <div class="efris-test-connection mt-3">
+                                        <button type="button" class="btn btn-outline-primary btn-sm" id="testEfrisConnection">
+                                            <i class="bi bi-plug me-1"></i>
+                                            {% trans "Test EFRIS Connection" %}
+                                        </button>
+                                        <div id="efrisTestResult" class="mt-2" style="display: none;"></div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- EFRIS Disabled Message -->
+                            <div id="efrisDisabledMessage" class="alert alert-info mt-3" style="display: none;">
+                                <div class="d-flex align-items-center">
+                                    <i class="bi bi-info-circle me-2"></i>
+                                    <div>
+                                        <strong>{% trans "EFRIS Integration Disabled" %}</strong>
+                                        <p class="mb-0">{% trans "Enable EFRIS integration to configure tax compliance settings and automatic fiscalization." %}</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Section 6: Subscription Plan -->
+                <div class="form-section">
+                    <div class="section-header" data-bs-toggle="collapse" data-bs-target="#planSection" aria-expanded="false">
+                        <div>
+                            <h3 class="section-title">
+                                <span class="section-icon"><i class="bi bi-credit-card"></i></span>
+                                {% trans "Subscription Plan" %}
+                            </h3>
+                            <p class="section-description">{% trans "Choose a subscription plan for this company" %}</p>
+                        </div>
+                        <i class="bi bi-chevron-down collapse-icon"></i>
+                    </div>
+                    <div class="collapse" id="planSection">
+                        <div class="section-body">
+                            <div class="form-group">
+                                <label for="{{ form.plan.id_for_label }}" class="form-label">
+                                    {{ form.plan.label }}
+                                </label>
+                                {{ form.plan }}
+                                {% if form.plan.help_text %}
+                                    <small class="form-text">{{ form.plan.help_text }}</small>
+                                {% endif %}
+                                <small class="form-text text-muted">
+                                    <i class="bi bi-info-circle me-1"></i>
+                                    {% trans "Free plan will be assigned if none selected" %}
+                                </small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Section 7: Branding -->
+                <div class="form-section">
+                    <div class="section-header" data-bs-toggle="collapse" data-bs-target="#brandingSection" aria-expanded="false">
+                        <div>
+                            <h3 class="section-title">
+                                <span class="section-icon"><i class="bi bi-palette"></i></span>
+                                {% trans "Branding" %}
+                            </h3>
+                            <p class="section-description">{% trans "Company logo and favicon" %}</p>
+                        </div>
+                        <i class="bi bi-chevron-down collapse-icon"></i>
+                    </div>
+                    <div class="collapse" id="brandingSection">
+                        <div class="section-body">
+                            <div class="form-row">
+                                <!-- Logo -->
+                                <div class="form-group">
+                                    <label for="{{ form.logo.id_for_label }}" class="form-label">
+                                        {{ form.logo.label }}
+                                    </label>
+                                    <div class="file-upload-wrapper">
+                                        {{ form.logo }}
+                                        <span class="file-name" id="logoFileName">{% trans "No file chosen" %}</span>
+                                    </div>
+                                    {% if form.logo.help_text %}
+                                        <small class="form-text">{{ form.logo.help_text }}</small>
+                                    {% endif %}
+                                </div>
+
+                                <!-- Favicon -->
+                                <div class="form-group">
+                                    <label for="{{ form.favicon.id_for_label }}" class="form-label">
+                                        {{ form.favicon.label }}
+                                    </label>
+                                    <div class="file-upload-wrapper">
+                                        {{ form.favicon }}
+                                        <span class="file-name" id="faviconFileName">{% trans "No file chosen" %}</span>
+                                    </div>
+                                    {% if form.favicon.help_text %}
+                                        <small class="form-text">{{ form.favicon.help_text }}</small>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Section 8: Domain Configuration -->
+                <div class="form-section">
+                    <div class="section-header" data-bs-toggle="collapse" data-bs-target="#domainSection" aria-expanded="false">
+                        <div>
+                            <h3 class="section-title">
+                                <span class="section-icon"><i class="bi bi-link-45deg"></i></span>
+                                {% trans "Domain Configuration" %}
+                            </h3>
+                            <p class="section-description">{% trans "Configure company domain settings" %}</p>
+                        </div>
+                        <i class="bi bi-chevron-down collapse-icon"></i>
+                    </div>
+                    <div class="collapse" id="domainSection">
+                        <div class="section-body">
+                            <!-- Domain Name -->
+                            <div class="form-group">
+                                <label for="domain_name" class="form-label">
+                                    {% trans "Domain Name" %}
+                                    <span class="auto-badge">{% trans "Auto-generated" %}</span>
+                                </label>
+                                <input type="text"
+                                       class="form-control"
+                                       id="domain_name"
+                                       name="domain_name"
+                                       placeholder="{% trans 'e.g., company.primebooks.sale' %}">
+                                <small class="form-text">{% trans "Leave blank to auto-generate from schema name" %}</small>
+                                <div class="preview-box">
+                                    <i class="bi bi-globe preview-icon"></i>
+                                    <span class="preview-label">{% trans "Domain:" %}</span>
+                                    <span class="preview-value" id="domainPreview">---</span>
+                                </div>
+                            </div>
+
+                            <!-- SSL Enabled -->
+                            <div class="form-check">
+                                <input type="checkbox"
+                                       class="form-check-input"
+                                       id="ssl_enabled"
+                                       name="ssl_enabled"
+                                       checked>
+                                <label class="form-check-label" for="ssl_enabled">
+                                    {% trans "Enable SSL (HTTPS)" %}
+                                </label>
+                                <small class="form-text d-block">{% trans "Recommended for production environments" %}</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Section 9: Default Store Setup -->
+                <div class="form-section">
+                    <div class="section-header" data-bs-toggle="collapse" data-bs-target="#storeSection" aria-expanded="false">
+                        <div>
+                            <h3 class="section-title">
+                                <span class="section-icon"><i class="bi bi-shop"></i></span>
+                                {% trans "Default Store Setup" %}
+                            </h3>
+                            <p class="section-description">{% trans "Configure the main store/branch for this company" %}</p>
+                        </div>
+                        <i class="bi bi-chevron-down collapse-icon"></i>
+                    </div>
+                    <div class="collapse" id="storeSection">
+                        <div class="section-body">
+                            <!-- Store Name -->
+                            <div class="form-group">
+                                <label for="store_name" class="form-label">
+                                    {% trans "Store Name" %}
+                                </label>
+                                <input type="text"
+                                       class="form-control"
+                                       id="store_name"
+                                       name="store_name"
+                                       placeholder="{% trans 'e.g., Main Branch' %}">
+                                <small class="form-text">{% trans "Leave blank to use company name + 'Main Store'" %}</small>
+                            </div>
+
+                            <!-- Store Region -->
+                            <div class="form-group">
+                                <label for="store_region" class="form-label">
+                                    {% trans "Store Region/District" %}
+                                </label>
+                                <input type="text"
+                                       class="form-control"
+                                       id="store_region"
+                                       name="store_region"
+                                       placeholder="{% trans 'e.g., Kampala, Entebbe, Jinja' %}">
+                                <small class="form-text">{% trans "Geographic location of the store" %}</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Section 10: Admin User Creation -->
+                <div class="form-section">
+                    <div class="section-header" data-bs-toggle="collapse" data-bs-target="#adminSection" aria-expanded="false">
+                        <div>
+                            <h3 class="section-title">
+                                <span class="section-icon"><i class="bi bi-person-badge"></i></span>
+                                {% trans "Admin User Creation" %}
+                            </h3>
+                            <p class="section-description">{% trans "Create an administrator account for this company" %}</p>
+                        </div>
+                        <i class="bi bi-chevron-down collapse-icon"></i>
+                    </div>
+                    <div class="collapse" id="adminSection">
+                        <div class="section-body">
+                            <!-- Create Admin User Checkbox -->
+                            <div class="form-check mb-3">
+                                <input type="checkbox"
+                                       class="form-check-input"
+                                       id="create_admin_user"
+                                       name="create_admin_user"
+                                       value="true">
+                                <label class="form-check-label" for="create_admin_user">
+                                    {% trans "Create administrator user for this company" %}
+                                </label>
+                            </div>
+
+                            <!-- Admin User Fields -->
+                            <div class="admin-fields" id="adminUserFields">
+                                <h5 class="mb-3">{% trans "Administrator Details" %}</h5>
+
+                                <div class="form-row">
+                                    <!-- First Name -->
+                                    <div class="form-group">
+                                        <label for="admin_first_name" class="form-label">
+                                            {% trans "First Name" %}
+                                            <span class="required-indicator admin-required">*</span>
+                                        </label>
+                                        <input type="text"
+                                               class="form-control"
+                                               id="admin_first_name"
+                                               name="admin_first_name"
+                                               placeholder="{% trans 'Admin first name' %}">
+                                        <div class="invalid-feedback"></div>
+                                    </div>
+
+                                    <!-- Last Name -->
+                                    <div class="form-group">
+                                        <label for="admin_last_name" class="form-label">
+                                            {% trans "Last Name" %}
+                                            <span class="required-indicator admin-required">*</span>
+                                        </label>
+                                        <input type="text"
+                                               class="form-control"
+                                               id="admin_last_name"
+                                               name="admin_last_name"
+                                               placeholder="{% trans 'Admin last name' %}">
+                                        <div class="invalid-feedback"></div>
+                                    </div>
+                                </div>
+
+                                <!-- Email -->
+                                <div class="form-group">
+                                    <label for="admin_email" class="form-label">
+                                        {% trans "Email Address" %}
+                                        <span class="required-indicator admin-required">*</span>
+                                    </label>
+                                    <input type="email"
+                                           class="form-control"
+                                           id="admin_email"
+                                           name="admin_email"
+                                           placeholder="{% trans 'admin@example.com' %}">
+                                    <div class="invalid-feedback"></div>
+                                </div>
+
+                                <div class="form-row">
+                                    <!-- Username -->
+                                    <div class="form-group">
+                                        <label for="admin_username" class="form-label">
+                                            {% trans "Username" %}
+                                            <span class="required-indicator admin-required">*</span>
+                                        </label>
+                                        <input type="text"
+                                               class="form-control"
+                                               id="admin_username"
+                                               name="admin_username"
+                                               placeholder="{% trans 'admin_username' %}">
+                                        <small class="form-text">{% trans "Must be at least 3 characters" %}</small>
+                                        <div class="invalid-feedback"></div>
+                                    </div>
+
+                                    <!-- Password -->
+                                    <div class="form-group">
+                                        <label for="admin_password" class="form-label">
+                                            {% trans "Password" %}
+                                            <span class="required-indicator admin-required">*</span>
+                                        </label>
+                                        <div class="input-group">
+                                            <input type="password"
+                                                   class="form-control"
+                                                   id="admin_password"
+                                                   name="admin_password"
+                                                   placeholder="{% trans '••••••••' %}">
+                                            <button class="btn btn-outline-secondary"
+                                                    type="button"
+                                                    id="togglePassword">
+                                                <i class="bi bi-eye"></i>
+                                            </button>
+                                        </div>
+                                        <small class="form-text">{% trans "Must be at least 8 characters" %}</small>
+                                        <div class="invalid-feedback"></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Section 11: Security & Additional Settings -->
+                <div class="form-section">
+                    <div class="section-header" data-bs-toggle="collapse" data-bs-target="#securitySection" aria-expanded="false">
+                        <div>
+                            <h3 class="section-title">
+                                <span class="section-icon"><i class="bi bi-lock"></i></span>
+                                {% trans "Security & Additional Settings" %}
+                            </h3>
+                            <p class="section-description">{% trans "Security preferences and internal notes" %}</p>
+                        </div>
+                        <i class="bi bi-chevron-down collapse-icon"></i>
+                    </div>
+                    <div class="collapse" id="securitySection">
+                        <div class="section-body">
+                            <!-- Two Factor Required -->
+                            <div class="form-check mb-3">
+                                {{ form.two_factor_required }}
+                                <label class="form-check-label" for="{{ form.two_factor_required.id_for_label }}">
+                                    {{ form.two_factor_required.label }}
+                                </label>
+                                {% if form.two_factor_required.help_text %}
+                                    <small class="form-text d-block">{{ form.two_factor_required.help_text }}</small>
+                                {% endif %}
+                            </div>
+
+                            <!-- Internal Notes -->
+                            <div class="form-group">
+                                <label for="{{ form.notes.id_for_label }}" class="form-label">
+                                    {{ form.notes.label }}
+                                </label>
+                                {{ form.notes }}
+                                {% if form.notes.help_text %}
+                                    <small class="form-text">{{ form.notes.help_text }}</small>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Sticky Submit Bar -->
+                <div class="sticky-submit-bar">
+                    <div class="btn-group-actions">
+                        <button type="submit" class="btn btn-primary btn-lg" id="submitBtn">
+                            <span class="spinner-border spinner-border-sm me-2" role="status" style="display: none;" id="submitSpinner"></span>
+                            <i class="bi bi-check-circle me-2" id="submitIcon"></i>
+                            {% trans "Create Company" %}
+                        </button>
+                        <a href="{% url 'companies:company_list' %}" class="btn btn-outline-secondary btn-lg">
+                            <i class="bi bi-x-circle me-2"></i>
+                            {% trans "Cancel" %}
+                        </a>
+                    </div>
+                </div>
+
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const form = document.getElementById('companyForm');
+    const submitBtn = document.getElementById('submitBtn');
+    const submitSpinner = document.getElementById('submitSpinner');
+    const submitIcon = document.getElementById('submitIcon');
+
+    // ==============================================
+    // AUTO-GENERATION PREVIEWS
+    // ==============================================
+
+    // Schema name generation and preview
+    const nameField = document.getElementById('{{ form.name.id_for_label }}');
+    const tradingNameField = document.getElementById('{{ form.trading_name.id_for_label }}');
+    const schemaField = document.getElementById('{{ form.schema_name.id_for_label }}');
+    const schemaPreview = document.getElementById('schemaPreview');
+
+    function generateSchemaName(text) {
+        if (!text) return '';
+        // Convert to lowercase, replace spaces and special chars with underscore
+        let schema = text.toLowerCase()
+            .replace(/[^a-z0-9\s-]/g, '')
+            .replace(/[\s-]+/g, '_')
+            .substring(0, 50);
+
+        // Ensure it starts with a letter
+        if (schema && !/^[a-z]/.test(schema)) {
+            schema = 'company_' + schema;
+        }
+
+        return schema;
+    }
+
+    function updateSchemaPreview() {
+        const baseName = tradingNameField.value || nameField.value;
+        if (schemaField.value.trim()) {
+            schemaPreview.textContent = schemaField.value.trim();
+        } else if (baseName) {
+            const generated = generateSchemaName(baseName);
+            schemaPreview.textContent = generated || '---';
+            schemaPreview.style.fontStyle = 'italic';
+            schemaPreview.style.opacity = '0.7';
+        } else {
+            schemaPreview.textContent = '---';
+        }
+    }
+
+    nameField.addEventListener('input', updateSchemaPreview);
+    tradingNameField.addEventListener('input', updateSchemaPreview);
+    schemaField.addEventListener('input', function() {
+        schemaPreview.style.fontStyle = 'normal';
+        schemaPreview.style.opacity = '1';
+        updateSchemaPreview();
+    });
+
+    // Domain name generation and preview
+    const domainField = document.getElementById('domain_name');
+    const domainPreview = document.getElementById('domainPreview');
+    const baseDomain = '{{ settings.BASE_DOMAIN|default:"primebooks.sale" }}';
+
+    function updateDomainPreview() {
+        if (domainField.value.trim()) {
+            domainPreview.textContent = domainField.value.trim();
+            domainPreview.style.fontStyle = 'normal';
+            domainPreview.style.opacity = '1';
+        } else {
+            const schema = schemaField.value || generateSchemaName(tradingNameField.value || nameField.value);
+            if (schema) {
+                domainPreview.textContent = `${schema}.${baseDomain}`;
+                domainPreview.style.fontStyle = 'italic';
+                domainPreview.style.opacity = '0.7';
+            } else {
+                domainPreview.textContent = '---';
+            }
+        }
+    }
+
+    domainField.addEventListener('input', updateDomainPreview);
+    schemaField.addEventListener('input', updateDomainPreview);
+    nameField.addEventListener('input', updateDomainPreview);
+    tradingNameField.addEventListener('input', updateDomainPreview);
+
+    // Initial preview update
+    updateSchemaPreview();
+    updateDomainPreview();
+
+    // ==============================================
+    // EFRIS CONDITIONAL FIELDS
+    // ==============================================
+
+    const efrisEnabledCheckbox = document.getElementById('{{ form.efris_enabled.id_for_label }}');
+    const efrisFields = document.getElementById('efrisFields');
+    const efrisDisabledMessage = document.getElementById('efrisDisabledMessage');
+    const efrisRequiredFields = document.querySelectorAll('.efris-required');
+    const toggleKeyPassword = document.getElementById('toggleKeyPassword');
+    const testEfrisConnection = document.getElementById('testEfrisConnection');
+    const efrisTestResult = document.getElementById('efrisTestResult');
+
+    // EFRIS required field IDs
+    const efrisRequiredFieldIds = [
+        'efris_environment',
+        'efris_mode',
+        'efris_device_number',
+        'efris_public_certificate'
+    ];
+
+    // Toggle EFRIS fields based on checkbox state
+    function toggleEfrisFields() {
+        if (efrisEnabledCheckbox.checked) {
+            // Show EFRIS configuration fields
+            efrisFields.style.display = 'block';
+            efrisDisabledMessage.style.display = 'none';
+
+            // Make EFRIS fields required
+            efrisRequiredFields.forEach(indicator => {
+                indicator.style.display = 'inline';
+            });
+
+            // Add required attribute to EFRIS fields
+            efrisRequiredFieldIds.forEach(fieldId => {
+                const field = document.getElementById(fieldId);
+                if (field) field.required = true;
+            });
+
+        } else {
+            // Hide EFRIS configuration fields
+            efrisFields.style.display = 'none';
+            efrisDisabledMessage.style.display = 'block';
+
+            // Hide required indicators
+            efrisRequiredFields.forEach(indicator => {
+                indicator.style.display = 'none';
+            });
+
+            // Remove required attribute from EFRIS fields
+            efrisRequiredFieldIds.forEach(fieldId => {
+                const field = document.getElementById(fieldId);
+                if (field) field.required = false;
+            });
+
+            // Clear test result
+            efrisTestResult.style.display = 'none';
+        }
+    }
+
+    // Initial state
+    toggleEfrisFields();
+
+    // Event listener for checkbox change
+    efrisEnabledCheckbox.addEventListener('change', toggleEfrisFields);
+
+    // Toggle key password visibility
+    if (toggleKeyPassword) {
+        toggleKeyPassword.addEventListener('click', function() {
+            const passwordField = document.getElementById('efris_key_password');
+            const type = passwordField.getAttribute('type') === 'password' ? 'text' : 'password';
+            passwordField.setAttribute('type', type);
+            this.querySelector('i').classList.toggle('bi-eye');
+            this.querySelector('i').classList.toggle('bi-eye-slash');
+        });
+    }
+
+    // Test EFRIS connection
+    if (testEfrisConnection) {
+        testEfrisConnection.addEventListener('click', function() {
+            const environment = document.getElementById('efris_environment').value;
+            const deviceNumber = document.getElementById('efris_device_number').value;
+            const publicCertificate = document.getElementById('efris_public_certificate').value;
+
+            // Basic validation
+            if (!environment || !deviceNumber || !publicCertificate) {
+                showEfrisTestResult('Please fill all required EFRIS fields before testing.', 'danger');
+                return;
+            }
+
+            // Show loading state
+            testEfrisConnection.disabled = true;
+            testEfrisConnection.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Testing...';
+
+            // Simulate API call (replace with actual EFRIS API call)
+            setTimeout(() => {
+                // This would be replaced with actual EFRIS API integration
+                const isSuccess = Math.random() > 0.3; // Simulate 70% success rate
+
+                if (isSuccess) {
+                    showEfrisTestResult('✅ EFRIS configuration valid! Connection test successful.', 'success');
+                } else {
+                    showEfrisTestResult('❌ EFRIS connection failed. Please check your configuration.', 'danger');
+                }
+
+                testEfrisConnection.disabled = false;
+                testEfrisConnection.innerHTML = '<i class="bi bi-plug me-1"></i> Test EFRIS Connection';
+            }, 2000);
+        });
+    }
+
+    function showEfrisTestResult(message, type) {
+        efrisTestResult.textContent = message;
+        efrisTestResult.className = `alert alert-${type} mt-2`;
+        efrisTestResult.style.display = 'block';
+    }
+
+    // ==============================================
+    // ADMIN USER CONDITIONAL FIELDS
+    // ==============================================
+
+    const createAdminCheckbox = document.getElementById('create_admin_user');
+    const adminUserFields = document.getElementById('adminUserFields');
+
+    function toggleAdminFields() {
+        if (createAdminCheckbox.checked) {
+            adminUserFields.classList.add('show');
+            // Make admin fields required
+            document.getElementById('admin_email').required = true;
+            document.getElementById('admin_username').required = true;
+            document.getElementById('admin_password').required = true;
+            document.getElementById('admin_first_name').required = true;
+            document.getElementById('admin_last_name').required = true;
+        } else {
+            adminUserFields.classList.remove('show');
+            // Remove required
+            document.getElementById('admin_email').required = false;
+            document.getElementById('admin_username').required = false;
+            document.getElementById('admin_password').required = false;
+            document.getElementById('admin_first_name').required = false;
+            document.getElementById('admin_last_name').required = false;
+        }
+    }
+
+    createAdminCheckbox.addEventListener('change', toggleAdminFields);
+    toggleAdminFields(); // Initial state
+
+    // ==============================================
+    // PASSWORD TOGGLE
+    // ==============================================
+
+    const togglePassword = document.getElementById('togglePassword');
+    const passwordField = document.getElementById('admin_password');
+
+    if (togglePassword) {
+        togglePassword.addEventListener('click', function() {
+            const type = passwordField.getAttribute('type') === 'password' ? 'text' : 'password';
+            passwordField.setAttribute('type', type);
+            this.querySelector('i').classList.toggle('bi-eye');
+            this.querySelector('i').classList.toggle('bi-eye-slash');
+        });
+    }
+
+    // ==============================================
+    // FILE UPLOAD PREVIEW
+    // ==============================================
+
+    const logoInput = document.getElementById('{{ form.logo.id_for_label }}');
+    const faviconInput = document.getElementById('{{ form.favicon.id_for_label }}');
+
+    if (logoInput) {
+        logoInput.addEventListener('change', function() {
+            const fileName = this.files[0] ? this.files[0].name : '{% trans "No file chosen" %}';
+            document.getElementById('logoFileName').textContent = fileName;
+        });
+    }
+
+    if (faviconInput) {
+        faviconInput.addEventListener('change', function() {
+            const fileName = this.files[0] ? this.files[0].name : '{% trans "No file chosen" %}';
+            document.getElementById('faviconFileName').textContent = fileName;
+        });
+    }
+
+    // ==============================================
+    // REAL-TIME VALIDATION
+    // ==============================================
+
+    // Email validation
+    function validateEmail(email) {
+        const re = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        return re.test(email);
+    }
+
+    // Phone validation
+    function validatePhone(phone) {
+        const re = /^\+?[0-9]+$/;
+        return re.test(phone);
+    }
+
+    // Schema name validation
+    function validateSchema(schema) {
+        const re = /^[a-z][a-z0-9_]*$/;
+        return re.test(schema);
+    }
+
+    // TIN validation
+    function validateTIN(tin) {
+        return tin.length >= 8 && /^[A-Z0-9-]+$/.test(tin);
+    }
+
+    function showValidation(field, isValid, message = '') {
+        const feedbackDiv = field.parentElement.querySelector('.invalid-feedback');
+
+        if (isValid) {
+            field.classList.remove('is-invalid');
+            field.classList.add('is-valid');
+            if (feedbackDiv) feedbackDiv.textContent = '';
+        } else {
+            field.classList.remove('is-valid');
+            field.classList.add('is-invalid');
+            if (feedbackDiv) feedbackDiv.textContent = message;
+        }
+    }
+
+    // Email field validation
+    const emailField = document.getElementById('{{ form.email.id_for_label }}');
+    if (emailField) {
+        emailField.addEventListener('blur', function() {
+            if (this.value) {
+                showValidation(this, validateEmail(this.value), '{% trans "Please enter a valid email address" %}');
+            } else {
+                this.classList.remove('is-valid', 'is-invalid');
+            }
+        });
+    }
+
+    // Phone field validation
+    const phoneField = document.getElementById('{{ form.phone.id_for_label }}');
+    if (phoneField) {
+        phoneField.addEventListener('blur', function() {
+            if (this.value) {
+                showValidation(this, validatePhone(this.value), '{% trans "Please enter a valid phone number (e.g., +256700000000)" %}');
+            } else {
+                this.classList.remove('is-valid', 'is-invalid');
+            }
+        });
+    }
+
+    // Schema name validation
+    if (schemaField) {
+        schemaField.addEventListener('blur', function() {
+            if (this.value) {
+                showValidation(this, validateSchema(this.value), '{% trans "Schema name must start with a letter and contain only lowercase letters, numbers, and underscores" %}');
+            }
+        });
+    }
+
+    // TIN validation
+    const tinField = document.getElementById('{{ form.tin.id_for_label }}');
+    if (tinField) {
+        tinField.addEventListener('input', function() {
+            this.value = this.value.toUpperCase();
+        });
+
+        tinField.addEventListener('blur', function() {
+            if (this.value) {
+                showValidation(this, validateTIN(this.value), '{% trans "TIN must be at least 8 characters and contain only letters, numbers, and hyphens" %}');
+            } else {
+                this.classList.remove('is-valid', 'is-invalid');
+            }
+        });
+    }
+
+    // Admin email validation
+    const adminEmailField = document.getElementById('admin_email');
+    if (adminEmailField) {
+        adminEmailField.addEventListener('blur', function() {
+            if (createAdminCheckbox.checked && this.value) {
+                showValidation(this, validateEmail(this.value), '{% trans "Please enter a valid email address" %}');
+            }
+        });
+    }
+
+    // Admin username validation
+    const adminUsernameField = document.getElementById('admin_username');
+    if (adminUsernameField) {
+        adminUsernameField.addEventListener('blur', function() {
+            if (createAdminCheckbox.checked && this.value) {
+                const isValid = this.value.length >= 3;
+                showValidation(this, isValid, '{% trans "Username must be at least 3 characters" %}');
+            }
+        });
+    }
+
+    // Admin password validation
+    if (passwordField) {
+        passwordField.addEventListener('blur', function() {
+            if (createAdminCheckbox.checked && this.value) {
+                const isValid = this.value.length >= 8;
+                showValidation(this, isValid, '{% trans "Password must be at least 8 characters" %}');
+            }
+        });
+    }
+
+    // ==============================================
+    // FORM PROGRESS TRACKING
+    // ==============================================
+
+    const formProgress = document.getElementById('formProgress');
+    const progressBar = document.getElementById('progressBar');
+    const progressPercentage = document.getElementById('progressPercentage');
+
+    function calculateProgress() {
+        const requiredFields = form.querySelectorAll('[required]');
+        let filledFields = 0;
+
+        requiredFields.forEach(field => {
+            if (field.type === 'checkbox') {
+                if (field.checked) filledFields++;
+            } else if (field.value.trim()) {
+                filledFields++;
+            }
+        });
+
+        const percentage = Math.round((filledFields / requiredFields.length) * 100);
+        progressBar.style.width = percentage + '%';
+        progressPercentage.textContent = percentage + '%';
+
+        if (percentage > 0) {
+            formProgress.classList.add('show');
+        }
+    }
+
+    // Update progress on any field change
+    form.addEventListener('input', calculateProgress);
+    form.addEventListener('change', calculateProgress);
+
+    // ==============================================
+    // FORM SUBMISSION
+    // ==============================================
+
+    form.addEventListener('submit', function(e) {
+        // Show loading state
+        submitBtn.disabled = true;
+        submitSpinner.style.display = 'inline-block';
+        submitIcon.style.display = 'none';
+
+        // Validate required fields
+        let isValid = true;
+        const requiredFields = form.querySelectorAll('[required]');
+
+        requiredFields.forEach(field => {
+            if (!field.value.trim() && field.type !== 'checkbox') {
+                showValidation(field, false, '{% trans "This field is required" %}');
+                isValid = false;
+            }
+        });
+
+        // Validate admin fields if creating admin user
+        if (createAdminCheckbox.checked) {
+            const adminFields = [
+                'admin_first_name',
+                'admin_last_name',
+                'admin_email',
+                'admin_username',
+                'admin_password'
+            ];
+
+            adminFields.forEach(fieldId => {
+                const field = document.getElementById(fieldId);
+                if (field && !field.value.trim()) {
+                    showValidation(field, false, '{% trans "This field is required" %}');
+                    isValid = false;
+                }
+            });
+
+            // Validate admin email format
+            if (adminEmailField && adminEmailField.value && !validateEmail(adminEmailField.value)) {
+                showValidation(adminEmailField, false, '{% trans "Please enter a valid email address" %}');
+                isValid = false;
+            }
+
+            // Validate admin username length
+            if (adminUsernameField && adminUsernameField.value && adminUsernameField.value.length < 3) {
+                showValidation(adminUsernameField, false, '{% trans "Username must be at least 3 characters" %}');
+                isValid = false;
+            }
+
+            // Validate admin password length
+            if (passwordField && passwordField.value && passwordField.value.length < 8) {
+                showValidation(passwordField, false, '{% trans "Password must be at least 8 characters" %}');
+                isValid = false;
+            }
+        }
+
+        // Validate EFRIS fields if enabled
+        if (efrisEnabledCheckbox.checked) {
+            let efrisValid = true;
+            efrisRequiredFieldIds.forEach(fieldId => {
+                const field = document.getElementById(fieldId);
+                if (field && !field.value.trim()) {
+                    showValidation(field, false, '{% trans "This field is required for EFRIS integration" %}');
+                    efrisValid = false;
+                    isValid = false;
+                }
+            });
+
+            if (!efrisValid) {
+                // Scroll to EFRIS section if there are errors
+                document.getElementById('efrisSection').scrollIntoView({ behavior: 'smooth' });
+            }
+        }
+
+        if (!isValid) {
+            e.preventDefault();
+            // Scroll to first error
+            const firstError = form.querySelector('.is-invalid');
+            if (firstError) {
+                firstError.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+
+            // Reset button state
+            submitBtn.disabled = false;
+            submitSpinner.style.display = 'none';
+            submitIcon.style.display = 'inline-block';
+        }
+        // If valid, form will submit normally
+    });
+
+    // ==============================================
+    // SECTION COLLAPSE/EXPAND MANAGEMENT
+    // ==============================================
+
+    // Auto-expand sections with errors on page load
+    document.querySelectorAll('.is-invalid').forEach(invalidField => {
+        const section = invalidField.closest('.form-section');
+        if (section) {
+            const collapseElement = section.querySelector('.collapse');
+            if (collapseElement) {
+                new bootstrap.Collapse(collapseElement, { toggle: false }).show();
+            }
+        }
+    });
+
+    // Initialize all collapse elements
+    const collapseElements = document.querySelectorAll('.collapse');
+    collapseElements.forEach(collapseEl => {
+        // Initialize Bootstrap Collapse
+        new bootstrap.Collapse(collapseEl, { toggle: false });
+    });
+
+    // Update section header aria-expanded on toggle
+    document.querySelectorAll('.section-header').forEach(header => {
+        header.addEventListener('click', function() {
+            const target = document.querySelector(this.getAttribute('data-bs-target'));
+            const isExpanded = target.classList.contains('show');
+            this.setAttribute('aria-expanded', isExpanded);
+        });
+    });
+// Add this to your JavaScript to debug form submission
+form.addEventListener('submit', function(e) {
+    console.log('EFRIS Enabled:', efrisEnabledCheckbox.checked);
+    console.log('Device Number:', document.getElementById('efris_device_number').value);
+    console.log('Public Certificate:', document.getElementById('efris_public_certificate').value);
+
+    // Check if EFRIS fields are being recognized as filled
+    efrisRequiredFieldIds.forEach(fieldId => {
+        const field = document.getElementById(fieldId);
+        console.log(`${fieldId}:`, field.value, 'Length:', field.value.length);
+    });
+});
+    // ==============================================
+    // KEYBOARD SHORTCUTS
+    // ==============================================
+
+    document.addEventListener('keydown', function(e) {
+        // Ctrl + Enter to submit form
+        if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+            e.preventDefault();
+            form.dispatchEvent(new Event('submit'));
+        }
+
+        // Escape to cancel
+        if (e.key === 'Escape') {
+            const cancelBtn = document.querySelector('a[href*="company_list"]');
+            if (cancelBtn) {
+                cancelBtn.click();
+            }
+        }
+    });
+
+    // ==============================================
+    // INITIALIZATION
+    // ==============================================
+
+    // Calculate initial progress
+    calculateProgress();
+
+    console.log('Company creation form initialized successfully');
+});
+</script>
+{% endblock %}

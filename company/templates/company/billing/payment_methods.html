@@ -1,0 +1,309 @@
+{% extends "base.html" %}
+{% load static i18n %}
+
+{% block title %}{% trans "Payment Methods" %} - {{ company.trading_name|default:company.name }}{% endblock %}
+
+{% block breadcrumb %}
+{{ block.super }}
+<li class="breadcrumb-item"><a href="{% url 'companies:billing_history' %}">{% trans "Billing" %}</a></li>
+<li class="breadcrumb-item active">{% trans "Payment Methods" %}</li>
+{% endblock %}
+
+{% block page_header %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h1 class="h3 mb-1">{% trans "Payment Methods" %}</h1>
+        <p class="text-muted mb-0">{% trans "Manage your payment methods" %}</p>
+    </div>
+    <div>
+        <a href="{% url 'companies:billing_history' %}" class="btn btn-outline-primary">
+            <i class="bi bi-arrow-left me-1"></i>{% trans "Back to History" %}
+        </a>
+    </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-lg-8">
+        <!-- Current Payment Methods -->
+        <div class="card border-0 shadow-sm mb-4">
+            <div class="card-header bg-transparent border-0">
+                <h5 class="card-title mb-0">{% trans "Your Payment Methods" %}</h5>
+            </div>
+            <div class="card-body">
+                {% if payment_methods %}
+                    <div class="row">
+                        {% for method in payment_methods %}
+                        <div class="col-md-6 mb-3">
+                            <div class="card {% if method.is_default %}border-primary{% else %}border{% endif %} h-100">
+                                <div class="card-body">
+                                    <div class="d-flex justify-content-between align-items-start mb-2">
+                                        <div>
+                                            <h6 class="mb-1">
+                                                {{ method.type|title }}
+                                                {% if method.is_default %}
+                                                    <span class="badge bg-primary ms-1">{% trans "Default" %}</span>
+                                                {% endif %}
+                                            </h6>
+                                            <p class="text-muted mb-1 small">{{ method.details }}</p>
+                                        </div>
+                                        <div class="dropdown">
+                                            <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown">
+                                                <i class="bi bi-three-dots"></i>
+                                            </button>
+                                            <ul class="dropdown-menu">
+                                                {% if not method.is_default %}
+                                                <li>
+                                                    <a class="dropdown-item" href="#" onclick="setDefaultMethod('{{ method.id }}')">
+                                                        <i class="bi bi-check-circle me-2"></i>{% trans "Set as Default" %}
+                                                    </a>
+                                                </li>
+                                                {% endif %}
+                                                <li>
+                                                    <a class="dropdown-item text-danger" href="#" onclick="removeMethod('{{ method.id }}')">
+                                                        <i class="bi bi-trash me-2"></i>{% trans "Remove" %}
+                                                    </a>
+                                                </li>
+                                            </ul>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                {% else %}
+                    <div class="text-center py-4">
+                        <i class="bi bi-credit-card fs-1 text-muted mb-3"></i>
+                        <h5 class="text-muted">{% trans "No payment methods" %}</h5>
+                        <p class="text-muted mb-3">{% trans "Add a payment method to get started" %}</p>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Add New Payment Method -->
+        <div class="card border-0 shadow-sm">
+            <div class="card-header bg-transparent border-0">
+                <h5 class="card-title mb-0">{% trans "Add Payment Method" %}</h5>
+            </div>
+            <div class="card-body">
+                <form id="addPaymentForm">
+                    {% csrf_token %}
+                    <div class="mb-3">
+                        <label class="form-label">{% trans "Payment Type" %}</label>
+                        <select name="payment_type" class="form-select" required>
+                            <option value="">{% trans "Select payment type" %}</option>
+                            <option value="credit_card">{% trans "Credit Card" %}</option>
+                            <option value="debit_card">{% trans "Debit Card" %}</option>
+                            <option value="bank_transfer">{% trans "Bank Transfer" %}</option>
+                            <option value="paypal">{% trans "PayPal" %}</option>
+                            <option value="mobile_money">{% trans "Mobile Money" %}</option>
+                        </select>
+                    </div>
+
+                    <!-- Credit Card Fields (shown when credit/debit card is selected) -->
+                    <div id="cardFields" style="display: none;">
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label class="form-label">{% trans "Card Number" %}</label>
+                                    <input type="text" class="form-control" name="card_number" placeholder="1234 5678 9012 3456">
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="mb-3">
+                                    <label class="form-label">{% trans "Expiry Date" %}</label>
+                                    <input type="text" class="form-control" name="expiry_date" placeholder="MM/YY">
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="mb-3">
+                                    <label class="form-label">{% trans "CVV" %}</label>
+                                    <input type="text" class="form-control" name="cvv" placeholder="123">
+                                </div>
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">{% trans "Cardholder Name" %}</label>
+                            <input type="text" class="form-control" name="cardholder_name">
+                        </div>
+                    </div>
+
+                    <!-- Other payment method fields can be added here -->
+
+                    <div class="form-check mb-3">
+                        <input class="form-check-input" type="checkbox" name="set_as_default" id="setAsDefault">
+                        <label class="form-check-label" for="setAsDefault">
+                            {% trans "Set as default payment method" %}
+                        </label>
+                    </div>
+
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-plus-circle me-1"></i>{% trans "Add Payment Method" %}
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-4">
+        <!-- Billing Information -->
+        <div class="card border-0 shadow-sm">
+            <div class="card-header bg-transparent border-0">
+                <h5 class="card-title mb-0">{% trans "Billing Information" %}</h5>
+            </div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <strong>{% trans "Current Plan:" %}</strong><br>
+                    {% if current_plan %}
+                        <span class="badge bg-info">{{ current_plan.display_name|default:current_plan.name }}</span>
+                    {% else %}
+                        <span class="text-muted">{% trans "No active plan" %}</span>
+                    {% endif %}
+                </div>
+
+                <div class="mb-3">
+                    <strong>{% trans "Billing Email:" %}</strong><br>
+                    <span class="text-muted">{{ company.billing_email|default:company.email }}</span>
+                </div>
+
+                <div class="mb-3">
+                    <strong>{% trans "Billing Address:" %}</strong><br>
+                    <span class="text-muted">
+                        {% if company.physical_address %}
+                            {{ company.physical_address }}
+                        {% else %}
+                            {% trans "Not specified" %}
+                        {% endif %}
+                    </span>
+                </div>
+
+                <hr>
+
+                <div class="d-grid">
+                    <a href="{% url 'companies:billing_settings' %}" class="btn btn-outline-primary">
+                        <i class="bi bi-gear me-1"></i>{% trans "Update Billing Settings" %}
+                    </a>
+                </div>
+            </div>
+        </div>
+
+        <!-- Security Notice -->
+        <div class="card border-0 shadow-sm mt-4">
+            <div class="card-body">
+                <div class="d-flex align-items-start">
+                    <i class="bi bi-shield-check text-success me-2 mt-1"></i>
+                    <div>
+                        <h6 class="mb-1">{% trans "Secure Payments" %}</h6>
+                        <p class="small text-muted mb-0">
+                            {% trans "Your payment information is encrypted and secure. We never store your full card details." %}
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// Show/hide card fields based on payment type selection
+document.querySelector('select[name="payment_type"]').addEventListener('change', function() {
+    const cardFields = document.getElementById('cardFields');
+    if (this.value === 'credit_card' || this.value === 'debit_card') {
+        cardFields.style.display = 'block';
+    } else {
+        cardFields.style.display = 'none';
+    }
+});
+
+// Handle form submission
+document.getElementById('addPaymentForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+
+    const formData = new FormData(this);
+
+    fetch('{% url "companies:add_payment_method" %}', {
+        method: 'POST',
+        body: formData,
+        headers: {
+            'X-Requested-With': 'XMLHttpRequest',
+        },
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showNotification(data.message, 'success');
+            setTimeout(() => {
+                location.reload();
+            }, 1500);
+        } else {
+            showNotification(data.message, 'error');
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        showNotification('{% trans "An error occurred" %}', 'error');
+    });
+});
+
+function setDefaultMethod(methodId) {
+    // Implementation for setting default payment method
+    showNotification('{% trans "Setting default payment method..." %}', 'info');
+    // Add your AJAX call here
+}
+
+function removeMethod(methodId) {
+    if (confirm('{% trans "Are you sure you want to remove this payment method?" %}')) {
+        const formData = new FormData();
+        formData.append('method_id', methodId);
+
+        fetch('{% url "companies:remove_payment_method" %}', {
+            method: 'POST',
+            body: formData,
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest',
+            },
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                showNotification(data.message, 'success');
+                setTimeout(() => {
+                    location.reload();
+                }, 1500);
+            } else {
+                showNotification(data.message, 'error');
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            showNotification('{% trans "An error occurred" %}', 'error');
+        });
+    }
+}
+
+function showNotification(message, type) {
+    // Simple notification implementation
+    const alertClass = type === 'success' ? 'alert-success' :
+                      type === 'error' ? 'alert-danger' : 'alert-info';
+
+    const notification = document.createElement('div');
+    notification.className = `alert ${alertClass} alert-dismissible fade show position-fixed`;
+    notification.style.cssText = 'top: 20px; right: 20px; z-index: 9999; min-width: 300px;';
+    notification.innerHTML = `
+        ${message}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    `;
+
+    document.body.appendChild(notification);
+
+    setTimeout(() => {
+        notification.remove();
+    }, 5000);
+}
+</script>
+{% endblock %}

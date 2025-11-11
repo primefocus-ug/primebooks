@@ -1,0 +1,252 @@
+{% extends 'base.html' %}
+{% load static %}
+{% load humanize %}
+{% load i18n %}
+
+{% block title %}{% trans "Budgets" %}{% endblock %}
+
+{% block breadcrumb_items %}
+<li class="breadcrumb-item"><a href="{% url 'user_dashboard' %}">{% trans "Home" %}</a></li>
+<li class="breadcrumb-item"><a href="{% url 'finance:dashboard' %}">{% trans "Finance" %}</a></li>
+<li class="breadcrumb-item active">{% trans "Budgets" %}</li>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- Page Header -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h1 class="h3 mb-1 fw-bold">{% trans "Budgets" %}</h1>
+            <p class="text-muted mb-0">{% trans "Manage and track your budgets" %}</p>
+        </div>
+        <div class="d-flex gap-2">
+            <a href="{% url 'finance:budget_create' %}" class="btn btn-primary">
+                <i class="bi bi-plus-circle me-1"></i>
+                {% trans "New Budget" %}
+            </a>
+        </div>
+    </div>
+
+    <!-- Filters -->
+    <div class="card mb-4">
+        <div class="card-body">
+            <form method="get" class="row g-3">
+                <div class="col-md-4">
+                    <label for="fiscal_year" class="form-label">{% trans "Fiscal Year" %}</label>
+                    <select name="fiscal_year" id="fiscal_year" class="form-select">
+                        <option value="">{% trans "All Years" %}</option>
+                        {% for year in fiscal_years %}
+                        <option value="{{ year.pk }}" {% if request.GET.fiscal_year == year.pk|stringformat:"s" %}selected{% endif %}>
+                            {{ year.name }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-4">
+                    <label for="status" class="form-label">{% trans "Status" %}</label>
+                    <select name="status" id="status" class="form-select">
+                        <option value="">{% trans "All Statuses" %}</option>
+                        <option value="DRAFT" {% if request.GET.status == 'DRAFT' %}selected{% endif %}>{% trans "Draft" %}</option>
+                        <option value="SUBMITTED" {% if request.GET.status == 'SUBMITTED' %}selected{% endif %}>{% trans "Submitted" %}</option>
+                        <option value="APPROVED" {% if request.GET.status == 'APPROVED' %}selected{% endif %}>{% trans "Approved" %}</option>
+                        <option value="ACTIVE" {% if request.GET.status == 'ACTIVE' %}selected{% endif %}>{% trans "Active" %}</option>
+                        <option value="CLOSED" {% if request.GET.status == 'CLOSED' %}selected{% endif %}>{% trans "Closed" %}</option>
+                    </select>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">&nbsp;</label>
+                    <div class="d-grid">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-funnel me-1"></i>
+                            {% trans "Apply Filters" %}
+                        </button>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Budgets Grid -->
+    <div class="row">
+        {% for budget in budgets %}
+        <div class="col-xl-6 col-lg-6 mb-4">
+            <div class="card h-100">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="card-title mb-0">{{ budget.name }}</h5>
+                    <span class="badge bg-{% if budget.status == 'ACTIVE' %}success{% elif budget.status == 'APPROVED' %}info{% elif budget.status == 'DRAFT' %}secondary{% elif budget.status == 'SUBMITTED' %}warning{% else %}dark{% endif %}">
+                        {{ budget.get_status_display }}
+                    </span>
+                </div>
+                <div class="card-body">
+                    <div class="mb-3">
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <span class="text-muted">{% trans "Fiscal Year" %}:</span>
+                            <strong>{{ budget.fiscal_year.name }}</strong>
+                        </div>
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <span class="text-muted">{% trans "Period" %}:</span>
+                            <span>{{ budget.start_date|date:"M d, Y" }} - {{ budget.end_date|date:"M d, Y" }}</span>
+                        </div>
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <span class="text-muted">{% trans "Type" %}:</span>
+                            <span class="badge bg-light text-dark">{{ budget.get_budget_type_display }}</span>
+                        </div>
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <span class="text-muted">{% trans "Scenario" %}:</span>
+                            <span class="badge bg-info">{{ budget.get_scenario_display }}</span>
+                        </div>
+                        {% if budget.version > 1 %}
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <span class="text-muted">{% trans "Version" %}:</span>
+                            <span class="badge bg-secondary">v{{ budget.version }}</span>
+                        </div>
+                        {% endif %}
+                    </div>
+
+                    <!-- Budget Progress -->
+                    <div class="mb-3">
+                        <div class="d-flex justify-content-between align-items-center mb-1">
+                            <small class="text-muted">{% trans "Budget Utilization" %}</small>
+                            <small class="fw-semibold">{{ budget.get_utilization|floatformat:1 }}%</small>
+                        </div>
+                        <div class="progress" style="height: 8px;">
+                            <div class="progress-bar {% if budget.get_utilization > budget.alert_threshold %}bg-warning{% else %}bg-success{% endif %}"
+                                 style="width: {{ budget.get_utilization }}%">
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Budget Totals -->
+                    <div class="row text-center">
+                        <div class="col-4">
+                            <div class="border-end">
+                                <small class="text-muted d-block">{% trans "Budget" %}</small>
+                                <strong class="text-primary">{{ base_currency.symbol }}{{ budget.total_budget|floatformat:0|intcomma }}</strong>
+                            </div>
+                        </div>
+                        <div class="col-4">
+                            <div class="border-end">
+                                <small class="text-muted d-block">{% trans "Actual" %}</small>
+                                <strong class="{% if budget.total_actual > budget.total_budget %}text-danger{% else %}text-success{% endif %}">
+                                    {{ base_currency.symbol }}{{ budget.total_actual|floatformat:0|intcomma }}
+                                </strong>
+                            </div>
+                        </div>
+                        <div class="col-4">
+                            <small class="text-muted d-block">{% trans "Variance" %}</small>
+                            <strong class="{% if budget.total_variance >= 0 %}text-success{% else %}text-danger{% endif %}">
+                                {{ base_currency.symbol }}{{ budget.total_variance|floatformat:0|intcomma }}
+                            </strong>
+                        </div>
+                    </div>
+                </div>
+                <div class="card-footer bg-transparent">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <small class="text-muted">
+                            {% trans "Created by" %} {{ budget.created_by.get_full_name|default:budget.created_by.username }}
+                            <br>
+                            {{ budget.created_at|date:"M d, Y" }}
+                        </small>
+                        <div class="dropdown">
+                            <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown">
+                                {% trans "Actions" %}
+                            </button>
+                            <ul class="dropdown-menu dropdown-menu-end">
+                                <li>
+                                    <a class="dropdown-item" href="{% url 'finance:budget_detail' budget.pk %}">
+                                        <i class="bi bi-eye me-2"></i>{% trans "View Details" %}
+                                    </a>
+                                </li>
+                                {% if budget.status == 'DRAFT' %}
+                                <li>
+                                    <a class="dropdown-item" href="{% url 'finance:budget_update' budget.pk %}">
+                                        <i class="bi bi-pencil me-2"></i>{% trans "Edit" %}
+                                    </a>
+                                </li>
+                                {% endif %}
+                                {% if budget.status == 'APPROVED' and perms.finance.change_budget %}
+                                <li>
+                                    <form method="post" action="{% url 'finance:budget_activate' budget.pk %}" class="d-inline">
+                                        {% csrf_token %}
+                                        <button type="submit" class="dropdown-item">
+                                            <i class="bi bi-play-circle me-2"></i>{% trans "Activate" %}
+                                        </button>
+                                    </form>
+                                </li>
+                                {% endif %}
+                                {% if budget.status == 'SUBMITTED' and perms.finance.change_budget %}
+                                <li>
+                                    <form method="post" action="{% url 'finance:budget_approve' budget.pk %}" class="d-inline">
+                                        {% csrf_token %}
+                                        <button type="submit" class="dropdown-item">
+                                            <i class="bi bi-check-circle me-2"></i>{% trans "Approve" %}
+                                        </button>
+                                    </form>
+                                </li>
+                                {% endif %}
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% empty %}
+        <div class="col-12">
+            <div class="card">
+                <div class="card-body text-center py-5">
+                    <i class="bi bi-pie-chart display-4 text-muted d-block mb-3"></i>
+                    <h5 class="text-muted">{% trans "No Budgets" %}</h5>
+                    <p class="text-muted mb-4">{% trans "Create your first budget to start tracking expenses against planned amounts." %}</p>
+                    <a href="{% url 'finance:budget_create' %}" class="btn btn-primary">
+                        <i class="bi bi-plus-circle me-1"></i>
+                        {% trans "Create Budget" %}
+                    </a>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+
+    <!-- Pagination -->
+    {% if budgets.has_other_pages %}
+    <div class="d-flex justify-content-between align-items-center mt-4">
+        <div class="text-muted">
+            {% blocktrans with start=budgets.start_index end=budgets.end_index total=budgets.paginator.count %}
+            Showing {{ start }} to {{ end }} of {{ total }} budgets
+            {% endblocktrans %}
+        </div>
+        <nav aria-label="Budgets pagination">
+            <ul class="pagination mb-0">
+                {% if budgets.has_previous %}
+                <li class="page-item">
+                    <a class="page-link" href="?page={{ budgets.previous_page_number }}{% for key, value in request.GET.items %}{% if key != 'page' %}&{{ key }}={{ value }}{% endif %}{% endfor %}">
+                        {% trans "Previous" %}
+                    </a>
+                </li>
+                {% endif %}
+
+                {% for num in budgets.paginator.page_range %}
+                    {% if budgets.number == num %}
+                    <li class="page-item active"><span class="page-link">{{ num }}</span></li>
+                    {% elif num > budgets.number|add:'-3' and num < budgets.number|add:'3' %}
+                    <li class="page-item">
+                        <a class="page-link" href="?page={{ num }}{% for key, value in request.GET.items %}{% if key != 'page' %}&{{ key }}={{ value }}{% endif %}{% endfor %}">
+                            {{ num }}
+                        </a>
+                    </li>
+                    {% endif %}
+                {% endfor %}
+
+                {% if budgets.has_next %}
+                <li class="page-item">
+                    <a class="page-link" href="?page={{ budgets.next_page_number }}{% for key, value in request.GET.items %}{% if key != 'page' %}&{{ key }}={{ value }}{% endif %}{% endfor %}">
+                        {% trans "Next" %}
+                    </a>
+                </li>
+                {% endif %}
+            </ul>
+        </nav>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

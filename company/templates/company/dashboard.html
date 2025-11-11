@@ -15,10 +15,24 @@
         <p class="text-muted mb-0">{% trans "Welcome back! Here's an overview of your business operations." %}</p>
     </div>
     <div class="d-flex gap-2">
+        <!-- Subscription Status Badge -->
+        <div class="me-3">
+            {% if company.plan %}
+                <span class="badge {% if company.status == 'ACTIVE' %}bg-success{% elif company.status == 'TRIAL' %}bg-info{% elif company.status == 'EXPIRED' %}bg-danger{% else %}bg-warning{% endif %} fs-6">
+                    {{ company.plan.display_name|default:company.plan.name }}
+                    {% if company.is_trial %}
+                        - {% trans "Trial" %}
+                    {% endif %}
+                </span>
+            {% else %}
+                <span class="badge bg-secondary fs-6">{% trans "No Plan" %}</span>
+            {% endif %}
+        </div>
+
         <button class="btn btn-outline-primary" onclick="refreshDashboard()" id="refreshBtn">
             <i class="bi bi-arrow-clockwise"></i> {% trans 'Refresh'%}
         </button>
-       
+
         <div class="dropdown">
             <button class="btn btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown">
                 <i class="bi bi-calendar3"></i> {% trans 'Period' %}
@@ -31,6 +45,25 @@
         </div>
     </div>
 </div>
+
+<!-- Subscription Alert Banner -->
+{% if subscription_warning %}
+<div class="alert alert-warning alert-dismissible fade show" role="alert">
+    <div class="d-flex align-items-center">
+        <i class="bi bi-exclamation-triangle-fill me-2 fs-4"></i>
+        <div class="flex-grow-1">
+            <strong>{{ subscription_warning.title }}</strong>
+            <p class="mb-0">{{ subscription_warning.message }}</p>
+            {% if subscription_warning.action_url %}
+                <a href="{{ subscription_warning.action_url }}" class="btn btn-sm btn-warning mt-2">
+                    {{ subscription_warning.action_text }}
+                </a>
+            {% endif %}
+        </div>
+    </div>
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endif %}
 {% endblock %}
 
 {% block content %}
@@ -114,53 +147,185 @@
     </div>
 </div>
 
-<!-- Secondary Metrics Row -->
+<!-- Subscription Metrics Row -->
 <div class="row mb-4">
-    <div class="col-lg-3 col-md-6 mb-3">
-        <div class="card secondary-card border-0 shadow-sm h-100">
+    <div class="col-xl-2 col-md-4 col-6 mb-3">
+        <div class="card subscription-metric-card border-0 shadow-sm h-100">
+            <div class="card-body text-center">
+                <div class="text-primary mb-2">
+                    <i class="bi bi-credit-card fs-2"></i>
+                </div>
+                <h4 class="mb-1">{{ active_subscriptions|default:0 }}</h4>
+                <p class="text-muted mb-0 small">{% trans 'Active Subscriptions' %}</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-xl-2 col-md-4 col-6 mb-3">
+        <div class="card subscription-metric-card border-0 shadow-sm h-100">
             <div class="card-body text-center">
                 <div class="text-warning mb-2">
-                    <i class="bi bi-gear fs-1"></i>
+                    <i class="bi bi-clock-history fs-2"></i>
                 </div>
-                <h4 class="mb-1">{{ efris_enabled_companies|default:0 }}</h4>
-                <p class="text-muted mb-0">{% trans 'EFRIS Enabled' %}</p>
+                <h4 class="mb-1">{{ expiring_soon_count|default:0 }}</h4>
+                <p class="text-muted mb-0 small">{% trans 'Expiring Soon' %}</p>
             </div>
         </div>
     </div>
-    <div class="col-lg-3 col-md-6 mb-3">
-        <div class="card secondary-card border-0 shadow-sm h-100">
-            <div class="card-body text-center">
-                <div class="text-danger mb-2">
-                    <i class="bi bi-clock-history fs-1"></i>
-                </div>
-                <h4 class="mb-1">{{ expired_companies|default:0 }}</h4>
-                <p class="text-muted mb-0">{% trans 'Expired' %}</p>
-            </div>
-        </div>
-    </div>
-    <div class="col-lg-3 col-md-6 mb-3">
-        <div class="card secondary-card border-0 shadow-sm h-100">
+    <div class="col-xl-2 col-md-4 col-6 mb-3">
+        <div class="card subscription-metric-card border-0 shadow-sm h-100">
             <div class="card-body text-center">
                 <div class="text-info mb-2">
-                    <i class="bi bi-clock fs-1"></i>
+                    <i class="bi bi-gift fs-2"></i>
                 </div>
                 <h4 class="mb-1">{{ trial_companies|default:0 }}</h4>
-                <p class="text-muted mb-0">{% trans 'On Trial' %}</p>
+                <p class="text-muted mb-0 small">{% trans 'Active Trials' %}</p>
             </div>
         </div>
     </div>
-    <div class="col-lg-3 col-md-6 mb-3">
-        <div class="card secondary-card border-0 shadow-sm h-100">
+    <div class="col-xl-2 col-md-4 col-6 mb-3">
+        <div class="card subscription-metric-card border-0 shadow-sm h-100">
+            <div class="card-body text-center">
+                <div class="text-danger mb-2">
+                    <i class="bi bi-x-circle fs-2"></i>
+                </div>
+                <h4 class="mb-1">{{ expired_companies|default:0 }}</h4>
+                <p class="text-muted mb-0 small">{% trans 'Expired' %}</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-xl-2 col-md-4 col-6 mb-3">
+        <div class="card subscription-metric-card border-0 shadow-sm h-100">
             <div class="card-body text-center">
                 <div class="text-success mb-2">
-                    <i class="bi bi-people fs-1"></i>
+                    <i class="bi bi-cash-coin fs-2"></i>
                 </div>
-                <h4 class="mb-1">{{ total_employees|default:0 }}</h4>
-                <p class="text-muted mb-0">{% trans 'Total Employees' %}</p>
+                <h4 class="mb-1">${{ monthly_revenue|default:0|floatformat:2 }}</h4>
+                <p class="text-muted mb-0 small">{% trans 'Monthly Revenue' %}</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-xl-2 col-md-4 col-6 mb-3">
+        <div class="card subscription-metric-card border-0 shadow-sm h-100">
+            <div class="card-body text-center">
+                <div class="text-secondary mb-2">
+                    <i class="bi bi-arrow-repeat fs-2"></i>
+                </div>
+                <h4 class="mb-1">{{ renewal_rate|default:0 }}%</h4>
+                <p class="text-muted mb-0 small">{% trans 'Renewal Rate' %}</p>
             </div>
         </div>
     </div>
 </div>
+
+<!-- Current Subscription Status Card -->
+{% if company.plan %}
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card border-0 shadow-sm">
+            <div class="card-header bg-transparent border-0">
+                <h5 class="card-title mb-0">
+                    <i class="bi bi-person-badge text-primary me-2"></i>
+                    {% trans 'Your Subscription Status' %}
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <div class="d-flex align-items-center mb-3">
+                            <div class="subscription-icon me-3">
+                                <i class="bi bi-award fs-1 text-primary"></i>
+                            </div>
+                            <div>
+                                <h4 class="mb-1">{{ company.plan.display_name|default:company.plan.name }}</h4>
+                                <p class="text-muted mb-0">
+                                    ${{ company.plan.price }} {{ company.preferred_currency }}
+                                    / {{ company.plan.billing_cycle|lower }}
+                                </p>
+                            </div>
+                        </div>
+
+                        <div class="subscription-features mb-4">
+                            <h6 class="mb-2">{% trans 'Plan Features:' %}</h6>
+                            <div class="row">
+                                {% for feature in company.plan.get_feature_list %}
+                                <div class="col-sm-6 mb-1">
+                                    <i class="bi bi-check-circle-fill text-success me-2"></i>
+                                    <small>{{ feature }}</small>
+                                </div>
+                                {% endfor %}
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="col-md-6">
+                        <div class="subscription-status-info">
+                            <div class="row mb-3">
+                                <div class="col-6">
+                                    <small class="text-muted">{% trans 'Status' %}</small>
+                                    <div>
+                                        <span class="badge {% if company.status == 'ACTIVE' %}bg-success{% elif company.status == 'TRIAL' %}bg-info{% elif company.status == 'EXPIRED' %}bg-danger{% else %}bg-warning{% endif %}">
+                                            {{ company.get_status_display }}
+                                        </span>
+                                    </div>
+                                </div>
+                                <div class="col-6">
+                                    <small class="text-muted">{% trans 'Billing Cycle' %}</small>
+                                    <div>
+                                        <strong>{{ company.plan.billing_cycle }}</strong>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="row mb-3">
+                                <div class="col-6">
+                                    <small class="text-muted">{% trans 'Subscription Ends' %}</small>
+                                    <div>
+                                        <strong>{{ company.subscription_ends_at|date:"M d, Y" }}</strong>
+                                    </div>
+                                </div>
+                                <div class="col-6">
+                                    <small class="text-muted">{% trans 'Days Remaining' %}</small>
+                                    <div>
+                                        <strong class="{% if company.days_until_expiry <= 7 %}text-danger{% elif company.days_until_expiry <= 30 %}text-warning{% endif %}">
+                                            {{ company.days_until_expiry }}
+                                        </strong>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {% if company.is_trial %}
+                            <div class="alert alert-info mb-3">
+                                <div class="d-flex align-items-center">
+                                    <i class="bi bi-info-circle me-2"></i>
+                                    <div>
+                                        <strong>{% trans 'Trial Period' %}</strong>
+                                        <p class="mb-0">{% trans 'Your trial ends on' %} {{ company.trial_ends_at|date:"M d, Y" }}</p>
+                                    </div>
+                                </div>
+                            </div>
+                            {% endif %}
+
+                            <div class="d-grid gap-2 d-md-flex justify-content-md-end">
+                                {% if company.days_until_expiry <= 30 %}
+                                <a href="{% url 'companies:subscription_renew' %}" class="btn btn-primary">
+                                    <i class="bi bi-arrow-clockwise me-1"></i>{% trans 'Renew Now' %}
+                                </a>
+                                {% endif %}
+                                <a href="{% url 'companies:subscription_plans' %}" class="btn btn-outline-primary">
+                                    <i class="bi bi-graph-up me-1"></i>{% trans 'Upgrade Plan' %}
+                                </a>
+                                <a href="{% url 'companies:subscription_dashboard' %}" class="btn btn-outline-secondary">
+                                    <i class="bi bi-speedometer2 me-1"></i>{% trans 'Manage' %}
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
 
 <!-- Charts Section -->
 <div class="row mb-4">
@@ -271,7 +436,7 @@
                                     <th>{% trans 'Company' %}</th>
                                     <th>{% trans 'Status' %}</th>
                                     <th>{% trans 'Plan' %}</th>
-                                    <th>{% trans 'Registered' %}</th>
+                                    <th>{% trans 'Subscription Ends' %}</th>
                                     <th>{% trans 'Actions' %}</th>
                                 </tr>
                             </thead>
@@ -308,7 +473,17 @@
                                         {% endif %}
                                     </td>
                                     <td>
-                                        <small class="text-muted">{{ company.created_at|timesince }} {% trans 'ago' %}</small>
+                                        {% if company.subscription_ends_at %}
+                                            <small class="{% if company.days_until_expiry <= 7 %}text-danger{% elif company.days_until_expiry <= 30 %}text-warning{% endif %}">
+                                                {{ company.subscription_ends_at|date:"M d, Y" }}
+                                            </small>
+                                            <br>
+                                            <small class="text-muted">
+                                                ({{ company.days_until_expiry }} {% trans 'days' %})
+                                            </small>
+                                        {% else %}
+                                            <small class="text-muted">-</small>
+                                        {% endif %}
                                     </td>
                                     <td>
                                         <div class="btn-group btn-group-sm">
@@ -322,6 +497,12 @@
                                             <a href="{% url 'companies:company_update' company_id=company.company_id %}"
                                                class="btn btn-outline-secondary btn-sm" title="{% trans 'Edit' %}">
                                                 <i class="bi bi-pencil"></i>
+                                            </a>
+                                            {% endif %}
+                                            {% if perms.company.change_company %}
+                                            <a href="{% url 'companies:subscription_dashboard' %}"
+                                               class="btn btn-outline-info btn-sm" title="{% trans 'Manage Subscription' %}">
+                                                <i class="bi bi-credit-card"></i>
                                             </a>
                                             {% endif %}
                                         </div>
@@ -358,33 +539,67 @@
             <div class="card-body">
                 <div class="d-grid gap-3">
                     {% if perms.company.add_company %}
-                    <a href="{% url 'companies:company_create' %}" class="btn btn-primary">
+                    <a href="{% url 'companies:create_company' %}" class="btn btn-primary">
                         <i class="bi bi-plus-circle me-2"></i>{% trans 'Create Company' %}
                     </a>
                     {% endif %}
+
+                    <!-- Subscription Actions -->
+                    {% if company.plan %}
+                    <a href="{% url 'companies:subscription_dashboard' %}" class="btn btn-outline-primary">
+                        <i class="bi bi-speedometer2 me-2"></i>{% trans 'Subscription Dashboard' %}
+                    </a>
+                    <a href="{% url 'companies:subscription_plans' %}" class="btn btn-outline-success">
+                        <i class="bi bi-graph-up me-2"></i>{% trans 'View Plans & Upgrade' %}
+                    </a>
+                    {% if company.days_until_expiry <= 30 %}
+                    <a href="{% url 'companies:subscription_renew' %}" class="btn btn-warning">
+                        <i class="bi bi-arrow-clockwise me-2"></i>{% trans 'Renew Subscription' %}
+                    </a>
+                    {% endif %}
+                    {% else %}
+                    <a href="{% url 'companies:subscription_plans' %}" class="btn btn-success">
+                        <i class="bi bi-credit-card me-2"></i>{% trans 'Choose a Plan' %}
+                    </a>
+                    {% endif %}
+
                     {% if perms.branches.add_companybranch %}
-                    <a href="{% url 'companies:branch_create' %}" class="btn btn-outline-success">
+                    <a href="{% url 'companies:branch_create' %}" class="btn btn-outline-info">
                         <i class="bi bi-diagram-3 me-2"></i>{% trans 'Add Branch' %}
                     </a>
                     {% endif %}
+
                     {% if company_id %}
-                    <a href="{% url 'companies:employee_create' company_id=company_id %}" class="btn btn-outline-success">
+                    <a href="{% url 'companies:employee_create' company_id=company_id %}" class="btn btn-outline-info">
                         <i class="bi bi-people me-2"></i>{% trans 'Add Employee' %}
                     </a>
                     {% endif %}
-                    {% if perms.company.add_domain %}
-                    <a href="{% url 'companies:domain_create' %}" class="btn btn-outline-info">
-                        <i class="bi bi-globe me-2"></i>{% trans 'Add Domain' %}
-                    </a>
-                    {% endif %}
-                    <a href="{% url 'companies:company_export' %}" class="btn btn-outline-warning">
-                        <i class="bi bi-download me-2"></i>{% trans 'Export Data' %}
+
+                    <a href="{% url 'companies:billing_history' %}" class="btn btn-outline-secondary">
+                        <i class="bi bi-receipt me-2"></i>{% trans 'Billing History' %}
                     </a>
                 </div>
 
                 <hr class="my-4">
 
                 <h6 class="text-muted mb-3">{% trans 'System Health' %}</h6>
+                <div class="mb-3">
+                    <div class="d-flex justify-content-between mb-1">
+                        <small>{% trans 'Active Subscriptions' %}</small>
+                        <small class="text-muted">
+                            {% if total_companies > 0 %}
+                                {% widthratio active_subscriptions total_companies 100 %}%
+                            {% else %}
+                                0%
+                            {% endif %}
+                        </small>
+                    </div>
+                    <div class="progress" style="height: 6px;">
+                        <div class="progress-bar bg-primary" role="progressbar"
+                             style="width: {% if total_companies > 0 %}{% widthratio active_subscriptions total_companies 100 %}%{% else %}0%{% endif %}"></div>
+                    </div>
+                </div>
+
                 <div class="mb-3">
                     <div class="d-flex justify-content-between mb-1">
                         <small>{% trans 'Verification Rate' %}</small>
@@ -416,23 +631,6 @@
                     <div class="progress" style="height: 6px;">
                         <div class="progress-bar bg-warning" role="progressbar"
                              style="width: {% if total_companies > 0 %}{% widthratio efris_enabled_companies total_companies 100 %}%{% else %}0%{% endif %}"></div>
-                    </div>
-                </div>
-
-                <div class="mb-3">
-                    <div class="d-flex justify-content-between mb-1">
-                        <small>{% trans 'Active Companies' %}</small>
-                        <small class="text-muted">
-                            {% if total_companies > 0 %}
-                                {% widthratio active_companies total_companies 100 %}%
-                            {% else %}
-                                0%
-                            {% endif %}
-                        </small>
-                    </div>
-                    <div class="progress" style="height: 6px;">
-                        <div class="progress-bar bg-primary" role="progressbar"
-                             style="width: {% if total_companies > 0 %}{% widthratio active_companies total_companies 100 %}%{% else %}0%{% endif %}"></div>
                     </div>
                 </div>
             </div>
@@ -526,7 +724,79 @@
         border-color: var(--border-color);
         transition: all 0.3s ease;
     }
+.subscription-metric-card {
+        transition: all 0.3s ease;
+        border-left: 4px solid transparent;
+    }
 
+    .subscription-metric-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 15px rgba(0,0,0,0.1) !important;
+    }
+
+    .subscription-metric-card:nth-child(1) { border-left-color: #007bff; }
+    .subscription-metric-card:nth-child(2) { border-left-color: #ffc107; }
+    .subscription-metric-card:nth-child(3) { border-left-color: #17a2b8; }
+    .subscription-metric-card:nth-child(4) { border-left-color: #dc3545; }
+    .subscription-metric-card:nth-child(5) { border-left-color: #28a745; }
+    .subscription-metric-card:nth-child(6) { border-left-color: #6c757d; }
+
+    .subscription-icon {
+        width: 60px;
+        height: 60px;
+        background: linear-gradient(135deg, #007bff, #0056b3);
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: white;
+    }
+
+    .subscription-features {
+        background: var(--bg-secondary);
+        padding: 1rem;
+        border-radius: 0.5rem;
+        border-left: 4px solid #28a745;
+    }
+
+    .subscription-status-info {
+        background: var(--bg-secondary);
+        padding: 1.5rem;
+        border-radius: 0.5rem;
+        height: 100%;
+    }
+
+    /* Alert styles for subscription warnings */
+    .alert-warning {
+        border-left: 4px solid #ffc107;
+    }
+
+    /* Badge styles for subscription status */
+    .badge-status {
+        font-size: 0.75rem;
+        padding: 0.35em 0.65em;
+    }
+
+    .status-active { background-color: var(--success-color) !important; color: white !important; }
+    .status-trial { background-color: var(--info-color) !important; color: white !important; }
+    .status-expired { background-color: var(--danger-color) !important; color: white !important; }
+    .status-suspended { background-color: var(--warning-color) !important; color: var(--dark-color) !important; }
+
+    /* Responsive adjustments for subscription metrics */
+    @media (max-width: 768px) {
+        .subscription-metric-card .fs-2 {
+            font-size: 1.5rem !important;
+        }
+
+        .subscription-icon {
+            width: 50px;
+            height: 50px;
+        }
+
+        .subscription-status-info {
+            padding: 1rem;
+        }
+    }
     .secondary-card:hover,
     .chart-card:hover,
     .activity-card:hover,
@@ -719,6 +989,7 @@ document.addEventListener('DOMContentLoaded', function() {
     initializeCharts();
     setupEventListeners();
     initializeDarkMode();
+    initializeSubscriptionFeatures();
 });
 
 let registrationChart, currencyChart, statusChart, planChart;
@@ -902,7 +1173,10 @@ function initializeCharts() {
             maintainAspectRatio: false,
             plugins: {
                 legend: {
-                    position: 'bottom'
+                    position: 'bottom',
+                    labels: {
+                        color: '#6c757d'
+                    }
                 }
             }
         }
@@ -920,6 +1194,8 @@ function setupEventListeners() {
 
 function initializeDarkMode() {
     const darkModeToggle = document.getElementById('darkModeToggle');
+    if (!darkModeToggle) return;
+
     const savedTheme = localStorage.getItem('theme') || 'light';
 
     // Apply saved theme
@@ -942,7 +1218,10 @@ function initializeDarkMode() {
 
 function updateDarkModeButton(isDark) {
     const darkModeToggle = document.getElementById('darkModeToggle');
+    if (!darkModeToggle) return;
+
     const icon = darkModeToggle.querySelector('i');
+    if (!icon) return;
 
     if (isDark) {
         icon.className = 'bi bi-sun';
@@ -967,6 +1246,9 @@ function updateChartsForTheme(theme) {
                 }
                 if (chart.options.scales.x) {
                     chart.options.scales.x.ticks.color = textColor;
+                    if (chart.options.scales.x.grid) {
+                        chart.options.scales.x.grid.color = gridColor;
+                    }
                 }
             }
 
@@ -976,7 +1258,7 @@ function updateChartsForTheme(theme) {
                 chart.options.plugins.legend.labels.color = textColor;
             }
 
-            chart.update();
+            chart.update('none'); // Use 'none' to prevent animation
         }
     });
 }
@@ -984,6 +1266,8 @@ function updateChartsForTheme(theme) {
 function refreshDashboard() {
     const refreshBtn = document.getElementById('refreshBtn');
     const loadingOverlay = document.getElementById('loadingOverlay');
+
+    if (!refreshBtn || !loadingOverlay) return;
 
     // Show loading state
     refreshBtn.innerHTML = '<i class="bi bi-arrow-clockwise spin"></i> {% trans "Refreshing..." %}';
@@ -998,8 +1282,12 @@ function refreshDashboard() {
 
 function changePeriod(days) {
     console.log('Changing period to:', days, 'days');
+
+    const loadingOverlay = document.getElementById('loadingOverlay');
+    if (!loadingOverlay) return;
+
     // Show loading overlay
-    document.getElementById('loadingOverlay').style.display = 'flex';
+    loadingOverlay.style.display = 'flex';
 
     // In a real application, you would make an AJAX call to update the dashboard data
     // for the selected time period
@@ -1009,15 +1297,22 @@ function changePeriod(days) {
             'X-Requested-With': 'XMLHttpRequest',
         },
     })
-    .then(response => response.json())
+    .then(response => {
+        if (!response.ok) {
+            throw new Error('Network response was not ok');
+        }
+        return response.json();
+    })
     .then(data => {
         // Update charts with new data
         updateChartData(data);
-        document.getElementById('loadingOverlay').style.display = 'none';
+        loadingOverlay.style.display = 'none';
     })
     .catch(error => {
         console.error('Error:', error);
-        document.getElementById('loadingOverlay').style.display = 'none';
+        loadingOverlay.style.display = 'none';
+        // Show error message to user
+        showNotification('{% trans "Failed to update dashboard data" %}', 'error');
     });
 }
 
@@ -1029,19 +1324,190 @@ function updateChartData(data) {
         registrationChart.update();
     }
 
-    // Update other charts as needed
-    // ... similar updates for other charts
+    // Update status chart
+    if (statusChart && data.status_distribution) {
+        const statusColors = {
+            'ACTIVE': '#28a745',
+            'TRIAL': '#17a2b8',
+            'EXPIRED': '#dc3545',
+            'SUSPENDED': '#ffc107'
+        };
+
+        statusChart.data.labels = data.status_distribution.map(item => item.status);
+        statusChart.data.datasets[0].data = data.status_distribution.map(item => item.count);
+        statusChart.data.datasets[0].backgroundColor = data.status_distribution.map(item => statusColors[item.status] || '#6c757d');
+        statusChart.update();
+    }
+
+    // Update currency chart
+    if (currencyChart && data.currency_distribution) {
+        currencyChart.data.labels = data.currency_distribution.map(item => item.currency);
+        currencyChart.data.datasets[0].data = data.currency_distribution.map(item => item.count);
+        currencyChart.update();
+    }
+
+    // Update plan chart
+    if (planChart && data.plan_distribution) {
+        planChart.data.labels = data.plan_distribution.map(item => item.plan);
+        planChart.data.datasets[0].data = data.plan_distribution.map(item => item.count);
+        planChart.update();
+    }
+
+    // Update subscription metrics
+    if (data.subscription_metrics) {
+        updateSubscriptionMetrics(data.subscription_metrics);
+    }
 }
 
 function toggleDarkMode() {
-    // This function is called by the button onclick, but the actual logic is in initializeDarkMode
-    // We keep this for backwards compatibility if the onclick is used elsewhere
-    document.getElementById('darkModeToggle').click();
+    const darkModeToggle = document.getElementById('darkModeToggle');
+    if (darkModeToggle) {
+        darkModeToggle.click();
+    }
+}
+
+function initializeSubscriptionFeatures() {
+    // Add any subscription-specific JavaScript functionality here
+    console.log('Subscription features initialized');
+
+    // Example: Auto-show renewal reminder if subscription is expiring soon
+    const daysUntilExpiry = {{ company.days_until_expiry|default:0 }};
+    if (daysUntilExpiry > 0 && daysUntilExpiry <= 7) {
+        showRenewalReminder(daysUntilExpiry);
+    }
+
+    // Initialize subscription action buttons
+    initializeSubscriptionActions();
+}
+
+function initializeSubscriptionActions() {
+    // Add event listeners for subscription action buttons
+    document.querySelectorAll('[data-subscription-action]').forEach(button => {
+        button.addEventListener('click', function() {
+            const action = this.getAttribute('data-subscription-action');
+            const planId = this.getAttribute('data-plan-id');
+            handleSubscriptionAction(action, planId);
+        });
+    });
+}
+
+function handleSubscriptionAction(action, planId = null) {
+    const loadingOverlay = document.getElementById('loadingOverlay');
+    if (!loadingOverlay) return;
+
+    loadingOverlay.style.display = 'flex';
+
+    let url = '';
+
+    switch(action) {
+        case 'renew':
+            url = '{% url "companies:subscription_renew" %}';
+            break;
+        case 'upgrade':
+            url = `/companies/subscription/upgrade/${planId}/`;
+            break;
+        case 'downgrade':
+            url = `/companies/subscription/downgrade/${planId}/`;
+            break;
+        case 'cancel':
+            url = '{% url "companies:subscription_cancel" %}';
+            break;
+        default:
+            console.error('Unknown subscription action:', action);
+            loadingOverlay.style.display = 'none';
+            return;
+    }
+
+    // In a real implementation, you would make an AJAX call here
+    // For now, we'll redirect to the appropriate page
+    setTimeout(() => {
+        if (url) {
+            window.location.href = url;
+        } else {
+            loadingOverlay.style.display = 'none';
+            showNotification('{% trans "Action not available" %}', 'error');
+        }
+    }, 500);
+}
+
+function updateSubscriptionMetrics(data) {
+    // Update subscription metrics on the dashboard
+    const metricCards = document.querySelectorAll('.subscription-metric-card');
+
+    if (data.active_subscriptions !== undefined && metricCards[0]) {
+        metricCards[0].querySelector('h4').textContent = data.active_subscriptions;
+    }
+    if (data.expiring_soon_count !== undefined && metricCards[1]) {
+        metricCards[1].querySelector('h4').textContent = data.expiring_soon_count;
+    }
+    if (data.trial_companies !== undefined && metricCards[2]) {
+        metricCards[2].querySelector('h4').textContent = data.trial_companies;
+    }
+    if (data.expired_companies !== undefined && metricCards[3]) {
+        metricCards[3].querySelector('h4').textContent = data.expired_companies;
+    }
+    if (data.monthly_revenue !== undefined && metricCards[4]) {
+        metricCards[4].querySelector('h4').textContent = '$' + data.monthly_revenue.toFixed(2);
+    }
+    if (data.renewal_rate !== undefined && metricCards[5]) {
+        metricCards[5].querySelector('h4').textContent = data.renewal_rate + '%';
+    }
+}
+
+function showRenewalReminder(daysUntilExpiry) {
+    // Create a renewal reminder notification
+    const reminderHtml = `
+        <div class="alert alert-warning alert-dismissible fade show" role="alert">
+            <div class="d-flex align-items-center">
+                <i class="bi bi-exclamation-triangle-fill me-2"></i>
+                <div>
+                    <strong>{% trans "Subscription Expiring Soon" %}</strong>
+                    <p class="mb-0">{% trans "Your subscription expires in" %} ${daysUntilExpiry} {% trans "days" %}.</p>
+                </div>
+            </div>
+            <div class="mt-2">
+                <a href="{% url 'companies:subscription_renew' %}" class="btn btn-warning btn-sm">
+                    <i class="bi bi-arrow-clockwise me-1"></i>{% trans "Renew Now" %}
+                </a>
+            </div>
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+    `;
+
+    // You could insert this at the top of the page or show as a toast notification
+    console.log('Renewal reminder: Subscription expires in', daysUntilExpiry, 'days');
+}
+
+function showNotification(message, type = 'info') {
+    // Simple notification function - you might want to use a proper notification library
+    const alertClass = type === 'error' ? 'alert-danger' :
+                      type === 'success' ? 'alert-success' :
+                      type === 'warning' ? 'alert-warning' : 'alert-info';
+
+    const notificationHtml = `
+        <div class="alert ${alertClass} alert-dismissible fade show position-fixed"
+             style="top: 20px; right: 20px; z-index: 9999; min-width: 300px;">
+            ${message}
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+    `;
+
+    document.body.insertAdjacentHTML('beforeend', notificationHtml);
+
+    // Auto-remove after 5 seconds
+    setTimeout(() => {
+        const alerts = document.querySelectorAll('.alert.position-fixed');
+        alerts.forEach(alert => {
+            if (alert.parentNode) {
+                alert.parentNode.removeChild(alert);
+            }
+        });
+    }, 5000);
 }
 
 // Error handling for chart initialization
 window.addEventListener('error', function(e) {
-    if (e.message.includes('Chart')) {
+    if (e.message.includes('Chart') || e.message.includes('canvas')) {
         console.error('Chart initialization error:', e);
         // Hide chart containers if there's an error
         document.querySelectorAll('canvas').forEach(canvas => {
@@ -1064,5 +1530,13 @@ if ('performance' in window) {
         }, 100);
     });
 }
+
+// Export functions for global access if needed
+window.Dashboard = {
+    refresh: refreshDashboard,
+    changePeriod: changePeriod,
+    toggleDarkMode: toggleDarkMode,
+    handleSubscriptionAction: handleSubscriptionAction
+};
 </script>
 {% endblock %}

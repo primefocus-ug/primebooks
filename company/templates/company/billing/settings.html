@@ -1,0 +1,244 @@
+{% extends "base.html" %}
+{% load static i18n %}
+
+{% block title %}{% trans "Billing Settings" %} - {{ company.trading_name|default:company.name }}{% endblock %}
+
+{% block breadcrumb %}
+{{ block.super }}
+<li class="breadcrumb-item"><a href="{% url 'companies:billing_history' %}">{% trans "Billing" %}</a></li>
+<li class="breadcrumb-item active">{% trans "Settings" %}</li>
+{% endblock %}
+
+{% block page_header %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h1 class="h3 mb-1">{% trans "Billing Settings" %}</h1>
+        <p class="text-muted mb-0">{% trans "Manage your billing preferences and information" %}</p>
+    </div>
+    <div>
+        <a href="{% url 'companies:billing_history' %}" class="btn btn-outline-primary">
+            <i class="bi bi-arrow-left me-1"></i>{% trans "Back to Billing" %}
+        </a>
+    </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-lg-8">
+        <div class="card border-0 shadow-sm">
+            <div class="card-header bg-transparent border-0">
+                <h5 class="card-title mb-0">{% trans "Billing Information" %}</h5>
+            </div>
+            <div class="card-body">
+                <form id="billingSettingsForm">
+                    {% csrf_token %}
+
+                    <!-- Billing Email -->
+                    <div class="mb-3">
+                        <label class="form-label">{% trans "Billing Email" %}</label>
+                        <input type="email" class="form-control" name="billing_email"
+                               value="{{ billing_email }}"
+                               placeholder="{% trans 'Enter billing email address' %}">
+                        <div class="form-text">
+                            {% trans "We'll send invoices and receipts to this email address" %}
+                        </div>
+                    </div>
+
+                    <!-- Billing Address -->
+                    <div class="mb-3">
+                        <label class="form-label">{% trans "Billing Address" %}</label>
+                        <textarea class="form-control" name="billing_address" rows="3"
+                                  placeholder="{% trans 'Enter your billing address' %}">{{ billing_address|default:'' }}</textarea>
+                    </div>
+
+                    <!-- Currency Preference -->
+                    <div class="mb-3">
+                        <label class="form-label">{% trans "Preferred Currency" %}</label>
+                        <select class="form-select" name="preferred_currency" disabled>
+                            <option>{{ company.preferred_currency }}</option>
+                        </select>
+                        <div class="form-text">
+                            {% trans "Currency cannot be changed once set. Contact support for assistance." %}
+                        </div>
+                    </div>
+
+                    <!-- Invoice Preferences -->
+                    <div class="mb-3">
+                        <label class="form-label">{% trans "Invoice Preferences" %}</label>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" name="auto_generate_invoices" id="autoGenerate" checked>
+                            <label class="form-check-label" for="autoGenerate">
+                                {% trans "Automatically generate invoices for recurring payments" %}
+                            </label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" name="email_invoices" id="emailInvoices" checked>
+                            <label class="form-check-label" for="emailInvoices">
+                                {% trans "Email invoices automatically" %}
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- Tax Information -->
+                    <div class="mb-4">
+                        <label class="form-label">{% trans "Tax Information" %}</label>
+                        <input type="text" class="form-control" name="tax_id"
+                               placeholder="{% trans 'Tax ID / VAT Number (if applicable)' %}">
+                        <div class="form-text">
+                            {% trans "Provide your tax identification number for invoice purposes" %}
+                        </div>
+                    </div>
+
+                    <div class="d-flex justify-content-between">
+                        <button type="button" class="btn btn-secondary" onclick="resetForm()">
+                            {% trans "Reset" %}
+                        </button>
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-check-circle me-1"></i>{% trans "Save Settings" %}
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- Danger Zone -->
+        <div class="card border-0 shadow-sm mt-4 border-danger">
+            <div class="card-header bg-transparent border-danger">
+                <h5 class="card-title mb-0 text-danger">{% trans "Danger Zone" %}</h5>
+            </div>
+            <div class="card-body">
+                <p class="text-muted mb-3">
+                    {% trans "These actions are irreversible. Please proceed with caution." %}
+                </p>
+
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <h6 class="mb-1">{% trans "Delete Billing History" %}</h6>
+                        <p class="text-muted mb-0 small">
+                            {% trans "Permanently delete all your billing history and invoices" %}
+                        </p>
+                    </div>
+                    <button class="btn btn-outline-danger" onclick="showDeleteConfirmation()">
+                        <i class="bi bi-trash me-1"></i>{% trans "Delete History" %}
+                    </button>
+                </div>
+
+                <hr class="my-3">
+
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <h6 class="mb-1">{% trans "Close Account" %}</h6>
+                        <p class="text-muted mb-0 small">
+                            {% trans "Permanently close your account and delete all data" %}
+                        </p>
+                    </div>
+                    <button class="btn btn-outline-danger" disabled title="{% trans 'Contact support to close your account' %}">
+                        <i class="bi bi-x-circle me-1"></i>{% trans "Close Account" %}
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Delete Confirmation Modal -->
+<div class="modal fade" id="deleteConfirmationModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">{% trans "Confirm Deletion" %}</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p>{% trans "Are you sure you want to delete all your billing history? This action cannot be undone." %}</p>
+                <div class="form-check">
+                    <input class="form-check-input" type="checkbox" id="confirmDelete">
+                    <label class="form-check-label" for="confirmDelete">
+                        {% trans "I understand this action is irreversible" %}
+                    </label>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">{% trans "Cancel" %}</button>
+                <button type="button" class="btn btn-danger" id="confirmDeleteBtn" disabled>
+                    <i class="bi bi-trash me-1"></i>{% trans "Delete All History" %}
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.getElementById('billingSettingsForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+
+    const formData = new FormData(this);
+
+    fetch('{% url "companies:billing_settings" %}', {
+        method: 'POST',
+        body: formData,
+        headers: {
+            'X-Requested-With': 'XMLHttpRequest',
+        },
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showNotification('{% trans "Settings updated successfully" %}', 'success');
+        } else {
+            showNotification(data.message || '{% trans "Failed to update settings" %}', 'error');
+        }
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        showNotification('{% trans "An error occurred" %}', 'error');
+    });
+});
+
+function resetForm() {
+    document.getElementById('billingSettingsForm').reset();
+    showNotification('{% trans "Form reset" %}', 'info');
+}
+
+function showDeleteConfirmation() {
+    const modal = new bootstrap.Modal(document.getElementById('deleteConfirmationModal'));
+    modal.show();
+}
+
+// Enable/disable delete button based on confirmation checkbox
+document.getElementById('confirmDelete').addEventListener('change', function() {
+    document.getElementById('confirmDeleteBtn').disabled = !this.checked;
+});
+
+document.getElementById('confirmDeleteBtn').addEventListener('click', function() {
+    // Implement deletion logic here
+    showNotification('{% trans "Deletion feature not implemented yet" %}', 'warning');
+
+    const modal = bootstrap.Modal.getInstance(document.getElementById('deleteConfirmationModal'));
+    modal.hide();
+});
+
+function showNotification(message, type) {
+    const alertClass = type === 'success' ? 'alert-success' :
+                      type === 'error' ? 'alert-danger' :
+                      type === 'warning' ? 'alert-warning' : 'alert-info';
+
+    const notification = document.createElement('div');
+    notification.className = `alert ${alertClass} alert-dismissible fade show position-fixed`;
+    notification.style.cssText = 'top: 20px; right: 20px; z-index: 9999; min-width: 300px;';
+    notification.innerHTML = `
+        ${message}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    `;
+
+    document.body.appendChild(notification);
+
+    setTimeout(() => {
+        notification.remove();
+    }, 5000);
+}
+</script>
+{% endblock %}

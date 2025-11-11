@@ -83,7 +83,37 @@ NAVIGATION_ITEMS = [
         url_name="user_dashboard",
         icon="bi bi-speedometer2"
     ),
-
+    NavigationItem(
+        name="Profile & Settings",
+        icon="bi bi-speedometer2",
+        children=[
+            NavigationItem(
+                name="My Profile",
+                url_name="user_profile",
+                icon="bi bi-person-circle"
+            ),
+            NavigationItem(
+                name="Security Settings",
+                url_name="user_security_settings",
+                icon="bi bi-shield-lock"
+            ),
+            NavigationItem(
+                name="Notifications",
+                url_name="user_notification_settings",
+                icon="bi bi-bell"
+            ),
+            NavigationItem(
+                name="Preferences",
+                url_name="user_preferences",
+                icon="bi bi-sliders"
+            ),
+            NavigationItem(
+                name="Analytics",
+                url_name="user_analytics",
+                icon="bi bi-graph-up"
+            ),
+        ]
+    ),
     NavigationItem(
         name="User Management",
         icon="bi bi-people",
@@ -108,13 +138,13 @@ NAVIGATION_ITEMS = [
                 permission="auth.view_group"
             ),
             NavigationItem(
-                name="Add Roles",
+                name="Add Role",
                 url_name="role_create",
                 icon="bi bi-shield-plus",
                 permission="auth.add_group"
             ),
             NavigationItem(
-                name="Bulk Assign",
+                name="Bulk Role Assignment",
                 url_name="role_bulk_assignment",
                 icon="bi bi-shield-lock",
                 permission="accounts.assign_role_users"
@@ -127,7 +157,6 @@ NAVIGATION_ITEMS = [
             ),
         ]
     ),
-
     NavigationItem(
         name="Companies",
         icon="bi bi-building",
@@ -139,10 +168,16 @@ NAVIGATION_ITEMS = [
                 permission="companies.view_company",
             ),
             NavigationItem(
-                name="Add Branch",
-                url_name="companies:branch_create",
-                icon="bi bi-plus-circle",
-                permission="branches.view_branch"
+                name="Subscription Plans",
+                url_name="companies:subscription_plans",
+                icon="bi bi-diagram-3",
+                permission="companies.view_subscription"
+            ),
+            NavigationItem(
+            name="Billing History",
+            url_name="companies:billing_history",
+            icon="bi bi-receipt",
+            permission="companies.view_billing"
             ),
             NavigationItem(
                 name="Branches",
@@ -179,32 +214,77 @@ NAVIGATION_ITEMS = [
     ),
 
     NavigationItem(
-        name="Stores",
+        name="Stores Dashboard",
+        url_name="stores:store_dashboard",
+        icon="bi bi-speedometer2",
+    ),
+
+    NavigationItem(
+        name="Stores Management",
         icon="bi bi-shop",
         children=[
             NavigationItem(
-                name="Store Dashboard",
-                url_name="stores:dashboard",
-                icon="bi bi-speedometer2",
-                permission="stores.view_store",
-            ),
-            NavigationItem(
-                name="Create Store",
-                url_name="stores:store_create",
-                icon="bi bi-shop-window",
-                permission="stores.add_store"
-            ),
-            NavigationItem(
-                name="Store List",
+                name="All Stores",
                 url_name="stores:store_list",
-                icon="bi bi-eye",
+                icon="bi bi-shop-window",
                 permission="stores.view_store"
             ),
             NavigationItem(
-                name="Device Operators",
-                url_name="stores:device_logs",
-                icon="bi bi-device-hdd",
-                permission="stores.view_deviceoperatorlog"
+            name="All Inventory",
+            url_name="stores:inventory_list",
+            icon="bi bi-box-seam",
+            permission="stores.view_storeinventory"
+            ),
+            NavigationItem(
+                name="Low Stock Alerts",
+                url_name="stores:low_stock_alert",
+                icon="bi bi-exclamation-circle",
+                permission="stores.view_storeinventory"
+            ),
+            NavigationItem(
+                name="Reports",
+                url_name="stores:generate_report",
+                icon="bi bi-file-earmark-text",
+                permission="stores.view_storeinventory"
+            ),
+            NavigationItem(
+                name="Device Sessions",
+                url_name="stores:device_sessions_dashboard",
+                icon="bi bi-activity",
+                permission="stores.view_storesdevice"
+            ),
+            NavigationItem(
+                name="Security Alerts",
+                url_name="stores:security_alerts",
+                icon="bi bi-exclamation-triangle",
+                permission="stores.view_securityalert"
+            ),
+            NavigationItem(
+                name="Sales Reports",
+                url_name="stores:analytics",
+                icon="bi bi-graph-up"
+            ),
+        ]
+    ),
+
+    NavigationItem(
+        name="Sessions & Security",
+        icon="bi bi-shield-lock",
+        children=[
+            NavigationItem(
+                name="My Sessions",
+                url_name="stores:user_sessions",
+                icon="bi bi-person-lines-fill"
+            ),
+            NavigationItem(
+                name="Terminate All Sessions",
+                url_name="stores:terminate_all_sessions",
+                icon="bi bi-x-circle"
+            ),
+            NavigationItem(
+                name="Device Fingerprints",
+                url_name="stores:device_fingerprints",
+                icon="bi bi-fingerprint"
             ),
         ]
     ),
@@ -227,34 +307,61 @@ NAVIGATION_ITEMS = [
                 permission="inventory.view_product"
             ),
             NavigationItem(
-                name="Products",
+                name="All Products",
                 url_name="inventory:product_list",
-                icon="bi bi-box-seam",
-                permission="inventory.view_product"
+                icon="bi bi-basket",
             ),
             NavigationItem(
                 name="Add Product",
                 url_name="inventory:product_create",
                 icon="bi bi-plus-circle",
-                permission="inventory.add_product"
+            ),
+        NavigationItem(
+            name="Services",
+            icon="bi bi-briefcase",
+            children=[
+                NavigationItem(
+                    name="All Services",
+                    url_name="inventory:service_list",
+                    icon="bi bi-list-task",
+                ),
+                NavigationItem(
+                    name="Add Service",
+                    url_name="inventory:service_create",
+                    icon="bi bi-plus-circle",
+                ),
+            ],
+        ),
+            NavigationItem(
+                name="Bulk Import",
+                url_name="inventory:stock_import",
+                icon="bi bi-upload",
             ),
             NavigationItem(
-                name="Categories",
+                name="All Categories",
                 url_name="inventory:category_list",
-                icon="bi bi-tags",
-                permission="inventory.view_category"
+                icon="bi bi-list-ul",
+            ),
+            NavigationItem(
+                name="Add Category",
+                url_name="inventory:category_create",
+                icon="bi bi-plus-circle",
             ),
             NavigationItem(
                 name="Suppliers",
-                url_name="inventory:supplier_list",
                 icon="bi bi-truck",
-                permission="inventory.view_supplier"
-            ),
-            NavigationItem(
-                name="Add Stock",
-                url_name="inventory:stock_create",
-                icon="bi bi-sliders",
-                permission="inventory.stock_create"
+                children=[
+                    NavigationItem(
+                        name="All Suppliers",
+                        url_name="inventory:supplier_list",
+                        icon="bi bi-person-lines-fill",
+                    ),
+                    NavigationItem(
+                        name="Add Supplier",
+                        url_name="inventory:supplier_create",
+                        icon="bi bi-plus-circle",
+                    ),
+                ],
             ),
             NavigationItem(
                 name="Stock Management",
@@ -269,7 +376,7 @@ NAVIGATION_ITEMS = [
                     ),
                     NavigationItem(
                         name="Stock Adjustment",
-                        url_name="inventory:stock_create",
+                        url_name="inventory:movement_create",
                         icon="bi bi-sliders",
                         permission="inventory.change_stock"
                     ),
@@ -304,69 +411,6 @@ NAVIGATION_ITEMS = [
                     ),
                 ]
             ),
-            NavigationItem(
-                name="Bulk Import",
-                url_name="inventory:bulk_import",
-                icon="bi bi-upload",
-                permission="inventory.add_product"
-            ),
-        ]
-    ),
-
-    NavigationItem(
-        name="Services",
-        icon="bi bi-tools",
-        permission="services.view_service",
-        children=[
-            NavigationItem(
-                name="Services Dashboard",
-                url_name="services:dashboard",
-                icon="bi bi-speedometer2",
-                permission="services.view_service"
-            ),
-            NavigationItem(
-                name="Services",
-                url_name="services:service_list",
-                icon="bi bi-tools",
-                permission="services.view_service"
-            ),
-            NavigationItem(
-                name="Appointments",
-                url_name="services:appointment_list",
-                icon="bi bi-calendar-check",
-                permission="services.view_appointment"
-            ),
-            NavigationItem(
-                name="Calendar",
-                url_name="services:appointment_calendar",
-                icon="bi bi-calendar",
-                permission="services.view_appointment"
-            ),
-            NavigationItem(
-                name="Service Order",
-                url_name="services:execution_list",
-                icon="bi bi-clipboard-check",
-                permission="services.view_serviceexecution"
-            ),
-            NavigationItem(
-                name="Report Management",
-                icon="bi bi-clipboard-data",
-                permission="services.view_report",
-                children=[
-                    NavigationItem(
-                        name="Packages",
-                        url_name="services:package_list",
-                        icon="bi bi-box",
-                        permission="services.view_package"
-                    ),
-                    NavigationItem(
-                        name="Service Reports",
-                        url_name="services:reports_dashboard",
-                        icon="bi bi-graph-up",
-                        permission="services.view_report"
-                    ),
-                ]
-            ),
         ]
     ),
 
@@ -395,7 +439,234 @@ NAVIGATION_ITEMS = [
             ),
         ]
     ),
+    NavigationItem(
+        name="Finance",
+        icon="bi bi-cash-stack",
+        children=[
+            NavigationItem(
+                name="Dashboard",
+                url_name="finance:dashboard",
+                icon="bi bi-speedometer2",
+            ),
 
+            # 💱 Currency & Exchange
+            NavigationItem(
+                name="Currencies & Rates",
+                icon="bi bi-currency-exchange",
+                children=[
+                    NavigationItem(
+                        name="Currencies",
+                        url_name="finance:currency_list",
+                        icon="bi bi-coin",
+                    ),
+                    NavigationItem(
+                        name="Add Currency",
+                        url_name="finance:currency_create",
+                        icon="bi bi-plus-circle",
+                    ),
+                    NavigationItem(
+                        name="Exchange Rates",
+                        url_name="finance:exchange_rate_list",
+                        icon="bi bi-graph-up",
+                    ),
+                    NavigationItem(
+                        name="Fetch Exchange Rates",
+                        url_name="finance:fetch_exchange_rates",
+                        icon="bi bi-cloud-arrow-down",
+                    ),
+                ],
+            ),
+
+            # 📘 Chart of Accounts
+            NavigationItem(
+                name="Chart of Accounts",
+                icon="bi bi-journal-bookmark",
+                children=[
+                    NavigationItem(
+                        name="View Accounts",
+                        url_name="finance:chart_of_accounts_list",
+                        icon="bi bi-list-ul",
+                    ),
+                    NavigationItem(
+                        name="Add Account",
+                        url_name="finance:chart_of_accounts_create",
+                        icon="bi bi-plus-circle",
+                    ),
+                ],
+            ),
+
+            # 🧾 Journal Entries
+            NavigationItem(
+                name="Journals",
+                icon="bi bi-book",
+                children=[
+                    NavigationItem(
+                        name="Journal Entries",
+                        url_name="finance:journal_entry_list",
+                        icon="bi bi-journal",
+                    ),
+                    NavigationItem(
+                        name="Create Entry",
+                        url_name="finance:journal_entry_create",
+                        icon="bi bi-plus-circle",
+                    ),
+                    NavigationItem(
+                        name="Recurring Entries",
+                        url_name="finance:recurring_entry_list",
+                        icon="bi bi-arrow-repeat",
+                    ),
+                ],
+            ),
+
+            # 🏦 Banking
+            NavigationItem(
+                name="Banking",
+                icon="bi bi-bank",
+                children=[
+                    NavigationItem(
+                        name="Bank Accounts",
+                        url_name="finance:bank_account_list",
+                        icon="bi bi-credit-card-2-front",
+                    ),
+                    NavigationItem(
+                        name="Reconciliation",
+                        url_name="finance:bank_reconciliation_list",
+                        icon="bi bi-journal-check",
+                    ),
+                    NavigationItem(
+                        name="Transactions",
+                        url_name="finance:transaction_list",
+                        icon="bi bi-arrow-left-right",
+                    ),
+                ],
+            ),
+
+            # 💼 Budgets
+            NavigationItem(
+                name="Budgets",
+                icon="bi bi-wallet2",
+                children=[
+                    NavigationItem(
+                        name="All Budgets",
+                        url_name="finance:budget_list",
+                        icon="bi bi-list-task",
+                    ),
+                    NavigationItem(
+                        name="Create Budget",
+                        url_name="finance:budget_create",
+                        icon="bi bi-plus-circle",
+                    ),
+                ],
+            ),
+
+            # 🧱 Fixed Assets
+            NavigationItem(
+                name="Fixed Assets",
+                icon="bi bi-hdd-stack",
+                children=[
+                    NavigationItem(
+                        name="All Assets",
+                        url_name="finance:fixed_asset_list",
+                        icon="bi bi-box-seam",
+                    ),
+                    NavigationItem(
+                        name="Add Asset",
+                        url_name="finance:fixed_asset_create",
+                        icon="bi bi-plus-circle",
+                    ),
+                ],
+            ),
+
+            # 📅 Fiscal Management
+            NavigationItem(
+                name="Fiscal Management",
+                icon="bi bi-calendar-check",
+                children=[
+                    NavigationItem(
+                        name="Fiscal Years",
+                        url_name="finance:fiscal_year_list",
+                        icon="bi bi-calendar3",
+                    ),
+                    NavigationItem(
+                        name="Dimensions",
+                        url_name="finance:dimension_list",
+                        icon="bi bi-diagram-3",
+                    ),
+                ],
+            ),
+
+            # 🧾 Expenses
+            NavigationItem(
+                name="Expenses",
+                icon="bi bi-receipt",
+                children=[
+                    NavigationItem(
+                        name="Expense Dashboard",
+                        url_name="finance:expense_dashboard",
+                        icon="bi bi-speedometer2",
+                    ),
+                    NavigationItem(
+                        name="All Expenses",
+                        url_name="finance:expense_list",
+                        icon="bi bi-list-ul",
+                    ),
+                    NavigationItem(
+                        name="Add Expense",
+                        url_name="finance:expense_create",
+                        icon="bi bi-plus-circle",
+                    ),
+                    NavigationItem(
+                        name="Expense Categories",
+                        url_name="finance:expense_category_list",
+                        icon="bi bi-tags",
+                    ),
+                    NavigationItem(
+                        name="Petty Cash",
+                        url_name="finance:petty_cash_list",
+                        icon="bi bi-cash",
+                    ),
+                ],
+            ),
+
+            # 🧮 Reports
+            NavigationItem(
+                name="Reports",
+                icon="bi bi-bar-chart",
+                children=[
+                    NavigationItem(
+                        name="Financial Reports",
+                        url_name="finance:financial_reports_dashboard",
+                        icon="bi bi-clipboard-data",
+                    ),
+                    NavigationItem(
+                        name="Balance Sheet",
+                        url_name="finance:generate_balance_sheet",
+                        icon="bi bi-journal-richtext",
+                    ),
+                    NavigationItem(
+                        name="Income Statement",
+                        url_name="finance:generate_income_statement",
+                        icon="bi bi-graph-up",
+                    ),
+                    NavigationItem(
+                        name="Trial Balance",
+                        url_name="finance:generate_trial_balance",
+                        icon="bi bi-clipboard-check",
+                    ),
+                    NavigationItem(
+                        name="Cash Flow",
+                        url_name="finance:generate_cash_flow",
+                        icon="bi bi-cash-coin",
+                    ),
+                    NavigationItem(
+                        name="Tax Reports",
+                        url_name="finance:tax_report",
+                        icon="bi bi-file-earmark-bar-graph",
+                    ),
+                ],
+            ),
+        ],
+    ),
     NavigationItem(
         name="Customers",
         icon="bi bi-people",
@@ -567,19 +838,23 @@ NAVIGATION_ITEMS = [
         visible_func=lambda user: user.is_staff or user.is_superuser,
         children=[
             NavigationItem(
-                name="User Management",
-                url_name="user_list",
-                icon="bi bi-people",
-                permission="auth.view_user"
-            ),
-            NavigationItem(
                 name="System Settings",
-                url="#",
+                url_name="saas_admin_system_settings",
                 icon="bi bi-sliders"
             ),
             NavigationItem(
-                name="Security",
-                url="user_security_settings",
+                name="Audit Log",
+                url_name="saas_admin_audit_log",
+                icon="bi bi-clipboard-data"
+            ),
+            NavigationItem(
+                name="Company List",
+                url_name="system_companies_list",
+                icon="bi bi-building"
+            ),
+            NavigationItem(
+                name="Security Center",
+                url_name="user_security_settings",
                 icon="bi bi-shield-lock"
             ),
         ]

@@ -1,0 +1,84 @@
+{% extends 'base.html' %}
+{% load static i18n humanize %}
+
+{% block title %}{% trans "Transaction" %} #{{ transaction.transaction_id }} - {{ block.super }}{% endblock %}
+
+{% block breadcrumb_items %}
+    <li class="breadcrumb-item"><a href="{% url 'finance:dashboard' %}">{% trans "Finance" %}</a></li>
+    <li class="breadcrumb-item"><a href="{% url 'finance:transaction_list' %}">{% trans "Transactions" %}</a></li>
+    <li class="breadcrumb-item active">{{ transaction.transaction_id }}</li>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h2><i class="bi bi-arrow-left-right me-2"></i>{% trans "Transaction Details" %}</h2>
+            <p class="text-muted mb-0">{{ transaction.transaction_id }}</p>
+        </div>
+        <a href="{% url 'finance:transaction_list' %}" class="btn btn-outline-secondary">
+            <i class="bi bi-arrow-left me-1"></i>{% trans "Back" %}
+        </a>
+    </div>
+
+    <div class="row g-4">
+        <div class="col-md-8">
+            <div class="card border-0 shadow-sm mb-4">
+                <div class="card-header bg-transparent py-3">
+                    <h5 class="mb-0"><i class="bi bi-info-circle me-2"></i>{% trans "Transaction Information" %}</h5>
+                </div>
+                <div class="card-body">
+                    <dl class="row">
+                        <dt class="col-sm-4">{% trans "Type" %}</dt>
+                        <dd class="col-sm-8"><span class="badge bg-primary">{{ transaction.get_transaction_type_display }}</span></dd>
+                        <dt class="col-sm-4">{% trans "Bank Account" %}</dt>
+                        <dd class="col-sm-8">{{ transaction.bank_account }}</dd>
+                        <dt class="col-sm-4">{% trans "Amount" %}</dt>
+                        <dd class="col-sm-8"><h4>{{ transaction.amount|floatformat:2|intcomma }} {{ transaction.currency }}</h4></dd>
+                        <dt class="col-sm-4">{% trans "Date" %}</dt>
+                        <dd class="col-sm-8">{{ transaction.transaction_date }}</dd>
+                        <dt class="col-sm-4">{% trans "Payment Method" %}</dt>
+                        <dd class="col-sm-8">{{ transaction.get_payment_method_display }}</dd>
+                        <dt class="col-sm-4">{% trans "Payee/Payer" %}</dt>
+                        <dd class="col-sm-8">{{ transaction.payee_payer }}</dd>
+                        <dt class="col-sm-4">{% trans "Reference" %}</dt>
+                        <dd class="col-sm-8">{{ transaction.reference|default:"—" }}</dd>
+                        <dt class="col-sm-4">{% trans "Description" %}</dt>
+                        <dd class="col-sm-8">{{ transaction.description }}</dd>
+                    </dl>
+                </div>
+            </div>
+            {% if transaction.journal_entry %}
+            <div class="card border-0 shadow-sm">
+                <div class="card-header bg-transparent py-3">
+                    <h5 class="mb-0"><i class="bi bi-journal-text me-2"></i>{% trans "Related Journal Entry" %}</h5>
+                </div>
+                <div class="card-body">
+                    <a href="{% url 'finance:journal_entry_detail' transaction.journal_entry.pk %}" class="btn btn-outline-primary">
+                        {% trans "View Entry" %} {{ transaction.journal_entry.entry_number }}
+                    </a>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+        <div class="col-md-4">
+            <div class="card border-0 shadow-sm">
+                <div class="card-body text-center">
+                    <div class="mb-3">
+                        {% if transaction.is_cleared %}
+                            <i class="bi bi-check-circle text-success" style="font-size:3rem;"></i>
+                            <h5 class="mt-2">{% trans "Cleared" %}</h5>
+                            <p class="text-muted">{{ transaction.cleared_date }}</p>
+                        {% else %}
+                            <i class="bi bi-hourglass-split text-warning" style="font-size:3rem;"></i>
+                            <h5 class="mt-2">{% trans "Pending" %}</h5>
+                        {% endif %}
+                    </div>
+                    <small class="text-muted">{% trans "Created by" %} {{ transaction.created_by.get_full_name }}</small><br>
+                    <small class="text-muted">{{ transaction.created_at }}</small>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -6,6 +6,7 @@ from django.utils import timezone
 from django.urls import reverse_lazy, reverse
 from django.http import JsonResponse
 from django.contrib import messages
+from django.urls import reverse
 from datetime import timedelta
 from .utils import (
     get_visible_users,
@@ -26,8 +27,7 @@ def _is_admin_user(user):
     """
     return (
             getattr(user, 'is_saas_admin', False) or
-            user.user_type in ['SAAS_ADMIN', 'SYSTEM_ADMIN', 'SUPER_ADMIN'] or
-            user.is_superuser
+            user.primary_role and user.primary_role.priority >= 90
     )
 
 
@@ -132,7 +132,7 @@ def _get_user_statistics(include_hidden=False):
 
     # User type distribution
     stats['by_type'] = list(
-        base_queryset.values('user_type')
+        base_queryset.values('groups__role__group__name')
         .annotate(count=Count('id'))
         .order_by('-count')
     )
@@ -378,14 +378,14 @@ def switch_tenant_view(request):
             company = get_object_or_404(Company, id=tenant_id)
 
             # Store the target company in session
-            request.session['saas_admin_viewing_company'] = company.id
+            request.session['saas_admin_viewing_company'] = company.company_id
             request.session['saas_admin_viewing_company_name'] = company.name
 
             # Also store schema name if using django-tenants
             if hasattr(company, 'schema_name'):
                 request.session['saas_admin_viewing_schema'] = company.schema_name
 
-            logger.info(f"SaaS admin {request.user.email} switched to company {company.name} (ID: {company.id})")
+            logger.info(f"SaaS admin {request.user.email} switched to company {company.name} (ID: {company.company_id})")
 
             # Return JSON for AJAX requests
             if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
@@ -393,7 +393,7 @@ def switch_tenant_view(request):
                     'success': True,
                     'message': f'Switched to {company.name}',
                     'company': {
-                        'id': company.id,
+                        'id': company.company_id,
                         'name': company.name,
                         'schema_name': getattr(company, 'schema_name', ''),
                     },
@@ -437,10 +437,10 @@ def switch_tenant_view(request):
     companies_data = []
     for company in accessible_companies:
         companies_data.append({
-            'id': company.id,
+            'id': company.company_id,
             'name': company.name,
             'schema_name': getattr(company, 'schema_name', ''),
-            'company_id': getattr(company, 'company_id', company.id),
+            'company_id': getattr(company, 'company_id', company.company_id),
             'user_count': get_company_user_count(company),
             'status': getattr(company, 'status', 'ACTIVE'),
             'is_trial': getattr(company, 'is_trial', False),

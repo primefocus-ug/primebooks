@@ -2,10 +2,41 @@ from django.shortcuts import redirect
 from django.contrib import messages
 from django.utils.deprecation import MiddlewareMixin
 from django.contrib.auth import get_user_model
+from django.utils.functional import SimpleLazyObject
 from django_tenants.utils import get_tenant_model, get_public_schema_name
+import time
 
 User = get_user_model()
 
+
+class RolePermissionMiddleware:
+    """
+    Middleware to ensure permissions are loaded from roles
+    """
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        if hasattr(request, 'user') and request.user.is_authenticated:
+            # Force permission refresh on each request
+            request.user = SimpleLazyObject(lambda: self._get_user_with_perms(request.user))
+
+        response = self.get_response(request)
+        return response
+
+    def _get_user_with_perms(self, user):
+        """Refresh user permissions from database"""
+        from django.contrib.auth import get_user_model
+        User = get_user_model()
+
+        # Get fresh user instance with permissions
+        fresh_user = User.objects.select_related('company').prefetch_related(
+            'groups__permissions',
+            'user_permissions'
+        ).get(pk=user.pk)
+
+        return fresh_user
 
 class SaaSAdminAccessMiddleware(MiddlewareMixin):
     """
@@ -189,4 +220,44 @@ class SaaSAdminContextMiddleware(MiddlewareMixin):
                     'saas_admin_context': getattr(request, 'saas_admin_context', {}),
                 })
 
+        return response
+
+
+
+
+class AuditMiddleware(MiddlewareMixin):
+    """
+    Middleware to track request timing for audit logs
+    """
+
+    def process_request(self, request):
+        """Store request start time"""
+        request._audit_start_time = time.time()
+
+    def process_response(self, request, response):
+        """Calculate request duration"""
+        if hasattr(request, '_audit_start_time'):
+            duration = (time.time() - request._audit_start_time) * 1000  # Convert to ms
+            request._audit_duration = int(duration)
+
+        return response
+
+
+class RefreshPermissionsMiddleware:
+    """Ensure user permissions are fresh on each request"""
+
+    def __init__(self, get_response):
+        self.get_response = get_response
+
+    def __call__(self, request):
+        if hasattr(request, 'user') and request.user.is_authenticated:
+            # Clear permission cache
+            if hasattr(request.user, '_perm_cache'):
+                delattr(request.user, '_perm_cache')
+            if hasattr(request.user, '_user_perm_cache'):
+                delattr(request.user, '_user_perm_cache')
+            if hasattr(request.user, '_group_perm_cache'):
+                delattr(request.user, '_group_perm_cache')
+
+        response = self.get_response(request)
         return response

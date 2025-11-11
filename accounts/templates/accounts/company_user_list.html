@@ -1,5 +1,6 @@
 {% extends 'base.html' %}
 {% load i18n %}
+{% load custom_filters %}
 {% load static %}
 
 {% block extra_css %}
@@ -46,10 +47,6 @@
         font-size: 0.875rem;
         border-radius: 6px;
     }
-    .bg-primary { background-color: #007bff !important; }
-    .bg-success { background-color: #28a745 !important; }
-    .bg-info { background-color: #17a2b8 !important; }
-    .bg-warning { background-color: #ffc107 !important; }
 </style>
 {% endblock %}
 
@@ -61,18 +58,18 @@
                 <div class="col-md-8">
                     <h1 class="mb-1">
                         <i class="fas fa-building me-2"></i>
-                        {{ company.display_name }}
+                        {{ company.display_name|default:company.name }}
                     </h1>
                     <p class="mb-0 opacity-75">{% trans "User Management" %}</p>
                 </div>
                 <div class="col-md-4 text-end">
                     <div class="d-flex gap-2 justify-content-end">
                         {% if can_add_users %}
-                            <a href="{% url 'invite_user' company.id %}" class="btn btn-light">
+                            <a href="{% url 'invite_user' %}" class="btn btn-light">
                                 <i class="fas fa-user-plus me-1"></i> {% trans "Invite User" %}
                             </a>
-                            <a href="{% url 'assign_user_to_company' company.id %}" class="btn btn-outline-light">
-                                <i class="fas fa-user-plus me-1"></i> {% trans "Add Existing" %}
+                            <a href="{% url 'assign_user_to_company' %}" class="btn btn-outline-light">
+                                <i class="fas fa-link me-1"></i> {% trans "Add Existing" %}
                             </a>
                         {% else %}
                             <span class="badge bg-warning">{% trans "User limit reached" %}</span>
@@ -100,7 +97,7 @@
                     <div class="card-body">
                         <i class="fas fa-user-shield text-success fa-2x mb-2"></i>
                         <h4 class="mb-1">
-                            {% with admins=company_users|filter_attr:"is_company_admin" %}
+                            {% with admins=company_users|filter_attr:"company_admin" %}
                                 {{ admins|length }}
                             {% endwith %}
                         </h4>
@@ -125,7 +122,7 @@
                 <div class="card stats-card text-center">
                     <div class="card-body">
                         <i class="fas fa-chart-line text-warning fa-2x mb-2"></i>
-                        <h4 class="mb-1">{{ company.plan.max_users }}</h4>
+                        <h4 class="mb-1">{{ company.plan.max_users|default:"Unlimited" }}</h4>
                         <small class="text-muted">{% trans "Max Allowed" %}</small>
                     </div>
                 </div>
@@ -148,7 +145,7 @@
                             <i class="fas fa-search me-1"></i> {% trans "Search" %}
                         </button>
                         {% if search_query %}
-                            <a href="{% url 'company_user_list' company.id %}" class="btn btn-outline-secondary ms-2">
+                            <a href="{% url 'company_user_list'  %}" class="btn btn-outline-secondary ms-2">
                                 <i class="fas fa-times me-1"></i> {% trans "Clear" %}
                             </a>
                         {% endif %}
@@ -164,7 +161,7 @@
                     <i class="fas fa-users me-2"></i>
                     {% trans "Company Users" %}
                 </h5>
-                <span class="badge bg-primary">{% blocktrans %}{{ company_users.paginator.count }} users{% endblocktrans %}</span>
+                <span class="badge bg-primary">{% blocktrans with count=company_users.paginator.count %}{{ count }} users{% endblocktrans %}</span>
             </div>
             <div class="card-body p-0">
                 {% if company_users %}
@@ -181,72 +178,78 @@
                                 </tr>
                             </thead>
                             <tbody>
-                                {% for company_user in company_users %}
+                                {% for user in company_users %}
                                     <tr>
                                         <td>
                                             <div class="d-flex align-items-center">
-                                                {% if company_user.user.avatar %}
-                                                    <img src="{{ company_user.user.avatar.url }}"
+                                                {% if user.avatar %}
+                                                    <img src="{{ user.avatar.url }}"
                                                          class="user-avatar me-3" alt="{% trans "Avatar" %}">
                                                 {% else %}
                                                     <div class="user-avatar me-3 bg-secondary d-flex align-items-center justify-content-center text-white">
-                                                        {{ company_user.user.get_full_name|first|default:company_user.user.username|first }}
+                                                        {{ user.get_full_name|first|default:user.username|first|upper }}
                                                     </div>
                                                 {% endif %}
                                                 <div>
                                                     <div class="fw-semibold">
-                                                        {{ company_user.user.get_full_name|default:company_user.user.username }}
-                                                        {% if company.owner == company_user.user %}
-                                                            <i class="fas fa-crown text-warning ms-1" title="{% trans "Company Owner" %}"></i>
+                                                        {{ user.get_full_name|default:user.username }}
+                                                        {% if user.company_admin %}
+                                                            <i class="fas fa-crown text-warning ms-1" title="{% trans "Company Admin" %}"></i>
+                                                        {% endif %}
+                                                        {% if user.is_saas_admin %}
+                                                            <i class="fas fa-star text-info ms-1" title="{% trans "SaaS Admin" %}"></i>
                                                         {% endif %}
                                                     </div>
-                                                    <small class="text-muted">{{ company_user.user.email }}</small>
+                                                    <small class="text-muted">{{ user.email }}</small>
                                                 </div>
                                             </div>
                                         </td>
                                         <td>
                                             <div>
                                                 <span class="badge bg-light text-dark">
-                                                    {{ company_user.user.get_user_type_display }}
+                                                    {{ user.display_role|default:"No Role" }}
                                                 </span>
-                                                {% if company_user.is_company_admin %}
+                                                {% if user.company_admin %}
                                                     <br><span class="admin-badge mt-1">{% trans "Admin" %}</span>
                                                 {% endif %}
                                             </div>
                                         </td>
                                         <td>
-                                            <span class="user-status {% if company_user.is_active and company_user.user.is_active %}active{% else %}inactive{% endif %}"></span>
-                                            {% if company_user.is_active and company_user.user.is_active %}
+                                            <span class="user-status {% if user.is_active %}active{% else %}inactive{% endif %}"></span>
+                                            {% if user.is_active %}
                                                 <span class="text-success">{% trans "Active" %}</span>
                                             {% else %}
                                                 <span class="text-danger">{% trans "Inactive" %}</span>
                                             {% endif %}
+                                            {% if user.is_locked %}
+                                                <br><small class="text-warning">{% trans "Locked" %}</small>
+                                            {% endif %}
                                         </td>
                                         <td>
-                                            <small>{% blocktrans %}{{ company_user.created_at|date:"M d, Y" }}{% endblocktrans %}</small>
+                                            <small>{{ user.date_joined|date:"M d, Y" }}</small>
                                         </td>
                                         <td>
-                                            {% if company_user.user.last_login %}
-                                                <small>{% blocktrans %}{{ company_user.user.last_login|date:"M d, Y H:i" }}{% endblocktrans %}</small>
+                                            {% if user.last_login %}
+                                                <small>{{ user.last_login|date:"M d, Y H:i" }}</small>
                                             {% else %}
                                                 <small class="text-muted">{% trans "Never" %}</small>
                                             {% endif %}
                                         </td>
                                         <td>
                                             <div class="btn-group" role="group">
-                                                <a href="{% url 'user_detail' company_user.user.pk %}"
+                                                <a href="{% url 'user_detail' user.pk %}"
                                                    class="btn btn-sm btn-outline-primary action-btn" title="{% trans "View Details" %}">
                                                     <i class="fas fa-eye"></i>
                                                 </a>
 
-                                                {% if company.owner != company_user.user %}
-                                                    <a href="{% url 'toggle_company_admin' company.id company_user.user.pk %}"
-                                                       class="btn btn-sm {% if company_user.is_company_admin %}btn-outline-warning{% else %}btn-outline-success{% endif %} action-btn"
-                                                       title="{% if company_user.is_company_admin %}{% trans "Remove Admin" %}{% else %}{% trans "Make Admin" %}{% endif %}">
-                                                        <i class="fas {% if company_user.is_company_admin %}fa-user-minus{% else %}fa-user-shield{% endif %}"></i>
+                                                {% if not user.is_saas_admin and user != request.user %}
+                                                    <a href="{% url 'toggle_company_admin'  user_id=user.pk %}"
+                                                       class="btn btn-sm {% if user.company_admin %}btn-outline-warning{% else %}btn-outline-success{% endif %} action-btn"
+                                                       title="{% if user.company_admin %}{% trans "Remove Admin" %}{% else %}{% trans "Make Admin" %}{% endif %}">
+                                                        <i class="fas {% if user.company_admin %}fa-user-minus{% else %}fa-user-shield{% endif %}"></i>
                                                     </a>
 
-                                                    <a href="{% url 'remove_user_from_company' company.id company_user.user.pk %}"
+                                                    <a href="{% url 'remove_user_from_company' user_id=user.pk %}"
                                                        class="btn btn-sm btn-outline-danger action-btn"
                                                        onclick="return confirm('{% trans "Are you sure you want to remove this user from the company?" %}')"
                                                        title="{% trans "Remove from Company" %}">
@@ -272,7 +275,7 @@
                             {% endif %}
                         </p>
                         {% if can_add_users %}
-                            <a href="{% url 'invite_user' company.id %}" class="btn btn-primary">
+                            <a href="{% url 'invite_user' %}" class="btn btn-primary">
                                 <i class="fas fa-user-plus me-1"></i> {% trans "Invite First User" %}
                             </a>
                         {% endif %}
@@ -327,7 +330,6 @@
         {% endif %}
     </div>
 </div>
-
 {% endblock %}
 
 {% block extra_js %}
@@ -337,7 +339,18 @@
         const removeButtons = document.querySelectorAll('a[href*="remove_user_from_company"]');
         removeButtons.forEach(button => {
             button.addEventListener('click', function(e) {
-                if (!confirm('Are you sure you want to remove this user from the company?')) {
+                if (!confirm('{% trans "Are you sure you want to remove this user from the company?" %}')) {
+                    e.preventDefault();
+                }
+            });
+        });
+
+        // Confirm before changing admin status
+        const adminButtons = document.querySelectorAll('a[href*="toggle_company_admin"]');
+        adminButtons.forEach(button => {
+            button.addEventListener('click', function(e) {
+                const action = this.title.toLowerCase();
+                if (!confirm('{% trans "Are you sure you want to" %} ' + action + '?')) {
                     e.preventDefault();
                 }
             });

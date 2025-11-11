@@ -1,0 +1,616 @@
+{% extends 'base.html' %}
+{% load i18n %}
+{% load static %}
+
+{% block title %}{% trans "Audit Dashboard" %} | {{ block.super }}{% endblock %}
+
+{% block breadcrumb_items %}
+<li class="breadcrumb-item"><a href="{% url 'user_dashboard' %}">{% trans "Dashboard" %}</a></li>
+<li class="breadcrumb-item active">{% trans "Audit Dashboard" %}</li>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+    .metrics-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        gap: 1.5rem;
+        margin-bottom: 2rem;
+    }
+
+    .metric-card {
+        background: linear-gradient(135deg, var(--primary-600) 0%, var(--primary-700) 100%);
+        color: white;
+        border-radius: var(--border-radius-lg);
+        padding: 1.5rem;
+        box-shadow: var(--shadow-lg);
+        transition: all 0.3s ease;
+        position: relative;
+        overflow: hidden;
+    }
+
+    .metric-card::before {
+        content: '';
+        position: absolute;
+        top: -50%;
+        right: -50%;
+        width: 200%;
+        height: 200%;
+        background: radial-gradient(circle, rgba(255,255,255,0.1) 0%, transparent 70%);
+        animation: pulse 3s ease-in-out infinite;
+    }
+
+    @keyframes pulse {
+        0%, 100% { transform: scale(1); opacity: 0.5; }
+        50% { transform: scale(1.1); opacity: 0.8; }
+    }
+
+    .metric-card:hover {
+        transform: translateY(-4px);
+        box-shadow: var(--shadow-xl);
+    }
+
+    .metric-card.warning {
+        background: linear-gradient(135deg, var(--amber-500) 0%, var(--amber-600) 100%);
+    }
+
+    .metric-card.danger {
+        background: linear-gradient(135deg, var(--red-500) 0%, var(--red-600) 100%);
+    }
+
+    .metric-card.success {
+        background: linear-gradient(135deg, var(--green-500) 0%, var(--green-600) 100%);
+    }
+
+    .metric-card.info {
+        background: linear-gradient(135deg, var(--primary-500) 0%, var(--primary-600) 100%);
+    }
+
+    .metric-icon {
+        font-size: 2.5rem;
+        opacity: 0.9;
+        margin-bottom: 0.5rem;
+        position: relative;
+        z-index: 1;
+    }
+
+    .metric-value {
+        font-size: 2.5rem;
+        font-weight: 700;
+        line-height: 1;
+        margin-bottom: 0.5rem;
+        position: relative;
+        z-index: 1;
+    }
+
+    .metric-label {
+        font-size: 0.875rem;
+        opacity: 0.9;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        position: relative;
+        z-index: 1;
+    }
+
+    .chart-card {
+        background: var(--bg-primary);
+        border: 1px solid var(--border-color);
+        border-radius: var(--border-radius);
+        padding: 1.5rem;
+        margin-bottom: 1.5rem;
+        box-shadow: var(--shadow-sm);
+    }
+
+    .chart-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 1.5rem;
+        padding-bottom: 1rem;
+        border-bottom: 2px solid var(--border-color);
+    }
+
+    .chart-title {
+        font-size: 1.125rem;
+        font-weight: 600;
+        color: var(--text-primary);
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
+    .chart-container {
+        position: relative;
+        height: 300px;
+    }
+
+    .event-list {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+    }
+
+    .event-item {
+        padding: 1rem;
+        border-bottom: 1px solid var(--border-color);
+        transition: background 0.2s ease;
+    }
+
+    .event-item:hover {
+        background: var(--bg-secondary);
+    }
+
+    .event-item:last-child {
+        border-bottom: none;
+    }
+
+    .event-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: start;
+        margin-bottom: 0.5rem;
+    }
+
+    .event-title {
+        font-weight: 600;
+        color: var(--text-primary);
+    }
+
+    .event-time {
+        font-size: 0.875rem;
+        color: var(--text-secondary);
+    }
+
+    .event-description {
+        font-size: 0.875rem;
+        color: var(--text-secondary);
+        margin-bottom: 0.5rem;
+    }
+
+    .event-meta {
+        display: flex;
+        gap: 1rem;
+        flex-wrap: wrap;
+    }
+
+    .top-list {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+    }
+
+    .top-list-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 0.75rem 1rem;
+        border-bottom: 1px solid var(--border-color);
+        transition: background 0.2s ease;
+    }
+
+    .top-list-item:hover {
+        background: var(--bg-secondary);
+    }
+
+    .top-list-item:last-child {
+        border-bottom: none;
+    }
+
+    .top-list-rank {
+        width: 2rem;
+        height: 2rem;
+        border-radius: 50%;
+        background: var(--primary-100);
+        color: var(--primary-700);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 700;
+        margin-right: 1rem;
+        flex-shrink: 0;
+    }
+
+    .top-list-content {
+        flex: 1;
+    }
+
+    .top-list-name {
+        font-weight: 600;
+        color: var(--text-primary);
+    }
+
+    .top-list-count {
+        font-size: 1.25rem;
+        font-weight: 700;
+        color: var(--primary-600);
+    }
+
+    .empty-state {
+        text-align: center;
+        padding: 3rem 1rem;
+    }
+
+    .empty-state-icon {
+        font-size: 4rem;
+        color: var(--text-muted);
+        margin-bottom: 1rem;
+    }
+
+    .empty-state-text {
+        color: var(--text-secondary);
+        font-size: 1rem;
+    }
+
+    [data-theme="dark"] .top-list-rank {
+        background: rgba(59, 130, 246, 0.2);
+        color: var(--primary-400);
+    }
+
+    [data-theme="dark"] .metric-card {
+        background: linear-gradient(135deg, var(--primary-700) 0%, var(--primary-800) 100%);
+    }
+
+    [data-theme="dark"] .metric-card.warning {
+        background: linear-gradient(135deg, var(--amber-600) 0%, var(--amber-700) 100%);
+    }
+
+    [data-theme="dark"] .metric-card.danger {
+        background: linear-gradient(135deg, var(--red-600) 0%, var(--red-700) 100%);
+    }
+
+    [data-theme="dark"] .metric-card.success {
+        background: linear-gradient(135deg, var(--green-600) 0%, var(--green-700) 100%);
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- Page Header -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1 class="h3 mb-0">
+            <i class="bi bi-graph-up-arrow me-2"></i>{% trans "Audit Dashboard" %}
+        </h1>
+        <div class="d-flex gap-2">
+            <a href="{% url 'saas_admin_audit_log' %}" class="btn btn-primary">
+                <i class="bi bi-list-ul me-2"></i>{% trans "View All Logs" %}
+            </a>
+            <a href="{% url 'export_audit_dashboard_data' %}" class="btn btn-outline-primary">
+                <i class="bi bi-download me-2"></i>{% trans "Export Data" %}
+            </a>
+        </div>
+    </div>
+
+    <!-- Key Metrics -->
+    <div class="metrics-grid">
+        <div class="metric-card">
+            <div class="metric-icon">
+                <i class="bi bi-file-text"></i>
+            </div>
+            <div class="metric-value">{{ metrics.total_logs|default:0 }}</div>
+            <div class="metric-label">{% trans "Total Logs" %}</div>
+        </div>
+
+        <div class="metric-card success">
+            <div class="metric-icon">
+                <i class="bi bi-clock-history"></i>
+            </div>
+            <div class="metric-value">{{ metrics.logs_24h|default:0 }}</div>
+            <div class="metric-label">{% trans "Last 24 Hours" %}</div>
+        </div>
+
+        <div class="metric-card danger">
+            <div class="metric-icon">
+                <i class="bi bi-exclamation-triangle"></i>
+            </div>
+            <div class="metric-value">{{ metrics.failed_actions_24h|default:0 }}</div>
+            <div class="metric-label">{% trans "Failed Actions" %}</div>
+        </div>
+
+        <div class="metric-card warning">
+            <div class="metric-icon">
+                <i class="bi bi-shield-exclamation"></i>
+            </div>
+            <div class="metric-value">{{ metrics.critical_alerts|default:0 }}</div>
+            <div class="metric-label">{% trans "Critical Alerts" %}</div>
+        </div>
+
+        <div class="metric-card info">
+            <div class="metric-icon">
+                <i class="bi bi-clipboard-check"></i>
+            </div>
+            <div class="metric-value">{{ metrics.pending_reviews|default:0 }}</div>
+            <div class="metric-label">{% trans "Pending Reviews" %}</div>
+        </div>
+    </div>
+
+    <!-- Activity Chart -->
+    <div class="chart-card">
+        <div class="chart-header">
+            <div class="chart-title">
+                <i class="bi bi-graph-up"></i>
+                {% trans "Activity Over Last 24 Hours" %}
+            </div>
+            <small class="text-muted">{% trans "Hourly breakdown" %}</small>
+        </div>
+        <div class="chart-container">
+            <canvas id="activityChart"></canvas>
+        </div>
+    </div>
+
+    <!-- Two Column Layout -->
+    <div class="row">
+        <!-- Top Actions -->
+        <div class="col-lg-6 mb-4">
+            <div class="chart-card">
+                <div class="chart-header">
+                    <div class="chart-title">
+                        <i class="bi bi-lightning"></i>
+                        {% trans "Top Actions (Last 7 Days)" %}
+                    </div>
+                    <span class="badge bg-primary">{{ top_actions|length }}</span>
+                </div>
+                {% if top_actions %}
+                <ul class="top-list">
+                    {% for action in top_actions %}
+                    <li class="top-list-item">
+                        <div class="top-list-rank">{{ forloop.counter }}</div>
+                        <div class="top-list-content">
+                            <div class="top-list-name">
+                                {% for choice in action_types %}
+                                    {% if choice.0 == action.action %}
+                                        {{ choice.1 }}
+                                    {% endif %}
+                                {% endfor %}
+                            </div>
+                        </div>
+                        <div class="top-list-count">{{ action.count }}</div>
+                    </li>
+                    {% endfor %}
+                </ul>
+                {% else %}
+                <div class="empty-state">
+                    <div class="empty-state-icon">
+                        <i class="bi bi-inbox"></i>
+                    </div>
+                    <p class="empty-state-text">{% trans "No action data available" %}</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Top Users -->
+        <div class="col-lg-6 mb-4">
+            <div class="chart-card">
+                <div class="chart-header">
+                    <div class="chart-title">
+                        <i class="bi bi-people"></i>
+                        {% trans "Most Active Users (Last 7 Days)" %}
+                    </div>
+                    <span class="badge bg-primary">{{ top_users|length }}</span>
+                </div>
+                {% if top_users %}
+                <ul class="top-list">
+                    {% for user in top_users %}
+                    <li class="top-list-item">
+                        <div class="top-list-rank">{{ forloop.counter }}</div>
+                        <div class="top-list-content">
+                            <div class="top-list-name">
+                                {% if user.user__first_name %}
+                                    {{ user.user__first_name }} {{ user.user__last_name }}
+                                {% else %}
+                                    {{ user.user__email }}
+                                {% endif %}
+                            </div>
+                        </div>
+                        <div class="top-list-count">{{ user.count }}</div>
+                    </li>
+                    {% endfor %}
+                </ul>
+                {% else %}
+                <div class="empty-state">
+                    <div class="empty-state-icon">
+                        <i class="bi bi-person-x"></i>
+                    </div>
+                    <p class="empty-state-text">{% trans "No user data available" %}</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Failed Actions and Security Events -->
+    <div class="row">
+        <!-- Failed Actions -->
+        <div class="col-lg-6 mb-4">
+            <div class="chart-card border-danger">
+                <div class="chart-header">
+                    <div class="chart-title text-danger">
+                        <i class="bi bi-x-circle"></i>
+                        {% trans "Recent Failed Actions" %}
+                    </div>
+                    <span class="badge bg-danger">{{ failed_actions|length }}</span>
+                </div>
+                {% if failed_actions %}
+                <ul class="event-list">
+                    {% for action in failed_actions %}
+                    <li class="event-item">
+                        <div class="event-header">
+                            <div class="event-title">{{ action.get_action_display }}</div>
+                            <div class="event-time">{{ action.timestamp|timesince }} {% trans "ago" %}</div>
+                        </div>
+                        <div class="event-description">
+                            {{ action.action_description|truncatewords:15 }}
+                        </div>
+                        <div class="event-meta">
+                            <span class="badge bg-danger">
+                                {% if action.user %}
+                                    <i class="bi bi-person"></i> {{ action.user.email }}
+                                {% else %}
+                                    <i class="bi bi-gear"></i> {% trans "System" %}
+                                {% endif %}
+                            </span>
+                            {% if action.company %}
+                            <span class="badge bg-secondary">
+                                <i class="bi bi-building"></i> {{ action.company.name }}
+                            </span>
+                            {% endif %}
+                            {% if action.error_message %}
+                            <small class="text-danger">{{ action.error_message|truncatewords:10 }}</small>
+                            {% endif %}
+                        </div>
+                        <div class="mt-2">
+                            <a href="{% url 'audit_log_detail' action.id %}" class="btn btn-sm btn-outline-danger">
+                                <i class="bi bi-eye me-1"></i>{% trans "View" %}
+                            </a>
+                        </div>
+                    </li>
+                    {% endfor %}
+                </ul>
+                {% else %}
+                <div class="empty-state">
+                    <div class="empty-state-icon text-success">
+                        <i class="bi bi-check-circle"></i>
+                    </div>
+                    <p class="empty-state-text text-success">{% trans "No failed actions in last 24 hours" %}</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Security Events -->
+        <div class="col-lg-6 mb-4">
+            <div class="chart-card border-warning">
+                <div class="chart-header">
+                    <div class="chart-title text-warning">
+                        <i class="bi bi-shield-exclamation"></i>
+                        {% trans "Security Events" %}
+                    </div>
+                    <span class="badge bg-warning">{{ security_events|length }}</span>
+                </div>
+                {% if security_events %}
+                <ul class="event-list">
+                    {% for event in security_events %}
+                    <li class="event-item">
+                        <div class="event-header">
+                            <div class="event-title">{{ event.get_action_display }}</div>
+                            <div class="event-time">{{ event.timestamp|timesince }} {% trans "ago" %}</div>
+                        </div>
+                        <div class="event-description">
+                            {{ event.action_description|truncatewords:15 }}
+                        </div>
+                        <div class="event-meta">
+                            <span class="badge bg-warning">
+                                {% if event.user %}
+                                    <i class="bi bi-person"></i> {{ event.user.email }}
+                                {% else %}
+                                    <i class="bi bi-gear"></i> {% trans "System" %}
+                                {% endif %}
+                            </span>
+                            <span class="badge bg-secondary">
+                                <i class="bi bi-geo-alt"></i> {{ event.ip_address }}
+                            </span>
+                            {% if event.company %}
+                            <span class="badge bg-secondary">
+                                <i class="bi bi-building"></i> {{ event.company.name }}
+                            </span>
+                            {% endif %}
+                        </div>
+                        <div class="mt-2">
+                            <a href="{% url 'audit_log_detail' event.id %}" class="btn btn-sm btn-outline-warning">
+                                <i class="bi bi-eye me-1"></i>{% trans "View" %}
+                            </a>
+                        </div>
+                    </li>
+                    {% endfor %}
+                </ul>
+                {% else %}
+                <div class="empty-state">
+                    <div class="empty-state-icon text-success">
+                        <i class="bi bi-shield-check"></i>
+                    </div>
+                    <p class="empty-state-text text-success">{% trans "No security events in last 7 days" %}</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Activity Chart
+    const ctx = document.getElementById('activityChart');
+    if (ctx) {
+        const activityData = {{ activity_by_hour|safe }};
+
+        const chart = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: activityData.map(d => {
+                    const date = new Date(d.hour);
+                    return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+                }),
+                datasets: [{
+                    label: '{% trans "Actions" %}',
+                    data: activityData.map(d => d.count),
+                    backgroundColor: 'rgba(59, 130, 246, 0.5)',
+                    borderColor: 'rgb(59, 130, 246)',
+                    borderWidth: 2,
+                    borderRadius: 4,
+                    hoverBackgroundColor: 'rgba(59, 130, 246, 0.7)',
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        display: false
+                    },
+                    tooltip: {
+                        callbacks: {
+                            title: function(context) {
+                                return context[0].label;
+                            },
+                            label: function(context) {
+                                return '{% trans "Actions" %}: ' + context.parsed.y;
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        ticks: {
+                            stepSize: 1,
+                            precision: 0
+                        },
+                        grid: {
+                            color: 'rgba(0, 0, 0, 0.05)'
+                        }
+                    },
+                    x: {
+                        ticks: {
+                            maxRotation: 45,
+                            minRotation: 45
+                        },
+                        grid: {
+                            display: false
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    // Auto-refresh dashboard every 5 minutes
+    setTimeout(function() {
+        location.reload();
+    }, 300000); // 5 minutes
+});
+</script>
+{% endblock %}

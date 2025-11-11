@@ -1,0 +1,210 @@
+{% extends 'base.html' %}
+{% load static %}
+{% load i18n %}
+{% load humanize %}
+
+{% block title %}{% trans "Announcements" %}{% endblock %}
+
+{% block extra_css %}
+<style>
+    .announcement-card {
+        border-left: 4px solid;
+        transition: all 0.3s ease;
+    }
+
+    .announcement-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    }
+
+    .announcement-icon {
+        width: 50px;
+        height: 50px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 50%;
+        font-size: 1.5rem;
+    }
+
+    @media (max-width: 767.98px) {
+        .announcement-icon {
+            width: 40px;
+            height: 40px;
+            font-size: 1.25rem;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block breadcrumb_items %}
+    <li class="breadcrumb-item"><a href="{% url 'user_dashboard' %}">{% trans "Home" %}</a></li>
+    <li class="breadcrumb-item active">{% trans "Announcements" %}</li>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- Page Header -->
+    <div class="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center mb-4">
+        <div>
+            <h1 class="h3 mb-2">
+                <i class="bi bi-megaphone me-2"></i>
+                {% trans "System Announcements" %}
+            </h1>
+            <p class="text-muted mb-0">
+                {% trans "Important updates and notices" %}
+            </p>
+        </div>
+        <div class="mt-3 mt-md-0">
+            <a href="{% url 'notifications:notification_list' %}" class="btn btn-outline-primary">
+                <i class="bi bi-arrow-left me-2"></i>
+                {% trans "Back to Notifications" %}
+            </a>
+        </div>
+    </div>
+
+    {% if announcements %}
+        <div class="row g-3">
+            {% for announcement in announcements %}
+                <div class="col-12">
+                    <div class="card border-0 shadow-sm announcement-card"
+                         style="border-left-color: {% if announcement.announcement_type == 'critical' %}#dc3545{% elif announcement.announcement_type == 'warning' %}#ffc107{% elif announcement.announcement_type == 'maintenance' %}#0dcaf0{% elif announcement.announcement_type == 'update' %}#198754{% elif announcement.announcement_type == 'feature' %}#0d6efd{% else %}#6c757d{% endif %};">
+                        <div class="card-body">
+                            <div class="d-flex align-items-start">
+                                <!-- Icon -->
+                                <div class="announcement-icon me-3
+                                    {% if announcement.announcement_type == 'critical' %}bg-danger bg-opacity-10 text-danger
+                                    {% elif announcement.announcement_type == 'warning' %}bg-warning bg-opacity-10 text-warning
+                                    {% elif announcement.announcement_type == 'maintenance' %}bg-info bg-opacity-10 text-info
+                                    {% elif announcement.announcement_type == 'update' %}bg-success bg-opacity-10 text-success
+                                    {% elif announcement.announcement_type == 'feature' %}bg-primary bg-opacity-10 text-primary
+                                    {% else %}bg-secondary bg-opacity-10 text-secondary{% endif %}">
+                                    {% if announcement.announcement_type == 'critical' %}
+                                        <i class="bi bi-exclamation-triangle-fill"></i>
+                                    {% elif announcement.announcement_type == 'warning' %}
+                                        <i class="bi bi-exclamation-circle-fill"></i>
+                                    {% elif announcement.announcement_type == 'maintenance' %}
+                                        <i class="bi bi-tools"></i>
+                                    {% elif announcement.announcement_type == 'update' %}
+                                        <i class="bi bi-arrow-up-circle-fill"></i>
+                                    {% elif announcement.announcement_type == 'feature' %}
+                                        <i class="bi bi-star-fill"></i>
+                                    {% else %}
+                                        <i class="bi bi-megaphone-fill"></i>
+                                    {% endif %}
+                                </div>
+
+                                <!-- Content -->
+                                <div class="flex-grow-1">
+                                    <div class="d-flex justify-content-between align-items-start mb-2">
+                                        <div>
+                                            <h5 class="mb-1">{{ announcement.title }}</h5>
+                                            <span class="badge
+                                                {% if announcement.announcement_type == 'critical' %}bg-danger
+                                                {% elif announcement.announcement_type == 'warning' %}bg-warning text-dark
+                                                {% elif announcement.announcement_type == 'maintenance' %}bg-info text-dark
+                                                {% elif announcement.announcement_type == 'update' %}bg-success
+                                                {% elif announcement.announcement_type == 'feature' %}bg-primary
+                                                {% else %}bg-secondary{% endif %}">
+                                                {{ announcement.get_announcement_type_display }}
+                                            </span>
+                                        </div>
+                                        {% if announcement.is_dismissible %}
+                                            <form method="post" action="{% url 'notifications:dismiss_announcement' announcement.pk %}" class="ms-2">
+                                                {% csrf_token %}
+                                                <button type="submit" class="btn btn-sm btn-link text-muted" title="{% trans 'Dismiss' %}">
+                                                    <i class="bi bi-x-lg"></i>
+                                                </button>
+                                            </form>
+                                        {% endif %}
+                                    </div>
+
+                                    <p class="mb-2">{{ announcement.message }}</p>
+
+                                    <div class="d-flex flex-wrap gap-3 align-items-center">
+                                        <small class="text-muted">
+                                            <i class="bi bi-calendar3 me-1"></i>
+                                            {{ announcement.start_date|date:"M d, Y" }}
+                                            {% if announcement.end_date %}
+                                                - {{ announcement.end_date|date:"M d, Y" }}
+                                            {% endif %}
+                                        </small>
+
+                                        {% if announcement.action_url %}
+                                            <a href="{{ announcement.action_url }}" class="btn btn-sm btn-primary">
+                                                <i class="bi bi-arrow-right me-1"></i>
+                                                {{ announcement.action_text|default:_("Learn More") }}
+                                            </a>
+                                        {% endif %}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            {% endfor %}
+        </div>
+    {% else %}
+        <!-- Empty State -->
+        <div class="card border-0 shadow-sm">
+            <div class="card-body text-center py-5">
+                <i class="bi bi-megaphone text-muted" style="font-size: 4rem;"></i>
+                <h4 class="mt-3 text-muted">{% trans "No Active Announcements" %}</h4>
+                <p class="text-muted">
+                    {% trans "There are no active announcements at this time." %}
+                </p>
+                <a href="{% url 'notifications:notification_list' %}" class="btn btn-primary mt-3">
+                    <i class="bi bi-arrow-left me-2"></i>
+                    {% trans "Back to Notifications" %}
+                </a>
+            </div>
+        </div>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Handle dismiss buttons with AJAX
+    document.querySelectorAll('form[action*="dismiss"]').forEach(form => {
+        form.addEventListener('submit', function(e) {
+            e.preventDefault();
+
+            const formData = new FormData(form);
+
+            fetch(form.action, {
+                method: 'POST',
+                body: formData,
+                headers: {
+                    'X-Requested-With': 'XMLHttpRequest'
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    // Fade out and remove the announcement card
+                    const card = form.closest('.announcement-card').parentElement;
+                    card.style.transition = 'opacity 0.3s ease';
+                    card.style.opacity = '0';
+
+                    setTimeout(() => {
+                        card.remove();
+
+                        // Check if there are any announcements left
+                        const announcementsGrid = document.querySelector('.row.g-3');
+                        if (announcementsGrid && announcementsGrid.children.length === 0) {
+                            location.reload();
+                        }
+                    }, 300);
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                form.submit(); // Fallback to normal form submission
+            });
+        });
+    });
+});
+</script>
+{% endblock %}

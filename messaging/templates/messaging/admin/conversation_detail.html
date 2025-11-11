@@ -1,0 +1,217 @@
+{% extends 'base.html' %}
+{% load static %}
+{% load i18n %}
+
+{% block title %}{% trans "Conversation Detail" %} | {{ block.super }}{% endblock %}
+
+{% block breadcrumb_items %}
+<li class="breadcrumb-item"><a href="{% url 'messaging:admin_dashboard' %}">{% trans "Admin" %}</a></li>
+<li class="breadcrumb-item"><a href="{% url 'messaging:admin_conversations' %}">{% trans "Conversations" %}</a></li>
+<li class="breadcrumb-item active">#{{ conversation.id }}</li>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- Header -->
+    <div class="card mb-4">
+        <div class="card-header">
+            <h3 class="mb-0">
+                <i class="bi bi-chat-dots me-2"></i>
+                {% if conversation.name %}
+                    {{ conversation.name }}
+                {% else %}
+                    {% trans "Direct Message" %}
+                {% endif %}
+            </h3>
+        </div>
+        <div class="card-body">
+            <div class="row">
+                <div class="col-md-6">
+                    <table class="table table-sm">
+                        <tr>
+                            <th>{% trans "ID" %}:</th>
+                            <td>{{ conversation.id }}</td>
+                        </tr>
+                        <tr>
+                            <th>{% trans "Type" %}:</th>
+                            <td><span class="badge bg-primary">{{ conversation.get_conversation_type_display }}</span></td>
+                        </tr>
+                        <tr>
+                            <th>{% trans "Created By" %}:</th>
+                            <td>{{ conversation.created_by.username }}</td>
+                        </tr>
+                        <tr>
+                            <th>{% trans "Created At" %}:</th>
+                            <td>{{ conversation.created_at }}</td>
+                        </tr>
+                    </table>
+                </div>
+                <div class="col-md-6">
+                    <table class="table table-sm">
+                        <tr>
+                            <th>{% trans "Participants" %}:</th>
+                            <td>{{ participants.count }}</td>
+                        </tr>
+                        <tr>
+                            <th>{% trans "Cross-Tenant" %}:</th>
+                            <td>
+                                {% if conversation.is_cross_tenant %}
+                                    <span class="badge bg-warning">{% trans "Yes" %}</span>
+                                {% else %}
+                                    <span class="badge bg-secondary">{% trans "No" %}</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        <tr>
+                            <th>{% trans "Description" %}:</th>
+                            <td>{{ conversation.description|default:"—" }}</td>
+                        </tr>
+                    </table>
+                </div>
+            </div>
+
+            {% if conversation.description %}
+            <div class="alert alert-info mt-3">
+                <strong>{% trans "Description" %}:</strong> {{ conversation.description }}
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="row">
+        <!-- Participants -->
+        <div class="col-md-4">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0">{% trans "Participants" %}</h5>
+                </div>
+                <div class="card-body p-0">
+                    <div class="list-group list-group-flush">
+                        {% for participant in participants %}
+                        <div class="list-group-item">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <div>
+                                    <strong>{{ participant.user.username }}</strong>
+                                    {% if participant.is_admin %}
+                                        <span class="badge bg-primary">{% trans "Admin" %}</span>
+                                    {% endif %}
+                                    <br>
+                                    <small class="text-muted">{{ participant.user.email }}</small>
+                                </div>
+                                <div>
+                                    {% if participant.is_muted %}
+                                        <i class="bi bi-bell-slash text-muted" title="{% trans 'Muted' %}"></i>
+                                    {% endif %}
+                                </div>
+                            </div>
+                            <small class="text-muted">
+                                {% trans "Joined" %}: {{ participant.joined_at|date:"Y-m-d H:i" }}
+                            </small>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Messages Metadata -->
+        <div class="col-md-8">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0">{% trans "Messages (Metadata Only)" %}</h5>
+                    <small class="text-muted">
+                        {% trans "For privacy, message content is not displayed. Only metadata is shown." %}
+                    </small>
+                </div>
+                <div class="card-body p-0">
+                    <div class="table-responsive" style="max-height: 500px; overflow-y: auto;">
+                        <table class="table table-sm mb-0">
+                            <thead class="table-light sticky-top">
+                                <tr>
+                                    <th>{% trans "ID" %}</th>
+                                    <th>{% trans "Sender" %}</th>
+                                    <th>{% trans "Type" %}</th>
+                                    <th>{% trans "Time" %}</th>
+                                    <th>{% trans "Status" %}</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for msg in messages_metadata %}
+                                <tr>
+                                    <td>{{ msg.id }}</td>
+                                    <td>{{ msg.sender__username }}</td>
+                                    <td>
+                                        {% if msg.message_type == 'text' %}
+                                            <i class="bi bi-chat-text"></i> {% trans "Text" %}
+                                        {% elif msg.message_type == 'file' %}
+                                            <i class="bi bi-file-earmark"></i> {% trans "File" %}
+                                        {% else %}
+                                            <i class="bi bi-info-circle"></i> {% trans "System" %}
+                                        {% endif %}
+                                    </td>
+                                    <td>{{ msg.created_at|date:"Y-m-d H:i:s" }}</td>
+                                    <td>
+                                        {% if msg.is_edited %}
+                                            <span class="badge bg-warning">{% trans "Edited" %}</span>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                {% empty %}
+                                <tr>
+                                    <td colspan="5" class="text-center text-muted py-3">
+                                        {% trans "No messages" %}
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Audit Log -->
+    <div class="card mt-4">
+        <div class="card-header">
+            <h5 class="mb-0">{% trans "Audit Trail" %}</h5>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-sm mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>{% trans "Time" %}</th>
+                            <th>{% trans "Action" %}</th>
+                            <th>{% trans "User" %}</th>
+                            <th>{% trans "Details" %}</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for log in audit_logs %}
+                        <tr>
+                            <td>{{ log.timestamp|date:"Y-m-d H:i:s" }}</td>
+                            <td><span class="badge bg-info">{{ log.get_action_type_display }}</span></td>
+                            <td>{{ log.user.username|default:"System" }}</td>
+                            <td>
+                                {% if log.metadata %}
+                                    <small class="text-muted">{{ log.metadata }}</small>
+                                {% else %}
+                                    —
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="4" class="text-center text-muted py-3">
+                                {% trans "No audit logs" %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -2834,6 +2834,324 @@ class EnhancedEFRISAPIClient:
 
         return actual_content
 
+    # ============================================================================
+    # SERVICE MANAGEMENT INTERFACES (Uses same T130, T144 as Products)
+    # ============================================================================
+
+    def register_service_with_efris(self, service) -> Dict[str, Any]:
+        """
+        Register service with EFRIS using T130 (same as products)
+        Services use goodsTypeCode='101' but serviceMark='102'
+
+        Args:
+            service: Service model instance
+
+        Returns:
+            Dict with registration results
+        """
+        try:
+            # Ensure authentication
+            auth_result = self.ensure_authenticated()
+            if not auth_result.get("success"):
+                return {
+                    "success": False,
+                    "error": f"Authentication failed: {auth_result.get('error')}"
+                }
+
+            # Determine service code
+            service_code = getattr(service, 'code', None) or f"SRV{service.id}"
+
+            # Service pricing
+            unit_price = float(getattr(service, 'unit_price', 0) or 0)
+
+            # Check if service has excise tax
+            has_excise = self._service_has_excise_tax(service)
+
+            # Build T130 service data (same structure as product)
+            service_data = {
+                "operationType": "101",  # 101=Add, 102=Modify
+                "goodsName": str(service.name[:200] if service.name else "Unnamed Service"),
+                "goodsCode": str(service_code),
+                "measureUnit": self._map_unit_to_efris(service.unit_of_measure),
+                "unitPrice": f"{unit_price:.2f}",
+                "currency": "101",  # UGX
+                "commodityCategoryId": service.category.efris_category_id if service.category else '100000000000000000',
+                "haveExciseTax": "101" if has_excise else "102",
+                "description": str((getattr(service, 'description', None) or service.name or "")[:1024]),
+                "stockPrewarning": "0",  # ✅ Services don't have stock warnings
+                "havePieceUnit": "102",
+                "pieceMeasureUnit": "",
+                "pieceUnitPrice": "",
+                "packageScaledValue": "",
+                "pieceScaledValue": "",
+                "exciseDutyCode": "",
+                "haveOtherUnit": "102",
+                "goodsTypeCode": "101",  # Standard goods type (not fuel)
+            }
+
+            if has_excise:
+                excise_info = self._build_excise_tax_info(service)
+                service_data.update(excise_info)
+
+            # T130 expects an array
+            service_data_array = [service_data]
+
+            # Validate
+            validation_errors = self._validate_t130_data(service_data)
+            if validation_errors:
+                return {
+                    "success": False,
+                    "error": f"Validation failed: {'; '.join(validation_errors)}"
+                }
+
+            logger.info(f"Registering service {service_code} with EFRIS (T130)")
+
+            try:
+                request_data = self._build_request("T130", service_data_array, encrypt=True)
+                response = self._make_http_request(request_data)
+
+                if response.status_code != 200:
+                    return {
+                        "success": False,
+                        "error": f"HTTP {response.status_code}",
+                        "service_code": service_code
+                    }
+
+                response_data = response.json()
+                return_info = response_data.get('returnStateInfo', {})
+                return_code = return_info.get('returnCode', '99')
+
+                if return_code not in ['00', '45']:
+                    error_message = return_info.get('returnMessage', 'T130 API call failed')
+                    logger.error(f"T130 failed: {return_code} - {error_message}")
+                    return {
+                        "success": False,
+                        "error": error_message,
+                        "error_code": return_code,
+                        "service_code": service_code
+                    }
+
+                # Decrypt response content
+                data_section = response_data.get('data', {})
+                decrypted_content = self._decrypt_response_content(data_section)
+
+                # Normalize response
+                if isinstance(decrypted_content, dict):
+                    for key in ['goodsStockIn', 'records', 'data', 'results']:
+                        if key in decrypted_content and isinstance(decrypted_content[key], list):
+                            decrypted_content = decrypted_content[key]
+                            break
+
+                # Handle empty response (success with no immediate data)
+                if not isinstance(decrypted_content, list) or len(decrypted_content) == 0:
+                    logger.info(f"T130 successful (empty response) for {service_code}")
+                    time.sleep(1)  # Wait a moment
+
+                    # Query EFRIS for the service ID and code
+                    query_result = self.t144_query_goods_by_code(service_code)
+
+                    if query_result.get('success') and query_result.get('goods'):
+                        efris_service = query_result['goods'][0]
+                        efris_service_id = efris_service.get('id')
+                        efris_service_code = efris_service.get('goodsCode') or service_code
+
+                        # Update service
+                        service.efris_is_uploaded = True
+                        service.efris_upload_date = timezone.now()
+                        service.efris_service_id = efris_service_id
+                        service.save(update_fields=[
+                            'efris_is_uploaded',
+                            'efris_upload_date',
+                            'efris_service_id'
+                        ])
+
+                        logger.info(f"Service {service_code} uploaded: ID={efris_service_id}")
+
+                        return {
+                            "success": True,
+                            "message": "Service registered with EFRIS",
+                            "service_code": service_code,
+                            "efris_service_id": efris_service_id,
+                            "efris_service_code": efris_service_code,
+                            "efris_data": efris_service
+                        }
+
+                    # Query failed
+                    logger.warning(f"Service uploaded but query failed for {service_code}")
+                    service.efris_is_uploaded = True
+                    service.efris_upload_date = timezone.now()
+                    service.save(update_fields=['efris_is_uploaded', 'efris_upload_date'])
+                    return {
+                        "success": True,
+                        "message": "Service uploaded but could not retrieve EFRIS ID",
+                        "service_code": service_code
+                    }
+
+                # Handle normal response list
+                result_item = decrypted_content[0]
+                efris_service_id = result_item.get('commodityGoodsId') or result_item.get('goodsId')
+                efris_service_code = result_item.get('goodsCode') or service_code
+
+                # Update service
+                service.efris_is_uploaded = True
+                service.efris_upload_date = timezone.now()
+                service.efris_service_id = efris_service_id
+                service.save(update_fields=[
+                    'efris_is_uploaded',
+                    'efris_upload_date',
+                    'efris_service_id'
+                ])
+
+                logger.info(f"Service {service_code} uploaded: ID={efris_service_id}")
+
+                return {
+                    "success": True,
+                    "message": "Service registered with EFRIS",
+                    "service_code": service_code,
+                    "efris_service_id": efris_service_id,
+                    "efris_service_code": efris_service_code,
+                    "efris_data": result_item
+                }
+
+            except json.JSONDecodeError as e:
+                logger.error(f"T130 JSON parsing error: {e}")
+                return {"success": False, "error": f"Invalid JSON response: {e}", "service_code": service_code}
+            except Exception as api_error:
+                logger.error(f"T130 processing error: {api_error}", exc_info=True)
+                return {"success": False, "error": str(api_error), "service_code": service_code}
+
+        except Exception as e:
+            logger.error(f"Service registration failed: {e}", exc_info=True)
+            return {"success": False, "error": str(e)}
+
+    def refresh_service_from_efris(self, service) -> Dict[str, Any]:
+        """
+        Query EFRIS for service details and update local service
+
+        Args:
+            service: Service model instance
+
+        Returns:
+            Dict with refresh results
+        """
+        try:
+            service_code = service.code
+
+            if not service_code:
+                return {
+                    "success": False,
+                    "error": "Service has no code"
+                }
+
+            logger.info(f"Refreshing service {service_code} from EFRIS")
+
+            # Query EFRIS using T144
+            query_result = self.t144_query_goods_by_code(service_code)
+
+            if not query_result.get('success'):
+                return {
+                    "success": False,
+                    "error": query_result.get('error', 'Query failed')
+                }
+
+            goods_list = query_result.get('goods', [])
+
+            if not goods_list:
+                return {
+                    "success": False,
+                    "error": f"Service {service_code} not found in EFRIS"
+                }
+
+            efris_service = goods_list[0]
+            efris_service_id = efris_service.get('id')
+
+            if not efris_service_id:
+                return {
+                    "success": False,
+                    "error": "EFRIS service ID not available in response"
+                }
+
+            # Update service
+            updates = {}
+
+            if service.efris_service_id != efris_service_id:
+                updates['efris_service_id'] = efris_service_id
+
+            if not service.efris_is_uploaded:
+                updates['efris_is_uploaded'] = True
+
+            if not service.efris_upload_date:
+                updates['efris_upload_date'] = timezone.now()
+
+            if updates:
+                for field, value in updates.items():
+                    setattr(service, field, value)
+                service.save(update_fields=list(updates.keys()))
+
+                logger.info(f"Service {service_code} updated with EFRIS data: {updates}")
+
+            return {
+                "success": True,
+                "message": "Service refreshed from EFRIS",
+                "efris_service_id": efris_service_id,
+                "efris_data": efris_service,
+                "updates": updates
+            }
+
+        except Exception as e:
+            logger.error(f"Failed to refresh service from EFRIS: {e}", exc_info=True)
+            return {
+                "success": False,
+                "error": str(e)
+            }
+
+    def _service_has_excise_tax(self, service) -> bool:
+        """Check if service is subject to excise tax"""
+        excise_rate = getattr(service, 'excise_duty_rate', None)
+        if excise_rate and float(excise_rate) > 0:
+            return True
+        return False
+
+    def query_service_by_code(self, service_code: str) -> Dict[str, Any]:
+        """
+        Query service details from EFRIS by code
+        Uses T144 interface
+
+        Args:
+            service_code: Service code to query
+
+        Returns:
+            Dict with service details or error
+        """
+        try:
+            result = self.t144_query_goods_by_code(service_code)
+
+            if result.get('success') and result.get('goods'):
+                service_data = result['goods'][0]
+
+                # Check if it's actually a service (serviceMark='102')
+                service_mark = service_data.get('serviceMark', '101')
+
+                return {
+                    "success": True,
+                    "is_service": service_mark == '102',
+                    "service_data": service_data,
+                    "service_code": service_code
+                }
+
+            return {
+                "success": False,
+                "error": result.get('error', 'Service not found')
+            }
+
+        except Exception as e:
+            logger.error(f"Service query failed: {e}", exc_info=True)
+            return {
+                "success": False,
+                "error": str(e)
+            }
+
+
     def register_product_with_efris(self, product) -> Dict[str, Any]:
         """
         Register product with EFRIS (T130) and retrieve the EFRIS goods ID and code.
@@ -8771,6 +9089,140 @@ class EnhancedEFRISAPIClient:
             logger.error(f"T124 failed: {e}", exc_info=True)
             return {"success": False, "error": str(e)}
 
+def bulk_register_services_with_efris(company):
+    """
+    Bulk register services with EFRIS
+    Similar to bulk_register_products_with_efris but for services
+
+    Args:
+        company: Company instance
+
+    Returns:
+        Dict with bulk registration results
+    """
+    results = {
+        'total': 0,
+        'successful': 0,
+        'failed': 0,
+        'errors': [],
+        'warnings': [],
+        'registered_services': []
+    }
+
+    try:
+        with schema_context(company.schema_name):
+            from inventory.models import Service
+
+            # Get services that need registration
+            services = Service.objects.filter(
+                is_active=True,
+                efris_is_uploaded=False,
+                efris_auto_sync_enabled=True
+            ).select_related('category')
+
+            results['total'] = services.count()
+
+            if results['total'] == 0:
+                results['warnings'].append('No services found that need EFRIS registration')
+                return results
+
+            logger.info(f"Starting bulk registration of {results['total']} services for company {company.name}")
+
+            with EnhancedEFRISAPIClient(company) as client:
+                # Process services in batches
+                batch_size = 10
+                for i in range(0, results['total'], batch_size):
+                    batch_services = services[i:i + batch_size]
+
+                    for service in batch_services:
+                        try:
+                            # Validate service before registration
+                            validation_errors = []
+
+                            if not service.name or len(service.name.strip()) < 2:
+                                validation_errors.append("Service name is too short")
+
+                            if not service.code:
+                                validation_errors.append("Service code is missing")
+
+                            if not hasattr(service, 'unit_price') or service.unit_price is None:
+                                validation_errors.append("Unit price is missing")
+
+                            if not service.category:
+                                validation_errors.append("Service category is missing")
+                            elif service.category.category_type != 'service':
+                                validation_errors.append("Category must be a service category")
+                            elif not service.category.efris_commodity_category_code:
+                                validation_errors.append("Category must have EFRIS commodity category")
+
+                            if validation_errors:
+                                results['failed'] += 1
+                                results['errors'].append({
+                                    'service_id': service.id,
+                                    'code': service.code,
+                                    'name': service.name,
+                                    'error': f"Validation failed: {'; '.join(validation_errors)}"
+                                })
+                                continue
+
+                            # Register the service
+                            result = client.register_service_with_efris(service)
+
+                            if result.get('success'):
+                                results['successful'] += 1
+                                results['registered_services'].append({
+                                    'service_id': service.id,
+                                    'code': service.code,
+                                    'name': service.name,
+                                    'efris_service_id': result.get('efris_service_id', 'N/A')
+                                })
+                                logger.info(f"Successfully registered service: {service.name}")
+                            else:
+                                results['failed'] += 1
+                                error_detail = {
+                                    'service_id': service.id,
+                                    'code': service.code,
+                                    'name': service.name,
+                                    'error': result.get('error', 'Unknown error'),
+                                    'error_code': result.get('error_code')
+                                }
+                                results['errors'].append(error_detail)
+                                logger.error(f"Failed to register service {service.name}: {result.get('error')}")
+
+                        except Exception as e:
+                            results['failed'] += 1
+                            error_detail = {
+                                'service_id': service.id,
+                                'code': service.code,
+                                'name': service.name,
+                                'error': f"Registration exception: {str(e)}"
+                            }
+                            results['errors'].append(error_detail)
+                            logger.error(f"Exception during service registration: {e}", exc_info=True)
+
+                    # Small delay between batches
+                    if i + batch_size < results['total']:
+                        import time
+                        time.sleep(1)
+
+    except Exception as e:
+        results['errors'].append({
+            'service_id': None,
+            'code': 'SYSTEM',
+            'name': 'Bulk Registration',
+            'error': f"System error: {str(e)}"
+        })
+        logger.error(f"Bulk service registration system error: {e}", exc_info=True)
+
+    # Generate summary
+    success_rate = (results['successful'] / results['total'] * 100) if results['total'] > 0 else 0
+    logger.info(
+        f"Bulk service registration completed: {results['successful']}/{results['total']} "
+        f"services registered ({success_rate:.1f}% success rate)"
+    )
+
+    return results
+
 
 def bulk_register_products_with_efris(company):
     results = {
@@ -9463,6 +9915,220 @@ def test_efris_connection(company) -> Dict[str, Any]:
         results['error'] = str(e)
 
     return results
+
+class EFRISServiceManager:
+    """
+    Service manager for EFRIS operations
+    Handles service-specific EFRIS logic
+    """
+
+    def __init__(self, company):
+        self.company = company
+        self.client = EnhancedEFRISAPIClient(company)
+
+    def register_service(self, service, user=None) -> Dict[str, Any]:
+        """
+        Register a single service with EFRIS
+
+        Args:
+            service: Service model instance
+            user: Optional user performing the action
+
+        Returns:
+            Dict with registration result
+        """
+        try:
+            # Validate service
+            is_valid, errors = self.validate_service_for_efris(service)
+            if not is_valid:
+                return {
+                    "success": False,
+                    "error": f"Validation failed: {'; '.join(errors)}"
+                }
+
+            # Register with EFRIS
+            result = self.client.register_service_with_efris(service)
+
+            # Log the operation
+            if result.get('success'):
+                self._log_service_operation(
+                    service=service,
+                    operation='REGISTER',
+                    success=True,
+                    user=user
+                )
+            else:
+                self._log_service_operation(
+                    service=service,
+                    operation='REGISTER',
+                    success=False,
+                    error=result.get('error'),
+                    user=user
+                )
+
+            return result
+
+        except Exception as e:
+            logger.error(f"Service registration failed: {e}", exc_info=True)
+            return {
+                "success": False,
+                "error": str(e)
+            }
+
+    def update_service(self, service, user=None) -> Dict[str, Any]:
+        """
+        Update service in EFRIS (uses T130 with operationType='102')
+
+        Args:
+            service: Service model instance
+            user: Optional user performing the action
+
+        Returns:
+            Dict with update result
+        """
+        try:
+            if not service.efris_service_id:
+                return {
+                    "success": False,
+                    "error": "Service must be registered with EFRIS before updating"
+                }
+
+            # Mark as not uploaded to trigger update
+            service.efris_is_uploaded = False
+
+            # Register (will use operationType='102' for update)
+            result = self.client.register_service_with_efris(service)
+
+            if result.get('success'):
+                self._log_service_operation(
+                    service=service,
+                    operation='UPDATE',
+                    success=True,
+                    user=user
+                )
+
+            return result
+
+        except Exception as e:
+            logger.error(f"Service update failed: {e}", exc_info=True)
+            return {
+                "success": False,
+                "error": str(e)
+            }
+
+    def validate_service_for_efris(self, service) -> Tuple[bool, List[str]]:
+        """
+        Validate service for EFRIS compliance
+
+        Args:
+            service: Service model instance
+
+        Returns:
+            Tuple of (is_valid, list_of_errors)
+        """
+        errors = []
+
+        # Basic validation
+        if not service:
+            return False, ["Service object is required"]
+
+        # Name validation
+        if not service.name or len(service.name.strip()) < 2:
+            errors.append("Service name must be at least 2 characters")
+
+        # Code validation
+        if not service.code:
+            errors.append("Service code is required")
+
+        # Price validation
+        if not hasattr(service, 'unit_price') or service.unit_price is None:
+            errors.append("Unit price is required")
+        elif service.unit_price < 0:
+            errors.append("Unit price cannot be negative")
+
+        # Category validation
+        if not service.category:
+            errors.append("Service must have a category")
+        else:
+            if service.category.category_type != 'service':
+                errors.append("Category must be a service category")
+
+            if not service.category.efris_commodity_category_code:
+                errors.append("Category must have EFRIS commodity category assigned")
+            elif not service.category.efris_is_leaf_node:
+                errors.append("Category's EFRIS commodity category must be a leaf node")
+
+        # Tax validation
+        if not service.tax_rate:
+            errors.append("Tax rate is required")
+
+        # Unit of measure validation
+        if not service.unit_of_measure:
+            errors.append("Unit of measure is required")
+
+        return len(errors) == 0, errors
+
+    def sync_service_changes(self, service, user=None) -> Dict[str, Any]:
+        """
+        Sync service changes to EFRIS if auto-sync is enabled
+
+        Args:
+            service: Service model instance
+            user: Optional user performing the action
+
+        Returns:
+            Dict with sync result
+        """
+        if not service.efris_auto_sync_enabled:
+            return {
+                "success": False,
+                "message": "Auto-sync is disabled for this service"
+            }
+
+        if not service.efris_is_uploaded:
+            # Not yet uploaded, do initial registration
+            return self.register_service(service, user)
+        else:
+            # Already uploaded, do update
+            return self.update_service(service, user)
+
+    def _log_service_operation(
+            self,
+            service,
+            operation: str,
+            success: bool,
+            error: Optional[str] = None,
+            user=None
+    ):
+        """
+        Log EFRIS service operation
+
+        Args:
+            service: Service model instance
+            operation: Operation type (REGISTER, UPDATE, etc.)
+            success: Whether operation succeeded
+            error: Optional error message
+            user: Optional user performing the action
+        """
+        try:
+            from efris.models import EFRISAPILog
+
+            EFRISAPILog.objects.create(
+                company=self.company,
+                interface_code='T130',
+                request_type=f'SERVICE_{operation}',
+                status='SUCCESS' if success else 'FAILED',
+                error_message=error,
+                request_data={
+                    'service_id': service.id,
+                    'service_code': service.code,
+                    'service_name': service.name,
+                    'operation': operation
+                },
+                created_by=user
+            )
+        except Exception as e:
+            logger.warning(f"Failed to log service operation: {e}")
 
 
 class EFRISProductService:
@@ -10286,4 +10952,5 @@ __all__ = [
     'TaxpayerQueryService',
     'GoodsInquiryService',
     'schedule_daily_dictionary_update',
+    'EFRISServiceManager',
 ]

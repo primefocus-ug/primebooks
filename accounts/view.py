@@ -30,6 +30,34 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+from django.db import connection
+from django_tenants.utils import tenant_context
+from company.email import send_tenant_email, send_password_reset_email
+# accounts/views.py
+from django.http import JsonResponse
+from django.contrib.auth.decorators import login_required
+
+
+@login_required
+def debug_permissions(request):
+    user = request.user
+
+    return JsonResponse({
+        'user': user.email,
+        'is_active': user.is_active,
+        'is_saas_admin': user.is_saas_admin,
+        'company_id': user.company_id,
+        'company_name': user.company.name if user.company else None,
+        'groups': list(user.groups.values_list('name', flat=True)),
+        'roles': list(user.groups.filter(role__isnull=False).values(
+            'name', 'role__priority', 'role__is_active'
+        )),
+        'all_permissions': list(user.get_all_permissions()),
+        'group_permissions': list(
+            user.groups.values_list('permissions__codename', flat=True)
+        ),
+    })
+
 def password_reset_request(request):
     """
     Password reset request - user enters email
@@ -40,42 +68,86 @@ def password_reset_request(request):
             email = form.cleaned_data['email']
 
             try:
-                user = CustomUser.objects.get(email=email, is_active=True)
+                # Get the current tenant
+                tenant = getattr(request, 'tenant', None) or getattr(connection, 'tenant', None)
 
-                # Generate password reset token
-                token = default_token_generator.make_token(user)
-                uid = urlsafe_base64_encode(force_bytes(user.pk))
+                # Use tenant context for user lookup and email sending
+                if tenant:
+                    with tenant_context(tenant):
+                        user = CustomUser.objects.get(email=email, is_active=True)
 
-                # Build reset URL
-                reset_url = request.build_absolute_uri(
-                    reverse('password_reset_confirm', kwargs={
-                        'uidb64': uid,
-                        'token': token
+                        # Generate password reset token
+                        token = default_token_generator.make_token(user)
+                        uid = urlsafe_base64_encode(force_bytes(user.pk))
+
+                        # Build reset URL
+                        reset_url = request.build_absolute_uri(
+                            reverse('password_reset_confirm', kwargs={
+                                'uidb64': uid,
+                                'token': token
+                            })
+                        )
+
+                        # Send email using tenant-aware function
+                        subject = 'Password Reset Request'
+                        message = render_to_string('accounts/password_reset_email.html', {
+                            'user': user,
+                            'reset_url': reset_url,
+                            'site_name': tenant.name,
+                        })
+
+                        send_tenant_email(
+                            subject=subject,
+                            message=message,
+                            recipient_list=[user.email],
+                            html_message=message,
+                            fail_silently=False,
+                            tenant=tenant
+                        )
+
+                        messages.success(
+                            request,
+                            'Password reset instructions have been sent to your email.'
+                        )
+                        logger.info(f"Password reset email sent to {email} for tenant {tenant.name}")
+                else:
+                    # Fallback to regular user lookup and email sending
+                    user = CustomUser.objects.get(email=email, is_active=True)
+
+                    # Generate password reset token
+                    token = default_token_generator.make_token(user)
+                    uid = urlsafe_base64_encode(force_bytes(user.pk))
+
+                    # Build reset URL
+                    reset_url = request.build_absolute_uri(
+                        reverse('password_reset_confirm', kwargs={
+                            'uidb64': uid,
+                            'token': token
+                        })
+                    )
+
+                    # Send email using default method
+                    subject = 'Password Reset Request'
+                    message = render_to_string('accounts/password_reset_email.html', {
+                        'user': user,
+                        'reset_url': reset_url,
+                        'site_name': 'POS System',
                     })
-                )
 
-                # Send email
-                subject = 'Password Reset Request'
-                message = render_to_string('accounts/password_reset_email.html', {
-                    'user': user,
-                    'reset_url': reset_url,
-                    'site_name': request.tenant.name if hasattr(request, 'tenant') else 'POS System',
-                })
+                    send_mail(
+                        subject,
+                        message,
+                        settings.DEFAULT_FROM_EMAIL,
+                        [user.email],
+                        html_message=message,
+                        fail_silently=False,
+                    )
 
-                send_mail(
-                    subject,
-                    message,
-                    settings.DEFAULT_FROM_EMAIL,
-                    [user.email],
-                    html_message=message,
-                    fail_silently=False,
-                )
-
-                messages.success(
-                    request,
-                    'Password reset instructions have been sent to your email.'
-                )
-                logger.info(f"Password reset email sent to {email}")
+                    messages.success(
+                        request,
+                        'Password reset instructions have been sent to your email.'
+                    )
+                    logger.info(f"Password reset email sent to {email} (no tenant context)")
 
             except CustomUser.DoesNotExist:
                 # Don't reveal if email exists or not (security)
@@ -97,36 +169,86 @@ def password_reset_confirm(request, uidb64, token):
     Password reset confirmation - user clicks link from email
     """
     try:
+        # Get the current tenant
+        tenant = getattr(request, 'tenant', None) or getattr(connection, 'tenant', None)
+
         uid = force_str(urlsafe_base64_decode(uidb64))
-        user = CustomUser.objects.get(pk=uid)
-    except (TypeError, ValueError, OverflowError, CustomUser.DoesNotExist):
-        user = None
 
-    if user is not None and default_token_generator.check_token(user, token):
-        if request.method == 'POST':
-            form = SetPasswordForm(user, request.POST)
-            if form.is_valid():
-                form.save()
+        if tenant:
+            # Use tenant context for user lookup and password reset
+            with tenant_context(tenant):
+                user = CustomUser.objects.get(pk=uid)
 
-                # Unlock account if locked
-                if user.is_locked:
-                    user.unlock_account()
+                if user is not None and default_token_generator.check_token(user, token):
+                    if request.method == 'POST':
+                        form = SetPasswordForm(user, request.POST)
+                        if form.is_valid():
+                            form.save()
 
-                messages.success(
-                    request,
-                    'Your password has been reset successfully. You can now log in.'
-                )
-                logger.info(f"Password reset successful for user {user.email}")
+                            # Unlock account if locked
+                            if user.is_locked:
+                                user.unlock_account()
 
-                return redirect('login')
+                            messages.success(
+                                request,
+                                'Your password has been reset successfully. You can now log in.'
+                            )
+                            logger.info(f"Password reset successful for user {user.email} in tenant {tenant.name}")
+
+                            return redirect('login')
+                    else:
+                        form = SetPasswordForm(user)
+
+                    return render(request, 'accounts/password_reset_confirm.html', {
+                        'form': form,
+                        'validlink': True,
+                    })
+                else:
+                    messages.error(
+                        request,
+                        'The password reset link is invalid or has expired. Please request a new one.'
+                    )
+                    return render(request, 'accounts/password_reset_confirm.html', {
+                        'validlink': False,
+                    })
         else:
-            form = SetPasswordForm(user)
+            # Fallback without tenant context
+            user = CustomUser.objects.get(pk=uid)
 
-        return render(request, 'accounts/password_reset_confirm.html', {
-            'form': form,
-            'validlink': True,
-        })
-    else:
+            if user is not None and default_token_generator.check_token(user, token):
+                if request.method == 'POST':
+                    form = SetPasswordForm(user, request.POST)
+                    if form.is_valid():
+                        form.save()
+
+                        # Unlock account if locked
+                        if user.is_locked:
+                            user.unlock_account()
+
+                        messages.success(
+                            request,
+                            'Your password has been reset successfully. You can now log in.'
+                        )
+                        logger.info(f"Password reset successful for user {user.email}")
+
+                        return redirect('login')
+                else:
+                    form = SetPasswordForm(user)
+
+                return render(request, 'accounts/password_reset_confirm.html', {
+                    'form': form,
+                    'validlink': True,
+                })
+            else:
+                messages.error(
+                    request,
+                    'The password reset link is invalid or has expired. Please request a new one.'
+                )
+                return render(request, 'accounts/password_reset_confirm.html', {
+                    'validlink': False,
+                })
+
+    except (TypeError, ValueError, OverflowError, CustomUser.DoesNotExist):
         messages.error(
             request,
             'The password reset link is invalid or has expired. Please request a new one.'
@@ -134,6 +256,67 @@ def password_reset_confirm(request, uidb64, token):
         return render(request, 'accounts/password_reset_confirm.html', {
             'validlink': False,
         })
+
+
+# Alternative simplified version using the helper function
+def password_reset_request_simple(request):
+    """
+    Simplified password reset request using the helper function
+    """
+    if request.method == 'POST':
+        form = PasswordResetRequestForm(request.POST)
+        if form.is_valid():
+            email = form.cleaned_data['email']
+
+            try:
+                # Get the current tenant
+                tenant = getattr(request, 'tenant', None) or getattr(connection, 'tenant', None)
+
+                if tenant:
+                    with tenant_context(tenant):
+                        user = CustomUser.objects.get(email=email, is_active=True)
+                else:
+                    user = CustomUser.objects.get(email=email, is_active=True)
+
+                # Generate password reset token
+                token = default_token_generator.make_token(user)
+                uid = urlsafe_base64_encode(force_bytes(user.pk))
+
+                # Build reset URL
+                reset_url = request.build_absolute_uri(
+                    reverse('password_reset_confirm', kwargs={
+                        'uidb64': uid,
+                        'token': token
+                    })
+                )
+
+                # Use the simplified password reset email function
+                from company.email import send_password_reset_email
+                send_password_reset_email(
+                    user_email=user.email,
+                    reset_url=reset_url,
+                    tenant=tenant
+                )
+
+                messages.success(
+                    request,
+                    'Password reset instructions have been sent to your email.'
+                )
+                logger.info(f"Password reset email sent to {email}")
+
+            except CustomUser.DoesNotExist:
+                # Don't reveal if email exists or not (security)
+                messages.success(
+                    request,
+                    'If that email exists, password reset instructions have been sent.'
+                )
+                logger.warning(f"Password reset requested for non-existent email: {email}")
+
+            return redirect('login')
+    else:
+        form = PasswordResetRequestForm()
+
+    return render(request, 'accounts/password_reset_request.html', {'form': form})
 
 @login_required
 @permission_required('accounts.can_manage_users', raise_exception=True)

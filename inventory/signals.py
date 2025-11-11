@@ -9,7 +9,10 @@ from django.db import transaction
 from channels.layers import get_channel_layer
 from asgiref.sync import async_to_sync
 from django_tenants.utils import schema_context
-
+from django.utils import timezone
+from django_tenants.utils import schema_context
+import logging
+from .models import Service
 from .models import Stock, StockMovement, Product, ImportSession, ImportLog
 import structlog
 
@@ -22,6 +25,280 @@ bulk_stock_update = Signal()
 inventory_alert = Signal()
 efris_sync_required = Signal()
 
+
+# Custom signals for service EFRIS operations
+service_efris_sync_requested = Signal()  # providing_args=['service', 'user']
+service_efris_synced = Signal()  # providing_args=['service', 'result']
+service_efris_sync_failed = Signal()  # providing_args=['service', 'error']
+
+
+@receiver(pre_save, sender=Service)
+def service_pre_save_handler(sender, instance, **kwargs):
+    """
+    Pre-save handler for Service model
+    Track changes that require EFRIS sync
+    """
+    if instance.pk:
+        try:
+            old_instance = Service.objects.get(pk=instance.pk)
+
+            # Fields that trigger EFRIS update when changed
+            efris_sensitive_fields = [
+                'name', 'code', 'unit_price',
+                'tax_rate', 'excise_duty_rate', 'unit_of_measure',
+                'category_id', 'is_active'
+            ]
+
+            # Check if any EFRIS-sensitive field changed
+            has_changes = any(
+                getattr(old_instance, field) != getattr(instance, field)
+                for field in efris_sensitive_fields
+            )
+
+            if has_changes and instance.efris_auto_sync_enabled:
+                # Mark for re-sync
+                if instance.efris_is_uploaded:
+                    instance._efris_needs_update = True
+                    logger.info(
+                        f"Service {instance.name} marked for EFRIS update "
+                        f"due to field changes"
+                    )
+
+        except Service.DoesNotExist:
+            pass
+
+    # Store old state for post-save comparison
+    instance._old_efris_uploaded = getattr(
+        Service.objects.filter(pk=instance.pk).first(),
+        'efris_is_uploaded',
+        False
+    ) if instance.pk else False
+
+
+@receiver(post_save, sender=Service)
+def service_post_save_handler(sender, instance, created, **kwargs):
+    """
+    Post-save handler for Service model
+    Triggers async EFRIS sync if needed
+    """
+    # Skip if we're in a migration or if auto-sync is disabled
+    if kwargs.get('raw', False) or not instance.efris_auto_sync_enabled:
+        return
+
+    try:
+        # Get tenant schema
+        from django.db import connection
+        schema_name = connection.schema_name
+
+        # Check if EFRIS sync is needed
+        should_sync = False
+        sync_reason = None
+
+        if created and not instance.efris_is_uploaded:
+            should_sync = True
+            sync_reason = 'NEW_SERVICE'
+            logger.info(f"New service {instance.name} created, queueing EFRIS sync")
+
+        elif hasattr(instance, '_efris_needs_update') and instance._efris_needs_update:
+            should_sync = True
+            sync_reason = 'SERVICE_UPDATED'
+            logger.info(f"Service {instance.name} updated, queueing EFRIS sync")
+
+        if should_sync:
+            # Try to queue async task
+            try:
+                from .tasks import sync_service_to_efris_task
+
+                # Delay to avoid race conditions
+                task = sync_service_to_efris_task.apply_async(
+                    args=[schema_name, instance.id],
+                    countdown=2  # 2 second delay
+                )
+
+                logger.info(
+                    f"EFRIS sync task queued for service {instance.name} "
+                    f"(reason: {sync_reason}, task: {task.id})"
+                )
+
+                # Send custom signal
+                service_efris_sync_requested.send(
+                    sender=Service,
+                    service=instance,
+                    user=None
+                )
+
+            except ImportError:
+                logger.warning(
+                    f"Celery not available, skipping auto-sync for service {instance.name}"
+                )
+
+        # Clean up temporary attributes
+        if hasattr(instance, '_efris_needs_update'):
+            delattr(instance, '_efris_needs_update')
+
+    except Exception as e:
+        logger.error(f"Error in service post_save handler: {str(e)}", exc_info=True)
+
+
+@receiver(post_delete, sender=Service)
+def service_post_delete_handler(sender, instance, **kwargs):
+    """
+    Post-delete handler for Service model
+    Log service deletion (EFRIS doesn't support deletion, just deactivation)
+    """
+    try:
+        logger.info(
+            f"Service deleted: {instance.name} (ID: {instance.id}, "
+            f"Code: {instance.code}, EFRIS ID: {instance.efris_service_id})"
+        )
+
+        # If service was synced to EFRIS, log a warning
+        if instance.efris_is_uploaded:
+            logger.warning(
+                f"Service {instance.name} was deleted but exists in EFRIS. "
+                f"Consider deactivating instead of deleting."
+            )
+
+    except Exception as e:
+        logger.error(f"Error in service post_delete handler: {str(e)}", exc_info=True)
+
+
+@receiver(service_efris_synced)
+def handle_service_efris_synced(sender, service, result, **kwargs):
+    """
+    Handler for successful EFRIS sync
+    """
+    try:
+        logger.info(
+            f"Service {service.name} successfully synced to EFRIS. "
+            f"EFRIS Service ID: {result.get('efris_service_id')}"
+        )
+
+        # Update service with EFRIS data
+        if not service.efris_is_uploaded:
+            service.efris_is_uploaded = True
+            service.efris_upload_date = timezone.now()
+
+            efris_service_id = result.get('efris_service_id')
+            if efris_service_id:
+                service.efris_service_id = efris_service_id
+
+            service.save(update_fields=[
+                'efris_is_uploaded',
+                'efris_upload_date',
+                'efris_service_id'
+            ])
+
+        # Send notification (optional)
+        # from notifications.models import Notification
+        # Notification.objects.create(...)
+
+    except Exception as e:
+        logger.error(f"Error handling service_efris_synced: {str(e)}", exc_info=True)
+
+
+@receiver(service_efris_sync_failed)
+def handle_service_efris_sync_failed(sender, service, error, **kwargs):
+    """
+    Handler for failed EFRIS sync
+    """
+    try:
+        logger.error(
+            f"Service {service.name} EFRIS sync failed: {error}"
+        )
+
+        # Mark service as needing retry
+        service.efris_is_uploaded = False
+        service.save(update_fields=['efris_is_uploaded'])
+
+        # Send notification (optional)
+        # from notifications.models import Notification
+        # Notification.objects.create(...)
+
+    except Exception as e:
+        logger.error(f"Error handling service_efris_sync_failed: {str(e)}", exc_info=True)
+
+
+# ===========================================
+# CATEGORY SIGNALS (affect services)
+# ===========================================
+
+from .models import Category
+
+
+@receiver(post_save, sender=Category)
+def category_post_save_handler(sender, instance, created, **kwargs):
+    """
+    When a category is updated, check if services need EFRIS re-sync
+    """
+    if kwargs.get('raw', False) or created:
+        return
+
+    try:
+        # Only process service categories
+        if instance.category_type != 'service':
+            return
+
+        # Check if EFRIS-related fields changed
+        if instance.pk:
+            old_instance = Category.objects.filter(pk=instance.pk).first()
+            if not old_instance:
+                return
+
+            efris_changed = (
+                    old_instance.efris_commodity_category_code !=
+                    instance.efris_commodity_category_code
+            )
+
+            if efris_changed:
+                # Get all active services in this category
+                services_count = instance.services.filter(
+                    is_active=True,
+                    efris_auto_sync_enabled=True,
+                    efris_is_uploaded=True
+                ).count()
+
+                if services_count > 0:
+                    logger.info(
+                        f"Category {instance.name} EFRIS settings changed. "
+                        f"{services_count} service(s) may need re-sync."
+                    )
+
+                    # Mark services for re-sync
+                    instance.services.filter(
+                        is_active=True,
+                        efris_auto_sync_enabled=True
+                    ).update(efris_is_uploaded=False)
+
+    except Exception as e:
+        logger.error(f"Error in category post_save handler: {str(e)}", exc_info=True)
+
+
+# ===========================================
+# SIGNAL CONNECTORS
+# ===========================================
+
+def connect_service_signals():
+    """
+    Connect all service signals
+    Call this in apps.py ready() method
+    """
+    # Signals are connected via decorators above
+    logger.info("Service signals connected")
+
+
+def disconnect_service_signals():
+    """
+    Disconnect service signals (useful for testing)
+    """
+    from django.db.models.signals import post_save, pre_save, post_delete
+
+    post_save.disconnect(service_post_save_handler, sender=Service)
+    pre_save.disconnect(service_pre_save_handler, sender=Service)
+    post_delete.disconnect(service_post_delete_handler, sender=Service)
+    post_save.disconnect(category_post_save_handler, sender=Category)
+
+    logger.info("Service signals disconnected")
 
 def get_current_schema():
     """Get current tenant schema name"""

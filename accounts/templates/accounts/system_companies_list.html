@@ -1,606 +1,726 @@
+{% extends 'base.html' %}
+{% load static %}
 {% load custom_filters %}
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>System Companies Management</title>
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.0/css/bootstrap.min.css" rel="stylesheet">
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
-    <style>
-        .header-section {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            padding: 2rem 0;
-            margin-bottom: 2rem;
-        }
-        .company-card {
-            border: none;
-            border-radius: 12px;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
-            transition: all 0.3s ease;
-            margin-bottom: 1rem;
-        }
-        .company-card:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 8px 25px rgba(0,0,0,0.15);
-        }
-        .status-badge {
-            padding: 0.35rem 0.75rem;
-            border-radius: 20px;
-            font-size: 0.75rem;
-            font-weight: 600;
-        }
-        .status-ACTIVE { background-color: #d4edda; color: #155724; }
-        .status-TRIAL { background-color: #fff3cd; color: #856404; }
-        .status-EXPIRED { background-color: #f8d7da; color: #721c24; }
-        .status-SUSPENDED { background-color: #f1f3f4; color: #495057; }
-        .status-ARCHIVED { background-color: #e2e3e5; color: #41464b; }
-        .company-logo {
-            width: 50px;
-            height: 50px;
-            border-radius: 8px;
-            object-fit: cover;
-        }
-        .filter-card {
-            background: white;
-            border-radius: 12px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-            margin-bottom: 2rem;
-        }
-        .table-action-btn {
-            padding: 0.25rem 0.5rem;
-            font-size: 0.75rem;
-            border-radius: 4px;
-        }
-        .expiry-warning {
-            background: linear-gradient(45deg, #ff6b6b, #feca57);
-            color: white;
-            border-radius: 4px;
-            padding: 0.25rem 0.5rem;
-            font-size: 0.75rem;
-        }
-        .plan-badge {
-            background: linear-gradient(45deg, #667eea, #764ba2);
-            color: white;
-            padding: 0.25rem 0.5rem;
-            border-radius: 12px;
-            font-size: 0.75rem;
-        }
-        /* Style for dropdown forms */
-        .dropdown-menu form {
-            display: block;
-            width: 100%;
-        }
-        .dropdown-menu button.dropdown-item {
-            width: 100%;
-            text-align: left;
-            border: none;
-            background: none;
-        }
-        .dropdown-menu button.dropdown-item:hover {
-            background-color: #f8f9fa;
-        }
-    </style>
-</head>
-<body class="bg-light">
-    <div class="header-section">
-        <div class="container-fluid">
-            <div class="row align-items-center">
-                <div class="col-md-8">
-                    <h1 class="mb-1">
-                        <i class="fas fa-building me-2"></i>
-                        Companies Management
-                    </h1>
-                    <p class="mb-0 opacity-75">System-wide company administration and monitoring</p>
-                </div>
-                <div class="col-md-4 text-end">
-                    <div class="d-flex gap-2 justify-content-end">
-                        <a href="{% url 'saas_admin_dashboard' %}" class="btn btn-outline-light">
-                            <i class="fas fa-arrow-left me-1"></i> Back to Dashboard
-                        </a>
-                        <div class="dropdown">
-                            <button class="btn btn-light dropdown-toggle" type="button" data-bs-toggle="dropdown">
-                                <i class="fas fa-download me-1"></i> Export
-                            </button>
-                            <ul class="dropdown-menu">
-                                <li><a class="dropdown-item" href="#"><i class="fas fa-file-csv me-2"></i>Export CSV</a></li>
-                                <li><a class="dropdown-item" href="#"><i class="fas fa-file-excel me-2"></i>Export Excel</a></li>
-                            </ul>
-                        </div>
+{% load i18n %}
+
+{% block title %}{% trans "System Companies Management" %}{% endblock %}
+
+{% block extra_css %}
+<style>
+    .header-section {
+        background: linear-gradient(135deg, var(--primary-600) 0%, var(--primary-700) 100%);
+        color: white;
+        padding: 2rem 0;
+        margin-bottom: 2rem;
+        border-radius: 0 0 var(--border-radius) var(--border-radius);
+    }
+
+    .company-card {
+        border: none;
+        border-radius: var(--border-radius);
+        box-shadow: var(--shadow-md);
+        transition: all 0.3s ease;
+        margin-bottom: 1rem;
+        background: var(--bg-primary);
+        border: 1px solid var(--border-color);
+    }
+
+    .company-card:hover {
+        transform: translateY(-2px);
+        box-shadow: var(--shadow-lg);
+    }
+
+    .status-badge {
+        padding: 0.35rem 0.75rem;
+        border-radius: 20px;
+        font-size: 0.75rem;
+        font-weight: 600;
+    }
+
+    .status-ACTIVE {
+        background-color: var(--green-50);
+        color: var(--green-600);
+    }
+
+    .status-TRIAL {
+        background-color: var(--amber-50);
+        color: var(--amber-600);
+    }
+
+    .status-EXPIRED {
+        background-color: var(--red-50);
+        color: var(--red-600);
+    }
+
+    .status-SUSPENDED {
+        background-color: var(--bg-secondary);
+        color: var(--text-secondary);
+    }
+
+    .status-ARCHIVED {
+        background-color: var(--bg-tertiary);
+        color: var(--text-muted);
+    }
+
+    .company-logo {
+        width: 50px;
+        height: 50px;
+        border-radius: var(--border-radius-sm);
+        object-fit: cover;
+    }
+
+    .filter-card {
+        background: var(--bg-primary);
+        border-radius: var(--border-radius);
+        box-shadow: var(--shadow-sm);
+        margin-bottom: 2rem;
+        border: 1px solid var(--border-color);
+    }
+
+    .table-action-btn {
+        padding: 0.25rem 0.5rem;
+        font-size: 0.75rem;
+        border-radius: var(--border-radius-sm);
+    }
+
+    .expiry-warning {
+        background: linear-gradient(45deg, var(--red-500), var(--amber-500));
+        color: white;
+        border-radius: var(--border-radius-sm);
+        padding: 0.25rem 0.5rem;
+        font-size: 0.75rem;
+    }
+
+    .plan-badge {
+        background: linear-gradient(45deg, var(--primary-600), var(--primary-700));
+        color: white;
+        padding: 0.25rem 0.5rem;
+        border-radius: 12px;
+        font-size: 0.75rem;
+    }
+
+    /* Style for dropdown forms */
+    .dropdown-menu {
+        background: var(--bg-primary);
+        border: 1px solid var(--border-color);
+        box-shadow: var(--shadow-lg);
+    }
+
+    .dropdown-menu form {
+        display: block;
+        width: 100%;
+    }
+
+    .dropdown-menu button.dropdown-item {
+        width: 100%;
+        text-align: left;
+        border: none;
+        background: none;
+        color: var(--text-primary);
+    }
+
+    .dropdown-menu button.dropdown-item:hover {
+        background-color: var(--bg-secondary);
+        color: var(--text-primary);
+    }
+
+    .table {
+        color: var(--text-primary);
+        margin-bottom: 0;
+    }
+
+    .table-light {
+        background-color: var(--bg-secondary);
+        color: var(--text-primary);
+    }
+
+    .table-hover tbody tr:hover {
+        background-color: var(--bg-secondary);
+    }
+
+    /* Dark theme specific adjustments */
+    [data-theme="dark"] .table {
+        --bs-table-bg: var(--bg-primary);
+        --bs-table-striped-bg: var(--bg-secondary);
+        --bs-table-striped-color: var(--text-primary);
+        --bs-table-active-bg: var(--bg-tertiary);
+        --bs-table-active-color: var(--text-primary);
+        --bs-table-hover-bg: var(--bg-secondary);
+        --bs-table-hover-color: var(--text-primary);
+        color: var(--text-primary);
+        border-color: var(--border-color);
+    }
+
+    [data-theme="dark"] .form-control,
+    [data-theme="dark"] .form-select {
+        background-color: var(--bg-primary);
+        color: var(--text-primary);
+        border-color: var(--border-color);
+    }
+
+    [data-theme="dark"] .form-control:focus,
+    [data-theme="dark"] .form-select:focus {
+        background-color: var(--bg-primary);
+        color: var(--text-primary);
+        border-color: var(--primary-500);
+    }
+
+    .progress {
+        background-color: var(--border-color);
+    }
+
+    .progress-bar {
+        background-color: var(--primary-500);
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="header-section">
+    <div class="container-fluid">
+        <div class="row align-items-center">
+            <div class="col-md-8">
+                <h1 class="mb-1">
+                    <i class="fas fa-building me-2"></i>
+                    {% trans "Companies Management" %}
+                </h1>
+                <p class="mb-0 opacity-75">{% trans "System-wide company administration and monitoring" %}</p>
+            </div>
+            <div class="col-md-4 text-end">
+                <div class="d-flex gap-2 justify-content-end">
+                    <a href="{% url 'saas_admin_dashboard' %}" class="btn btn-outline-light">
+                        <i class="fas fa-arrow-left me-1"></i> {% trans "Back to Dashboard" %}
+                    </a>
+                    <div class="dropdown">
+                        <button class="btn btn-light dropdown-toggle" type="button" data-bs-toggle="dropdown">
+                            <i class="fas fa-download me-1"></i> {% trans "Export" %}
+                        </button>
+                        <ul class="dropdown-menu">
+                            <li><a class="dropdown-item" href="#"><i class="fas fa-file-csv me-2"></i>{% trans "Export CSV" %}</a></li>
+                            <li><a class="dropdown-item" href="#"><i class="fas fa-file-excel me-2"></i>{% trans "Export Excel" %}</a></li>
+                        </ul>
                     </div>
                 </div>
             </div>
         </div>
     </div>
+</div>
 
-    <div class="container-fluid">
-        <!-- Filters -->
-        <div class="filter-card">
-            <div class="card-body">
-                <form method="get" class="row g-3">
-                    <div class="col-md-3">
-                        <label class="form-label">Search</label>
-                        <div class="input-group">
-                            <span class="input-group-text"><i class="fas fa-search"></i></span>
-                            <input type="text" class="form-control" name="search"
-                                   placeholder="Company name, email..." value="{{ current_filters.search }}">
-                        </div>
+<div class="container-fluid">
+    <!-- Filters -->
+    <div class="filter-card">
+        <div class="card-body">
+            <form method="get" class="row g-3">
+                <div class="col-md-3">
+                    <label class="form-label">{% trans "Search" %}</label>
+                    <div class="input-group">
+                        <span class="input-group-text"><i class="fas fa-search"></i></span>
+                        <input type="text" class="form-control" name="search"
+                               placeholder="{% trans 'Company name, email...' %}" value="{{ current_filters.search }}">
                     </div>
-                    <div class="col-md-2">
-                        <label class="form-label">Status</label>
-                        <select name="status" class="form-select">
-                            <option value="">All Status</option>
-                            {% for status_code, status_name in status_choices %}
-                                <option value="{{ status_code }}" {% if current_filters.status == status_code %}selected{% endif %}>
-                                    {{ status_name }}
-                                </option>
-                            {% endfor %}
-                        </select>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label">{% trans "Status" %}</label>
+                    <select name="status" class="form-select">
+                        <option value="">{% trans "All Status" %}</option>
+                        {% for status_code, status_name in status_choices %}
+                            <option value="{{ status_code }}" {% if current_filters.status == status_code %}selected{% endif %}>
+                                {{ status_name }}
+                            </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label">{% trans "Plan" %}</label>
+                    <select name="plan" class="form-select">
+                        <option value="">{% trans "All Plans" %}</option>
+                        {% for plan in subscription_plans %}
+                            <option value="{{ plan.name }}" {% if current_filters.plan == plan.name %}selected{% endif %}>
+                                {{ plan.display_name }}
+                            </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">&nbsp;</label>
+                    <div class="d-flex gap-2">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="fas fa-filter me-1"></i> {% trans "Filter" %}
+                        </button>
+                        <a href="{% url 'system_companies_list' %}" class="btn btn-outline-secondary">
+                            <i class="fas fa-times me-1"></i> {% trans "Clear" %}
+                        </a>
                     </div>
-                    <div class="col-md-2">
-                        <label class="form-label">Plan</label>
-                        <select name="plan" class="form-select">
-                            <option value="">All Plans</option>
-                            {% for plan in subscription_plans %}
-                                <option value="{{ plan.name }}" {% if current_filters.plan == plan.name %}selected{% endif %}>
-                                    {{ plan.display_name }}
-                                </option>
-                            {% endfor %}
-                        </select>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label">{% trans "View" %}</label>
+                    <div class="btn-group w-100" role="group">
+                        <input type="radio" class="btn-check" name="view" id="tableView" checked>
+                        <label class="btn btn-outline-secondary" for="tableView">
+                            <i class="fas fa-table"></i>
+                        </label>
+                        <input type="radio" class="btn-check" name="view" id="cardView">
+                        <label class="btn btn-outline-secondary" for="cardView">
+                            <i class="fas fa-th"></i>
+                        </label>
                     </div>
-                    <div class="col-md-3">
-                        <label class="form-label">&nbsp;</label>
-                        <div class="d-flex gap-2">
-                            <button type="submit" class="btn btn-primary">
-                                <i class="fas fa-filter me-1"></i> Filter
-                            </button>
-                            <a href="{% url 'system_companies_list' %}" class="btn btn-outline-secondary">
-                                <i class="fas fa-times me-1"></i> Clear
-                            </a>
-                        </div>
-                    </div>
-                    <div class="col-md-2">
-                        <label class="form-label">View</label>
-                        <div class="btn-group w-100" role="group">
-                            <input type="radio" class="btn-check" name="view" id="tableView" checked>
-                            <label class="btn btn-outline-secondary" for="tableView">
-                                <i class="fas fa-table"></i>
-                            </label>
-                            <input type="radio" class="btn-check" name="view" id="cardView">
-                            <label class="btn btn-outline-secondary" for="cardView">
-                                <i class="fas fa-th"></i>
-                            </label>
-                        </div>
-                    </div>
-                </form>
-            </div>
+                </div>
+            </form>
         </div>
+    </div>
 
-        <!-- Table View -->
-        <div id="tableViewContent" class="card">
-            <div class="card-header d-flex justify-content-between align-items-center">
-                <h5 class="mb-0">
-                    <i class="fas fa-list me-2"></i>
-                    Companies List
-                </h5>
-                <span class="badge bg-primary">{{ companies.paginator.count }} companies</span>
-            </div>
-            <div class="card-body p-0">
-                {% if companies %}
-                    <div class="table-responsive">
-                        <table class="table table-hover mb-0">
-                            <thead class="table-light">
+    <!-- Table View -->
+    <div id="tableViewContent" class="card">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <h5 class="mb-0">
+                <i class="fas fa-list me-2"></i>
+                {% trans "Companies List" %}
+            </h5>
+            <span class="badge bg-primary">{{ companies.paginator.count }} {% trans "companies" %}</span>
+        </div>
+        <div class="card-body p-0">
+            {% if companies %}
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>{% trans "Company" %}</th>
+                                <th>{% trans "Owner" %}</th>
+                                <th>{% trans "Plan" %}</th>
+                                <th>{% trans "Status" %}</th>
+                                <th>{% trans "Expiry" %}</th>
+                                <th>{% trans "Users" %}</th>
+                                <th>{% trans "Created" %}</th>
+                                <th>{% trans "Actions" %}</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for company in companies %}
                                 <tr>
-                                    <th>Company</th>
-                                    <th>Owner</th>
-                                    <th>Plan</th>
-                                    <th>Status</th>
-                                    <th>Expiry</th>
-                                    <th>Users</th>
-                                    <th>Created</th>
-                                    <th>Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {% for company in companies %}
-                                    <tr>
-                                        <td>
-                                            <div class="d-flex align-items-center">
-                                                {% if company.logo %}
-                                                    <img src="{{ company.logo.url }}" class="company-logo me-3" alt="Logo">
-                                                {% else %}
-                                                    <div class="company-logo me-3 bg-secondary d-flex align-items-center justify-content-center text-white">
-                                                        {{ company.display_name|first }}
-                                                    </div>
-                                                {% endif %}
-                                                <div>
-                                                    <div class="fw-semibold">{{ company.display_name }}</div>
-                                                    <small class="text-muted">{{ company.company_id }}</small>
-                                                    {% if company.email %}
-                                                        <div><small class="text-muted">{{ company.email }}</small></div>
-                                                    {% endif %}
-                                                </div>
-                                            </div>
-                                        </td>
-                                        <td>
-                                            {% if company.owner %}
-                                                <div>
-                                                    <div class="fw-semibold">{{ company.owner.get_full_name|default:company.owner.username }}</div>
-                                                    <small class="text-muted">{{ company.owner.email }}</small>
-                                                </div>
+                                    <td>
+                                        <div class="d-flex align-items-center">
+                                            {% if company.logo %}
+                                                <img src="{{ company.logo.url }}" class="company-logo me-3" alt="{% trans 'Logo' %}">
                                             {% else %}
-                                                <span class="text-muted">No owner</span>
-                                            {% endif %}
-                                        </td>
-                                        <td>
-                                            {% if company.plan %}
-                                                <span class="plan-badge">{{ company.plan.display_name }}</span>
-                                                <div><small class="text-muted">${{ company.plan.price }}/{{ company.plan.get_billing_cycle_display|lower }}</small></div>
-                                            {% else %}
-                                                <span class="badge bg-light text-dark">No Plan</span>
-                                            {% endif %}
-                                        </td>
-                                        <td>
-                                            <span class="status-badge status-{{ company.status }}">
-                                                {{ company.get_status_display }}
-                                            </span>
-                                            {% if company.is_trial %}
-                                                <div><small class="text-warning"><i class="fas fa-clock me-1"></i>Trial</small></div>
-                                            {% endif %}
-                                        </td>
-                                        <td>
-                                            {% if company.is_trial and company.trial_ends_at %}
-                                                <div>{{ company.trial_ends_at|date:"M d, Y" }}</div>
-                                                {% if company.days_until_expiry <= 7 %}
-                                                    <span class="expiry-warning">{{ company.days_until_expiry }} days left</span>
-                                                {% endif %}
-                                            {% elif company.subscription_ends_at %}
-                                                <div>{{ company.subscription_ends_at|date:"M d, Y" }}</div>
-                                                {% if company.days_until_expiry <= 30 %}
-                                                    <span class="expiry-warning">{{ company.days_until_expiry }} days left</span>
-                                                {% endif %}
-                                            {% else %}
-                                                <span class="text-muted">N/A</span>
-                                            {% endif %}
-                                        </td>
-                                        <td>
-                                            <div class="d-flex align-items-center">
-                                                <span class="fw-semibold">{{ company.employees_count }}</span>
-                                                <span class="text-muted">/ {{ company.plan.max_users|default:"∞" }}</span>
-                                            </div>
-                                            <div class="progress mt-1" style="height: 4px;">
-                                                <div class="progress-bar" role="progressbar"
-                                                     style="width: {% if company.plan.max_users %}{{ company.employees_count|mul:100|div:company.plan.max_users }}%{% else %}0%{% endif %}">
+                                                <div class="company-logo me-3 bg-secondary d-flex align-items-center justify-content-center text-white">
+                                                    {{ company.display_name|first }}
                                                 </div>
+                                            {% endif %}
+                                            <div>
+                                                <div class="fw-semibold">{{ company.display_name }}</div>
+                                                <small class="text-muted">{{ company.company_id }}</small>
+                                                {% if company.email %}
+                                                    <div><small class="text-muted">{{ company.email }}</small></div>
+                                                {% endif %}
                                             </div>
-                                        </td>
-                                        <td>
-                                            <div>{{ company.created_at|date:"M d, Y" }}</div>
-                                            <small class="text-muted">{{ company.created_at|date:"H:i" }}</small>
-                                        </td>
-                                        <td>
+                                        </div>
+                                    </td>
+                                    <td>
+                                        {% if company.owner %}
+                                            <div>
+                                                <div class="fw-semibold">{{ company.owner.get_full_name|default:company.owner.username }}</div>
+                                                <small class="text-muted">{{ company.owner.email }}</small>
+                                            </div>
+                                        {% else %}
+                                            <span class="text-muted">{% trans "No owner" %}</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        {% if company.plan %}
+                                            <span class="plan-badge">{{ company.plan.display_name }}</span>
+                                            <div><small class="text-muted">${{ company.plan.price }}/{{ company.plan.get_billing_cycle_display|lower }}</small></div>
+                                        {% else %}
+                                            <span class="badge bg-light text-dark">{% trans "No Plan" %}</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        <span class="status-badge status-{{ company.status }}">
+                                            {{ company.get_status_display }}
+                                        </span>
+                                        {% if company.is_trial %}
+                                            <div><small class="text-warning"><i class="fas fa-clock me-1"></i>{% trans "Trial" %}</small></div>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        {% if company.is_trial and company.trial_ends_at %}
+                                            <div>{{ company.trial_ends_at|date:"M d, Y" }}</div>
+                                            {% if company.days_until_expiry <= 7 %}
+                                                <span class="expiry-warning">{{ company.days_until_expiry }} {% trans "days left" %}</span>
+                                            {% endif %}
+                                        {% elif company.subscription_ends_at %}
+                                            <div>{{ company.subscription_ends_at|date:"M d, Y" }}</div>
+                                            {% if company.days_until_expiry <= 30 %}
+                                                <span class="expiry-warning">{{ company.days_until_expiry }} {% trans "days left" %}</span>
+                                            {% endif %}
+                                        {% else %}
+                                            <span class="text-muted">{% trans "N/A" %}</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        <div class="d-flex align-items-center">
+                                            <span class="fw-semibold">{{ company.employees_count }}</span>
+                                            <span class="text-muted">/ {{ company.plan.max_users|default:"∞" }}</span>
+                                        </div>
+                                        <div class="progress mt-1" style="height: 4px;">
+                                            <div class="progress-bar" role="progressbar"
+                                                 style="width: {% if company.plan.max_users %}{{ company.employees_count|mul:100|div:company.plan.max_users }}%{% else %}0%{% endif %}">
+                                            </div>
+                                        </div>
+                                    </td>
+                                    <td>
+                                        <div>{{ company.created_at|date:"M d, Y" }}</div>
+                                        <small class="text-muted">{{ company.created_at|date:"H:i" }}</small>
+                                    </td>
+                                    <td>
+                                        <div class="btn-group" role="group">
+                                            <a href="{% url 'user_list'  %}"
+                                               class="btn btn-sm btn-outline-primary table-action-btn" title="{% trans 'View Users' %}">
+                                                <i class="fas fa-users"></i>
+                                            </a>
+                                            <button class="btn btn-sm btn-outline-info table-action-btn"
+                                                    data-bs-toggle="modal" data-bs-target="#companyModal"
+                                                    data-company="{{ company.company_id }}" title="{% trans 'View Details' %}">
+                                                <i class="fas fa-eye"></i>
+                                            </button>
                                             <div class="btn-group" role="group">
-                                                <a href="{% url 'user_list'  %}"
-                                                   class="btn btn-sm btn-outline-primary table-action-btn" title="View Users">
-                                                    <i class="fas fa-users"></i>
-                                                </a>
-                                                <button class="btn btn-sm btn-outline-info table-action-btn"
-                                                        data-bs-toggle="modal" data-bs-target="#companyModal"
-                                                        data-company="{{ company.company_id }}" title="View Details">
-                                                    <i class="fas fa-eye"></i>
+                                                <button class="btn btn-sm btn-outline-secondary dropdown-toggle table-action-btn"
+                                                        data-bs-toggle="dropdown">
+                                                    <i class="fas fa-cog"></i>
                                                 </button>
-                                                <div class="btn-group" role="group">
-                                                    <button class="btn btn-sm btn-outline-secondary dropdown-toggle table-action-btn"
-                                                            data-bs-toggle="dropdown">
-                                                        <i class="fas fa-cog"></i>
-                                                    </button>
-                                                    <ul class="dropdown-menu">
-                                                        {% if company.status == 'SUSPENDED' %}
-                                                            <li>
-                                                                <form method="post" action="{% url 'companies:company_action' company.company_id %}">
-                                                                    {% csrf_token %}
-                                                                    <input type="hidden" name="action" value="activate">
-                                                                    <button type="submit" class="dropdown-item">
-                                                                        <i class="fas fa-play me-2"></i>Activate
-                                                                    </button>
-                                                                </form>
-                                                            </li>
-                                                        {% else %}
-                                                            <li>
-                                                                <form method="post" action="{% url 'companies:company_action' company.company_id %}">
-                                                                    {% csrf_token %}
-                                                                    <input type="hidden" name="action" value="suspend">
-                                                                    <button type="submit" class="dropdown-item">
-                                                                        <i class="fas fa-pause me-2"></i>Suspend
-                                                                    </button>
-                                                                </form>
-                                                            </li>
-                                                        {% endif %}
+                                                <ul class="dropdown-menu">
+                                                    {% if company.status == 'SUSPENDED' %}
                                                         <li>
                                                             <form method="post" action="{% url 'companies:company_action' company.company_id %}">
                                                                 {% csrf_token %}
-                                                                <input type="hidden" name="action" value="archive">
-                                                                <button type="submit" class="dropdown-item text-danger">
-                                                                    <i class="fas fa-archive me-2"></i>Archive
+                                                                <input type="hidden" name="action" value="activate">
+                                                                <button type="submit" class="dropdown-item">
+                                                                    <i class="fas fa-play me-2"></i>{% trans "Activate" %}
                                                                 </button>
                                                             </form>
                                                         </li>
-                                                    </ul>
-                                                </div>
-                                            </div>
-                                        </td>
-                                    </tr>
-                                {% endfor %}
-                            </tbody>
-                        </table>
-                    </div>
-                {% else %}
-                    <div class="text-center py-5">
-                        <i class="fas fa-building fa-3x text-muted mb-3"></i>
-                        <h5 class="text-muted">No companies found</h5>
-                        <p class="text-muted">No companies match your current filters.</p>
-                    </div>
-                {% endif %}
-            </div>
-        </div>
-
-        <!-- Card View -->
-        <div id="cardViewContent" class="d-none">
-            {% if companies %}
-                <div class="row">
-                    {% for company in companies %}
-                        <div class="col-lg-4 col-md-6 mb-4">
-                            <div class="company-card">
-                                <div class="card-body">
-                                    <div class="d-flex align-items-start mb-3">
-                                        {% if company.logo %}
-                                            <img src="{{ company.logo.url }}" class="company-logo me-3" alt="Logo">
-                                        {% else %}
-                                            <div class="company-logo me-3 bg-secondary d-flex align-items-center justify-content-center text-white">
-                                                {{ company.display_name|first }}
-                                            </div>
-                                        {% endif %}
-                                        <div class="flex-grow-1">
-                                            <h5 class="mb-1">{{ company.display_name }}</h5>
-                                            <div class="text-muted mb-2">{{ company.company_id }}</div>
-                                            <div class="d-flex gap-2 mb-2">
-                                                <span class="status-badge status-{{ company.status }}">
-                                                    {{ company.get_status_display }}
-                                                </span>
-                                                {% if company.plan %}
-                                                    <span class="plan-badge">{{ company.plan.display_name }}</span>
-                                                {% endif %}
+                                                    {% else %}
+                                                        <li>
+                                                            <form method="post" action="{% url 'companies:company_action' company.company_id %}">
+                                                                {% csrf_token %}
+                                                                <input type="hidden" name="action" value="suspend">
+                                                                <button type="submit" class="dropdown-item">
+                                                                    <i class="fas fa-pause me-2"></i>{% trans "Suspend" %}
+                                                                </button>
+                                                            </form>
+                                                        </li>
+                                                    {% endif %}
+                                                    <li>
+                                                        <form method="post" action="{% url 'companies:company_action' company.company_id %}">
+                                                            {% csrf_token %}
+                                                            <input type="hidden" name="action" value="archive">
+                                                            <button type="submit" class="dropdown-item text-danger">
+                                                                <i class="fas fa-archive me-2"></i>{% trans "Archive" %}
+                                                            </button>
+                                                        </form>
+                                                    </li>
+                                                </ul>
                                             </div>
                                         </div>
-                                    </div>
-                                    
-                                    <div class="row g-3 text-center mb-3">
-                                        <div class="col-4">
-                                            <div class="small text-muted">Users</div>
-                                            <div class="fw-bold">{{ company.employees_count }}/{{ company.plan.max_users|default:"∞" }}</div>
-                                        </div>
-                                        <div class="col-4">
-                                            <div class="small text-muted">Branches</div>
-                                            <div class="fw-bold">{{ company.branches_count }}/{{ company.plan.max_branches|default:"∞" }}</div>
-                                        </div>
-                                        <div class="col-4">
-                                            <div class="small text-muted">Storage</div>
-                                            <div class="fw-bold">{{ company.storage_usage_percentage|floatformat:0 }}%</div>
-                                        </div>
-                                    </div>
-
-                                    {% if company.owner %}
-                                        <div class="border-top pt-3 mb-3">
-                                            <div class="small text-muted">Owner</div>
-                                            <div class="fw-semibold">{{ company.owner.get_full_name|default:company.owner.username }}</div>
-                                            <div class="small text-muted">{{ company.owner.email }}</div>
-                                        </div>
-                                    {% endif %}
-
-                                    <div class="border-top pt-3">
-                                        <div class="row g-2">
-                                            <div class="col-6">
-                                                <div class="small text-muted">Created</div>
-                                                <div class="small">{{ company.created_at|date:"M d, Y" }}</div>
-                                            </div>
-                                            <div class="col-6">
-                                                <div class="small text-muted">Expires</div>
-                                                {% if company.is_trial and company.trial_ends_at %}
-                                                    <div class="small">{{ company.trial_ends_at|date:"M d, Y" }}</div>
-                                                {% elif company.subscription_ends_at %}
-                                                    <div class="small">{{ company.subscription_ends_at|date:"M d, Y" }}</div>
-                                                {% else %}
-                                                    <div class="small text-muted">N/A</div>
-                                                {% endif %}
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div class="card-footer bg-transparent border-0">
-                                    <div class="d-flex gap-2">
-                                        <a href="{% url 'user_list' %}" class="btn btn-primary btn-sm flex-fill">
-                                            <i class="fas fa-users me-1"></i> Users
-                                        </a>
-                                        <button class="btn btn-outline-secondary btn-sm" data-bs-toggle="modal" data-bs-target="#companyModal">
-                                            <i class="fas fa-eye"></i>
-                                        </button>
-                                        <div class="dropdown">
-                                            <button class="btn btn-outline-secondary btn-sm dropdown-toggle" data-bs-toggle="dropdown">
-                                                <i class="fas fa-cog"></i>
-                                            </button>
-                                            <ul class="dropdown-menu">
-                                                <li><a class="dropdown-item" href="#"><i class="fas fa-edit me-2"></i>Edit</a></li>
-                                                <li><a class="dropdown-item" href="#"><i class="fas fa-pause me-2"></i>Suspend</a></li>
-                                                <li><hr class="dropdown-divider"></li>
-                                                <li><a class="dropdown-item text-danger" href="#"><i class="fas fa-archive me-2"></i>Archive</a></li>
-                                            </ul>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    {% endfor %}
+                                    </td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
                 </div>
             {% else %}
                 <div class="text-center py-5">
-                    <i class="fas fa-building fa-4x text-muted mb-4"></i>
-                    <h4 class="text-muted">No companies found</h4>
-                    <p class="text-muted">No companies match your current filters.</p>
+                    <i class="fas fa-building fa-3x text-muted mb-3"></i>
+                    <h5 class="text-muted">{% trans "No companies found" %}</h5>
+                    <p class="text-muted">{% trans "No companies match your current filters." %}</p>
                 </div>
             {% endif %}
         </div>
+    </div>
 
-        <!-- Pagination -->
-        {% if companies.has_other_pages %}
-            <nav aria-label="Companies pagination" class="mt-4">
-                <ul class="pagination justify-content-center">
-                    {% if companies.has_previous %}
-                        <li class="page-item">
-                            <a class="page-link" href="?page=1">
-                                <i class="fas fa-angle-double-left"></i>
-                            </a>
-                        </li>
-                        <li class="page-item">
-                            <a class="page-link" href="?page={{ companies.previous_page_number }}">
-                                <i class="fas fa-angle-left"></i>
-                            </a>
-                        </li>
-                    {% endif %}
+    <!-- Card View -->
+    <div id="cardViewContent" class="d-none">
+        {% if companies %}
+            <div class="row">
+                {% for company in companies %}
+                    <div class="col-lg-4 col-md-6 mb-4">
+                        <div class="company-card">
+                            <div class="card-body">
+                                <div class="d-flex align-items-start mb-3">
+                                    {% if company.logo %}
+                                        <img src="{{ company.logo.url }}" class="company-logo me-3" alt="{% trans 'Logo' %}">
+                                    {% else %}
+                                        <div class="company-logo me-3 bg-secondary d-flex align-items-center justify-content-center text-white">
+                                            {{ company.display_name|first }}
+                                        </div>
+                                    {% endif %}
+                                    <div class="flex-grow-1">
+                                        <h5 class="mb-1">{{ company.display_name }}</h5>
+                                        <div class="text-muted mb-2">{{ company.company_id }}</div>
+                                        <div class="d-flex gap-2 mb-2">
+                                            <span class="status-badge status-{{ company.status }}">
+                                                {{ company.get_status_display }}
+                                            </span>
+                                            {% if company.plan %}
+                                                <span class="plan-badge">{{ company.plan.display_name }}</span>
+                                            {% endif %}
+                                        </div>
+                                    </div>
+                                </div>
 
-                    {% for num in companies.paginator.page_range %}
-                        {% if companies.number == num %}
-                            <li class="page-item active">
-                                <span class="page-link">{{ num }}</span>
-                            </li>
-                        {% elif num > companies.number|add:'-3' and num < companies.number|add:'3' %}
-                            <li class="page-item">
-                                <a class="page-link" href="?page={{ num }}">{{ num }}</a>
-                            </li>
-                        {% endif %}
-                    {% endfor %}
+                                <div class="row g-3 text-center mb-3">
+                                    <div class="col-4">
+                                        <div class="small text-muted">{% trans "Users" %}</div>
+                                        <div class="fw-bold">{{ company.employees_count }}/{{ company.plan.max_users|default:"∞" }}</div>
+                                    </div>
+                                    <div class="col-4">
+                                        <div class="small text-muted">{% trans "Branches" %}</div>
+                                        <div class="fw-bold">{{ company.branches_count }}/{{ company.plan.max_branches|default:"∞" }}</div>
+                                    </div>
+                                    <div class="col-4">
+                                        <div class="small text-muted">{% trans "Storage" %}</div>
+                                        <div class="fw-bold">{{ company.storage_usage_percentage|floatformat:0 }}%</div>
+                                    </div>
+                                </div>
 
-                    {% if companies.has_next %}
-                        <li class="page-item">
-                            <a class="page-link" href="?page={{ companies.next_page_number }}">
-                                <i class="fas fa-angle-right"></i>
-                            </a>
-                        </li>
-                        <li class="page-item">
-                            <a class="page-link" href="?page={{ companies.paginator.num_pages }}">
-                                <i class="fas fa-angle-double-right"></i>
-                            </a>
-                        </li>
-                    {% endif %}
-                </ul>
-            </nav>
+                                {% if company.owner %}
+                                    <div class="border-top pt-3 mb-3">
+                                        <div class="small text-muted">{% trans "Owner" %}</div>
+                                        <div class="fw-semibold">{{ company.owner.get_full_name|default:company.owner.username }}</div>
+                                        <div class="small text-muted">{{ company.owner.email }}</div>
+                                    </div>
+                                {% endif %}
+
+                                <div class="border-top pt-3">
+                                    <div class="row g-2">
+                                        <div class="col-6">
+                                            <div class="small text-muted">{% trans "Created" %}</div>
+                                            <div class="small">{{ company.created_at|date:"M d, Y" }}</div>
+                                        </div>
+                                        <div class="col-6">
+                                            <div class="small text-muted">{% trans "Expires" %}</div>
+                                            {% if company.is_trial and company.trial_ends_at %}
+                                                <div class="small">{{ company.trial_ends_at|date:"M d, Y" }}</div>
+                                            {% elif company.subscription_ends_at %}
+                                                <div class="small">{{ company.subscription_ends_at|date:"M d, Y" }}</div>
+                                            {% else %}
+                                                <div class="small text-muted">{% trans "N/A" %}</div>
+                                            {% endif %}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="card-footer bg-transparent border-0">
+                                <div class="d-flex gap-2">
+                                    <a href="{% url 'user_list' %}" class="btn btn-primary btn-sm flex-fill">
+                                        <i class="fas fa-users me-1"></i> {% trans "Users" %}
+                                    </a>
+                                    <button class="btn btn-outline-secondary btn-sm" data-bs-toggle="modal" data-bs-target="#companyModal">
+                                        <i class="fas fa-eye"></i>
+                                    </button>
+                                    <div class="dropdown">
+                                        <button class="btn btn-outline-secondary btn-sm dropdown-toggle" data-bs-toggle="dropdown">
+                                            <i class="fas fa-cog"></i>
+                                        </button>
+                                        <ul class="dropdown-menu">
+                                            <li><a class="dropdown-item" href="#"><i class="fas fa-edit me-2"></i>{% trans "Edit" %}</a></li>
+                                            <li><a class="dropdown-item" href="#"><i class="fas fa-pause me-2"></i>{% trans "Suspend" %}</a></li>
+                                            <li><hr class="dropdown-divider"></li>
+                                            <li><a class="dropdown-item text-danger" href="#"><i class="fas fa-archive me-2"></i>{% trans "Archive" %}</a></li>
+                                        </ul>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                {% endfor %}
+            </div>
+        {% else %}
+            <div class="text-center py-5">
+                <i class="fas fa-building fa-4x text-muted mb-4"></i>
+                <h4 class="text-muted">{% trans "No companies found" %}</h4>
+                <p class="text-muted">{% trans "No companies match your current filters." %}</p>
+            </div>
         {% endif %}
     </div>
 
-    <!-- Company Detail Modal -->
-    <div class="modal fade" id="companyModal" tabindex="-1">
-        <div class="modal-dialog modal-lg">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title">Company Details</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                </div>
-                <div class="modal-body">
-                    <div id="modalContent">
-                        <div class="text-center">
-                            <div class="spinner-border" role="status">
-                                <span class="visually-hidden">Loading...</span>
-                            </div>
+    <!-- Pagination -->
+    {% if companies.has_other_pages %}
+        <nav aria-label="{% trans 'Companies pagination' %}" class="mt-4">
+            <ul class="pagination justify-content-center">
+                {% if companies.has_previous %}
+                    <li class="page-item">
+                        <a class="page-link" href="?page=1">
+                            <i class="fas fa-angle-double-left"></i>
+                        </a>
+                    </li>
+                    <li class="page-item">
+                        <a class="page-link" href="?page={{ companies.previous_page_number }}">
+                            <i class="fas fa-angle-left"></i>
+                        </a>
+                    </li>
+                {% endif %}
+
+                {% for num in companies.paginator.page_range %}
+                    {% if companies.number == num %}
+                        <li class="page-item active">
+                            <span class="page-link">{{ num }}</span>
+                        </li>
+                    {% elif num > companies.number|add:'-3' and num < companies.number|add:'3' %}
+                        <li class="page-item">
+                            <a class="page-link" href="?page={{ num }}">{{ num }}</a>
+                        </li>
+                    {% endif %}
+                {% endfor %}
+
+                {% if companies.has_next %}
+                    <li class="page-item">
+                        <a class="page-link" href="?page={{ companies.next_page_number }}">
+                            <i class="fas fa-angle-right"></i>
+                        </a>
+                    </li>
+                    <li class="page-item">
+                        <a class="page-link" href="?page={{ companies.paginator.num_pages }}">
+                            <i class="fas fa-angle-double-right"></i>
+                        </a>
+                    </li>
+                {% endif %}
+            </ul>
+        </nav>
+    {% endif %}
+</div>
+
+<!-- Company Detail Modal -->
+<div class="modal fade" id="companyModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">{% trans "Company Details" %}</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div id="modalContent">
+                    <div class="text-center">
+                        <div class="spinner-border" role="status">
+                            <span class="visually-hidden">{% trans "Loading..." %}</span>
                         </div>
                     </div>
                 </div>
             </div>
         </div>
     </div>
+</div>
+{% endblock %}
 
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.0/js/bootstrap.bundle.min.js"></script>
-    
-    <script>
-        // View toggle functionality
-        document.getElementById('tableView').addEventListener('change', function() {
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // View toggle functionality
+    const tableView = document.getElementById('tableView');
+    const cardView = document.getElementById('cardView');
+    const tableViewContent = document.getElementById('tableViewContent');
+    const cardViewContent = document.getElementById('cardViewContent');
+
+    if (tableView && cardView && tableViewContent && cardViewContent) {
+        tableView.addEventListener('change', function() {
             if (this.checked) {
-                document.getElementById('tableViewContent').classList.remove('d-none');
-                document.getElementById('cardViewContent').classList.add('d-none');
+                tableViewContent.classList.remove('d-none');
+                cardViewContent.classList.add('d-none');
             }
         });
 
-        document.getElementById('cardView').addEventListener('change', function() {
+        cardView.addEventListener('change', function() {
             if (this.checked) {
-                document.getElementById('tableViewContent').classList.add('d-none');
-                document.getElementById('cardViewContent').classList.remove('d-none');
+                tableViewContent.classList.add('d-none');
+                cardViewContent.classList.remove('d-none');
             }
         });
+    }
 
-        // Company modal functionality
-        document.addEventListener('DOMContentLoaded', function() {
-            const companyModal = document.getElementById('companyModal');
-            companyModal.addEventListener('show.bs.modal', function(event) {
-                const button = event.relatedTarget;
-                const companyId = button.getAttribute('data-company');
-                
-                if (companyId) {
-                    // In a real implementation, you would fetch company details via AJAX
-                    document.getElementById('modalContent').innerHTML = `
-                        <div class="row">
-                            <div class="col-md-6">
-                                <h6>Company Information</h6>
-                                <p><strong>ID:</strong> ${companyId}</p>
-                                <p><strong>Status:</strong> <span class="badge bg-success">Active</span></p>
-                                <p><strong>Plan:</strong> Professional</p>
-                            </div>
-                            <div class="col-md-6">
-                                <h6>Usage Statistics</h6>
-                                <p><strong>Users:</strong> 15/50</p>
-                                <p><strong>Storage:</strong> 2.5GB/10GB</p>
-                                <p><strong>API Calls:</strong> 1,250/5,000</p>
-                            </div>
+    // Company modal functionality
+    const companyModal = document.getElementById('companyModal');
+    if (companyModal) {
+        companyModal.addEventListener('show.bs.modal', function(event) {
+            const button = event.relatedTarget;
+            const companyId = button.getAttribute('data-company');
+            const modalContent = document.getElementById('modalContent');
+
+            if (companyId && modalContent) {
+                // In a real implementation, you would fetch company details via AJAX
+                modalContent.innerHTML = `
+                    <div class="row">
+                        <div class="col-md-6">
+                            <h6>{% trans "Company Information" %}</h6>
+                            <p><strong>{% trans "ID:" %}</strong> ${companyId}</p>
+                            <p><strong>{% trans "Status:" %}</strong> <span class="badge bg-success">{% trans "Active" %}</span></p>
+                            <p><strong>{% trans "Plan:" %}</strong> {% trans "Professional" %}</p>
                         </div>
-                        <hr>
-                        <div class="row">
-                            <div class="col-12">
-                                <h6>Recent Activity</h6>
-                                <div class="list-group">
-                                    <div class="list-group-item">
-                                        <small class="text-muted">2 hours ago</small><br>
-                                        New user registered: john.doe@example.com
-                                    </div>
-                                    <div class="list-group-item">
-                                        <small class="text-muted">1 day ago</small><br>
-                                        Invoice generated: #INV-001234
-                                    </div>
+                        <div class="col-md-6">
+                            <h6>{% trans "Usage Statistics" %}</h6>
+                            <p><strong>{% trans "Users:" %}</strong> 15/50</p>
+                            <p><strong>{% trans "Storage:" %}</strong> 2.5GB/10GB</p>
+                            <p><strong>{% trans "API Calls:" %}</strong> 1,250/5,000</p>
+                        </div>
+                    </div>
+                    <hr>
+                    <div class="row">
+                        <div class="col-12">
+                            <h6>{% trans "Recent Activity" %}</h6>
+                            <div class="list-group">
+                                <div class="list-group-item">
+                                    <small class="text-muted">{% trans "2 hours ago" %}</small><br>
+                                    {% trans "New user registered: john.doe@example.com" %}
+                                </div>
+                                <div class="list-group-item">
+                                    <small class="text-muted">{% trans "1 day ago" %}</small><br>
+                                    {% trans "Invoice generated: #INV-001234" %}
                                 </div>
                             </div>
                         </div>
-                    `;
+                    </div>
+                `;
+            }
+        });
+    }
+
+    // Auto-refresh functionality
+    let autoRefresh = false;
+    function toggleAutoRefresh() {
+        autoRefresh = !autoRefresh;
+        if (autoRefresh) {
+            setTimeout(function refresh() {
+                if (autoRefresh) {
+                    location.reload();
                 }
-            });
-        });
-
-        // Auto-refresh functionality
-        let autoRefresh = false;
-        function toggleAutoRefresh() {
-            autoRefresh = !autoRefresh;
-            if (autoRefresh) {
-                setTimeout(function refresh() {
-                    if (autoRefresh) {
-                        location.reload();
-                    }
-                }, 30000); // Refresh every 30 seconds
-            }
+            }, 30000); // Refresh every 30 seconds
         }
+    }
 
-        // Keyboard shortcuts
-        document.addEventListener('keydown', function(e) {
-            if (e.ctrlKey && e.key === 'r') {
-                e.preventDefault();
-                location.reload();
+    // Keyboard shortcuts
+    document.addEventListener('keydown', function(e) {
+        if (e.ctrlKey && e.key === 'r') {
+            e.preventDefault();
+            location.reload();
+        }
+    });
+
+    // Theme-aware styling updates
+    function updateThemeStyles() {
+        // Any additional theme-specific JavaScript can go here
+    }
+
+    // Listen for theme changes
+    const observer = new MutationObserver(function(mutations) {
+        mutations.forEach(function(mutation) {
+            if (mutation.attributeName === 'data-theme') {
+                updateThemeStyles();
             }
         });
-    </script>
-</body>
-</html>
+    });
+
+    observer.observe(document.documentElement, {
+        attributes: true,
+        attributeFilter: ['data-theme']
+    });
+});
+</script>
+{% endblock %}

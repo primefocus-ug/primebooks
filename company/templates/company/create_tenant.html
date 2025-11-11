@@ -1,0 +1,732 @@
+{% extends "base.html" %}
+{% load static %}
+{% load i18n %}
+
+{% block title %}Create New Tenant - {{ block.super }}{% endblock %}
+
+{% block extra_css %}
+<style>
+    .form-section {
+        background: white;
+        border-radius: 8px;
+        padding: 1.5rem;
+        margin-bottom: 1.5rem;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+
+    .form-section-title {
+        font-size: 1.25rem;
+        font-weight: 600;
+        margin-bottom: 1rem;
+        padding-bottom: 0.5rem;
+        border-bottom: 2px solid #e5e7eb;
+        color: #1f2937;
+    }
+
+    .required-field::after {
+        content: " *";
+        color: #dc2626;
+    }
+
+    .help-text {
+        font-size: 0.875rem;
+        color: #6b7280;
+        margin-top: 0.25rem;
+    }
+
+    .info-box {
+        background: #f0f9ff;
+        border-left: 4px solid #3b82f6;
+        padding: 1rem;
+        border-radius: 4px;
+        margin-bottom: 1.5rem;
+    }
+
+    .warning-box {
+        background: #fef3c7;
+        border-left: 4px solid #f59e0b;
+        padding: 1rem;
+        border-radius: 4px;
+        margin-bottom: 1.5rem;
+    }
+
+    .step-indicator {
+        display: flex;
+        justify-content: space-between;
+        margin-bottom: 2rem;
+        padding: 1rem;
+        background: #f9fafb;
+        border-radius: 8px;
+    }
+
+    .step {
+        flex: 1;
+        text-align: center;
+        padding: 0.5rem;
+        position: relative;
+    }
+
+    .step::after {
+        content: '';
+        position: absolute;
+        top: 50%;
+        right: -50%;
+        width: 100%;
+        height: 2px;
+        background: #e5e7eb;
+        z-index: -1;
+    }
+
+    .step:last-child::after {
+        display: none;
+    }
+
+    .step.active {
+        color: #3b82f6;
+        font-weight: 600;
+    }
+
+    .step-number {
+        display: inline-block;
+        width: 32px;
+        height: 32px;
+        line-height: 32px;
+        border-radius: 50%;
+        background: #e5e7eb;
+        margin-bottom: 0.5rem;
+    }
+
+    .step.active .step-number {
+        background: #3b82f6;
+        color: white;
+    }
+
+    .password-strength {
+        height: 4px;
+        border-radius: 2px;
+        margin-top: 0.5rem;
+        transition: all 0.3s;
+    }
+
+    .strength-weak { background: #ef4444; width: 33%; }
+    .strength-medium { background: #f59e0b; width: 66%; }
+    .strength-strong { background: #10b981; width: 100%; }
+
+    .auto-generate-btn {
+        position: absolute;
+        right: 10px;
+        top: 50%;
+        transform: translateY(-50%);
+        padding: 0.25rem 0.5rem;
+        font-size: 0.75rem;
+    }
+
+    .field-wrapper {
+        position: relative;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <div class="row">
+        <div class="col-12">
+            <!-- Header -->
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <div>
+                    <h2 class="mb-1">
+                        <i class="bi bi-building-add me-2"></i>Create New Tenant
+                    </h2>
+                    <p class="text-muted mb-0">Set up a new company with its own database schema and domain</p>
+                </div>
+                <a href="{% url 'companies:company_list' %}" class="btn btn-outline-secondary">
+                    <i class="bi bi-arrow-left"></i> Back to Companies
+                </a>
+            </div>
+
+            <!-- Info Box -->
+            <div class="info-box">
+                <h6 class="mb-2"><i class="bi bi-info-circle me-2"></i>What is a Tenant?</h6>
+                <p class="mb-0">
+                    A tenant is a completely isolated company instance with its own database schema,
+                    users, and configuration. Each tenant operates independently with full data separation.
+                </p>
+            </div>
+
+            <!-- Main Form -->
+            <form method="post" id="tenantForm">
+                {% csrf_token %}
+
+                <!-- Display Messages -->
+                {% if messages %}
+                    {% for message in messages %}
+                    <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
+                        {{ message }}
+                        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                    </div>
+                    {% endfor %}
+                {% endif %}
+
+                <!-- Step 1: Company Information -->
+                <div class="form-section">
+                    <h3 class="form-section-title">
+                        <i class="bi bi-building me-2"></i>Step 1: Company Information
+                    </h3>
+
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label for="name" class="form-label required-field">Legal Company Name</label>
+                            <input type="text"
+                                   class="form-control"
+                                   id="name"
+                                   name="name"
+                                   required
+                                   value="{{ form_data.name|default:'' }}"
+                                   placeholder="Enter legal company name">
+                            <div class="help-text">Official registered name of the company</div>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label for="trading_name" class="form-label">Trading Name</label>
+                            <input type="text"
+                                   class="form-control"
+                                   id="trading_name"
+                                   name="trading_name"
+                                   value="{{ form_data.trading_name|default:'' }}"
+                                   placeholder="Enter trading name (if different)">
+                            <div class="help-text">Business name used for operations</div>
+                        </div>
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-12 mb-3">
+                            <label for="description" class="form-label">Company Description</label>
+                            <textarea class="form-control"
+                                      id="description"
+                                      name="description"
+                                      rows="3"
+                                      placeholder="Brief description of the company">{{ form_data.description|default:'' }}</textarea>
+                        </div>
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label for="email" class="form-label required-field">Company Email</label>
+                            <input type="email"
+                                   class="form-control"
+                                   id="email"
+                                   name="email"
+                                   required
+                                   value="{{ form_data.email|default:'' }}"
+                                   placeholder="company@example.com">
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label for="phone" class="form-label">Phone Number</label>
+                            <input type="tel"
+                                   class="form-control"
+                                   id="phone"
+                                   name="phone"
+                                   value="{{ form_data.phone|default:'' }}"
+                                   placeholder="+256700000000">
+                        </div>
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-12 mb-3">
+                            <label for="physical_address" class="form-label required-field">Physical Address</label>
+                            <textarea class="form-control"
+                                      id="physical_address"
+                                      name="physical_address"
+                                      rows="2"
+                                      required
+                                      placeholder="Enter physical address">{{ form_data.physical_address|default:'' }}</textarea>
+                        </div>
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label for="postal_address" class="form-label">Postal Address</label>
+                            <input type="text"
+                                   class="form-control"
+                                   id="postal_address"
+                                   name="postal_address"
+                                   value="{{ form_data.postal_address|default:'' }}"
+                                   placeholder="P.O. Box address">
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label for="website" class="form-label">Website</label>
+                            <input type="url"
+                                   class="form-control"
+                                   id="website"
+                                   name="website"
+                                   value="{{ form_data.website|default:'' }}"
+                                   placeholder="https://www.example.com">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Step 2: Tax Information -->
+                <div class="form-section">
+                    <h3 class="form-section-title">
+                        <i class="bi bi-file-text me-2"></i>Step 2: Tax & Registration
+                    </h3>
+
+                    <div class="row">
+                        <div class="col-md-4 mb-3">
+                            <label for="tin" class="form-label">TIN</label>
+                            <input type="text"
+                                   class="form-control text-uppercase"
+                                   id="tin"
+                                   name="tin"
+                                   value="{{ form_data.tin|default:'' }}"
+                                   placeholder="Tax Identification Number">
+                            <div class="help-text">Required for EFRIS integration</div>
+                        </div>
+                        <div class="col-md-4 mb-3">
+                            <label for="brn" class="form-label">BRN</label>
+                            <input type="text"
+                                   class="form-control text-uppercase"
+                                   id="brn"
+                                   name="brn"
+                                   value="{{ form_data.brn|default:'' }}"
+                                   placeholder="Business Registration Number">
+                        </div>
+                        <div class="col-md-4 mb-3">
+                            <label for="nin" class="form-label">NIN</label>
+                            <input type="text"
+                                   class="form-control text-uppercase"
+                                   id="nin"
+                                   name="nin"
+                                   value="{{ form_data.nin|default:'' }}"
+                                   placeholder="National Identification Number">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Step 3: Technical Configuration -->
+                <div class="form-section">
+                    <h3 class="form-section-title">
+                        <i class="bi bi-gear me-2"></i>Step 3: Technical Configuration
+                    </h3>
+
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label for="schema_name" class="form-label">Database Schema Name</label>
+                            <div class="field-wrapper">
+                                <input type="text"
+                                       class="form-control"
+                                       id="schema_name"
+                                       name="schema_name"
+                                       value="{{ form_data.schema_name|default:'' }}"
+                                       placeholder="Leave blank for auto-generation"
+                                       pattern="[a-z][a-z0-9_]*">
+                                <button type="button"
+                                        class="btn btn-sm btn-outline-primary auto-generate-btn"
+                                        onclick="generateSchemaName()">
+                                    <i class="bi bi-magic"></i> Generate
+                                </button>
+                            </div>
+                            <div class="help-text">Lowercase letters, numbers, and underscores only. Auto-generated if left blank.</div>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label for="domain" class="form-label required-field">Domain</label>
+                            <div class="input-group">
+                                <input type="text"
+                                       class="form-control"
+                                       id="domain"
+                                       name="domain"
+                                       required
+                                       value="{{ form_data.domain|default:'' }}"
+                                       placeholder="companyname">
+                                <span class="input-group-text">.localhost</span>
+                            </div>
+                            <div class="help-text">Subdomain for accessing this tenant</div>
+                        </div>
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-4 mb-3">
+                            <label for="time_zone" class="form-label required-field">Time Zone</label>
+                            <select class="form-select" id="time_zone" name="time_zone" required>
+                                <option value="Africa/Kampala" selected>Africa/Kampala</option>
+                                <option value="Africa/Nairobi">Africa/Nairobi</option>
+                                <option value="UTC">UTC</option>
+                                <option value="America/New_York">America/New York</option>
+                                <option value="Europe/London">Europe/London</option>
+                            </select>
+                        </div>
+                        <div class="col-md-4 mb-3">
+                            <label for="locale" class="form-label required-field">Locale</label>
+                            <input type="text"
+                                   class="form-control"
+                                   id="locale"
+                                   name="locale"
+                                   value="en-UG"
+                                   required
+                                   placeholder="e.g., en-UG, en-US">
+                        </div>
+                        <div class="col-md-4 mb-3">
+                            <label for="preferred_currency" class="form-label">Currency</label>
+                            <select class="form-select" id="preferred_currency" name="preferred_currency">
+                                <option value="UGX" selected>UGX - Ugandan Shilling</option>
+                                <option value="USD">USD - US Dollar</option>
+                                <option value="KES">KES - Kenyan Shilling</option>
+                                <option value="EUR">EUR - Euro</option>
+                                <option value="GBP">GBP - British Pound</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label for="date_format" class="form-label required-field">Date Format</label>
+                            <select class="form-select" id="date_format" name="date_format" required>
+                                <option value="%d/%m/%Y" selected>DD/MM/YYYY (31/12/2023)</option>
+                                <option value="%m/%d/%Y">MM/DD/YYYY (12/31/2023)</option>
+                                <option value="%Y-%m-%d">YYYY-MM-DD (2023-12-31)</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label for="time_format" class="form-label required-field">Time Format</label>
+                            <select class="form-select" id="time_format" name="time_format" required>
+                                <option value="24" selected>24 Hour</option>
+                                <option value="12">12 Hour (AM/PM)</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Step 4: EFRIS Configuration (Optional) -->
+                <div class="form-section">
+                    <h3 class="form-section-title">
+                        <i class="bi bi-receipt me-2"></i>Step 4: EFRIS Integration (Optional)
+                    </h3>
+
+                    <div class="row">
+                        <div class="col-md-4 mb-3">
+                            <div class="form-check">
+                                <input class="form-check-input"
+                                       type="checkbox"
+                                       id="efris_enabled"
+                                       name="efris_enabled"
+                                       {{ form_data.efris_enabled|yesno:"checked," }}>
+                                <label class="form-check-label" for="efris_enabled">
+                                    Enable EFRIS Integration
+                                </label>
+                            </div>
+                        </div>
+                        <div class="col-md-4 mb-3">
+                            <div class="form-check">
+                                <input class="form-check-input"
+                                       type="checkbox"
+                                       id="efris_is_production"
+                                       name="efris_is_production"
+                                       {{ form_data.efris_is_production|yesno:"checked," }}>
+                                <label class="form-check-label" for="efris_is_production">
+                                    Production Mode
+                                </label>
+                            </div>
+                        </div>
+                        <div class="col-md-4 mb-3">
+                            <label for="efris_integration_mode" class="form-label">Integration Mode</label>
+                            <select class="form-select" id="efris_integration_mode" name="efris_integration_mode">
+                                <option value="offline" selected>Offline Mode</option>
+                                <option value="online">Online Mode</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label for="efris_device_number" class="form-label">Device Number</label>
+                            <input type="text"
+                                   class="form-control"
+                                   id="efris_device_number"
+                                   name="efris_device_number"
+                                   value="{{ form_data.efris_device_number|default:'' }}"
+                                   placeholder="e.g., 1026925503_01">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Step 5: Subscription Plan -->
+                <div class="form-section">
+                    <h3 class="form-section-title">
+                        <i class="bi bi-credit-card me-2"></i>Step 5: Subscription Plan
+                    </h3>
+
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label for="plan" class="form-label">Select Plan</label>
+                            <select class="form-select" id="plan" name="plan">
+                                <option value="">No Plan (Free Trial Only)</option>
+                                {% for plan in plans %}
+                                <option value="{{ plan.id }}">
+                                    {{ plan.display_name|default:plan.get_name_display }} -
+                                    ${{ plan.price }}/{{ plan.get_billing_cycle_display|lower }}
+                                </option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <div class="form-check mt-4">
+                                <input class="form-check-input"
+                                       type="checkbox"
+                                       id="is_trial"
+                                       name="is_trial"
+                                       checked>
+                                <label class="form-check-label" for="is_trial">
+                                    Start with Trial Period (60 days)
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Step 6: Admin User -->
+                <div class="form-section">
+                    <h3 class="form-section-title">
+                        <i class="bi bi-person-badge me-2"></i>Step 6: Admin User Account
+                    </h3>
+
+                    <div class="warning-box">
+                        <strong><i class="bi bi-exclamation-triangle me-2"></i>Important:</strong>
+                        This user will have full administrative access to the tenant.
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label for="admin_username" class="form-label required-field">Username</label>
+                            <input type="text"
+                                   class="form-control"
+                                   id="admin_username"
+                                   name="admin_username"
+                                   required
+                                   value="{{ form_data.admin_username|default:'' }}"
+                                   placeholder="admin">
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label for="admin_email" class="form-label required-field">Email</label>
+                            <input type="email"
+                                   class="form-control"
+                                   id="admin_email"
+                                   name="admin_email"
+                                   required
+                                   value="{{ form_data.admin_email|default:'' }}"
+                                   placeholder="admin@company.com">
+                        </div>
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label for="admin_first_name" class="form-label">First Name</label>
+                            <input type="text"
+                                   class="form-control"
+                                   id="admin_first_name"
+                                   name="admin_first_name"
+                                   value="{{ form_data.admin_first_name|default:'' }}"
+                                   placeholder="John">
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label for="admin_last_name" class="form-label">Last Name</label>
+                            <input type="text"
+                                   class="form-control"
+                                   id="admin_last_name"
+                                   name="admin_last_name"
+                                   value="{{ form_data.admin_last_name|default:'' }}"
+                                   placeholder="Doe">
+                        </div>
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label for="admin_password" class="form-label required-field">Password</label>
+                            <div class="input-group">
+                                <input type="password"
+                                       class="form-control"
+                                       id="admin_password"
+                                       name="admin_password"
+                                       required
+                                       placeholder="Enter strong password"
+                                       onkeyup="checkPasswordStrength()">
+                                <button class="btn btn-outline-secondary"
+                                        type="button"
+                                        onclick="togglePassword('admin_password')">
+                                    <i class="bi bi-eye" id="admin_password_icon"></i>
+                                </button>
+                                <button class="btn btn-outline-primary"
+                                        type="button"
+                                        onclick="generatePassword()">
+                                    <i class="bi bi-magic"></i> Generate
+                                </button>
+                            </div>
+                            <div id="password-strength" class="password-strength"></div>
+                            <div class="help-text">Minimum 8 characters with letters and numbers</div>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label for="admin_password_confirm" class="form-label required-field">Confirm Password</label>
+                            <div class="input-group">
+                                <input type="password"
+                                       class="form-control"
+                                       id="admin_password_confirm"
+                                       name="admin_password_confirm"
+                                       required
+                                       placeholder="Confirm password"
+                                       onkeyup="checkPasswordMatch()">
+                                <button class="btn btn-outline-secondary"
+                                        type="button"
+                                        onclick="togglePassword('admin_password_confirm')">
+                                    <i class="bi bi-eye" id="admin_password_confirm_icon"></i>
+                                </button>
+                            </div>
+                            <small id="password-match" class="text-danger" style="display:none;">Passwords do not match</small>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Form Actions -->
+                <div class="form-section">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <a href="{% url 'companies:company_list' %}" class="btn btn-outline-secondary">
+                            <i class="bi bi-x-circle me-1"></i> Cancel
+                        </a>
+                        <button type="submit" class="btn btn-primary btn-lg" id="submitBtn">
+                            <i class="bi bi-plus-circle me-1"></i> Create Tenant
+                        </button>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // Auto-generate schema name from company name
+    document.getElementById('name').addEventListener('input', function() {
+        const schemaInput = document.getElementById('schema_name');
+        const domainInput = document.getElementById('domain');
+
+        if (!schemaInput.value) {
+            const name = this.value.toLowerCase()
+                .replace(/[^a-z0-9]/g, '_')
+                .replace(/^[0-9]/, 'c_')
+                .substring(0, 20);
+            schemaInput.placeholder = name ? `${name}_xxxxx (auto)` : 'Auto-generated';
+        }
+
+        if (!domainInput.value) {
+            const domain = this.value.toLowerCase()
+                .replace(/[^a-z0-9]/g, '')
+                .substring(0, 20);
+            domainInput.value = domain;
+        }
+    });
+
+    // Generate schema name
+    function generateSchemaName() {
+        const companyName = document.getElementById('name').value;
+        if (!companyName) {
+            alert('Please enter company name first');
+            return;
+        }
+
+        const base = companyName.toLowerCase()
+            .replace(/[^a-z0-9]/g, '_')
+            .replace(/^[0-9]/, 'c_')
+            .substring(0, 20);
+
+        const random = Math.random().toString(36).substring(2, 10);
+        document.getElementById('schema_name').value = `${base}_${random}`;
+    }
+
+    // Password strength checker
+    function checkPasswordStrength() {
+        const password = document.getElementById('admin_password').value;
+        const strengthDiv = document.getElementById('password-strength');
+
+        if (password.length === 0) {
+            strengthDiv.className = 'password-strength';
+            return;
+        }
+
+        let strength = 0;
+        if (password.length >= 8) strength++;
+        if (password.match(/[a-z]/) && password.match(/[A-Z]/)) strength++;
+        if (password.match(/[0-9]/)) strength++;
+        if (password.match(/[^a-zA-Z0-9]/)) strength++;
+
+        if (strength <= 1) {
+            strengthDiv.className = 'password-strength strength-weak';
+        } else if (strength <= 2) {
+            strengthDiv.className = 'password-strength strength-medium';
+        } else {
+            strengthDiv.className = 'password-strength strength-strong';
+        }
+    }
+
+    // Check password match
+    function checkPasswordMatch() {
+        const password = document.getElementById('admin_password').value;
+        const confirm = document.getElementById('admin_password_confirm').value;
+        const matchDiv = document.getElementById('password-match');
+
+        if (confirm.length > 0 && password !== confirm) {
+            matchDiv.style.display = 'block';
+        } else {
+            matchDiv.style.display = 'none';
+        }
+    }
+
+    // Toggle password visibility
+    function togglePassword(fieldId) {
+        const field = document.getElementById(fieldId);
+        const icon = document.getElementById(fieldId + '_icon');
+
+        if (field.type === 'password') {
+            field.type = 'text';
+            icon.className = 'bi bi-eye-slash';
+        } else {
+            field.type = 'password';
+            icon.className = 'bi bi-eye';
+        }
+    }
+
+    // Generate random password
+    function generatePassword() {
+        const length = 12;
+        const charset = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*';
+        let password = '';
+
+        for (let i = 0; i < length; i++) {
+            password += charset.charAt(Math.floor(Math.random() * charset.length));
+        }
+
+        document.getElementById('admin_password').value = password;
+        document.getElementById('admin_password_confirm').value = password;
+        checkPasswordStrength();
+        checkPasswordMatch();
+
+        // Show password temporarily
+        document.getElementById('admin_password').type = 'text';
+        document.getElementById('admin_password_icon').className = 'bi bi-eye-slash';
+    }
+
+    // Form submission
+    document.getElementById('tenantForm').addEventListener('submit', function(e) {
+        const password = document.getElementById('admin_password').value;
+        const confirm = document.getElementById('admin_password_confirm').value;
+
+        if (password !== confirm) {
+            e.preventDefault();
+            alert('Passwords do not match!');
+            return false;
+        }
+
+        // Show loading state
+        const submitBtn = document.getElementById('submitBtn');
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Creating Tenant...';
+    });
+</script>
+{% endblock %}

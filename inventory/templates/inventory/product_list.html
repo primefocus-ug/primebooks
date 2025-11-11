@@ -1,8 +1,18 @@
 {% extends 'base.html' %}
+{% load static %}
+{% load humanize %}
+{% load math_extras %}
+{% load custom_filters %}
+{% load i18n %}
+
 
 {% block title %}Product Inventory - {{ store.name }} | {{ company.trading_name|default:company.name }}{% endblock %}
 
+{% load %}
 {% block breadcrumbs %}
+
+
+
 <li class="breadcrumb-item">
     {% if perms.inventory.view_product %}
     <a href="{% url 'inventory:dashboard' %}">
@@ -24,7 +34,7 @@
                 <i class="fas fa-boxes"></i> Product Inventory
                 <span class="badge bg-primary-soft">{{ products|length }} items</span>
             </h1>
-            <p class="text-muted">Manage your product catalog and inventory levels</p>
+            <p class="text-muted">{% trans "Manage your product catalog and inventory levels" %}</p>
         </div>
 
         <div class="header-actions">
@@ -33,11 +43,11 @@
                     <i class="fas fa-tasks"></i> Bulk Actions
                 </button>
                 <ul class="dropdown-menu">
-                    <li><a class="dropdown-item" href="#" data-action="activate"><i class="fas fa-check-circle text-success"></i> Activate</a></li>
-                    <li><a class="dropdown-item" href="#" data-action="deactivate"><i class="fas fa-ban text-danger"></i> Deactivate</a></li>
+                    <li><a class="dropdown-item" href="#" data-action="activate"><i class="fas fa-check-circle text-success"></i>{% trans " Activate" %}</a></li>
+                    <li><a class="dropdown-item" href="#" data-action="deactivate"><i class="fas fa-ban text-danger"></i>{% trans " Deactivate" %}</a></li>
                     <li><hr class="dropdown-divider"></li>
-                    <li><a class="dropdown-item" href="#" data-action="export"><i class="fas fa-file-export text-info"></i> Export Selected</a></li>
-                    <li><a class="dropdown-item text-danger" href="#" data-action="delete"><i class="fas fa-trash-alt"></i> Delete Selected</a></li>
+                    <li><a class="dropdown-item" href="#" data-action="export"><i class="fas fa-file-export text-info"></i>{% trans " Export Selected" %}</a></li>
+                    <li><a class="dropdown-item text-danger" href="#" data-action="delete"><i class="fas fa-trash-alt"></i>{% trans " Delete Selected" %}</a></li>
                 </ul>
             </div>
 
@@ -48,15 +58,15 @@
                 </a>
                 {% endif %}
                 <button type="button" class="btn btn-primary dropdown-toggle dropdown-toggle-split" data-bs-toggle="dropdown">
-                    <span class="visually-hidden">Toggle Dropdown</span>
+                    <span class="visually-hidden">{% trans "Toggle Dropdown" %}</span>
                 </button>
                 <ul class="dropdown-menu">
                     {% if perms.inventory.add_product %}
-                    <li><a class="dropdown-item" href="{% url 'inventory:bulk_import' %}"><i class="fas fa-file-import"></i> Bulk Import</a></li>
+                    <li><a class="dropdown-item" href="{% url 'inventory:bulk_import' %}"><i class="fas fa-file-import"></i>{% trans " Bulk Import" %}</a></li>
                     {% endif %}
-                    <li><a class="dropdown-item" href="#" onclick="exportProducts()"><i class="fas fa-file-export"></i> Export All</a></li>
+                    <li><a class="dropdown-item" href="#" onclick="exportProducts()"><i class="fas fa-file-export"></i>{% trans " Export All" %}</a></li>
                     <li><hr class="dropdown-divider"></li>
-                    <li><a class="dropdown-item" href="#"><i class="fas fa-barcode"></i> Generate Barcodes</a></li>
+                    <li><a class="dropdown-item" href="#"><i class="fas fa-barcode"></i>{% trans " Generate Barcodes" %}</a></li>
                 </ul>
             </div>
         </div>
@@ -74,28 +84,28 @@
 
                 <!-- Category Filter -->
                 <div class="filter-group">
-                    <label>Category</label>
+                    <label>{% trans "Category" %}</label>
                     {{ filter_form.category }}
                 </div>
 
                 <!-- Supplier Filter -->
                 <div class="filter-group">
-                    <label>Supplier</label>
+                    <label>{% trans "Supplier" %}</label>
                     {{ filter_form.supplier }}
                 </div>
 
                 <!-- Status Filter -->
                 <div class="filter-group">
-                    <label>Status</label>
+                    <label>{% trans "Status" %}</label>
                     {{ filter_form.status }}
                 </div>
 
                 <!-- Price Range -->
                 <div class="filter-group price-range">
-                    <label>Price Range</label>
+                    <label>{% trans "Price Range" %}</label>
                     <div class="range-inputs">
                         {{ filter_form.min_price }}
-                        <span class="range-separator">to</span>
+                        <span class="range-separator">{% trans "to" %}</span>
                         {{ filter_form.max_price }}
                     </div>
                 </div>
@@ -125,12 +135,12 @@
                         <th width="40">
                             <input type="checkbox" id="selectAll" class="form-check-input">
                         </th>
-                        <th>Product Details</th>
-                        <th>Category</th>
-                        <th>Pricing</th>
-                        <th>Inventory</th>
-                        <th>Status</th>
-                        <th width="150">Actions</th>
+                        <th>{% trans "Product Details" %}</th>
+                        <th>{% trans "Category" %}</th>
+                        <th>{% trans "Pricing" %}</th>
+                        <th>{% trans "Inventory" %}</th>
+                        <th>{% trans "Status" %}</th>
+                        <th width="150">{% trans "Actions" %}</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -155,7 +165,7 @@
                                     <div class="product-meta">
                                         <span class="badge bg-success">SKU: {{ product.sku }}</span>
                                         {% if product.barcode %}
-                                        <span class="badge bg-primary">Barcode: {{ product.barcode }}</span>
+                                        <span class="badge bg-primary">{% trans "Barcode: {{ product.barcode }}" %}</span>
                                         {% endif %}
                                     </div>
                                 </div>
@@ -167,13 +177,13 @@
                                 <i class="fas fa-tag"></i> {{ product.category.name }}
                             </span>
                             {% else %}
-                            <span class="text-muted">Uncategorized</span>
+                            <span class="text-muted">{% trans "Uncategorized" %}</span>
                             {% endif %}
                         </td>
                         <td>
                             <div class="pricing-info">
-                                <span class="selling-price">UGX {{ product.selling_price|floatformat:0 }}</span>
-                                <span class="cost-price">Cost: UGX {{ product.cost_price|floatformat:0 }}</span>
+                                <span class="selling-price">UGX {{ product.selling_price|money }}</span>
+                                <span class="cost-price">Cost: UGX {{ product.cost_price|money }}</span>
                                 {% if product.discount_percentage > 0 %}
                                 <span class="discount-badge">
                                     <i class="fas fa-percentage"></i> {{ product.discount_percentage }}% off
@@ -184,7 +194,7 @@
                         <td>
                             <div class="inventory-info">
                                 <div class="stock-level">
-                                    <span class="label">Stock:</span>
+                                    <span class="label">{% trans "Stock:" %}</span>
                                     <span class="value {% if product.current_stock <= product.min_stock_level %}text-danger{% endif %}">
                                         {{ product.total_stock|default:"0" }} in Stock
                                     </span>
@@ -291,8 +301,8 @@
             <div class="empty-state-icon">
                 <i class="fas fa-box-open"></i>
             </div>
-            <h3>No Products Found</h3>
-            <p class="text-muted">Your inventory is currently empty. Add your first product to get started.</p>
+            <h3>{% trans "No Products Found" %}</h3>
+            <p class="text-muted">{% trans "Your inventory is currently empty. Add your first product to get started." %}</p>
             {% if perms.inventory.add_product %}
             <a href="{% url 'inventory:product_create' %}" class="btn btn-primary">
                 <i class="fas fa-plus-circle"></i> Add Product
@@ -317,29 +327,29 @@
                 {% csrf_token %}
                 <div class="modal-body">
                     <div class="mb-3">
-                        <label class="form-label">Product</label>
+                        <label class="form-label">{% trans "Product" %}</label>
                         <input type="text" class="form-control" id="quickProductName" readonly>
                         <input type="hidden" id="quickProductId">
                     </div>
 
                     <div class="row">
                         <div class="col-md-6 mb-3">
-                            <label class="form-label">Store</label>
+                            <label class="form-label">{% trans "Store" %}</label>
                             <select class="form-select" id="quickStore" required>
-                                <option value="">Select Store</option>
+                                <option value="">{% trans "Select Store" %}</option>
                                 {% for store in stores %}
                                 <option value="{{ store.id }}">{{ store.name }}</option>
                                 {% endfor %}
                             </select>
                         </div>
                         <div class="col-md-6 mb-3">
-                            <label class="form-label">Current Stock</label>
+                            <label class="form-label">{% trans "Current Stock" %}</label>
                             <input type="text" class="form-control" id="currentStock" readonly>
                         </div>
                     </div>
 
                     <div class="mb-3">
-                        <label class="form-label">Adjustment Type</label>
+                        <label class="form-label">{% trans "Adjustment Type" %}</label>
                         <div class="btn-group w-100" role="group">
                             <input type="radio" class="btn-check" name="adjustmentType" id="increaseStock" value="increase" checked>
                             <label class="btn btn-outline-success" for="increaseStock">
@@ -359,25 +369,25 @@
                     </div>
 
                     <div class="mb-3">
-                        <label class="form-label">Quantity</label>
+                        <label class="form-label">{% trans "Quantity" %}</label>
                         <input type="number" class="form-control" id="adjustmentQuantity" step="0.001" min="0" required>
                     </div>
 
                     <div class="mb-3">
-                        <label class="form-label">Reason</label>
+                        <label class="form-label">{% trans "Reason" %}</label>
                         <select class="form-select" id="adjustmentReason" required>
-                            <option value="">Select reason</option>
-                            <option value="delivery">Delivery Received</option>
-                            <option value="return">Customer Return</option>
-                            <option value="damage">Damaged Goods</option>
-                            <option value="theft">Theft/Loss</option>
-                            <option value="correction">Inventory Correction</option>
-                            <option value="other">Other</option>
+                            <option value="">{% trans "Select reason" %}</option>
+                            <option value="delivery">{% trans "Delivery Received" %}</option>
+                            <option value="return">{% trans "Customer Return" %}</option>
+                            <option value="damage">{% trans "Damaged Goods" %}</option>
+                            <option value="theft">{% trans "Theft/Loss" %}</option>
+                            <option value="correction">{% trans "Inventory Correction" %}</option>
+                            <option value="other">{% trans "Other" %}</option>
                         </select>
                     </div>
 
                     <div class="mb-3" id="reasonNoteContainer" style="display: none;">
-                        <label class="form-label">Notes</label>
+                        <label class="form-label">{% trans "Notes" %}</label>
                         <textarea class="form-control" id="adjustmentNotes" rows="2" placeholder="Additional details..."></textarea>
                     </div>
                 </div>
@@ -421,11 +431,18 @@
 {% endblock %}
 
 {% block extra_css %}
+<link rel="stylesheet" href="{% static 'dark.css' %}">
+<link rel="stylesheet" href="{% static 'themes.css' %}">
+
 <style>
 .product-inventory-container {
     padding: 1.5rem;
     max-width: 1400px;
     margin: 0 auto;
+}
+[data-theme="dark"] .product-inventory-container {
+    color: white;
+    background-color: #1e1e2f;
 }
 
 /* Header Styles */
@@ -466,12 +483,23 @@
     margin-bottom: 1.5rem;
     box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
 }
+[data-theme="dark"] .filter-card {
+    background: #2c2f33;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+    color: white;
+}
 
 .filter-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
     gap: 1rem;
     align-items: end;
+    
+}
+[data-theme="dark"] .filter-card {
+    background: #2c2f33;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+    color: white;
 }
 
 .filter-group {
@@ -526,6 +554,11 @@
     border-radius: 0.75rem;
     padding: 1.25rem;
     box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
+}
+[data-theme="dark"] .inventory-table-container {
+    background: #2c2f33;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+    color: white;
 }
 
 .table {
@@ -866,7 +899,7 @@ $(document).ready(function() {
     // Initialize DataTable
     const productsTable = $('#productsTable').DataTable({
         responsive: true,
-        dom: '<"top"f>rt<"bottom"lip><"clear">',
+        dom: '<"top"f>{% trans "rt" %}<"bottom"lip><"clear">',
         pageLength: 25,
         language: {
             search: "_INPUT_",
@@ -1041,7 +1074,7 @@ $(document).ready(function() {
         $('#productQuickViewContent').html(`
             <div class="text-center py-4">
                 <i class="fas fa-spinner fa-spin fa-2x"></i>
-                <p>Loading product details...</p>
+                <p>{% trans "Loading product details..." %}</p>
             </div>
         `);
 
@@ -1057,53 +1090,53 @@ $(document).ready(function() {
                               `<div class="image-placeholder"><i class="fas fa-box"></i></div>`}
                         </div>
                         <div>
-                            <h4>${data.name}</h4>
-                            <div class="text-muted">SKU: ${data.sku || 'N/A'}</div>
+                            <h4>{% trans "${data.name}" %}</h4>
+                            <div class="text-muted">{% trans "SKU: ${data.sku || 'N/A'}" %}</div>
                         </div>
                     </div>
 
                     <div class="detail-row">
-                        <div class="detail-label">Category</div>
-                        <div class="detail-value">${data.category || 'Uncategorized'}</div>
+                        <div class="detail-label">{% trans "Category" %}</div>
+                        <div class="detail-value">{% trans "${data.category || 'Uncategorized'}" %}</div>
                     </div>
                     <div class="detail-row">
-                        <div class="detail-label">Supplier</div>
-                        <div class="detail-value">${data.supplier || 'No supplier'}</div>
+                        <div class="detail-label">{% trans "Supplier" %}</div>
+                        <div class="detail-value">{% trans "${data.supplier || 'No supplier'}" %}</div>
                     </div>
                     <div class="detail-row">
-                        <div class="detail-label">Barcode</div>
-                        <div class="detail-value">${data.barcode || 'N/A'}</div>
+                        <div class="detail-label">{% trans "Barcode" %}</div>
+                        <div class="detail-value">{% trans "${data.barcode || 'N/A'}" %}</div>
                     </div>
                 </div>
 
                 <div class="product-detail-section">
-                    <h5 class="mb-3">Pricing Information</h5>
+                    <h5 class="mb-3">{% trans "Pricing Information" %}</h5>
                     <div class="detail-row">
-                        <div class="detail-label">Selling Price</div>
-                        <div class="detail-value">UGX ${data.selling_price}</div>
+                        <div class="detail-label">{% trans "Selling Price" %}</div>
+                        <div class="detail-value">{% trans "UGX ${data.selling_price}" %}</div>
                     </div>
                     <div class="detail-row">
-                        <div class="detail-label">Cost Price</div>
-                        <div class="detail-value">UGX ${data.cost_price}</div>
+                        <div class="detail-label">{% trans "Cost Price" %}</div>
+                        <div class="detail-value">{% trans "UGX ${data.cost_price}" %}</div>
                     </div>
                     <div class="detail-row">
-                        <div class="detail-label">Tax Rate</div>
-                        <div class="detail-value">${data.tax_rate || 'N/A'}</div>
+                        <div class="detail-label">{% trans "Tax Rate" %}</div>
+                        <div class="detail-value">{% trans "${data.tax_rate || 'N/A'}" %}</div>
                     </div>
                     <div class="detail-row">
-                        <div class="detail-label">Unit of Measure</div>
-                        <div class="detail-value">${data.unit_of_measure || 'N/A'}</div>
+                        <div class="detail-label">{% trans "Unit of Measure" %}</div>
+                        <div class="detail-value">{% trans "${data.unit_of_measure || 'N/A'}" %}</div>
                     </div>
                 </div>
 
                 <div class="product-detail-section">
-                    <h5 class="mb-3">Inventory Status</h5>
+                    <h5 class="mb-3">{% trans "Inventory Status" %}</h5>
                     <table class="stock-table">
                         <thead>
                             <tr>
-                                <th>Store</th>
-                                <th>Current Stock</th>
-                                <th>Status</th>
+                                <th>{% trans "Store" %}</th>
+                                <th>{% trans "Current Stock" %}</th>
+                                <th>{% trans "Status" %}</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -1113,25 +1146,25 @@ $(document).ready(function() {
                 data.stock_levels.forEach(stock => {
                     let statusBadge = '';
                     if (stock.status === 'in_stock') {
-                        statusBadge = '<span class="badge bg-success">In Stock</span>';
+                        statusBadge = '<span class="badge bg-success">{% trans "In Stock" %}</span>';
                     } else if (stock.status === 'low_stock') {
-                        statusBadge = '<span class="badge bg-warning">Low Stock</span>';
+                        statusBadge = '<span class="badge bg-warning">{% trans "Low Stock" %}</span>';
                     } else {
-                        statusBadge = '<span class="badge bg-danger">Out of Stock</span>';
+                        statusBadge = '<span class="badge bg-danger">{% trans "Out of Stock" %}</span>';
                     }
 
                     content += `
                         <tr>
-                            <td>${stock.store_name}</td>
-                            <td>${stock.quantity} ${data.unit_of_measure}</td>
-                            <td>${statusBadge}</td>
+                            <td>{% trans "${stock.store_name}" %}</td>
+                            <td>{% trans "${stock.quantity} ${data.unit_of_measure}" %}</td>
+                            <td>{% trans "${statusBadge}" %}</td>
                         </tr>
                     `;
                 });
             } else {
                 content += `
                     <tr>
-                        <td colspan="3" class="text-center text-muted py-3">No stock records available</td>
+                        <td colspan="3" class="text-center text-muted py-3">{% trans "No stock records available" %}</td>
                     </tr>
                 `;
             }

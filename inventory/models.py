@@ -166,25 +166,29 @@ class Category(models.Model):
                     commodity_category_code=self.efris_commodity_category_code
                 )
 
-                # NEW: Validate it's a leaf node (required for use)
+                # ✅ NEW: Validate it's a leaf node (CRITICAL REQUIREMENT)
+                # EFRIS only allows leaf nodes to be used for products/services
                 if efris_cat.is_leaf_node != '101':
                     raise ValidationError({
                         'efris_commodity_category_code':
-                            _("Selected EFRIS category is not a leaf node. Only leaf nodes can be used.")
+                            _("Selected EFRIS category is not a leaf node (is_leaf_node must be '101'). "
+                              "Only leaf nodes (terminal categories) can be used for products and services.")
                     })
 
-                # NEW: Validate type matches (product vs service)
+                # ✅ NEW: Validate type matches (product vs service)
+                # serviceMark: '101' = Product, '102' = Service
                 efris_type = 'service' if efris_cat.service_mark == '102' else 'product'
                 if self.category_type != efris_type:
                     raise ValidationError({
                         'efris_commodity_category_code':
-                            _(f"EFRIS category is a {efris_type}, but you selected category type as {self.category_type}")
+                            _(f"EFRIS category is a {efris_type} (serviceMark={efris_cat.service_mark}), "
+                              f"but you selected category type as '{self.category_type}'. They must match.")
                     })
 
             except EFRISCommodityCategory.DoesNotExist:
                 raise ValidationError({
                     'efris_commodity_category_code':
-                        _("Invalid EFRIS commodity category code")
+                        _("Invalid EFRIS commodity category code. This code does not exist in the system.")
                 })
 
     # Properties that fetch from shared EFRIS data
@@ -423,7 +427,6 @@ class Supplier(models.Model):
             'supplier_address': self.address,
             'supplier_contact': self.phone
         }
-
 
 class Product(models.Model, EFRISProductMixin):
     TAX_RATE_CHOICES = [
@@ -1148,6 +1151,31 @@ class Product(models.Model, EFRISProductMixin):
     def __str__(self):
         return f"{self.name} ({self.sku})"
 
+    def clean(self):
+        """Validate product data before saving"""
+        super().clean()
+
+        # Validate category has EFRIS commodity category
+        if self.category and not self.category.efris_commodity_category_code:
+            raise ValidationError({
+                'category': _("Selected category does not have an EFRIS commodity category assigned. "
+                              "Please assign one in the category settings.")
+            })
+
+        # ✅ NEW: Validate it's a leaf node
+        if self.category and not self.category.efris_is_leaf_node:
+            raise ValidationError({
+                'category': _("Selected category's EFRIS commodity category is not a leaf node. "
+                              "Only leaf nodes (terminal categories) can be used for products.")
+            })
+
+        # Validate category is a product category
+        if self.category and self.category.category_type != 'product':
+            raise ValidationError({
+                'category': _("Selected category is not a product category. "
+                              "Please select a product category.")
+            })
+
     # DRY Properties - Everything inherits from Category
     @property
     def efris_commodity_category_id(self):
@@ -1231,8 +1259,6 @@ class Product(models.Model, EFRISProductMixin):
     @property
     def efris_unit_of_measure_code(self):
         return self.unit_of_measure or '103'
-
-
 
     @property
     def final_price(self):
@@ -1394,6 +1420,361 @@ class Product(models.Model, EFRISProductMixin):
             'currency': 'UGX'
         }
 
+class Service(models.Model):
+    TAX_RATE_CHOICES = [
+        ('A', 'Standard rate (18%)'),
+        ('B', 'Zero rate (0%)'),
+        ('C', 'Exempt (Not taxable)'),
+        ('D', 'Deemed rate (18%)'),
+        ('E', 'Excise Duty rate (as per excise duty rates)'),
+    ]
+
+    EFRIS_TAX_CATEGORIES = [
+        ('101', 'Standard rate (18%)'),
+        ('102', 'Zero rate (0%)'),
+        ('103', 'Exempt (Not taxable)'),
+        ('104', 'Deemed rate (18%)'),
+        ('105', 'Excise Duty + VAT'),
+    ]
+
+    # Core Service Fields
+    category = models.ForeignKey(
+        Category,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        limit_choices_to={'category_type': 'service'},
+        related_name='services',
+        verbose_name=_("Service Category"),
+        help_text=_("Service category - EFRIS commodity category will be inherited from this")
+    )
+
+    name = models.CharField(
+        max_length=255,
+        verbose_name=_("Service Name")
+    )
+
+    code = models.CharField(
+        max_length=100,
+        unique=True,
+        verbose_name=_("Service Code"),
+        help_text=_("Unique identifier for this service")
+    )
+
+    description = models.TextField(
+        blank=True,
+        verbose_name=_("Description")
+    )
+
+    # Pricing
+    unit_price = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        validators=[MinValueValidator(0)],
+        verbose_name=_("Unit Price (UGX)"),
+        help_text=_("Price per unit of service")
+    )
+    # Tax Information
+    tax_rate = models.CharField(
+        max_length=1,
+        choices=TAX_RATE_CHOICES,
+        default='A',
+        verbose_name=_("Tax Rate Category")
+    )
+
+    excise_duty_rate = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        default=0,
+        validators=[MinValueValidator(0)],
+        verbose_name=_("Excise Duty Rate (%)"),
+        help_text=_("Only applicable if tax rate is E")
+    )
+
+    # Unit of Measure (for services like hours, sessions, etc.)
+    unit_of_measure = models.CharField(
+        max_length=20,
+        choices=Product.UNIT_CHOICES,  # Reuse Product's unit choices
+        default='207',  # Hours
+        verbose_name=_("Unit of Measure"),
+        help_text=_("Unit for measuring this service (e.g., Hours, Sessions)")
+    )
+
+    # EFRIS Status Fields
+    efris_is_uploaded = models.BooleanField(
+        default=False,
+        verbose_name=_("Uploaded to EFRIS")
+    )
+
+    efris_upload_date = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name=_("EFRIS Upload Date")
+    )
+
+    efris_service_id = models.CharField(
+        max_length=50,
+        blank=True,
+        null=True,
+        verbose_name=_("EFRIS Service ID"),
+        help_text=_("ID assigned by EFRIS after successful upload")
+    )
+
+    efris_auto_sync_enabled = models.BooleanField(
+        default=True,
+        verbose_name=_("EFRIS Auto Sync Enabled"),
+        help_text=_("Automatically sync price and details changes to EFRIS")
+    )
+
+    # Other Fields
+    is_active = models.BooleanField(
+        default=True,
+        verbose_name=_("Active")
+    )
+
+    image = models.ImageField(
+        upload_to='services/images/',
+        blank=True,
+        null=True,
+        verbose_name=_("Service Image")
+    )
+
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name=_("Created At")
+    )
+
+    updated_at = models.DateTimeField(
+        auto_now=True,
+        verbose_name=_("Updated At")
+    )
+
+    created_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='services_created',
+        verbose_name=_("Created By")
+    )
+
+    class Meta:
+        verbose_name = _("Service")
+        verbose_name_plural = _("Services")
+        ordering = ['name']
+        indexes = [
+            models.Index(fields=['efris_is_uploaded']),
+            models.Index(fields=['efris_auto_sync_enabled']),
+            models.Index(fields=['is_active']),
+        ]
+
+    def __str__(self):
+        return f"⚙️ {self.name} ({self.code})"
+
+    def clean(self):
+        """Validate service data before saving"""
+        super().clean()
+
+        # Validate category is a service category
+        if self.category and self.category.category_type != 'service':
+            raise ValidationError({
+                'category': _("Selected category is not a service category. Please select a service category.")
+            })
+
+        # Validate EFRIS commodity category if category is set
+        if self.category and not self.category.efris_commodity_category_code:
+            raise ValidationError({
+                'category': _("Selected category does not have an EFRIS commodity category assigned.")
+            })
+
+        # Validate it's a leaf node
+        if self.category and not self.category.efris_is_leaf_node:
+            raise ValidationError({
+                'category': _(
+                    "Selected category's EFRIS commodity category is not a leaf node. Only leaf nodes can be used.")
+            })
+
+    # Properties - Inherit from Category
+    @property
+    def efris_commodity_category_id(self):
+        """Get EFRIS commodity category code from the service's category."""
+        if self.category and self.category.efris_commodity_category:
+            return self.category.efris_commodity_category.commodity_category_code
+        return '100000000'
+
+    @property
+    def efris_commodity_category_name(self):
+        """Get EFRIS commodity category name from the service's category."""
+        if self.category and self.category.efris_commodity_category:
+            return self.category.efris_commodity_category.commodity_category_name
+        return 'General Services'
+
+    @property
+    def efris_service_code(self):
+        """Service code for EFRIS"""
+        return self.code
+
+    @property
+    def efris_service_name(self):
+        """EFRIS service name"""
+        return self.name
+
+    @property
+    def efris_service_description(self):
+        """EFRIS service description"""
+        return self.description or self.name
+
+    @property
+    def efris_tax_category_id(self):
+        """Auto-mapped EFRIS tax category from tax_rate"""
+        tax_rate_mapping = {
+            'A': '101',  # Standard (18%)
+            'B': '102',  # Zero (0%)
+            'C': '103',  # Exempt
+            'D': '104',  # Deemed (18%)
+            'E': '105',  # Excise Duty + VAT
+        }
+        return tax_rate_mapping.get(self.tax_rate, '101')
+
+    @property
+    def efris_tax_rate(self):
+        """Auto-calculated EFRIS tax rate from tax_rate"""
+        tax_rate_values = {
+            'A': 18.00,
+            'B': 0.00,
+            'C': 0.00,
+            'D': 18.00,
+            'E': 18.00,
+        }
+        return tax_rate_values.get(self.tax_rate, 18.00)
+
+    @property
+    def efris_excise_duty_rate(self):
+        """EFRIS excise duty rate"""
+        return self.excise_duty_rate
+
+    @property
+    def efris_unit_of_measure_code(self):
+        """EFRIS unit of measure code"""
+        return self.unit_of_measure or '207'  # Default to Hours
+
+    @property
+    def final_price(self):
+        """Calculate final price after discount"""
+        from decimal import Decimal
+        unit_price = self.unit_price or Decimal('0')
+
+        if not isinstance(unit_price, Decimal):
+            unit_price = Decimal(str(unit_price))
+
+        return unit_price
+
+    @property
+    def efris_status_display(self):
+        """Human-readable EFRIS status"""
+        if not self.efris_auto_sync_enabled:
+            return "EFRIS Sync Disabled"
+        elif self.efris_is_uploaded:
+            upload_date = self.efris_upload_date.strftime('%d/%m/%Y') if self.efris_upload_date else 'Unknown date'
+            return f"Uploaded to EFRIS ({upload_date})"
+        else:
+            return "Pending EFRIS Upload"
+
+    @property
+    def efris_configuration_complete(self):
+        """Check if EFRIS configuration is complete"""
+        required_fields = [
+            self.name,
+            self.code,
+            self.tax_rate,
+            self.unit_of_measure,
+            self.category,
+            self.efris_commodity_category_id
+        ]
+        return all(required_fields) and self.category.efris_is_leaf_node
+
+    # EFRIS Methods
+    def mark_for_efris_upload(self):
+        """Mark service for upload to EFRIS"""
+        self.efris_is_uploaded = False
+        self.save(update_fields=['efris_is_uploaded'])
+
+    def mark_efris_uploaded(self, efris_service_id=None):
+        """Mark service as successfully uploaded to EFRIS"""
+        self.efris_is_uploaded = True
+        self.efris_upload_date = timezone.now()
+        if efris_service_id:
+            self.efris_service_id = efris_service_id
+        self.save(update_fields=['efris_is_uploaded', 'efris_upload_date', 'efris_service_id'])
+
+    def enable_efris_sync(self):
+        """Enable EFRIS auto-sync"""
+        self.efris_auto_sync_enabled = True
+        self.save(update_fields=['efris_auto_sync_enabled'])
+
+    def disable_efris_sync(self):
+        """Disable EFRIS auto-sync"""
+        self.efris_auto_sync_enabled = False
+        self.save(update_fields=['efris_auto_sync_enabled'])
+
+    def get_efris_errors(self):
+        """Get list of EFRIS configuration errors"""
+        errors = []
+
+        if not self.efris_auto_sync_enabled:
+            return errors
+
+        required_fields = {
+            'name': 'Service Name',
+            'code': 'Service Code',
+            'tax_rate': 'Tax Rate',
+            'unit_of_measure': 'Unit of Measure',
+        }
+
+        for field, label in required_fields.items():
+            if not getattr(self, field):
+                errors.append(f"{label} is required for EFRIS sync")
+
+        if not self.category:
+            errors.append("Service must have a category for EFRIS sync")
+        elif not self.category.efris_commodity_category:
+            errors.append(f"Category '{self.category.name}' must have an EFRIS Commodity Category assigned")
+        elif not self.category.efris_is_leaf_node:
+            errors.append("Selected category's EFRIS commodity category is not a leaf node")
+
+        return errors
+
+    def get_efris_data(self):
+        """Get service data formatted for EFRIS API"""
+        return {
+            'serviceCode': self.efris_service_code,
+            'serviceName': self.efris_service_name,
+            'serviceDescription': self.efris_service_description,
+            'commodityCategoryId': self.efris_commodity_category_id,
+            'commodityCategoryName': self.efris_commodity_category_name,
+            'taxCategoryId': self.efris_tax_category_id,
+            'taxRate': float(self.efris_tax_rate),
+            'exciseDutyRate': float(self.efris_excise_duty_rate),
+            'unitOfMeasureCode': self.efris_unit_of_measure_code,
+            'unitPrice': float(self.final_price),
+            'currency': 'UGX'
+        }
+
+    def save(self, *args, **kwargs):
+        """Override save to handle EFRIS sync logic"""
+        if self.pk:
+            old_instance = Service.objects.filter(pk=self.pk).first()
+            if old_instance:
+                # Check if price or critical fields changed
+                if (old_instance.unit_price != self.unit_price or
+                        old_instance.tax_rate != self.tax_rate or
+                        old_instance.category_id != self.category_id):
+                    self.efris_is_uploaded = False
+
+        # Run validation
+        self.full_clean()
+
+        super().save(*args, **kwargs)
 
 class Stock(models.Model):
     product = models.ForeignKey(

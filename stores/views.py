@@ -45,6 +45,9 @@ from .forms import (
     StoreForm, StoreOperatingHoursForm, StoreDeviceForm,
     StoreFilterForm, BulkStoreActionForm, StoreStaffAssignmentForm, EnhancedStoreReportForm
 )
+from django.core.exceptions import ValidationError
+from company.decorator import check_branch_limit
+from django.utils.decorators import method_decorator
 from django.contrib.auth import get_user_model
 from django.core.serializers.json import DjangoJSONEncoder
 from .utils import (
@@ -727,12 +730,12 @@ def pos_interface(request):
     store_id = request.GET.get('store')
     if not store_id:
         messages.error(request, 'Please select a store to access POS terminal')
-        return redirect('stores:list')
+        return redirect('stores:store_list')
 
     store = get_object_or_404(Store, id=store_id)
     if not request.user.is_superuser and store not in request.user.stores.all():
         messages.error(request, 'You do not have access to this store')
-        return redirect('stores:list')
+        return redirect('stores:store_list')
 
     context = {
         'store': store,
@@ -1012,6 +1015,7 @@ class StoreDetailView(LoginRequiredMixin, PermissionRequiredMixin, DetailView):
         })
         return context
 
+
 class StoreCreateView(LoginRequiredMixin, PermissionRequiredMixin, CreateView):
     """Create a new store"""
 
@@ -1021,6 +1025,10 @@ class StoreCreateView(LoginRequiredMixin, PermissionRequiredMixin, CreateView):
     permission_required = 'stores.add_store'
     success_url = reverse_lazy('stores:store_list')
 
+    @method_decorator(check_branch_limit)
+    def dispatch(self, *args, **kwargs):
+        return super().dispatch(*args, **kwargs)
+
     def get_form_kwargs(self):
         kwargs = super().get_form_kwargs()
         kwargs['user'] = self.request.user
@@ -1028,14 +1036,39 @@ class StoreCreateView(LoginRequiredMixin, PermissionRequiredMixin, CreateView):
         return kwargs
 
     def form_valid(self, form):
-        if hasattr(self.request, 'tenant') and not self.request.user.is_superuser:
+        if hasattr(self.request, 'tenant') and not self.request.user.is_saas_admin:
             form.instance.company = self.request.tenant
-        messages.success(self.request, f'Store "{form.instance.name}" created successfully!')
-        return super().form_valid(form)
+
+        try:
+            messages.success(self.request, f'Store "{form.instance.name}" created successfully!')
+            return super().form_valid(form)
+        except ValidationError as e:
+            # Handle the branch limit validation error from the signal
+            messages.error(self.request, str(e))
+            return self.form_invalid(form)
+        except Exception as e:
+            # Handle any other unexpected errors
+            messages.error(self.request, f'Error creating store: {str(e)}')
+            return self.form_invalid(form)
 
     def form_invalid(self, form):
         messages.error(self.request, 'Please correct the errors below.')
         return super().form_invalid(form)
+
+    def get_context_data(self, **kwargs):
+        """Add branch limit context to template"""
+        context = super().get_context_data(**kwargs)
+
+        if hasattr(self.request, 'tenant') and not self.request.user.is_superuser:
+            company = self.request.tenant
+            current_branches = Store.objects.filter(company=company).count()
+            context.update({
+                'current_branches': current_branches,
+                'branch_limit': company.plan.branch_limit,
+                'can_create_more': current_branches < company.plan.branch_limit
+            })
+
+        return context
 
 class StoreUpdateView(LoginRequiredMixin, PermissionRequiredMixin, UpdateView):
     """Update an existing store"""
@@ -1757,7 +1790,7 @@ def _write_staff_assignment_csv(writer, stores, report_data):
                 store.name,
                 member.get_full_name() or member.username,
                 member.email,
-                member.get_user_type_display() if hasattr(member, 'get_user_type_display') else 'Staff',
+                member.display_role if hasattr(member, 'get_user_type_display') else 'Staff',
                 getattr(member, 'phone_number', ''),
                 'Active' if member.is_active else 'Inactive',
                 member.date_joined.strftime('%Y-%m-%d') if member.date_joined else '',
@@ -1926,7 +1959,7 @@ def _populate_excel_staff_sheet(ws, stores, report_data):
                 store.name,
                 member.get_full_name() or member.username,
                 member.email,
-                member.get_user_type_display() if hasattr(member, 'get_user_type_display') else 'Staff',
+                member.display_role if hasattr(member, 'get_user_type_display') else 'Staff',
                 'Active' if member.is_active else 'Inactive'
             ])
 
@@ -2265,20 +2298,6 @@ def store_map_view(request):
 
 @login_required
 def nearest_stores_api(request):
-    """
-    Find nearest stores to a given location.
-
-    Query Parameters:
-        lat (float): Latitude of the search location
-        lon (float): Longitude of the search location
-        limit (int, optional): Maximum number of stores to return (default: 5)
-        max_distance (float, optional): Maximum distance in kilometers
-        store_type (str, optional): Filter by store type
-        efris_only (bool, optional): Only return EFRIS-enabled stores
-
-    Example:
-        /stores/api/nearest/?lat=0.3476&lon=32.5825&limit=5&max_distance=50
-    """
     try:
         # Get required parameters
         lat = float(request.GET.get('lat'))

@@ -1,6 +1,8 @@
 {% extends 'base.html' %}
 {% load widget_tweaks %}
 {% load static %}
+{% load custom_filters %}
+
 
 {% block title %}
 {% if form_type == 'category' %}
@@ -40,7 +42,70 @@
 {% block extra_css %}
 <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
 <link href="https://cdn.jsdelivr.net/npm/select2-bootstrap-5-theme@1.3.0/dist/select2-bootstrap-5-theme.min.css" rel="stylesheet" />
+<link rel="stylesheet" href="{% static 'themes.css' %}">
 <style>
+    [data-theme="dark"] .form-check {
+        background-color: var(--dark-bg-secondary);
+    }
+    [data-theme="dark"] .form-control,
+    [data-theme="dark"] .form-select {
+        background-color: var(--dark-bg-secondary);
+        color: var(--dark-text-primary);
+        border-color: var(--dark-border-color);
+    }
+    [data-theme="dark"] .form-control:focus,
+    [data-theme="dark"] .form-select:focus {
+        background-color: var(--dark-bg-secondary);
+        color: var(--dark-text-primary);
+        border-color: var(--primary);
+        box-shadow: 0 0 0 0.25rem rgba(46, 89, 217, 0.25);
+    }
+    [data-theme="dark"] .input-group-text {
+        color:white !important;
+    }
+    [data-theme="dark"]  .form-control {
+        background-color: var(--dark-bg-secondary);
+        color: var(--dark-text-primary);
+        border-color: var(--dark-border-color);
+    }
+    [data-theme="dark"] .input-group .form-control:focus {
+        background-color: var(--dark-bg-secondary);
+        color: var(--dark-text-primary);
+        border-color: var(--primary);
+        box-shadow: 0 0 0 0.25rem rgba(46, 89, 217, 0.25);
+    }
+    [data-theme="dark"] .modal-header {
+        color: #fef6f6ff;
+        background-color: #1c1b1bff !important;
+    }
+    [data-theme="dark"] .modal-content {
+        background-color: #1c1b1bff !important;
+        color: #fef6f6ff;
+    }
+    [data-theme="dark"] #id_cost_price {
+        color: #fef6f6ff;
+    }
+    [data-theme="dark"] #id_description {
+        color: #fef6f6ff;
+    }
+    [data-theme="dark"] .form-control::placeholder {
+        color: #fef6f6ff;
+    }
+    [data-theme="dark"] .form-label {
+        color: #fef6f6ff;
+    }
+    [data-theme="dark"] .form-check-label {
+        color: #fef6f6ff;
+    }
+    [data-theme="dark"] .input-group-text {
+        color: #fcfcfcff!important;
+    }
+    
+    [data-theme="dark"] .card.nash {
+        background-color: #1c1b1bff;
+        border: 1px solid #333;
+        color: #fef6f6ff;
+    }
     .efris-info-card {
         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
         color: white;
@@ -92,15 +157,31 @@
         background: #17a2b8;
         color: #fff;
     }
+    [data-theme="dark"] .badge-zero-rate {
+        background: #138496;
+    }
 
     .badge-excisable {
         background: #dc3545;
         color: #fff;
     }
+    [data-theme="dark"] .badge-excisable {
+        background: #c82333;
+    }
 
     .badge-standard {
         background: #28a745;
         color: #fff;
+
+    }
+    [data-theme="dark"] .badge-standard {
+        background: #218838;
+    }
+    [data-theme="dark"] .nash{
+        background-color: #03080dff;
+    }
+    [data-theme='dark'] .select2-search__field{
+        background-color: #03080dff !important;
     }
 
     .efris-category-result {
@@ -112,6 +193,26 @@
         color: #2c3e50;
         font-size: 0.95em;
     }
+[data-theme="dark"] .select2-search__field {
+    background-color: #222 !important;
+    color: #fff !important;
+    border-color: #555 !important;
+}
+
+[data-theme="dark"] .select2-search__field::placeholder {
+    color: #bbb !important;
+}
+[data-theme="dark"] .select2-results__options{
+    background-color: #03080dff !important;
+}
+[data-theme="dark"] .select2-selection{
+    background-color: #03080dff !important;
+    color: #fff !important;
+}
+[data-theme="dark"] .select2-search {
+    color: #ffffffff !important;
+     background-color: #03080dff !important;
+}
 
     .efris-category-result .category-name {
         color: #7f8c8d;
@@ -126,6 +227,16 @@
 
     .select2-selection.is-invalid {
         border-color: #dc3545 !important;
+    }
+    [data-theme="dark"] .form-text{
+        color: #fef6f6ff !important;
+    }
+    [data-theme="dark"] .text-muted{
+        color: #eef2f6ff !important;
+    }
+    [data-theme="dark"] .form-select{
+        color: #fef6f6ff !important;
+        background-color: #1c1b1bff !important;
     }
 
     .type-mismatch-warning {
@@ -278,8 +389,8 @@
                                     </button>
                                     {% endif %}
                                 </div>
-                                <small class="form-text text-muted">
-                                    <i class="fas fa-info-circle"></i> EFRIS commodity category inherited from category
+                                <small class="form-text text-muted totall">
+                                    <i class="fas fa-info-circle totall"></i> EFRIS commodity category inherited from category
                                 </small>
                                 {% if form.category.errors %}
                                     <div class="invalid-feedback d-block">{{ form.category.errors.0 }}</div>
@@ -344,9 +455,9 @@
                                     <div class="invalid-feedback d-block">{{ form.cost_price.errors.0 }}</div>
                                 {% endif %}
                             </div>
-                            <div class="col-md-4 mb-3">
-                                <label for="{{ form.selling_price.id_for_label }}" class="form-label">
-                                    Selling Price (UGX) <span class="text-danger">*</span>
+                            <div class="col-md-4 mb-3 totall">
+                                <label for="{{ form.selling_price.id_for_label }}" class="form-label totall">
+                                    Selling Price (UGX) <span class="text-danger totall">*</span>
                                 </label>
                                 <div class="input-group">
                                     <span class="input-group-text">UGX</span>
@@ -358,40 +469,40 @@
                             </div>
                             <div class="col-md-4 mb-3">
                                 <label for="{{ form.discount_percentage.id_for_label }}" class="form-label">Discount (%)</label>
-                                <div class="input-group">
+                                <div class="input-group totall">
                                     {{ form.discount_percentage }}
-                                    <span class="input-group-text">%</span>
+                                    <span class="input-group-text totall">%</span>
                                 </div>
                                 {% if form.discount_percentage.errors %}
-                                    <div class="invalid-feedback d-block">{{ form.discount_percentage.errors.0 }}</div>
+                                    <div class="invalid-feedback d-block totall">{{ form.discount_percentage.errors.0 }}</div>
                                 {% endif %}
                             </div>
-                            <div class="col-md-6 mb-3">
-                                <label for="{{ form.tax_rate.id_for_label }}" class="form-label">Tax Rate Category</label>
+                            <div class="col-md-6 mb-3 totall">
+                                <label for="{{ form.tax_rate.id_for_label }}" class="form-label totall">Tax Rate Category</label>
                                 {{ form.tax_rate }}
                                 {% if form.tax_rate.errors %}
-                                    <div class="invalid-feedback d-block">{{ form.tax_rate.errors.0 }}</div>
+                                    <div class="invalid-feedback d-block totall">{{ form.tax_rate.errors.0 }}</div>
                                 {% endif %}
                             </div>
-                            <div class="col-md-6 mb-3">
+                            <div class="col-md-6 mb-3 totall">
                                 <label for="{{ form.excise_duty_rate.id_for_label }}" class="form-label">Excise Duty Rate (%)</label>
-                                <div class="input-group">
+                                <div class="input-group totall">
                                     {{ form.excise_duty_rate }}
-                                    <span class="input-group-text">%</span>
+                                    <span class="input-group-text totall">%</span>
                                 </div>
-                                <small class="form-text text-muted">Only if tax rate is E (Excise Duty)</small>
+                                <small class="form-text text-muted totall">Only if tax rate is E (Excise Duty)</small>
                                 {% if form.excise_duty_rate.errors %}
-                                    <div class="invalid-feedback d-block">{{ form.excise_duty_rate.errors.0 }}</div>
+                                    <div class="invalid-feedback d-block totall">{{ form.excise_duty_rate.errors.0 }}</div>
                                 {% endif %}
                             </div>
                         </div>
-                        <div class="row mb-4">
-                            <div class="col-12">
-                                <h6 class="form-section-header">
-                                    <i class="fas fa-warehouse"></i> Inventory Settings
+                        <div class="row mb-4 totall">
+                            <div class="col-12 totall">
+                                <h6 class="form-section-header totall">
+                                    <i class="fas fa-warehouse totall"></i> Inventory Settings
                                 </h6>
                             </div>
-                            <div class="col-md-6 mb-3">
+                            <div class="col-md-6 mb-3 totall">
                                 <label for="{{ form.unit_of_measure.id_for_label }}" class="form-label">Unit of Measure</label>
                                 {{ form.unit_of_measure }}
                                 {% if form.unit_of_measure.errors %}
@@ -430,7 +541,7 @@
                                 </h6>
                             </div>
                             <div class="col-12">
-                                <div class="card bg-light">
+                                <div class="card nash">
                                     <div class="card-body">
                                         <div class="row">
                                             <div class="col-md-6 mb-3">
@@ -508,8 +619,8 @@
                                         ⚙️ Service Category
                                     </option>
                                 </select>
-                                <small class="form-text text-muted">
-                                    <i class="fas fa-info-circle"></i>
+                                <small class="form-text text-muted totall">
+                                    <i class="fas fa-info-circle totall"></i>
                                     Select whether this category is for products or services
                                 </small>
                                 {% if form.category_type.errors %}
@@ -588,18 +699,18 @@
                                     <option value="">Search by code or name (min 3 characters)...</option>
                                     {% endif %}
                                 </select>
-                                <small class="form-text text-muted">
-                                    <i class="fas fa-info-circle"></i>
+                                <small class="form-text text-muted totall">
+                                    <i class="fas fa-info-circle totall"></i>
                                     Search and select the official EFRIS commodity category. Only leaf nodes are shown.
                                 </small>
-                                <div class="invalid-feedback">Please select an EFRIS commodity category</div>
+                                <div class="invalid-feedback totall">Please select an EFRIS commodity category</div>
                             </div>
 
                             <!-- EFRIS Category Details Display -->
-                            <div class="col-12 mb-3">
+                            <div class="col-12 mb-3 totall">
                                 <div id="efris-info-card" class="efris-info-card">
-                                    <h6 class="mb-3">
-                                        <i class="fas fa-info-circle"></i> EFRIS Category Details
+                                    <h6 class="mb-3 totall">
+                                        <i class="fas fa-info-circle totall"></i> EFRIS Category Details
                                     </h6>
                                     <div class="row">
                                         <div class="col-md-6">
@@ -634,19 +745,19 @@
                                         <strong>Enable EFRIS Auto Sync</strong>
                                     </label>
                                 </div>
-                                <small class="form-text text-muted">
+                                <small class="form-text text-muted totall">
                                     Automatically sync this category and its products to EFRIS
                                 </small>
                             </div>
 
-                            <div class="col-md-6 mb-3">
-                                <div class="form-check form-switch">
+                            <div class="col-md-6 mb-3 totall">
+                                <div class="form-check form-switch totall">
                                     {% render_field form.is_active class="form-check-input" %}
-                                    <label class="form-check-label" for="{{ form.is_active.id_for_label }}">
+                                    <label class="form-check-label totall" for="{{ form.is_active.id_for_label }}">
                                         <strong>Active Category</strong>
                                     </label>
                                 </div>
-                                <small class="form-text text-muted">
+                                <small class="form-text text-muted totall">
                                     Inactive categories are hidden from product selection
                                 </small>
                             </div>
@@ -668,15 +779,15 @@
                         <!-- EFRIS Statistics -->
                         <div class="row mb-4">
                             <div class="col-12">
-                                <div class="card bg-light">
-                                    <div class="card-body">
-                                        <h6 class="mb-3">
-                                            <i class="fas fa-chart-bar"></i> EFRIS Database Statistics
+                                <div class="card nash">
+                                    <div class="card-body totall">
+                                        <h6 class="mb-3 totall">
+                                            <i class="fas fa-chart-bar totall"></i> EFRIS Database Statistics
                                         </h6>
-                                        <div class="row text-center" id="efris-stats-container">
-                                            <div class="col-md-3">
+                                        <div class="row text-center totall" id="efris-stats-container">
+                                            <div class="col-md-3 totall">
                                                 <div class="h4 text-primary mb-1" id="stat-products">-</div>
-                                                <small class="text-muted">Product Categories</small>
+                                                <small class="text-muted totall">Product Categories</small>
                                             </div>
                                             <div class="col-md-3">
                                                 <div class="h4 text-info mb-1" id="stat-services">-</div>
@@ -719,10 +830,10 @@
                     {% elif form_type == 'supplier' %}
                     <form method="post" enctype="multipart/form-data" id="supplierForm" novalidate">
                         {% csrf_token %}
-                        <div class="row mb-4">
-                            <div class="col-12">
-                                <h6 class="form-section-header">
-                                    <i class="fas fa-info-circle"></i> Supplier Information
+                        <div class="row mb-4 totall">
+                            <div class="col-12 totall">
+                                <h6 class="form-section-header totall">
+                                    <i class="fas fa-info-circle totall"></i> Supplier Information
                                 </h6>
                             </div>
                             <div class="col-md-6 mb-3">
@@ -809,12 +920,12 @@
                             <div class="col-md-6 mb-3">
                                 <label class="form-label">Product <span class="text-danger">*</span></label>
                                 <input type="text" class="form-control" value="{{ object.product.name }}" disabled>
-                                <small class="form-text text-muted">Cannot change product for existing stock</small>
+                                <small class="form-text text-muted totall">Cannot change product for existing stock</small>
                             </div>
                             <div class="col-md-6 mb-3">
                                 <label class="form-label">Store <span class="text-danger">*</span></label>
                                 <input type="text" class="form-control" value="{{ object.store.name }}" disabled>
-                                <small class="form-text text-muted">Cannot change store for existing stock</small>
+                                <small class="form-text text-muted totall">Cannot change store for existing stock</small>
                             </div>
                             {% else %}
                             <div class="col-md-6 mb-3">
@@ -854,11 +965,11 @@
                                     <i class="fas fa-boxes"></i> Quantity & Levels
                                 </h6>
                             </div>
-                            <div class="col-md-4 mb-3">
+                            <div class="col-md-4 mb-3 totall">
                                 <label for="{{ form.quantity.id_for_label }}" class="form-label">
-                                    Current Quantity <span class="text-danger">*</span>
+                                    Current Quantity <span class="text-danger totall">*</span>
                                 </label>
-                                <div class="input-group">
+                                <div class="input-group totall">
                                     {{ form.quantity }}
                                     <span class="input-group-text" id="quantityUnit">Units</span>
                                 </div>
@@ -867,11 +978,11 @@
                                     <div class="invalid-feedback d-block">{{ form.quantity.errors.0 }}</div>
                                 {% endif %}
                             </div>
-                            <div class="col-md-4 mb-3">
+                            <div class="col-md-4 mb-3 totall">
                                 <label for="{{ form.low_stock_threshold.id_for_label }}" class="form-label">
                                     Low Stock Threshold <span class="text-danger">*</span>
                                 </label>
-                                <div class="input-group">
+                                <div class="input-group totall">
                                     {{ form.low_stock_threshold }}
                                     <span class="input-group-text" id="thresholdUnit">Units</span>
                                 </div>
@@ -880,8 +991,8 @@
                                     <div class="invalid-feedback d-block">{{ form.low_stock_threshold.errors.0 }}</div>
                                 {% endif %}
                             </div>
-                            <div class="col-md-4 mb-3">
-                                <label for="{{ form.reorder_quantity.id_for_label }}" class="form-label">
+                            <div class="col-md-4 mb-3 totall">
+                                <label for="{{ form.reorder_quantity.id_for_label }}" class="form-label totall">
                                     Reorder Quantity <span class="text-danger">*</span>
                                 </label>
                                 <div class="input-group">
@@ -898,10 +1009,10 @@
                             <div class="col-12">
                                 <h6 class="form-section-header">
                                     <i class="fas fa-chart-line"></i> Stock Status
-                                </h6>
+                                </h6 class="totall">
                             </div>
                             <div class="col-12">
-                                <div class="card bg-light">
+                                <div class="card nash">
                                     <div class="card-body">
                                         <div class="row">
                                             <div class="col-md-3">
@@ -959,9 +1070,9 @@
                                     {{ stock_metrics.variance|floatformat:3 }}
                                 </div>
                             </div>
-                            <div class="col-md-6 mb-3">
+                            <div class="col-md-6 mb-3 totall">
                                 <label class="form-label">Variance Percentage</label>
-                                <div class="h5 {% if stock_metrics.variance_percentage < 0 %}text-danger{% elif stock_metrics.variance_percentage > 0 %}text-success{% else %}text-muted{% endif %}">
+                                <div class="h5 {% if stock_metrics.variance_percentage < 0 %}text-danger{% elif stock_metrics.variance_percentage > 0 %}text-success{% else %}text-muted{% endif %} totall">
                                     {{ stock_metrics.variance_percentage|floatformat:2 }}%
                                 </div>
                             </div>
@@ -1005,30 +1116,30 @@
                         <i class="fas fa-info-circle text-primary"></i> Product Details
                     </h6>
                 </div>
-                <div class="card-body">
-                    <div class="mb-2">
+                <div class="card-body totall">
+                    <div class="mb-2 totall">
                         <strong>Name:</strong> {{ object.product.name }}
                     </div>
-                    <div class="mb-2">
+                    <div class="mb-2 totall">
                         <strong>SKU:</strong> {{ object.product.sku }}
                     </div>
-                    <div class="mb-2">
+                    <div class="mb-2 totall">
                         <strong>Category:</strong> {{ object.product.category.name }}
                     </div>
-                    <div class="mb-2">
+                    <div class="mb-2 totall">
                         <strong>Unit:</strong> {{ object.product.unit_of_measure }}
                     </div>
-                    <div class="mb-2">
-                        <strong>Cost Price:</strong> UGX {{ object.product.cost_price|floatformat:2 }}
+                    <div class="mb-2 totall">
+                        <strong>Cost Price:</strong> UGX {{ object.product.cost_price|money }}
                     </div>
-                    <div class="mb-2">
-                        <strong>Selling Price:</strong> UGX {{ object.product.selling_price|floatformat:2 }}
+                    <div class="mb- totall2">
+                        <strong>Selling Price:</strong> UGX {{ object.product.selling_price|money }}
                     </div>
                 </div>
             </div>
-            <div class="card shadow mb-4">
+            <div class="card shadow mb-4 totall">
                 <div class="card-header">
-                    <h6 class="card-title mb-0">
+                    <h6 class="card-title mb-0 totall">
                         <i class="fas fa-history text-info"></i> Recent Movements
                     </h6>
                 </div>
@@ -1056,7 +1167,7 @@
                         View All Movements
                     </a>
                     {% else %}
-                    <p class="text-muted mb-0">No movements recorded yet.</p>
+                    <p class="text-muted mb-0 totall">No movements recorded yet.</p>
                     {% endif %}
                 </div>
             </div>
@@ -1092,39 +1203,39 @@
                 </div>
                 <div class="card-body">
                     <ul class="list-unstyled">
-                        <li class="mb-3">
-                            <h6 class="fw-bold"><i class="fas fa-box me-2"></i>Quantity</h6>
-                            <p class="small text-muted">Track current available stock at this location.</p>
+                        <li class="mb-3 totall">
+                            <h6 class="fw-bold"><i class="fas fa-box me-2 totall"></i>Quantity</h6>
+                            <p class="small text-muted totall">Track current available stock at this location.</p>
                         </li>
-                        <li class="mb-3">
-                            <h6 class="fw-bold"><i class="fas fa-exclamation-triangle me-2 text-warning"></i>Low Stock Threshold</h6>
-                            <p class="small text-muted">Get alerts when stock falls below this level.</p>
+                        <li class="mb-3 totall">
+                            <h6 class="fw-bold"><i class="fas fa-exclamation-triangle me-2 text-warning totall"></i>Low Stock Threshold</h6>
+                            <p class="small text-muted totall">Get alerts when stock falls below this level.</p>
                         </li>
-                        <li class="mb-3">
-                            <h6 class="fw-bold"><i class="fas fa-shopping-cart me-2"></i>Reorder Quantity</h6>
-                            <p class="small text-muted">Suggested amount to order when restocking.</p>
+                        <li class="mb-3 totall">
+                            <h6 class="fw-bold totall"><i class="fas fa-shopping-cart me-2 totall"></i>Reorder Quantity</h6>
+                            <p class="small text-muted totall">Suggested amount to order when restocking.</p>
                         </li>
-                        <li class="mb-3">
-                            <h6 class="fw-bold"><i class="fas fa-clipboard-check me-2"></i>Physical Counts</h6>
-                            <p class="small text-muted">Regular counts help maintain accuracy.</p>
+                        <li class="mb-3 totall">
+                            <h6 class="fw-bold totall"><i class="fas fa-clipboard-check me-2 totall"></i>Physical Counts</h6>
+                            <p class="small text-muted totall">Regular counts help maintain accuracy.</p>
                         </li>
                     </ul>
                 </div>
             </div>
             <div class="card shadow">
-                <div class="card-header">
-                    <h6 class="card-title mb-0">
-                        <i class="fas fa-tools text-primary"></i> Quick Actions
+                <div class="card-header totall">
+                    <h6 class="card-title mb-0 totall">
+                        <i class="fas fa-tools text-primary totall"></i> Quick Actions
                     </h6>
                 </div>
                 <div class="card-body">
-                    <div class="d-grid gap-2">
+                    <div class="d-grid gap-2 totall">
                         <a href="{% url 'inventory:stock_list' %}" class="btn btn-outline-secondary btn-sm">
-                            <i class="fas fa-list"></i> View All Stock
+                            <i class="fas fa-list totall"></i> View All Stock
                         </a>
                         {% if object %}
                         <a href="{% url 'inventory:movement_create' %}?stock={{ object.pk }}" class="btn btn-outline-success btn-sm">
-                            <i class="fas fa-plus"></i> Add Movement
+                            <i class="fas fa-plus totall"></i> Add Movement
                         </a>
                         <button class="btn btn-outline-info btn-sm" onclick="recordPhysicalCount({{ object.pk }})">
                             <i class="fas fa-clipboard-check"></i> Physical Count

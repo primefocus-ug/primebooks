@@ -1,0 +1,288 @@
+{% extends 'base.html' %}
+{% load static %}
+{% load humanize %}
+{% load i18n %}
+
+{% block title %}{% trans "Expenses" %}{% endblock %}
+
+{% block breadcrumb_items %}
+<li class="breadcrumb-item"><a href="{% url 'user_dashboard' %}">{% trans "Home" %}</a></li>
+<li class="breadcrumb-item"><a href="{% url 'finance:dashboard' %}">{% trans "Finance" %}</a></li>
+<li class="breadcrumb-item"><a href="{% url 'finance:expense_dashboard' %}">{% trans "Expenses" %}</a></li>
+<li class="breadcrumb-item active">{% trans "All Expenses" %}</li>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- Page Header -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h1 class="h3 mb-1 fw-bold">{% trans "Expenses" %}</h1>
+            <p class="text-muted mb-0">{% trans "Track and manage all expenses" %}</p>
+        </div>
+        <div class="d-flex gap-2">
+            <a href="{% url 'finance:expense_create' %}" class="btn btn-primary">
+                <i class="bi bi-plus-circle me-1"></i>
+                {% trans "New Expense" %}
+            </a>
+            <a href="{% url 'finance:quick_expense_create' %}" class="btn btn-outline-primary">
+                <i class="bi bi-lightning me-1"></i>
+                {% trans "Quick Expense" %}
+            </a>
+        </div>
+    </div>
+
+    <!-- Stats Cards -->
+    <div class="row mb-4">
+        <div class="col-md-3">
+            <div class="card bg-primary text-white">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between">
+                        <div>
+                            <h6 class="card-title">{% trans "Total Submitted" %}</h6>
+                            <h3 class="mb-0">{{ expenses.paginator.count }}</h3>
+                        </div>
+                        <div class="align-self-center">
+                            <i class="bi bi-receipt fs-1 opacity-50"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card bg-success text-white">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between">
+                        <div>
+                            <h6 class="card-title">{% trans "Approved" %}</h6>
+                            <h3 class="mb-0">{{ expenses|length }}</h3>
+                        </div>
+                        <div class="align-self-center">
+                            <i class="bi bi-check-circle fs-1 opacity-50"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card bg-warning text-dark">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between">
+                        <div>
+                            <h6 class="card-title">{% trans "Pending" %}</h6>
+                            <h3 class="mb-0">0</h3>
+                        </div>
+                        <div class="align-self-center">
+                            <i class="bi bi-clock fs-1 opacity-50"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card bg-info text-white">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between">
+                        <div>
+                            <h6 class="card-title">{% trans "This Month" %}</h6>
+                            <h3 class="mb-0">{{ base_currency.symbol }}0.00</h3>
+                        </div>
+                        <div class="align-self-center">
+                            <i class="bi bi-calendar-month fs-1 opacity-50"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Filters -->
+    <div class="card mb-4">
+        <div class="card-body">
+            <form method="get" class="row g-3">
+                <div class="col-md-3">
+                    <label for="status" class="form-label">{% trans "Status" %}</label>
+                    <select name="status" id="status" class="form-select">
+                        <option value="">{% trans "All Statuses" %}</option>
+                        {% for status in expense_status %}
+                        <option value="{{ status.0 }}" {% if request.GET.status == status.0 %}selected{% endif %}>
+                            {{ status.1 }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label for="category" class="form-label">{% trans "Category" %}</label>
+                    <select name="category" id="category" class="form-select">
+                        <option value="">{% trans "All Categories" %}</option>
+                        {% for category in categories %}
+                        <option value="{{ category.pk }}" {% if request.GET.category == category.pk|stringformat:"s" %}selected{% endif %}>
+                            {{ category.name }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label for="date_from" class="form-label">{% trans "From Date" %}</label>
+                    <input type="date" name="date_from" id="date_from" class="form-control"
+                           value="{{ request.GET.date_from }}">
+                </div>
+                <div class="col-md-2">
+                    <label for="date_to" class="form-label">{% trans "To Date" %}</label>
+                    <input type="date" name="date_to" id="date_to" class="form-control"
+                           value="{{ request.GET.date_to }}">
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label">&nbsp;</label>
+                    <div class="d-grid">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-funnel me-1"></i>
+                            {% trans "Filter" %}
+                        </button>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Expenses Table -->
+    <div class="card">
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>{% trans "Expense #" %}</th>
+                            <th>{% trans "Date" %}</th>
+                            <th>{% trans "Category" %}</th>
+                            <th>{% trans "Description" %}</th>
+                            <th class="text-end">{% trans "Amount" %}</th>
+                            <th>{% trans "Payment Method" %}</th>
+                            <th>{% trans "Status" %}</th>
+                            <th>{% trans "Submitted By" %}</th>
+                            <th>{% trans "Actions" %}</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for expense in expenses %}
+                        <tr>
+                            <td>
+                                <a href="{% url 'finance:expense_detail' expense.pk %}" class="fw-semibold text-decoration-none">
+                                    {{ expense.expense_number }}
+                                </a>
+                            </td>
+                            <td>{{ expense.date|date:"M d, Y" }}</td>
+                            <td>
+                                <span class="badge bg-light text-dark">{{ expense.category.name }}</span>
+                            </td>
+                            <td>
+                                <div class="text-truncate" style="max-width: 200px;" title="{{ expense.description }}">
+                                    {{ expense.description }}
+                                </div>
+                            </td>
+                            <td class="text-end fw-semibold">
+                                {{ expense.currency.symbol }}{{ expense.amount|floatformat:2|intcomma }}
+                            </td>
+                            <td>
+                                <small class="text-muted">{{ expense.get_payment_method_display }}</small>
+                            </td>
+                            <td>
+                                <span class="badge bg-{% if expense.status == 'APPROVED' %}success{% elif expense.status == 'PAID' %}info{% elif expense.status == 'DRAFT' %}secondary{% elif expense.status == 'SUBMITTED' %}warning{% else %}danger{% endif %}">
+                                    {{ expense.get_status_display }}
+                                </span>
+                            </td>
+                            <td>
+                                <small class="text-muted">{{ expense.submitted_by.get_full_name|default:expense.submitted_by.username }}</small>
+                            </td>
+                            <td>
+                                <div class="dropdown">
+                                    <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown">
+                                        {% trans "Actions" %}
+                                    </button>
+                                    <ul class="dropdown-menu dropdown-menu-end">
+                                        <li>
+                                            <a class="dropdown-item" href="{% url 'finance:expense_detail' expense.pk %}">
+                                                <i class="bi bi-eye me-2"></i>{% trans "View" %}
+                                            </a>
+                                        </li>
+                                        {% if expense.can_edit %}
+                                        <li>
+                                            <a class="dropdown-item" href="#">
+                                                <i class="bi bi-pencil me-2"></i>{% trans "Edit" %}
+                                            </a>
+                                        </li>
+                                        {% endif %}
+                                        {% if expense.can_approve and perms.finance.approve_expense %}
+                                        <li>
+                                            <form method="post" action="{% url 'finance:expense_approve' expense.pk %}" class="d-inline">
+                                                {% csrf_token %}
+                                                <button type="submit" class="dropdown-item">
+                                                    <i class="bi bi-check-circle me-2"></i>{% trans "Approve" %}
+                                                </button>
+                                            </form>
+                                        </li>
+                                        {% endif %}
+                                    </ul>
+                                </div>
+                            </td>
+                        </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="9" class="text-center py-5 text-muted">
+                                <i class="bi bi-receipt display-4 d-block mb-3"></i>
+                                <p class="mb-0">{% trans "No expenses found" %}</p>
+                                {% if request.GET %}
+                                <small>{% trans "Try adjusting your filters" %}</small>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Pagination -->
+    {% if expenses.has_other_pages %}
+    <div class="d-flex justify-content-between align-items-center mt-4">
+        <div class="text-muted">
+            {% blocktrans with start=expenses.start_index end=expenses.end_index total=expenses.paginator.count %}
+            Showing {{ start }} to {{ end }} of {{ total }} expenses
+            {% endblocktrans %}
+        </div>
+        <nav aria-label="Expenses pagination">
+            <ul class="pagination mb-0">
+                {% if expenses.has_previous %}
+                <li class="page-item">
+                    <a class="page-link" href="?page={{ expenses.previous_page_number }}{% for key, value in request.GET.items %}{% if key != 'page' %}&{{ key }}={{ value }}{% endif %}{% endfor %}">
+                        {% trans "Previous" %}
+                    </a>
+                </li>
+                {% endif %}
+
+                {% for num in expenses.paginator.page_range %}
+                    {% if expenses.number == num %}
+                    <li class="page-item active"><span class="page-link">{{ num }}</span></li>
+                    {% elif num > expenses.number|add:'-3' and num < expenses.number|add:'3' %}
+                    <li class="page-item">
+                        <a class="page-link" href="?page={{ num }}{% for key, value in request.GET.items %}{% if key != 'page' %}&{{ key }}={{ value }}{% endif %}{% endfor %}">
+                            {{ num }}
+                        </a>
+                    </li>
+                    {% endif %}
+                {% endfor %}
+
+                {% if expenses.has_next %}
+                <li class="page-item">
+                    <a class="page-link" href="?page={{ expenses.next_page_number }}{% for key, value in request.GET.items %}{% if key != 'page' %}&{{ key }}={{ value }}{% endif %}{% endfor %}">
+                        {% trans "Next" %}
+                    </a>
+                </li>
+                {% endif %}
+            </ul>
+        </nav>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

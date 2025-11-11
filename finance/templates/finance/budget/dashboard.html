@@ -1,0 +1,571 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Budget Monitoring - Finance Dashboard</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css">
+    <style>
+        :root {
+            --primary: #4f46e5;
+            --success: #10b981;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+            --info: #3b82f6;
+        }
+
+        body {
+            background: #f8f9fa;
+            font-family: 'Segoe UI', system-ui, sans-serif;
+        }
+
+        .page-header {
+            background: linear-gradient(135deg, var(--primary), #6366f1);
+            color: white;
+            padding: 2rem 0;
+            margin-bottom: 2rem;
+            border-radius: 0 0 1rem 1rem;
+        }
+
+        .budget-card {
+            background: white;
+            border-radius: 1rem;
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            transition: all 0.3s;
+        }
+
+        .budget-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 4px 16px rgba(0,0,0,0.15);
+        }
+
+        .budget-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+            padding-bottom: 1rem;
+            border-bottom: 2px solid #f3f4f6;
+        }
+
+        .progress-custom {
+            height: 24px;
+            border-radius: 12px;
+            background: #f3f4f6;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .progress-bar-custom {
+            height: 100%;
+            border-radius: 12px;
+            transition: width 0.5s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 600;
+            font-size: 0.875rem;
+            color: white;
+        }
+
+        .progress-bar-success { background: linear-gradient(90deg, #10b981, #059669); }
+        .progress-bar-info { background: linear-gradient(90deg, #3b82f6, #2563eb); }
+        .progress-bar-warning { background: linear-gradient(90deg, #f59e0b, #d97706); }
+        .progress-bar-danger { background: linear-gradient(90deg, #ef4444, #dc2626); }
+
+        .alert-badge {
+            padding: 0.25rem 0.75rem;
+            border-radius: 2rem;
+            font-size: 0.875rem;
+            font-weight: 600;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.25rem;
+        }
+
+        .alert-badge.success {
+            background: #d1fae5;
+            color: #059669;
+        }
+
+        .alert-badge.warning {
+            background: #fef3c7;
+            color: #d97706;
+        }
+
+        .alert-badge.danger {
+            background: #fee2e2;
+            color: #dc2626;
+        }
+
+        .budget-details {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 1rem;
+            margin-top: 1rem;
+        }
+
+        .detail-item {
+            text-align: center;
+            padding: 1rem;
+            background: #f9fafb;
+            border-radius: 0.5rem;
+        }
+
+        .detail-label {
+            font-size: 0.75rem;
+            color: #6b7280;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 0.5rem;
+        }
+
+        .detail-value {
+            font-size: 1.25rem;
+            font-weight: 700;
+            color: #1f2937;
+        }
+
+        .line-item {
+            padding: 1rem;
+            border-bottom: 1px solid #f3f4f6;
+            transition: background 0.2s;
+        }
+
+        .line-item:hover {
+            background: #f9fafb;
+        }
+
+        .line-item:last-child {
+            border-bottom: none;
+        }
+
+        .filter-bar {
+            background: white;
+            padding: 1.5rem;
+            border-radius: 1rem;
+            margin-bottom: 2rem;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+
+        .stat-card {
+            background: white;
+            border-radius: 0.75rem;
+            padding: 1.5rem;
+            text-align: center;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+
+        .stat-icon {
+            width: 56px;
+            height: 56px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 1rem;
+            font-size: 1.5rem;
+        }
+
+        .stat-value {
+            font-size: 2rem;
+            font-weight: 700;
+            margin: 0.5rem 0;
+        }
+
+        .stat-label {
+            color: #6b7280;
+            font-size: 0.875rem;
+        }
+
+        .action-buttons {
+            display: flex;
+            gap: 0.5rem;
+            flex-wrap: wrap;
+        }
+
+        .btn-action {
+            padding: 0.5rem 1rem;
+            border-radius: 0.5rem;
+            font-weight: 600;
+            transition: all 0.2s;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .loading { animation: pulse 1.5s infinite; }
+
+        .chart-container {
+            background: white;
+            border-radius: 1rem;
+            padding: 1.5rem;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            margin-bottom: 2rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="page-header">
+        <div class="container">
+            <div class="row align-items-center">
+                <div class="col-md-6">
+                    <h1><i class="bi bi-pie-chart-fill"></i> Budget Monitoring</h1>
+                    <p class="mb-0 opacity-75">Real-time budget tracking and variance analysis</p>
+                </div>
+                <div class="col-md-6 text-end">
+                    <button class="btn btn-light me-2" onclick="exportBudgetReport()">
+                        <i class="bi bi-download"></i> Export
+                    </button>
+                    <button class="btn btn-light" onclick="refreshData()">
+                        <i class="bi bi-arrow-clockwise"></i> Refresh
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="container">
+        <!-- Summary Statistics -->
+        <div class="row mb-4">
+            <div class="col-md-3 mb-3">
+                <div class="stat-card">
+                    <div class="stat-icon" style="background: #dbeafe; color: #2563eb;">
+                        <i class="bi bi-cash-stack"></i>
+                    </div>
+                    <div class="stat-value">$2.5M</div>
+                    <div class="stat-label">Total Budget</div>
+                </div>
+            </div>
+            <div class="col-md-3 mb-3">
+                <div class="stat-card">
+                    <div class="stat-icon" style="background: #d1fae5; color: #059669;">
+                        <i class="bi bi-graph-up"></i>
+                    </div>
+                    <div class="stat-value">$1.8M</div>
+                    <div class="stat-label">Total Spent</div>
+                </div>
+            </div>
+            <div class="col-md-3 mb-3">
+                <div class="stat-card">
+                    <div class="stat-icon" style="background: #fef3c7; color: #d97706;">
+                        <i class="bi bi-piggy-bank"></i>
+                    </div>
+                    <div class="stat-value">$700K</div>
+                    <div class="stat-label">Remaining</div>
+                </div>
+            </div>
+            <div class="col-md-3 mb-3">
+                <div class="stat-card">
+                    <div class="stat-icon" style="background: #e0e7ff; color: #6366f1;">
+                        <i class="bi bi-speedometer2"></i>
+                    </div>
+                    <div class="stat-value">72%</div>
+                    <div class="stat-label">Utilization</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Filters -->
+        <div class="filter-bar">
+            <div class="row align-items-end">
+                <div class="col-md-3">
+                    <label class="form-label">Fiscal Year</label>
+                    <select class="form-select" id="fiscalYearFilter">
+                        <option value="">2024</option>
+                        <option value="">2023</option>
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">Department</label>
+                    <select class="form-select" id="departmentFilter">
+                        <option value="">All Departments</option>
+                        <option value="">Sales</option>
+                        <option value="">Marketing</option>
+                        <option value="">Operations</option>
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">Alert Level</label>
+                    <select class="form-select" id="alertFilter">
+                        <option value="">All Levels</option>
+                        <option value="danger">Critical (>100%)</option>
+                        <option value="warning">Warning (>90%)</option>
+                        <option value="info">Watch (>75%)</option>
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <button class="btn btn-primary w-100" onclick="applyFilters()">
+                        <i class="bi bi-funnel"></i> Apply Filters
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Budget Overview Chart -->
+        <div class="chart-container">
+            <h5 class="mb-3">Budget vs Actual by Department</h5>
+            <canvas id="budgetChart" height="80"></canvas>
+        </div>
+
+        <!-- Budget Cards -->
+        <div id="budgetContainer">
+            <!-- Sales Department Budget -->
+            <div class="budget-card">
+                <div class="budget-header">
+                    <div>
+                        <h4 class="mb-1">Sales Department - FY 2024</h4>
+                        <span class="alert-badge warning">
+                            <i class="bi bi-exclamation-triangle"></i> 92% Utilized
+                        </span>
+                    </div>
+                    <div class="action-buttons">
+                        <button class="btn btn-sm btn-primary btn-action" onclick="viewDetails('sales')">
+                            <i class="bi bi-eye"></i> Details
+                        </button>
+                        <button class="btn btn-sm btn-outline-primary btn-action" onclick="adjustBudget('sales')">
+                            <i class="bi bi-sliders"></i> Adjust
+                        </button>
+                    </div>
+                </div>
+
+                <div class="progress-custom">
+                    <div class="progress-bar-custom progress-bar-warning" style="width: 92%">
+                        92% ($920K / $1M)
+                    </div>
+                </div>
+
+                <div class="budget-details">
+                    <div class="detail-item">
+                        <div class="detail-label">Budgeted</div>
+                        <div class="detail-value">$1,000,000</div>
+                    </div>
+                    <div class="detail-item">
+                        <div class="detail-label">Actual</div>
+                        <div class="detail-value">$920,000</div>
+                    </div>
+                    <div class="detail-item">
+                        <div class="detail-label">Remaining</div>
+                        <div class="detail-value">$80,000</div>
+                    </div>
+                    <div class="detail-item">
+                        <div class="detail-label">Variance</div>
+                        <div class="detail-value" style="color: var(--warning)">-$20,000</div>
+                    </div>
+                </div>
+
+                <!-- Budget Lines -->
+                <div class="mt-3">
+                    <h6 class="mb-2">Budget Lines</h6>
+
+                    <div class="line-item">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div>
+                                <strong>Marketing Campaigns</strong>
+                                <div class="text-muted small">Account: 5100-Marketing</div>
+                            </div>
+                            <div class="text-end">
+                                <div><strong>$450K</strong> / $500K</div>
+                                <span class="alert-badge warning"><i class="bi bi-exclamation-triangle"></i> 90%</span>
+                            </div>
+                        </div>
+                        <div class="progress-custom mt-2" style="height: 8px;">
+                            <div class="progress-bar-custom progress-bar-warning" style="width: 90%"></div>
+                        </div>
+                    </div>
+
+                    <div class="line-item">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div>
+                                <strong>Sales Travel</strong>
+                                <div class="text-muted small">Account: 5200-Travel</div>
+                            </div>
+                            <div class="text-end">
+                                <div><strong>$280K</strong> / $300K</div>
+                                <span class="alert-badge warning"><i class="bi bi-exclamation-triangle"></i> 93%</span>
+                            </div>
+                        </div>
+                        <div class="progress-custom mt-2" style="height: 8px;">
+                            <div class="progress-bar-custom progress-bar-warning" style="width: 93%"></div>
+                        </div>
+                    </div>
+
+                    <div class="line-item">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div>
+                                <strong>Sales Commissions</strong>
+                                <div class="text-muted small">Account: 5300-Commissions</div>
+                            </div>
+                            <div class="text-end">
+                                <div><strong>$190K</strong> / $200K</div>
+                                <span class="alert-badge info"><i class="bi bi-info-circle"></i> 95%</span>
+                            </div>
+                        </div>
+                        <div class="progress-custom mt-2" style="height: 8px;">
+                            <div class="progress-bar-custom progress-bar-warning" style="width: 95%"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Marketing Department Budget -->
+            <div class="budget-card">
+                <div class="budget-header">
+                    <div>
+                        <h4 class="mb-1">Marketing Department - FY 2024</h4>
+                        <span class="alert-badge danger">
+                            <i class="bi bi-x-circle"></i> 105% Utilized - Over Budget!
+                        </span>
+                    </div>
+                    <div class="action-buttons">
+                        <button class="btn btn-sm btn-danger btn-action" onclick="viewDetails('marketing')">
+                            <i class="bi bi-exclamation-circle"></i> Urgent Review
+                        </button>
+                    </div>
+                </div>
+
+                <div class="progress-custom">
+                    <div class="progress-bar-custom progress-bar-danger" style="width: 100%">
+                        105% ($525K / $500K) - OVER BUDGET
+                    </div>
+                </div>
+
+                <div class="budget-details">
+                    <div class="detail-item">
+                        <div class="detail-label">Budgeted</div>
+                        <div class="detail-value">$500,000</div>
+                    </div>
+                    <div class="detail-item">
+                        <div class="detail-label">Actual</div>
+                        <div class="detail-value" style="color: var(--danger)">$525,000</div>
+                    </div>
+                    <div class="detail-item">
+                        <div class="detail-label">Over Budget</div>
+                        <div class="detail-value" style="color: var(--danger)">$25,000</div>
+                    </div>
+                    <div class="detail-item">
+                        <div class="detail-label">Variance</div>
+                        <div class="detail-value" style="color: var(--danger)">-$25,000</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Operations Department Budget -->
+            <div class="budget-card">
+                <div class="budget-header">
+                    <div>
+                        <h4 class="mb-1">Operations Department - FY 2024</h4>
+                        <span class="alert-badge success">
+                            <i class="bi bi-check-circle"></i> 68% Utilized - On Track
+                        </span>
+                    </div>
+                    <div class="action-buttons">
+                        <button class="btn btn-sm btn-outline-primary btn-action" onclick="viewDetails('ops')">
+                            <i class="bi bi-eye"></i> Details
+                        </button>
+                    </div>
+                </div>
+
+                <div class="progress-custom">
+                    <div class="progress-bar-custom progress-bar-success" style="width: 68%">
+                        68% ($680K / $1M)
+                    </div>
+                </div>
+
+                <div class="budget-details">
+                    <div class="detail-item">
+                        <div class="detail-label">Budgeted</div>
+                        <div class="detail-value">$1,000,000</div>
+                    </div>
+                    <div class="detail-item">
+                        <div class="detail-label">Actual</div>
+                        <div class="detail-value">$680,000</div>
+                    </div>
+                    <div class="detail-item">
+                        <div class="detail-label">Remaining</div>
+                        <div class="detail-value">$320,000</div>
+                    </div>
+                    <div class="detail-item">
+                        <div class="detail-label">Variance</div>
+                        <div class="detail-value" style="color: var(--success)">$320,000</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script>
+        // Initialize chart
+        const ctx = document.getElementById('budgetChart').getContext('2d');
+        new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: ['Sales', 'Marketing', 'Operations', 'IT', 'HR'],
+                datasets: [{
+                    label: 'Budgeted',
+                    data: [1000000, 500000, 1000000, 750000, 350000],
+                    backgroundColor: 'rgba(79, 70, 229, 0.8)'
+                }, {
+                    label: 'Actual',
+                    data: [920000, 525000, 680000, 600000, 280000],
+                    backgroundColor: 'rgba(16, 185, 129, 0.8)'
+                }]
+            },
+            options: {
+                responsive: true,
+                plugins: {
+                    legend: {
+                        position: 'bottom'
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        ticks: {
+                            callback: function(value) {
+                                return '$' + (value / 1000) + 'K';
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
+        function refreshData() {
+            document.body.style.opacity = '0.6';
+            setTimeout(() => {
+                document.body.style.opacity = '1';
+                alert('Data refreshed successfully!');
+            }, 500);
+        }
+
+        function exportBudgetReport() {
+            alert('Exporting budget report...');
+        }
+
+        function applyFilters() {
+            alert('Applying filters...');
+        }
+
+        function viewDetails(dept) {
+            window.location.href = `/finance/budget/${dept}/details/`;
+        }
+
+        function adjustBudget(dept) {
+            if (confirm(`Adjust budget for ${dept} department?`)) {
+                window.location.href = `/finance/budget/${dept}/adjust/`;
+            }
+        }
+
+        // Auto-refresh every 5 minutes
+        setInterval(refreshData, 300000);
+    </script>
+</body>
+</html>

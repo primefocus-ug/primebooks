@@ -11,6 +11,7 @@ urlpatterns = [
     path('quick-sale/', views.quick_sale, name='quick_sale'),
     path('pos/', views.pos_interface, name='pos_interface'),
     path('analytics/', views.sales_analytics, name='analytics'),
+    path('analytics/day-details/', views.analytics_day_details, name='analytics_day_details'),
     path('fiscalize/<int:sale_id>/', views.fiscalize_sale, name='fiscalize_sale'),
     path('efris-status/', views.sales_efris_status, name='efris_status'),
     

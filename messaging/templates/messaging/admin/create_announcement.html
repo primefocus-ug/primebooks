@@ -1,0 +1,201 @@
+{% extends 'base.html' %}
+{% load static %}
+{% load i18n %}
+
+{% block title %}{% trans "Create Announcement" %} | {{ block.super }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row justify-content-center">
+        <div class="col-lg-8">
+            <div class="card">
+                <div class="card-header">
+                    <h3 class="mb-0">
+                        <i class="bi bi-megaphone me-2"></i>
+                        {% trans "Create System Announcement" %}
+                    </h3>
+                    <p class="text-muted mb-0 small">
+                        {% trans "Broadcast important updates to all or specific users across all tenants" %}
+                    </p>
+                </div>
+                <div class="card-body">
+                    <form method="post">
+                        {% csrf_token %}
+
+                        <!-- Basic Info -->
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">{% trans "Announcement Type" %} *</label>
+                                <select name="announcement_type" class="form-select" required>
+                                    <option value="info">{% trans "Information" %}</option>
+                                    <option value="warning">{% trans "Warning" %}</option>
+                                    <option value="maintenance">{% trans "Maintenance" %}</option>
+                                    <option value="update">{% trans "System Update" %}</option>
+                                    <option value="feature">{% trans "New Feature" %}</option>
+                                    <option value="critical">{% trans "Critical Alert" %}</option>
+                                </select>
+                            </div>
+
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">{% trans "Priority" %} *</label>
+                                <select name="priority" class="form-select" required>
+                                    <option value="low">{% trans "Low" %}</option>
+                                    <option value="medium" selected>{% trans "Medium" %}</option>
+                                    <option value="high">{% trans "High" %}</option>
+                                    <option value="urgent">{% trans "Urgent" %}</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label">{% trans "Title" %} *</label>
+                            <input type="text" name="title" class="form-control" required
+                                   placeholder="{% trans 'e.g., System Maintenance Scheduled' %}">
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label">{% trans "Message" %} *</label>
+                            <textarea name="message" class="form-control" rows="5" required
+                                      placeholder="{% trans 'Enter your announcement message...' %}"></textarea>
+                            <small class="text-muted">
+                                {% trans "Supports plain text. Keep it clear and concise." %}
+                            </small>
+                        </div>
+
+                        <!-- Targeting -->
+                        <div class="card bg-light mb-3">
+                            <div class="card-body">
+                                <h5 class="card-title">{% trans "Target Audience" %}</h5>
+
+                                <div class="form-check mb-2">
+                                    <input class="form-check-input" type="checkbox" name="target_all_tenants"
+                                           id="targetAll" checked>
+                                    <label class="form-check-label" for="targetAll">
+                                        {% trans "Send to all tenants" %}
+                                    </label>
+                                </div>
+
+                                <div class="mb-3">
+                                    <label class="form-label">{% trans "Target User Roles (Optional)" %}</label>
+                                    <select name="target_user_roles" class="form-select" multiple size="3">
+                                        <option value="admin">{% trans "Admins" %}</option>
+                                        <option value="manager">{% trans "Managers" %}</option>
+                                        <option value="hr">{% trans "HR" %}</option>
+                                        <option value="cashier">{% trans "Cashiers" %}</option>
+                                    </select>
+                                    <small class="text-muted">
+                                        {% trans "Leave empty to target all users. Hold Ctrl to select multiple." %}
+                                    </small>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Delivery Options -->
+                        <div class="card bg-light mb-3">
+                            <div class="card-body">
+                                <h5 class="card-title">{% trans "Delivery Options" %}</h5>
+
+                                <div class="row">
+                                    <div class="col-md-6">
+                                        <div class="form-check mb-2">
+                                            <input class="form-check-input" type="checkbox" name="show_in_app"
+                                                   id="showInApp" checked>
+                                            <label class="form-check-label" for="showInApp">
+                                                {% trans "Show in-app notification" %}
+                                            </label>
+                                        </div>
+
+                                        <div class="form-check mb-2">
+                                            <input class="form-check-input" type="checkbox" name="send_email"
+                                                   id="sendEmail">
+                                            <label class="form-check-label" for="sendEmail">
+                                                {% trans "Send email notification" %}
+                                            </label>
+                                        </div>
+
+                                        <div class="form-check mb-2">
+                                            <input class="form-check-input" type="checkbox" name="is_dismissible"
+                                                   id="isDismissible" checked>
+                                            <label class="form-check-label" for="isDismissible">
+                                                {% trans "Allow users to dismiss" %}
+                                            </label>
+                                        </div>
+                                    </div>
+
+                                    <div class="col-md-6">
+                                        <div class="mb-3">
+                                            <label class="form-label">{% trans "Schedule for (Optional)" %}</label>
+                                            <input type="datetime-local" name="scheduled_for" class="form-control">
+                                            <small class="text-muted">
+                                                {% trans "Leave empty to send immediately" %}
+                                            </small>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Action Button (Optional) -->
+                        <div class="card bg-light mb-3">
+                            <div class="card-body">
+                                <h5 class="card-title">{% trans "Action Button (Optional)" %}</h5>
+
+                                <div class="row">
+                                    <div class="col-md-6 mb-3">
+                                        <label class="form-label">{% trans "Button Text" %}</label>
+                                        <input type="text" name="action_text" class="form-control"
+                                               placeholder="{% trans 'e.g., Learn More' %}">
+                                    </div>
+
+                                    <div class="col-md-6 mb-3">
+                                        <label class="form-label">{% trans "Button URL" %}</label>
+                                        <input type="url" name="action_url" class="form-control"
+                                               placeholder="https://example.com">
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Preview -->
+                        <div class="alert alert-info">
+                            <h6 class="alert-heading">
+                                <i class="bi bi-eye me-2"></i>
+                                {% trans "Preview" %}
+                            </h6>
+                            <div id="announcementPreview" class="mt-2 p-3 bg-white rounded">
+                                <strong id="previewTitle">{% trans "Your announcement title" %}</strong>
+                                <p id="previewMessage" class="mb-0 mt-2">{% trans "Your announcement message" %}</p>
+                            </div>
+                        </div>
+
+                        <!-- Submit Buttons -->
+                        <div class="d-flex gap-2 justify-content-end">
+                            <a href="{% url 'messaging:admin_announcements' %}" class="btn btn-secondary">
+                                {% trans "Cancel" %}
+                            </a>
+                            <button type="submit" class="btn btn-primary">
+                                <i class="bi bi-send me-2"></i>
+                                {% trans "Create & Send Announcement" %}
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // Live preview
+    document.querySelector('input[name="title"]').addEventListener('input', function(e) {
+        document.getElementById('previewTitle').textContent = e.target.value || '{% trans "Your announcement title" %}';
+    });
+
+    document.querySelector('textarea[name="message"]').addEventListener('input', function(e) {
+        document.getElementById('previewMessage').textContent = e.target.value || '{% trans "Your announcement message" %}';
+    });
+</script>
+{% endblock %}
+

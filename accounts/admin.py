@@ -3,60 +3,101 @@ from django.contrib.auth.admin import UserAdmin
 from django.utils.html import format_html
 from django.utils.translation import gettext_lazy as _
 from .models import CustomUser,  UserSignature, Role, RoleHistory
+# accounts/admin.py
+
+from django.contrib import admin
+from django.contrib.admin import AdminSite
+from django.shortcuts import redirect
+from django.urls import reverse
+
+site_header = "PrimeBooks Administration"
+site_title = "PrimeBooks Admin"
+
+admin.site.register(Role)
+class RestrictedAdminSite(AdminSite):
+    """Admin site that only allows SaaS admins"""
+
+    site_header = "PrimeBooks Administration"
+    site_title = "PrimeBooks Admin"
+
+    def has_permission(self, request):
+        """
+        Only SaaS admins can access Django admin
+        """
+        if not request.user.is_active:
+            return False
+
+        # Check is_saas_admin flag
+        return getattr(request.user, 'is_saas_admin', False)
+
+    def login(self, request, extra_context=None):
+        """
+        Redirect non-SaaS admins to regular login
+        """
+        if request.method == 'POST':
+            # Try to authenticate
+            from django.contrib.auth import authenticate
+            username = request.POST.get('username')
+            password = request.POST.get('password')
+
+            user = authenticate(request, username=username, password=password)
+
+            if user and not getattr(user, 'is_saas_admin', False):
+                # Redirect to regular app instead
+                return redirect(reverse('login'))
+
+        return super().login(request, extra_context)
+
+
+# Create custom admin site instance
+admin_site = RestrictedAdminSite(name='admin')
+
+# Register your models with the custom site
+from .models import CustomUser, Role, UserSignature
 
 
 class CustomUserAdmin(UserAdmin):
-    """Custom admin for managing users with additional fields"""
-    model = CustomUser
-    ordering = ("-date_joined",)
-    list_display = (
-        "email", "username", "user_type","first_name", "last_name", "is_active",
-        "is_staff", "company_admin", "last_activity_at", "login_count","is_hidden", "saas_admin_badge"
-    )
-    list_filter = (
-        "is_active", "is_staff", "company_admin",
-        "user_type", "two_factor_enabled", "language"
-    )
-    search_fields = ("email", "username", "first_name", "last_name", "phone_number")
+    list_display = ['email', 'get_primary_role', 'is_active']
+    list_filter = ['groups__role__group__name', 'is_active']
 
-    # Make non-editable fields visible but read-only
-    readonly_fields = ("password_changed_at","date_joined")
-
-    # Fieldsets for viewing/editing users
+    # ✅ ADD THIS — override everything
     fieldsets = (
-        (None, {"fields": ("email", "username", "password")}),
-        (_("Personal Info"), {"fields": ("first_name", "middle_name", "last_name", "phone_number", "avatar", "bio")}),
-        (_("Permissions"), {"fields": ("user_type", "is_active", "is_staff", "is_superuser", "company_admin",
-                                       "groups", "user_permissions")}),
-        (_("Security"), {"fields": ("two_factor_enabled", "backup_codes", "failed_login_attempts", "locked_until")}),
-        (_("Activity"), {"fields": ("last_login", "last_activity_at", "last_login_ip", "login_count", "password_changed_at")}),
-        (_("Localization"), {"fields": ("timezone", "language")}),
-        (_("Metadata"), {"fields": ("metadata",)}),
-    )
-
-    # Fields when creating new users
-    add_fieldsets = (
-        (None, {
-            "classes": ("wide",),
-            "fields": ("email", "username", "password1", "password2", "user_type", "is_active", "is_staff"),
+        (None, {'fields': ('email', 'password')}),
+        (_('Personal info'), {'fields': ('first_name', 'last_name')}),
+        (_('Permissions'), {
+            'fields': (
+                'is_active', 'is_staff', 'is_superuser',
+                'groups', 'user_permissions',
+            )
+        }),
+        (_('Important dates'), {
+            'fields': ('last_login',),  # ✅ removed date_joined
         }),
     )
 
-    def saas_admin_badge(self, obj):
-        if getattr(obj, 'is_saas_admin', False):
-            return format_html(
-                '<span class="badge" style="background-color: #dc3545; color: white;">SaaS Admin</span>'
-            )
-        return ''
+    # ✅ Add custom add_fieldsets (to avoid inheriting default ones)
+    add_fieldsets = (
+        (None, {
+            'classes': ('wide',),
+            'fields': ('email', 'password1', 'password2'),
+        }),
+    )
 
-    saas_admin_badge.short_description = 'SaaS Admin'
+    # ✅ OPTIONAL: ensure date_joined never shows in forms
+    exclude = ('date_joined',)
 
-    def get_queryset(self, request):
-        # Show hidden users in admin only if user is SaaS admin
-        qs = super().get_queryset(request)
-        if not getattr(request.user, 'is_saas_admin', False):
-            qs = qs.filter(is_hidden=False)
-        return qs
+    # ✅ Fix your custom role display
+    def get_primary_role(self, obj):
+        return obj.display_role
+
+    get_primary_role.short_description = 'Primary Role'
+    get_primary_role.admin_order_field = 'groups__role__priority'
+
+
+@admin.register(Role, site=admin_site)
+class RoleAdmin(admin.ModelAdmin):
+    list_display = ['group', 'company', 'priority', 'is_system_role', 'is_active']
+    list_filter = ['is_system_role', 'is_active']
 
 
 @admin.register(UserSignature)
@@ -70,5 +111,4 @@ class UserSignatureAdmin(admin.ModelAdmin):
 
 # Register CustomUser separately using UserAdmin override
 admin.site.register(CustomUser, CustomUserAdmin)
-admin.site.register(Role)
 admin.site.register(RoleHistory)

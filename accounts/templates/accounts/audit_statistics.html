@@ -1,0 +1,801 @@
+{% extends 'base.html' %}
+{% load i18n %}
+{% load custom_filters %}
+{% load static %}
+
+{% block title %}{% trans "Audit Statistics" %} | {{ block.super }}{% endblock %}
+
+{% block breadcrumb_items %}
+<li class="breadcrumb-item"><a href="{% url 'user_dashboard' %}">{% trans "Dashboard" %}</a></li>
+<li class="breadcrumb-item"><a href="{% url 'audit_dashboard' %}">{% trans "Audit" %}</a></li>
+<li class="breadcrumb-item active">{% trans "Statistics" %}</li>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+    .stats-container {
+        max-width: 1600px;
+        margin: 0 auto;
+    }
+
+    .overview-cards {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+        gap: 1.5rem;
+        margin-bottom: 2rem;
+    }
+
+    .overview-card {
+        background: linear-gradient(135deg, var(--primary-600) 0%, var(--primary-700) 100%);
+        color: white;
+        border-radius: var(--border-radius-lg);
+        padding: 2rem;
+        box-shadow: var(--shadow-xl);
+        transition: all 0.3s ease;
+        position: relative;
+        overflow: hidden;
+    }
+
+    .overview-card::before {
+        content: '';
+        position: absolute;
+        top: -50%;
+        right: -50%;
+        width: 200%;
+        height: 200%;
+        background: radial-gradient(circle, rgba(255,255,255,0.1) 0%, transparent 70%);
+    }
+
+    .overview-card:hover {
+        transform: translateY(-4px);
+        box-shadow: var(--shadow-xl), 0 0 30px rgba(59, 130, 246, 0.3);
+    }
+
+    .overview-card.success {
+        background: linear-gradient(135deg, var(--green-500) 0%, var(--green-600) 100%);
+    }
+
+    .overview-card.warning {
+        background: linear-gradient(135deg, var(--amber-500) 0%, var(--amber-600) 100%);
+    }
+
+    .overview-card.danger {
+        background: linear-gradient(135deg, var(--red-500) 0%, var(--red-600) 100%);
+    }
+
+    .overview-card.info {
+        background: linear-gradient(135deg, var(--primary-500) 0%, var(--primary-600) 100%);
+    }
+
+    .card-icon {
+        font-size: 3rem;
+        opacity: 0.9;
+        margin-bottom: 1rem;
+        position: relative;
+        z-index: 1;
+    }
+
+    .card-value {
+        font-size: 3rem;
+        font-weight: 700;
+        line-height: 1;
+        margin-bottom: 0.5rem;
+        position: relative;
+        z-index: 1;
+    }
+
+    .card-label {
+        font-size: 1rem;
+        opacity: 0.9;
+        position: relative;
+        z-index: 1;
+    }
+
+    .card-trend {
+        font-size: 0.875rem;
+        margin-top: 0.5rem;
+        opacity: 0.8;
+        position: relative;
+        z-index: 1;
+    }
+
+    .chart-card {
+        background: var(--bg-primary);
+        border: 1px solid var(--border-color);
+        border-radius: var(--border-radius);
+        padding: 1.5rem;
+        margin-bottom: 2rem;
+        box-shadow: var(--shadow-md);
+    }
+
+    .chart-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 1.5rem;
+        padding-bottom: 1rem;
+        border-bottom: 2px solid var(--border-color);
+    }
+
+    .chart-title {
+        font-size: 1.25rem;
+        font-weight: 600;
+        color: var(--text-primary);
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
+    .chart-controls {
+        display: flex;
+        gap: 0.5rem;
+    }
+
+    .chart-container {
+        position: relative;
+        height: 350px;
+    }
+
+    .stats-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+        gap: 1.5rem;
+        margin-bottom: 2rem;
+    }
+
+    .stat-card {
+        background: var(--bg-primary);
+        border: 1px solid var(--border-color);
+        border-radius: var(--border-radius);
+        padding: 1.5rem;
+        box-shadow: var(--shadow-sm);
+        transition: all 0.3s ease;
+    }
+
+    .stat-card:hover {
+        box-shadow: var(--shadow-md);
+        transform: translateY(-2px);
+    }
+
+    .stat-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 1rem;
+        padding-bottom: 1rem;
+        border-bottom: 2px solid var(--border-color);
+    }
+
+    .stat-title {
+        font-size: 1rem;
+        font-weight: 600;
+        color: var(--text-primary);
+    }
+
+    .stat-icon {
+        font-size: 1.5rem;
+        color: var(--primary-600);
+    }
+
+    .stat-list {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+    }
+
+    .stat-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 0.75rem 0;
+        border-bottom: 1px solid var(--border-color);
+    }
+
+    .stat-item:last-child {
+        border-bottom: none;
+    }
+
+    .stat-item:hover {
+        background: var(--bg-secondary);
+        margin: 0 -0.5rem;
+        padding-left: 0.5rem;
+        padding-right: 0.5rem;
+        border-radius: var(--border-radius-sm);
+    }
+
+    .stat-name {
+        font-size: 0.9375rem;
+        color: var(--text-primary);
+    }
+
+    .stat-value {
+        font-size: 1.125rem;
+        font-weight: 700;
+        color: var(--primary-600);
+    }
+
+    .progress-item {
+        margin-bottom: 1.5rem;
+    }
+
+    .progress-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 0.5rem;
+    }
+
+    .progress-label {
+        font-size: 0.9375rem;
+        font-weight: 600;
+        color: var(--text-primary);
+    }
+
+    .progress-value {
+        font-size: 0.875rem;
+        color: var(--text-secondary);
+    }
+
+    .progress {
+        height: 12px;
+        border-radius: 999px;
+        background: var(--bg-secondary);
+        overflow: hidden;
+    }
+
+    .progress-bar {
+        height: 100%;
+        border-radius: 999px;
+        transition: width 1s ease;
+        background: linear-gradient(90deg, var(--primary-500) 0%, var(--primary-600) 100%);
+    }
+
+    .time-selector {
+        display: flex;
+        gap: 0.5rem;
+        background: var(--bg-secondary);
+        padding: 0.25rem;
+        border-radius: var(--border-radius-sm);
+    }
+
+    .time-btn {
+        padding: 0.5rem 1rem;
+        border: none;
+        background: transparent;
+        color: var(--text-secondary);
+        border-radius: var(--border-radius-sm);
+        cursor: pointer;
+        transition: all 0.3s ease;
+        font-weight: 500;
+    }
+
+    .time-btn:hover {
+        background: var(--bg-primary);
+        color: var(--text-primary);
+    }
+
+    .time-btn.active {
+        background: var(--primary-600);
+        color: white;
+    }
+
+    .comparison-row {
+        display: grid;
+        grid-template-columns: 1fr auto 1fr;
+        gap: 1rem;
+        align-items: center;
+        padding: 1rem;
+        background: var(--bg-secondary);
+        border-radius: var(--border-radius-sm);
+        margin-bottom: 1rem;
+    }
+
+    .comparison-value {
+        text-align: center;
+    }
+
+    .comparison-number {
+        font-size: 1.5rem;
+        font-weight: 700;
+        color: var(--text-primary);
+    }
+
+    .comparison-label {
+        font-size: 0.875rem;
+        color: var(--text-secondary);
+        margin-top: 0.25rem;
+    }
+
+    .comparison-arrow {
+        font-size: 1.5rem;
+        color: var(--text-muted);
+    }
+
+    .heatmap-container {
+        overflow-x: auto;
+    }
+
+    .heatmap {
+        display: grid;
+        grid-template-columns: auto repeat(24, 1fr);
+        gap: 2px;
+        min-width: 600px;
+    }
+
+    .heatmap-label {
+        font-size: 0.75rem;
+        color: var(--text-secondary);
+        display: flex;
+        align-items: center;
+        padding-right: 0.5rem;
+    }
+
+    .heatmap-cell {
+        aspect-ratio: 1;
+        border-radius: 2px;
+        transition: all 0.3s ease;
+        cursor: pointer;
+        position: relative;
+    }
+
+    .heatmap-cell:hover {
+        transform: scale(1.2);
+        z-index: 10;
+        box-shadow: var(--shadow-md);
+    }
+
+    .heatmap-cell[data-intensity="0"] { background: var(--bg-tertiary); }
+    .heatmap-cell[data-intensity="1"] { background: rgba(59, 130, 246, 0.2); }
+    .heatmap-cell[data-intensity="2"] { background: rgba(59, 130, 246, 0.4); }
+    .heatmap-cell[data-intensity="3"] { background: rgba(59, 130, 246, 0.6); }
+    .heatmap-cell[data-intensity="4"] { background: rgba(59, 130, 246, 0.8); }
+    .heatmap-cell[data-intensity="5"] { background: rgba(59, 130, 246, 1); }
+
+    .export-section {
+        background: var(--bg-primary);
+        border: 1px solid var(--border-color);
+        border-radius: var(--border-radius);
+        padding: 1.5rem;
+        margin-top: 2rem;
+    }
+
+    .export-title {
+        font-size: 1.125rem;
+        font-weight: 600;
+        color: var(--text-primary);
+        margin-bottom: 1rem;
+    }
+
+    .export-buttons {
+        display: flex;
+        gap: 1rem;
+        flex-wrap: wrap;
+    }
+
+    [data-theme="dark"] .overview-card {
+        background: linear-gradient(135deg, var(--primary-700) 0%, var(--primary-800) 100%);
+    }
+
+    [data-theme="dark"] .overview-card.success {
+        background: linear-gradient(135deg, var(--green-600) 0%, var(--green-700) 100%);
+    }
+
+    [data-theme="dark"] .overview-card.warning {
+        background: linear-gradient(135deg, var(--amber-600) 0%, var(--amber-700) 100%);
+    }
+
+    [data-theme="dark"] .overview-card.danger {
+        background: linear-gradient(135deg, var(--red-600) 0%, var(--red-700) 100%);
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="stats-container">
+    <!-- Page Header -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1 class="h3 mb-0">
+            <i class="bi bi-graph-up me-2"></i>{% trans "Audit Statistics" %}
+        </h1>
+        <div class="d-flex gap-2">
+            <a href="{% url 'audit_dashboard' %}" class="btn btn-outline-primary">
+                <i class="bi bi-speedometer2 me-2"></i>{% trans "Dashboard" %}
+            </a>
+            <a href="{% url 'saas_admin_audit_log' %}" class="btn btn-primary">
+                <i class="bi bi-list-ul me-2"></i>{% trans "All Logs" %}
+            </a>
+        </div>
+    </div>
+
+    <!-- Overview Cards -->
+    <div class="overview-cards">
+        <div class="overview-card">
+            <div class="card-icon">
+                <i class="bi bi-file-text"></i>
+            </div>
+            <div class="card-value">{{ total_logs|default:0 }}</div>
+            <div class="card-label">{% trans "Total Audit Logs" %}</div>
+            <div class="card-trend">
+                <i class="bi bi-arrow-up"></i> {{ logs_growth|default:0 }}% {% trans "vs last period" %}
+            </div>
+        </div>
+
+        <div class="overview-card success">
+            <div class="card-icon">
+                <i class="bi bi-check-circle"></i>
+            </div>
+            <div class="card-value">{{ success_rate|default:0 }}%</div>
+            <div class="card-label">{% trans "Success Rate" %}</div>
+            <div class="card-trend">
+                {{ successful_actions|default:0 }} {% trans "successful actions" %}
+            </div>
+        </div>
+
+        <div class="overview-card warning">
+            <div class="card-icon">
+                <i class="bi bi-exclamation-triangle"></i>
+            </div>
+            <div class="card-value">{{ critical_events|default:0 }}</div>
+            <div class="card-label">{% trans "Critical Events" %}</div>
+            <div class="card-trend">
+                {% trans "Last 30 days" %}
+            </div>
+        </div>
+
+        <div class="overview-card danger">
+            <div class="card-icon">
+                <i class="bi bi-x-circle"></i>
+            </div>
+            <div class="card-value">{{ failed_actions|default:0 }}</div>
+            <div class="card-label">{% trans "Failed Actions" %}</div>
+            <div class="card-trend">
+                {{ failure_rate|default:0 }}% {% trans "failure rate" %}
+            </div>
+        </div>
+
+        <div class="overview-card info">
+            <div class="card-icon">
+                <i class="bi bi-people"></i>
+            </div>
+            <div class="card-value">{{ active_users|default:0 }}</div>
+            <div class="card-label">{% trans "Active Users" %}</div>
+            <div class="card-trend">
+                {% trans "Last 7 days" %}
+            </div>
+        </div>
+
+        <div class="overview-card info">
+            <div class="card-icon">
+                <i class="bi bi-clock-history"></i>
+            </div>
+            <div class="card-value">{{ avg_response_time|default:0 }}ms</div>
+            <div class="card-label">{% trans "Avg Response Time" %}</div>
+            <div class="card-trend">
+                {% trans "All actions" %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Activity Over Time -->
+    <div class="chart-card">
+        <div class="chart-header">
+            <div class="chart-title">
+                <i class="bi bi-graph-up"></i>
+                {% trans "Activity Over Time" %}
+            </div>
+            <div class="time-selector">
+                <button class="time-btn active" data-period="7d">{% trans "7 Days" %}</button>
+                <button class="time-btn" data-period="30d">{% trans "30 Days" %}</button>
+                <button class="time-btn" data-period="90d">{% trans "90 Days" %}</button>
+                <button class="time-btn" data-period="1y">{% trans "1 Year" %}</button>
+            </div>
+        </div>
+        <div class="chart-container">
+            <canvas id="activityChart"></canvas>
+        </div>
+    </div>
+
+    <!-- Two Column Stats -->
+    <div class="row">
+        <!-- Action Distribution -->
+        <div class="col-lg-6 mb-4">
+            <div class="chart-card">
+                <div class="chart-header">
+                    <div class="chart-title">
+                        <i class="bi bi-pie-chart"></i>
+                        {% trans "Action Distribution" %}
+                    </div>
+                </div>
+                <div class="chart-container" style="height: 300px;">
+                    <canvas id="actionDistributionChart"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- User Activity -->
+        <div class="col-lg-6 mb-4">
+            <div class="chart-card">
+                <div class="chart-header">
+                    <div class="chart-title">
+                        <i class="bi bi-bar-chart"></i>
+                        {% trans "User Activity" %}
+                    </div>
+                </div>
+                <div class="chart-container" style="height: 300px;">
+                    <canvas id="userActivityChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Statistics Grid -->
+    <div class="stats-grid">
+        <!-- Top Actions -->
+        <div class="stat-card">
+            <div class="stat-header">
+                <div class="stat-title">{% trans "Top Actions" %}</div>
+                <div class="stat-icon">
+                    <i class="bi bi-lightning"></i>
+                </div>
+            </div>
+            <ul class="stat-list">
+                {% for action in top_actions|slice:":10" %}
+                <li class="stat-item">
+                    <span class="stat-name">{{ action.action_display }}</span>
+                    <span class="stat-value">{{ action.count }}</span>
+                </li>
+                {% empty %}
+                <li class="text-muted text-center py-3">{% trans "No data available" %}</li>
+                {% endfor %}
+            </ul>
+        </div>
+
+        <!-- Most Active Users -->
+        <div class="stat-card">
+            <div class="stat-header">
+                <div class="stat-title">{% trans "Most Active Users" %}</div>
+                <div class="stat-icon">
+                    <i class="bi bi-person-check"></i>
+                </div>
+            </div>
+            <ul class="stat-list">
+                {% for user in top_users|slice:":10" %}
+                <li class="stat-item">
+                    <span class="stat-name">{{ user.email }}</span>
+                    <span class="stat-value">{{ user.action_count }}</span>
+                </li>
+                {% empty %}
+                <li class="text-muted text-center py-3">{% trans "No data available" %}</li>
+                {% endfor %}
+            </ul>
+        </div>
+
+        <!-- Error Rate by Action -->
+        <div class="stat-card">
+            <div class="stat-header">
+                <div class="stat-title">{% trans "Error Rate by Action" %}</div>
+                <div class="stat-icon">
+                    <i class="bi bi-exclamation-triangle"></i>
+                </div>
+            </div>
+            <div class="stat-list">
+                {% for action in actions_with_errors|slice:":10" %}
+                <div class="progress-item">
+                    <div class="progress-header">
+                        <span class="progress-label">{{ action.name }}</span>
+                        <span class="progress-value">{{ action.error_rate }}%</span>
+                    </div>
+                    <div class="progress">
+                        <div class="progress-bar bg-danger" style="width: {{ action.error_rate }}%"></div>
+                    </div>
+                </div>
+                {% empty %}
+                <p class="text-muted text-center py-3">{% trans "No errors recorded" %}</p>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Activity Heatmap -->
+    <div class="chart-card">
+        <div class="chart-header">
+            <div class="chart-title">
+                <i class="bi bi-calendar-week"></i>
+                {% trans "Activity Heatmap (Last 7 Days)" %}
+            </div>
+        </div>
+        <div class="heatmap-container">
+            <div class="heatmap">
+                <!-- Days of week labels -->
+                <div class="heatmap-label"></div>
+                {% for hour in 24|range %}
+                <div class="heatmap-label">{{ hour }}</div>
+                {% endfor %}
+
+                <!-- Heatmap data -->
+                {% for day in heatmap_data %}
+                <div class="heatmap-label">{{ day.name }}</div>
+                {% for hour in day.hours %}
+                <div class="heatmap-cell"
+                     data-intensity="{{ hour.intensity }}"
+                     title="{{ day.name }} {{ hour.hour }}:00 - {{ hour.count }} actions">
+                </div>
+                {% endfor %}
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Period Comparison -->
+    <div class="chart-card">
+        <div class="chart-header">
+            <div class="chart-title">
+                <i class="bi bi-arrow-left-right"></i>
+                {% trans "Period Comparison" %}
+            </div>
+        </div>
+        <div class="comparison-row">
+            <div class="comparison-value">
+                <div class="comparison-number">{{ last_period_logs|default:0 }}</div>
+                <div class="comparison-label">{% trans "Previous Period" %}</div>
+            </div>
+            <div class="comparison-arrow">
+                {% if current_period_logs > last_period_logs %}
+                    <i class="bi bi-arrow-right text-success"></i>
+                {% elif current_period_logs < last_period_logs %}
+                    <i class="bi bi-arrow-right text-danger"></i>
+                {% else %}
+                    <i class="bi bi-arrow-right text-muted"></i>
+                {% endif %}
+            </div>
+            <div class="comparison-value">
+                <div class="comparison-number">{{ current_period_logs|default:0 }}</div>
+                <div class="comparison-label">{% trans "Current Period" %}</div>
+            </div>
+        </div>
+
+        <div class="comparison-row">
+            <div class="comparison-value">
+                <div class="comparison-number">{{ last_period_users|default:0 }}</div>
+                <div class="comparison-label">{% trans "Active Users (Previous)" %}</div>
+            </div>
+            <div class="comparison-arrow">
+                {% if current_period_users > last_period_users %}
+                    <i class="bi bi-arrow-right text-success"></i>
+                {% elif current_period_users < last_period_users %}
+                    <i class="bi bi-arrow-right text-danger"></i>
+                {% else %}
+                    <i class="bi bi-arrow-right text-muted"></i>
+                {% endif %}
+            </div>
+            <div class="comparison-value">
+                <div class="comparison-number">{{ current_period_users|default:0 }}</div>
+                <div class="comparison-label">{% trans "Active Users (Current)" %}</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Export Section -->
+    <div class="export-section">
+        <div class="export-title">
+            <i class="bi bi-download me-2"></i>{% trans "Export Statistics" %}
+        </div>
+        <div class="export-buttons">
+            <a href="?export=csv" class="btn btn-success">
+                <i class="bi bi-filetype-csv me-2"></i>{% trans "Export as CSV" %}
+            </a>
+            <a href="?export=excel" class="btn btn-primary">
+                <i class="bi bi-file-earmark-excel me-2"></i>{% trans "Export as Excel" %}
+            </a>
+            <a href="?export=pdf" class="btn btn-danger">
+                <i class="bi bi-file-pdf me-2"></i>{% trans "Export as PDF" %}
+            </a>
+            <a href="{% url 'export_audit_dashboard_data' %}" class="btn btn-info">
+                <i class="bi bi-file-code me-2"></i>{% trans "Export as JSON" %}
+            </a>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Activity Over Time Chart
+    const activityCtx = document.getElementById('activityChart');
+    if (activityCtx) {
+        new Chart(activityCtx, {
+            type: 'line',
+            data: {
+                labels: {{ activity_labels|safe }},
+                datasets: [{
+                    label: '{% trans "Total Actions" %}',
+                    data: {{ activity_data|safe }},
+                    borderColor: 'rgb(59, 130, 246)',
+                    backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                    tension: 0.4,
+                    fill: true
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        display: false
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true
+                    }
+                }
+            }
+        });
+    }
+
+    // Action Distribution Pie Chart
+    const distributionCtx = document.getElementById('actionDistributionChart');
+    if (distributionCtx) {
+        new Chart(distributionCtx, {
+            type: 'doughnut',
+            data: {
+                labels: {{ action_labels|safe }},
+                datasets: [{
+                    data: {{ action_data|safe }},
+                    backgroundColor: [
+                        'rgba(59, 130, 246, 0.8)',
+                        'rgba(16, 185, 129, 0.8)',
+                        'rgba(245, 158, 11, 0.8)',
+                        'rgba(239, 68, 68, 0.8)',
+                        'rgba(139, 92, 246, 0.8)'
+                    ]
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false
+            }
+        });
+    }
+
+    // User Activity Bar Chart
+    const userCtx = document.getElementById('userActivityChart');
+    if (userCtx) {
+        new Chart(userCtx, {
+            type: 'bar',
+            data: {
+                labels: {{ user_labels|safe }},
+                datasets: [{
+                    label: '{% trans "Actions" %}',
+                    data: {{ user_data|safe }},
+                    backgroundColor: 'rgba(59, 130, 246, 0.5)',
+                    borderColor: 'rgb(59, 130, 246)',
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    y: {
+                        beginAtZero: true
+                    }
+                }
+            }
+        });
+    }
+
+    // Time period selector
+    document.querySelectorAll('.time-btn').forEach(btn => {
+        btn.addEventListener('click', function() {
+            document.querySelectorAll('.time-btn').forEach(b => b.classList.remove('active'));
+            this.classList.add('active');
+            const period = this.dataset.period;
+            window.location.href = `?period=${period}`;
+        });
+    });
+});
+</script>
+{% endblock %}

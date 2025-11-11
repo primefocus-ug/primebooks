@@ -1,27 +1,40 @@
 {% extends 'base.html' %}
+{% load static %}
+{% load custom_filters%}
 {% load i18n %}
 
 {% block title %}{% trans "User Management" %} - PrimeBooks{% endblock %}
 
 {% block extra_css %}
+<link rel="stylesheet" href="{% static 'themes.css' %}" >
+
 <style>
+    
     .search-card {
         background: white;
         border-radius: 12px;
         box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
         margin-bottom: 2rem;
     }
-
+[data-theme='dark'] .search-card{
+    background: black !important;
+}
     .search-header {
         background: linear-gradient(135deg, var(--primary-color) 0%, #1d4ed8 100%);
         color: white;
         padding: 1.5rem;
         border-radius: 12px 12px 0 0;
     }
+    [data-theme='dark'] .search-header{
+    background: black !important;
+}
 
     .search-body {
         padding: 1.5rem;
     }
+     [data-theme='dark'].search-body{
+    background: black !important;
+}
 
     .user-card {
         background: white;
@@ -30,16 +43,25 @@
         transition: transform 0.2s ease, box-shadow 0.2s ease;
         margin-bottom: 1rem;
     }
-
+    [data-theme="dark"].user-card{
+        background:black;
+    }
+   
     .user-card:hover {
         transform: translateY(-2px);
         box-shadow: 0 8px 15px -3px rgba(0, 0, 0, 0.1);
     }
+    [data-theme='dark'] .user-card:hover{
+    background: black !important;
+}
 
     .user-header {
         padding: 1.5rem;
         border-bottom: 1px solid #f1f5f9;
     }
+    [data-theme='dark'] .user-header{
+    background: black !important;
+}
 
     .user-avatar-lg {
         width: 60px;
@@ -49,7 +71,10 @@
         border: 3px solid white;
         box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
     }
-
+    [data-theme='dark']  .user-avatar-lg{
+    background: black !important;
+}
+   
     .user-meta {
         display: flex;
         flex-wrap: wrap;
@@ -58,6 +83,9 @@
         background: #f8fafc;
         border-radius: 0 0 12px 12px;
     }
+     [data-theme='dark']  .user-meta {
+    background: black !important;
+}
 
     .meta-item {
         display: flex;
@@ -65,12 +93,16 @@
         font-size: 0.875rem;
         color: var(--secondary-color);
     }
+    [data-theme='dark'] .meta-item{
+    background: black !important;
+}
+    
 
     .meta-item i {
         margin-right: 0.5rem;
         width: 16px;
     }
-
+    
     .bulk-actions {
         background: white;
         border-radius: 12px;
@@ -79,11 +111,17 @@
         margin-bottom: 2rem;
         display: none;
     }
+     [data-theme='dark'] .bulk-actions{
+    background: black !important;
+}
 
     .bulk-actions.show {
         display: block;
         animation: slideDown 0.3s ease;
     }
+    [data-theme='dark'] .bulk-actions.show{
+    background: black !important;
+}
 
     @keyframes slideDown {
         from { opacity: 0; transform: translateY(-10px); }
@@ -104,6 +142,9 @@
         box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
         text-align: center;
     }
+   [data-theme='dark'] .stat-item{
+    background: black !important;
+}
 
     .stat-number {
         font-size: 2rem;
@@ -120,6 +161,7 @@
         display: flex;
         gap: 0.5rem;
     }
+   
 
     .action-btn {
         width: 32px;
@@ -151,6 +193,7 @@
         font-weight: 600;
     }
 
+
     .type-super-admin { background: #fee2e2; color: #dc2626; }
     .type-company-admin { background: #fef3c7; color: #d97706; }
     .type-manager { background: #dbeafe; color: #2563eb; }
@@ -171,14 +214,15 @@
             margin-bottom: 1rem;
         }
     }
+    
 </style>
-{% endblock %}
 
+{% endblock %}
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-4">
     <div>
-        <h1 class="mb-1">{% trans "User Management" %}</h1>
-        <p class="text-muted mb-0">{% trans "Manage all system users and their permissions" %}</p>
+        <h1 class="mb-1 ">{% trans "User Management" %}</h1>
+        <p class="text-muted mb-0 totall">{% trans "Manage all system users and their permissions" %}</p>
     </div>
     <div>
         <a href="{% url 'user_create' %}" class="btn btn-primary">
@@ -219,9 +263,9 @@
         </h4>
     </div>
     <div class="search-body">
-        <form method="get" id="searchForm">
+        <form method="get" id="searchForm ">
             <div class="row">
-                <div class="col-md-3">
+                <div class="col-md-3 ">
                     <label class="form-label">{% trans "Search Query" %}</label>
                     {{ search_form.search_query }}
                 </div>
@@ -250,7 +294,7 @@
                 </div>
             </div>
             <div class="row mt-3">
-                <div class="col-md-3">
+                <div class="col-md-3 ">
                     <label class="form-label">{% trans "Date From" %}</label>
                     {{ search_form.date_joined_from }}
                 </div>
@@ -264,15 +308,15 @@
 </div>
 
 <!-- Bulk Actions -->
-<div class="bulk-actions" id="bulkActions">
+<div class="bulk-actions" id="bulkActions" >
     <form method="post" action="{% url 'bulk_user_actions' %}" id="bulkForm">
         {% csrf_token %}
-        <div class="row align-items-end">
+        <div class="row align-items-end ">
             <div class="col-md-3">
                 <label class="form-label">{% trans "Selected:" %} <span id="selectedCount">0</span> {% trans "users" %}</label>
                 {{ bulk_form.selected_users }}
             </div>
-            <div class="col-md-4">
+            <div class="col-md-4 ">
                 <label class="form-label">{% trans "Action" %}</label>
                 {{ bulk_form.action }}
             </div>
@@ -282,7 +326,7 @@
                 </button>
             </div>
             <div class="col-md-2 text-end">
-                <button type="button" class="btn btn-outline-secondary" onclick="hideBulkActions()">
+                <button type="button" class="btn btn-outline-secondary" onclick="hideBulkActions();">
                     <i class="bi bi-x"></i>
                 </button>
             </div>
@@ -317,7 +361,7 @@
                             {{ user_profile.get_user_type_display }}
                         </span>
                     </div>
-                    <p class="text-muted mb-0">{{ user_profile.email }}</p>
+                    <p class="text-muted mb-0 totall">{{ user_profile.email }}</p>
                 </div>
                 <div class="col-auto">
                     <div class="table-actions">
@@ -337,7 +381,7 @@
                         {% endif %}
                         <a href="{% url 'user_delete' user_profile.pk %}"
                            class="action-btn btn btn-outline-danger" title="{% trans 'Delete User' %}"
-                           onclick="return confirm('{% trans "Are you sure you want to delete" %} {{ user_profile.get_full_name }}?')">
+                           onclick="return confirm('{% blocktrans %}Are you sure you want to delete {{ user_name }}?{% endblocktrans %}')">
                             <i class="bi bi-trash"></i>
                         </a>
                     </div>
@@ -406,7 +450,7 @@
             <nav aria-label="{% trans 'User pagination' %}">
                 <ul class="pagination justify-content-end mb-0">
                     {% if page_obj.has_previous %}
-                        <li class="page-item">
+                        <li class="page-item totall">
                             <a class="page-link" href="?page=1{% if request.GET.urlencode %}&{{ request.GET.urlencode }}{% endif %}">
                                 <i class="bi bi-chevron-double-left"></i>
                             </a>

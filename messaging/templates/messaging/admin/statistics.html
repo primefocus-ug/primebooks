@@ -1,0 +1,352 @@
+{% extends 'base.html' %}
+{% load static %}
+{% load i18n %}
+
+{% block title %}{% trans "Messaging Statistics" %} | {{ block.super }}{% endblock %}
+
+{% block extra_css %}
+<style>
+    .stat-card {
+        background: var(--bg-primary);
+        border-radius: var(--border-radius);
+        padding: 1.5rem;
+        box-shadow: var(--shadow-md);
+        height: 100%;
+    }
+
+    .stat-value {
+        font-size: 2.5rem;
+        font-weight: 700;
+        color: var(--primary-600);
+        margin-bottom: 0.5rem;
+    }
+
+    .stat-label {
+        font-size: 0.875rem;
+        color: var(--text-secondary);
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+
+    .chart-container {
+        background: var(--bg-primary);
+        border-radius: var(--border-radius);
+        padding: 1.5rem;
+        box-shadow: var(--shadow-md);
+        margin-bottom: 2rem;
+    }
+
+    .table-card {
+        background: var(--bg-primary);
+        border-radius: var(--border-radius);
+        box-shadow: var(--shadow-md);
+        overflow: hidden;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h1 class="mb-2">
+                <i class="bi bi-graph-up me-2"></i>
+                {% trans "Messaging Statistics" %}
+            </h1>
+            <p class="text-muted mb-0">
+                {% trans "Detailed analytics and usage patterns" %}
+            </p>
+        </div>
+        <div class="d-flex gap-2">
+            <a href="{% url 'messaging:export_statistics' %}" class="btn btn-outline-primary">
+                <i class="bi bi-download me-2"></i>
+                {% trans "Export CSV" %}
+            </a>
+            <a href="{% url 'messaging:admin_dashboard' %}" class="btn btn-secondary">
+                <i class="bi bi-arrow-left me-2"></i>
+                {% trans "Back to Dashboard" %}
+            </a>
+        </div>
+    </div>
+
+    <!-- Date Range Filter -->
+    <div class="card mb-4">
+        <div class="card-body">
+            <form method="get" class="row g-3 align-items-end">
+                <div class="col-md-4">
+                    <label class="form-label">{% trans "From Date" %}</label>
+                    <input type="date" name="from" class="form-control"
+                           value="{{ start_date|date:'Y-m-d' }}">
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">{% trans "To Date" %}</label>
+                    <input type="date" name="to" class="form-control"
+                           value="{{ end_date|date:'Y-m-d' }}">
+                </div>
+                <div class="col-md-4">
+                    <button type="submit" class="btn btn-primary w-100">
+                        <i class="bi bi-filter me-2"></i>
+                        {% trans "Apply Filter" %}
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Summary Stats -->
+    <div class="row g-4 mb-4">
+        <div class="col-lg-3 col-md-6">
+            <div class="stat-card">
+                <div class="stat-value">{{ total_stats.total_messages|default:0 }}</div>
+                <div class="stat-label">{% trans "Total Messages" %}</div>
+            </div>
+        </div>
+
+        <div class="col-lg-3 col-md-6">
+            <div class="stat-card">
+                <div class="stat-value">{{ total_stats.total_conversations|default:0 }}</div>
+                <div class="stat-label">{% trans "Total Conversations" %}</div>
+            </div>
+        </div>
+
+        <div class="col-lg-3 col-md-6">
+            <div class="stat-card">
+                <div class="stat-value">{{ total_stats.avg_active_users|floatformat:0|default:0 }}</div>
+                <div class="stat-label">{% trans "Avg Active Users/Day" %}</div>
+            </div>
+        </div>
+
+        <div class="col-lg-3 col-md-6">
+            <div class="stat-card">
+                <div class="stat-value">{{ total_stats.total_storage|floatformat:2|default:0 }} MB</div>
+                <div class="stat-label">{% trans "Storage Used" %}</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Charts -->
+    <div class="row">
+        <div class="col-lg-8 mb-4">
+            <div class="chart-container">
+                <h5 class="mb-4">{% trans "Message Volume Over Time" %}</h5>
+                <canvas id="messagesChart" height="80"></canvas>
+            </div>
+        </div>
+
+        <div class="col-lg-4 mb-4">
+            <div class="chart-container">
+                <h5 class="mb-4">{% trans "Conversation Types" %}</h5>
+                <canvas id="conversationTypesChart"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-lg-6 mb-4">
+            <div class="chart-container">
+                <h5 class="mb-4">{% trans "Messages by Day of Week" %}</h5>
+                <canvas id="dayOfWeekChart" height="100"></canvas>
+            </div>
+        </div>
+
+        <div class="col-lg-6 mb-4">
+            <div class="chart-container">
+                <h5 class="mb-4">{% trans "Messages by Hour" %}</h5>
+                <canvas id="hourChart" height="100"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <!-- Tables -->
+    <div class="row">
+        <div class="col-lg-6 mb-4">
+            <div class="table-card">
+                <div class="card-header bg-light">
+                    <h5 class="mb-0">{% trans "Top 10 Users by Messages" %}</h5>
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0">
+                        <thead>
+                            <tr>
+                                <th>#</th>
+                                <th>{% trans "User" %}</th>
+                                <th class="text-end">{% trans "Messages" %}</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for user in top_users %}
+                            <tr>
+                                <td>{{ forloop.counter }}</td>
+                                <td>
+                                    <strong>{{ user.sender__username }}</strong>
+                                    <br>
+                                    <small class="text-muted">{{ user.sender__email }}</small>
+                                </td>
+                                <td class="text-end">
+                                    <span class="badge bg-primary">{{ user.count }}</span>
+                                </td>
+                            </tr>
+                            {% empty %}
+                            <tr>
+                                <td colspan="3" class="text-center text-muted py-4">
+                                    {% trans "No data available" %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-lg-6 mb-4">
+            <div class="table-card">
+                <div class="card-header bg-light">
+                    <h5 class="mb-0">{% trans "Top 10 Conversations" %}</h5>
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0">
+                        <thead>
+                            <tr>
+                                <th>#</th>
+                                <th>{% trans "Conversation" %}</th>
+                                <th class="text-end">{% trans "Messages" %}</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for conv in top_conversations %}
+                            <tr>
+                                <td>{{ forloop.counter }}</td>
+                                <td>
+                                    <a href="{% url 'messaging:admin_conversation_detail' conv.id %}">
+                                        {{ conv.name|default:"Direct Message" }}
+                                    </a>
+                                    <br>
+                                    <small class="text-muted">{{ conv.get_conversation_type_display }}</small>
+                                </td>
+                                <td class="text-end">
+                                    <span class="badge bg-primary">{{ conv.message_count }}</span>
+                                </td>
+                            </tr>
+                            {% empty %}
+                            <tr>
+                                <td colspan="3" class="text-center text-muted py-4">
+                                    {% trans "No data available" %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+    // Message Volume Chart
+    const dailyStats = {{ daily_stats|safe }};
+    const messagesCtx = document.getElementById('messagesChart');
+
+    new Chart(messagesCtx, {
+        type: 'line',
+        data: {
+            labels: dailyStats.map(d => new Date(d.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })),
+            datasets: [{
+                label: 'Messages',
+                data: dailyStats.map(d => d.total_messages || 0),
+                borderColor: 'rgb(59, 130, 246)',
+                backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                tension: 0.4,
+                fill: true
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: true,
+            plugins: {
+                legend: { display: false }
+            },
+            scales: {
+                y: { beginAtZero: true, ticks: { precision: 0 } }
+            }
+        }
+    });
+
+    // Conversation Types Chart
+    const convBreakdown = {{ conversation_breakdown|safe }};
+    const typesCtx = document.getElementById('conversationTypesChart');
+
+    new Chart(typesCtx, {
+        type: 'doughnut',
+        data: {
+            labels: convBreakdown.map(c => c.conversation_type),
+            datasets: [{
+                data: convBreakdown.map(c => c.count),
+                backgroundColor: [
+                    'rgb(59, 130, 246)',
+                    'rgb(16, 185, 129)',
+                    'rgb(245, 158, 11)',
+                    'rgb(239, 68, 68)'
+                ]
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: true
+        }
+    });
+
+    // Day of Week Chart
+    const dayData = {{ messages_by_day|safe }};
+    const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const dayCtx = document.getElementById('dayOfWeekChart');
+
+    new Chart(dayCtx, {
+        type: 'bar',
+        data: {
+            labels: dayData.map(d => dayNames[d.day]),
+            datasets: [{
+                label: 'Messages',
+                data: dayData.map(d => d.count),
+                backgroundColor: 'rgba(59, 130, 246, 0.5)',
+                borderColor: 'rgb(59, 130, 246)',
+                borderWidth: 1
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: true,
+            plugins: { legend: { display: false } },
+            scales: { y: { beginAtZero: true } }
+        }
+    });
+
+    // Hour Chart
+    const hourData = {{ messages_by_hour|safe }};
+    const hourCtx = document.getElementById('hourChart');
+
+    new Chart(hourCtx, {
+        type: 'bar',
+        data: {
+            labels: hourData.map(h => h.hour + ':00'),
+            datasets: [{
+                label: 'Messages',
+                data: hourData.map(h => h.count),
+                backgroundColor: 'rgba(16, 185, 129, 0.5)',
+                borderColor: 'rgb(16, 185, 129)',
+                borderWidth: 1
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: true,
+            plugins: { legend: { display: false } },
+            scales: { y: { beginAtZero: true } }
+        }
+    });
+</script>
+{% endblock %}

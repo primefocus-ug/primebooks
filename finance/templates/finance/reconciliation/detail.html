@@ -1,0 +1,259 @@
+{% extends 'base.html' %}
+{% load i18n %}
+
+{% block title %}{% trans "Bank Reconciliation" %} | {{ block.super }}{% endblock %}
+
+{% block breadcrumb_items %}
+<li class="breadcrumb-item"><a href="{% url 'finance:dashboard' %}">{% trans "Finance" %}</a></li>
+<li class="breadcrumb-item"><a href="{% url 'finance:bank_reconciliation_list' %}">{% trans "Reconciliations" %}</a></li>
+<li class="breadcrumb-item active">{{ reconciliation.bank_account.bank_name }}</li>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+    .matching-area {
+        min-height: 400px;
+    }
+    .transaction-item {
+        padding: 0.75rem;
+        margin-bottom: 0.5rem;
+        border: 1px solid var(--border-color);
+        border-radius: var(--border-radius-sm);
+        cursor: pointer;
+        transition: all 0.3s ease;
+    }
+    .transaction-item:hover {
+        background-color: var(--primary-50);
+        border-color: var(--primary-500);
+    }
+    .transaction-item.selected {
+        background-color: var(--primary-100);
+        border-color: var(--primary-600);
+        border-width: 2px;
+    }
+    [data-theme="dark"] .transaction-item:hover {
+        background-color: rgba(59, 130, 246, 0.1);
+    }
+    [data-theme="dark"] .transaction-item.selected {
+        background-color: rgba(59, 130, 246, 0.2);
+    }
+    .matched-item {
+        opacity: 0.5;
+        pointer-events: none;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- Reconciliation Header -->
+    <div class="card shadow-lg mb-4" style="background: linear-gradient(135deg, var(--primary-600), var(--primary-700)); color: white;">
+        <div class="card-body p-4">
+            <div class="row align-items-center">
+                <div class="col-12 col-md-8">
+                    <h2 class="mb-2">{{ reconciliation.bank_account.bank_name }}</h2>
+                    <p class="mb-0 opacity-75">
+                        <i class="bi bi-calendar3 me-2"></i>{{ reconciliation.reconciliation_date|date:"M d, Y" }}
+                    </p>
+                </div>
+                <div class="col-12 col-md-4 mt-3 mt-md-0 text-md-end">
+                    {% if reconciliation.is_completed %}
+                    <span class="badge bg-success fs-6">
+                        <i class="bi bi-check-circle me-1"></i>{% trans "Completed" %}
+                    </span>
+                    {% else %}
+                    <span class="badge bg-warning fs-6">
+                        <i class="bi bi-hourglass-split me-1"></i>{% trans "In Progress" %}
+                    </span>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Balance Summary -->
+    <div class="row mb-4">
+        <div class="col-12 col-md-4 mb-3">
+            <div class="card shadow-sm border-start border-primary border-4">
+                <div class="card-body">
+                    <p class="text-muted mb-1">{% trans "Statement Balance" %}</p>
+                    <h4 class="mb-0">{{ reconciliation.statement_ending_balance|floatformat:2 }}</h4>
+                </div>
+            </div>
+        </div>
+        <div class="col-12 col-md-4 mb-3">
+            <div class="card shadow-sm border-start border-success border-4">
+                <div class="card-body">
+                    <p class="text-muted mb-1">{% trans "Book Balance" %}</p>
+                    <h4 class="mb-0">{{ reconciliation.book_balance|floatformat:2 }}</h4>
+                </div>
+            </div>
+        </div>
+        <div class="col-12 col-md-4 mb-3">
+            <div class="card shadow-sm border-start {% if reconciliation.difference == 0 %}border-success{% else %}border-danger{% endif %} border-4">
+                <div class="card-body">
+                    <p class="text-muted mb-1">{% trans "Difference" %}</p>
+                    <h4 class="mb-0 {% if reconciliation.difference == 0 %}text-success{% else %}text-danger{% endif %}">
+                        {{ reconciliation.difference|floatformat:2 }}
+                    </h4>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Matching Interface -->
+    <div class="row">
+        <div class="col-12 col-lg-6 mb-4">
+            <div class="card shadow-sm h-100">
+                <div class="card-header bg-light">
+                    <h5 class="mb-0">
+                        <i class="bi bi-bank me-2"></i>{% trans "Bank Transactions" %}
+                        <span class="badge bg-primary ms-2">{{ bank_transactions.count }}</span>
+                    </h5>
+                </div>
+                <div class="card-body matching-area" id="bankTransactions">
+                    {% for trans in bank_transactions %}
+                    <div class="transaction-item" data-id="{{ trans.id }}" data-amount="{{ trans.amount }}" onclick="selectTransaction('bank', {{ trans.id }})">
+                        <div class="d-flex justify-content-between align-items-start">
+                            <div>
+                                <strong>{{ trans.transaction_date|date:"M d, Y" }}</strong>
+                                <p class="mb-0 small">{{ trans.description|truncatewords:10 }}</p>
+                            </div>
+                            <div class="text-end">
+                                <strong class="{% if trans.transaction_type == 'DEPOSIT' %}text-success{% else %}text-danger{% endif %}">
+                                    {{ trans.amount|floatformat:2 }}
+                                </strong>
+                            </div>
+                        </div>
+                    </div>
+                    {% empty %}
+                    <div class="text-center text-muted py-4">
+                        <i class="bi bi-inbox fs-1 d-block mb-2"></i>
+                        {% trans "No unmatched bank transactions" %}
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+
+        <div class="col-12 col-lg-6 mb-4">
+            <div class="card shadow-sm h-100">
+                <div class="card-header bg-light">
+                    <h5 class="mb-0">
+                        <i class="bi bi-journal-text me-2"></i>{% trans "Book Transactions" %}
+                        <span class="badge bg-primary ms-2">{{ book_transactions.count }}</span>
+                    </h5>
+                </div>
+                <div class="card-body matching-area" id="bookTransactions">
+                    {% for trans in book_transactions %}
+                    <div class="transaction-item" data-id="{{ trans.id }}" data-amount="{{ trans.amount }}" onclick="selectTransaction('book', {{ trans.id }})">
+                        <div class="d-flex justify-content-between align-items-start">
+                            <div>
+                                <strong>{{ trans.transaction_date|date:"M d, Y" }}</strong>
+                                <p class="mb-0 small">{{ trans.description|truncatewords:10 }}</p>
+                                <small class="text-muted">{{ trans.reference_number }}</small>
+                            </div>
+                            <div class="text-end">
+                                <strong class="{% if trans.transaction_type == 'DEPOSIT' %}text-success{% else %}text-danger{% endif %}">
+                                    {{ trans.amount|floatformat:2 }}
+                                </strong>
+                            </div>
+                        </div>
+                    </div>
+                    {% empty %}
+                    <div class="text-center text-muted py-4">
+                        <i class="bi bi-inbox fs-1 d-block mb-2"></i>
+                        {% trans "No unmatched book transactions" %}
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Action Buttons -->
+    {% if not reconciliation.is_completed and perms.finance.change_bankreconciliation %}
+    <div class="d-flex gap-2 flex-wrap">
+        <button type="button" class="btn btn-success" id="matchBtn" onclick="matchSelected()" disabled>
+            <i class="bi bi-link-45deg me-1"></i>{% trans "Match Selected" %}
+        </button>
+        <button type="button" class="btn btn-primary" onclick="autoMatch()">
+            <i class="bi bi-magic me-1"></i>{% trans "Auto Match" %}
+        </button>
+        <form method="post" action="{% url 'finance:bank_reconciliation_complete' reconciliation.id %}" class="d-inline">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-outline-success" {% if reconciliation.difference != 0 %}disabled title="{% trans 'Balance must be zero to complete' %}"{% endif %}>
+                <i class="bi bi-check-circle me-1"></i>{% trans "Complete Reconciliation" %}
+            </button>
+        </form>
+        <a href="{% url 'finance:bank_reconciliation_list' %}" class="btn btn-outline-secondary">
+            <i class="bi bi-arrow-left me-1"></i>{% trans "Back" %}
+        </a>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let selectedBank = null;
+let selectedBook = null;
+
+function selectTransaction(type, id) {
+    const item = document.querySelector(`#${type}Transactions .transaction-item[data-id="${id}"]`);
+
+    if (type === 'bank') {
+        // Deselect previous
+        document.querySelectorAll('#bankTransactions .transaction-item').forEach(el => {
+            el.classList.remove('selected');
+        });
+        item.classList.add('selected');
+        selectedBank = id;
+    } else {
+        document.querySelectorAll('#bookTransactions .transaction-item').forEach(el => {
+            el.classList.remove('selected');
+        });
+        item.classList.add('selected');
+        selectedBook = id;
+    }
+
+    // Enable match button if both selected
+    const matchBtn = document.getElementById('matchBtn');
+    if (selectedBank && selectedBook) {
+        matchBtn.disabled = false;
+    }
+}
+
+function matchSelected() {
+    if (!selectedBank || !selectedBook) return;
+
+    const formData = new FormData();
+    formData.append('bank_transaction_id', selectedBank);
+    formData.append('book_transaction_id', selectedBook);
+    formData.append('csrfmiddlewaretoken', '{{ csrf_token }}');
+
+    fetch("{% url 'finance:bank_reconciliation_match' reconciliation.id %}", {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => {
+        if (response.ok) {
+            // Mark as matched and remove from list
+            document.querySelector(`#bankTransactions .transaction-item[data-id="${selectedBank}"]`).classList.add('matched-item');
+            document.querySelector(`#bookTransactions .transaction-item[data-id="${selectedBook}"]`).classList.add('matched-item');
+
+            setTimeout(() => {
+                window.location.reload();
+            }, 500);
+        }
+    });
+}
+
+function autoMatch() {
+    if (confirm('{% trans "Automatically match transactions with same amount and date?" %}')) {
+        // Implement auto-match logic
+        alert('{% trans "Auto-matching in progress..." %}');
+    }
+}
+</script>
+{% endblock %}

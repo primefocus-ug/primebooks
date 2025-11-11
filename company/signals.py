@@ -19,6 +19,8 @@ from sales.models import Sale
 from stores.models import DeviceOperatorLog
 from inventory.models import Stock
 from accounts.models import CustomUser
+from django.core.exceptions import ValidationError
+from stores.models import Store
 
 logger = logging.getLogger(__name__)
 
@@ -34,38 +36,157 @@ class DecimalEncoder(json.JSONEncoder):
 channel_layer = get_channel_layer()
 
 
+@receiver(pre_save, sender=CustomUser)
+def check_user_limit_on_create(sender, instance, **kwargs):
+    '''
+    Prevent user creation if limit reached
+    '''
+    # Only check on new user creation
+    if instance.pk:
+        return
+
+    # Skip for users without company
+    if not instance.company:
+        return
+
+    # Skip for SaaS admins
+    if instance.is_saas_admin:
+        return
+
+    company = instance.company
+
+    # Check if plan exists
+    if not company.plan:
+        raise ValidationError('Company has no active plan')
+
+    # Count existing users
+    current_users = CustomUser.objects.filter(
+        company=company,
+        is_hidden=False
+    ).count()
+
+    # Check limit
+    if current_users >= company.plan.max_users:
+        raise ValidationError(
+            f'User limit reached ({current_users}/{company.plan.max_users}). '
+            f'Please upgrade your plan to add more users.'
+        )
+
+
+@receiver(pre_save, sender=Store)
+def check_branch_limit_on_create(sender, instance, **kwargs):
+    '''
+    Prevent branch/store creation if limit reached
+    '''
+    # Only check on new store creation
+    if instance.pk:
+        return
+
+    # Skip for stores without company
+    if not instance.company:
+        return
+
+    company = instance.company
+
+    # Check if plan exists
+    if not company.plan:
+        raise ValidationError('Company has no active plan')
+
+    # Count existing branches
+    current_branches = Store.objects.filter(company=company).count()
+
+    # Check limit
+    if current_branches >= company.plan.max_branches:
+        raise ValidationError(
+            f'Branch limit reached ({current_branches}/{company.plan.max_branches}). '
+            f'Please upgrade your plan to add more branches.'
+        )
+
+
+from django.db import transaction
+from django.db.models.signals import post_save
+from django.dispatch import receiver
+from company.models import Company
+import logging
+
+logger = logging.getLogger(__name__)
+
+
 @receiver(post_save, sender=Company)
 def handle_company_efris_changes(sender, instance, created, **kwargs):
     """Handle EFRIS-related changes when company is saved"""
 
+    # Import here to avoid circular imports - FIX THE PATH
+    from company.tasks import setup_efris_for_company, sync_company_to_efris
+
     if created:
         # New company created - schedule EFRIS setup if enabled
         if instance.efris_enabled:
-            logger.info(f"Scheduling EFRIS setup for new company {instance.company_id}")
-            setup_efris_for_company.delay(instance.company_id)
+            logger.info(f"New company created with EFRIS enabled: {instance.company_id}")
+
+            # Schedule task to run AFTER the transaction commits
+            transaction.on_commit(
+                lambda: setup_efris_for_company.apply_async(
+                    args=[instance.company_id],
+                    countdown=5,
+                )
+            )
+
+            logger.info(
+                f"Scheduled EFRIS setup task for company {instance.company_id} "
+                f"(will run in 5 seconds after transaction commits)"
+            )
+        else:
+            logger.info(f"New company created without EFRIS: {instance.company_id}")
+
     else:
         # Existing company updated - check for EFRIS changes
         try:
-            old_instance = Company.objects.get(pk=instance.pk)
+            from django.db.models import ObjectDoesNotExist
+
+            old_instance = Company.objects.filter(pk=instance.pk).first()
+
+            if not old_instance:
+                logger.warning(f"Could not find old instance for company {instance.company_id}")
+                return
 
             # Check if EFRIS was just enabled
             if not old_instance.efris_enabled and instance.efris_enabled:
-                logger.info(f"EFRIS enabled for company {instance.company_id}")
-                setup_efris_for_company.delay(instance.company_id)
+                logger.info(f"EFRIS enabled for existing company {instance.company_id}")
+
+                transaction.on_commit(
+                    lambda: setup_efris_for_company.apply_async(
+                        args=[instance.company_id],
+                        countdown=2,
+                    )
+                )
 
             # Check if critical EFRIS fields changed
-            efris_fields = ['tin', 'name', 'trading_name', 'email', 'phone', 'physical_address']
-            if instance.efris_enabled and any(
-                    getattr(old_instance, field) != getattr(instance, field)
-                    for field in efris_fields
-            ):
-                logger.info(f"EFRIS data changed for company {instance.company_id}")
-                sync_company_to_efris.delay(instance.company_id)
+            elif instance.efris_enabled:
+                efris_fields = ['tin', 'name', 'trading_name', 'email', 'phone', 'physical_address']
+                fields_changed = [
+                    field for field in efris_fields
+                    if getattr(old_instance, field) != getattr(instance, field)
+                ]
 
-        except Company.DoesNotExist:
-            # This shouldn't happen but handle gracefully
-            pass
+                if fields_changed:
+                    logger.info(
+                        f"EFRIS data changed for company {instance.company_id}: "
+                        f"fields={', '.join(fields_changed)}"
+                    )
 
+                    transaction.on_commit(
+                        lambda: sync_company_to_efris.apply_async(
+                            args=[instance.company_id],
+                            countdown=1,
+                        )
+                    )
+
+        except Exception as e:
+            logger.error(
+                f"Error in EFRIS change handler for company {instance.company_id}: {e}",
+                exc_info=True
+            )
 
 @receiver(pre_save, sender=Company)
 def validate_efris_configuration(sender, instance, **kwargs):
@@ -212,9 +333,9 @@ def branch_updated_handler(sender, instance, created, **kwargs):
 
 @receiver(post_save, sender=CustomUser)
 def employee_updated_handler(sender, instance, created, **kwargs):
-    """Handle employee creation/updates"""
+    """Handle employee creation/updates."""
     if instance.is_hidden or instance.is_saas_admin:
-        return  # Don't send updates for hidden users
+        return  # Skip hidden or SaaS admin users
 
     try:
         event_type = 'employee_joined' if created else 'employee_updated'
@@ -226,17 +347,19 @@ def employee_updated_handler(sender, instance, created, **kwargs):
                 'data': {
                     'event_type': event_type,
                     'user_name': instance.get_full_name() or instance.username,
-                    'user_type': instance.user_type,
+                    'user_role': getattr(instance.primary_role, 'name', None),
                     'is_active': instance.is_active,
-                    'timestamp': instance.date_joined.isoformat() if created else instance.updated_at.isoformat() if hasattr(
-                        instance, 'updated_at') else None
-                }
-            }
+                    'timestamp': (
+                        instance.date_joined.isoformat()
+                        if created
+                        else getattr(instance, 'updated_at', instance.date_joined).isoformat()
+                    ),
+                },
+            },
         )
 
     except Exception as e:
         print(f"Error sending employee update: {e}")
-
 
 def send_performance_alert(company_id, alert_type, message, data=None):
     """Send performance alerts to company dashboard"""

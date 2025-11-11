@@ -1,0 +1,389 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Chart of Accounts{% endblock %}
+
+{% block breadcrumb_items %}
+<li class="breadcrumb-item"><a href="{% url 'finance:dashboard' %}">Finance</a></li>
+<li class="breadcrumb-item active">Chart of Accounts</li>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+    .accounts-container {
+        background: var(--bg-primary);
+        border-radius: var(--border-radius);
+        border: 1px solid var(--border-color);
+        overflow: hidden;
+    }
+
+    .accounts-header {
+        padding: 1.5rem;
+        border-bottom: 1px solid var(--border-color);
+        background: var(--bg-secondary);
+    }
+
+    .accounts-filters {
+        display: flex;
+        gap: 1rem;
+        flex-wrap: wrap;
+        margin-bottom: 1rem;
+    }
+
+    .accounts-table {
+        width: 100%;
+        border-collapse: collapse;
+    }
+
+    .accounts-table thead {
+        background: var(--bg-tertiary);
+        border-bottom: 2px solid var(--border-color);
+        position: sticky;
+        top: 0;
+        z-index: 10;
+    }
+
+    .accounts-table th {
+        padding: 1rem 1.5rem;
+        text-align: left;
+        font-weight: 600;
+        font-size: 0.875rem;
+        color: var(--text-secondary);
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+
+    .accounts-table td {
+        padding: 1rem 1.5rem;
+        border-bottom: 1px solid var(--border-color-light);
+    }
+
+    .accounts-table tbody tr {
+        transition: background 0.2s ease;
+    }
+
+    .accounts-table tbody tr:hover {
+        background: var(--bg-secondary);
+    }
+
+    .account-row {
+        cursor: pointer;
+    }
+
+    .account-code {
+        font-weight: 600;
+        color: var(--primary-600);
+        font-family: 'Courier New', monospace;
+    }
+
+    .account-name {
+        font-weight: 500;
+        color: var(--text-primary);
+    }
+
+    .account-type-badge {
+        display: inline-block;
+        padding: 0.25rem 0.75rem;
+        border-radius: 20px;
+        font-size: 0.75rem;
+        font-weight: 600;
+        text-transform: uppercase;
+    }
+
+    .account-type-ASSET { background: rgba(59, 130, 246, 0.1); color: #2563eb; }
+    .account-type-LIABILITY { background: rgba(239, 68, 68, 0.1); color: #dc2626; }
+    .account-type-EQUITY { background: rgba(16, 185, 129, 0.1); color: #059669; }
+    .account-type-REVENUE { background: rgba(34, 197, 94, 0.1); color: #16a34a; }
+    .account-type-EXPENSE { background: rgba(245, 158, 11, 0.1); color: #d97706; }
+
+    .account-balance {
+        font-weight: 600;
+        font-family: 'Courier New', monospace;
+        text-align: right;
+    }
+
+    .account-balance.positive {
+        color: var(--finance-success);
+    }
+
+    .account-balance.negative {
+        color: var(--finance-danger);
+    }
+
+    .account-actions {
+        display: flex;
+        gap: 0.5rem;
+        justify-content: flex-end;
+    }
+
+    .account-actions .btn {
+        padding: 0.375rem 0.75rem;
+        font-size: 0.875rem;
+    }
+
+    .indent-level-1 { padding-left: 3rem !important; }
+    .indent-level-2 { padding-left: 4.5rem !important; }
+    .indent-level-3 { padding-left: 6rem !important; }
+
+    .account-header-row {
+        font-weight: 700;
+        background: var(--bg-tertiary);
+    }
+
+    .empty-state {
+        text-align: center;
+        padding: 4rem 2rem;
+        color: var(--text-secondary);
+    }
+
+    .empty-state i {
+        font-size: 4rem;
+        margin-bottom: 1rem;
+        opacity: 0.5;
+    }
+
+    @media (max-width: 768px) {
+        .accounts-table {
+            display: block;
+            overflow-x:overflow-x: auto;
+        }
+
+        .accounts-filters {
+            flex-direction: column;
+        }
+
+        .accounts-filters .form-control,
+        .accounts-filters .form-select {
+            width: 100%;
+        }
+
+        .accounts-table th,
+        .accounts-table td {
+            padding: 0.75rem;
+            font-size: 0.875rem;
+        }
+
+        .account-actions {
+            flex-direction: column;
+        }
+
+        .account-actions .btn {
+            width: 100%;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- Page Header -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h1 class="h3 mb-1 fw-bold">Chart of Accounts</h1>
+            <p class="text-muted mb-0">Manage your account structure and balances</p>
+        </div>
+        <a href="{% url 'finance:chart_of_accounts_create' %}" class="btn btn-primary">
+            <i class="bi bi-plus-lg me-2"></i>New Account
+        </a>
+    </div>
+
+    <!-- Accounts Container -->
+    <div class="accounts-container">
+        <div class="accounts-header">
+            <!-- Filters -->
+            <div class="accounts-filters">
+                <div class="flex-grow-1">
+                    <div class="input-group">
+                        <span class="input-group-text">
+                            <i class="bi bi-search"></i>
+                        </span>
+                        <input type="text" class="form-control" id="searchAccounts" placeholder="Search accounts...">
+                    </div>
+                </div>
+                <select class="form-select" id="filterAccountType" style="max-width: 200px;">
+                    <option value="">All Types</option>
+                    {% for type in account_types %}
+                    <option value="{{ type.0 }}">{{ type.1 }}</option>
+                    {% endfor %}
+                </select>
+                <select class="form-select" id="filterCurrency" style="max-width: 150px;">
+                    <option value="">All Currencies</option>
+                    {% for currency in currencies %}
+                    <option value="{{ currency.id }}">{{ currency.code }}</option>
+                    {% endfor %}
+                </select>
+                <div class="form-check form-switch d-flex align-items-center">
+                    <input class="form-check-input" type="checkbox" id="showInactive">
+                    <label class="form-check-label ms-2" for="showInactive">Show Inactive</label>
+                </div>
+            </div>
+
+            <!-- Summary Stats -->
+            <div class="row g-3 mt-2">
+                <div class="col-md-3">
+                    <div class="p-2 rounded" style="background: var(--bg-primary);">
+                        <small class="text-muted d-block">Total Accounts</small>
+                        <span class="h5 mb-0 fw-bold">{{ root_accounts|length }}</span>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="p-2 rounded" style="background: var(--bg-primary);">
+                        <small class="text-muted d-block">Active</small>
+                        <span class="h5 mb-0 fw-bold text-success">{{ root_accounts|length }}</span>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="p-2 rounded" style="background: var(--bg-primary);">
+                        <small class="text-muted d-block">Total Balance</small>
+                        <span class="h5 mb-0 fw-bold">$0.00</span>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="p-2 rounded" style="background: var(--bg-primary);">
+                        <small class="text-muted d-block">Currencies</small>
+                        <span class="h5 mb-0 fw-bold">{{ currencies|length }}</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Accounts Table -->
+        <div class="table-responsive">
+            <table class="accounts-table" id="accountsTable">
+                <thead>
+                    <tr>
+                        <th style="width: 120px;">Code</th>
+                        <th>Account Name</th>
+                        <th style="width: 150px;">Type</th>
+                        <th style="width: 100px;">Currency</th>
+                        <th style="width: 150px;" class="text-end">Balance</th>
+                        <th style="width: 120px;">Status</th>
+                        <th style="width: 150px;" class="text-end">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for account in root_accounts %}
+                    <tr class="account-row" data-account-id="{{ account.id }}" data-type="{{ account.account_type }}" data-currency="{{ account.currency.id }}">
+                        <td>
+                            <span class="account-code">{{ account.code }}</span>
+                        </td>
+                        <td>
+                            <div class="d-flex align-items-center">
+                                {% if account.is_header %}
+                                <i class="bi bi-folder me-2 text-primary"></i>
+                                {% else %}
+                                <i class="bi bi-file-text me-2 text-muted"></i>
+                                {% endif %}
+                                <span class="account-name">{{ account.name }}</span>
+                            </div>
+                        </td>
+                        <td>
+                            <span class="account-type-badge account-type-{{ account.account_type }}">
+                                {{ account.get_account_type_display }}
+                            </span>
+                        </td>
+                        <td>
+                            <span class="badge bg-secondary">{{ account.currency.code }}</span>
+                        </td>
+                        <td class="account-balance {% if account.current_balance >= 0 %}positive{% else %}negative{% endif %}">
+                            {{ account.currency.symbol }}{{ account.current_balance|floatformat:2 }}
+                        </td>
+                        <td>
+                            {% if account.is_active %}
+                            <span class="badge bg-success">Active</span>
+                            {% else %}
+                            <span class="badge bg-secondary">Inactive</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <div class="account-actions">
+                                <a href="{% url 'finance:chart_of_accounts_detail' account.pk %}" class="btn btn-sm btn-outline-primary" title="View Details">
+                                    <i class="bi bi-eye"></i>
+                                </a>
+                                <a href="{% url 'finance:chart_of_accounts_update' account.pk %}" class="btn btn-sm btn-outline-secondary" title="Edit">
+                                    <i class="bi bi-pencil"></i>
+                                </a>
+                            </div>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="7">
+                            <div class="empty-state">
+                                <i class="bi bi-inbox"></i>
+                                <h5>No Accounts Found</h5>
+                                <p class="mb-3">Start by creating your first account</p>
+                                <a href="{% url 'finance:chart_of_accounts_create' %}" class="btn btn-primary">
+                                    <i class="bi bi-plus-lg me-2"></i>Create Account
+                                </a>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const searchInput = document.getElementById('searchAccounts');
+    const typeFilter = document.getElementById('filterAccountType');
+    const currencyFilter = document.getElementById('filterCurrency');
+    const showInactive = document.getElementById('showInactive');
+    const tableRows = document.querySelectorAll('.account-row');
+
+    function filterAccounts() {
+        const searchTerm = searchInput.value.toLowerCase();
+        const selectedType = typeFilter.value;
+        const selectedCurrency = currencyFilter.value;
+        const showInactiveAccounts = showInactive.checked;
+
+        tableRows.forEach(row => {
+            const code = row.querySelector('.account-code').textContent.toLowerCase();
+            const name = row.querySelector('.account-name').textContent.toLowerCase();
+            const type = row.dataset.type;
+            const currency = row.dataset.currency;
+            const isActive = row.querySelector('.badge.bg-success') !== null;
+
+            const matchesSearch = code.includes(searchTerm) || name.includes(searchTerm);
+            const matchesType = !selectedType || type === selectedType;
+            const matchesCurrency = !selectedCurrency || currency === selectedCurrency;
+            const matchesStatus = showInactiveAccounts || isActive;
+
+            if (matchesSearch && matchesType && matchesCurrency && matchesStatus) {
+                row.style.display = '';
+            } else {
+                row.style.display = 'none';
+            }
+        });
+
+        // Show empty state if no results
+        const visibleRows = Array.from(tableRows).filter(row => row.style.display !== 'none');
+        const emptyState = document.querySelector('.empty-state');
+        if (emptyState) {
+            emptyState.style.display = visibleRows.length === 0 ? 'block' : 'none';
+        }
+    }
+
+    // Event listeners
+    searchInput?.addEventListener('input', filterAccounts);
+    typeFilter?.addEventListener('change', filterAccounts);
+    currencyFilter?.addEventListener('change', filterAccounts);
+    showInactive?.addEventListener('change', filterAccounts);
+
+    // Row click to view details
+    tableRows.forEach(row => {
+        row.addEventListener('click', function(e) {
+            if (!e.target.closest('.account-actions')) {
+                const accountId = this.dataset.accountId;
+                window.location.href = `/finance/chart-of-accounts/${accountId}/`;
+            }
+        });
+    });
+});
+</script>
+{% endblock %}

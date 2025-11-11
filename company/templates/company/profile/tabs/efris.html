@@ -1,0 +1,400 @@
+{% load static %}
+
+<!-- EFRIS Tab Content -->
+<div class="row">
+    <div class="col-lg-8">
+        <div class="card mb-4">
+            <div class="card-header">
+                <div class="d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">EFRIS Integration</h5>
+                    <span class="badge bg-{{ efris_active|yesno:'success,danger' }}">
+                        {{ efris_status_display }}
+                    </span>
+                </div>
+            </div>
+            <div class="card-body">
+                <!-- EFRIS Status -->
+                {% if configuration_errors %}
+                <div class="alert alert-warning mb-4">
+                    <strong>Configuration Incomplete</strong>
+                    <ul class="mb-0 mt-2">
+                        {% for error in configuration_errors %}
+                        <li>{{ error }}</li>
+                        {% endfor %}
+                    </ul>
+                </div>
+                {% endif %}
+
+                {% if efris_enabled and efris_active and configuration_complete %}
+                <div class="alert alert-success mb-4">
+                    <i class="bi bi-check-circle-fill me-2"></i>
+                    <strong>EFRIS is Active</strong>
+                    <br><small>Your company is connected to EFRIS and ready for fiscalization</small>
+                    {% if last_sync %}
+                    <br><small class="text-muted">Last sync: {{ last_sync|timesince }} ago</small>
+                    {% endif %}
+                </div>
+                {% endif %}
+
+                <!-- EFRIS Configuration Form -->
+                <form id="efris-settings-form" method="post">
+                    {% csrf_token %}
+
+                    <h6 class="mb-3 text-primary">EFRIS Settings</h6>
+
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" id="efris_enabled"
+                                       name="efris_enabled" {% if efris_enabled %}checked{% endif %}>
+                                <label class="form-check-label" for="efris_enabled">
+                                    <strong>Enable EFRIS Integration</strong>
+                                    <br><small class="text-muted">Master switch for EFRIS functionality</small>
+                                </label>
+                            </div>
+                        </div>
+
+                        <div class="col-md-6">
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" id="efris_is_production"
+                                       name="efris_is_production" {% if efris_is_production %}checked{% endif %}>
+                                <label class="form-check-label" for="efris_is_production">
+                                    <strong>Production Mode</strong>
+                                    <br><small class="text-muted">Use live EFRIS servers</small>
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="efris_integration_mode" class="form-label">Integration Mode</label>
+                        <select class="form-select" id="efris_integration_mode" name="efris_integration_mode">
+                            <option value="offline" {% if efris_mode == 'offline' %}selected{% endif %}>
+                                Offline Mode (Manual Upload)
+                            </option>
+                            <option value="online" {% if efris_mode == 'online' %}selected{% endif %}>
+                                Online Mode (Real-time)
+                            </option>
+                        </select>
+                    </div>
+
+                    <h6 class="mb-3 text-primary mt-4">Business Information</h6>
+                    <p class="small text-muted">This information is mapped from your company profile</p>
+
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label">Taxpayer Name</label>
+                            <input type="text" class="form-control bg-light"
+                                   value="{{ company.name }}" readonly>
+                            <small class="text-muted">From: Legal Company Name</small>
+                        </div>
+
+                        <div class="col-md-6">
+                            <label class="form-label">Business Name</label>
+                            <input type="text" class="form-control bg-light"
+                                   value="{{ company.trading_name|default:company.name }}" readonly>
+                            <small class="text-muted">From: Trading Name</small>
+                        </div>
+                    </div>
+
+                    <div class="row mb-3">
+                        <div class="col-md-4">
+                            <label class="form-label">TIN</label>
+                            <input type="text" class="form-control bg-light"
+                                   value="{{ company.tin|default:'Not set' }}" readonly>
+                        </div>
+
+                        <div class="col-md-4">
+                            <label class="form-label">Email</label>
+                            <input type="text" class="form-control bg-light"
+                                   value="{{ company.email }}" readonly>
+                        </div>
+
+                        <div class="col-md-4">
+                            <label class="form-label">Phone</label>
+                            <input type="text" class="form-control bg-light"
+                                   value="{{ company.phone }}" readonly>
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Business Address</label>
+                        <textarea class="form-control bg-light" rows="2" readonly>{{ company.physical_address }}</textarea>
+                    </div>
+
+                    <div class="alert alert-info">
+                        <i class="bi bi-info-circle me-2"></i>
+                        To update EFRIS business information, edit your company profile in the Settings tab.
+                    </div>
+
+                    <h6 class="mb-3 text-primary mt-4">EFRIS API Credentials</h6>
+
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label for="efris_device_number" class="form-label">Device Number</label>
+                            <input type="text" class="form-control" id="efris_device_number"
+                                   name="efris_device_number"
+                                   value="{{ company.efris_device_number|default:'' }}"
+                                   placeholder="e.g., 1234567890">
+                        </div>
+
+                        <div class="col-md-6">
+                            <label for="efris_client_id" class="form-label">Client ID</label>
+                            <input type="text" class="form-control" id="efris_client_id"
+                                   name="efris_client_id"
+                                   value="{{ company.efris_client_id|default:'' }}">
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="efris_api_key" class="form-label">API Key</label>
+                        <div class="input-group">
+                            <input type="password" class="form-control" id="efris_api_key"
+                                   name="efris_api_key"
+                                   value="{{ company.efris_api_key|default:'' }}"
+                                   placeholder="Enter EFRIS API Key">
+                            <button class="btn btn-outline-secondary" type="button"
+                                    onclick="togglePassword('efris_api_key')">
+                                <i class="bi bi-eye"></i>
+                            </button>
+                        </div>
+                    </div>
+
+                    <h6 class="mb-3 text-primary mt-4">Automation Settings</h6>
+
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox"
+                                       id="efris_auto_fiscalize_sales" name="efris_auto_fiscalize_sales"
+                                       {% if company.efris_auto_fiscalize_sales %}checked{% endif %}>
+                                <label class="form-check-label" for="efris_auto_fiscalize_sales">
+                                    Auto-Fiscalize Sales
+                                    <br><small class="text-muted">Automatically fiscalize completed invoices</small>
+                                </label>
+                            </div>
+                        </div>
+
+                        <div class="col-md-6">
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox"
+                                       id="efris_auto_sync_products" name="efris_auto_sync_products"
+                                       {% if company.efris_auto_sync_products %}checked{% endif %}>
+                                <label class="form-check-label" for="efris_auto_sync_products">
+                                    Auto-Sync Products
+                                    <br><small class="text-muted">Create EFRIS goods for new products</small>
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="d-flex justify-content-end gap-2 mt-4">
+                        <button type="button" class="btn btn-outline-secondary" onclick="testEFRISConnection()">
+                            <i class="bi bi-plug me-2"></i>Test Connection
+                        </button>
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-check-lg me-2"></i>Save EFRIS Settings
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- EFRIS Status Sidebar -->
+    <div class="col-lg-4">
+        <div class="card mb-3">
+            <div class="card-header">
+                <h6 class="mb-0">EFRIS Status</h6>
+            </div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <span class="text-muted">Enabled</span>
+                        <strong class="text-{{ efris_enabled|yesno:'success,danger' }}">
+                            {{ efris_enabled|yesno:'Yes,No' }}
+                        </strong>
+                    </div>
+
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <span class="text-muted">Active</span>
+                        <strong class="text-{{ efris_active|yesno:'success,danger' }}">
+                            {{ efris_active|yesno:'Yes,No' }}
+                        </strong>
+                    </div>
+
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <span class="text-muted">Registered</span>
+                        <strong class="text-{{ efris_registered|yesno:'success,warning' }}">
+                            {{ efris_registered|yesno:'Yes,No' }}
+                        </strong>
+                    </div>
+
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <span class="text-muted">Configuration</span>
+                        <strong class="text-{{ configuration_complete|yesno:'success,warning' }}">
+                            {{ configuration_complete|yesno:'Complete,Incomplete' }}
+                        </strong>
+                    </div>
+
+                    <div class="d-flex justify-content-between align-items-center">
+                        <span class="text-muted">Environment</span>
+                        <strong>{{ efris_environment }}</strong>
+                    </div>
+                </div>
+
+                {% if last_sync %}
+                <div class="border-top pt-3">
+                    <small class="text-muted">Last Sync</small>
+                    <div>{{ last_sync|date:"M d, Y H:i" }}</div>
+                    <small class="text-muted">{{ last_sync|timesince }} ago</small>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <div class="card mb-3">
+            <div class="card-header">
+                <h6 class="mb-0">Quick Actions</h6>
+            </div>
+            <div class="card-body">
+                <button class="btn btn-outline-primary w-100 mb-2" onclick="syncEFRISData()">
+                    <i class="bi bi-arrow-repeat me-2"></i>Sync Data
+                </button>
+                <button class="btn btn-outline-info w-100 mb-2" onclick="viewEFRISLogs()">
+                    <i class="bi bi-journal-text me-2"></i>View Logs
+                </button>
+                <a href="{% url 'efris:dashboard' %}" class="btn btn-outline-secondary w-100">
+                    <i class="bi bi-speedometer2 me-2"></i>EFRIS Dashboard
+                </a>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <h6 class="mb-0">Help & Documentation</h6>
+            </div>
+            <div class="card-body">
+                <p class="small text-muted mb-2">
+                    Need help setting up EFRIS integration?
+                </p>
+                <a href="#" class="btn btn-sm btn-outline-primary w-100 mb-2">
+                    <i class="bi bi-book me-1"></i>Setup Guide
+                </a>
+                <a href="https://www.ura.go.ug/efris" target="_blank"
+                   class="btn btn-sm btn-outline-secondary w-100">
+                    <i class="bi bi-box-arrow-up-right me-1"></i>EFRIS Portal
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function togglePassword(fieldId) {
+    const field = document.getElementById(fieldId);
+    const icon = event.target.closest('button').querySelector('i');
+
+    if (field.type === 'password') {
+        field.type = 'text';
+        icon.classList.remove('bi-eye');
+        icon.classList.add('bi-eye-slash');
+    } else {
+        field.type = 'password';
+        icon.classList.remove('bi-eye-slash');
+        icon.classList.add('bi-eye');
+    }
+}
+
+async function testEFRISConnection() {
+    const btn = event.target;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Testing...';
+
+    try {
+        const response = await fetch('/efris/api/test-connection/', {
+            method: 'POST',
+            headers: {
+                'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value,
+                'X-Requested-With': 'XMLHttpRequest'
+            }
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            window.companyProfile.showNotification('success', 'EFRIS connection successful!');
+        } else {
+            window.companyProfile.showNotification('error', data.message || 'Connection failed');
+        }
+    } catch (error) {
+        window.companyProfile.showNotification('error', 'Error testing connection');
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-plug me-2"></i>Test Connection';
+    }
+}
+
+async function syncEFRISData() {
+    if (!confirm('Sync all EFRIS data? This may take a few minutes.')) return;
+
+    const btn = event.target;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Syncing...';
+
+    try {
+        const response = await fetch('/efris/api/sync/', {
+            method: 'POST',
+            headers: {
+                'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value,
+                'X-Requested-With': 'XMLHttpRequest'
+            }
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            window.companyProfile.showNotification('success', 'EFRIS data synced successfully!');
+            setTimeout(() => window.location.reload(), 2000);
+        } else {
+            window.companyProfile.showNotification('error', data.message || 'Sync failed');
+        }
+    } catch (error) {
+        window.companyProfile.showNotification('error', 'Error syncing data');
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-arrow-repeat me-2"></i>Sync Data';
+    }
+}
+
+function viewEFRISLogs() {
+    window.location.href = '/efris/logs/';
+}
+
+// Form submission
+document.getElementById('efris-settings-form').addEventListener('submit', async function(e) {
+    e.preventDefault();
+
+    const formData = new FormData(this);
+
+    try {
+        const response = await fetch(window.location.href, {
+            method: 'POST',
+            body: formData,
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest'
+            }
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            window.companyProfile.showNotification('success', 'EFRIS settings saved successfully');
+        } else {
+            window.companyProfile.showNotification('error', data.message || 'Failed to save settings');
+        }
+    } catch (error) {
+        window.companyProfile.showNotification('error', 'Error saving settings');
+    }
+});
+</script>

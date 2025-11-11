@@ -173,6 +173,31 @@ class CompanyAdmin(TenantAdminMixin, admin.ModelAdmin):
         'disable_efris'
     ]
 
+    def get_form(self, request, obj=None, **kwargs):
+        form = super().get_form(request, obj, **kwargs)
+
+        # Explicitly make optional fields not required
+        optional_fields = [
+            'brand_colors',
+            'logo',
+            'favicon',
+            'description',
+            'website',
+            'postal_address',
+            'ip_whitelist',
+            'tags',
+            'brn',
+            'nin',
+            'vat_registration_number',
+            'efris_certificate_data',
+        ]
+
+        for field in optional_fields:
+            if field in form.base_fields:
+                form.base_fields[field].required = False
+
+        return form
+
     def status_badge(self, obj):
         colors = {
             'ACTIVE': 'green',

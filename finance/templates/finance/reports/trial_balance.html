@@ -1,0 +1,327 @@
+{% extends 'base.html' %}
+{% load i18n %}
+{% load static %}
+
+{% block title %}{% trans "Trial Balance" %} | {{ block.super }}{% endblock %}
+
+{% block breadcrumb_items %}
+<li class="breadcrumb-item"><a href="{% url 'finance:dashboard' %}">{% trans "Finance" %}</a></li>
+<li class="breadcrumb-item"><a href="{% url 'finance:financial_reports_dashboard' %}">{% trans "Reports" %}</a></li>
+<li class="breadcrumb-item active">{% trans "Trial Balance" %}</li>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+    .balance-indicator {
+        width: 20px;
+        height: 20px;
+        border-radius: 50%;
+        display: inline-block;
+        margin-left: 0.5rem;
+    }
+
+    .balance-indicator.balanced {
+        background-color: var(--green-500);
+    }
+
+    .balance-indicator.unbalanced {
+        background-color: var(--red-500);
+        animation: pulse 1.5s infinite;
+    }
+
+    @keyframes pulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.5; }
+    }
+
+    .total-row {
+        font-weight: 700;
+        font-size: 1.1rem;
+        background-color: var(--primary-50);
+        border-top: 3px solid var(--primary-600);
+        border-bottom: 3px double var(--primary-600);
+    }
+
+    [data-theme="dark"] .total-row {
+        background-color: rgba(59, 130, 246, 0.15);
+    }
+
+    .account-code {
+        font-family: 'Courier New', monospace;
+        font-weight: 600;
+        color: var(--primary-600);
+    }
+
+    .zero-balance-row {
+        opacity: 0.6;
+    }
+
+    @media (max-width: 767.98px) {
+        .trial-balance-table {
+            font-size: 0.85rem;
+        }
+
+        .account-code {
+            display: block;
+            font-size: 0.75rem;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- Page Header -->
+    <div class="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center mb-4">
+        <div class="mb-3 mb-md-0">
+            <h1 class="h3 mb-2 text-primary">
+                <i class="bi bi-balance-scale me-2"></i>{% trans "Trial Balance" %}
+            </h1>
+            <p class="text-muted mb-0">
+                {% trans "Verify accounting balance integrity" %}
+                <span class="balance-indicator {% if is_balanced %}balanced{% else %}unbalanced{% endif %}"
+                      title="{% if is_balanced %}{% trans 'Balanced' %}{% else %}{% trans 'Unbalanced' %}{% endif %}">
+                </span>
+            </p>
+        </div>
+        <div class="d-flex flex-wrap gap-2">
+            {% if perms.finance.view_financialreport %}
+            <button type="button" class="btn btn-outline-primary" onclick="window.print()">
+                <i class="bi bi-printer me-1"></i>{% trans "Print" %}
+            </button>
+            <a href="{% url 'finance:export_trial_balance_csv' %}?as_of_date={{ as_of_date|date:'Y-m-d' }}"
+               class="btn btn-outline-success">
+                <i class="bi bi-file-earmark-excel me-1"></i>{% trans "Export CSV" %}
+            </a>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Date Filter -->
+    <div class="card shadow-sm mb-4">
+        <div class="card-header bg-light">
+            <h5 class="mb-0">
+                <i class="bi bi-calendar3 me-2"></i>{% trans "As of Date" %}
+            </h5>
+        </div>
+        <div class="card-body">
+            <form method="get" class="row g-3">
+                <div class="col-12 col-sm-6 col-lg-4">
+                    <label for="as_of_date" class="form-label">{% trans "Select Date" %}</label>
+                    <input type="date" class="form-control" id="as_of_date" name="as_of_date"
+                           value="{{ as_of_date|date:'Y-m-d' }}" required>
+                </div>
+                <div class="col-12 col-sm-6 col-lg-4">
+                    <label class="form-label d-block">&nbsp;</label>
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" id="hide_zero" name="hide_zero"
+                               {% if request.GET.hide_zero %}checked{% endif %}>
+                        <label class="form-check-label" for="hide_zero">
+                            {% trans "Hide Zero Balances" %}
+                        </label>
+                    </div>
+                </div>
+                <div class="col-12 col-lg-4 d-flex align-items-end">
+                    <button type="submit" class="btn btn-primary w-100">
+                        <i class="bi bi-search me-1"></i>{% trans "Generate Report" %}
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Balance Status Alert -->
+    {% if not is_balanced %}
+    <div class="alert alert-danger d-flex align-items-center" role="alert">
+        <i class="bi bi-exclamation-triangle-fill me-2 fs-4"></i>
+        <div>
+            <strong>{% trans "Warning:" %}</strong>
+            {% trans "Trial balance is not balanced. Please review your journal entries." %}
+            <br>
+            <small>{% trans "Difference:" %} <strong>{{ total_debit|add:"-"|add:total_credit|floatformat:2 }}</strong></small>
+        </div>
+    </div>
+    {% else %}
+    <div class="alert alert-success d-flex align-items-center" role="alert">
+        <i class="bi bi-check-circle-fill me-2 fs-4"></i>
+        <div>
+            <strong>{% trans "Success:" %}</strong>
+            {% trans "Trial balance is perfectly balanced!" %}
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Trial Balance Table -->
+    <div class="card shadow-sm">
+        <div class="card-header bg-primary text-white">
+            <div class="d-flex justify-content-between align-items-center">
+                <h4 class="mb-0">{% trans "Trial Balance" %}</h4>
+                <span class="badge bg-light text-primary">
+                    {% trans "As of" %} {{ as_of_date|date:"M d, Y" }}
+                </span>
+            </div>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table trial-balance-table table-hover mb-0">
+                    <thead class="bg-light">
+                        <tr>
+                            <th style="width: 15%;">{% trans "Account Code" %}</th>
+                            <th style="width: 45%;">{% trans "Account Name" %}</th>
+                            <th class="text-end" style="width: 20%;">{% trans "Debit" %}</th>
+                            <th class="text-end" style="width: 20%;">{% trans "Credit" %}</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for item in trial_balance_data %}
+                        <tr {% if item.debit == 0 and item.credit == 0 %}class="zero-balance-row"{% endif %}>
+                            <td>
+                                <span class="account-code">{{ item.account.code }}</span>
+                            </td>
+                            <td>
+                                <a href="{% url 'finance:chart_of_accounts_detail' item.account.id %}"
+                                   class="text-decoration-none">
+                                    {{ item.account.name }}
+                                </a>
+                                <br>
+                                <small class="text-muted">{{ item.account.get_account_type_display }}</small>
+                            </td>
+                            <td class="text-end">
+                                {% if item.debit > 0 %}
+                                    {{ item.debit|floatformat:2 }}
+                                {% else %}
+                                    <span class="text-muted">-</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-end">
+                                {% if item.credit > 0 %}
+                                    {{ item.credit|floatformat:2 }}
+                                {% else %}
+                                    <span class="text-muted">-</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="4" class="text-center text-muted py-4">
+                                <i class="bi bi-inbox fs-1 d-block mb-2"></i>
+                                {% trans "No accounts with balances found" %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+
+                        <!-- Total Row -->
+                        <tr class="total-row">
+                            <td colspan="2" class="text-end">{% trans "TOTAL" %}</td>
+                            <td class="text-end">{{ total_debit|floatformat:2 }}</td>
+                            <td class="text-end">{{ total_credit|floatformat:2 }}</td>
+                        </tr>
+
+                        <!-- Difference Row (if unbalanced) -->
+                        {% if not is_balanced %}
+                        <tr class="table-danger">
+                            <td colspan="2" class="text-end fw-bold">{% trans "DIFFERENCE" %}</td>
+                            <td colspan="2" class="text-end fw-bold text-danger">
+                                {{ total_debit|add:"-"|add:total_credit|floatformat:2 }}
+                            </td>
+                        </tr>
+                        {% endif %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Summary Statistics -->
+    <div class="row mt-4">
+        <div class="col-12 col-md-6 col-lg-4 mb-3">
+            <div class="card shadow-sm border-start border-primary border-4">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <p class="text-muted mb-1">{% trans "Total Debits" %}</p>
+                            <h4 class="mb-0">{{ total_debit|floatformat:2 }}</h4>
+                        </div>
+                        <div class="text-primary">
+                            <i class="bi bi-arrow-up-circle fs-2"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-12 col-md-6 col-lg-4 mb-3">
+            <div class="card shadow-sm border-start border-success border-4">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <p class="text-muted mb-1">{% trans "Total Credits" %}</p>
+                            <h4 class="mb-0">{{ total_credit|floatformat:2 }}</h4>
+                        </div>
+                        <div class="text-success">
+                            <i class="bi bi-arrow-down-circle fs-2"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-12 col-md-12 col-lg-4 mb-3">
+            <div class="card shadow-sm border-start {% if is_balanced %}border-success{% else %}border-danger{% endif %} border-4">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <p class="text-muted mb-1">{% trans "Balance Status" %}</p>
+                            <h4 class="mb-0 {% if is_balanced %}text-success{% else %}text-danger{% endif %}">
+                                {% if is_balanced %}
+                                    <i class="bi bi-check-circle-fill me-1"></i>{% trans "Balanced" %}
+                                {% else %}
+                                    <i class="bi bi-x-circle-fill me-1"></i>{% trans "Unbalanced" %}
+                                {% endif %}
+                            </h4>
+                        </div>
+                        <div class="{% if is_balanced %}text-success{% else %}text-danger{% endif %}">
+                            <i class="bi {% if is_balanced %}bi-check2-circle{% else %}bi-exclamation-triangle{% endif %} fs-2"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Account Type Breakdown -->
+    <div class="card shadow-sm mt-4">
+        <div class="card-header bg-light">
+            <h5 class="mb-0">
+                <i class="bi bi-pie-chart me-2"></i>{% trans "Balance by Account Type" %}
+            </h5>
+        </div>
+        <div class="card-body">
+            <div class="row">
+                {% for type, display in account_types %}
+                <div class="col-12 col-sm-6 col-lg-4 mb-3">
+                    <div class="d-flex justify-content-between align-items-center p-3 bg-light rounded">
+                        <span class="fw-medium">{{ display }}</span>
+                        <span class="badge bg-primary">
+                            {{ trial_balance_data|length }}
+                        </span>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Auto-refresh balance status indicator
+    const balanceIndicator = document.querySelector('.balance-indicator');
+    if (balanceIndicator && !balanceIndicator.classList.contains('balanced')) {
+        setInterval(() => {
+            balanceIndicator.style.opacity = balanceIndicator.style.opacity === '0.5' ? '1' : '0.5';
+        }, 750);
+    }
+});
+</script>
+{% endblock %}

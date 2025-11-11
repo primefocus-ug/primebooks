@@ -513,16 +513,29 @@ class Store(models.Model):
         return f"{company_name} - {self.name}"
 
     def save(self, *args, **kwargs):
-        # Ensure only one main branch per company
-        if self.is_main_branch:
-            Store.objects.filter(
-                company=self.company,
-                is_main_branch=True
-            ).exclude(id=self.id).update(is_main_branch=False)
+        skip_main_branch_update = kwargs.pop('skip_main_branch_update', False)
 
         # Auto-generate code if not provided
         if not self.code:
             self.code = f"ST-{uuid.uuid4().hex[:6].upper()}"
+
+        # Set default values for required fields
+        if self.allows_sales is None:
+            self.allows_sales = True
+        if self.allows_inventory is None:
+            self.allows_inventory = True
+
+        # Only try to update other stores if this store has an ID (already exists)
+        # and if we're setting it as main branch and not skipping the logic
+        if not skip_main_branch_update and self.id and self.is_main_branch and self.company:
+            try:
+                Store.objects.filter(
+                    company=self.company,
+                    is_main_branch=True
+                ).exclude(id=self.id).update(is_main_branch=False)
+            except Exception as e:
+                # If this fails (e.g., table doesn't exist or no other stores), just log and continue
+                print(f"Warning: Could not update other stores: {e}")
 
         super().save(*args, **kwargs)
 

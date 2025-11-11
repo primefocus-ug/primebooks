@@ -1,0 +1,865 @@
+{% extends 'base.html' %}
+{% load static %}
+{% load humanize %}
+{% load i18n %}
+
+{% block title %}{% trans "Finance Dashboard" %}{% endblock %}
+
+{% block breadcrumb_items %}
+<li class="breadcrumb-item"><a href="{% url 'user_dashboard' %}">{% trans "Home" %}</a></li>
+<li class="breadcrumb-item active">{% trans "Finance Dashboard" %}</li>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+    :root {
+        --finance-primary: #0d6efd;
+        --finance-success: #10b981;
+        --finance-warning: #f59e0b;
+        --finance-danger: #ef4444;
+        --finance-info: #3b82f6;
+        --card-hover-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+    }
+
+    [data-theme="dark"] {
+        --finance-primary: #60a5fa;
+        --finance-success: #34d399;
+        --finance-warning: #fbbf24;
+        --finance-danger: #f87171;
+        --finance-info: #60a5fa;
+        --card-hover-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+    }
+
+    .dashboard-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+        gap: 1.5rem;
+        margin-bottom: 2rem;
+    }
+
+    .stat-card {
+        background: var(--bg-primary);
+        border-radius: var(--border-radius);
+        padding: 1.5rem;
+        border: 1px solid var(--border-color);
+        transition: all 0.3s ease;
+        position: relative;
+        overflow: hidden;
+    }
+
+    .stat-card::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 4px;
+        background: var(--stat-color);
+        opacity: 0;
+        transition: opacity 0.3s ease;
+    }
+
+    .stat-card:hover {
+        transform: translateY(-4px);
+        box-shadow: var(--card-hover-shadow);
+        border-color: var(--stat-color);
+    }
+
+    .stat-card:hover::before {
+        opacity: 1;
+    }
+
+    .stat-icon {
+        width: 60px;
+        height: 60px;
+        border-radius: 12px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.75rem;
+        margin-bottom: 1rem;
+        background: linear-gradient(135deg, var(--stat-color), var(--stat-color-dark));
+        color: white;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    }
+
+    .stat-label {
+        font-size: 0.875rem;
+        color: var(--text-secondary);
+        font-weight: 500;
+        margin-bottom: 0.5rem;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+
+    .stat-value {
+        font-size: 2rem;
+        font-weight: 700;
+        color: var(--text-primary);
+        line-height: 1.2;
+        margin-bottom: 0.5rem;
+    }
+
+    .stat-change {
+        font-size: 0.875rem;
+        font-weight: 500;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.25rem;
+        padding: 0.25rem 0.5rem;
+        border-radius: 4px;
+    }
+
+    .stat-change.positive {
+        background: rgba(16, 185, 129, 0.1);
+        color: var(--finance-success);
+    }
+
+    .stat-change.negative {
+        background: rgba(239, 68, 68, 0.1);
+        color: var(--finance-danger);
+    }
+
+    .chart-card {
+        background: var(--bg-primary);
+        border-radius: var(--border-radius);
+        padding: 1.5rem;
+        border: 1px solid var(--border-color);
+        margin-bottom: 1.5rem;
+    }
+
+    .chart-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 1.5rem;
+        flex-wrap: wrap;
+        gap: 1rem;
+    }
+
+    .chart-title {
+        font-size: 1.125rem;
+        font-weight: 600;
+        color: var(--text-primary);
+        margin: 0;
+    }
+
+    .quick-actions {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 1rem;
+        margin-bottom: 2rem;
+    }
+
+    .quick-action-btn {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 1.5rem;
+        background: var(--bg-primary);
+        border: 2px dashed var(--border-color);
+        border-radius: var(--border-radius);
+        text-decoration: none;
+        color: var(--text-primary);
+        transition: all 0.3s ease;
+        min-height: 120px;
+    }
+
+    .quick-action-btn:hover {
+        border-color: var(--finance-primary);
+        background: rgba(13, 110, 253, 0.05);
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        color: var(--text-primary);
+    }
+
+    .quick-action-icon {
+        width: 48px;
+        height: 48px;
+        border-radius: 50%;
+        background: var(--finance-primary);
+        color: white;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.5rem;
+        margin-bottom: 0.75rem;
+    }
+
+    .quick-action-label {
+        font-weight: 600;
+        font-size: 0.95rem;
+        text-align: center;
+    }
+
+    .recent-transactions {
+        background: var(--bg-primary);
+        border-radius: var(--border-radius);
+        border: 1px solid var(--border-color);
+        overflow: hidden;
+    }
+
+    .transaction-header {
+        padding: 1.25rem 1.5rem;
+        border-bottom: 1px solid var(--border-color);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+    .transaction-item {
+        padding: 1rem 1.5rem;
+        border-bottom: 1px solid var(--border-color);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        transition: background 0.2s ease;
+    }
+
+    .transaction-item:hover {
+        background: var(--bg-secondary);
+    }
+
+    .transaction-item:last-child {
+        border-bottom: none;
+    }
+
+    .transaction-info {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+        flex: 1;
+    }
+
+    .transaction-icon {
+        width: 40px;
+        height: 40px;
+        border-radius: 8px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.125rem;
+        flex-shrink: 0;
+    }
+
+    .transaction-icon.credit {
+        background: rgba(16, 185, 129, 0.1);
+        color: var(--finance-success);
+    }
+
+    .transaction-icon.debit {
+        background: rgba(239, 68, 68, 0.1);
+        color: var(--finance-danger);
+    }
+
+    .transaction-details {
+        flex: 1;
+        min-width: 0;
+    }
+
+    .transaction-title {
+        font-weight: 600;
+        color: var(--text-primary);
+        margin-bottom: 0.25rem;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+
+    .transaction-meta {
+        font-size: 0.875rem;
+        color: var(--text-secondary);
+    }
+
+    .transaction-amount {
+        font-weight: 700;
+        font-size: 1rem;
+        white-space: nowrap;
+    }
+
+    .transaction-amount.credit {
+        color: var(--finance-success);
+    }
+
+    .transaction-amount.debit {
+        color: var(--finance-danger);
+    }
+
+    .budget-alert {
+        background: linear-gradient(135deg, rgba(245, 158, 11, 0.1), rgba(239, 68, 68, 0.1));
+        border: 1px solid var(--finance-warning);
+        border-radius: var(--border-radius);
+        padding: 1rem 1.5rem;
+        margin-bottom: 1rem;
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+    }
+
+    .budget-alert-icon {
+        width: 40px;
+        height: 40px;
+        border-radius: 50%;
+        background: var(--finance-warning);
+        color: white;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+    }
+
+    .budget-alert-content {
+        flex: 1;
+    }
+
+    .budget-alert-title {
+        font-weight: 600;
+        color: var(--text-primary);
+        margin-bottom: 0.25rem;
+    }
+
+    .budget-alert-message {
+        font-size: 0.875rem;
+        color: var(--text-secondary);
+    }
+
+    .progress-bar-container {
+        height: 8px;
+        background: var(--bg-tertiary);
+        border-radius: 4px;
+        overflow: hidden;
+        margin-top: 0.5rem;
+    }
+
+    .progress-bar-fill {
+        height: 100%;
+        background: linear-gradient(90deg, var(--finance-success), var(--finance-warning));
+        transition: width 0.3s ease;
+    }
+
+    .empty-state {
+        text-align: center;
+        padding: 3rem 2rem;
+        color: var(--text-secondary);
+    }
+
+    .empty-state-icon {
+        font-size: 3rem;
+        margin-bottom: 1rem;
+        opacity: 0.5;
+    }
+
+    @keyframes rotate {
+        from { transform: rotate(0deg); }
+        to { transform: rotate(360deg); }
+    }
+
+    .rotating {
+        animation: rotate 0.5s linear infinite;
+    }
+
+    @media (max-width: 768px) {
+        .dashboard-grid {
+            grid-template-columns: 1fr;
+            gap: 1rem;
+        }
+
+        .stat-card {
+            padding: 1.25rem;
+        }
+
+        .stat-icon {
+            width: 50px;
+            height: 50px;
+            font-size: 1.5rem;
+        }
+
+        .stat-value {
+            font-size: 1.75rem;
+        }
+
+        .quick-actions {
+            grid-template-columns: repeat(2, 1fr);
+        }
+
+        .transaction-item {
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 0.75rem;
+        }
+
+        .transaction-amount {
+            align-self: flex-end;
+        }
+
+        .chart-header {
+            flex-direction: column;
+            align-items: flex-start;
+        }
+    }
+
+    @media (max-width: 480px) {
+        .quick-actions {
+            grid-template-columns: 1fr;
+        }
+
+        .stat-value {
+            font-size: 1.5rem;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- Page Header -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h1 class="h3 mb-1 fw-bold">{% trans "Finance Dashboard" %}</h1>
+            <p class="text-muted mb-0">{% trans "Welcome back! Here's your financial overview." %}</p>
+        </div>
+        <div class="d-flex gap-2">
+            <button class="btn btn-outline-primary" id="refreshDashboard">
+                <i class="bi bi-arrow-clockwise"></i>
+                <span class="d-none d-sm-inline ms-1">{% trans "Refresh" %}</span>
+            </button>
+            <div class="dropdown">
+                <button class="btn btn-primary dropdown-toggle" type="button" data-bs-toggle="dropdown">
+                    <i class="bi bi-calendar3"></i>
+                    <span class="d-none d-sm-inline ms-1">{% trans "This Month" %}</span>
+                </button>
+                <ul class="dropdown-menu dropdown-menu-end">
+                    <li><a class="dropdown-item" href="#">{% trans "Today" %}</a></li>
+                    <li><a class="dropdown-item" href="#">{% trans "This Week" %}</a></li>
+                    <li><a class="dropdown-item active" href="#">{% trans "This Month" %}</a></li>
+                    <li><a class="dropdown-item" href="#">{% trans "This Quarter" %}</a></li>
+                    <li><a class="dropdown-item" href="#">{% trans "This Year" %}</a></li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <!-- Key Metrics -->
+    <div class="dashboard-grid">
+        <!-- Total Assets -->
+        <div class="stat-card" style="--stat-color: var(--finance-primary); --stat-color-dark: #0a58ca;">
+            <div class="stat-icon">
+                <i class="bi bi-wallet2"></i>
+            </div>
+            <div class="stat-label">{% trans "Total Assets" %}</div>
+            <div class="stat-value">{{ base_currency.symbol }}{{ total_assets|floatformat:2|default:"0.00"|intcomma }}</div>
+            <div class="stat-change positive">
+                <i class="bi bi-arrow-up"></i>
+                {% trans "Active" %}
+            </div>
+        </div>
+
+        <!-- Total Liabilities -->
+        <div class="stat-card" style="--stat-color: var(--finance-danger); --stat-color-dark: #c81e1e;">
+            <div class="stat-icon">
+                <i class="bi bi-credit-card"></i>
+            </div>
+            <div class="stat-label">{% trans "Total Liabilities" %}</div>
+            <div class="stat-value">{{ base_currency.symbol }}{{ total_liabilities|floatformat:2|default:"0.00"|intcomma }}</div>
+            <div class="stat-change negative">
+                <i class="bi bi-arrow-down"></i>
+                {% trans "Active" %}
+            </div>
+        </div>
+
+        <!-- Equity -->
+        <div class="stat-card" style="--stat-color: var(--finance-success); --stat-color-dark: #059669;">
+            <div class="stat-icon">
+                <i class="bi bi-graph-up"></i>
+            </div>
+            <div class="stat-label">{% trans "Total Equity" %}</div>
+            <div class="stat-value">{{ base_currency.symbol }}{{ total_equity|floatformat:2|default:"0.00"|intcomma }}</div>
+            <div class="stat-change positive">
+                <i class="bi bi-arrow-up"></i>
+                {% trans "Active" %}
+            </div>
+        </div>
+
+        <!-- Net Income -->
+        <div class="stat-card" style="--stat-color: var(--finance-info); --stat-color-dark: #2563eb;">
+            <div class="stat-icon">
+                <i class="bi bi-trophy"></i>
+            </div>
+            <div class="stat-label">{% trans "Net Income (YTD)" %}</div>
+            <div class="stat-value">{{ base_currency.symbol }}{{ net_income|floatformat:2|default:"0.00"|intcomma }}</div>
+            <div class="stat-change {% if net_income >= 0 %}positive{% else %}negative{% endif %}">
+                <i class="bi bi-arrow-{% if net_income >= 0 %}up{% else %}down{% endif %}"></i>
+                {% if current_fiscal_year %}{{ current_fiscal_year.name }}{% else %}{% trans "YTD" %}{% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Pending Approvals -->
+    {% if pending_entries > 0 %}
+    <div class="alert alert-warning d-flex align-items-center mb-4">
+        <i class="bi bi-exclamation-triangle me-3 fs-4"></i>
+        <div>
+            <strong>{% trans "Pending Approvals" %}</strong>
+            <p class="mb-0">{% blocktrans count counter=pending_entries %}You have {{ pending_entries }} journal entry waiting for approval.{% plural %}You have {{ pending_entries }} journal entries waiting for approval.{% endblocktrans %}</p>
+        </div>
+        <a href="{% url 'finance:journal_entry_list' %}?status=PENDING" class="btn btn-warning ms-auto">
+            {% trans "Review" %}
+        </a>
+    </div>
+    {% endif %}
+
+    <!-- Budget Alerts -->
+    {% if budget_alerts %}
+    <div class="mb-4">
+        <h5 class="fw-bold mb-3">
+            <i class="bi bi-exclamation-triangle me-2"></i>
+            {% trans "Budget Alerts" %}
+        </h5>
+        {% for alert in budget_alerts %}
+        <div class="budget-alert">
+            <div class="budget-alert-icon">
+                <i class="bi bi-exclamation-circle"></i>
+            </div>
+            <div class="budget-alert-content">
+                <div class="budget-alert-title">{{ alert.budget.name }}</div>
+                <div class="budget-alert-message">
+                    {% blocktrans with utilization=alert.utilization|floatformat:1 %}{{ utilization }}% utilized{% endblocktrans %}
+                </div>
+                <div class="progress-bar-container">
+                    <div class="progress-bar-fill" style="width: {{ alert.utilization|default:0 }}%"></div>
+                </div>
+            </div>
+            <a href="{% url 'finance:budget_detail' alert.budget.pk %}" class="btn btn-sm btn-outline-warning">
+                {% trans "View Details" %}
+            </a>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    <!-- Quick Actions -->
+    <div class="mb-4">
+        <h5 class="fw-bold mb-3">{% trans "Quick Actions" %}</h5>
+        <div class="quick-actions">
+            <a href="{% url 'finance:journal_entry_create' %}" class="quick-action-btn">
+                <div class="quick-action-icon" style="background: var(--finance-primary);">
+                    <i class="bi bi-journal-plus"></i>
+                </div>
+                <span class="quick-action-label">{% trans "New Journal Entry" %}</span>
+            </a>
+            <a href="{% url 'finance:transaction_create' %}" class="quick-action-btn">
+                <div class="quick-action-icon" style="background: var(--finance-success);">
+                    <i class="bi bi-cash-coin"></i>
+                </div>
+                <span class="quick-action-label">{% trans "Record Transaction" %}</span>
+            </a>
+            <a href="{% url 'finance:expense_create' %}" class="quick-action-btn">
+                <div class="quick-action-icon" style="background: var(--finance-warning);">
+                    <i class="bi bi-receipt"></i>
+                </div>
+                <span class="quick-action-label">{% trans "Submit Expense" %}</span>
+            </a>
+            <a href="{% url 'finance:bank_reconciliation_create' %}" class="quick-action-btn">
+                <div class="quick-action-icon" style="background: var(--finance-info);">
+                    <i class="bi bi-check2-square"></i>
+                </div>
+                <span class="quick-action-label">{% trans "Reconcile Bank" %}</span>
+            </a>
+        </div>
+    </div>
+
+    <div class="row">
+        <!-- Recent Transactions -->
+        <div class="col-lg-8 mb-4">
+            <div class="recent-transactions">
+                <div class="transaction-header">
+                    <h5 class="fw-bold mb-0">{% trans "Recent Transactions" %}</h5>
+                    <a href="{% url 'finance:transaction_list' %}" class="btn btn-sm btn-outline-primary">
+                        {% trans "View All" %}
+                    </a>
+                </div>
+                <div class="transaction-list">
+                    {% for transaction in recent_transactions %}
+                    <div class="transaction-item">
+                        <div class="transaction-info">
+                            <div class="transaction-icon {% if transaction.transaction_type == 'DEPOSIT' %}credit{% else %}debit{% endif %}">
+                                {% if transaction.transaction_type == 'DEPOSIT' %}
+                                <i class="bi bi-arrow-down-circle"></i>
+                                {% else %}
+                                <i class="bi bi-arrow-up-circle"></i>
+                                {% endif %}
+                            </div>
+                            <div class="transaction-details">
+                                <div class="transaction-title">{{ transaction.description|truncatewords:8|default:"No description" }}</div>
+                                <div class="transaction-meta">
+                                    {{ transaction.transaction_date|date:"M d, Y" }} • {{ transaction.bank_account.account_name }}
+                                </div>
+                            </div>
+                        </div>
+                        <div class="transaction-amount {% if transaction.transaction_type == 'DEPOSIT' %}credit{% else %}debit{% endif %}">
+                            {% if transaction.transaction_type == 'DEPOSIT' %}+{% else %}-{% endif %}
+                            {{ transaction.currency.symbol }}{{ transaction.amount|floatformat:2|intcomma }}
+                        </div>
+                    </div>
+                    {% empty %}
+                    <div class="empty-state">
+                        <div class="empty-state-icon">
+                            <i class="bi bi-inbox"></i>
+                        </div>
+                        <p class="mb-0">{% trans "No recent transactions" %}</p>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Bank Accounts -->
+        <div class="col-lg-4 mb-4">
+            <div class="chart-card">
+                <div class="chart-header">
+                    <h5 class="chart-title">{% trans "Bank Accounts" %}</h5>
+                    <a href="{% url 'finance:bank_account_list' %}" class="btn btn-sm btn-outline-primary">
+                        <i class="bi bi-arrow-right"></i>
+                    </a>
+                </div>
+                <div class="bank-accounts-list">
+                    {% for account in bank_accounts %}
+                    <div class="mb-3 p-3 rounded" style="background: var(--bg-secondary);">
+                        <div class="d-flex justify-content-between align-items-start mb-2">
+                            <div>
+                                <div class="fw-semibold">{{ account.account_name }}</div>
+                                <small class="text-muted">{{ account.account_number }}</small>
+                            </div>
+                            {% if account.is_default %}
+                            <span class="badge bg-primary">{% trans "Default" %}</span>
+                            {% endif %}
+                        </div>
+                        <div class="h5 mb-0 fw-bold">
+                            {{ account.currency.symbol }}{{ account.current_balance|floatformat:2|intcomma }}
+                        </div>
+                        <small class="text-muted">{{ account.bank_name }}</small>
+                    </div>
+                    {% empty %}
+                    <div class="empty-state">
+                        <div class="empty-state-icon">
+                            <i class="bi bi-bank2"></i>
+                        </div>
+                        <p class="mb-0">{% trans "No bank accounts" %}</p>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+
+            <!-- Fiscal Year Info -->
+            {% if current_fiscal_year %}
+            <div class="chart-card mt-4">
+                <div class="chart-header">
+                    <h5 class="chart-title">{% trans "Current Fiscal Year" %}</h5>
+                </div>
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <span class="text-muted">{% trans "Year" %}:</span>
+                    <strong>{{ current_fiscal_year.name }}</strong>
+                </div>
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <span class="text-muted">{% trans "Period" %}:</span>
+                    <strong>{{ current_fiscal_year.start_date|date:"M d" }} - {{ current_fiscal_year.end_date|date:"M d, Y" }}</strong>
+                </div>
+                <div class="d-flex justify-content-between align-items-center">
+                    <span class="text-muted">{% trans "Status" %}:</span>
+                    <span class="badge bg-{% if current_fiscal_year.status == 'OPEN' %}success{% elif current_fiscal_year.status == 'CLOSED' %}secondary{% else %}warning{% endif %}">
+                        {{ current_fiscal_year.get_status_display }}
+                    </span>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Financial Charts -->
+    <div class="row">
+        <!-- Revenue vs Expenses Chart -->
+        <div class="col-lg-8">
+            <div class="chart-card">
+                <div class="chart-header">
+                    <h5 class="chart-title">{% trans "Revenue vs Expenses" %}</h5>
+                    <div class="chart-actions">
+                        <button class="btn btn-sm btn-outline-secondary" id="exportChart">
+                            <i class="bi bi-download"></i>
+                            <span class="d-none d-sm-inline ms-1">{% trans "Export" %}</span>
+                        </button>
+                    </div>
+                </div>
+                <canvas id="revenueExpenseChart" height="80"></canvas>
+            </div>
+        </div>
+
+        <!-- Account Balance Distribution -->
+        <div class="col-lg-4">
+            <div class="chart-card">
+                <div class="chart-header">
+                    <h5 class="chart-title">{% trans "Account Distribution" %}</h5>
+                </div>
+                <canvas id="accountDistributionChart" height="200"></canvas>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Theme detection
+    const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+    const textColor = isDark ? '#e5e7eb' : '#374151';
+    const gridColor = isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)';
+
+    // Revenue vs Expenses Chart
+    const revenueCtx = document.getElementById('revenueExpenseChart');
+    if (revenueCtx) {
+        // Sample data - replace with real data from your views
+        const revenueData = [30000, 35000, 32000, 40000, 45000, 42000, 48000, 52000, 50000, 55000, 58000, 60000];
+        const expenseData = [20000, 22000, 21000, 25000, 28000, 27000, 30000, 32000, 31000, 35000, 36000, 38000];
+
+        new Chart(revenueCtx, {
+            type: 'line',
+            data: {
+                labels: ['{% trans "Jan" %}', '{% trans "Feb" %}', '{% trans "Mar" %}', '{% trans "Apr" %}', '{% trans "May" %}', '{% trans "Jun" %}',
+                        '{% trans "Jul" %}', '{% trans "Aug" %}', '{% trans "Sep" %}', '{% trans "Oct" %}', '{% trans "Nov" %}', '{% trans "Dec" %}'],
+                datasets: [{
+                    label: '{% trans "Revenue" %}',
+                    data: revenueData,
+                    borderColor: 'rgb(16, 185, 129)',
+                    backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                    tension: 0.4,
+                    fill: true
+                }, {
+                    label: '{% trans "Expenses" %}',
+                    data: expenseData,
+                    borderColor: 'rgb(239, 68, 68)',
+                    backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                    tension: 0.4,
+                    fill: true
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: true,
+                plugins: {
+                    legend: {
+                        position: 'top',
+                        labels: {
+                            color: textColor,
+                            usePointStyle: true,
+                            padding: 20
+                        }
+                    },
+                    tooltip: {
+                        mode: 'index',
+                        intersect: false,
+                        callbacks: {
+                            label: function(context) {
+                                return context.dataset.label + ': ' + '{{ base_currency.symbol|default:"$" }}' + context.parsed.y.toLocaleString();
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        ticks: {
+                            color: textColor,
+                            callback: function(value) {
+                                return '{{ base_currency.symbol|default:"$" }}' + (value / 1000).toLocaleString() + 'K';
+                            }
+                        },
+                        grid: {
+                            color: gridColor
+                        }
+                    },
+                    x: {
+                        ticks: {
+                            color: textColor
+                        },
+                        grid: {
+                            color: gridColor
+                        }
+                    }}
+            }
+        });
+    }
+
+    // Account Distribution Chart
+    const distributionCtx = document.getElementById('accountDistributionChart');
+    if (distributionCtx) {
+        new Chart(distributionCtx, {
+            type: 'doughnut',
+            data: {
+                labels: [
+                    '{% trans "Assets" %}',
+                    '{% trans "Liabilities" %}',
+                    '{% trans "Equity" %}',
+                    '{% trans "Revenue" %}',
+                    '{% trans "Expenses" %}'
+                ],
+                datasets: [{
+                    data: [40, 25, 20, 10, 5], // Sample data
+                    backgroundColor: [
+                        'rgb(59, 130, 246)',
+                        'rgb(239, 68, 68)',
+                        'rgb(16, 185, 129)',
+                        'rgb(245, 158, 11)',
+                        'rgb(139, 92, 246)'
+                    ],
+                    borderColor: isDark ? 'rgb(30, 41, 59)' : 'rgb(255, 255, 255)',
+                    borderWidth: 2
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        position: 'bottom',
+                        labels: {
+                            color: textColor,
+                            padding: 20,
+                            usePointStyle: true
+                        }
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                const label = context.label || '';
+                                const value = context.parsed;
+                                const total = context.dataset.data.reduce((a, b) => a + b, 0);
+                                const percentage = Math.round((value / total) * 100);
+                                return `${label}: ${percentage}%`;
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    // Refresh Dashboard
+    document.getElementById('refreshDashboard')?.addEventListener('click', function() {
+        const btn = this;
+        btn.disabled = true;
+        btn.querySelector('i').classList.add('rotating');
+
+        setTimeout(() => {
+            window.location.reload();
+        }, 1000);
+    });
+
+    // Export Chart
+    document.getElementById('exportChart')?.addEventListener('click', function() {
+        alert('{% trans "Export functionality would be implemented here" %}');
+    });
+});
+</script>
+{% endblock %}

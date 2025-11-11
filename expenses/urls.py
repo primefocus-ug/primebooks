@@ -1,37 +1,33 @@
 from django.urls import path
-from . import views
+from . import views, api_views
 
 app_name = 'expenses'
 
 urlpatterns = [
-    # Dashboard
+    # Main views
     path('', views.expense_dashboard, name='dashboard'),
+    path('list/', views.expense_list, name='expense_list'),
+    path('create/', views.expense_create, name='expense_create'),
+    path('<int:pk>/', views.expense_detail, name='expense_detail'),
+    path('<int:pk>/edit/', views.expense_edit, name='expense_edit'),
+    path('<int:pk>/submit/', views.expense_submit, name='expense_submit'),
+    path('<int:pk>/approve/', views.expense_approve, name='expense_approve'),
+    path('<int:pk>/reject/', views.expense_reject, name='expense_reject'),
+    path('<int:pk>/pay/', views.expense_mark_paid, name='expense_mark_paid'),
+    path('<int:pk>/comment/', views.expense_add_comment, name='add_comment'),
+    path('<int:pk>/attachment/<int:attachment_id>/delete/', views.expense_delete_attachment, name='delete_attachment'),
 
-    # Expense URLs
-    path('expenses/', views.ExpenseListView.as_view(), name='expense_list'),
-    path('expenses/create/', views.create_expense, name='expense_create'),
-    path('expenses/<int:pk>/', views.ExpenseDetailView.as_view(), name='expense_detail'),
-    path('expenses/<int:pk>/update/', views.update_expense, name='expense_update'),
-    path('expenses/<int:pk>/approve/', views.approve_expense, name='expense_approve'),
-    path('expenses/<int:pk>/reject/', views.reject_expense, name='expense_reject'),
-    path('expenses/<int:pk>/pay/', views.mark_expense_paid, name='expense_pay'),
-    path('expenses/<int:pk>/cancel/', views.cancel_expense, name='expense_cancel'),
-
-    # Vendor URLs
-    path('vendors/', views.VendorListView.as_view(), name='vendor_list'),
-    path('vendors/create/', views.create_vendor, name='vendor_create'),
-    path('vendors/<int:pk>/', views.VendorDetailView.as_view(), name='vendor_detail'),
-    path('vendors/<int:pk>/update/', views.update_vendor, name='vendor_update'),
-
-    # Budget URLs
-    path('budgets/', views.BudgetListView.as_view(), name='budget_list'),
-    path('budgets/dashboard/', views.budget_dashboard, name='budget_dashboard'),
-
-    # Reports
+    # Reports and exports
     path('reports/', views.expense_reports, name='reports'),
-    path('reports/export/', views.export_expenses, name='export_expenses'),
+    path('export/', views.expense_export, name='export'),
 
-    # API Endpoints
-    path('api/stats/', views.get_expense_stats_api, name='api_expense_stats'),
-    path('api/check-budget/', views.check_budget_availability, name='api_check_budget'),
+    # API endpoints
+    path('api/stats/', api_views.expense_stats_api, name='api_stats'),
+    path('api/category-stats/', api_views.expense_category_stats_api, name='api_category_stats'),
+    path('api/chart-data/', api_views.expense_chart_data_api, name='api_chart_data'),
+    path('api/search/', api_views.expense_search_api, name='api_search'),
+    path('api/budget-utilization/', api_views.budget_utilization_api, name='api_budget_utilization'),
+    path('api/<int:pk>/quick-approve/', api_views.quick_approve_api, name='api_quick_approve'),
+    path('api/bulk-action/', api_views.bulk_action_api, name='api_bulk_action'),
+    path('api/check-number/', api_views.check_expense_number_api, name='api_check_number'),
 ]

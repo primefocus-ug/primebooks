@@ -1,0 +1,63 @@
+{% load i18n %}
+{% load humanize %}
+
+<tr class="{% if level > 0 %}collapsible-row{% endif %} {% if account.is_header %}header-account{% endif %} account-row-level-{{ level }}"
+    {% if level > 0 %}data-parent-id="{{ account.parent.id }}"{% endif %}>
+    <td>
+        {% if account.get_children %}
+            <i class="bi bi-chevron-right expand-icon me-2" data-account-id="{{ account.id }}"></i>
+        {% else %}
+            <span class="ms-4"></span>
+        {% endif %}
+        <strong>{{ account.code }}</strong>
+        {% if account.is_header %}
+            <i class="bi bi-folder text-muted ms-1" title="{% trans 'Header Account' %}"></i>
+        {% endif %}
+    </td>
+    <td>
+        <a href="{% url 'finance:chart_of_accounts_detail' account.pk %}" class="text-decoration-none">
+            {{ account.name }}
+        </a>
+    </td>
+    <td>
+        <span class="badge badge-account-type
+                     {% if account.account_type == 'ASSET' %}bg-primary
+                     {% elif account.account_type == 'LIABILITY' %}bg-danger
+                     {% elif account.account_type == 'EQUITY' %}bg-info
+                     {% elif account.account_type == 'REVENUE' %}bg-success
+                     {% elif account.account_type == 'EXPENSE' %}bg-warning
+                     {% else %}bg-secondary{% endif %}">
+            {{ account.get_account_type_display }}
+        </span>
+    </td>
+    <td class="text-end">
+        {% if not account.is_header %}
+            <strong>{{ account.current_balance|floatformat:2|intcomma }}</strong>
+        {% else %}
+            <span class="text-muted">—</span>
+        {% endif %}
+    </td>
+    <td>{{ account.currency }}</td>
+    <td class="text-center">
+        <div class="btn-group btn-group-sm" role="group">
+            <a href="{% url 'finance:chart_of_accounts_detail' account.pk %}"
+               class="btn btn-outline-primary"
+               title="{% trans 'View Details' %}">
+                <i class="bi bi-eye"></i>
+            </a>
+            {% if perms.finance.change_chartofaccounts %}
+            <a href="{% url 'finance:chart_of_accounts_update' account.pk %}"
+               class="btn btn-outline-secondary"
+               title="{% trans 'Edit' %}">
+                <i class="bi bi-pencil"></i>
+            </a>
+            {% endif %}
+        </div>
+    </td>
+</tr>
+
+<!-- Recursively render children -->
+{% for child in account.get_children %}
+    {% include 'finance/chart_of_accounts/_account_row.html' with account=child level=level|add:1 %}
+{% endfor %}
+

@@ -1,0 +1,342 @@
+{% extends 'base.html' %}
+{% load static %}
+{% load i18n %}
+
+{% block title %}{% trans "Messaging Admin Dashboard" %} | {{ block.super }}{% endblock %}
+
+{% block breadcrumb_items %}
+<li class="breadcrumb-item"><a href="{% url 'user_dashboard' %}">{% trans "Dashboard" %}</a></li>
+<li class="breadcrumb-item"><a href="{% url 'messaging:index' %}">{% trans "Messages" %}</a></li>
+<li class="breadcrumb-item active">{% trans "Admin Dashboard" %}</li>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+    .stat-card {
+        background: var(--bg-primary);
+        border-radius: var(--border-radius);
+        padding: 1.5rem;
+        box-shadow: var(--shadow-md);
+        transition: all 0.3s ease;
+    }
+
+    .stat-card:hover {
+        transform: translateY(-3px);
+        box-shadow: var(--shadow-lg);
+    }
+
+    .stat-icon {
+        width: 56px;
+        height: 56px;
+        border-radius: 12px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.5rem;
+        margin-bottom: 1rem;
+    }
+
+    .stat-value {
+        font-size: 2rem;
+        font-weight: 700;
+        color: var(--text-primary);
+        margin-bottom: 0.25rem;
+    }
+
+    .stat-label {
+        font-size: 0.875rem;
+        color: var(--text-secondary);
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+
+    .chart-container {
+        background: var(--bg-primary);
+        border-radius: var(--border-radius);
+        padding: 1.5rem;
+        box-shadow: var(--shadow-md);
+    }
+
+    .activity-item {
+        padding: 1rem;
+        border-bottom: 1px solid var(--border-color-light);
+        transition: background 0.2s ease;
+    }
+
+    .activity-item:hover {
+        background: var(--bg-secondary);
+    }
+
+    .activity-item:last-child {
+        border-bottom: none;
+    }
+
+    .conversation-type-badge {
+        padding: 0.25rem 0.75rem;
+        border-radius: 12px;
+        font-size: 0.75rem;
+        font-weight: 600;
+    }
+
+    .audit-log-item {
+        padding: 0.75rem 1rem;
+        border-left: 3px solid var(--border-color);
+        margin-bottom: 0.5rem;
+        background: var(--bg-secondary);
+        border-radius: 4px;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h1 class="mb-2">
+                <i class="bi bi-speedometer2 me-2"></i>
+                {% trans "Messaging Admin Dashboard" %}
+            </h1>
+            <p class="text-muted mb-0">
+                {% trans "Monitor messaging activity, view statistics, and manage announcements" %}
+            </p>
+        </div>
+        <div>
+            <a href="{% url 'messaging:admin_announcements' %}" class="btn btn-primary me-2">
+                <i class="bi bi-megaphone me-2"></i>
+                {% trans "Announcements" %}
+            </a>
+            <a href="{% url 'messaging:admin_statistics' %}" class="btn btn-outline-primary">
+                <i class="bi bi-graph-up me-2"></i>
+                {% trans "Statistics" %}
+            </a>
+        </div>
+    </div>
+
+    <!-- Statistics Cards -->
+    <div class="row g-4 mb-4">
+        <div class="col-md-3">
+            <div class="stat-card">
+                <div class="stat-icon" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;">
+                    <i class="bi bi-chat-dots-fill"></i>
+                </div>
+                <div class="stat-value">{{ stats.total_conversations|default:0 }}</div>
+                <div class="stat-label">{% trans "Total Conversations" %}</div>
+            </div>
+        </div>
+
+        <div class="col-md-3">
+            <div class="stat-card">
+                <div class="stat-icon" style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); color: white;">
+                    <i class="bi bi-envelope-fill"></i>
+                </div>
+                <div class="stat-value">{{ stats.total_messages|default:0 }}</div>
+                <div class="stat-label">{% trans "Total Messages" %}</div>
+            </div>
+        </div>
+
+        <div class="col-md-3">
+            <div class="stat-card">
+                <div class="stat-icon" style="background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); color: white;">
+                    <i class="bi bi-people-fill"></i>
+                </div>
+                <div class="stat-value">{{ stats.active_users_today|default:0 }}</div>
+                <div class="stat-label">{% trans "Active Users Today" %}</div>
+            </div>
+        </div>
+
+        <div class="col-md-3">
+            <div class="stat-card">
+                <div class="stat-icon" style="background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%); color: white;">
+                    <i class="bi bi-chat-left-text-fill"></i>
+                </div>
+                <div class="stat-value">{{ stats.messages_today|default:0 }}</div>
+                <div class="stat-label">{% trans "Messages Today" %}</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row g-4">
+        <!-- Recent Activity -->
+        <div class="col-lg-8">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">
+                        <i class="bi bi-clock-history me-2"></i>
+                        {% trans "Recent Conversations" %}
+                    </h5>
+                    <a href="{% url 'messaging:admin_conversations' %}" class="btn btn-sm btn-outline-primary">
+                        {% trans "View All" %}
+                    </a>
+                </div>
+                <div class="card-body p-0">
+                    {% if recent_conversations %}
+                        {% for conv in recent_conversations %}
+                        <div class="activity-item">
+                            <div class="d-flex justify-content-between align-items-start">
+                                <div>
+                                    <h6 class="mb-1">
+                                        <a href="{% url 'messaging:admin_conversation_detail' conv.id %}" class="text-decoration-none">
+                                            {{ conv.name|default:"Direct Message" }}
+                                        </a>
+                                    </h6>
+                                    <p class="text-muted mb-2 small">
+                                        {% trans "Created by" %} <strong>{{ conv.created_by.username }}</strong>
+                                        • {{ conv.last_activity|timesince }} {% trans "ago" %}
+                                    </p>
+                                    <div class="d-flex gap-2 align-items-center">
+                                        <span class="conversation-type-badge bg-primary-subtle text-primary">
+                                            {{ conv.get_conversation_type_display }}
+                                        </span>
+                                        <span class="badge bg-secondary">
+                                            <i class="bi bi-chat-dots me-1"></i>
+                                            {{ conv.message_count }} {% trans "messages" %}
+                                        </span>
+                                    </div>
+                                </div>
+                                <a href="{% url 'messaging:admin_conversation_detail' conv.id %}" class="btn btn-sm btn-outline-secondary">
+                                    <i class="bi bi-eye"></i>
+                                </a>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    {% else %}
+                        <div class="p-4 text-center text-muted">
+                            <i class="bi bi-inbox fs-1 d-block mb-2"></i>
+                            {% trans "No conversations yet" %}
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+
+            <!-- Message Volume Chart -->
+            <div class="card mt-4">
+                <div class="card-header">
+                    <h5 class="mb-0">
+                        <i class="bi bi-graph-up me-2"></i>
+                        {% trans "Message Volume (Last 30 Days)" %}
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <canvas id="messageChart" height="100"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- Sidebar -->
+        <div class="col-lg-4">
+            <!-- Conversation Types -->
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5 class="mb-0">
+                        <i class="bi bi-pie-chart me-2"></i>
+                        {% trans "Conversation Types" %}
+                    </h5>
+                </div>
+                <div class="card-body">
+                    {% if conversation_types %}
+                        {% for type in conversation_types %}
+                        <div class="d-flex justify-content-between align-items-center mb-3">
+                            <span class="text-capitalize">{{ type.conversation_type }}</span>
+                            <span class="badge bg-primary">{{ type.count }}</span>
+                        </div>
+                        {% endfor %}
+                    {% else %}
+                        <p class="text-muted mb-0">{% trans "No data available" %}</p>
+                    {% endif %}
+                </div>
+            </div>
+
+            <!-- Recent Audit Log -->
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">
+                        <i class="bi bi-shield-check me-2"></i>
+                        {% trans "Recent Activity" %}
+                    </h5>
+                    <a href="{% url 'messaging:admin_audit_log' %}" class="btn btn-sm btn-outline-primary">
+                        {% trans "View All" %}
+                    </a>
+                </div>
+                <div class="card-body p-0">
+                    {% if recent_audit %}
+                        <div class="p-3" style="max-height: 400px; overflow-y: auto;">
+                            {% for log in recent_audit|slice:":10" %}
+                            <div class="audit-log-item">
+                                <div class="d-flex justify-content-between align-items-start mb-1">
+                                    <span class="badge bg-info-subtle text-info">
+                                        {{ log.get_action_type_display }}
+                                    </span>
+                                    <small class="text-muted">{{ log.timestamp|timesince }} {% trans "ago" %}</small>
+                                </div>
+                                <p class="mb-0 small">
+                                    <strong>{{ log.user.username }}</strong>
+                                    {% if log.conversation %}
+                                        {% trans "in" %} <em>{{ log.conversation.name|default:"conversation"|truncatewords:3 }}</em>
+                                    {% endif %}
+                                </p>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    {% else %}
+                        <div class="p-4 text-center text-muted">
+                            <i class="bi bi-inbox fs-3 d-block mb-2"></i>
+                            {% trans "No activity yet" %}
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+    // Message Volume Chart
+    const ctx = document.getElementById('messageChart');
+
+    const chartData = {{ daily_stats|safe }};
+    const labels = chartData.map(d => {
+        const date = new Date(d.date);
+        return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    });
+    const data = chartData.map(d => d.total || 0);
+
+    new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: labels,
+            datasets: [{
+                label: '{% trans "Messages" %}',
+                data: data,
+                borderColor: 'rgb(59, 130, 246)',
+                backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                tension: 0.4,
+                fill: true
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    display: false
+                },
+                tooltip: {
+                    mode: 'index',
+                    intersect: false,
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    ticks: {
+                        precision: 0
+                    }
+                }
+            }
+        }
+    });
+</script>
+{% endblock %}

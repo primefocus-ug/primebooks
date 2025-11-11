@@ -1,36 +1,58 @@
-from django.db.models.signals import post_save,post_migrate, pre_save
+from django.db.models.signals import post_save, post_migrate
 from django.dispatch import receiver
-from django.conf import  settings
+from django.conf import settings
 from django.contrib.auth.models import Group, Permission
 from django.db import connection
-from django.db.models.signals import post_save
-from django.dispatch import receiver
-from django.contrib.auth.models import Group, Permission
 from django.contrib.contenttypes.models import ContentType
 from company.models import Company
 from .models import Role, CustomUser
 import logging
+from django.utils.deprecation import MiddlewareMixin
+from django.contrib.auth.signals import user_logged_in, user_logged_out, user_login_failed
+from django.db.models.signals import post_save, post_delete
+from django.dispatch import receiver
+from django.utils import timezone
+from .models import AuditLog, LoginHistory
+from .utils import get_client_ip, parse_user_agent
+
+import logging
+from django.db.models.signals import post_save, post_delete
+from django.dispatch import receiver
+from django.contrib.auth.signals import user_logged_in, user_logged_out, user_login_failed
+from django.utils import timezone
+from django.db import connection
+
 
 logger = logging.getLogger(__name__)
-USER_TYPE_TO_ROLE = {
-    'SUPER_ADMIN': 'Super Admin',
-    'MANAGER': 'Manager',
-    'CASHIER': 'Cashier',
-    'EMPLOYEE': 'Viewer',  # Default lowest role
-    # Add more if roles exist, like:
-    # 'STOCK_KEEPER': 'Stock Keeper',
-    # 'ACCOUNTANT': 'Accountant',
-}
 
+from django_tenants.utils import schema_context, get_tenant_model
+
+def safe_schema_context(f):
+    """Decorator to ensure signals always run in an active tenant schema"""
+    def wrapper(*args, **kwargs):
+        try:
+            # If schema is already active, run directly
+            return f(*args, **kwargs)
+        except Exception as e:
+            # Try fallback to each tenant schema if needed
+            TenantModel = get_tenant_model()
+            for tenant in TenantModel.objects.all():
+                try:
+                    with schema_context(tenant.schema_name):
+                        return f(*args, **kwargs)
+                except Exception:
+                    continue
+            import logging
+            logging.getLogger(__name__).warning(f"Signal skipped due to schema issues: {e}")
+    return wrapper
 
 @receiver(post_migrate)
 def create_saas_admin_if_needed(sender, **kwargs):
     """Create SaaS admin after migrations, but only inside tenant schemas"""
-    # Skip if we're not in a tenant schema
     if connection.schema_name == 'public':
         return
 
-    if sender.name == 'accounts':  # Only run after accounts app migration
+    if sender.name == 'accounts':
         try:
             if not CustomUser.objects.filter(is_saas_admin=True).exists():
                 from company.models import Company
@@ -42,165 +64,455 @@ def create_saas_admin_if_needed(sender, **kwargs):
                         first_name='SaaS',
                         last_name='Administrator'
                     )
-                    print(f"[{connection.schema_name}] Created default SaaS admin via signal")
+                    print(f"[{connection.schema_name}] Created default SaaS admin")
         except Exception as e:
-            print(f"[{connection.schema_name}] Could not create SaaS admin via signal: {str(e)}")
+            print(f"[{connection.schema_name}] Could not create SaaS admin: {str(e)}")
 
 
 def get_default_roles_config():
+    """
+    Complete role configuration with all default roles.
+    Priority determines hierarchy: higher = more privileges
+
+    Key changes:
+    1. Added custom permissions (can_manage_users, can_view_reports, etc.)
+    2. Structured permissions more logically by role responsibility
+    3. Added permission dependencies and hierarchy
+    """
     return {
-        'Super Admin': {
-            'description': 'Full system access. Can manage all aspects of the system including users, settings, and critical operations.',
-            'color_code': '#dc3545',  # Red
+        'SaaS Admin': {
+            'description': 'System-wide administrator with access to all companies and features. Highest level access.',
+            'color_code': '#000000',
+            'priority': 110,
+            'is_system_role': True,
+            'permissions': 'all',  # Special case: gets all permissions
+            'custom_permissions': [
+                'accounts.can_manage_users',
+                'accounts.can_view_reports',
+                'accounts.can_manage_settings',
+                'accounts.can_export_data',
+                'accounts.can_access_saas_admin',
+                'accounts.can_manage_all_companies',
+            ]
+        },
+        'Company Admin': {
+            'description': 'Tenant owner with full control over their company. Can manage billing, users, settings, and all company data.',
+            'color_code': '#8b0000',
             'priority': 100,
             'is_system_role': True,
-            'permissions': 'all',  # Special case - gets all permissions
+            'custom_permissions': [
+                'accounts.can_manage_users',
+                'accounts.can_view_reports',
+                'accounts.can_manage_settings',
+                'accounts.can_export_data',
+            ],
+            'permissions': {
+                # Company Management
+                'company.company': ['change', 'view'],
+                'company.companysubscription': ['add', 'change', 'view', 'delete'],
+
+                # User Management
+                'accounts.customuser': ['add', 'change', 'view', 'delete'],
+                'accounts.role': ['add', 'change', 'view', 'delete'],
+                'accounts.rolehistory': ['view'],
+                'accounts.usersignature': ['add', 'change', 'view', 'delete'],
+
+                # Inventory Management
+                'inventory.product': ['add', 'change', 'view', 'delete'],
+                'inventory.category': ['add', 'change', 'view', 'delete'],
+                'inventory.stock': ['add', 'change', 'view', 'delete'],
+                'inventory.stockmovement': ['add', 'change', 'view', 'delete'],
+                'inventory.supplier': ['add', 'change', 'view', 'delete'],
+                'inventory.importresult': ['add', 'change', 'view', 'delete'],
+
+                # Invoice & Payments
+                'invoices.invoice': ['add', 'change', 'view', 'delete'],
+                'invoices.invoicepayment': ['add', 'change', 'view', 'delete'],
+                'invoices.receipt': ['add', 'change', 'view', 'delete'],
+
+                # Sales Management
+                'sales.sale': ['add', 'change', 'view', 'delete'],
+                'sales.saleitem': ['add', 'change', 'view', 'delete'],
+                'sales.receipt': ['add', 'change', 'view', 'delete'],
+                'sales.payment': ['add', 'change', 'view', 'delete'],
+                'sales.cart': ['add', 'change', 'view', 'delete'],
+                'sales.cartitem': ['add', 'change', 'view', 'delete'],
+
+                # Store Management
+                'stores.store': ['add', 'change', 'view', 'delete'],
+                'stores.storeoperatinghours': ['add', 'change', 'view', 'delete'],
+                'stores.storedevice': ['add', 'change', 'view', 'delete'],
+                'stores.userdevicesession': ['add', 'change', 'view', 'delete'],
+                'stores.securityalert': ['view', 'delete'],
+                'stores.devicefingerprint': ['view', 'delete'],
+
+                # Reports
+                'reports.savedreport': ['add', 'change', 'view', 'delete'],
+                'reports.reportschedule': ['add', 'change', 'view', 'delete'],
+                'reports.generatedreport': ['add', 'change', 'view', 'delete'],
+                'reports.reportaccesslog': ['view', 'delete'],
+                'reports.reportcomparison': ['add', 'change', 'view', 'delete'],
+
+                # Customer Management
+                'customers.customer': ['add', 'change', 'view', 'delete'],
+                'customers.customergroup': ['add', 'change', 'view', 'delete'],
+
+                # Branch Management
+                'branches.companybranch': ['add', 'change', 'view', 'delete'],
+
+                # Expense Management
+                'expenses.expense': ['add', 'change', 'view', 'delete'],
+                'expenses.expensecategory': ['add', 'change', 'view', 'delete'],
+
+                # Finance
+                'finance.account': ['add', 'change', 'view', 'delete'],
+                'finance.transaction': ['add', 'change', 'view', 'delete'],
+
+                # EFRIS Integration
+                'efris.efrisconfig': ['add', 'change', 'view', 'delete'],
+                'efris.efrisinvoice': ['add', 'change', 'view', 'delete'],
+
+                # Notifications
+                'notifications.notification': ['add', 'change', 'view', 'delete'],
+            }
+        },
+        'Super Admin': {
+            'description': 'Trusted company administrator. Can manage operations, users, and data but cannot modify company settings or billing.',
+            'color_code': '#dc3545',
+            'priority': 90,
+            'is_system_role': True,
+            'custom_permissions': [
+                'accounts.can_manage_users',
+                'accounts.can_view_reports',
+                'accounts.can_manage_settings',
+            ],
+            'permissions': {
+                # User Management (limited)
+                'accounts.customuser': ['add', 'change', 'view'],
+                'accounts.role': ['view'],
+                'accounts.rolehistory': ['view'],
+                'accounts.usersignature': ['add', 'change', 'view'],
+
+                # Full Inventory Control
+                'inventory.product': ['add', 'change', 'view', 'delete'],
+                'inventory.category': ['add', 'change', 'view', 'delete'],
+                'inventory.stock': ['add', 'change', 'view', 'delete'],
+                'inventory.stockmovement': ['add', 'change', 'view', 'delete'],
+                'inventory.supplier': ['add', 'change', 'view', 'delete'],
+                'inventory.importresult': ['view'],
+
+                # Invoice Management
+                'invoices.invoice': ['add', 'change', 'view', 'delete'],
+                'invoices.invoicepayment': ['add', 'change', 'view'],
+                'invoices.receipt': ['add', 'change', 'view'],
+
+                # Sales Management
+                'sales.sale': ['add', 'change', 'view', 'delete'],
+                'sales.saleitem': ['add', 'change', 'view', 'delete'],
+                'sales.receipt': ['add', 'change', 'view'],
+                'sales.payment': ['add', 'change', 'view'],
+                'sales.cart': ['add', 'change', 'view', 'delete'],
+                'sales.cartitem': ['add', 'change', 'view', 'delete'],
+
+                # Store Operations
+                'stores.store': ['change', 'view'],
+                'stores.storeoperatinghours': ['add', 'change', 'view'],
+                'stores.storedevice': ['change', 'view'],
+                'stores.userdevicesession': ['view', 'delete'],
+                'stores.securityalert': ['view'],
+                'stores.devicefingerprint': ['view'],
+
+                # Full Report Access
+                'reports.savedreport': ['add', 'change', 'view', 'delete'],
+                'reports.reportschedule': ['add', 'change', 'view', 'delete'],
+                'reports.generatedreport': ['add', 'change', 'view', 'delete'],
+                'reports.reportaccesslog': ['view'],
+                'reports.reportcomparison': ['add', 'change', 'view'],
+
+                # Customer Management
+                'customers.customer': ['add', 'change', 'view', 'delete'],
+                'customers.customergroup': ['add', 'change', 'view', 'delete'],
+
+                # Branch View
+                'branches.companybranch': ['view'],
+
+                # Expense Management
+                'expenses.expense': ['add', 'change', 'view', 'delete'],
+                'expenses.expensecategory': ['add', 'change', 'view', 'delete'],
+
+                # Finance View
+                'finance.account': ['view'],
+                'finance.transaction': ['add', 'change', 'view'],
+
+                # EFRIS
+                'efris.efrisconfig': ['view'],
+                'efris.efrisinvoice': ['add', 'change', 'view'],
+
+                # Notifications
+                'notifications.notification': ['add', 'change', 'view', 'delete'],
+            }
         },
         'Manager': {
-            'description': 'Store manager with access to sales, inventory, reports, and staff management. Cannot modify system settings.',
-            'color_code': '#0d6efd',  # Blue
+            'description': 'Store manager with access to sales, inventory, reports, and staff management.',
+            'color_code': '#0d6efd',
             'priority': 80,
             'is_system_role': True,
+            'custom_permissions': [
+                'accounts.can_manage_users',
+                'accounts.can_view_reports',
+            ],
             'permissions': {
+                # Limited User Management
+                'accounts.customuser': ['add', 'change', 'view'],
+                'accounts.role': ['view'],
+
                 # Inventory Management
                 'inventory.product': ['add', 'change', 'view'],
                 'inventory.category': ['add', 'change', 'view'],
                 'inventory.stock': ['add', 'change', 'view'],
-                'inventory.stockmovement': ['add', 'view'],
+                'inventory.stockmovement': ['add', 'change', 'view'],
                 'inventory.supplier': ['add', 'change', 'view'],
+                'inventory.importresult': ['view'],
 
-                # Invoices
+                # Invoice Management
                 'invoices.invoice': ['add', 'change', 'view'],
-                'invoices.invoicepayment': ['add', 'view'],
+                'invoices.invoicepayment': ['add', 'change', 'view'],
+                'invoices.receipt': ['view'],
 
-                #sales
-                'sales.sale': ['add','change','view'],
-                'sales.saleitem': ['add','change','view'],
-                'sales.receipt': ['add','change','view'],
-                'sales.payment': ['add','change','view'],
-                'sales.cart': ['add', 'change', 'view'],
-                'sales.cartitem': ['add', 'change', 'view'],
+                # Sales Operations
+                'sales.sale': ['add', 'change', 'view'],
+                'sales.saleitem': ['add', 'change', 'view'],
+                'sales.receipt': ['add', 'change', 'view'],
+                'sales.payment': ['add', 'change', 'view'],
+                'sales.cart': ['add', 'change', 'view', 'delete'],
+                'sales.cartitem': ['add', 'change', 'view', 'delete'],
 
                 # Store Management
-                'stores.store': ['view'],
-                'stores.storeoperatinghours': ['view', 'change'],
-                'stores.storedevice': ['view', 'change'],
+                'stores.store': ['change', 'view'],
+                'stores.storeoperatinghours': ['add', 'change', 'view'],
+                'stores.storedevice': ['change', 'view'],
                 'stores.userdevicesession': ['view', 'change'],
                 'stores.securityalert': ['view'],
                 'stores.devicefingerprint': ['view'],
 
                 # Reports
-                'reports.savedreport': ['view','add','change'],
-                'reports.reportschedule': ['view','change','add'],
-                'reports.generatedreport': ['view','add','change'],
+                'reports.savedreport': ['add', 'change', 'view'],
+                'reports.reportschedule': ['add', 'change', 'view'],
+                'reports.generatedreport': ['add', 'change', 'view'],
                 'reports.reportaccesslog': ['view'],
                 'reports.reportcomparison': ['view'],
 
-                # Users (limited)
-                'accounts.customuser': ['view','change'],
-                'accounts.role': ['view'],
-            }
-        },
-        'Cashier': {
-            'description': 'Point of sale operator. Can process sales, handle payments, and view basic inventory. No access to reports or settings.',
-            'color_code': '#198754',  # Green
-            'priority': 60,
-            'is_system_role': True,
-            'permissions': {
-                # Sales Only
-                'invoices.invoice': ['add', 'view'],
-                'invoices.payment': ['add', 'view'],
-                'invoices.receipt': ['view'],
+                # Customer Management
+                'customers.customer': ['add', 'change', 'view'],
+                'customers.customergroup': ['add', 'change', 'view'],
 
-                'sales.sale': ['add', 'view'],
-                'sales.payment': ['add', 'view'],
-                'sales.receipt': ['view'],
+                # Expense Management
+                'expenses.expense': ['add', 'change', 'view'],
+                'expenses.expensecategory': ['view'],
 
-                # Limited Inventory (view only)
-                'inventory.product': ['view'],
-                'inventory.category': ['view'],
-
-                # Store
-                'stores.store': ['view'],
-            }
-        },
-        'Stock Keeper': {
-            'description': 'Inventory management specialist. Can manage stock levels, receive deliveries, and perform stock adjustments. No sales access.',
-            'color_code': '#fd7e14',  # Orange
-            'priority': 50,
-            'is_system_role': True,
-            'permissions': {
-                # Full Inventory Access
-                'inventory.product': ['add', 'change', 'view'],
-                'inventory.category': ['add', 'change', 'view'],
-                'inventory.stockmovement': ['add', 'change', 'view'],
-                'inventory.stock': ['add', 'change', 'view'],
-                'inventory.supplier': ['add', 'change', 'view'],
-                'inventory.importresult': [ 'view'],
-
-                # Store (view only)
-                'stores.store': ['view'],
-
-                # Reports (inventory only)
-                'reports.generatedreport': ['view'],
+                # Notifications
+                'notifications.notification': ['view'],
             }
         },
         'Accountant': {
-            'description': 'Financial management and reporting. Full access to financial reports, payments, and expenses. No inventory management.',
-            'color_code': '#6f42c1',  # Purple
+            'description': 'Financial management and reporting. Full access to financial reports, payments, and expenses.',
+            'color_code': '#6f42c1',
             'priority': 70,
             'is_system_role': True,
+            'custom_permissions': [
+                'accounts.can_view_reports',
+                'accounts.can_export_data',
+            ],
             'permissions': {
-                # Financial
-                'invoices.invoice': ['view'],
-                'sales.sale': ['add', 'change', 'view'],
-                'sales.receipt': ['view'],
-
-                # Reports (all)
-                'reports.savedreport': ['view'],
-                'reports.generatedreport': ['view'],
-
-                # Limited User View
+                # View Users Only
                 'accounts.customuser': ['view'],
+
+                # Invoice & Payment Management
+                'invoices.invoice': ['add', 'change', 'view'],
+                'invoices.invoicepayment': ['add', 'change', 'view'],
+                'invoices.receipt': ['add', 'change', 'view'],
+
+                # Sales View & Payment
+                'sales.sale': ['view'],
+                'sales.saleitem': ['view'],
+                'sales.receipt': ['view'],
+                'sales.payment': ['add', 'change', 'view'],
+
+                # Reports - Full Access
+                'reports.savedreport': ['add', 'change', 'view', 'delete'],
+                'reports.generatedreport': ['add', 'change', 'view', 'delete'],
+                'reports.reportschedule': ['add', 'change', 'view'],
+                'reports.reportaccesslog': ['view'],
+                'reports.reportcomparison': ['add', 'change', 'view'],
+
+                # Expense Management - Full
+                'expenses.expense': ['add', 'change', 'view', 'delete'],
+                'expenses.expensecategory': ['add', 'change', 'view', 'delete'],
+
+                # Finance - Full Access
+                'finance.account': ['add', 'change', 'view', 'delete'],
+                'finance.transaction': ['add', 'change', 'view', 'delete'],
+
+                # Customer View
+                'customers.customer': ['view'],
+                'customers.customergroup': ['view'],
+
+                # Inventory View Only
+                'inventory.product': ['view'],
+                'inventory.stock': ['view'],
+
+                # Store View
+                'stores.store': ['view'],
+
+                # EFRIS
+                'efris.efrisconfig': ['view'],
+                'efris.efrisinvoice': ['view'],
+
+                # Notifications
+                'notifications.notification': ['view'],
+            }
+        },
+        'Cashier': {
+            'description': 'Point of sale operator. Can process sales, handle payments, and view basic inventory.',
+            'color_code': '#198754',
+            'priority': 60,
+            'is_system_role': True,
+            'custom_permissions': [],
+            'permissions': {
+                # Sales Operations
+                'sales.sale': ['add', 'view'],
+                'sales.saleitem': ['add', 'view'],
+                'sales.payment': ['add', 'view'],
+                'sales.receipt': ['add', 'view'],
+                'sales.cart': ['add', 'change', 'view', 'delete'],
+                'sales.cartitem': ['add', 'change', 'view', 'delete'],
+
+                # Invoice Creation
+                'invoices.invoice': ['add', 'view'],
+                'invoices.invoicepayment': ['add', 'view'],
+                'invoices.receipt': ['view'],
+
+                # Inventory View Only
+                'inventory.product': ['view'],
+                'inventory.category': ['view'],
+                'inventory.stock': ['view'],
+
+                # Store View
+                'stores.store': ['view'],
+
+                # Customer Management (Limited)
+                'customers.customer': ['add', 'view'],
+
+                # EFRIS Invoice
+                'efris.efrisinvoice': ['add', 'view'],
+
+                # Notifications
+                'notifications.notification': ['view'],
+            }
+        },
+        'Stock Keeper': {
+            'description': 'Inventory management specialist. Can manage stock levels, receive deliveries, and perform stock adjustments.',
+            'color_code': '#fd7e14',
+            'priority': 50,
+            'is_system_role': True,
+            'custom_permissions': [],
+            'permissions': {
+                # Full Inventory Management
+                'inventory.product': ['add', 'change', 'view'],
+                'inventory.category': ['add', 'change', 'view'],
+                'inventory.stock': ['add', 'change', 'view'],
+                'inventory.stockmovement': ['add', 'change', 'view'],
+                'inventory.supplier': ['add', 'change', 'view'],
+                'inventory.importresult': ['view'],
+
+                # Store View
+                'stores.store': ['view'],
+
+                # Reports - Inventory Only
+                'reports.generatedreport': ['view'],
+                'reports.savedreport': ['view'],
+
+                # Notifications
+                'notifications.notification': ['view'],
             }
         },
         'Sales Rep': {
             'description': 'Sales representative with customer management. Can create quotes, manage customers, and view sales reports.',
-            'color_code': '#20c997',  # Teal
+            'color_code': '#20c997',
             'priority': 40,
             'is_system_role': True,
+            'custom_permissions': [],
             'permissions': {
-                # Sales
-                'invoices.invoice': ['add', 'view'],
+                # Sales Management
                 'sales.sale': ['add', 'change', 'view'],
-                'customers.customer': ['add', 'change', 'view'],
+                'sales.saleitem': ['add', 'change', 'view'],
+                'sales.payment': ['add', 'view'],
+                'sales.receipt': ['view'],
 
-                # Limited Inventory
+                # Invoice Management
+                'invoices.invoice': ['add', 'change', 'view'],
+                'invoices.invoicepayment': ['add', 'view'],
+
+                # Customer Management - Full
+                'customers.customer': ['add', 'change', 'view'],
+                'customers.customergroup': ['add', 'change', 'view'],
+
+                # Inventory View
                 'inventory.product': ['view'],
                 'inventory.category': ['view'],
+                'inventory.stock': ['view'],
 
-                # Reports (sales only)
+                # Reports View
                 'reports.savedreport': ['view'],
+                'reports.generatedreport': ['view'],
+
+                # Store View
+                'stores.store': ['view'],
+
+                # Notifications
+                'notifications.notification': ['view'],
             }
         },
         'Viewer': {
-            'description': 'Read-only access. Can view all data but cannot make any changes. Useful for auditors or external consultants.',
-            'color_code': '#6c757d',  # Gray
+            'description': 'Read-only access. Can view all data but cannot make any changes.',
+            'color_code': '#6c757d',
             'priority': 10,
             'is_system_role': True,
+            'custom_permissions': [
+                'accounts.can_view_reports',
+            ],
             'permissions': {
-                # View everything
+                # View Everything, Change Nothing
                 'inventory.product': ['view'],
                 'inventory.category': ['view'],
+                'inventory.stock': ['view'],
                 'inventory.stockmovement': ['view'],
                 'inventory.supplier': ['view'],
                 'invoices.invoice': ['view'],
+                'invoices.invoicepayment': ['view'],
+                'invoices.receipt': ['view'],
                 'sales.sale': ['view'],
+                'sales.saleitem': ['view'],
                 'sales.receipt': ['view'],
+                'sales.payment': ['view'],
                 'stores.store': ['view'],
+                'stores.storeoperatinghours': ['view'],
+                'stores.storedevice': ['view'],
                 'accounts.customuser': ['view'],
+                'accounts.role': ['view'],
                 'reports.savedreport': ['view'],
                 'reports.generatedreport': ['view'],
+                'reports.reportcomparison': ['view'],
+                'customers.customer': ['view'],
+                'customers.customergroup': ['view'],
+                'branches.companybranch': ['view'],
+                'expenses.expense': ['view'],
+                'expenses.expensecategory': ['view'],
+                'finance.account': ['view'],
+                'finance.transaction': ['view'],
+                'efris.efrisconfig': ['view'],
+                'efris.efrisinvoice': ['view'],
+                'notifications.notification': ['view'],
             }
         }
     }
@@ -208,34 +520,32 @@ def get_default_roles_config():
 
 @receiver(post_save, sender=Company)
 def create_default_roles_for_tenant(sender, instance, created, **kwargs):
-    """
-    Create default roles when a new tenant (company) is created.
-    Only runs for non-public schemas.
-    """
+    """Create default roles when a new company is created"""
     if not created:
         return
 
-    # Skip for public schema
     if instance.schema_name == 'public':
         return
 
-    # Use schema_context to work within tenant
     from django_tenants.utils import schema_context
 
     with schema_context(instance.schema_name):
         try:
+            # Check if tables exist
+            existing_tables = connection.introspection.table_names()
+            if "auth_group" not in existing_tables or "accounts_role" not in existing_tables:
+                logger.warning(
+                    f"Skipping role creation for {instance.schema_name} — auth tables not ready"
+                )
+                return
+
             logger.info(f"Creating default roles for tenant: {instance.schema_name}")
 
             roles_config = get_default_roles_config()
             created_roles = []
 
             for role_name, config in roles_config.items():
-                # Create the underlying Group
-                group, group_created = Group.objects.get_or_create(
-                    name=role_name
-                )
-
-                # Create the Role wrapper
+                group, group_created = Group.objects.get_or_create(name=role_name)
                 role, role_created = Role.objects.get_or_create(
                     group=group,
                     company=instance,
@@ -249,24 +559,17 @@ def create_default_roles_for_tenant(sender, instance, created, **kwargs):
                 )
 
                 if role_created:
-                    # Assign permissions
                     if config['permissions'] == 'all':
-                        # Super Admin gets all permissions
-                        all_permissions = Permission.objects.all()
-                        group.permissions.set(all_permissions)
+                        group.permissions.set(Permission.objects.all())
                     else:
-                        # Assign specific permissions
                         permissions_to_add = []
-
                         for model_path, actions in config['permissions'].items():
                             app_label, model_name = model_path.split('.')
-
                             try:
                                 content_type = ContentType.objects.get(
                                     app_label=app_label,
                                     model=model_name.lower()
                                 )
-
                                 for action in actions:
                                     codename = f"{action}_{model_name.lower()}"
                                     try:
@@ -277,41 +580,35 @@ def create_default_roles_for_tenant(sender, instance, created, **kwargs):
                                         permissions_to_add.append(permission)
                                     except Permission.DoesNotExist:
                                         logger.warning(
-                                            f"Permission {codename} not found for {model_path}"
+                                            f"Permission {codename} not found for {app_label}.{model_name}"
                                         )
                             except ContentType.DoesNotExist:
-                                logger.warning(
-                                    f"ContentType not found for {model_path}"
-                                )
+                                logger.warning(f"ContentType not found for {model_path}")
 
                         if permissions_to_add:
                             group.permissions.add(*permissions_to_add)
 
                     created_roles.append(role_name)
-                    logger.info(f"Created role: {role_name} with {group.permissions.count()} permissions")
+                    logger.info(f"✓ Created role: {role_name} (priority: {config['priority']})")
 
             if created_roles:
-                logger.info(
-                    f"Successfully created {len(created_roles)} default roles for "
-                    f"tenant {instance.schema_name}: {', '.join(created_roles)}"
-                )
+                logger.info(f"✅ Created {len(created_roles)} roles: {', '.join(created_roles)}")
+            else:
+                logger.info(f"ℹ️  All roles already exist for {instance.schema_name}")
 
         except Exception as e:
             logger.error(
-                f"Error creating default roles for tenant {instance.schema_name}: {str(e)}",
+                f"❌ Error creating default roles for tenant {instance.schema_name}: {e}",
                 exc_info=True
             )
 
 
-# Optional: Also create roles when running migrations
+
 def create_default_roles_on_migrate(sender, **kwargs):
     """
     Alternative approach: Create default roles when running migrations.
     This is useful if you want to create roles for existing tenants.
     """
-    from django_tenants.utils import get_tenant_model, schema_context
-
-    # Get current tenant from connection
     from django.db import connection
 
     if hasattr(connection, 'tenant') and connection.tenant:
@@ -330,35 +627,240 @@ def create_default_roles_on_migrate(sender, **kwargs):
         logger.info(f"Creating default roles during migration for {tenant.schema_name}")
         create_default_roles_for_tenant(Company, tenant, created=True)
 
-@receiver(post_save, sender=CustomUser)
-def assign_role_and_staff_status(sender, instance: CustomUser, created, **kwargs):
-    """
-    Assign group permissions based on user_type after saving the user.
-    Only runs on new users (created=True).
-    """
-    if not created:
-        return  # Only assign roles when user is first created
 
-    role_name = USER_TYPE_TO_ROLE.get(instance.user_type)
-    if not role_name:
-        logger.warning(f"No role mapping defined for user_type '{instance.user_type}'")
+def table_exists(table_name: str) -> bool:
+    """Check if a given database table exists."""
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = %s)",
+                [table_name],
+            )
+            return cursor.fetchone()[0]
+    except Exception:
+        return False
+
+
+# ------------------- AUTH EVENT LOGGING -------------------
+
+@receiver(user_logged_in)
+@safe_schema_context
+def log_user_login(sender, request, user, **kwargs):
+    """Log successful user login"""
+    from .utils import get_location_from_ip
+    from .models import LoginHistory, AuditLog
+
+    # ✅ Skip if tables aren't ready
+    if not table_exists(LoginHistory._meta.db_table) or not table_exists(AuditLog._meta.db_table):
         return
+
+    from .utils import get_client_ip, parse_user_agent
+
+    ip_address = get_client_ip(request)
+    user_agent = request.META.get('HTTP_USER_AGENT', '')
+    browser_info = parse_user_agent(user_agent)
+
+    # Create login history
+    login_history = LoginHistory.objects.create(
+        user=user,
+        status='success',
+        ip_address=ip_address,
+        user_agent=user_agent,
+        browser=browser_info.get('browser', ''),
+        os=browser_info.get('os', ''),
+        device_type=browser_info.get('device_type', ''),
+        session_key=request.session.session_key
+    )
+
+    # Get location (optional)
+    try:
+        location_data = get_location_from_ip(ip_address)
+        if location_data:
+            login_history.location = location_data.get('city', '')
+            login_history.latitude = location_data.get('latitude')
+            login_history.longitude = location_data.get('longitude')
+            login_history.save(update_fields=['location', 'latitude', 'longitude'])
+    except Exception:
+        pass  # Don't fail login if location lookup fails
+
+    # Create audit log
+    AuditLog.objects.create(
+        user=user,
+        action='login_success',
+        action_description=f"User {user.get_full_name()} logged in successfully",
+        ip_address=ip_address,
+        user_agent=user_agent,
+        request_path=request.path,
+        request_method=request.method,
+        company=getattr(user, 'company', None),
+        metadata={
+            'browser': browser_info.get('browser', ''),
+            'os': browser_info.get('os', ''),
+            'device_type': browser_info.get('device_type', '')
+        }
+    )
+
+
+@receiver(user_login_failed)
+@safe_schema_context
+def log_failed_login(sender, credentials, request, **kwargs):
+    """Log failed login attempt"""
+    from .models import LoginHistory, AuditLog
+
+    # ✅ Skip if tables aren't ready
+    if not table_exists(LoginHistory._meta.db_table) or not table_exists(AuditLog._meta.db_table):
+        return
+
+    from django.contrib.auth import get_user_model
+    from .utils import get_client_ip
+
+    ip_address = get_client_ip(request)
+    user_agent = request.META.get('HTTP_USER_AGENT', '')
+
+    User = get_user_model()
+    username = credentials.get('username', '')
+    user = None
 
     try:
-        role = Role.objects.get(group__name=role_name)
-    except Role.DoesNotExist:
-        logger.warning(f"Role '{role_name}' does not exist. Cannot assign group.")
+        user = User.objects.get(username=username)
+    except User.DoesNotExist:
+        try:
+            user = User.objects.get(email=username)
+        except User.DoesNotExist:
+            pass
+
+    if user:
+        LoginHistory.objects.create(
+            user=user,
+            status='failed',
+            ip_address=ip_address,
+            user_agent=user_agent,
+            failure_reason='Invalid credentials'
+        )
+
+    AuditLog.objects.create(
+        user=user,
+        action='login_failed',
+        action_description=f"Failed login attempt for username: {username}",
+        ip_address=ip_address,
+        user_agent=user_agent,
+        request_path=getattr(request, 'path', ''),
+        request_method=getattr(request, 'method', ''),
+        success=False,
+        severity='warning',
+        metadata={'username_attempted': username}
+    )
+
+
+@receiver(user_logged_out)
+@safe_schema_context
+def log_user_logout(sender, request, user, **kwargs):
+    """Log user logout"""
+    from .models import LoginHistory, AuditLog
+    from .utils import get_client_ip
+
+    # ✅ Skip if tables aren't ready
+    if not table_exists(LoginHistory._meta.db_table) or not table_exists(AuditLog._meta.db_table):
         return
 
-    # Safe to assign M2M now, user.id exists
-    instance.groups.set([role.group])
+    ip_address = get_client_ip(request)
 
-    # Optionally set is_staff based on user_type
-    instance.is_staff = instance.user_type in ['SUPER_ADMIN', 'MANAGER']
-    instance.save(update_fields=['is_staff'])
+    # Update login history
+    if hasattr(request, 'session') and request.session.session_key:
+        LoginHistory.objects.filter(
+            user=user,
+            session_key=request.session.session_key,
+            logout_timestamp__isnull=True
+        ).update(logout_timestamp=timezone.now())
+
+    AuditLog.objects.create(
+        user=user,
+        action='logout',
+        action_description=f"User {user.get_full_name()} logged out",
+        ip_address=ip_address,
+        user_agent=request.META.get('HTTP_USER_AGENT', ''),
+        request_path=request.path,
+        request_method=request.method,
+        company=getattr(user, 'company', None)
+    )
 
 
-# Connect the migration signal (optional)
-from django.db.models.signals import post_migrate
-# Uncomment to enable role creation on migrate:
-# post_migrate.connect(create_default_roles_on_migrate, sender=None)
+# ------------------- GENERIC MODEL CHANGE TRACKING -------------------
+
+def should_audit_model(model_class):
+    """Check if model should be audited"""
+    audit_models = [
+        'CustomUser', 'Company', 'Store', 'Product',
+        'Sale', 'Invoice', 'Expense', 'Stock'
+    ]
+    return model_class.__name__ in audit_models
+
+
+@receiver(post_save)
+@safe_schema_context
+def log_model_save(sender, instance, created, **kwargs):
+    """Log model creation/update"""
+    from .models import AuditLog
+
+    # ✅ Skip if AuditLog table doesn't exist yet
+    if not table_exists(AuditLog._meta.db_table):
+        return
+
+    if not should_audit_model(sender) or sender.__name__ == 'AuditLog':
+        return
+
+    action = f"{sender.__name__.lower()}_created" if created else f"{sender.__name__.lower()}_updated"
+    description = f"{'Created' if created else 'Updated'} {sender._meta.verbose_name}: {str(instance)}"
+
+    user = getattr(instance, 'created_by', None) or getattr(instance, 'updated_by', None)
+
+    try:
+        AuditLog.objects.create(
+            user=user,
+            action=action if action in dict(AuditLog.ACTION_TYPES) else 'other',
+            action_description=description,
+            content_object=instance,
+            resource_name=str(instance),
+            is_system_action=user is None,
+            company=getattr(instance, 'company', None),
+            metadata={
+                'model': sender.__name__,
+                'created': created
+            }
+        )
+    except Exception as e:
+        logger.error(f"Failed to create audit log: {e}")
+
+
+@receiver(post_delete)
+@safe_schema_context
+def log_model_delete(sender, instance, **kwargs):
+    """Log model deletion"""
+    from .models import AuditLog
+
+    # ✅ Skip if AuditLog table doesn't exist yet
+    if not table_exists(AuditLog._meta.db_table):
+        return
+
+    if not should_audit_model(sender) or sender.__name__ == 'AuditLog':
+        return
+
+    action = f"{sender.__name__.lower()}_deleted"
+    description = f"Deleted {sender._meta.verbose_name}: {str(instance)}"
+    user = getattr(instance, 'deleted_by', None)
+
+    try:
+        AuditLog.objects.create(
+            user=user,
+            action=action if action in dict(AuditLog.ACTION_TYPES) else 'other',
+            action_description=description,
+            resource_name=str(instance),
+            is_system_action=user is None,
+            company=getattr(instance, 'company', None),
+            metadata={
+                'model': sender.__name__,
+                'deleted': True
+            }
+        )
+    except Exception as e:
+        logger.error(f"Failed to create audit log for deletion: {e}")

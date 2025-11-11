@@ -1,0 +1,167 @@
+{% extends 'base.html' %}
+{% load static %}
+{% load i18n %}
+
+{% block title %}{% trans "System Announcements" %} | {{ block.super }}{% endblock %}
+
+{% block breadcrumb_items %}
+<li class="breadcrumb-item"><a href="{% url 'messaging:admin_dashboard' %}">{% trans "Admin" %}</a></li>
+<li class="breadcrumb-item active">{% trans "Announcements" %}</li>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h1><i class="bi bi-megaphone me-2"></i>{% trans "System Announcements" %}</h1>
+            <p class="text-muted mb-0">{% trans "Broadcast important updates to all users" %}</p>
+        </div>
+        <a href="{% url 'messaging:admin_create_announcement' %}" class="btn btn-primary">
+            <i class="bi bi-plus-lg me-2"></i>{% trans "Create Announcement" %}
+        </a>
+    </div>
+
+    <!-- Announcements List -->
+    <div class="row">
+        {% for announcement in announcements %}
+        <div class="col-md-6 mb-4">
+            <div class="card h-100">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <div>
+                        <span class="badge {% if announcement.announcement_type == 'critical' %}bg-danger{% elif announcement.announcement_type == 'warning' %}bg-warning{% elif announcement.announcement_type == 'maintenance' %}bg-primary{% elif announcement.announcement_type == 'update' %}bg-success{% elif announcement.announcement_type == 'feature' %}bg-info{% else %}bg-secondary{% endif %}">
+                            {{ announcement.get_announcement_type_display }}
+                        </span>
+                        <span class="badge bg-secondary ms-1">{{ announcement.get_priority_display }}</span>
+                    </div>
+                    <div>
+                        {% if announcement.is_sent %}
+                            <span class="badge bg-success">{% trans "Sent" %}</span>
+                        {% elif announcement.scheduled_for %}
+                            <span class="badge bg-warning">{% trans "Scheduled" %}</span>
+                        {% else %}
+                            <span class="badge bg-secondary">{% trans "Draft" %}</span>
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="card-body">
+                    <h5 class="card-title">{{ announcement.title }}</h5>
+                    <p class="card-text">{{ announcement.message|truncatewords:50 }}</p>
+                    
+                    <div class="mb-3">
+                        <small class="text-muted">
+                            <i class="bi bi-person me-1"></i>
+                            {% trans "By" %} {{ announcement.created_by.username }}
+                        </small>
+                        <br>
+                        <small class="text-muted">
+                            <i class="bi bi-calendar me-1"></i>
+                            {{ announcement.created_at|date:"Y-m-d H:i" }}
+                        </small>
+                        {% if announcement.scheduled_for %}
+                        <br>
+                        <small class="text-muted">
+                            <i class="bi bi-clock me-1"></i>
+                            {% trans "Scheduled for" %}: {{ announcement.scheduled_for|date:"Y-m-d H:i" }}
+                        </small>
+                        {% endif %}
+                        {% if announcement.sent_at %}
+                        <br>
+                        <small class="text-muted">
+                            <i class="bi bi-check-circle me-1"></i>
+                            {% trans "Sent at" %}: {{ announcement.sent_at|date:"Y-m-d H:i" }}
+                        </small>
+                        {% endif %}
+                    </div>
+
+                    <div class="d-flex gap-2">
+                        {% if announcement.show_in_app %}
+                            <span class="badge bg-primary"><i class="bi bi-app"></i> In-App</span>
+                        {% endif %}
+                        {% if announcement.send_email %}
+                            <span class="badge bg-primary"><i class="bi bi-envelope"></i> Email</span>
+                        {% endif %}
+                        {% if announcement.target_all_tenants %}
+                            <span class="badge bg-info">{% trans "All Tenants" %}</span>
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="card-footer">
+                    {% if not announcement.is_sent %}
+                    <button class="btn btn-sm btn-success" onclick="sendAnnouncement({{ announcement.id }})">
+                        <i class="bi bi-send"></i> {% trans "Send Now" %}
+                    </button>
+                    {% endif %}
+                    <button class="btn btn-sm btn-outline-secondary" onclick="viewDetails({{ announcement.id }})">
+                        <i class="bi bi-eye"></i> {% trans "View" %}
+                    </button>
+                    {% if not announcement.is_sent %}
+                    <button class="btn btn-sm btn-outline-danger" onclick="deleteAnnouncement({{ announcement.id }})">
+                        <i class="bi bi-trash"></i> {% trans "Delete" %}
+                    </button>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        {% empty %}
+        <div class="col-12">
+            <div class="text-center py-5">
+                <i class="bi bi-megaphone text-muted" style="font-size: 4rem;"></i>
+                <p class="text-muted mt-3">{% trans "No announcements yet" %}</p>
+                <a href="{% url 'messaging:admin_create_announcement' %}" class="btn btn-primary">
+                    {% trans "Create Your First Announcement" %}
+                </a>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function sendAnnouncement(id) {
+    if (!confirm('{% trans "Send this announcement now?" %}')) return;
+    
+    fetch(`/api/messaging/announcements/${id}/send/`, {
+        method: 'POST',
+        headers: {
+            'X-CSRFToken': '{{ csrf_token }}',
+            'Content-Type': 'application/json'
+        },
+        credentials: 'include'
+    })
+    .then(response => response.json())
+    .then(data => {
+        window.showAlert('{% trans "Announcement sent successfully!" %}', 'success');
+        location.reload();
+    })
+    .catch(error => {
+        window.showAlert('{% trans "Error sending announcement" %}', 'danger');
+    });
+}
+
+function deleteAnnouncement(id) {
+    if (!confirm('{% trans "Delete this announcement?" %}')) return;
+    
+    fetch(`/api/messaging/announcements/${id}/`, {
+        method: 'DELETE',
+        headers: {
+            'X-CSRFToken': '{{ csrf_token }}'
+        },
+        credentials: 'include'
+    })
+    .then(() => {
+        window.showAlert('{% trans "Announcement deleted" %}', 'info');
+        location.reload();
+    })
+    .catch(error => {
+        window.showAlert('{% trans "Error deleting announcement" %}', 'danger');
+    });
+}
+
+function viewDetails(id) {
+    window.location.href = `/en/messaging/admin/announcements/${id}/`;
+}
+</script>
+{% endblock %}
+

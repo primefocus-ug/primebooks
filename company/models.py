@@ -710,14 +710,33 @@ class Company(TenantMixin,EFRISCompanyMixin):
         """EFRIS taxpayer name - uses legal company name"""
         return self.name
 
+
+
     @property
     def efris_config(self):
-        """Get EFRIS configuration (django-tenants compatible)"""
+        """Get EFRIS configuration safely (django-tenants compatible)"""
         from django_tenants.utils import schema_context
         from efris.models import EFRISConfiguration
 
-        with schema_context(self.schema_name):
-            return EFRISConfiguration.get_for_company(self)
+        try:
+            with schema_context(self.schema_name):
+                from django.db import connection
+                from django.db.utils import ProgrammingError, OperationalError
+                # Check if table exists in this schema
+                with connection.cursor() as cursor:
+                    cursor.execute("""
+                        SELECT EXISTS (
+                            SELECT 1 FROM information_schema.tables 
+                            WHERE table_schema = %s AND table_name = 'efris_efrisconfiguration'
+                        )
+                    """, [self.schema_name])
+                    if not cursor.fetchone()[0]:
+                        return None
+
+                return EFRISConfiguration.get_for_company(self)
+        except (ProgrammingError, OperationalError):
+            # Happens if schema context not ready or migrations pending
+            return None
 
     @property
     def efris_business_name(self):

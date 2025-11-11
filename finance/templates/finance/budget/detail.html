@@ -1,0 +1,290 @@
+{% extends 'base.html' %}
+{% load i18n %}
+
+{% block title %}{{ budget.name }} | {{ block.super }}{% endblock %}
+
+{% block breadcrumb_items %}
+<li class="breadcrumb-item"><a href="{% url 'finance:dashboard' %}">{% trans "Finance" %}</a></li>
+<li class="breadcrumb-item"><a href="{% url 'finance:budget_list' %}">{% trans "Budgets" %}</a></li>
+<li class="breadcrumb-item active">{{ budget.name }}</li>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+    .variance-positive { color: var(--green-600); }
+    .variance-negative { color: var(--red-600); }
+    .budget-line-row:hover {
+        background-color: var(--primary-50);
+    }
+    [data-theme="dark"] .budget-line-row:hover {
+        background-color: rgba(59, 130, 246, 0.1);
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- Budget Header -->
+    <div class="card shadow-lg mb-4" style="background: linear-gradient(135deg, var(--primary-600), var(--primary-700)); color: white;">
+        <div class="card-body p-4">
+            <div class="row align-items-center">
+                <div class="col-12 col-md-8">
+                    <div class="d-flex align-items-center mb-3">
+                        <h2 class="mb-0 me-3">{{ budget.name }}</h2>
+                        <span class="badge bg-light text-primary">{{ budget.get_status_display }}</span>
+                    </div>
+                    <p class="mb-0 opacity-75">
+                        <i class="bi bi-calendar3 me-2"></i>{{ budget.fiscal_year.name }}
+                        ({{ budget.fiscal_year.start_date|date:"M d, Y" }} - {{ budget.fiscal_year.end_date|date:"M d, Y" }})
+                    </p>
+                </div>
+                <div class="col-12 col-md-4 mt-3 mt-md-0 text-md-end">
+                    <p class="mb-1 opacity-75">{% trans "Total Budget" %}</p>
+                    <h1 class="mb-0">{{ budget.total_budget_amount|floatformat:2 }}</h1>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Action Buttons -->
+    <div class="d-flex flex-wrap gap-2 mb-4">
+        {% if perms.finance.change_budget and budget.status == 'DRAFT' %}
+        <a href="{% url 'finance:budget_update' budget.id %}" class="btn btn-primary">
+            <i class="bi bi-pencil me-1"></i>{% trans "Edit Budget" %}
+        </a>
+        {% endif %}
+        {% if perms.finance.add_budget %}
+        <button class="btn btn-outline-primary" onclick="copyBudget()">
+            <i class="bi bi-files me-1"></i>{% trans "Copy Budget" %}
+        </button>
+        {% endif %}
+        <button class="btn btn-outline-success" onclick="exportBudget()">
+            <i class="bi bi-file-earmark-excel me-1"></i>{% trans "Export to Excel" %}
+        </button>
+        <button class="btn btn-outline-primary" onclick="window.print()">
+            <i class="bi bi-printer me-1"></i>{% trans "Print" %}
+        </button>
+    </div>
+
+    <!-- Summary Cards -->
+    <div class="row mb-4">
+        <div class="col-12 col-md-3 mb-3">
+            <div class="card shadow-sm border-start border-primary border-4">
+                <div class="card-body">
+                    <p class="text-muted mb-1">{% trans "Total Budget" %}</p>
+                    <h4 class="mb-0">{{ budget.total_budget_amount|floatformat:2 }}</h4>
+                </div>
+            </div>
+        </div>
+        <div class="col-12 col-md-3 mb-3">
+            <div class="card shadow-sm border-start border-danger border-4">
+                <div class="card-body">
+                    <p class="text-muted mb-1">{% trans "Actual Spent" %}</p>
+                    <h4 class="mb-0 text-danger">{{ budget.total_actual|floatformat:2 }}</h4>
+                </div>
+            </div>
+        </div>
+        <div class="col-12 col-md-3 mb-3">
+            <div class="card shadow-sm border-start border-success border-4">
+                <div class="card-body">
+                    <p class="text-muted mb-1">{% trans "Remaining" %}</p>
+                    <h4 class="mb-0 text-success">{{ budget.remaining_amount|floatformat:2 }}</h4>
+                </div>
+            </div>
+        </div>
+        <div class="col-12 col-md-3 mb-3">
+            <div class="card shadow-sm border-start border-warning border-4">
+                <div class="card-body">
+                    <p class="text-muted mb-1">{% trans "Utilization" %}</p>
+                    <h4 class="mb-0">{{ total_utilization|floatformat:0 }}%</h4>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Budget Lines Table -->
+    <div class="card shadow-sm mb-4">
+        <div class="card-header bg-light">
+            <h5 class="mb-0">
+                <i class="bi bi-list-ul me-2"></i>{% trans "Budget Lines" %}
+            </h5>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead class="bg-light">
+                        <tr>
+                            <th>{% trans "Account" %}</th>
+                            <th>{% trans "Cost Center" %}</th>
+                            <th class="text-end">{% trans "Budget" %}</th>
+                            <th class="text-end">{% trans "Actual" %}</th>
+                            <th class="text-end">{% trans "Variance" %}</th>
+                            <th class="text-end">{% trans "%" %}</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for line in lines %}
+                        <tr class="budget-line-row">
+                            <td>
+                                <a href="{% url 'finance:chart_of_accounts_detail' line.account.id %}">
+                                    {{ line.account.code }} - {{ line.account.name }}
+                                </a>
+                            </td>
+                            <td>
+                                {% if line.cost_center %}
+                                    {{ line.cost_center.name }}
+                                {% else %}
+                                    <span class="text-muted">-</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-end">{{ line.budget_amount|floatformat:2 }}</td>
+                            <td class="text-end">{{ line.actual|floatformat:2 }}</td>
+                            <td class="text-end {% if line.variance >= 0 %}variance-positive{% else %}variance-negative{% endif %}">
+                                {{ line.variance|floatformat:2 }}
+                            </td>
+                            <td class="text-end">
+                                <span class="badge bg-{% if line.utilization < 70 %}success{% elif line.utilization < 90 %}warning{% else %}danger{% endif %}">
+                                    {{ line.utilization|floatformat:0 }}%
+                                </span>
+                            </td>
+                        </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="6" class="text-center text-muted py-4">
+                                {% trans "No budget lines found" %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                    <tfoot class="bg-light fw-bold">
+                        <tr>
+                            <td colspan="2">{% trans "TOTAL" %}</td>
+                            <td class="text-end">{{ budget.total_budget_amount|floatformat:2 }}</td>
+                            <td class="text-end">{{ budget.total_actual|floatformat:2 }}</td>
+                            <td class="text-end {% if budget.total_variance >= 0 %}variance-positive{% else %}variance-negative{% endif %}">
+                                {{ budget.total_variance|floatformat:2 }}
+                            </td>
+                            <td class="text-end">{{ total_utilization|floatformat:0 }}%</td>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Charts Row -->
+    <div class="row">
+        <div class="col-12 col-lg-6 mb-4">
+            <div class="card shadow-sm h-100">
+                <div class="card-header bg-light">
+                    <h5 class="mb-0">
+                        <i class="bi bi-pie-chart me-2"></i>{% trans "Budget vs Actual" %}
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <canvas id="budgetChart" style="height: 300px;"></canvas>
+                </div>
+            </div>
+        </div>
+        <div class="col-12 col-lg-6 mb-4">
+            <div class="card shadow-sm h-100">
+                <div class="card-header bg-light">
+                    <h5 class="mb-0">
+                        <i class="bi bi-bar-chart me-2"></i>{% trans "Top Spending Categories" %}
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <canvas id="categoryChart" style="height: 300px;"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Budget vs Actual Chart
+    const budgetCtx = document.getElementById('budgetChart');
+    if (budgetCtx) {
+        new Chart(budgetCtx, {
+            type: 'doughnut',
+            data: {
+                labels: ['{% trans "Budget" %}', '{% trans "Actual" %}', '{% trans "Remaining" %}'],
+                datasets: [{
+                    data: [
+                        {{ budget.total_budget_amount }},
+                        {{ budget.total_actual }},
+                        {{ budget.remaining_amount }}
+                    ],
+                    backgroundColor: [
+                        'rgb(59, 130, 246)',
+                        'rgb(239, 68, 68)',
+                        'rgb(16, 185, 129)'
+                    ]
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        position: 'bottom'
+                    }
+                }
+            }
+        });
+    }
+
+    // Category Chart
+    const categoryCtx = document.getElementById('categoryChart');
+    if (categoryCtx) {
+        const labels = [{% for line in lines|slice:":5" %}'{{ line.account.name|truncatewords:3 }}'{% if not forloop.last %},{% endif %}{% endfor %}];
+        const budgetData = [{% for line in lines|slice:":5" %}{{ line.budget_amount }}{% if not forloop.last %},{% endif %}{% endfor %}];
+        const actualData = [{% for line in lines|slice:":5" %}{{ line.actual }}{% if not forloop.last %},{% endif %}{% endfor %}];
+
+        new Chart(categoryCtx, {
+            type: 'bar',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: '{% trans "Budget" %}',
+                    data: budgetData,
+                    backgroundColor: 'rgba(59, 130, 246, 0.7)'
+                }, {
+                    label: '{% trans "Actual" %}',
+                    data: actualData,
+                    backgroundColor: 'rgba(239, 68, 68, 0.7)'
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        position: 'bottom'
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true
+                    }
+                }
+            }
+        });
+    }
+});
+
+function copyBudget() {
+    if (confirm('{% trans "Create a copy of this budget?" %}')) {
+        window.location.href = "{% url 'finance:budget_copy' budget.id %}";
+    }
+}
+
+function exportBudget() {
+    window.location.href = "{% url 'finance:budget_export' budget.id %}";
+}
+</script>
+{% endblock %}

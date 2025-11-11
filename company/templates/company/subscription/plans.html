@@ -1,0 +1,791 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}Subscription Plans - {{ company.display_name }}{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'company/css/company.css' %}">
+<style>
+    /* Professional Theme Variables */
+    :root {
+        --primary-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        --success-gradient: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+        --bg-light: #ffffff;
+        --bg-secondary: #f8f9fa;
+        --bg-tertiary: #f1f3f5;
+        --text-primary: #1a202c;
+        --text-secondary: #718096;
+        --text-muted: #a0aec0;
+        --border-color: #e2e8f0;
+        --card-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
+        --card-shadow-hover: 0 20px 40px rgba(0, 0, 0, 0.12);
+        --featured-glow: 0 0 40px rgba(102, 126, 234, 0.3);
+    }
+
+    /* Dark Theme */
+    [data-theme="dark"] {
+        --bg-light: #1a1d23;
+        --bg-secondary: #23262d;
+        --bg-tertiary: #2c2f38;
+        --text-primary: #f7fafc;
+        --text-secondary: #cbd5e0;
+        --text-muted: #718096;
+        --border-color: #3d4451;
+        --card-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+        --card-shadow-hover: 0 20px 40px rgba(0, 0, 0, 0.6);
+        --featured-glow: 0 0 40px rgba(102, 126, 234, 0.5);
+    }
+
+    body {
+        background-color: var(--bg-secondary);
+        color: var(--text-primary);
+    }
+
+    /* Page Header */
+    .page-header {
+        background: var(--primary-gradient);
+        padding: 3rem 0;
+        margin-bottom: 3rem;
+        border-radius: 0 0 2rem 2rem;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
+    }
+
+    .page-header h2 {
+        color: white;
+        font-weight: 700;
+        font-size: 2.5rem;
+        margin-bottom: 0.5rem;
+    }
+
+    .page-header p {
+        color: rgba(255, 255, 255, 0.9);
+        font-size: 1.1rem;
+    }
+
+    /* Theme Toggle */
+    .theme-toggle-wrapper {
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        z-index: 1000;
+    }
+
+    .theme-toggle {
+        width: 50px;
+        height: 50px;
+        border-radius: 50%;
+        background: var(--bg-light);
+        border: 2px solid var(--border-color);
+        box-shadow: var(--card-shadow);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        transition: all 0.3s ease;
+    }
+
+    .theme-toggle:hover {
+        transform: scale(1.1);
+        box-shadow: var(--card-shadow-hover);
+    }
+
+    .theme-toggle i {
+        font-size: 1.3rem;
+        color: var(--text-primary);
+    }
+
+    /* Billing Cycle Toggle */
+    .billing-toggle {
+        background: var(--bg-light);
+        padding: 0.5rem;
+        border-radius: 50px;
+        display: inline-flex;
+        box-shadow: var(--card-shadow);
+        border: 1px solid var(--border-color);
+    }
+
+    .billing-toggle .btn-check {
+        display: none;
+    }
+
+    .billing-toggle label {
+        padding: 0.75rem 1.5rem;
+        border-radius: 50px;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        color: var(--text-secondary);
+        font-weight: 500;
+        border: none;
+        background: transparent;
+        margin: 0;
+    }
+
+    .billing-toggle .btn-check:checked + label {
+        background: var(--primary-gradient);
+        color: white;
+        box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+    }
+
+    .billing-toggle .badge {
+        font-size: 0.65rem;
+        padding: 0.25rem 0.5rem;
+        vertical-align: middle;
+    }
+
+    /* Plan Cards */
+    .plan-card {
+        background: var(--bg-light);
+        border: 2px solid var(--border-color);
+        border-radius: 1.5rem;
+        transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+        box-shadow: var(--card-shadow);
+        position: relative;
+        overflow: hidden;
+    }
+
+    .plan-card::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 5px;
+        background: var(--primary-gradient);
+        opacity: 0;
+        transition: opacity 0.3s ease;
+    }
+
+    .plan-card:hover {
+        transform: translateY(-8px);
+        box-shadow: var(--card-shadow-hover);
+        border-color: #667eea;
+    }
+
+    .plan-card:hover::before {
+        opacity: 1;
+    }
+
+    .plan-card.featured {
+        border-color: #667eea;
+        box-shadow: var(--featured-glow);
+        transform: scale(1.05);
+    }
+
+    .plan-card.featured::before {
+        opacity: 1;
+        height: 8px;
+    }
+
+    .plan-card.featured .popular-badge {
+        display: block !important;
+    }
+
+    .popular-badge {
+        position: absolute;
+        top: 20px;
+        right: -35px;
+        background: var(--success-gradient);
+        color: white;
+        padding: 0.4rem 3rem;
+        transform: rotate(45deg);
+        font-size: 0.75rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        box-shadow: 0 4px 12px rgba(17, 153, 142, 0.4);
+        display: none;
+    }
+
+    .plan-header {
+        text-align: center;
+        padding: 2rem 1.5rem 1rem;
+    }
+
+    .plan-name {
+        font-size: 1.5rem;
+        font-weight: 700;
+        color: var(--text-primary);
+        margin-bottom: 0.5rem;
+    }
+
+    .plan-description {
+        color: var(--text-muted);
+        font-size: 0.9rem;
+        min-height: 3rem;
+    }
+
+    /* Pricing */
+    .plan-pricing {
+        text-align: center;
+        padding: 1.5rem;
+        background: var(--bg-tertiary);
+        margin: 0 1.5rem;
+        border-radius: 1rem;
+    }
+
+    .price-wrapper {
+        display: flex;
+        align-items: baseline;
+        justify-content: center;
+        gap: 0.5rem;
+    }
+
+    .price-amount {
+        font-size: 3rem;
+        font-weight: 800;
+        background: var(--primary-gradient);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+    }
+
+    .price-currency {
+        font-size: 1.5rem;
+        font-weight: 600;
+        color: var(--text-secondary);
+    }
+
+    .price-period {
+        color: var(--text-muted);
+        font-size: 1rem;
+    }
+
+    .setup-fee {
+        color: var(--text-muted);
+        font-size: 0.85rem;
+        margin-top: 0.5rem;
+    }
+
+    .discount-badge {
+        display: inline-block;
+        margin-top: 0.75rem;
+        padding: 0.4rem 1rem;
+        background: var(--success-gradient);
+        border-radius: 50px;
+        font-weight: 600;
+        font-size: 0.85rem;
+    }
+
+    /* Plan Limits */
+    .plan-limits {
+        padding: 1.5rem;
+    }
+
+    .limit-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 0.75rem 0;
+        border-bottom: 1px solid var(--border-color);
+    }
+
+    .limit-item:last-child {
+        border-bottom: none;
+    }
+
+    .limit-label {
+        color: var(--text-secondary);
+        font-size: 0.9rem;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
+    .limit-label i {
+        font-size: 1rem;
+        color: var(--text-muted);
+    }
+
+    .limit-value {
+        font-weight: 700;
+        color: var(--text-primary);
+        font-size: 1rem;
+    }
+
+    /* Features */
+    .plan-features {
+        padding: 1.5rem;
+        border-top: 2px solid var(--border-color);
+    }
+
+    .feature-item {
+        display: flex;
+        align-items: center;
+        padding: 0.6rem 0;
+        gap: 0.75rem;
+    }
+
+    .feature-item i {
+        font-size: 1.1rem;
+        flex-shrink: 0;
+    }
+
+    .feature-item .bi-check-circle-fill {
+        color: #38ef7d;
+    }
+
+    .feature-item .bi-x-circle {
+        color: var(--text-muted);
+    }
+
+    .feature-text {
+        color: var(--text-secondary);
+        font-size: 0.9rem;
+    }
+
+    /* Action Button */
+    .plan-action {
+        padding: 1.5rem;
+    }
+
+    .select-plan-btn,
+    .current-plan-btn {
+        width: 100%;
+        padding: 1rem;
+        border-radius: 0.75rem;
+        font-weight: 600;
+        font-size: 1rem;
+        transition: all 0.3s ease;
+        border: none;
+    }
+
+    .select-plan-btn.btn-primary {
+        background: var(--primary-gradient);
+        color: white;
+        box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+    }
+
+    .select-plan-btn.btn-primary:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 20px rgba(102, 126, 234, 0.5);
+    }
+
+    .select-plan-btn.btn-outline-primary {
+        border: 2px solid #667eea;
+        color: #667eea;
+        background: transparent;
+    }
+
+    .select-plan-btn.btn-outline-primary:hover {
+        background: #667eea;
+        color: white;
+    }
+
+    .current-plan-btn {
+        background: var(--bg-tertiary);
+        color: var(--text-muted);
+        cursor: not-allowed;
+    }
+
+    /* Comparison Table */
+    .comparison-section {
+        background: var(--bg-light);
+        border-radius: 1.5rem;
+        padding: 2rem;
+        box-shadow: var(--card-shadow);
+    }
+
+    .comparison-section h5 {
+        color: var(--text-primary);
+        font-weight: 700;
+        margin-bottom: 1.5rem;
+    }
+
+    .comparison-table {
+        margin: 0;
+    }
+
+    .comparison-table thead th {
+        background: var(--bg-tertiary);
+        color: var(--text-primary);
+        font-weight: 700;
+        padding: 1rem;
+        border: none;
+        text-align: center;
+    }
+
+    .comparison-table tbody td {
+        padding: 1rem;
+        border-bottom: 1px solid var(--border-color);
+        color: var(--text-secondary);
+        text-align: center;
+    }
+
+    .comparison-table tbody tr:hover {
+        background: var(--bg-tertiary);
+    }
+
+    .comparison-table .feature-name {
+        font-weight: 600;
+        color: var(--text-primary);
+        text-align: left;
+    }
+
+    .check-icon {
+        color: #38ef7d;
+        font-size: 1.2rem;
+    }
+
+    .x-icon {
+        color: var(--text-muted);
+        font-size: 1.2rem;
+    }
+
+    /* Modal */
+    .modal-content {
+        background: var(--bg-light);
+        border: none;
+        border-radius: 1rem;
+        box-shadow: var(--card-shadow-hover);
+    }
+
+    .modal-header {
+        border-bottom: 1px solid var(--border-color);
+        padding: 1.5rem;
+    }
+
+    .modal-title {
+        color: var(--text-primary);
+        font-weight: 700;
+    }
+
+    .modal-body {
+        padding: 1.5rem;
+        color: var(--text-secondary);
+    }
+
+    .modal-footer {
+        border-top: 1px solid var(--border-color);
+        padding: 1.5rem;
+    }
+
+    .form-check-label {
+        color: var(--text-secondary);
+    }
+
+    .form-check-input:checked {
+        background-color: #667eea;
+        border-color: #667eea;
+    }
+
+    #cost-breakdown {
+        background: var(--bg-tertiary) !important;
+        border-color: var(--border-color) !important;
+        color: var(--text-primary);
+    }
+
+    .btn-close {
+        filter: var(--text-primary);
+    }
+
+    [data-theme="dark"] .btn-close {
+        filter: invert(1);
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- Theme Toggle -->
+<div class="theme-toggle-wrapper">
+    <button class="theme-toggle" id="theme-toggle" type="button">
+        <i class="bi bi-moon-fill" id="theme-icon"></i>
+    </button>
+</div>
+
+<!-- Page Header -->
+<div class="page-header">
+    <div class="container-fluid">
+        <div class="text-center">
+            <h2>Choose Your Perfect Plan</h2>
+            <p>Unlock the full potential of your business with our flexible pricing</p>
+        </div>
+    </div>
+</div>
+
+<div class="container-fluid py-4">
+    <!-- Billing Cycle Toggle -->
+    <div class="row mb-5">
+        <div class="col-12 text-center">
+            <div class="billing-toggle">
+                <input type="radio" class="btn-check" name="billing_cycle" id="monthly" value="MONTHLY" checked>
+                <label for="monthly">Monthly</label>
+
+                <input type="radio" class="btn-check" name="billing_cycle" id="quarterly" value="QUARTERLY">
+                <label for="quarterly">Quarterly</label>
+
+                <input type="radio" class="btn-check" name="billing_cycle" id="yearly" value="YEARLY">
+                <label for="yearly">
+                    Yearly <span class="badge bg-success">Save 10%</span>
+                </label>
+            </div>
+        </div>
+    </div>
+
+    <!-- Plans Grid -->
+    <div class="row mb-5 g-4">
+        {% for plan in plans %}
+        <div class="col-lg-3 col-md-6">
+            <div class="card plan-card h-100 {% if plan.is_popular %}featured{% endif %}"
+                 data-plan-id="{{ plan.id }}"
+                 data-base-price="{{ plan.price }}">
+
+                <!-- Popular Badge -->
+                <div class="popular-badge">Most Popular</div>
+
+                <!-- Plan Header -->
+                <div class="plan-header">
+                    <h3 class="plan-name">{{ plan.display_name }}</h3>
+                    <p class="plan-description">{{ plan.description|truncatewords:15 }}</p>
+                </div>
+
+                <!-- Pricing -->
+                <div class="plan-pricing">
+                    <div class="price-wrapper">
+                        <span class="price-currency">$</span>
+                        <span class="price-amount">{{ plan.price|floatformat:0 }}</span>
+                    </div>
+                    <div class="price-period">/month</div>
+                    {% if plan.setup_fee > 0 %}
+                    <div class="setup-fee">+ ${{ plan.setup_fee }} setup fee</div>
+                    {% endif %}
+                    <div class="discount-badge d-none">10% OFF</div>
+                </div>
+
+                <!-- Plan Limits -->
+                <div class="plan-limits">
+                    <div class="limit-item">
+                        <span class="limit-label">
+                            <i class="bi bi-people"></i>
+                            Users
+                        </span>
+                        <span class="limit-value">{{ plan.max_users }}</span>
+                    </div>
+                    <div class="limit-item">
+                        <span class="limit-label">
+                            <i class="bi bi-building"></i>
+                            Branches
+                        </span>
+                        <span class="limit-value">{{ plan.max_branches }}</span>
+                    </div>
+                    <div class="limit-item">
+                        <span class="limit-label">
+                            <i class="bi bi-hdd"></i>
+                            Storage
+                        </span>
+                        <span class="limit-value">{{ plan.max_storage_gb }}GB</span>
+                    </div>
+                    <div class="limit-item">
+                        <span class="limit-label">
+                            <i class="bi bi-lightning"></i>
+                            API Calls
+                        </span>
+                        <span class="limit-value">{{ plan.max_api_calls_per_month|floatformat:0 }}/mo</span>
+                    </div>
+                </div>
+
+                <!-- Features -->
+                <div class="plan-features">
+                    {% for feature in all_features %}
+                    <div class="feature-item">
+                        {% if feature in plan.get_feature_list %}
+                        <i class="bi bi-check-circle-fill"></i>
+                        {% else %}
+                        <i class="bi bi-x-circle"></i>
+                        {% endif %}
+                        <span class="feature-text">{{ feature }}</span>
+                    </div>
+                    {% endfor %}
+                </div>
+
+                <!-- Action Button -->
+                <div class="plan-action">
+                    {% if current_plan and plan.id == current_plan.id %}
+                    <button class="current-plan-btn" disabled>
+                        <i class="bi bi-check-lg me-2"></i>Current Plan
+                    </button>
+                    {% elif plan.price > current_plan.price %}
+                    <button class="select-plan-btn btn-primary"
+                            data-plan-id="{{ plan.id }}"
+                            data-plan-name="{{ plan.display_name }}"
+                            data-action="upgrade">
+                        <i class="bi bi-arrow-up-circle me-2"></i>Upgrade Now
+                    </button>
+                    {% elif plan.price < current_plan.price %}
+                    <button class="select-plan-btn btn-outline-primary"
+                            data-plan-id="{{ plan.id }}"
+                            data-plan-name="{{ plan.display_name }}"
+                            data-action="downgrade">
+                        <i class="bi bi-arrow-down-circle me-2"></i>Downgrade
+                    </button>
+                    {% else %}
+                    <button class="select-plan-btn btn-primary"
+                            data-plan-id="{{ plan.id }}"
+                            data-plan-name="{{ plan.display_name }}"
+                            data-action="upgrade">
+                        <i class="bi bi-check-circle me-2"></i>Select Plan
+                    </button>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+
+    <!-- Feature Comparison Table -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="comparison-section">
+                <h5>Detailed Feature Comparison</h5>
+                <div class="table-responsive">
+                    <table class="table comparison-table">
+                        <thead>
+                            <tr>
+                                <th class="feature-name">Feature</th>
+                                {% for plan in plans %}
+                                <th>{{ plan.display_name }}</th>
+                                {% endfor %}
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td class="feature-name">Maximum Users</td>
+                                {% for plan in plans %}
+                                <td>{{ plan.max_users }}</td>
+                                {% endfor %}
+                            </tr>
+                            <tr>
+                                <td class="feature-name">Branch Locations</td>
+                                {% for plan in plans %}
+                                <td>{{ plan.max_branches }}</td>
+                                {% endfor %}
+                            </tr>
+                            <tr>
+                                <td class="feature-name">Storage Space</td>
+                                {% for plan in plans %}
+                                <td>{{ plan.max_storage_gb }}GB</td>
+                                {% endfor %}
+                            </tr>
+                            <tr>
+                                <td class="feature-name">API Access</td>
+                                {% for plan in plans %}
+                                <td>
+                                    {% if plan.can_use_api %}
+                                    <i class="bi bi-check-lg check-icon"></i>
+                                    {% else %}
+                                    <i class="bi bi-x-lg x-icon"></i>
+                                    {% endif %}
+                                </td>
+                                {% endfor %}
+                            </tr>
+                            <tr>
+                                <td class="feature-name">Data Export</td>
+                                {% for plan in plans %}
+                                <td>
+                                    {% if plan.can_export_data %}
+                                    <i class="bi bi-check-lg check-icon"></i>
+                                    {% else %}
+                                    <i class="bi bi-x-lg x-icon"></i>
+                                    {% endif %}
+                                </td>
+                                {% endfor %}
+                            </tr>
+                            <tr>
+                                <td class="feature-name">Third-party Integrations</td>
+                                {% for plan in plans %}
+                                <td>
+                                    {% if plan.can_use_integrations %}
+                                    <i class="bi bi-check-lg check-icon"></i>
+                                    {% else %}
+                                    <i class="bi bi-x-lg x-icon"></i>
+                                    {% endif %}
+                                </td>
+                                {% endfor %}
+                            </tr>
+                            <tr>
+                                <td class="feature-name">Support Level</td>
+                                {% for plan in plans %}
+                                <td>{{ plan.get_support_level_display }}</td>
+                                {% endfor %}
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Upgrade Confirmation Modal -->
+<div class="modal fade" id="upgrade-confirmation-modal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Confirm Plan Change</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p>You are upgrading to <strong id="upgrade-plan-name"></strong></p>
+
+                <div class="mb-3">
+                    <label class="form-label fw-bold">Payment Method</label>
+                    <div>
+                        <div class="form-check mb-2">
+                            <input class="form-check-input" type="radio" name="payment_method" value="card" id="card" checked>
+                            <label class="form-check-label" for="card">
+                                <i class="bi bi-credit-card me-2"></i>Credit/Debit Card
+                            </label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="payment_method" value="bank_transfer" id="bank">
+                            <label class="form-check-label" for="bank">
+                                <i class="bi bi-bank me-2"></i>Bank Transfer
+                            </label>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="cost-breakdown" class="border rounded p-3"></div>
+
+                <input type="hidden" name="csrfmiddlewaretoken" value="{{ csrf_token }}">
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" id="confirm-upgrade-btn" class="btn btn-primary">Confirm Upgrade</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="{% static 'company/js/subscription.js' %}"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Theme Toggle
+    const themeToggle = document.getElementById('theme-toggle');
+    const themeIcon = document.getElementById('theme-icon');
+    const htmlElement = document.documentElement;
+
+    const savedTheme = localStorage.getItem('theme') || 'light';
+    htmlElement.setAttribute('data-theme', savedTheme);
+    updateThemeIcon(savedTheme);
+
+    themeToggle.addEventListener('click', function() {
+        const currentTheme = htmlElement.getAttribute('data-theme');
+        const newTheme = currentTheme === 'light' ? 'dark' : 'light';
+
+        htmlElement.setAttribute('data-theme', newTheme);
+        localStorage.setItem('theme', newTheme);
+        updateThemeIcon(newTheme);
+    });
+
+    function updateThemeIcon(theme) {
+        if (theme === 'dark') {
+            themeIcon.className = 'bi bi-sun-fill';
+        } else {
+            themeIcon.className = 'bi bi-moon-fill';
+        }
+    }
+});
+</script>
+{% endblock %}

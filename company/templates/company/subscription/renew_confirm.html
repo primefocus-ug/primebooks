@@ -1,0 +1,318 @@
+{% extends "base.html" %}
+{% load static i18n %}
+
+{% block title %}{% trans "Renew Subscription" %} - {{ company.display_name }}{% endblock %}
+
+{% block extra_css %}
+<style>
+    /* Light Theme (Default) */
+    :root {
+        --bg-primary: #ffffff;
+        --bg-secondary: #f8f9fa;
+        --bg-tertiary: #e9ecef;
+        --text-primary: #212529;
+        --text-secondary: #6c757d;
+        --border-color: #dee2e6;
+        --card-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
+        --input-bg: #ffffff;
+        --input-border: #ced4da;
+        --alert-bg: #cfe2ff;
+        --alert-border: #b6d4fe;
+        --alert-text: #084298;
+    }
+
+    /* Dark Theme */
+    [data-theme="dark"] {
+        --bg-primary: #1a1d23;
+        --bg-secondary: #23262d;
+        --bg-tertiary: #2c2f38;
+        --text-primary: #e9ecef;
+        --text-secondary: #adb5bd;
+        --border-color: #495057;
+        --card-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.3);
+        --input-bg: #2c2f38;
+        --input-border: #495057;
+        --alert-bg: #1c3a5c;
+        --alert-border: #2c5282;
+        --alert-text: #9ec5fe;
+    }
+
+    /* Apply theme variables */
+    .themed-card {
+        background-color: var(--bg-primary);
+        border: 1px solid var(--border-color);
+        box-shadow: var(--card-shadow);
+    }
+
+    .themed-card-header {
+        background-color: var(--bg-secondary);
+        border-bottom: 1px solid var(--border-color);
+    }
+
+    .themed-text {
+        color: var(--text-primary);
+    }
+
+    .themed-text-secondary {
+        color: var(--text-secondary);
+    }
+
+    .themed-alert {
+        background-color: var(--alert-bg);
+        border: 1px solid var(--alert-border);
+        color: var(--alert-text);
+    }
+
+    .themed-alert strong,
+    .themed-alert .alert-heading {
+        color: var(--alert-text);
+    }
+
+    .themed-form-control {
+        background-color: var(--input-bg);
+        border: 1px solid var(--input-border);
+        color: var(--text-primary);
+    }
+
+    .themed-form-control:focus {
+        background-color: var(--input-bg);
+        color: var(--text-primary);
+        border-color: #0d6efd;
+    }
+
+    .themed-form-control option {
+        background-color: var(--input-bg);
+        color: var(--text-primary);
+    }
+
+    .cost-summary {
+        background-color: var(--bg-tertiary);
+        border: 1px solid var(--border-color);
+    }
+
+    .cost-summary hr {
+        border-color: var(--border-color);
+        opacity: 1;
+    }
+
+    .themed-link {
+        color: #0d6efd;
+        text-decoration: none;
+    }
+
+    .themed-link:hover {
+        color: #0a58ca;
+        text-decoration: underline;
+    }
+
+    [data-theme="dark"] .themed-link {
+        color: #6ea8fe;
+    }
+
+    [data-theme="dark"] .themed-link:hover {
+        color: #9ec5fe;
+    }
+
+    .form-check-input:checked {
+        background-color: #0d6efd;
+        border-color: #0d6efd;
+    }
+
+    [data-theme="dark"] .form-check-input {
+        background-color: var(--input-bg);
+        border-color: var(--input-border);
+    }
+
+    [data-theme="dark"] .btn-secondary {
+        background-color: var(--bg-tertiary);
+        border-color: var(--border-color);
+        color: var(--text-primary);
+    }
+
+    [data-theme="dark"] .btn-secondary:hover {
+        background-color: #3a3d46;
+        border-color: var(--border-color);
+        color: var(--text-primary);
+    }
+
+    .page-container {
+        background-color: var(--bg-secondary);
+        min-height: 100vh;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page-container">
+    <div class="container-fluid py-4">
+        <div class="row">
+            <div class="col-12">
+                <div class="card themed-card">
+                    <div class="card-header themed-card-header pb-0">
+                        <div class="d-flex align-items-center justify-content-between">
+                            <h5 class="mb-0 themed-text">{% trans "Renew Subscription" %}</h5>
+                            <!-- Theme Toggle Button -->
+                            <button id="theme-toggle" class="btn btn-sm btn-outline-secondary" type="button">
+                                <i class="fas fa-moon" id="theme-icon"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="card-body">
+                        <!-- Current Plan Info -->
+                        <div class="alert themed-alert">
+                            <h6 class="alert-heading">{% trans "Current Plan" %}</h6>
+                            <p class="mb-0">
+                                <strong>{{ plan.display_name }}</strong> -
+                                ${{ plan.price }} {{ company.preferred_currency }}
+                            </p>
+                            <small>
+                                {% trans "Current subscription ends:" %} {{ current_expiry|date:"M d, Y" }}
+                            </small>
+                        </div>
+
+                        <!-- Renewal Details -->
+                        <div class="row">
+                            <div class="col-md-8 mx-auto">
+                                <div class="card themed-card">
+                                    <div class="card-header themed-card-header">
+                                        <h6 class="mb-0 themed-text">{% trans "Renewal Details" %}</h6>
+                                    </div>
+                                    <div class="card-body">
+                                        <form method="post" id="renewal-form">
+                                            {% csrf_token %}
+
+                                            <!-- Billing Cycle -->
+                                            <div class="mb-3">
+                                                <label class="form-label themed-text">{% trans "Billing Cycle" %}</label>
+                                                <select name="billing_cycle" class="form-select themed-form-control" required>
+                                                    <option value="MONTHLY" {% if billing_cycle == "MONTHLY" %}selected{% endif %}>
+                                                        {% trans "Monthly" %} - ${{ plan.price }} {{ company.preferred_currency }}
+                                                    </option>
+                                                    <option value="QUARTERLY" {% if billing_cycle == "QUARTERLY" %}selected{% endif %}>
+                                                        {% trans "Quarterly" %} - ${{ plan.price|floatformat:2 }} {{ company.preferred_currency }}
+                                                    </option>
+                                                    <option value="YEARLY" {% if billing_cycle == "YEARLY" %}selected{% endif %}>
+                                                        {% trans "Yearly" %} - ${{ plan.price|floatformat:2 }} {{ company.preferred_currency }}
+                                                    </option>
+                                                </select>
+                                            </div>
+
+                                            <!-- Payment Method -->
+                                            <div class="mb-3">
+                                                <label class="form-label themed-text">{% trans "Payment Method" %}</label>
+                                                <select name="payment_method" class="form-select themed-form-control" required>
+                                                    <option value="">{% trans "Select payment method" %}</option>
+                                                    <option value="credit_card">{% trans "Credit Card" %}</option>
+                                                    <option value="debit_card">{% trans "Debit Card" %}</option>
+                                                    <option value="bank_transfer">{% trans "Bank Transfer" %}</option>
+                                                    <option value="paypal">{% trans "PayPal" %}</option>
+                                                </select>
+                                                <small class="themed-text-secondary">
+                                                    <a href="{% url 'companies:payment_methods' %}" class="themed-link">{% trans "Manage payment methods" %}</a>
+                                                </small>
+                                            </div>
+
+                                            <!-- Cost Summary -->
+                                            <div class="cost-summary rounded p-3 mb-4">
+                                                <h6 class="mb-3 themed-text">{% trans "Cost Summary" %}</h6>
+                                                <div class="d-flex justify-content-between mb-2">
+                                                    <span class="themed-text-secondary">{% trans "Plan Cost:" %}</span>
+                                                    <span class="themed-text">${{ renewal_cost|floatformat:2 }} {{ company.preferred_currency }}</span>
+                                                </div>
+                                                <div class="d-flex justify-content-between mb-2">
+                                                    <span class="themed-text-secondary">{% trans "Tax:" %}</span>
+                                                    <span class="themed-text">$0.00 {{ company.preferred_currency }}</span>
+                                                </div>
+                                                <hr>
+                                                <div class="d-flex justify-content-between fw-bold">
+                                                    <span class="themed-text">{% trans "Total:" %}</span>
+                                                    <span class="text-primary fs-5">${{ renewal_cost|floatformat:2 }} {{ company.preferred_currency }}</span>
+                                                </div>
+                                            </div>
+
+                                            <!-- Terms Agreement -->
+                                            <div class="form-check mb-4">
+                                                <input class="form-check-input" type="checkbox" id="terms-agreement" required>
+                                                <label class="form-check-label themed-text" for="terms-agreement">
+                                                    {% trans "I agree to the" %}
+                                                    <a href="{% url 'legal:terms' %}" target="_blank" class="themed-link">{% trans "Terms of Service" %}</a>
+                                                    {% trans "and" %}
+                                                    <a href="{% url 'legal:privacy' %}" target="_blank" class="themed-link">{% trans "Privacy Policy" %}</a>
+                                                </label>
+                                            </div>
+
+                                            <!-- Action Buttons -->
+                                            <div class="d-flex gap-2">
+                                                <button type="submit" class="btn btn-primary">
+                                                    {% trans "Confirm Renewal" %}
+                                                </button>
+                                                <a href="{% url 'companies:subscription_dashboard' %}" class="btn btn-secondary">
+                                                    {% trans "Cancel" %}
+                                                </a>
+                                            </div>
+                                        </form>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Theme Toggle Functionality
+    const themeToggle = document.getElementById('theme-toggle');
+    const themeIcon = document.getElementById('theme-icon');
+    const htmlElement = document.documentElement;
+
+    // Load saved theme or default to light
+    const savedTheme = localStorage.getItem('theme') || 'light';
+    htmlElement.setAttribute('data-theme', savedTheme);
+    updateThemeIcon(savedTheme);
+
+    themeToggle.addEventListener('click', function() {
+        const currentTheme = htmlElement.getAttribute('data-theme');
+        const newTheme = currentTheme === 'light' ? 'dark' : 'light';
+
+        htmlElement.setAttribute('data-theme', newTheme);
+        localStorage.setItem('theme', newTheme);
+        updateThemeIcon(newTheme);
+    });
+
+    function updateThemeIcon(theme) {
+        if (theme === 'dark') {
+            themeIcon.className = 'fas fa-sun';
+        } else {
+            themeIcon.className = 'fas fa-moon';
+        }
+    }
+
+    // Form Submission
+    const form = document.getElementById('renewal-form');
+
+    form.addEventListener('submit', function(e) {
+        e.preventDefault();
+
+        if (!document.getElementById('terms-agreement').checked) {
+            alert('{% trans "Please agree to the terms and conditions" %}');
+            return;
+        }
+
+        // Show loading state
+        const submitBtn = form.querySelector('button[type="submit"]');
+        const originalText = submitBtn.innerHTML;
+        submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status"></span> {% trans "Processing..." %}';
+        submitBtn.disabled = true;
+
+        // Submit form
+        form.submit();
+    });
+});
+</script>
+{% endblock %}

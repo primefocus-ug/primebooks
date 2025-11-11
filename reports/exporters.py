@@ -31,7 +31,7 @@ class BaseReportExporter:
         """
         Returns the directory where the report file should be saved.
         """
-        path = os.path.join(settings.MEDIA_ROOT, 'reports', str(self.report.company.id))
+        path = os.path.join(settings.MEDIA_ROOT, 'reports', str(self.report.company.company_id))
         os.makedirs(path, exist_ok=True)
         return path
 

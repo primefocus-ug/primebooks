@@ -1,0 +1,609 @@
+{% extends 'base.html' %}
+{% load static %}
+{% load i18n %}
+{% load humanize %}
+
+{% block title %}{{ service.name }} | {% trans "Services" %} | {{ block.super }}{% endblock %}
+
+{% block extra_css %}
+<style>
+    .detail-card {
+        border-left: 4px solid var(--primary-500);
+    }
+
+    .info-row {
+        padding: 0.75rem 0;
+        border-bottom: 1px solid var(--border-color-light);
+    }
+
+    .info-row:last-child {
+        border-bottom: none;
+    }
+
+    .info-label {
+        font-weight: 600;
+        color: var(--text-secondary);
+        font-size: 0.9rem;
+    }
+
+    .info-value {
+        color: var(--text-primary);
+        font-size: 1rem;
+    }
+
+    .status-badge {
+        font-size: 0.875rem;
+        padding: 0.375rem 0.75rem;
+        border-radius: 20px;
+    }
+
+    .price-display {
+        font-size: 2rem;
+        font-weight: 700;
+        color: var(--primary-600);
+    }
+
+    .tab-content {
+        padding: 1.5rem;
+        background: var(--bg-primary);
+        border: 1px solid var(--border-color);
+        border-top: none;
+        border-radius: 0 0 var(--border-radius) var(--border-radius);
+    }
+
+    .nav-tabs {
+        border-bottom: 2px solid var(--border-color);
+    }
+
+    .nav-tabs .nav-link {
+        border: none;
+        color: var(--text-secondary);
+        font-weight: 500;
+        padding: 1rem 1.5rem;
+        transition: all 0.3s ease;
+    }
+
+    .nav-tabs .nav-link:hover {
+        color: var(--primary-600);
+        background-color: var(--primary-50);
+    }
+
+    .nav-tabs .nav-link.active {
+        color: var(--primary-600);
+        background-color: transparent;
+        border-bottom: 3px solid var(--primary-500);
+    }
+
+    .service-image {
+        max-width: 100%;
+        height: auto;
+        border-radius: var(--border-radius);
+        box-shadow: var(--shadow-md);
+    }
+
+    .efris-config-status {
+        padding: 1rem;
+        border-radius: var(--border-radius);
+        margin-bottom: 1rem;
+    }
+
+    .efris-config-status.complete {
+        background-color: var(--green-50);
+        border-left: 4px solid var(--green-500);
+    }
+
+    .efris-config-status.incomplete {
+        background-color: var(--red-50);
+        border-left: 4px solid var(--red-500);
+    }
+</style>
+{% endblock %}
+
+{% block breadcrumb_items %}
+<li class="breadcrumb-item"><a href="{% url 'inventory:dashboard' %}">{% trans "Inventory" %}</a></li>
+<li class="breadcrumb-item"><a href="{% url 'inventory:service_list' %}">{% trans "Services" %}</a></li>
+<li class="breadcrumb-item active">{{ service.name }}</li>
+{% endblock %}
+
+{% block page_header %}
+<div class="d-flex justify-content-between align-items-start mb-4">
+    <div>
+        <h2 class="mb-2">
+            <i class="bi bi-gear-fill text-primary me-2"></i>
+            {{ service.name }}
+            {% if not service.is_active %}
+            <span class="badge bg-danger">{% trans "Inactive" %}</span>
+            {% endif %}
+        </h2>
+        <p class="text-muted mb-0">
+            {% trans "Service Code:" %} <strong>{{ service.code }}</strong>
+        </p>
+    </div>
+    <div class="btn-group">
+        {% if perms.inventory.change_service %}
+        <a href="{% url 'inventory:service_update' service.pk %}" class="btn btn-primary">
+            <i class="bi bi-pencil me-1"></i>
+            {% trans "Edit" %}
+        </a>
+        {% endif %}
+
+        {% if service.efris_configuration_complete and service.efris_auto_sync_enabled %}
+        <a href="{% url 'inventory:service_efris_sync' service.id %}">
+        <button type="button" class="btn btn-success" id="sycToEfrisBtn" data-service-id="{{ service.id }}">
+            <i class="bi bi-cloud-arrow-up me-1"></i>
+            {% trans "Sync to EFRIS" %}
+        </button>
+            </a>
+        {% endif %}
+
+        {% if perms.inventory.delete_service %}
+        <button type="button" class="btn btn-danger" data-bs-toggle="modal" data-bs-target="#deleteModal">
+            <i class="bi bi-trash me-1"></i>
+            {% trans "Delete" %}
+        </button>
+        {% endif %}
+
+        <a href="{% url 'inventory:service_list' %}" class="btn btn-outline-secondary">
+            <i class="bi bi-arrow-left me-1"></i>
+            {% trans "Back to List" %}
+        </a>
+    </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="row">
+    <!-- Left Column - Main Details -->
+    <div class="col-lg-8">
+        <!-- Tabs Navigation -->
+        <ul class="nav nav-tabs" id="serviceDetailTabs" role="tablist">
+            <li class="nav-item" role="presentation">
+                <button class="nav-link active" id="details-tab" data-bs-toggle="tab"
+                        data-bs-target="#details" type="button" role="tab">
+                    <i class="bi bi-info-circle me-2"></i>
+                    {% trans "Details" %}
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="pricing-tab" data-bs-toggle="tab"
+                        data-bs-target="#pricing" type="button" role="tab">
+                    <i class="bi bi-currency-dollar me-2"></i>
+                    {% trans "Pricing" %}
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="efris-tab" data-bs-toggle="tab"
+                        data-bs-target="#efris" type="button" role="tab">
+                    <i class="bi bi-cloud me-2"></i>
+                    {% trans "EFRIS" %}
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link" id="history-tab" data-bs-toggle="tab"
+                        data-bs-target="#history" type="button" role="tab">
+                    <i class="bi bi-clock-history me-2"></i>
+                    {% trans "History" %}
+                </button>
+            </li>
+        </ul>
+
+        <!-- Tab Content -->
+        <div class="tab-content" id="serviceDetailTabContent">
+            <!-- Details Tab -->
+            <div class="tab-pane fade show active" id="details" role="tabpanel">
+                <div class="row">
+                    <div class="col-12">
+                        <h5 class="mb-3">{% trans "Basic Information" %}</h5>
+
+                        <div class="info-row row">
+                            <div class="col-4 info-label">{% trans "Service Name" %}</div>
+                            <div class="col-8 info-value">{{ service.name }}</div>
+                        </div>
+
+                        <div class="info-row row">
+                            <div class="col-4 info-label">{% trans "Service Code" %}</div>
+                            <div class="col-8 info-value">
+                                <code>{{ service.code }}</code>
+                            </div>
+                        </div>
+
+                        <div class="info-row row">
+                            <div class="col-4 info-label">{% trans "Category" %}</div>
+                            <div class="col-8 info-value">
+                                {% if service.category %}
+                                <a href="{% url 'inventory:category_detail' service.category.pk %}">
+                                    {{ service.category.name }}
+                                </a>
+                                {% else %}
+                                <span class="text-muted">{% trans "No category" %}</span>
+                                {% endif %}
+                            </div>
+                        </div>
+
+                        <div class="info-row row">
+                            <div class="col-4 info-label">{% trans "Description" %}</div>
+                            <div class="col-8 info-value">
+                                {% if service.description %}
+                                {{ service.description|linebreaks }}
+                                {% else %}
+                                <span class="text-muted">{% trans "No description" %}</span>
+                                {% endif %}
+                            </div>
+                        </div>
+
+                        <div class="info-row row">
+                            <div class="col-4 info-label">{% trans "Unit of Measure" %}</div>
+                            <div class="col-8 info-value">
+                                {{ service.get_unit_of_measure_display }}
+                            </div>
+                        </div>
+
+                        <div class="info-row row">
+                            <div class="col-4 info-label">{% trans "Status" %}</div>
+                            <div class="col-8 info-value">
+                                {% if service.is_active %}
+                                <span class="badge bg-success">{% trans "Active" %}</span>
+                                {% else %}
+                                <span class="badge bg-danger">{% trans "Inactive" %}</span>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Pricing Tab -->
+            <div class="tab-pane fade" id="pricing" role="tabpanel">
+                <h5 class="mb-3">{% trans "Pricing Information" %}</h5>
+
+                <div class="row mb-4">
+                    <div class="col-md-4">
+                        <div class="card bg-light">
+                            <div class="card-body text-center">
+                                <h6 class="text-muted mb-2">{% trans "Unit Price" %}</h6>
+                                <div class="price-display">
+                                    UGX {{ service.unit_price|floatformat:2|intcomma }}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="card bg-light">
+                            <div class="card-body text-center">
+                                <h6 class="text-muted mb-2">{% trans "Discount" %}</h6>
+                                <div class="price-display">
+                                    {{ service.discount_percentage|floatformat:2 }}%
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="card" style="border: 2px solid var(--primary-500);">
+                            <div class="card-body text-center">
+                                <h6 class="text-muted mb-2">{% trans "Final Price" %}</h6>
+                                <div class="price-display">
+                                    UGX {{ service.final_price|floatformat:2|intcomma }}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="info-row row">
+                    <div class="col-4 info-label">{% trans "Tax Rate" %}</div>
+                    <div class="col-8 info-value">
+                        {{ service.get_tax_rate_display }}
+                    </div>
+                </div>
+
+                {% if service.tax_rate == 'E' %}
+                <div class="info-row row">
+                    <div class="col-4 info-label">{% trans "Excise Duty Rate" %}</div>
+                    <div class="col-8 info-value">
+                        {{ service.excise_duty_rate|floatformat:2 }}%
+                    </div>
+                </div>
+                {% endif %}
+
+                <div class="info-row row">
+                    <div class="col-4 info-label">{% trans "EFRIS Tax Rate" %}</div>
+                    <div class="col-8 info-value">
+                        {{ service.efris_tax_rate }}%
+                    </div>
+                </div>
+            </div>
+
+            <!-- EFRIS Tab -->
+            <div class="tab-pane fade" id="efris" role="tabpanel">
+                <h5 class="mb-3">{% trans "EFRIS Integration" %}</h5>
+
+                <!-- EFRIS Configuration Status -->
+                <div class="efris-config-status {% if efris_config_complete %}complete{% else %}incomplete{% endif %}">
+                    <div class="d-flex align-items-center">
+                        {% if efris_config_complete %}
+                        <i class="bi bi-check-circle-fill text-success fs-3 me-3"></i>
+                        <div>
+                            <h6 class="mb-1 text-success">{% trans "Configuration Complete" %}</h6>
+                            <p class="mb-0 text-muted">{% trans "This service is ready for EFRIS sync" %}</p>
+                        </div>
+                        {% else %}
+                        <i class="bi bi-exclamation-triangle-fill text-danger fs-3 me-3"></i>
+                        <div>
+                            <h6 class="mb-1 text-danger">{% trans "Configuration Incomplete" %}</h6>
+                            <p class="mb-0">{% trans "Please fix the following issues:" %}</p>
+                            <ul class="mb-0 mt-2">
+                                {% for error in efris_errors %}
+                                <li class="text-danger">{{ error }}</li>
+                                {% endfor %}
+                            </ul>
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <div class="info-row row">
+                    <div class="col-4 info-label">{% trans "Auto-Sync Enabled" %}</div>
+                    <div class="col-8 info-value">
+                        {% if service.efris_auto_sync_enabled %}
+                        <span class="badge bg-success">{% trans "Enabled" %}</span>
+                        {% else %}
+                        <span class="badge bg-secondary">{% trans "Disabled" %}</span>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <div class="info-row row">
+                    <div class="col-4 info-label">{% trans "EFRIS Status" %}</div>
+                    <div class="col-8 info-value">
+                        {{ service.efris_status_display }}
+                    </div>
+                </div>
+
+                {% if service.efris_is_uploaded %}
+                <div class="info-row row">
+                    <div class="col-4 info-label">{% trans "Upload Date" %}</div>
+                    <div class="col-8 info-value">
+                        {{ service.efris_upload_date|date:"Y-m-d H:i" }}
+                    </div>
+                </div>
+
+                <div class="info-row row">
+                    <div class="col-4 info-label">{% trans "EFRIS Service ID" %}</div>
+                    <div class="col-8 info-value">
+                        <code>{{ service.efris_service_id }}</code>
+                    </div>
+                </div>
+                {% endif %}
+
+                {% if efris_category %}
+                <div class="mt-4">
+                    <h6>{% trans "EFRIS Commodity Category" %}</h6>
+                    <div class="card bg-light">
+                        <div class="card-body">
+                            <div class="info-row row">
+                                <div class="col-4 info-label">{% trans "Code" %}</div>
+                                <div class="col-8 info-value">
+                                    <code>{{ efris_category.commodity_category_code }}</code>
+                                </div>
+                            </div>
+                            <div class="info-row row">
+                                <div class="col-4 info-label">{% trans "Name" %}</div>
+                                <div class="col-8 info-value">
+                                    {{ efris_category.commodity_category_name }}
+                                </div>
+                            </div>
+                            <div class="info-row row">
+                                <div class="col-4 info-label">{% trans "Type" %}</div>
+                                <div class="col-8 info-value">
+                                    <span class="badge bg-info">{% trans "Service" %}</span>
+                                </div>
+                            </div>
+                            <div class="info-row row">
+                                <div class="col-4 info-label">{% trans "Is Leaf Node" %}</div>
+                                <div class="col-8 info-value">
+                                    {% if efris_category.is_leaf_node == '101' %}
+                                    <span class="badge bg-success">{% trans "Yes" %}</span>
+                                    {% else %}
+                                    <span class="badge bg-danger">{% trans "No" %}</span>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+
+            <!-- History Tab -->
+            <div class="tab-pane fade" id="history" role="tabpanel">
+                <h5 class="mb-3">{% trans "Service History" %}</h5>
+
+                <div class="info-row row">
+                    <div class="col-4 info-label">{% trans "Created At" %}</div>
+                    <div class="col-8 info-value">
+                        {{ service.created_at|date:"Y-m-d H:i:s" }}
+                    </div>
+                </div>
+
+                <div class="info-row row">
+                    <div class="col-4 info-label">{% trans "Created By" %}</div>
+                    <div class="col-8 info-value">
+                        {% if service.created_by %}
+                        {{ service.created_by.get_full_name|default:service.created_by.username }}
+                        {% else %}
+                        <span class="text-muted">{% trans "Unknown" %}</span>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <div class="info-row row">
+                    <div class="col-4 info-label">{% trans "Last Updated" %}</div>
+                    <div class="col-8 info-value">
+                        {{ service.updated_at|date:"Y-m-d H:i:s" }}
+                    </div>
+                </div>
+
+                <!-- Add more history information here as needed -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Right Column - Quick Info & Image -->
+    <div class="col-lg-4">
+        <!-- Service Image -->
+        {% if service.image %}
+        <div class="card mb-4">
+            <div class="card-body">
+                <h6 class="card-title mb-3">{% trans "Service Image" %}</h6>
+                <img src="{{ service.image.url }}" alt="{{ service.name }}" class="service-image">
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Quick Stats -->
+        <div class="card detail-card mb-4">
+            <div class="card-body">
+                <h6 class="card-title mb-3">
+                    <i class="bi bi-graph-up me-2"></i>
+                    {% trans "Quick Stats" %}
+                </h6>
+
+                <div class="mb-3">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <span class="text-muted">{% trans "Final Price" %}</span>
+                        <strong class="text-primary">UGX {{ service.final_price|floatformat:2|intcomma }}</strong>
+                    </div>
+
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <span class="text-muted">{% trans "Tax Rate" %}</span>
+                        <strong>{{ service.efris_tax_rate }}%</strong>
+                    </div>
+
+                    <div class="d-flex justify-content-between align-items-center">
+                        <span class="text-muted">{% trans "EFRIS Status" %}</span>
+                        {% if service.efris_is_uploaded %}
+                        <span class="badge bg-success">{% trans "Synced" %}</span>
+                        {% else %}
+                        <span class="badge bg-warning">{% trans "Pending" %}</span>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Quick Actions -->
+        <div class="card">
+            <div class="card-body">
+                <h6 class="card-title mb-3">
+                    <i class="bi bi-lightning me-2"></i>
+                    {% trans "Quick Actions" %}
+                </h6>
+
+                <div class="d-grid gap-2">
+                    {% if perms.inventory.change_service %}
+                    <a href="{% url 'inventory:service_update' service.pk %}" class="btn btn-outline-primary btn-sm">
+                        <i class="bi bi-pencil me-1"></i>
+                        {% trans "Edit Service" %}
+                    </a>
+                    {% endif %}
+
+                    {% if service.efris_configuration_complete and service.efris_auto_sync_enabled %}
+                    <button type="button" class="btn btn-outline-success btn-sm" id="quickSyncBtn">
+                        <i class="bi bi-cloud-arrow-up me-1"></i>
+                        {% trans "Sync to EFRIS" %}
+                    </button>
+                    {% endif %}
+
+                    {% if perms.inventory.add_service %}
+                    <a href="{% url 'inventory:service_create' %}" class="btn btn-outline-secondary btn-sm">
+                        <i class="bi bi-plus-circle me-1"></i>
+                        {% trans "Add New Service" %}
+                    </a>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Delete Confirmation Modal -->
+<div class="modal fade" id="deleteModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-danger text-white">
+                <h5 class="modal-title">
+                    <i class="bi bi-exclamation-triangle me-2"></i>
+                    {% trans "Confirm Delete" %}
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p>{% trans "Are you sure you want to delete this service?" %}</p>
+                <p><strong>{{ service.name }}</strong></p>
+                <p class="text-danger"><strong>{% trans "This action cannot be undone." %}</strong></p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                    {% trans "Cancel" %}
+                </button>
+                <form method="post" action="{% url 'inventory:service_delete' service.pk %}" style="display: inline;">
+                    {% csrf_token %}
+                    <button type="submit" class="btn btn-danger">
+                        <i class="bi bi-trash me-1"></i>
+                        {% trans "Delete" %}
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+$(document).ready(function() {
+    // EFRIS Sync Button
+    $('#syncToEfrisBtn, #quickSyncBtn').on('click', function() {
+        const serviceId = $(this).data('service-id') || {{ service.id }};
+        const $btn = $(this);
+        const originalText = $btn.html();
+
+        $btn.prop('disabled', true).html('<i class="bi bi-hourglass-split"></i> Syncing...');
+
+        $.ajax({
+            url: `/inventory/api/services/${serviceId}/efris-sync/`,
+            type: 'POST',
+            headers: {
+                'X-CSRFToken': $('[name=csrfmiddlewaretoken]').val()
+            },
+            success: function(response) {
+                if (response.success) {
+                    showAlert(response.message, 'success');
+                    setTimeout(() => location.reload(), 1500);
+                } else {
+                    showAlert(response.error, 'danger');
+                }
+            },
+            error: function(xhr) {
+                const error = xhr.responseJSON?.error || 'Failed to sync to EFRIS';
+                showAlert(error, 'danger');
+            },
+            complete: function() {
+                $btn.prop('disabled', false).html(originalText);
+            }
+        });
+    });
+
+    function showAlert(message, type) {
+        const alertHtml = `
+            <div class="alert alert-${type} alert-dismissible fade show" role="alert">
+                ${message}
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            </div>
+        `;
+        $('.main-content').prepend(alertHtml);
+        $('html, body').animate({ scrollTop: 0 }, 300);
+    }
+});
+</script>
+{% endblock %}

@@ -1,0 +1,242 @@
+<!-- LOGIN HISTORY TEMPLATE -->
+{% extends 'base.html' %}
+{% load i18n %}
+
+{% block title %}{% trans "Login History" %} | {{ block.super }}{% endblock %}
+
+{% block breadcrumb_items %}
+<li class="breadcrumb-item"><a href="{% url 'user_dashboard' %}">{% trans "Dashboard" %}</a></li>
+<li class="breadcrumb-item active">{% trans "Login History" %}</li>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+    .login-card {
+        background: var(--bg-primary);
+        border: 1px solid var(--border-color);
+        border-radius: var(--border-radius);
+        padding: 1.5rem;
+        margin-bottom: 1rem;
+        transition: all 0.3s ease;
+    }
+
+    .login-card:hover {
+        box-shadow: var(--shadow-md);
+        transform: translateY(-2px);
+    }
+
+    .login-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 1rem;
+    }
+
+    .device-icon {
+        width: 3.5rem;
+        height: 3.5rem;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: var(--primary-100);
+        color: var(--primary-700);
+        font-size: 1.75rem;
+    }
+
+    .login-info {
+        flex: 1;
+        margin-left: 1rem;
+    }
+
+    .login-title {
+        font-weight: 600;
+        font-size: 1.125rem;
+        color: var(--text-primary);
+    }
+
+    .login-meta {
+        font-size: 0.875rem;
+        color: var(--text-secondary);
+        margin-top: 0.25rem;
+    }
+
+    .stats-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 1rem;
+        margin-bottom: 2rem;
+    }
+
+    .stat-box {
+        background: var(--bg-primary);
+        border: 1px solid var(--border-color);
+        border-radius: var(--border-radius);
+        padding: 1.5rem;
+        text-align: center;
+    }
+
+    .stat-value {
+        font-size: 2rem;
+        font-weight: 700;
+        color: var(--primary-600);
+    }
+
+    .stat-label {
+        font-size: 0.875rem;
+        color: var(--text-secondary);
+        margin-top: 0.5rem;
+    }
+
+    [data-theme="dark"] .device-icon {
+        background: rgba(59, 130, 246, 0.2);
+        color: var(--primary-400);
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1 class="h3 mb-0">
+            <i class="bi bi-clock-history me-2"></i>{% trans "Login History" %}
+        </h1>
+        <a href="{% url 'user_activity_log' %}" class="btn btn-outline-primary">
+            <i class="bi bi-list-ul me-2"></i>{% trans "Activity Log" %}
+        </a>
+    </div>
+
+    <!-- Statistics -->
+    <div class="stats-grid">
+        <div class="stat-box">
+            <div class="stat-value">{{ stats.total_logins }}</div>
+            <div class="stat-label">{% trans "Total Logins" %}</div>
+        </div>
+        <div class="stat-box">
+            <div class="stat-value text-success">{{ stats.successful }}</div>
+            <div class="stat-label">{% trans "Successful" %}</div>
+        </div>
+        <div class="stat-box">
+            <div class="stat-value text-danger">{{ stats.failed }}</div>
+            <div class="stat-label">{% trans "Failed" %}</div>
+        </div>
+        <div class="stat-box">
+            <div class="stat-value text-warning">{{ stats.blocked }}</div>
+            <div class="stat-label">{% trans "Blocked" %}</div>
+        </div>
+        <div class="stat-box">
+            <div class="stat-value">{{ stats.unique_ips }}</div>
+            <div class="stat-label">{% trans "Unique IPs" %}</div>
+        </div>
+        <div class="stat-box">
+            <div class="stat-value">{{ stats.unique_devices }}</div>
+            <div class="stat-label">{% trans "Unique Devices" %}</div>
+        </div>
+    </div>
+
+    <!-- Filter -->
+    <div class="card mb-4">
+        <div class="card-body">
+            <form method="get" class="row g-3">
+                <div class="col-md-4">
+                    <label class="form-label">{% trans "Status" %}</label>
+                    <select name="status" class="form-select">
+                        <option value="">{% trans "All" %}</option>
+                        {% for status in status_choices %}
+                        <option value="{{ status.0 }}" {% if request.GET.status == status.0 %}selected{% endif %}>
+                            {{ status.1 }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-4 d-flex align-items-end">
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-filter me-2"></i>{% trans "Filter" %}
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Login History -->
+    {% if history %}
+        {% for login in history %}
+        <div class="login-card">
+            <div class="login-header">
+                <div class="d-flex align-items-center flex-grow-1">
+                    <div class="device-icon">
+                        {% if login.device_type == 'Mobile' %}
+                            <i class="bi bi-phone"></i>
+                        {% elif login.device_type == 'Tablet' %}
+                            <i class="bi bi-tablet"></i>
+                        {% else %}
+                            <i class="bi bi-laptop"></i>
+                        {% endif %}
+                    </div>
+                    <div class="login-info">
+                        <div class="login-title">
+                            {{ login.browser }} {% trans "on" %} {{ login.os }}
+                        </div>
+                        <div class="login-meta">
+                            <i class="bi bi-geo-alt"></i> {{ login.location|default:login.ip_address }}
+                            • <i class="bi bi-clock"></i> {{ login.timestamp|date:"Y-m-d H:i:s" }}
+                            {% if login.session_duration %}
+                            • {% trans "Duration:" %} {{ login.session_duration }}
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+                {% if login.status == 'success' %}
+                    <span class="badge bg-success fs-6">
+                        <i class="bi bi-check-circle me-1"></i>{% trans "Success" %}
+                    </span>
+                {% elif login.status == 'failed' %}
+                    <span class="badge bg-danger fs-6">
+                        <i class="bi bi-x-circle me-1"></i>{% trans "Failed" %}
+                    </span>
+                {% else %}
+                    <span class="badge bg-warning fs-6">
+                        <i class="bi bi-shield-x me-1"></i>{% trans "Blocked" %}
+                    </span>
+                {% endif %}
+            </div>
+            {% if login.failure_reason %}
+            <div class="alert alert-danger mb-0">
+                <i class="bi bi-exclamation-triangle me-2"></i>{{ login.failure_reason }}
+            </div>
+            {% endif %}
+        </div>
+        {% endfor %}
+
+        <!-- Pagination -->
+        {% if history.has_other_pages %}
+        <nav class="mt-4">
+            <ul class="pagination justify-content-center">
+                {% if history.has_previous %}
+                <li class="page-item">
+                    <a class="page-link" href="?page={{ history.previous_page_number }}&{{ request.GET.urlencode }}">
+                        {% trans "Previous" %}
+                    </a>
+                </li>
+                {% endif %}
+                <li class="page-item active">
+                    <span class="page-link">{{ history.number }} / {{ history.paginator.num_pages }}</span>
+                </li>
+                {% if history.has_next %}
+                <li class="page-item">
+                    <a class="page-link" href="?page={{ history.next_page_number }}&{{ request.GET.urlencode }}">
+                        {% trans "Next" %}
+                    </a>
+                </li>
+                {% endif %}
+            </ul>
+        </nav>
+        {% endif %}
+    {% else %}
+        <div class="text-center py-5">
+            <i class="bi bi-inbox fs-1 text-muted d-block mb-2"></i>
+            <p class="text-muted">{% trans "No login history available" %}</p>
+        </div>
+    {% endif %}
+</div>
+{% endblock %}

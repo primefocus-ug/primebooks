@@ -1,0 +1,905 @@
+{% extends 'base.html' %}
+{% load static %}
+{% load i18n %}
+
+{% block title %}{{ conversation.name|default:"Direct Message" }} | {% trans "Messages" %} | {{ block.super }}{% endblock %}
+
+{% block breadcrumb_items %}
+<li class="breadcrumb-item"><a href="{% url 'user_dashboard' %}">{% trans "Dashboard" %}</a></li>
+<li class="breadcrumb-item"><a href="{% url 'messaging:index' %}">{% trans "Messages" %}</a></li>
+<li class="breadcrumb-item active">{{ conversation.name|default:"Conversation" }}</li>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+    /* Full height chat container */
+    .chat-container {
+        height: calc(100vh - var(--header-height) - 8rem);
+        display: flex;
+        flex-direction: column;
+        background: var(--bg-primary);
+        border-radius: var(--border-radius);
+        box-shadow: var(--shadow-lg);
+        overflow: hidden;
+    }
+
+    /* Chat Header */
+    .chat-header {
+        padding: 1.5rem;
+        border-bottom: 1px solid var(--border-color);
+        background: var(--bg-tertiary);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+
+    .chat-header-info {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+    }
+
+    .conversation-avatar-large {
+        width: 48px;
+        height: 48px;
+        border-radius: 50%;
+        background: linear-gradient(135deg, var(--primary-500), var(--primary-700));
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: white;
+        font-weight: 600;
+        font-size: 1.25rem;
+    }
+
+    .chat-header-text h3 {
+        margin: 0;
+        font-size: 1.25rem;
+        color: var(--text-primary);
+    }
+
+    .chat-header-text p {
+        margin: 0;
+        font-size: 0.875rem;
+        color: var(--text-secondary);
+    }
+
+    .participants-info {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
+    .participant-avatar {
+        width: 32px;
+        height: 32px;
+        border-radius: 50%;
+        background: var(--gray-400);
+        border: 2px solid var(--bg-primary);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: white;
+        font-size: 0.75rem;
+        font-weight: 600;
+        margin-left: -8px;
+    }
+
+    .participant-avatar:first-child {
+        margin-left: 0;
+    }
+
+    /* Messages Area */
+    .messages-area {
+        flex: 1;
+        overflow-y: auto;
+        padding: 1.5rem;
+        background: var(--bg-secondary);
+        display: flex;
+        flex-direction: column;
+        gap: 1rem;
+    }
+
+    .message-group {
+        display: flex;
+        gap: 0.75rem;
+        max-width: 70%;
+        animation: slideIn 0.3s ease-out;
+    }
+
+    @keyframes slideIn {
+        from {
+            opacity: 0;
+            transform: translateY(10px);
+        }
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+
+    .message-group.own {
+        margin-left: auto;
+        flex-direction: row-reverse;
+    }
+
+    .message-avatar {
+        width: 40px;
+        height: 40px;
+        border-radius: 50%;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: white;
+        font-weight: 600;
+        font-size: 1rem;
+        flex-shrink: 0;
+    }
+
+    .message-content {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        gap: 0.25rem;
+    }
+
+    .message-sender {
+        font-size: 0.75rem;
+        color: var(--text-secondary);
+        font-weight: 600;
+        padding-left: 0.5rem;
+    }
+
+    .message-group.own .message-sender {
+        text-align: right;
+        padding-right: 0.5rem;
+        padding-left: 0;
+    }
+
+    .message-bubble {
+        background: var(--bg-primary);
+        padding: 0.875rem 1.125rem;
+        border-radius: 18px;
+        box-shadow: var(--shadow-sm);
+        word-wrap: break-word;
+        position: relative;
+    }
+
+    .message-group.own .message-bubble {
+        background: var(--primary-500);
+        color: white;
+    }
+
+    .message-text {
+        font-size: 0.9375rem;
+        line-height: 1.5;
+        white-space: pre-wrap;
+    }
+
+    .message-meta {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding-left: 0.5rem;
+        font-size: 0.75rem;
+        color: var(--text-muted);
+    }
+
+    .message-group.own .message-meta {
+        justify-content: flex-end;
+        padding-right: 0.5rem;
+        padding-left: 0;
+    }
+
+    .message-group.own .message-meta {
+        color: rgba(255, 255, 255, 0.8);
+    }
+
+    .message-actions {
+        position: absolute;
+        top: -10px;
+        right: 10px;
+        display: none;
+        background: var(--bg-primary);
+        border-radius: 12px;
+        padding: 0.25rem;
+        box-shadow: var(--shadow-md);
+    }
+
+    .message-bubble:hover .message-actions {
+        display: flex;
+    }
+
+    .message-action-btn {
+        background: none;
+        border: none;
+        padding: 0.25rem 0.5rem;
+        cursor: pointer;
+        color: var(--text-secondary);
+        border-radius: 6px;
+        transition: all 0.2s ease;
+    }
+
+    .message-action-btn:hover {
+        background: var(--bg-secondary);
+        color: var(--primary-500);
+    }
+
+    /* Typing Indicator */
+    .typing-indicator {
+        padding: 0.75rem 1.5rem;
+        font-size: 0.875rem;
+        color: var(--text-secondary);
+        font-style: italic;
+        display: none;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
+    .typing-dots {
+        display: flex;
+        gap: 3px;
+    }
+
+    .typing-dots span {
+        width: 6px;
+        height: 6px;
+        background: var(--text-secondary);
+        border-radius: 50%;
+        animation: typing 1.4s infinite;
+    }
+
+    .typing-dots span:nth-child(2) {
+        animation-delay: 0.2s;
+    }
+
+    .typing-dots span:nth-child(3) {
+        animation-delay: 0.4s;
+    }
+
+    @keyframes typing {
+        0%, 60%, 100% {
+            transform: translateY(0);
+        }
+        30% {
+            transform: translateY(-8px);
+        }
+    }
+
+    /* Message Input */
+    .message-input-container {
+        padding: 1.5rem;
+        border-top: 1px solid var(--border-color);
+        background: var(--bg-primary);
+    }
+
+    .message-input-wrapper {
+        display: flex;
+        gap: 0.75rem;
+        align-items: flex-end;
+    }
+
+    .message-input-box {
+        flex: 1;
+        display: flex;
+        background: var(--bg-secondary);
+        border: 1px solid var(--border-color);
+        border-radius: 24px;
+        padding: 0.75rem 1.125rem;
+        align-items: center;
+        gap: 0.75rem;
+        transition: all 0.3s ease;
+    }
+
+    .message-input-box:focus-within {
+        border-color: var(--primary-500);
+        box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+    }
+
+    .message-input-box textarea {
+        flex: 1;
+        border: none;
+        background: none;
+        outline: none;
+        resize: none;
+        font-family: inherit;
+        font-size: 0.9375rem;
+        color: var(--text-primary);
+        max-height: 120px;
+        min-height: 24px;
+    }
+
+    .message-input-box textarea::placeholder {
+        color: var(--text-muted);
+    }
+
+    .input-action-btn {
+        background: none;
+        border: none;
+        padding: 0.375rem;
+        cursor: pointer;
+        color: var(--text-secondary);
+        border-radius: 50%;
+        transition: all 0.2s ease;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .input-action-btn:hover {
+        background: var(--bg-tertiary);
+        color: var(--primary-500);
+    }
+
+    .send-btn {
+        background: var(--primary-500);
+        color: white;
+        border: none;
+        border-radius: 50%;
+        width: 48px;
+        height: 48px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        flex-shrink: 0;
+    }
+
+    .send-btn:hover:not(:disabled) {
+        background: var(--primary-600);
+        transform: scale(1.05);
+        box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
+    }
+
+    .send-btn:disabled {
+        background: var(--gray-300);
+        cursor: not-allowed;
+        opacity: 0.5;
+    }
+
+    /* Date Separator */
+    .date-separator {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin: 1.5rem 0;
+    }
+
+    .date-separator span {
+        background: var(--bg-primary);
+        padding: 0.5rem 1rem;
+        border-radius: 16px;
+        font-size: 0.75rem;
+        color: var(--text-secondary);
+        font-weight: 600;
+        box-shadow: var(--shadow-sm);
+    }
+
+    /* Empty State */
+    .empty-state {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        height: 100%;
+        color: var(--text-secondary);
+        padding: 2rem;
+    }
+
+    .empty-state i {
+        font-size: 4rem;
+        margin-bottom: 1rem;
+        opacity: 0.5;
+        color: var(--primary-500);
+    }
+
+    .empty-state h4 {
+        margin-bottom: 0.5rem;
+        color: var(--text-primary);
+    }
+
+    /* Loading Spinner */
+    .loading-spinner {
+        display: flex;
+        justify-content: center;
+        padding: 2rem;
+    }
+
+    .spinner {
+        width: 40px;
+        height: 40px;
+        border: 4px solid var(--border-color);
+        border-top-color: var(--primary-500);
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+    }
+
+    @keyframes spin {
+        to { transform: rotate(360deg); }
+    }
+
+    /* Responsive */
+    @media (max-width: 767px) {
+        .chat-container {
+            height: calc(100vh - 60px - 2rem);
+        }
+
+        .message-group {
+            max-width: 85%;
+        }
+
+        .chat-header {
+            padding: 1rem;
+        }
+
+        .messages-area {
+            padding: 1rem;
+        }
+
+        .message-input-container {
+            padding: 1rem;
+        }
+
+        .participants-info {
+            display: none;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="mb-3">
+        <a href="{% url 'messaging:index' %}" class="btn btn-outline-secondary">
+            <i class="bi bi-arrow-left me-2"></i>
+            {% trans "Back to Messages" %}
+        </a>
+    </div>
+
+    <div class="chat-container">
+        <!-- Chat Header -->
+        <div class="chat-header">
+            <div class="chat-header-info">
+                <div class="conversation-avatar-large">
+                    {% if conversation.conversation_type == 'direct' %}
+                        {% for participant in participants %}
+                            {% if participant.user != request.user %}
+                                {{ participant.user.username|slice:":1"|upper }}
+                            {% endif %}
+                        {% endfor %}
+                    {% else %}
+                        <i class="bi bi-people-fill"></i>
+                    {% endif %}
+                </div>
+                <div class="chat-header-text">
+                    <h3>
+                        {% if conversation.name %}
+                            {{ conversation.name }}
+                        {% else %}
+                            {% for participant in participants %}
+                                {% if participant.user != request.user %}
+                                    {{ participant.user.get_full_name|default:participant.user.username }}
+                                {% endif %}
+                            {% endfor %}
+                        {% endif %}
+                    </h3>
+                    <p>
+                        <i class="bi bi-circle-fill text-success" style="font-size: 0.5rem;"></i>
+                        {{ participants.count }} {% trans "participants" %}
+                    </p>
+                </div>
+            </div>
+
+            <div class="d-flex align-items-center gap-2">
+                <!-- Participants Avatars -->
+                <div class="participants-info">
+                    {% for participant in participants|slice:":5" %}
+                    <div class="participant-avatar" title="{{ participant.user.username }}">
+                        {{ participant.user.username|slice:":1"|upper }}
+                    </div>
+                    {% endfor %}
+                    {% if participants.count > 5 %}
+                    <div class="participant-avatar">
+                        +{{ participants.count|add:"-5" }}
+                    </div>
+                    {% endif %}
+                </div>
+
+                <!-- Actions -->
+                <div class="dropdown">
+                    <button class="btn btn-sm btn-outline-secondary dropdown-toggle"
+                            type="button"
+                            id="chatActions"
+                            data-bs-toggle="dropdown">
+                        <i class="bi bi-three-dots-vertical"></i>
+                    </button>
+                    <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="chatActions">
+                        <li>
+                            <a class="dropdown-item" href="#" onclick="event.preventDefault(); showParticipants();">
+                                <i class="bi bi-people me-2"></i>
+                                {% trans "View Participants" %}
+                            </a>
+                        </li>
+                        {% if current_participant.can_add_participants %}
+                        <li>
+                            <a class="dropdown-item" href="#" onclick="event.preventDefault(); addParticipants();">
+                                <i class="bi bi-person-plus me-2"></i>
+                                {% trans "Add Participants" %}
+                            </a>
+                        </li>
+                        {% endif %}
+                        <li><hr class="dropdown-divider"></li>
+                        <li>
+                            <a class="dropdown-item" href="#" onclick="event.preventDefault(); markAllRead();">
+                                <i class="bi bi-check-all me-2"></i>
+                                {% trans "Mark all as read" %}
+                            </a>
+                        </li>
+                        <li>
+                            <a class="dropdown-item text-danger" href="#" onclick="event.preventDefault(); leaveConversation();">
+                                <i class="bi bi-box-arrow-right me-2"></i>
+                                {% trans "Leave Conversation" %}
+                            </a>
+                        </li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <!-- Messages Area -->
+        <div class="messages-area" id="messagesArea">
+            <div class="loading-spinner">
+                <div class="spinner"></div>
+            </div>
+        </div>
+
+        <!-- Typing Indicator -->
+        <div class="typing-indicator" id="typingIndicator">
+            <span id="typingUser"></span> {% trans "is typing" %}
+            <div class="typing-dots">
+                <span></span>
+                <span></span>
+                <span></span>
+            </div>
+        </div>
+
+        <!-- Message Input -->
+        <div class="message-input-container">
+            <div class="message-input-wrapper">
+                <div class="message-input-box">
+                    <textarea id="messageInput"
+                              rows="1"
+                              placeholder="{% trans 'Type your message...' %}"
+                              onkeydown="handleKeyPress(event)"
+                              oninput="handleInput()"></textarea>
+
+                    <button class="input-action-btn" onclick="attachFile()" title="{% trans 'Attach file' %}">
+                        <i class="bi bi-paperclip fs-5"></i>
+                    </button>
+
+                    <button class="input-action-btn" onclick="insertEmoji()" title="{% trans 'Add emoji' %}">
+                        <i class="bi bi-emoji-smile fs-5"></i>
+                    </button>
+                </div>
+
+                <button class="send-btn" id="sendBtn" onclick="sendMessage()" disabled>
+                    <i class="bi bi-send-fill"></i>
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Include messaging client -->
+<script src="{% static 'js/messaging.js' %}"></script>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    const CONVERSATION_ID = {{ conversation.id }};
+    const CURRENT_USER_ID = {{ request.user.id }};
+    let messagingClient;
+
+    // Initialize
+    document.addEventListener('DOMContentLoaded', function() {
+        initializeChat();
+    });
+
+    async function initializeChat() {
+        // Initialize messaging client
+        messagingClient = new MessagingClient('/api/messaging');
+
+        // Set up event handlers
+        messagingClient.onNewMessage = handleNewMessage;
+        messagingClient.onTyping = handleTyping;
+        messagingClient.onConnectionChange = handleConnectionChange;
+        messagingClient.onError = handleError;
+
+        // Load conversation
+        await loadMessages();
+    }
+
+    async function loadMessages() {
+        try {
+            const messages = await messagingClient.joinConversation(CONVERSATION_ID);
+            renderMessages(messages);
+
+            // Mark as read
+            const messageIds = messages.map(m => m.id);
+            if (messageIds.length > 0) {
+                messagingClient.markMessagesAsRead(CONVERSATION_ID, messageIds);
+            }
+        } catch (error) {
+            console.error('Error loading messages:', error);
+            showError('{% trans "Failed to load messages" %}');
+        }
+    }
+
+    function renderMessages(messages) {
+        const container = document.getElementById('messagesArea');
+        container.innerHTML = '';
+
+        if (messages.length === 0) {
+            container.innerHTML = `
+                <div class="empty-state">
+                    <i class="bi bi-chat-text"></i>
+                    <h4>{% trans "No messages yet" %}</h4>
+                    <p>{% trans "Start the conversation by sending a message" %}</p>
+                </div>
+            `;
+            return;
+        }
+
+        let lastDate = null;
+        messages.forEach(message => {
+            // Add date separator if needed
+            const messageDate = new Date(message.created_at).toDateString();
+            if (messageDate !== lastDate) {
+                const separator = createDateSeparator(message.created_at);
+                container.appendChild(separator);
+                lastDate = messageDate;
+            }
+
+            // Add message
+            const messageEl = createMessageElement(message);
+            container.appendChild(messageEl);
+        });
+
+        scrollToBottom();
+    }
+
+    function createDateSeparator(date) {
+        const div = document.createElement('div');
+        div.className = 'date-separator';
+
+        const dateObj = new Date(date);
+        const today = new Date();
+        const yesterday = new Date(today);
+        yesterday.setDate(yesterday.getDate() - 1);
+
+        let dateText;
+        if (dateObj.toDateString() === today.toDateString()) {
+            dateText = '{% trans "Today" %}';
+        } else if (dateObj.toDateString() === yesterday.toDateString()) {
+            dateText = '{% trans "Yesterday" %}';
+        } else {
+            dateText = dateObj.toLocaleDateString('en-US', {
+                weekday: 'long',
+                year: 'numeric',
+                month: 'long',
+                day: 'numeric'
+            });
+        }
+
+        div.innerHTML = `<span>${dateText}</span>`;
+        return div;
+    }
+
+    function createMessageElement(message) {
+        const div = document.createElement('div');
+        const isOwn = message.sender.id === CURRENT_USER_ID;
+        div.className = `message-group ${isOwn ? 'own' : ''}`;
+        div.dataset.messageId = message.id;
+
+        const initial = message.sender.username.charAt(0).toUpperCase();
+        const time = formatTime(message.created_at);
+
+        div.innerHTML = `
+            <div class="message-avatar">${initial}</div>
+            <div class="message-content">
+                ${!isOwn ? `<div class="message-sender">${escapeHtml(message.sender.username)}</div>` : ''}
+                <div class="message-bubble">
+                    <div class="message-text">${escapeHtml(message.decrypted_content)}</div>
+                    ${isOwn && message.is_edited ?
+                        '<div class="message-actions">' +
+                        '<button class="message-action-btn" onclick="editMessage(' + message.id + ')" title="{% trans "Edit" %}">' +
+                        '<i class="bi bi-pencil"></i>' +
+                        '</button>' +
+                        '</div>' : ''}
+                </div>
+                <div class="message-meta">
+                    <span>${time}</span>
+                    ${message.is_edited ? '<span>• {% trans "Edited" %}</span>' : ''}
+                    ${message.read_receipts && message.read_receipts.length > 0 ? '<span><i class="bi bi-check-all"></i></span>' : ''}
+                </div>
+            </div>
+        `;
+
+        return div;
+    }
+
+    function handleNewMessage(message, conversationId) {
+        if (conversationId !== CONVERSATION_ID) return;
+
+        const container = document.getElementById('messagesArea');
+
+        // Remove empty state if present
+        const emptyState = container.querySelector('.empty-state');
+        if (emptyState) {
+            container.innerHTML = '';
+        }
+
+        // Add message
+        const messageEl = createMessageElement(message);
+        container.appendChild(messageEl);
+        scrollToBottom();
+
+        // Mark as read
+        messagingClient.markMessagesAsRead(CONVERSATION_ID, [message.id]);
+    }
+
+    function handleTyping(data) {
+        if (data.conversation_id !== CONVERSATION_ID) return;
+
+        const indicator = document.getElementById('typingIndicator');
+        const userSpan = document.getElementById('typingUser');
+
+        if (data.is_typing) {
+            userSpan.textContent = data.username;
+            indicator.style.display = 'flex';
+        } else {
+            indicator.style.display = 'none';
+        }
+    }
+
+    function handleConnectionChange(isConnected) {
+        const statusIcon = document.querySelector('.chat-header-text i');
+        if (statusIcon) {
+            if (isConnected) {
+                statusIcon.classList.remove('text-danger');
+                statusIcon.classList.add('text-success');
+            } else {
+                statusIcon.classList.remove('text-success');
+                statusIcon.classList.add('text-danger');
+            }
+        }
+    }
+
+    function handleError(error) {
+        console.error('Error:', error);
+        showError(error);
+    }
+
+    async function sendMessage() {
+        const input = document.getElementById('messageInput');
+        const content = input.value.trim();
+
+        if (!content) return;
+
+        try {
+            await messagingClient.sendMessage(CONVERSATION_ID, content);
+            input.value = '';
+            input.style.height = 'auto';
+            messagingClient.stopTyping(CONVERSATION_ID);
+            updateSendButton();
+        } catch (error) {
+            showError('{% trans "Failed to send message" %}');
+        }
+    }
+
+    function handleKeyPress(event) {
+        if (event.key === 'Enter' && !event.shiftKey) {
+            event.preventDefault();
+            sendMessage();
+        }
+    }
+
+    function handleInput() {
+        const input = document.getElementById('messageInput');
+
+        // Auto-resize textarea
+        input.style.height = 'auto';
+        input.style.height = input.scrollHeight + 'px';
+
+        // Update send button
+        updateSendButton();
+
+        // Send typing indicator
+        if (input.value.trim()) {
+            messagingClient.startTyping(CONVERSATION_ID);
+        } else {
+            messagingClient.stopTyping(CONVERSATION_ID);
+        }
+    }
+
+    function updateSendButton() {
+        const input = document.getElementById('messageInput');
+        const btn = document.getElementById('sendBtn');
+        btn.disabled = !input.value.trim();
+    }
+
+    function scrollToBottom() {
+        const container = document.getElementById('messagesArea');
+        container.scrollTop = container.scrollHeight;
+    }
+
+    function formatTime(timestamp) {
+        const date = new Date(timestamp);
+        return date.toLocaleTimeString('en-US', {
+            hour: 'numeric',
+            minute: '2-digit'
+        });
+    }
+
+    function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+
+    function showError(message) {
+        window.showAlert(message, 'danger');
+    }
+
+    function attachFile() {
+        window.showAlert('{% trans "File attachments coming soon" %}', 'info');
+    }
+
+    function insertEmoji() {
+        const emojis = ['👍', '❤️', '😂', '😮', '😢', '🙏', '🎉', '🔥', '✨', '💯'];
+        const emoji = prompt('{% trans "Choose emoji" %}:\n' + emojis.join(' '));
+        if (emoji) {
+            const input = document.getElementById('messageInput');
+            input.value += emoji;
+            input.focus();
+            handleInput();
+        }
+    }
+
+    async function markAllRead() {
+        try {
+            const response = await fetch(`/messaging/conversation/${CONVERSATION_ID}/mark-read/`, {
+                method: 'POST',
+                headers: {
+                    'X-CSRFToken': window.csrfToken
+                }
+            });
+            if (response.ok) {
+                window.showAlert('{% trans "All messages marked as read" %}', 'success');
+            }
+        } catch (error) {
+            showError('{% trans "Failed to mark as read" %}');
+        }
+    }
+
+    function showParticipants() {
+        window.showAlert('{% trans "Participants list coming soon" %}', 'info');
+    }
+
+    function addParticipants() {
+        window.showAlert('{% trans "Add participants coming soon" %}', 'info');
+    }
+
+    function leaveConversation() {
+        if (confirm('{% trans "Are you sure you want to leave this conversation?" %}')) {
+            window.location.href = "{% url 'messaging:index' %}";
+        }
+    }
+
+    function editMessage(messageId) {
+        window.showAlert('{% trans "Message editing coming soon" %}', 'info');
+    }
+</script>
+{% endblock %}

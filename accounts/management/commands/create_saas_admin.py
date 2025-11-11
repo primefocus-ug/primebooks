@@ -73,6 +73,12 @@ class Command(BaseCommand):
             help='Tenant schema name (default: all tenants)',
             default=None
         )
+        parser.add_argument(
+            '--assign-role',
+            type=str,
+            help='Assign a specific role to the SaaS admin (role name)',
+            default=None
+        )
 
     def handle(self, *args, **options):
         schema_name = options['schema']
@@ -111,6 +117,7 @@ class Command(BaseCommand):
         first_name = options['first_name']
         last_name = options['last_name']
         force = options['force']
+        role_name = options['assign_role']
 
         try:
             existing_saas_admins = User.objects.filter(is_saas_admin=True)
@@ -118,7 +125,8 @@ class Command(BaseCommand):
                 self.stdout.write(self.style.WARNING(
                     f'SaaS admin already exists: {", ".join([u.email for u in existing_saas_admins])}'
                 ))
-                self.stdout.write(self.style.WARNING('Use --force to create another one or --list to see existing admins'))
+                self.stdout.write(
+                    self.style.WARNING('Use --force to create another one or --list to see existing admins'))
                 return
 
             if User.objects.filter(email=email).exists() and not force:
@@ -135,21 +143,26 @@ class Command(BaseCommand):
             with transaction.atomic():
                 user = User.objects.filter(email=email).first()
                 if user and force:
-                    # update existing
+                    # update existing user to be SaaS admin
                     user.is_saas_admin = True
                     user.is_hidden = True
                     user.is_superuser = True
                     user.is_staff = True
                     user.can_access_all_companies = True
-                    user.user_type = 'SAAS_ADMIN'
                     user.username = username
                     user.first_name = first_name
                     user.last_name = last_name
                     user.set_password(password)
                     user.save()
+
+                    # Assign role if specified
+                    if role_name:
+                        self.assign_role_to_user(user, role_name)
+
                     self.stdout.write(self.style.SUCCESS(f'✓ Updated SaaS admin: {user.email}'))
+
                 elif not user:
-                    # create new
+                    # create new SaaS admin
                     saas_admin = User.objects.create_saas_admin(
                         email=email,
                         username=username,
@@ -157,6 +170,11 @@ class Command(BaseCommand):
                         first_name=first_name,
                         last_name=last_name
                     )
+
+                    # Assign role if specified
+                    if role_name:
+                        self.assign_role_to_user(saas_admin, role_name)
+
                     self.stdout.write(self.style.SUCCESS(f'✓ Created SaaS admin: {saas_admin.email}'))
 
         except Exception as e:
@@ -164,17 +182,68 @@ class Command(BaseCommand):
             import traceback
             self.stdout.write(self.style.ERROR(traceback.format_exc()))
 
+    def assign_role_to_user(self, user, role_name):
+        """Assign a role to the user using your role-based system"""
+        try:
+            from accounts.models import Role
+            from django.contrib.auth.models import Group
+
+            # Try to find the role by name
+            role = Role.objects.filter(
+                group__name__iexact=role_name,
+                is_active=True
+            ).first()
+
+            if not role:
+                # Try to find by group name directly
+                group = Group.objects.filter(name__iexact=role_name).first()
+                if group:
+                    # Create a role for this group if it doesn't exist
+                    role, created = Role.objects.get_or_create(
+                        group=group,
+                        defaults={
+                            'description': f'Auto-created role for {role_name}',
+                            'is_system_role': True,
+                            'priority': 100,  # High priority for SaaS admins
+                            'created_by': user
+                        }
+                    )
+
+            if role:
+                # Use the role assignment method from your model
+                user.assign_role(role)
+                self.stdout.write(self.style.SUCCESS(f'✓ Assigned role: {role.group.name}'))
+            else:
+                self.stdout.write(self.style.WARNING(f'Role not found: {role_name}'))
+
+        except Exception as e:
+            self.stdout.write(self.style.WARNING(f'Could not assign role {role_name}: {str(e)}'))
+
     def list_saas_admins(self):
-        admins = User.objects.filter(is_saas_admin=True)
+        """List all SaaS admins with their roles"""
+        admins = User.objects.filter(is_saas_admin=True).prefetch_related('groups__role')
         if not admins.exists():
             self.stdout.write(self.style.WARNING('No SaaS admins found'))
             return
 
-        for a in admins:
-            status = "Active" if a.is_active else "Inactive"
-            self.stdout.write(f'{a.email} ({a.username}) - {status}')
+        self.stdout.write(self.style.SUCCESS('SaaS Administrators:'))
+        self.stdout.write('-' * 80)
+
+        for admin in admins:
+            status = "Active" if admin.is_active else "Inactive"
+            roles = admin.role_names
+
+            self.stdout.write(f'Email:    {admin.email}')
+            self.stdout.write(f'Username: {admin.username}')
+            self.stdout.write(f'Name:     {admin.get_full_name()}')
+            self.stdout.write(f'Status:   {status}')
+            self.stdout.write(f'Roles:    {", ".join(roles) if roles else "No roles assigned"}')
+            self.stdout.write(f'Company:  {admin.company.name if admin.company else "No company"}')
+            self.stdout.write(f'Last Login: {admin.last_login or "Never"}')
+            self.stdout.write('-' * 80)
 
     def activate_saas_admin(self, email):
+        """Activate a SaaS admin by email"""
         try:
             admin = User.objects.get(email=email, is_saas_admin=True)
             admin.is_active = True
@@ -184,6 +253,7 @@ class Command(BaseCommand):
             self.stdout.write(self.style.ERROR(f'SaaS admin not found: {email}'))
 
     def deactivate_saas_admin(self, email):
+        """Deactivate a SaaS admin by email"""
         try:
             admin = User.objects.get(email=email, is_saas_admin=True)
             admin.is_active = False
@@ -193,6 +263,7 @@ class Command(BaseCommand):
             self.stdout.write(self.style.ERROR(f'SaaS admin not found: {email}'))
 
     def delete_saas_admin(self, email):
+        """Delete a SaaS admin by email (with confirmation)"""
         try:
             admin = User.objects.get(email=email, is_saas_admin=True)
             confirm = input(f'Type "yes" to delete SaaS admin "{email}": ')
@@ -203,3 +274,14 @@ class Command(BaseCommand):
                 self.stdout.write(self.style.WARNING('Operation cancelled'))
         except User.DoesNotExist:
             self.stdout.write(self.style.ERROR(f'SaaS admin not found: {email}'))
+
+    def get_saas_admin_stats(self):
+        """Get statistics about SaaS admins (optional enhancement)"""
+        total_admins = User.objects.filter(is_saas_admin=True).count()
+        active_admins = User.objects.filter(is_saas_admin=True, is_active=True).count()
+        hidden_admins = User.objects.filter(is_saas_admin=True, is_hidden=True).count()
+
+        self.stdout.write(self.style.SUCCESS('SaaS Admin Statistics:'))
+        self.stdout.write(f'Total SaaS Admins: {total_admins}')
+        self.stdout.write(f'Active SaaS Admins: {active_admins}')
+        self.stdout.write(f'Hidden SaaS Admins: {hidden_admins}')

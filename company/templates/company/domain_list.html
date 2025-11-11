@@ -1,5 +1,7 @@
 {% extends 'base.html' %}
+{% load i18n %}
 {% load static %}
+{%load custom_filters %}
 
 {% block title %}Domain Management - {{ company.trading_name|default:company.name }}{% endblock %}
 {% block page_title %}{{ company.trading_name|default:company.name }} | Domain Management{% endblock %}
@@ -7,20 +9,41 @@
 {% block extra_css %}
 <link href="https://cdnjs.cloudflare.com/ajax/libs/datatables/1.13.6/css/dataTables.bootstrap5.min.css" rel="stylesheet">
 <link href="https://cdnjs.cloudflare.com/ajax/libs/select2/4.1.0-rc.0/css/select2.min.css" rel="stylesheet">
-<style>
-    .domain-container {
-        background: white;
-        border-radius: 12px;
-        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-        overflow: hidden;
-        border: 1px solid #e5e7eb;
-    }
 
-    .domain-filters {
-        background: #f8fafc;
-        padding: 1.5rem;
-        border-bottom: 1px solid #e5e7eb;
-    }
+<link rel="stylesheet" href="{% static 'themes.css' %}">
+<style>
+
+:root {
+  /* Default (Light) Theme */
+  --color-background: white;
+  --color-text: black;
+  --color-secondary-bg: #f8f9fa;
+  --color-border: #dee2e6;
+}
+
+[data-theme='dark'] {
+  /* Dark Theme Overrides */
+  --color-background: #1e1e1e; /* VSCode-like dark background */
+  --color-text: #e0e0e0;
+  --color-secondary-bg: #2d2d2d;
+  --color-border: #444444;
+}
+
+.domain-container {
+    background:var(--color-background);
+    border-radius: 12px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    overflow: hidden;
+    border: 1px solid #e5e7eb;
+}
+     background-color: var(--color-background);
+  color: var(--color-text);
+.domain-filters {
+    background: #f8fafc;
+    padding: 1.5rem;
+    border-bottom: 1px solid #e5e7eb;
+}
+
 
     .domain-status {
         display: inline-flex;
@@ -45,7 +68,7 @@
     }
 
     .status-ssl {
-        background: #dbeafe;
+        background: var(--color-background);
         color: #2563eb;
         border: 1px solid #bfdbfe;
     }
@@ -55,9 +78,12 @@
         padding: 1rem 1.5rem;
         border-bottom: 1px solid #e5e7eb;
     }
+    [data-theme="dark"] .export-panel{
+        background: black;
+    }
 
     .table th {
-        background: #f8fafc;
+        background:var(--color-background);
         border-bottom: 2px solid #3b82f6;
         font-weight: 700;
         text-transform: uppercase;
@@ -65,14 +91,19 @@
         font-size: 0.825rem;
         color: #374151;
     }
+    
 
     .table tbody tr {
         transition: all 0.3s ease;
+        background: var(--color-background)
+        color: var(--color)
     }
 
     .table tbody tr:hover {
-        background: #f1f5f9;
+        background:var(--color-background);
+        color: var(--color-text);
     }
+   
 
     .action-buttons {
         display: flex;
@@ -94,6 +125,7 @@
         font-size: 4rem;
         margin-bottom: 1rem;
         opacity: 0.5;
+        background
     }
 </style>
 {% endblock %}
@@ -104,7 +136,7 @@
     <div class="domain-filters">
         <form method="GET" class="row g-3">
             <div class="col-md-4">
-                <label class="form-label fw-bold">Search Domains</label>
+                <label class="form-label fw-bold">{% trans "Search Domains" %}</label>
                 <div class="input-group">
                     <span class="input-group-text bg-primary text-white">
                         <i class="fas fa-search"></i>
@@ -118,7 +150,7 @@
             </div>
 
             <div class="col-md-3">
-                <label class="form-label fw-bold">Company</label>
+                <label class="form-label fw-bold">{% trans "Company" %}</label>
                 <select class="form-select" name="tenant">
                     <option value="">All Companies</option>
                     {% for company in companies %}
@@ -130,7 +162,7 @@
             </div>
 
             <div class="col-md-3">
-                <label class="form-label fw-bold">Primary Status</label>
+                <label class="form-label fw-bold">{% trans "Primary Status" %}</label>
                 <select class="form-select" name="is_primary">
                     <option value="">All</option>
                     <option value="true" {% if current_filters.is_primary == 'true' %}selected{% endif %}>Primary Only</option>
@@ -161,7 +193,7 @@
                 <span class="text-muted fw-semibold">{{ domains.paginator.count }} domains found</span>
                 {% if perms.company.add_company %}
                 <a href="{% url 'companies:domain_create' %}" class="btn btn-success btn-sm">
-                    <i class="fas fa-plus me-1"></i>Add Domain
+                    <i class="fas fa-plus me-1"></i>{% trans "Add Domain" %}
                 </a>
                 {% endif %}
             </div>
@@ -169,7 +201,7 @@
             <div class="d-flex gap-2 flex-wrap">
                 <a href="?{% if request.GET %}{{ request.GET.urlencode }}&{% endif %}format=csv"
                    class="btn btn-outline-success btn-sm">
-                    <i class="fas fa-download me-1"></i>Export CSV
+                    <i class="fas fa-download me-1"></i>{% trans "Export CSV" %}
                 </a>
             </div>
         </div>
@@ -206,27 +238,27 @@
                         </a>
                         {% endif %}
                         {% else %}
-                        <span class="text-muted">No company</span>
+                        <span class="text-muted">{% trans "No company" %}</span>
                         {% endif %}
                     </td>
                     <td>
                         {% if domain.is_primary %}
                         <span class="domain-status status-primary">
-                            <i class="fas fa-star"></i>Primary
+                            <i class="fas fa-star"></i>{% trans "Primary" %}
                         </span>
                         {% else %}
                         <span class="domain-status status-secondary">
-                            <i class="fas fa-circle"></i>Secondary
+                            <i class="fas fa-circle"></i>{% trans "Secondary" %}
                         </span>
                         {% endif %}
                     </td>
                     <td>
                         {% if domain.ssl_enabled %}
                         <span class="domain-status status-ssl">
-                            <i class="fas fa-lock"></i>Enabled
+                            <i class="fas fa-lock"></i>{% trans "Enabled" %}
                         </span>
                         {% else %}
-                        <span class="text-muted">Disabled</span>
+                        <span class="text-muted">{% trans "Disabled" %}</span>
                         {% endif %}
                     </td>
                     <td>
@@ -258,7 +290,7 @@
                     <td colspan="6" class="text-center py-5">
                         <div class="no-domains">
                             <i class="fas fa-globe"></i>
-                            <h5>No domains found</h5>
+                            <h5>{% trans "No domains found" %}</h5>
                             <p class="mb-3">
                                 {% if current_filters.q %}
                                     No domains match your search criteria.
@@ -268,7 +300,7 @@
                             </p>
                             {% if perms.company.add_domain %}
                             <a href="{% url 'companies:domain_create' %}" class="btn btn-primary">
-                                <i class="fas fa-plus me-2"></i>Add First Domain
+                                <i class="fas fa-plus me-2"></i>{% trans "Add First Domain|" %}
                             </a>
                             {% endif %}
                         </div>
@@ -331,6 +363,7 @@
 {% block extra_js %}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/datatables/1.13.6/js/jquery.dataTables.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/datatables/1.13.6/js/dataTables.bootstrap5.min.js"></script>
+
 <script>
 $(document).ready(function() {
     // Initialize DataTable

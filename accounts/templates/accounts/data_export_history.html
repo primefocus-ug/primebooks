@@ -1,0 +1,509 @@
+{% extends 'base.html' %}
+{% load i18n %}
+{% load static %}
+
+{% block title %}{% trans "Data Export History" %} | {{ block.super }}{% endblock %}
+
+{% block breadcrumb_items %}
+<li class="breadcrumb-item"><a href="{% url 'user_dashboard' %}">{% trans "Dashboard" %}</a></li>
+<li class="breadcrumb-item active">{% trans "Export History" %}</li>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+    .export-stats {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 1rem;
+        margin-bottom: 2rem;
+    }
+
+    .stat-card {
+        background: var(--bg-primary);
+        border: 1px solid var(--border-color);
+        border-radius: var(--border-radius);
+        padding: 1.5rem;
+        text-align: center;
+        transition: all 0.3s ease;
+        box-shadow: var(--shadow-sm);
+    }
+
+    .stat-card:hover {
+        transform: translateY(-2px);
+        box-shadow: var(--shadow-md);
+    }
+
+    .stat-icon {
+        font-size: 2rem;
+        color: var(--primary-600);
+        margin-bottom: 0.5rem;
+    }
+
+    .stat-value {
+        font-size: 2rem;
+        font-weight: 700;
+        color: var(--primary-600);
+        line-height: 1;
+    }
+
+    .stat-label {
+        font-size: 0.875rem;
+        color: var(--text-secondary);
+        margin-top: 0.5rem;
+    }
+
+    .filter-card {
+        background: var(--bg-primary);
+        border: 1px solid var(--border-color);
+        border-radius: var(--border-radius);
+        padding: 1.5rem;
+        margin-bottom: 2rem;
+        box-shadow: var(--shadow-sm);
+    }
+
+    .export-card {
+        background: var(--bg-primary);
+        border: 1px solid var(--border-color);
+        border-radius: var(--border-radius);
+        padding: 1.5rem;
+        margin-bottom: 1rem;
+        transition: all 0.3s ease;
+        box-shadow: var(--shadow-sm);
+    }
+
+    .export-card:hover {
+        box-shadow: var(--shadow-md);
+        transform: translateY(-2px);
+    }
+
+    .export-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 1rem;
+        padding-bottom: 1rem;
+        border-bottom: 1px solid var(--border-color);
+    }
+
+    .export-icon-wrapper {
+        width: 3.5rem;
+        height: 3.5rem;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: var(--primary-100);
+        color: var(--primary-700);
+        font-size: 1.75rem;
+        flex-shrink: 0;
+    }
+
+    .export-info {
+        flex: 1;
+        margin-left: 1rem;
+    }
+
+    .export-title {
+        font-weight: 600;
+        font-size: 1.125rem;
+        color: var(--text-primary);
+        margin-bottom: 0.25rem;
+    }
+
+    .export-meta {
+        font-size: 0.875rem;
+        color: var(--text-secondary);
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+        flex-wrap: wrap;
+    }
+
+    .export-details {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+        gap: 1rem;
+        padding: 1rem;
+        background: var(--bg-secondary);
+        border-radius: var(--border-radius-sm);
+        margin-bottom: 1rem;
+    }
+
+    .detail-item {
+        text-align: center;
+    }
+
+    .detail-value {
+        font-weight: 600;
+        color: var(--text-primary);
+        font-size: 1.125rem;
+    }
+
+    .detail-label {
+        font-size: 0.75rem;
+        color: var(--text-secondary);
+        margin-top: 0.25rem;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+
+    .filter-badge {
+        display: inline-block;
+        padding: 0.25rem 0.75rem;
+        background: var(--primary-100);
+        color: var(--primary-700);
+        border-radius: 999px;
+        font-size: 0.75rem;
+        margin-right: 0.5rem;
+        margin-bottom: 0.5rem;
+    }
+
+    .empty-state {
+        text-align: center;
+        padding: 4rem 2rem;
+    }
+
+    .empty-state-icon {
+        font-size: 5rem;
+        color: var(--text-muted);
+        margin-bottom: 1rem;
+    }
+
+    .empty-state-title {
+        font-size: 1.5rem;
+        font-weight: 600;
+        color: var(--text-primary);
+        margin-bottom: 0.5rem;
+    }
+
+    .empty-state-text {
+        color: var(--text-secondary);
+        font-size: 1rem;
+    }
+
+    .format-icon {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 2rem;
+        height: 2rem;
+        border-radius: 4px;
+        font-size: 0.875rem;
+        font-weight: 600;
+    }
+
+    .format-csv {
+        background: var(--green-100);
+        color: var(--green-700);
+    }
+
+    .format-excel {
+        background: var(--primary-100);
+        color: var(--primary-700);
+    }
+
+    .format-pdf {
+        background: var(--red-100);
+        color: var(--red-700);
+    }
+
+    .format-json {
+        background: var(--amber-100);
+        color: var(--amber-700);
+    }
+
+    [data-theme="dark"] .export-icon-wrapper {
+        background: rgba(59, 130, 246, 0.2);
+        color: var(--primary-400);
+    }
+
+    [data-theme="dark"] .filter-badge {
+        background: rgba(59, 130, 246, 0.2);
+        color: var(--primary-400);
+    }
+
+    [data-theme="dark"] .format-csv {
+        background: rgba(16, 185, 129, 0.2);
+        color: var(--green-400);
+    }
+
+    [data-theme="dark"] .format-excel {
+        background: rgba(59, 130, 246, 0.2);
+        color: var(--primary-400);
+    }
+
+    [data-theme="dark"] .format-pdf {
+        background: rgba(239, 68, 68, 0.2);
+        color: var(--red-400);
+    }
+
+    [data-theme="dark"] .format-json {
+        background: rgba(245, 158, 11, 0.2);
+        color: var(--amber-400);
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- Page Header -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1 class="h3 mb-0">
+            <i class="bi bi-download me-2"></i>{% trans "Data Export History" %}
+        </h1>
+        <a href="{% url 'user_activity_log' %}" class="btn btn-outline-primary">
+            <i class="bi bi-clock-history me-2"></i>{% trans "Activity Log" %}
+        </a>
+    </div>
+
+    <!-- Statistics -->
+    <div class="export-stats">
+        <div class="stat-card">
+            <div class="stat-icon">
+                <i class="bi bi-file-earmark-arrow-down"></i>
+            </div>
+            <div class="stat-value">{{ stats.total_exports|default:0 }}</div>
+            <div class="stat-label">{% trans "Total Exports" %}</div>
+        </div>
+
+        <div class="stat-card">
+            <div class="stat-icon">
+                <i class="bi bi-database"></i>
+            </div>
+            <div class="stat-value">{{ stats.total_records|default:0 }}</div>
+            <div class="stat-label">{% trans "Records Exported" %}</div>
+        </div>
+
+        {% for type in stats.by_type %}
+        <div class="stat-card">
+            <div class="stat-icon">
+                {% if type.export_type == 'csv' %}
+                    <i class="bi bi-filetype-csv"></i>
+                {% elif type.export_type == 'excel' %}
+                    <i class="bi bi-file-earmark-excel"></i>
+                {% elif type.export_type == 'pdf' %}
+                    <i class="bi bi-file-pdf"></i>
+                {% else %}
+                    <i class="bi bi-file-code"></i>
+                {% endif %}
+            </div>
+            <div class="stat-value">{{ type.count }}</div>
+            <div class="stat-label">{{ type.export_type|upper }}</div>
+        </div>
+        {% endfor %}
+    </div>
+
+    <!-- Filter -->
+    <div class="filter-card">
+        <h5 class="mb-3">
+            <i class="bi bi-funnel me-2"></i>{% trans "Filter Exports" %}
+        </h5>
+        <form method="get" class="row g-3">
+            <div class="col-md-4">
+                <label class="form-label">{% trans "Export Type" %}</label>
+                <select name="export_type" class="form-select">
+                    <option value="">{% trans "All Types" %}</option>
+                    {% for type in export_types %}
+                    <option value="{{ type.0 }}" {% if request.GET.export_type == type.0 %}selected{% endif %}>
+                        {{ type.1 }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">{% trans "Date From" %}</label>
+                <input type="date" name="date_from" class="form-control" value="{{ request.GET.date_from }}">
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">{% trans "Date To" %}</label>
+                <input type="date" name="date_to" class="form-control" value="{{ request.GET.date_to }}">
+            </div>
+            <div class="col-12">
+                <button type="submit" class="btn btn-primary">
+                    <i class="bi bi-filter me-2"></i>{% trans "Apply Filter" %}
+                </button>
+                <a href="{% url 'data_export_history' %}" class="btn btn-outline-secondary">
+                    <i class="bi bi-x-circle me-2"></i>{% trans "Clear" %}
+                </a>
+            </div>
+        </form>
+    </div>
+
+    <!-- Export History -->
+    {% if exports %}
+        {% for export in exports %}
+        <div class="export-card">
+            <div class="export-header">
+                <div class="d-flex align-items-center flex-grow-1">
+                    <div class="export-icon-wrapper">
+                        {% if export.export_type == 'csv' %}
+                            <i class="bi bi-filetype-csv"></i>
+                        {% elif export.export_type == 'excel' %}
+                            <i class="bi bi-file-earmark-excel"></i>
+                        {% elif export.export_type == 'pdf' %}
+                            <i class="bi bi-file-pdf"></i>
+                        {% else %}
+                            <i class="bi bi-file-code"></i>
+                        {% endif %}
+                    </div>
+                    <div class="export-info">
+                        <div class="export-title">
+                            {{ export.resource_type }}
+                            <span class="format-icon format-{{ export.export_type }}">
+                                {{ export.export_type|upper }}
+                            </span>
+                        </div>
+                        <div class="export-meta">
+                            <span>
+                                <i class="bi bi-clock"></i> {{ export.timestamp|date:"Y-m-d H:i:s" }}
+                            </span>
+                            <span>
+                                <i class="bi bi-geo-alt"></i> {{ export.ip_address }}
+                            </span>
+                        </div>
+                    </div>
+                </div>
+                <span class="badge bg-primary fs-6 px-3 py-2">
+                    {{ export.record_count }} {% trans "records" %}
+                </span>
+            </div>
+
+            <div class="export-details">
+                <div class="detail-item">
+                    <div class="detail-value">{{ export.record_count }}</div>
+                    <div class="detail-label">{% trans "Records" %}</div>
+                </div>
+                <div class="detail-item">
+                    <div class="detail-value">
+                        {% if export.file_size_bytes < 1024 %}
+                            {{ export.file_size_bytes }} B
+                        {% elif export.file_size_bytes < 1048576 %}
+                            {{ export.file_size_bytes|filesizeformat }}
+                        {% else %}
+                            {{ export.file_size_bytes|filesizeformat }}
+                        {% endif %}
+                    </div>
+                    <div class="detail-label">{% trans "File Size" %}</div>
+                </div>
+                <div class="detail-item">
+                    <div class="detail-value">{{ export.export_type|upper }}</div>
+                    <div class="detail-label">{% trans "Format" %}</div>
+                </div>
+                <div class="detail-item">
+                    <div class="detail-value">{{ export.timestamp|date:"H:i" }}</div>
+                    <div class="detail-label">{% trans "Time" %}</div>
+                </div>
+            </div>
+
+            {% if export.filters_applied %}
+            <div class="mt-2">
+                <small class="text-muted">
+                    <i class="bi bi-funnel"></i> {% trans "Filters applied:" %}
+                </small>
+                <div class="mt-2">
+                    {% for key, value in export.filters_applied.items %}
+                        <span class="filter-badge">{{ key }}: {{ value }}</span>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+        </div>
+        {% endfor %}
+
+        <!-- Pagination -->
+        {% if exports.has_other_pages %}
+        <nav class="mt-4" aria-label="{% trans 'Page navigation' %}">
+            <ul class="pagination justify-content-center">
+                {% if exports.has_previous %}
+                <li class="page-item">
+                    <a class="page-link" href="?page={{ exports.previous_page_number }}&{{ request.GET.urlencode }}">
+                        <i class="bi bi-chevron-left"></i> {% trans "Previous" %}
+                    </a>
+                </li>
+                {% endif %}
+
+                <li class="page-item active">
+                    <span class="page-link">
+                        {% trans "Page" %} {{ exports.number }} {% trans "of" %} {{ exports.paginator.num_pages }}
+                    </span>
+                </li>
+
+                {% if exports.has_next %}
+                <li class="page-item">
+                    <a class="page-link" href="?page={{ exports.next_page_number }}&{{ request.GET.urlencode }}">
+                        {% trans "Next" %} <i class="bi bi-chevron-right"></i>
+                    </a>
+                </li>
+                {% endif %}
+            </ul>
+        </nav>
+        {% endif %}
+    {% else %}
+        <div class="export-card">
+            <div class="empty-state">
+                <div class="empty-state-icon">
+                    <i class="bi bi-inbox"></i>
+                </div>
+                <div class="empty-state-title">{% trans "No Export History" %}</div>
+                <p class="empty-state-text">
+                    {% trans "You haven't exported any data yet. When you export data from the system, it will appear here." %}
+                </p>
+            </div>
+        </div>
+    {% endif %}
+
+    <!-- Info Box -->
+    <div class="alert alert-info mt-4">
+        <div class="d-flex">
+            <div class="me-3">
+                <i class="bi bi-info-circle fs-4"></i>
+            </div>
+            <div>
+                <h5 class="alert-heading">{% trans "About Data Exports" %}</h5>
+                <p class="mb-0">
+                    {% trans "This page shows all data exports you've performed. Exports are logged for security and compliance purposes. The actual export files are not stored here - this is only a history of export activities." %}
+                </p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Add smooth scrolling for pagination
+    const paginationLinks = document.querySelectorAll('.pagination a');
+    paginationLinks.forEach(link => {
+        link.addEventListener('click', function(e) {
+            // Scroll to top smoothly
+            window.scrollTo({
+                top: 0,
+                behavior: 'smooth'
+            });
+        });
+    });
+
+    // Highlight if coming from a specific export
+    const urlParams = new URLSearchParams(window.location.search);
+    const highlightId = urlParams.get('highlight');
+    if (highlightId) {
+        const card = document.querySelector(`[data-export-id="${highlightId}"]`);
+        if (card) {
+            card.style.animation = 'highlight 2s ease';
+            card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+    }
+});
+
+// Highlight animation
+const style = document.createElement('style');
+style.textContent = `
+    @keyframes highlight {
+        0%, 100% { box-shadow: var(--shadow-sm); }
+        50% { box-shadow: 0 0 20px rgba(59, 130, 246, 0.5); }
+    }
+`;
+document.head.appendChild(style);
+</script>
+{% endblock %}

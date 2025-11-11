@@ -1,0 +1,326 @@
+{% extends 'base.html' %}
+{% load i18n %}
+{% load static %}
+
+{% block title %}{% trans "Income Statement" %} | {{ block.super }}{% endblock %}
+
+{% block breadcrumb_items %}
+<li class="breadcrumb-item"><a href="{% url 'finance:dashboard' %}">{% trans "Finance" %}</a></li>
+<li class="breadcrumb-item"><a href="{% url 'finance:financial_reports_dashboard' %}">{% trans "Reports" %}</a></li>
+<li class="breadcrumb-item active">{% trans "Income Statement" %}</li>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+    .financial-table {
+        font-size: 0.95rem;
+    }
+
+    .financial-table tbody tr:hover {
+        background-color: var(--primary-50);
+    }
+
+    [data-theme="dark"] .financial-table tbody tr:hover {
+        background-color: rgba(59, 130, 246, 0.1);
+    }
+
+    .account-row {
+        padding-left: 1rem;
+    }
+
+    .total-row {
+        font-weight: 600;
+        background-color: var(--gray-100);
+        border-top: 2px solid var(--primary-500);
+        border-bottom: 2px solid var(--primary-500);
+    }
+
+    [data-theme="dark"] .total-row {
+        background-color: var(--gray-800);
+    }
+
+    .subtotal-row {
+        font-weight: 500;
+        background-color: var(--gray-50);
+        border-top: 1px solid var(--border-color);
+    }
+
+    [data-theme="dark"] .subtotal-row {
+        background-color: var(--gray-900);
+    }
+
+    .net-profit-positive {
+        color: var(--green-600);
+        font-weight: 700;
+    }
+
+    .net-profit-negative {
+        color: var(--red-600);
+        font-weight: 700;
+    }
+
+    .print-hide {
+        display: block;
+    }
+
+    @media print {
+        .print-hide {
+            display: none !important;
+        }
+
+        .card {
+            box-shadow: none !important;
+            border: 1px solid #000 !important;
+        }
+    }
+
+    @media (max-width: 767.98px) {
+        .financial-table {
+            font-size: 0.85rem;
+        }
+
+        .amount-column {
+            text-align: right;
+            min-width: 100px;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- Page Header -->
+    <div class="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center mb-4 print-hide">
+        <div class="mb-3 mb-md-0">
+            <h1 class="h3 mb-2 text-primary">
+                <i class="bi bi-graph-up me-2"></i>{% trans "Income Statement" %}
+            </h1>
+            <p class="text-muted mb-0">{% trans "Profit & Loss Statement" %}</p>
+        </div>
+        <div class="d-flex flex-wrap gap-2">
+            {% if perms.finance.add_financialreport %}
+            <button type="button" class="btn btn-outline-primary" onclick="window.print()">
+                <i class="bi bi-printer me-1"></i>{% trans "Print" %}
+            </button>
+            <button type="button" class="btn btn-outline-success" onclick="exportToExcel()">
+                <i class="bi bi-file-earmark-excel me-1"></i>{% trans "Export Excel" %}
+            </button>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Filter Card -->
+    <div class="card shadow-sm mb-4 print-hide">
+        <div class="card-header bg-light">
+            <h5 class="mb-0">
+                <i class="bi bi-funnel me-2"></i>{% trans "Period Selection" %}
+            </h5>
+        </div>
+        <div class="card-body">
+            <form method="get" class="row g-3">
+                <div class="col-12 col-sm-6 col-lg-4">
+                    <label for="start_date" class="form-label">{% trans "Start Date" %}</label>
+                    <input type="date" class="form-control" id="start_date" name="start_date"
+                           value="{{ start_date|date:'Y-m-d' }}" required>
+                </div>
+                <div class="col-12 col-sm-6 col-lg-4">
+                    <label for="end_date" class="form-label">{% trans "End Date" %}</label>
+                    <input type="date" class="form-control" id="end_date" name="end_date"
+                           value="{{ end_date|date:'Y-m-d' }}" required>
+                </div>
+                <div class="col-12 col-lg-4 d-flex align-items-end">
+                    <button type="submit" class="btn btn-primary w-100">
+                        <i class="bi bi-search me-1"></i>{% trans "Generate Report" %}
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Income Statement -->
+    <div class="card shadow-sm">
+        <div class="card-header bg-primary text-white">
+            <div class="d-flex justify-content-between align-items-center">
+                <h4 class="mb-0">{% trans "Income Statement" %}</h4>
+                <span class="badge bg-light text-primary">
+                    {{ start_date|date:"M d, Y" }} - {{ end_date|date:"M d, Y" }}
+                </span>
+            </div>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table financial-table table-hover mb-0">
+                    <thead class="bg-light">
+                        <tr>
+                            <th style="width: 70%;">{% trans "Account" %}</th>
+                            <th class="text-end amount-column">{% trans "Amount" %}</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <!-- Revenue Section -->
+                        <tr class="table-secondary">
+                            <td colspan="2" class="fw-bold">{% trans "REVENUE" %}</td>
+                        </tr>
+                        {% for account in revenue_accounts %}
+                        <tr class="account-row">
+                            <td>
+                                <a href="{% url 'finance:general_ledger' %}?account={{ account.id }}&start_date={{ start_date|date:'Y-m-d' }}&end_date={{ end_date|date:'Y-m-d' }}"
+                                   class="text-decoration-none">
+                                    {{ account.code }} - {{ account.name }}
+                                </a>
+                            </td>
+                            <td class="text-end">{{ account.period_balance|floatformat:2 }}</td>
+                        </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="2" class="text-muted text-center py-3">{% trans "No revenue accounts found" %}</td>
+                        </tr>
+                        {% endfor %}
+                        <tr class="subtotal-row">
+                            <td>{% trans "Total Revenue" %}</td>
+                            <td class="text-end">{{ total_revenue|floatformat:2 }}</td>
+                        </tr>
+
+                        <!-- Cost of Goods Sold -->
+                        <tr class="table-secondary">
+                            <td colspan="2" class="fw-bold">{% trans "COST OF GOODS SOLD" %}</td>
+                        </tr>
+                        {% for account in cogs_accounts %}
+                        <tr class="account-row">
+                            <td>
+                                <a href="{% url 'finance:general_ledger' %}?account={{ account.id }}&start_date={{ start_date|date:'Y-m-d' }}&end_date={{ end_date|date:'Y-m-d' }}"
+                                   class="text-decoration-none">
+                                    {{ account.code }} - {{ account.name }}
+                                </a>
+                            </td>
+                            <td class="text-end">{{ account.period_balance|floatformat:2 }}</td>
+                        </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="2" class="text-muted text-center py-3">{% trans "No COGS accounts found" %}</td>
+                        </tr>
+                        {% endfor %}
+                        <tr class="subtotal-row">
+                            <td>{% trans "Total Cost of Goods Sold" %}</td>
+                            <td class="text-end">{{ total_cogs|floatformat:2 }}</td>
+                        </tr>
+
+                        <!-- Gross Profit -->
+                        <tr class="total-row">
+                            <td>{% trans "GROSS PROFIT" %}</td>
+                            <td class="text-end">{{ gross_profit|floatformat:2 }}</td>
+                        </tr>
+
+                        <!-- Operating Expenses -->
+                        <tr class="table-secondary">
+                            <td colspan="2" class="fw-bold">{% trans "OPERATING EXPENSES" %}</td>
+                        </tr>
+                        {% for account in expense_accounts %}
+                        <tr class="account-row">
+                            <td>
+                                <a href="{% url 'finance:general_ledger' %}?account={{ account.id }}&start_date={{ start_date|date:'Y-m-d' }}&end_date={{ end_date|date:'Y-m-d' }}"
+                                   class="text-decoration-none">
+                                    {{ account.code }} - {{ account.name }}
+                                </a>
+                            </td>
+                            <td class="text-end">{{ account.period_balance|floatformat:2 }}</td>
+                        </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="2" class="text-muted text-center py-3">{% trans "No expense accounts found" %}</td>
+                        </tr>
+                        {% endfor %}
+                        <tr class="subtotal-row">
+                            <td>{% trans "Total Operating Expenses" %}</td>
+                            <td class="text-end">{{ total_expenses|floatformat:2 }}</td>
+                        </tr>
+
+                        <!-- Net Profit -->
+                        <tr class="total-row">
+                            <td>{% trans "NET PROFIT (LOSS)" %}</td>
+                            <td class="text-end {% if net_profit >= 0 %}net-profit-positive{% else %}net-profit-negative{% endif %}">
+                                {{ net_profit|floatformat:2 }}
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Summary Cards -->
+    <div class="row mt-4 print-hide">
+        <div class="col-12 col-md-6 col-lg-3 mb-3">
+            <div class="card shadow-sm border-start border-primary border-4">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <p class="text-muted mb-1">{% trans "Total Revenue" %}</p>
+                            <h4 class="mb-0">{{ total_revenue|floatformat:2 }}</h4>
+                        </div>
+                        <div class="text-primary">
+                            <i class="bi bi-cash-stack fs-2"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-12 col-md-6 col-lg-3 mb-3">
+            <div class="card shadow-sm border-start border-warning border-4">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <p class="text-muted mb-1">{% trans "Total COGS" %}</p>
+                            <h4 class="mb-0">{{ total_cogs|floatformat:2 }}</h4>
+                        </div>
+                        <div class="text-warning">
+                            <i class="bi bi-box-seam fs-2"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-12 col-md-6 col-lg-3 mb-3">
+            <div class="card shadow-sm border-start border-danger border-4">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <p class="text-muted mb-1">{% trans "Total Expenses" %}</p>
+                            <h4 class="mb-0">{{ total_expenses|floatformat:2 }}</h4>
+                        </div>
+                        <div class="text-danger">
+                            <i class="bi bi-wallet2 fs-2"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-12 col-md-6 col-lg-3 mb-3">
+            <div class="card shadow-sm border-start {% if net_profit >= 0 %}border-success{% else %}border-danger{% endif %} border-4">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <p class="text-muted mb-1">{% trans "Net Profit" %}</p>
+                            <h4 class="mb-0 {% if net_profit >= 0 %}text-success{% else %}text-danger{% endif %}">
+                                {{ net_profit|floatformat:2 }}
+                            </h4>
+                        </div>
+                        <div class="{% if net_profit >= 0 %}text-success{% else %}text-danger{% endif %}">
+                            <i class="bi {% if net_profit >= 0 %}bi-graph-up-arrow{% else %}bi-graph-down-arrow{% endif %} fs-2"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function exportToExcel() {
+    // Simple Excel export functionality
+    window.location.href = "{% url 'finance:generate_income_statement' %}?start_date={{ start_date|date:'Y-m-d' }}&end_date={{ end_date|date:'Y-m-d' }}&format=excel";
+}
+</script>
+{% endblock %}

@@ -1,0 +1,230 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login | {{ page_title }}</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        body {
+            min-height: 100vh;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .login-card {
+            max-width: 440px;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            overflow: hidden;
+        }
+        .login-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 40px;
+            text-align: center;
+            color: white;
+        }
+        .login-body {
+            padding: 40px;
+        }
+        .form-control {
+            border: 2px solid #e5e7eb;
+            border-radius: 12px;
+            padding: 12px 16px;
+            height: 56px;
+        }
+        .form-control:focus {
+            border-color: #667eea;
+            box-shadow: 0 0 0 4px rgba(102, 126, 234, 0.1);
+        }
+        .btn-primary {
+            width: 100%;
+            padding: 14px;
+            background: #667eea;
+            border: none;
+            border-radius: 12px;
+            font-weight: 600;
+        }
+        .btn-primary:hover {
+            background: #5568d3;
+        }
+        .divider {
+            display: flex;
+            align-items: center;
+            margin: 30px 0;
+            color: #9ca3af;
+        }
+        .divider::before, .divider::after {
+            content: '';
+            flex: 1;
+            border-bottom: 1px solid #e5e7eb;
+        }
+        .divider span {
+            padding: 0 15px;
+        }
+        .tenant-badge {
+            display: inline-block;
+            padding: 8px 16px;
+            background: #eff6ff;
+            border-radius: 8px;
+            color: #1e40af;
+            font-size: 14px;
+        }
+        #googleLoginBtn {
+            position: relative;
+        }
+        #googleLoginBtn.disabled {
+            opacity: 0.6;
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="login-card">
+        <div class="login-header">
+            <h1>Welcome Back</h1>
+            <p>Sign in to access your account</p>
+        </div>
+
+        <div class="login-body">
+            {% if messages %}
+                {% for message in messages %}
+                <div class="alert alert-{{ message.tags }} alert-dismissible">
+                    {{ message }}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>
+                {% endfor %}
+            {% endif %}
+
+            <div id="tenantInfo" style="display:none;" class="mb-3 text-center">
+                <small class="text-muted">Account found in:</small>
+                <div class="tenant-badge mt-2">
+                    <span id="tenantName"></span>
+                </div>
+            </div>
+
+            <form method="post" id="loginForm">
+                {% csrf_token %}
+
+                <div class="mb-3">
+                    <label for="email" class="form-label">Email</label>
+                    <input type="email"
+                           class="form-control"
+                           id="email"
+                           name="email"
+                           required
+                           onblur="checkTenant()">
+                </div>
+
+                <div class="mb-3">
+                    <label for="password" class="form-label">Password</label>
+                    <input type="password"
+                           class="form-control"
+                           id="password"
+                           name="password"
+                           required>
+                </div>
+
+                <button type="submit" class="btn btn-primary" id="loginBtn">
+                    Sign In
+                </button>
+            </form>
+
+            {% if google_oauth_enabled %}
+            <div class="divider"><span>or</span></div>
+
+            <button id="googleLoginBtn" class="btn btn-outline-secondary w-100" onclick="handleGoogleLogin()">
+                <img src="https://www.google.com/favicon.ico" width="20" class="me-2">
+                Sign in with Google
+            </button>
+            <small class="text-muted d-block mt-2 text-center" id="googleHint" style="display:none;">
+                Please enter your email first
+            </small>
+            {% endif %}
+        </div>
+    </div>
+
+    <script>
+        let tenantData = null;
+
+        async function checkTenant() {
+            const email = document.getElementById('email').value.trim();
+            if (!email || !email.includes('@')) return;
+
+            try {
+                const response = await fetch('{% url "public_router:api_find_tenant" %}', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': getCookie('csrftoken')
+                    },
+                    body: JSON.stringify({ email })
+                });
+
+                const data = await response.json();
+
+                if (data.exists) {
+                    tenantData = data;
+                    document.getElementById('tenantName').textContent = data.tenant_name;
+                    document.getElementById('tenantInfo').style.display = 'block';
+                    document.getElementById('googleLoginBtn').classList.remove('disabled');
+                    document.getElementById('googleHint').style.display = 'none';
+                } else {
+                    tenantData = null;
+                    document.getElementById('tenantInfo').style.display = 'none';
+                    document.getElementById('googleLoginBtn').classList.add('disabled');
+                    document.getElementById('googleHint').style.display = 'block';
+                }
+            } catch (error) {
+                console.error('Error:', error);
+            }
+        }
+
+        function handleGoogleLogin() {
+            const email = document.getElementById('email').value.trim();
+
+            if (!email || !tenantData) {
+                alert('Please enter your email address first');
+                document.getElementById('email').focus();
+                return;
+            }
+
+            // Store email in session for post-login tenant routing
+            sessionStorage.setItem('google_login_email', email);
+            sessionStorage.setItem('google_login_tenant', tenantData.tenant_schema);
+
+            // Redirect to Google OAuth
+            window.location.href = '/accounts/google/login/';
+        }
+
+        function getCookie(name) {
+            let cookieValue = null;
+            if (document.cookie && document.cookie !== '') {
+                const cookies = document.cookie.split(';');
+                for (let i = 0; i < cookies.length; i++) {
+                    const cookie = cookies[i].trim();
+                    if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                        cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                        break;
+                    }
+                }
+            }
+            return cookieValue;
+        }
+
+        document.getElementById('loginForm').addEventListener('submit', function() {
+            document.getElementById('loginBtn').disabled = true;
+            document.getElementById('loginBtn').textContent = 'Signing in...';
+        });
+
+        // On page load, disable Google login until email is entered
+        document.addEventListener('DOMContentLoaded', function() {
+            document.getElementById('googleLoginBtn').classList.add('disabled');
+            document.getElementById('googleHint').style.display = 'block';
+        });
+    </script>
+</body>
+</html>

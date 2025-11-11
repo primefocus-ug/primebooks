@@ -1,10 +1,13 @@
 {% extends "base.html" %}
 {% load i18n %}
 {% load saas_admin_tags %}
+{% load static %}
+{% load custom_filters %}
 
 {% block title %}SaaS Administration Dashboard{% endblock %}
 
 {% block extra_css %}
+<link rel="stylesheet" href ="{% static 'themes.css' %}">
 <style>
 .saas-admin-header {
     background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -20,7 +23,9 @@
     box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
     transition: transform 0.2s;
 }
-
+[data-theme='dark'] .stat-card{
+    background:black;
+}
 .stat-card:hover {
     transform: translateY(-2px);
     box-shadow: 0 8px 15px -3px rgba(0, 0, 0, 0.1);
@@ -56,8 +61,8 @@
 {% endblock %}
 
 {% block content %}
-<div class="saas-admin-header text-center">
-    <h1><i class="fas fa-crown"></i> {% trans "SaaS Administration Dashboard" %}</h1>
+<div class="saas-admin-header text-center totall">
+    <h1><i class="fas fa-crown totall"></i> {% trans "SaaS Administration Dashboard" %}</h1>
     <p class="mb-0">Welcome, {{ user.get_full_name|default:user.email }}</p>
     <span class="saas-admin-badge">{% trans "SaaS Administrator" %}</span>
 </div>
@@ -66,13 +71,13 @@
 {% saas_admin_tenant_switcher %}
 
 <!-- Quick Stats -->
-<div class="row mb-4">
+<div class="row mb-4 totall">
     <div class="col-md-3 mb-3">
-        <div class="stat-card p-3 h-100">
-            <div class="d-flex align-items-center">
+        <div class="stat-card p-3 h-100 totall">
+            <div class="d-flex align-items-center totall">
                 <div class="flex-grow-1">
                     <h3 class="text-primary mb-1">{{ total_companies|default:0 }}</h3>
-                    <p class="text-muted mb-0">{% trans "Total Companie" %}</p>
+                    <p class="text-muted totall mb-0">{% trans "Total Companies" %}</p>
                 </div>
                 <i class="fas fa-building fa-2x text-primary opacity-50"></i>
             </div>
@@ -84,7 +89,7 @@
             <div class="d-flex align-items-center">
                 <div class="flex-grow-1">
                     <h3 class="text-success mb-1">{{ active_companies|default:0 }}</h3>
-                    <p class="text-muted mb-0">{% trans "Active Companies" %}</p>
+                    <p class="text-muted mb-0 totall">{% trans "Active Companies" %}</p>
                 </div>
                 <i class="fas fa-check-circle fa-2x text-success opacity-50"></i>
             </div>
@@ -96,7 +101,7 @@
             <div class="d-flex align-items-center">
                 <div class="flex-grow-1">
                     <h3 class="text-info mb-1">{{ total_users|default:0 }}</h3>
-                    <p class="text-muted mb-0">{% trans "Total Users" %}</p>
+                    <p class="text-muted mb-0 totall">{% trans "Total Users" %}</p>
                 </div>
                 <i class="fas fa-users fa-2x text-info opacity-50"></i>
             </div>
@@ -107,8 +112,8 @@
         <div class="stat-card p-3 h-100">
             <div class="d-flex align-items-center">
                 <div class="flex-grow-1">
-                    <h3 class="text-warning mb-1">{{ trial_companies|default:0 }}</h3>
-                    <p class="text-muted mb-0">{% trans "Trial Companies" %}</p>
+                    <h3 class="text-warning mb-1 totall">{{ trial_companies|default:0 }}</h3>
+                    <p class="text-muted mb-0 totall">{% trans "Trial Companies" %}</p>
                 </div>
                 <i class="fas fa-clock fa-2x text-warning opacity-50"></i>
             </div>
@@ -121,7 +126,7 @@
     <div class="col-12">
         <div class="card">
             <div class="card-header">
-                <h5 class="mb-0">{% trans "Quick Actions" %}</h5>
+                <h5 class="mb-0 totall">{% trans "Quick Actions" %}</h5>
             </div>
             <div class="card-body">
                 <div class="btn-group flex-wrap" role="group">
@@ -154,12 +159,12 @@
                 <h5 class="mb-0">{% trans "Recent Companies" %}</h5>
                 <a href="{% url 'system_companies_list' %}" class="btn btn-sm btn-outline-primary">{% trans "View All" %}</a>
             </div>
-            <div class="card-body">
+            <div class="card-body totall">
                 {% for company in recent_companies %}
-                <div class="d-flex align-items-center mb-3">
-                    <div class="flex-grow-1">
-                        <h6 class="mb-1">{{ company.name }}</h6>
-                        <small class="text-muted">
+                <div class="d-flex align-items-center mb-3 totall">
+                    <div class="flex-grow-1 totall">
+                        <h6 class="mb-1 totall">{{ company.name }}</h6>
+                        <small class="text-muted totall">
                             Created: {{ company.created_at|date:"M d, Y" }}
                             {% if company.status %}
                                 | Status: <span class="badge badge-secondary">{{ company.get_status_display }}</span>
@@ -167,7 +172,7 @@
                         </small>
                     </div>
                     <div>
-                        <a href="?switch_tenant={{ company.id }}" class="btn btn-sm btn-outline-primary">
+                        <a href="?switch_tenant={{ company.company_id }}" class="btn btn-sm btn-outline-primary">
                             <i class="fas fa-sign-in-alt"></i> {% trans "Access" %}
                         </a>
                     </div>
@@ -213,7 +218,7 @@
                     </div>
                 </div>
                 {% empty %}
-                <p class="text-muted text-center">{% trans "No users found" %}</p>
+                <p class="text-muted text-center totall">{% trans "No users found" %}</p>
                 {% endfor %}
             </div>
         </div>
@@ -233,8 +238,8 @@
                     {% for plan in plan_stats %}
                     <div class="col-md-3 mb-3">
                         <div class="text-center">
-                            <h4 class="text-primary">{{ plan.count }}</h4>
-                            <p class="mb-0">{{ plan.plan__display_name|default:plan.plan__name }}</p>
+                            <h4 class="text-primary totall">{{ plan.count }}</h4>
+                            <p class="mb-0 totall">{{ plan.plan__display_name|default:plan.plan__name }}</p>
                         </div>
                     </div>
                     {% endfor %}
@@ -279,7 +284,7 @@
                                     </span>
                                 </td>
                                 <td>
-                                    <a href="?switch_tenant={{ company.id }}" class="btn btn-sm btn-outline-primary">
+                                    <a href="?switch_tenant={{ company.company_id }}" class="btn btn-sm btn-outline-primary">
                                         <i class="fas fa-sign-in-alt"></i>{% trans " Access" %}
                                     </a>
                                 </td>

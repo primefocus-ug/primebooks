@@ -28,6 +28,7 @@ class SavedReport(models.Model):
 
     name = models.CharField(
         max_length=100,
+        null=True,blank=True,
         verbose_name=_("Report Name")
     )
     report_type = models.CharField(

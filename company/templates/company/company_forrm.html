@@ -1,0 +1,606 @@
+{% extends "base.html" %}
+{% load static %}
+{% load custom_filters %}
+{% load i18n %}
+
+{% block title %}{{ form_title|default:"Company Form" }} - {{ block.super }}{% endblock %}
+
+{% block extra_css %}
+<style>
+    .form-section {
+        background: white;
+        border-radius: 8px;
+        padding: 1.5rem;
+        margin-bottom: 1.5rem;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+
+    .form-section-title {
+        font-size: 1.25rem;
+        font-weight: 600;
+        margin-bottom: 1rem;
+        padding-bottom: 0.5rem;
+        border-bottom: 2px solid #e5e7eb;
+    }
+
+    .required-field::after {
+        content: " *";
+        color: #dc2626;
+    }
+
+    .help-text {
+        font-size: 0.875rem;
+        color: #6b7280;
+        margin-top: 0.25rem;
+    }
+
+    .stats-card {
+        background: #f9fafb;
+        border-radius: 6px;
+        padding: 1rem;
+        border-left: 4px solid #3b82f6;
+    }
+
+    .btn-save {
+        min-width: 150px;
+    }
+
+    .form-check-input:checked {
+        background-color: #3b82f6;
+        border-color: #3b82f6;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <div class="row">
+        <div class="col-12">
+            <!-- Header -->
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <div>
+                    <h2 class="mb-1">{{ form_title|default:"Company Form" }}</h2>
+                    {% if is_update %}
+                    <p class="text-muted mb-0">
+                        <small>Company ID: {{ company.company_id }}</small>
+                    </p>
+                    {% endif %}
+                </div>
+                <a href="{% if is_update %}{% url 'companies:company_detail' company_id=company.company_id %}{% else %}{% url 'companies:company_list' %}{% endif %}"
+                   class="btn btn-outline-secondary">
+                    <i class="bi bi-arrow-left"></i> Back
+                </a>
+            </div>
+
+            <!-- Company Stats (Update Only) -->
+            {% if is_update %}
+            <div class="row mb-4">
+                <div class="col-md-3">
+                    <div class="stats-card">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div>
+                                <p class="text-muted mb-0 small">Branches</p>
+                                <h4 class="mb-0">{{ total_branches|default:0 }}</h4>
+                            </div>
+                            <i class="bi bi-diagram-3 fs-3 text-primary"></i>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="stats-card">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div>
+                                <p class="text-muted mb-0 small">Employees</p>
+                                <h4 class="mb-0">{{ total_employees|default:0 }}</h4>
+                            </div>
+                            <i class="bi bi-people fs-3 text-success"></i>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="stats-card">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div>
+                                <p class="text-muted mb-0 small">Storage Used</p>
+                                <h4 class="mb-0">{{ storage_usage_percentage|default:0 }}%</h4>
+                            </div>
+                            <i class="bi bi-hdd fs-3 text-warning"></i>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="stats-card">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div>
+                                <p class="text-muted mb-0 small">Days Until Expiry</p>
+                                <h4 class="mb-0">{{ days_until_expiry|default:0 }}</h4>
+                            </div>
+                            <i class="bi bi-calendar-check fs-3 text-danger"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+
+            <!-- Main Form -->
+            <form method="post" enctype="multipart/form-data" id="companyForm">
+                {% csrf_token %}
+
+                <!-- Display form errors -->
+                {% if form.errors %}
+                <div class="alert alert-danger alert-dismissible fade show" role="alert">
+                    <strong>Please correct the following errors:</strong>
+                    <ul class="mb-0 mt-2">
+                    {% for field, errors in form.errors.items %}
+                        {% for error in errors %}
+                        <li>
+                            {% if field == '__all__' %}
+                                {{ error }}
+                            {% else %}
+                                <strong>{{ form|getattr:field|getattr:'label'|default:field }}:</strong> {{ error }}
+                            {% endif %}
+                        </li>
+                        {% endfor %}
+                    {% endfor %}
+                    </ul>
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>
+                {% endif %}
+
+                <!-- Core Information -->
+                <div class="form-section">
+                    <h3 class="form-section-title">
+                        <i class="bi bi-building me-2"></i>Core Information
+                    </h3>
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label for="{{ form.name.id_for_label }}" class="form-label required-field">
+                                {{ form.name.label }}
+                            </label>
+                            {{ form.name }}
+                            {% if form.name.help_text %}
+                            <div class="help-text">{{ form.name.help_text }}</div>
+                            {% endif %}
+                            {% if form.name.errors %}
+                            <div class="text-danger small mt-1">{{ form.name.errors.0 }}</div>
+                            {% endif %}
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label for="{{ form.trading_name.id_for_label }}" class="form-label">
+                                {{ form.trading_name.label }}
+                            </label>
+                            {{ form.trading_name }}
+                            {% if form.trading_name.help_text %}
+                            <div class="help-text">{{ form.trading_name.help_text }}</div>
+                            {% endif %}
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-12 mb-3">
+                            <label for="{{ form.schema_name.id_for_label }}" class="form-label{% if not is_update %} required-field{% endif %}">
+                                {{ form.schema_name.label }}
+                            </label>
+                            {{ form.schema_name }}
+                            {% if form.schema_name.help_text %}
+                            <div class="help-text">{{ form.schema_name.help_text }}</div>
+                            {% endif %}
+                            {% if form.schema_name.errors %}
+                            <div class="text-danger small mt-1">{{ form.schema_name.errors.0 }}</div>
+                            {% endif %}
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-12 mb-3">
+                            <label for="{{ form.description.id_for_label }}" class="form-label">
+                                {{ form.description.label }}
+                            </label>
+                            {{ form.description }}
+                            {% if form.description.help_text %}
+                            <div class="help-text">{{ form.description.help_text }}</div>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Contact Information -->
+                <div class="form-section">
+                    <h3 class="form-section-title">
+                        <i class="bi bi-envelope me-2"></i>Contact Information
+                    </h3>
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label for="{{ form.email.id_for_label }}" class="form-label required-field">
+                                {{ form.email.label }}
+                            </label>
+                            {{ form.email }}
+                            {% if form.email.errors %}
+                            <div class="text-danger small mt-1">{{ form.email.errors.0 }}</div>
+                            {% endif %}
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label for="{{ form.phone.id_for_label }}" class="form-label">
+                                {{ form.phone.label }}
+                            </label>
+                            {{ form.phone }}
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-12 mb-3">
+                            <label for="{{ form.physical_address.id_for_label }}" class="form-label">
+                                {{ form.physical_address.label }}
+                            </label>
+                            {{ form.physical_address }}
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label for="{{ form.postal_address.id_for_label }}" class="form-label">
+                                {{ form.postal_address.label }}
+                            </label>
+                            {{ form.postal_address }}
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label for="{{ form.website.id_for_label }}" class="form-label">
+                                {{ form.website.label }}
+                            </label>
+                            {{ form.website }}
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tax & Registration -->
+                <div class="form-section">
+                    <h3 class="form-section-title">
+                        <i class="bi bi-file-text me-2"></i>Tax & Registration Information
+                    </h3>
+                    <div class="row">
+                        <div class="col-md-4 mb-3">
+                            <label for="{{ form.tin.id_for_label }}" class="form-label">
+                                {{ form.tin.label }}
+                            </label>
+                            {{ form.tin }}
+                        </div>
+                        <div class="col-md-4 mb-3">
+                            <label for="{{ form.brn.id_for_label }}" class="form-label">
+                                {{ form.brn.label }}
+                            </label>
+                            {{ form.brn }}
+                        </div>
+                        <div class="col-md-4 mb-3">
+                            <label for="{{ form.nin.id_for_label }}" class="form-label">
+                                {{ form.nin.label }}
+                            </label>
+                            {{ form.nin }}
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label for="{{ form.vat_registration_number.id_for_label }}" class="form-label">
+                                {{ form.vat_registration_number.label }}
+                            </label>
+                            {{ form.vat_registration_number }}
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label for="{{ form.vat_registration_date.id_for_label }}" class="form-label">
+                                {{ form.vat_registration_date.label }}
+                            </label>
+                            {{ form.vat_registration_date }}
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Subscription & Plan -->
+                <div class="form-section">
+                    <h3 class="form-section-title">
+                        <i class="bi bi-credit-card me-2"></i>Subscription & Plan
+                    </h3>
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label for="{{ form.plan.id_for_label }}" class="form-label">
+                                {{ form.plan.label }}
+                            </label>
+                            {{ form.plan }}
+                            {% if form.plan.help_text %}
+                            <div class="help-text">{{ form.plan.help_text }}</div>
+                            {% endif %}
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label for="{{ form.status.id_for_label }}" class="form-label">
+                                {{ form.status.label }}
+                            </label>
+                            {{ form.status }}
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-4 mb-3">
+                            <label for="{{ form.preferred_currency.id_for_label }}" class="form-label">
+                                {{ form.preferred_currency.label }}
+                            </label>
+                            {{ form.preferred_currency }}
+                        </div>
+                        <div class="col-md-4 mb-3">
+                            <div class="form-check mt-4">
+                                {{ form.is_trial }}
+                                <label class="form-check-label" for="{{ form.is_trial.id_for_label }}">
+                                    {{ form.is_trial.label }}
+                                </label>
+                            </div>
+                        </div>
+                        <div class="col-md-4 mb-3">
+                            <div class="form-check mt-4">
+                                {{ form.is_verified }}
+                                <label class="form-check-label" for="{{ form.is_verified.id_for_label }}">
+                                    {{ form.is_verified.label }}
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Subscription Dates (Admin/SaaS Admin only) -->
+                    {% if request.user.is_saas_admin %}
+                    <div class="row">
+                        <div class="col-md-4 mb-3">
+                            <label for="{{ form.trial_ends_at.id_for_label }}" class="form-label">
+                                {{ form.trial_ends_at.label }}
+                            </label>
+                            {{ form.trial_ends_at }}
+                            {% if form.trial_ends_at.help_text %}
+                            <div class="help-text">{{ form.trial_ends_at.help_text }}</div>
+                            {% endif %}
+                        </div>
+                        <div class="col-md-4 mb-3">
+                            <label for="{{ form.subscription_starts_at.id_for_label }}" class="form-label">
+                                {{ form.subscription_starts_at.label }}
+                            </label>
+                            {{ form.subscription_starts_at }}
+                        </div>
+                        <div class="col-md-4 mb-3">
+                            <label for="{{ form.subscription_ends_at.id_for_label }}" class="form-label">
+                                {{ form.subscription_ends_at.label }}
+                            </label>
+                            {{ form.subscription_ends_at }}
+                        </div>
+                    </div>
+                    {% endif %}
+                </div>
+
+                <!-- EFRIS Integration -->
+                <div class="form-section">
+                    <h3 class="form-section-title">
+                        <i class="bi bi-receipt me-2"></i>EFRIS Integration
+                    </h3>
+                    <div class="row">
+                        <div class="col-md-4 mb-3">
+                            <div class="form-check">
+                                {{ form.efris_enabled }}
+                                <label class="form-check-label" for="{{ form.efris_enabled.id_for_label }}">
+                                    {{ form.efris_enabled.label }}
+                                </label>
+                            </div>
+                            {% if form.efris_enabled.help_text %}
+                            <div class="help-text">{{ form.efris_enabled.help_text }}</div>
+                            {% endif %}
+                        </div>
+                        <div class="col-md-4 mb-3">
+                            <div class="form-check">
+                                {{ form.efris_is_production }}
+                                <label class="form-check-label" for="{{ form.efris_is_production.id_for_label }}">
+                                    {{ form.efris_is_production.label }}
+                                </label>
+                            </div>
+                            {% if form.efris_is_production.help_text %}
+                            <div class="help-text">{{ form.efris_is_production.help_text }}</div>
+                            {% endif %}
+                        </div>
+                        <div class="col-md-4 mb-3">
+                            <label for="{{ form.efris_integration_mode.id_for_label }}" class="form-label">
+                                {{ form.efris_integration_mode.label }}
+                            </label>
+                            {{ form.efris_integration_mode }}
+                            {% if form.efris_integration_mode.help_text %}
+                            <div class="help-text">{{ form.efris_integration_mode.help_text }}</div>
+                            {% endif %}
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label for="{{ form.efris_device_number.id_for_label }}" class="form-label">
+                                {{ form.efris_device_number.label }}
+                            </label>
+                            {{ form.efris_device_number }}
+                            {% if form.efris_device_number.help_text %}
+                            <div class="help-text">{{ form.efris_device_number.help_text }}</div>
+                            {% endif %}
+                        </div>
+                        <div class="col-md-3 mb-3">
+                            <div class="form-check mt-4">
+                                {{ form.efris_auto_fiscalize_sales }}
+                                <label class="form-check-label" for="{{ form.efris_auto_fiscalize_sales.id_for_label }}">
+                                    {{ form.efris_auto_fiscalize_sales.label }}
+                                </label>
+                            </div>
+                        </div>
+                        <div class="col-md-3 mb-3">
+                            <div class="form-check mt-4">
+                                {{ form.efris_auto_sync_products }}
+                                <label class="form-check-label" for="{{ form.efris_auto_sync_products.id_for_label }}">
+                                    {{ form.efris_auto_sync_products.label }}
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Localization -->
+                <div class="form-section">
+                    <h3 class="form-section-title">
+                        <i class="bi bi-globe me-2"></i>Localization Settings
+                    </h3>
+                    <div class="row">
+                        <div class="col-md-4 mb-3">
+                            <label for="{{ form.time_zone.id_for_label }}" class="form-label required-field">
+                                {{ form.time_zone.label }}
+                            </label>
+                            {{ form.time_zone }}
+                            {% if form.time_zone.help_text %}
+                            <div class="help-text">{{ form.time_zone.help_text }}</div>
+                            {% endif %}
+                            {% if form.time_zone.errors %}
+                            <div class="text-danger small mt-1">{{ form.time_zone.errors.0 }}</div>
+                            {% endif %}
+                        </div>
+                        <div class="col-md-4 mb-3">
+                            <label for="{{ form.locale.id_for_label }}" class="form-label required-field">
+                                {{ form.locale.label }}
+                            </label>
+                            {{ form.locale }}
+                            {% if form.locale.help_text %}
+                            <div class="help-text">{{ form.locale.help_text }}</div>
+                            {% endif %}
+                            {% if form.locale.errors %}
+                            <div class="text-danger small mt-1">{{ form.locale.errors.0 }}</div>
+                            {% endif %}
+                        </div>
+                        <div class="col-md-4 mb-3">
+                            <label for="{{ form.date_format.id_for_label }}" class="form-label required-field">
+                                {{ form.date_format.label }}
+                            </label>
+                            {{ form.date_format }}
+                            {% if form.date_format.help_text %}
+                            <div class="help-text">{{ form.date_format.help_text }}</div>
+                            {% endif %}
+                            {% if form.date_format.errors %}
+                            <div class="text-danger small mt-1">{{ form.date_format.errors.0 }}</div>
+                            {% endif %}
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-4 mb-3">
+                            <label for="{{ form.time_format.id_for_label }}" class="form-label required-field">
+                                {{ form.time_format.label }}
+                            </label>
+                            {{ form.time_format }}
+                            {% if form.time_format.help_text %}
+                            <div class="help-text">{{ form.time_format.help_text }}</div>
+                            {% endif %}
+                            {% if form.time_format.errors %}
+                            <div class="text-danger small mt-1">{{ form.time_format.errors.0 }}</div>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Branding -->
+                <div class="form-section">
+                    <h3 class="form-section-title">
+                        <i class="bi bi-palette me-2"></i>Branding
+                    </h3>
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label for="{{ form.logo.id_for_label }}" class="form-label">
+                                {{ form.logo.label }}
+                            </label>
+                            {{ form.logo }}
+                            {% if company.logo %}
+                            <div class="mt-2">
+                                <img src="{{ company.logo.url }}" alt="Current Logo" style="max-height: 100px;">
+                            </div>
+                            {% endif %}
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label for="{{ form.favicon.id_for_label }}" class="form-label">
+                                {{ form.favicon.label }}
+                            </label>
+                            {{ form.favicon }}
+                            {% if company.favicon %}
+                            <div class="mt-2">
+                                <img src="{{ company.favicon.url }}" alt="Current Favicon" style="max-height: 50px;">
+                            </div>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Admin Notes (SaaS Admin Only) -->
+                {% if request.user.is_saas_admin %}
+                <div class="form-section">
+                    <h3 class="form-section-title">
+                        <i class="bi bi-sticky me-2"></i>Admin Notes
+                    </h3>
+                    <div class="row">
+                        <div class="col-md-12 mb-3">
+                            <label for="{{ form.notes.id_for_label }}" class="form-label">
+                                {{ form.notes.label }}
+                            </label>
+                            {{ form.notes }}
+                            {% if form.notes.help_text %}
+                            <div class="help-text">{{ form.notes.help_text }}</div>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+
+                <!-- Form Actions -->
+                <div class="form-section">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <a href="{% if is_update %}{% url 'companies:company_detail' company_id=company.company_id %}{% else %}{% url 'companies:company_list' %}{% endif %}"
+                           class="btn btn-outline-secondary">
+                            <i class="bi bi-x-circle me-1"></i> Cancel
+                        </a>
+                        <button type="submit" class="btn btn-primary btn-save">
+                            <i class="bi bi-check-circle me-1"></i> {{ submit_text|default:"Save Company" }}
+                        </button>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Add Bootstrap classes to form fields
+        const formInputs = document.querySelectorAll('input:not([type="checkbox"]):not([type="radio"]):not([type="file"]), select, textarea');
+        formInputs.forEach(input => {
+            input.classList.add('form-control');
+        });
+
+        // Style checkboxes
+        const checkboxes = document.querySelectorAll('input[type="checkbox"]');
+        checkboxes.forEach(checkbox => {
+            checkbox.classList.add('form-check-input');
+        });
+
+        // Date input styling
+        const dateInputs = document.querySelectorAll('input[type="date"]');
+        dateInputs.forEach(input => {
+            input.classList.add('form-control');
+        });
+
+        // File input styling
+        const fileInputs = document.querySelectorAll('input[type="file"]');
+        fileInputs.forEach(input => {
+            input.classList.add('form-control');
+        });
+
+        // Form submission loading state
+        const form = document.getElementById('companyForm');
+        const submitBtn = form.querySelector('button[type="submit"]');
+        const originalBtnText = submitBtn.innerHTML;
+
+        form.addEventListener('submit', function() {
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Saving...';
+        });
+
+        // Re-enable button if form validation fails
+        form.addEventListener('invalid', function() {
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = originalBtnText;
+        }, true);
+    });
+</script>
+{% endblock %}

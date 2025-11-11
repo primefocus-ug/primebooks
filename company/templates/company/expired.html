@@ -5,40 +5,83 @@
 {% block container_class %}status-expired{% endblock %}
 
 {% block content %}
-<div class="status-icon">⏰</div>
-
-<h1 class="status-title">Subscription Expired</h1>
-
-<div class="company-info">
-    <div class="company-name">{{ company.display_name }}</div>
-    <div class="company-id">ID: {{ company.company_id }}</div>
+<div class="status-header">
+    <div class="status-icon">⏰</div>
+    <h1 class="status-title">Subscription Expired</h1>
 </div>
 
-<div class="status-message">
-    {% if company.is_trial %}
-        Your free trial expired {{ days_expired }} day{{ days_expired|pluralize }} ago.
-        Upgrade to a paid plan to continue using our services.
+<div class="company-info card">
+    <div class="card-body">
+        <div class="company-name">{{ company.display_name }}</div>
+        <div class="company-id">ID: {{ company.company_id }}</div>
+        {% if expiration_date %}
+        <div class="expiration-date">
+            Expired on: {{ expiration_date|date:"F j, Y" }}
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<div class="status-message alert alert-warning">
+    {% if expiration_type == 'trial' %}
+        <h4>Free Trial Ended</h4>
+        <p>Your free trial expired {{ days_expired }} day{{ days_expired|pluralize }} ago.</p>
+        <p class="mb-0">Upgrade to a paid plan to continue using our services with full access to all features.</p>
     {% else %}
-        Your {{ company.plan.get_name_display }} subscription expired {{ days_expired }} day{{ days_expired|pluralize }} ago.
-        Please renew your subscription to restore access.
+        <h4>Subscription Expired</h4>
+        <p>Your {{ company.plan.get_name_display }} subscription expired {{ days_expired }} day{{ days_expired|pluralize }} ago.</p>
+        <p class="mb-0">Please renew your subscription to restore access to your account and data.</p>
     {% endif %}
 </div>
 
+{% if show_data_warning %}
+<div class="data-warning alert alert-danger">
+    <h4>⚠️ Important Notice</h4>
+    <p>Your account has been expired for over 30 days. According to our data retention policy,
+       account data may be permanently deleted if the subscription is not renewed soon.</p>
+</div>
+{% endif %}
+
 <div class="actions">
-    <a href="{% url 'company:billing' %}" class="btn btn-primary">
-        {% if company.is_trial %}Upgrade Plan{% else %}Renew Subscription{% endif %}
+    <!-- FIXED: Use the correct URL name 'companies:billing' -->
+    <a href="{% url 'companies:billing' %}" class="btn btn-primary btn-lg">
+        {% if expiration_type == 'trial' %}
+            <i class="fas fa-rocket"></i> Upgrade to Paid Plan
+        {% else %}
+            <i class="fas fa-sync-alt"></i> Renew Subscription
+        {% endif %}
     </a>
-    <a href="{% url 'accounts:logout' %}" class="btn btn-secondary">Logout</a>
+
+    <!-- If logout doesn't work, try direct URL -->
+    <a href="/accounts/logout/" class="btn btn-outline-secondary">
+        <i class="fas fa-sign-out-alt"></i> Logout
+    </a>
 </div>
 
 {% if company.plan %}
-<div style="margin-top: 2rem; padding-top: 2rem; border-top: 1px solid #eee;">
-    <h3>Your Plan Details</h3>
-    <p><strong>Plan:</strong> {{ company.plan.display_name|default:company.plan.get_name_display }}</p>
-    <p><strong>Max Users:</strong> {{ company.plan.max_users }}</p>
-    <p><strong>Max Branches:</strong> {{ company.plan.max_branches }}</p>
-    <p><strong>Storage:</strong> {{ company.plan.max_storage_gb }}GB</p>
+<div class="plan-details card mt-4">
+    <div class="card-header">
+        <h3 class="mb-0">Your Plan Details</h3>
+    </div>
+    <div class="card-body">
+        <div class="row">
+            <div class="col-md-6">
+                <p><strong>Plan:</strong> {{ company.plan.display_name|default:company.plan.get_name_display }}</p>
+                <p><strong>Max Users:</strong> {{ company.plan.max_users }}</p>
+            </div>
+            <div class="col-md-6">
+                <p><strong>Max Branches:</strong> {{ company.plan.max_branches }}</p>
+                <p><strong>Storage:</strong> {{ company.plan.max_storage_gb }}GB</p>
+            </div>
+        </div>
+    </div>
 </div>
 {% endif %}
-{% endblock %}
 
+<div class="support-info mt-4 text-center">
+    <p class="text-muted">
+        Need help? <a href="mailto:support@company.com">Contact our support team</a>
+        or call us at <strong>1-800-HELP-NOW</strong>
+    </p>
+</div>
+{% endblock %}

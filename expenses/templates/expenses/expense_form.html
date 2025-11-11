@@ -1,381 +1,408 @@
 {% extends 'base.html' %}
 {% load static %}
+{% load i18n %}
+{% load widget_tweaks %}
 
-{% block title %}{% if is_update %}Edit{% else %}Create{% endif %} Expense{% endblock %}
+{% block title %}
+    {% if form.instance.pk %}{% trans "Edit Expense" %}{% else %}{% trans "Create Expense" %}{% endif %}
+{% endblock %}
 
-{% block extra_css %}
-<style>
-    .form-section {
-        background: #f8f9fa;
-        padding: 20px;
-        border-radius: 8px;
-        margin-bottom: 20px;
-    }
-    .form-section h5 {
-        border-bottom: 2px solid #667eea;
-        padding-bottom: 10px;
-        margin-bottom: 20px;
-    }
-    .file-upload-area {
-        border: 2px dashed #ced4da;
-        border-radius: 8px;
-        padding: 40px;
-        text-align: center;
-        cursor: pointer;
-        transition: all 0.3s ease;
-    }
-    .file-upload-area:hover {
-        border-color: #667eea;
-        background-color: #f8f9fa;
-    }
-    .file-preview {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 10px;
-        margin-top: 15px;
-    }
-    .file-preview-item {
-        position: relative;
-        padding: 10px;
-        background: white;
-        border: 1px solid #dee2e6;
-        border-radius: 4px;
-    }
-    .file-preview-item .remove-file {
-        position: absolute;
-        top: -8px;
-        right: -8px;
-        width: 20px;
-        height: 20px;
-        background: #dc3545;
-        color: white;
-        border-radius: 50%;
-        border: none;
-        cursor: pointer;
-    }
-    #budget-alert {
-        margin-top: 10px;
-    }
-</style>
+{% block breadcrumb_items %}
+    <li class="breadcrumb-item"><a href="{% url 'user_dashboard' %}">{% trans "Home" %}</a></li>
+    <li class="breadcrumb-item"><a href="{% url 'expenses:dashboard' %}">{% trans "Expenses" %}</a></li>
+    <li class="breadcrumb-item active">
+        {% if form.instance.pk %}{% trans "Edit" %}{% else %}{% trans "Create" %}{% endif %}
+    </li>
 {% endblock %}
 
 {% block content %}
-<div class="container-fluid py-4">
-    <div class="row mb-4">
-        <div class="col-md-12">
-            <h1>{% if is_update %}Edit{% else %}Create New{% endif %} Expense</h1>
-            <p class="text-muted">Fill in the details below</p>
-        </div>
-    </div>
+<div class="container-fluid">
+    <div class="row justify-content-center">
+        <div class="col-12 col-lg-10 col-xl-8">
+            <!-- Page Header -->
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h1 class="h3 mb-0">
+                    <i class="bi bi-plus-circle me-2"></i>
+                    {% if form.instance.pk %}
+                        {% trans "Edit Expense" %}
+                    {% else %}
+                        {% trans "Create New Expense" %}
+                    {% endif %}
+                </h1>
+                <a href="{% url 'expenses:expense_list' %}" class="btn btn-outline-secondary">
+                    <i class="bi bi-arrow-left me-2"></i>
+                    {% trans "Back" %}
+                </a>
+            </div>
 
-    <form method="post" enctype="multipart/form-data" id="expense-form">
-        {% csrf_token %}
+            <form method="post" enctype="multipart/form-data" id="expenseForm">
+                {% csrf_token %}
 
-        <div class="row">
-            <div class="col-md-8">
                 <!-- Basic Information -->
-                <div class="form-section">
-                    <h5><i class="fas fa-info-circle"></i> Basic Information</h5>
-
-                    <div class="form-row">
-                        <div class="form-group col-md-6">
-                            <label for="id_category">Category *</label>
-                            {{ form.category }}
-                            {% if form.category.errors %}
-                            <div class="text-danger">{{ form.category.errors }}</div>
-                            {% endif %}
-                        </div>
-
-                        <div class="form-group col-md-6">
-                            <label for="id_expense_type">Expense Type *</label>
-                            {{ form.expense_type }}
-                            {% if form.expense_type.errors %}
-                            <div class="text-danger">{{ form.expense_type.errors }}</div>
-                            {% endif %}
-                        </div>
+                <div class="card border-0 shadow-sm mb-3">
+                    <div class="card-header bg-primary bg-opacity-10 border-0 py-3">
+                        <h5 class="mb-0">
+                            <i class="bi bi-info-circle me-2"></i>
+                            {% trans "Basic Information" %}
+                        </h5>
                     </div>
+                    <div class="card-body">
+                        <div class="row g-3">
+                            <div class="col-12">
+                                <label for="{{ form.title.id_for_label }}" class="form-label required">
+                                    {% trans "Expense Title" %}
+                                </label>
+                                {{ form.title }}
+                                {% if form.title.errors %}
+                                    <div class="invalid-feedback d-block">
+                                        {{ form.title.errors }}
+                                    </div>
+                                {% endif %}
+                                <small class="form-text text-muted">
+                                    {% trans "Brief description of the expense" %}
+                                </small>
+                            </div>
 
-                    <div class="form-group">
-                        <label for="id_vendor">Vendor/Supplier</label>
-                        {{ form.vendor }}
-                        <small class="form-text text-muted">
-                            <a href="{% url 'expenses:vendor_create' %}" target="_blank">+ Add New Vendor</a>
-                        </small>
-                        {% if form.vendor.errors %}
-                        <div class="text-danger">{{ form.vendor.errors }}</div>
-                        {% endif %}
-                    </div>
+                            <div class="col-12">
+                                <label for="{{ form.description.id_for_label }}" class="form-label required">
+                                    {% trans "Description" %}
+                                </label>
+                                {{ form.description }}
+                                {% if form.description.errors %}
+                                    <div class="invalid-feedback d-block">
+                                        {{ form.description.errors }}
+                                    </div>
+                                {% endif %}
+                            </div>
 
-                    <div class="form-group">
-                        <label for="id_description">Description *</label>
-                        {{ form.description }}
-                        {% if form.description.errors %}
-                        <div class="text-danger">{{ form.description.errors }}</div>
-                        {% endif %}
+                            <div class="col-12 col-md-6">
+                                <label for="{{ form.category.id_for_label }}" class="form-label required">
+                                    {% trans "Category" %}
+                                </label>
+                                {{ form.category }}
+                                {% if form.category.errors %}
+                                    <div class="invalid-feedback d-block">
+                                        {{ form.category.errors }}
+                                    </div>
+                                {% endif %}
+                            </div>
+
+                            <div class="col-12 col-md-6">
+                                <label for="{{ form.reference_number.id_for_label }}" class="form-label">
+                                    {% trans "Reference/Receipt Number" %}
+                                </label>
+                                {{ form.reference_number }}
+                                {% if form.reference_number.errors %}
+                                    <div class="invalid-feedback d-block">
+                                        {{ form.reference_number.errors }}
+                                    </div>
+                                {% endif %}
+                            </div>
+                        </div>
                     </div>
                 </div>
 
-                <!-- Financial Details -->
-                <div class="form-section">
-                    <h5><i class="fas fa-money-bill-wave"></i> Financial Details</h5>
+                <!-- Amount Information -->
+                <div class="card border-0 shadow-sm mb-3">
+                    <div class="card-header bg-success bg-opacity-10 border-0 py-3">
+                        <h5 class="mb-0">
+                            <i class="bi bi-cash-coin me-2"></i>
+                            {% trans "Amount Information" %}
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row g-3">
+                            <div class="col-12 col-md-6">
+                                <label for="{{ form.amount.id_for_label }}" class="form-label required">
+                                    {% trans "Amount" %}
+                                </label>
+                                <div class="input-group">
+                                    {{ form.amount|add_class:"form-control" }}
+                                    <select name="currency" class="form-select" style="max-width: 100px;">
+                                        <option value="UGX" {% if form.currency.value == 'UGX' %}selected{% endif %}>UGX</option>
+                                        <option value="USD" {% if form.currency.value == 'USD' %}selected{% endif %}>USD</option>
+                                        <option value="EUR" {% if form.currency.value == 'EUR' %}selected{% endif %}>EUR</option>
+                                        <option value="GBP" {% if form.currency.value == 'GBP' %}selected{% endif %}>GBP</option>
+                                    </select>
+                                </div>
+                                {% if form.amount.errors %}
+                                    <div class="invalid-feedback d-block">
+                                        {{ form.amount.errors }}
+                                    </div>
+                                {% endif %}
+                            </div>
 
-                    <div class="form-row">
-                        <div class="form-group col-md-6">
-                            <label for="id_expense_date">Expense Date *</label>
-                            {{ form.expense_date }}
-                            {% if form.expense_date.errors %}
-                            <div class="text-danger">{{ form.expense_date.errors }}</div>
-                            {% endif %}
-                        </div>
+                            <div class="col-12 col-md-6">
+                                <label for="{{ form.tax_rate.id_for_label }}" class="form-label">
+                                    {% trans "Tax Rate (%)" %}
+                                </label>
+                                {{ form.tax_rate }}
+                                {% if form.tax_rate.errors %}
+                                    <div class="invalid-feedback d-block">
+                                        {{ form.tax_rate.errors }}
+                                    </div>
+                                {% endif %}
+                                <small class="form-text text-muted">
+                                    {% trans "Tax will be calculated automatically" %}
+                                </small>
+                            </div>
 
-                        <div class="form-group col-md-6">
-                            <label for="id_due_date">Due Date</label>
-                            {{ form.due_date }}
-                            {% if form.due_date.errors %}
-                            <div class="text-danger">{{ form.due_date.errors }}</div>
-                            {% endif %}
+                            <div class="col-12 col-md-6">
+                                <label for="{{ form.expense_date.id_for_label }}" class="form-label required">
+                                    {% trans "Expense Date" %}
+                                </label>
+                                {{ form.expense_date }}
+                                {% if form.expense_date.errors %}
+                                    <div class="invalid-feedback d-block">
+                                        {{ form.expense_date.errors }}
+                                    </div>
+                                {% endif %}
+                            </div>
+
+                            <div class="col-12 col-md-6">
+                                <label for="{{ form.due_date.id_for_label }}" class="form-label">
+                                    {% trans "Payment Due Date" %}
+                                </label>
+                                {{ form.due_date }}
+                                {% if form.due_date.errors %}
+                                    <div class="invalid-feedback d-block">
+                                        {{ form.due_date.errors }}
+                                    </div>
+                                {% endif %}
+                            </div>
                         </div>
                     </div>
-
-                    <div class="form-row">
-                        <div class="form-group col-md-4">
-                            <label for="id_amount">Amount *</label>
-                            {{ form.amount }}
-                            {% if form.amount.errors %}
-                            <div class="text-danger">{{ form.amount.errors }}</div>
-                            {% endif %}
-                        </div>
-
-                        <div class="form-group col-md-4">
-                            <label for="id_tax_rate">Tax Rate (%) *</label>
-                            {{ form.tax_rate }}
-                            {% if form.tax_rate.errors %}
-                            <div class="text-danger">{{ form.tax_rate.errors }}</div>
-                            {% endif %}
-                        </div>
-
-                        <div class="form-group col-md-4">
-                            <label for="id_tax_amount">Tax Amount</label>
-                            {{ form.tax_amount }}
-                            <small class="form-text text-muted">Auto-calculated</small>
-                            {% if form.tax_amount.errors %}
-                            <div class="text-danger">{{ form.tax_amount.errors }}</div>
-                            {% endif %}
-                        </div>
-                    </div>
-
-                    <div id="budget-alert"></div>
                 </div>
 
-                <!-- Reference Information -->
-                <div class="form-section">
-                    <h5><i class="fas fa-file-invoice"></i> Reference Information</h5>
+                <!-- Vendor Information -->
+                <div class="card border-0 shadow-sm mb-3">
+                    <div class="card-header bg-info bg-opacity-10 border-0 py-3">
+                        <h5 class="mb-0">
+                            <i class="bi bi-shop me-2"></i>
+                            {% trans "Vendor Information" %}
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row g-3">
+                            <div class="col-12 col-md-6">
+                                <label for="{{ form.vendor_name.id_for_label }}" class="form-label">
+                                    {% trans "Vendor Name" %}
+                                </label>
+                                {{ form.vendor_name }}
+                            </div>
 
-                    <div class="form-row">
-                        <div class="form-group col-md-6">
-                            <label for="id_invoice_number">Invoice/Receipt Number</label>
-                            {{ form.invoice_number }}
-                            {% if form.invoice_number.errors %}
-                            <div class="text-danger">{{ form.invoice_number.errors }}</div>
-                            {% endif %}
+                            <div class="col-12 col-md-6">
+                                <label for="{{ form.vendor_phone.id_for_label }}" class="form-label">
+                                    {% trans "Vendor Phone" %}
+                                </label>
+                                {{ form.vendor_phone }}
+                            </div>
+
+                            <div class="col-12 col-md-6">
+                                <label for="{{ form.vendor_email.id_for_label }}" class="form-label">
+                                    {% trans "Vendor Email" %}
+                                </label>
+                                {{ form.vendor_email }}
+                            </div>
+
+                            <div class="col-12 col-md-6">
+                                <label for="{{ form.vendor_tin.id_for_label }}" class="form-label">
+                                    {% trans "Vendor TIN" %}
+                                </label>
+                                {{ form.vendor_tin }}
+                            </div>
                         </div>
+                    </div>
+                </div>
 
-                        <div class="form-group col-md-6">
-                            <label for="id_purchase_order">Purchase Order Number</label>
-                            {{ form.purchase_order }}
-                            {% if form.purchase_order.errors %}
-                            <div class="text-danger">{{ form.purchase_order.errors }}</div>
-                            {% endif %}
+                <!-- Additional Options -->
+                <div class="card border-0 shadow-sm mb-3">
+                    <div class="card-header bg-warning bg-opacity-10 border-0 py-3">
+                        <h5 class="mb-0">
+                            <i class="bi bi-gear me-2"></i>
+                            {% trans "Additional Options" %}
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row g-3">
+                            <div class="col-12">
+                                <div class="form-check">
+                                    {{ form.is_reimbursable }}
+                                    <label class="form-check-label" for="{{ form.is_reimbursable.id_for_label }}">
+                                        {% trans "This is a reimbursable expense" %}
+                                    </label>
+                                    <small class="form-text text-muted d-block">
+                                        {% trans "Check if this expense should be reimbursed to you" %}
+                                    </small>
+                                </div>
+                            </div>
+
+                            <div class="col-12">
+                                <div class="form-check">
+                                    {{ form.is_recurring }}
+                                    <label class="form-check-label" for="{{ form.is_recurring.id_for_label }}">
+                                        {% trans "This is a recurring expense" %}
+                                    </label>
+                                </div>
+                            </div>
+
+                            <div class="col-12">
+                                <div class="form-check">
+                                    {{ form.is_billable }}
+                                    <label class="form-check-label" for="{{ form.is_billable.id_for_label }}">
+                                        {% trans "This expense can be billed to a customer" %}
+                                    </label>
+                                </div>
+                            </div>
+
+                            <div class="col-12 mt-3">
+                                <label for="{{ form.notes.id_for_label }}" class="form-label">
+                                    {% trans "Additional Notes" %}
+                                </label>
+                                {{ form.notes }}
+                            </div>
                         </div>
                     </div>
                 </div>
 
                 <!-- Attachments -->
-                <div class="form-section">
-                    <h5><i class="fas fa-paperclip"></i> Attachments</h5>
-
-                    <div class="file-upload-area" id="file-upload-area">
-                        <i class="fas fa-cloud-upload-alt fa-3x text-muted mb-3"></i>
-                        <p>Drag & drop files here or click to browse</p>
-                        <input type="file" name="attachments" id="attachments" multiple accept=".pdf,.jpg,.jpeg,.png" style="display: none;">
-                    </div>
-
-                    <div class="file-preview" id="file-preview"></div>
-
-                    <small class="form-text text-muted">
-                        Supported formats: PDF, JPG, PNG (Max 5MB per file)
-                    </small>
-                </div>
-
-                <!-- Notes -->
-                <div class="form-section">
-                    <h5><i class="fas fa-sticky-note"></i> Additional Notes</h5>
-
-                    <div class="form-group">
-                        <label for="id_notes">Notes</label>
-                        {{ form.notes }}
-                        {% if form.notes.errors %}
-                        <div class="text-danger">{{ form.notes.errors }}</div>
-                        {% endif %}
-                    </div>
-                </div>
-            </div>
-
-            <!-- Sidebar -->
-            <div class="col-md-4">
-                <!-- Quick Summary -->
-                <div class="card mb-3">
-                    <div class="card-header">
-                        <h5 class="mb-0">Summary</h5>
+                <div class="card border-0 shadow-sm mb-4">
+                    <div class="card-header bg-secondary bg-opacity-10 border-0 py-3">
+                        <h5 class="mb-0">
+                            <i class="bi bi-paperclip me-2"></i>
+                            {% trans "Attachments" %}
+                        </h5>
                     </div>
                     <div class="card-body">
-                        <table class="table table-sm table-borderless">
-                            <tr>
-                                <th>Amount:</th>
-                                <td id="summary-amount">0.00</td>
-                            </tr>
-                            <tr>
-                                <th>Tax:</th>
-                                <td id="summary-tax">0.00</td>
-                            </tr>
-                            <tr class="border-top">
-                                <th>Total:</th>
-                                <td><strong id="summary-total">0.00</strong></td>
-                            </tr>
-                        </table>
+                        <label for="{{ form.attachments.id_for_label }}" class="form-label">
+                            {% trans "Upload Files" %}
+                        </label>
+                        {{ form.attachments }}
+                        <small class="form-text text-muted d-block mt-2">
+                            {% trans "You can upload receipts, invoices, or supporting documents (PDF, images, documents)" %}
+                        </small>
                     </div>
                 </div>
 
-                <!-- Payment Options -->
-                <div class="card mb-3">
-                    <div class="card-header">
-                        <h5 class="mb-0">Payment Options</h5>
-                    </div>
+                <!-- Action Buttons -->
+                <div class="card border-0 shadow-sm">
                     <div class="card-body">
-                        <div class="form-group">
-                            <label for="id_payment_method">Payment Method</label>
-                            {{ form.payment_method }}
-                        </div>
-
-                        <div class="form-check">
-                            {{ form.is_recurring }}
-                            <label class="form-check-label" for="id_is_recurring">
-                                Recurring Expense
-                            </label>
+                        <div class="d-flex flex-column flex-md-row justify-content-end gap-2">
+                            <a href="{% url 'expenses:expense_list' %}" class="btn btn-outline-secondary">
+                                <i class="bi bi-x-lg me-2"></i>
+                                {% trans "Cancel" %}
+                            </a>
+                            <button type="submit" name="action" value="draft" class="btn btn-outline-primary">
+                                <i class="bi bi-save me-2"></i>
+                                {% trans "Save as Draft" %}
+                            </button>
+                            <button type="submit" name="action" value="submit" class="btn btn-primary"><i class="bi bi-send me-2"></i>
+                                {% trans "Submit for Approval" %}
+                            </button>
                         </div>
                     </div>
                 </div>
-
-                <!-- Actions -->
-                <div class="card">
-                    <div class="card-body">
-                        <button type="submit" name="status" value="DRAFT" class="btn btn-secondary btn-block">
-                            <i class="fas fa-save"></i> Save as Draft
-                        </button>
-                        <button type="submit" name="status" value="PENDING" class="btn btn-primary btn-block">
-                            <i class="fas fa-paper-plane"></i> Submit for Approval
-                        </button>
-                        <a href="{% url 'expenses:expense_list' %}" class="btn btn-outline-secondary btn-block">
-                            <i class="fas fa-times"></i> Cancel
-                        </a>
-                    </div>
-                </div>
-            </div>
+            </form>
         </div>
-    </form>
+    </div>
 </div>
 
-<input type="hidden" id="store_id" value="{{ request.user.stores.first.id }}">
-{% endblock %}
-
-{% block extra_js %}
-<script>
-    // Auto-calculate tax
-    function calculateTax() {
-        const amount = parseFloat(document.getElementById('id_amount').value) || 0;
-        const taxRate = parseFloat(document.getElementById('id_tax_rate').value) || 0;
-        const taxAmount = (amount * taxRate / 100).toFixed(2);
-        const total = (amount + parseFloat(taxAmount)).toFixed(2);
-
-        document.getElementById('id_tax_amount').value = taxAmount;
-        document.getElementById('summary-amount').textContent = amount.toFixed(2);
-        document.getElementById('summary-tax').textContent = taxAmount;
-        document.getElementById('summary-total').textContent = total;
+<style>
+    .required::after {
+        content: " *";
+        color: #dc3545;
     }
 
-    document.getElementById('id_amount').addEventListener('input', calculateTax);
-    document.getElementById('id_tax_rate').addEventListener('input', calculateTax);
+    .card {
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
 
-    // Check budget on category change
-    document.getElementById('id_category').addEventListener('change', function() {
-        const categoryId = this.value;
-        const amount = parseFloat(document.getElementById('id_amount').value) || 0;
-        const storeId = document.getElementById('store_id').value;
+    .form-label {
+        font-weight: 500;
+        margin-bottom: 0.5rem;
+    }
 
-        if (categoryId && amount > 0) {
-            fetch(`/expenses/api/check-budget/?category_id=${categoryId}&amount=${amount}&store_id=${storeId}`)
-                .then(response => response.json())
-                .then(data => {
-                    const alertDiv = document.getElementById('budget-alert');
-                    if (data.has_budget && !data.available) {
-                        alertDiv.innerHTML = `
-                            <div class="alert alert-warning">
-                                <i class="fas fa-exclamation-triangle"></i> ${data.message}
-                            </div>
-                        `;
-                    } else {
-                        alertDiv.innerHTML = '';
-                    }
-                });
+    .form-control:focus,
+    .form-select:focus {
+        border-color: var(--primary-500);
+        box-shadow: 0 0 0 0.2rem rgba(59, 130, 246, 0.25);
+    }
+
+    .form-check-input:checked {
+        background-color: var(--primary-600);
+        border-color: var(--primary-600);
+    }
+
+    @media (max-width: 767.98px) {
+        .card-body {
+            padding: 1rem;
+        }
+
+        .btn {
+            width: 100%;
+        }
+    }
+</style>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const form = document.getElementById('expenseForm');
+    const amountInput = document.querySelector('input[name="amount"]');
+    const taxRateInput = document.querySelector('input[name="tax_rate"]');
+
+    // Calculate tax automatically
+    function calculateTax() {
+        const amount = parseFloat(amountInput.value) || 0;
+        const taxRate = parseFloat(taxRateInput.value) || 0;
+        const taxAmount = (amount * taxRate / 100).toFixed(2);
+        const totalAmount = (amount + parseFloat(taxAmount)).toFixed(2);
+
+        // You can display this calculated value if needed
+        console.log('Tax Amount:', taxAmount);
+        console.log('Total Amount:', totalAmount);
+    }
+
+    if (amountInput && taxRateInput) {
+        amountInput.addEventListener('input', calculateTax);
+        taxRateInput.addEventListener('input', calculateTax);
+    }
+
+    // Form validation
+    form.addEventListener('submit', function(e) {
+        const action = e.submitter.value;
+
+        if (action === 'submit') {
+            // Additional validation for submission
+            const requiredFields = form.querySelectorAll('[required]');
+            let isValid = true;
+
+            requiredFields.forEach(field => {
+                if (!field.value.trim()) {
+                    isValid = false;
+                    field.classList.add('is-invalid');
+                } else {
+                    field.classList.remove('is-invalid');
+                }
+            });
+
+            if (!isValid) {
+                e.preventDefault();
+                alert('{% trans "Please fill in all required fields" %}');
+                return false;
+            }
         }
     });
 
-    // File upload handling
-    const fileUploadArea = document.getElementById('file-upload-area');
-    const fileInput = document.getElementById('attachments');
-    const filePreview = document.getElementById('file-preview');
-
-    fileUploadArea.addEventListener('click', () => fileInput.click());
-
-    fileUploadArea.addEventListener('dragover', (e) => {
-        e.preventDefault();
-        fileUploadArea.style.borderColor = '#667eea';
-        fileUploadArea.style.backgroundColor = '#f0f0f0';
-    });
-
-    fileUploadArea.addEventListener('dragleave', (e) => {
-        e.preventDefault();
-        fileUploadArea.style.borderColor = '#ced4da';
-        fileUploadArea.style.backgroundColor = 'transparent';
-    });
-
-    fileUploadArea.addEventListener('drop', (e) => {
-        e.preventDefault();
-        fileUploadArea.style.borderColor = '#ced4da';
-        fileUploadArea.style.backgroundColor = 'transparent';
-
-        const files = e.dataTransfer.files;
-        handleFiles(files);
-    });
-
-    fileInput.addEventListener('change', (e) => {
-        handleFiles(e.target.files);
-    });
-
-    function handleFiles(files) {
-        filePreview.innerHTML = '';
-        Array.from(files).forEach(file => {
-            const fileItem = document.createElement('div');
-            fileItem.className = 'file-preview-item';
-            fileItem.innerHTML = `
-                <i class="fas fa-file"></i> ${file.name}
-                <small>(${(file.size / 1024).toFixed(2)} KB)</small>
-            `;
-            filePreview.appendChild(fileItem);
+    // File upload preview
+    const fileInput = document.querySelector('input[type="file"]');
+    if (fileInput) {
+        fileInput.addEventListener('change', function() {
+            const files = Array.from(this.files);
+            if (files.length > 0) {
+                console.log(`${files.length} file(s) selected`);
+            }
         });
     }
-
-    // Initialize summary
-    calculateTax();
+});
 </script>
 {% endblock %}

@@ -1,5 +1,7 @@
 {% extends 'base.html' %}
 {% load widget_tweaks %}
+{% load static %}
+{% load custom_filters %}
 
 {% block title %}
     {% if form.instance.pk %}Edit Movement{% else %}Record Stock Movement{% endif %} - {{ company.trading_name|default:company.name }}
@@ -12,6 +14,7 @@
 {% block extra_css %}
 <link href="https://cdnjs.cloudflare.com/ajax/libs/select2/4.1.0-rc.0/css/select2.min.css" rel="stylesheet">
 <link href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/4.1.1/animate.min.css" rel="stylesheet">
+<link rel="stylesheet" href="{% static 'themes.css' %}">
 
 <style>
     :root {
@@ -29,15 +32,26 @@
     /* Layout */
     .movement-container {
         max-width: 1400px;
-        margin: 0 auto;
+        padding: 2rem;
+        margin: 0 auto 4rem auto;
     }
 
     .movement-form-card {
         background: white;
+        padding: 0;
         border-radius: var(--border-radius);
         box-shadow: var(--shadow-light);
         overflow: hidden;
         border: 1px solid rgba(0,0,0,0.05);
+    }
+
+    [data-theme="dark"] .movement-container {
+        background: #111827;
+    }
+
+    [data-theme="dark"] .movement-form-card {
+        background: #1f2937;
+        border-color: #374151;
     }
 
     .form-header {
@@ -60,8 +74,8 @@
     }
 
     @keyframes float {
-        0% { transform: rotate(0deg); }
-        100% { transform: rotate(360deg); }
+        0% { transform: translateX(0) translateY(0); }
+        100% { transform: translateX(-100%) translateY(-100%); }
     }
 
     .form-header h4 {
@@ -71,11 +85,15 @@
         display: flex;
         align-items: center;
         gap: 0.75rem;
+        position: relative;
+        z-index: 1;
     }
 
     .form-header p {
         margin: 0.5rem 0 0 0;
         opacity: 0.9;
+        position: relative;
+        z-index: 1;
     }
 
     /* Movement Type Selection */
@@ -83,6 +101,11 @@
         padding: 2rem;
         background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
         border-bottom: 1px solid #e2e8f0;
+    }
+
+    [data-theme="dark"] .movement-type-section {
+        background: #374151;
+        border-color: #4b5563;
     }
 
     .movement-types-grid {
@@ -102,6 +125,11 @@
         transition: var(--transition);
         position: relative;
         overflow: hidden;
+    }
+
+    [data-theme="dark"] .movement-type-card {
+        background: #1f2937;
+        border-color: #374151;
     }
 
     .movement-type-card::before {
@@ -129,6 +157,10 @@
         background: linear-gradient(135deg, #f0f4ff, #e0e7ff);
         transform: translateY(-4px);
         box-shadow: var(--shadow-heavy);
+    }
+
+    [data-theme="dark"] .movement-type-card.active {
+        background: linear-gradient(135deg, #374151, #4b5563);
     }
 
     .movement-type-card.stock-in {
@@ -182,10 +214,18 @@
         color: #1a202c;
     }
 
+    [data-theme="dark"] .movement-type-title {
+        color: #f9fafb;
+    }
+
     .movement-type-description {
         color: #64748b;
         font-size: 0.925rem;
         line-height: 1.5;
+    }
+
+    [data-theme="dark"] .movement-type-description {
+        color: #d1d5db;
     }
 
     .movement-type-examples {
@@ -195,6 +235,11 @@
         font-size: 0.825rem;
         color: #8b5cf6;
         font-weight: 500;
+    }
+
+    [data-theme="dark"] .movement-type-examples {
+        border-color: #4b5563;
+        color: #a78bfa;
     }
 
     /* Form Sections */
@@ -213,6 +258,10 @@
         margin-bottom: 1.5rem;
         padding-bottom: 0.75rem;
         border-bottom: 2px solid #f1f5f9;
+    }
+
+    [data-theme="dark"] .section-header {
+        border-color: #4b5563;
     }
 
     .section-number {
@@ -235,12 +284,21 @@
         margin: 0;
     }
 
+    [data-theme="dark"] .section-title {
+        color: #f9fafb;
+    }
+
     /* Product Selection */
     .product-selector-card {
         background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
         border-radius: var(--border-radius);
         padding: 2rem;
         border: 1px solid #e2e8f0;
+    }
+
+    [data-theme="dark"] .product-selector-card {
+        background: #374151;
+        border-color: #4b5563;
     }
 
     .product-info-panel {
@@ -251,6 +309,11 @@
         box-shadow: var(--shadow-light);
         border: 1px solid #f1f5f9;
         display: none;
+    }
+
+    [data-theme="dark"] .product-info-panel {
+        background: #1f2937;
+        border-color: #374151;
     }
 
     .product-info-panel.show {
@@ -295,11 +358,20 @@
         font-size: 1.5rem;
     }
 
+    [data-theme="dark"] .product-placeholder {
+        background: #374151;
+        color: #9ca3af;
+    }
+
     .product-info h6 {
         font-size: 1.125rem;
         font-weight: 700;
         margin: 0 0 0.5rem 0;
         color: #1a202c;
+    }
+
+    [data-theme="dark"] .product-info h6 {
+        color: #f9fafb;
     }
 
     .product-meta {
@@ -308,6 +380,10 @@
         font-size: 0.875rem;
         color: #64748b;
         margin-bottom: 1rem;
+    }
+
+    [data-theme="dark"] .product-meta {
+        color: #9ca3af;
     }
 
     .product-meta span {
@@ -359,6 +435,11 @@
         transition: var(--transition);
     }
 
+    [data-theme="dark"] .stock-info-card {
+        background: #1f2937;
+        border-color: #374151;
+    }
+
     .stock-info-card:hover {
         transform: translateY(-2px);
         box-shadow: var(--shadow-medium);
@@ -371,12 +452,20 @@
         color: #1a202c;
     }
 
+    [data-theme="dark"] .stock-info-value {
+        color: #f9fafb;
+    }
+
     .stock-info-label {
         font-size: 0.875rem;
         color: #64748b;
         text-transform: uppercase;
         letter-spacing: 0.05em;
         font-weight: 500;
+    }
+
+    [data-theme="dark"] .stock-info-label {
+        color: #d1d5db;
     }
 
     .stock-level-indicator {
@@ -386,6 +475,10 @@
         border-radius: 3px;
         margin-top: 0.75rem;
         overflow: hidden;
+    }
+
+    [data-theme="dark"] .stock-level-indicator {
+        background: #374151;
     }
 
     .stock-level-fill {
@@ -416,6 +509,13 @@
         background: white;
     }
 
+    [data-theme="dark"] .form-floating .form-control,
+    [data-theme="dark"] .form-floating .form-select {
+        background: #1f2937;
+        border-color: #4b5563;
+        color: #f9fafb;
+    }
+
     .form-floating .form-control:focus,
     .form-floating .form-select:focus {
         border-color: #667eea;
@@ -428,6 +528,10 @@
         color: #64748b;
         font-weight: 500;
         transition: var(--transition);
+    }
+
+    [data-theme="dark"] .form-floating label {
+        color: #9ca3af;
     }
 
     .form-floating .form-control:focus ~ label,
@@ -456,6 +560,11 @@
         border: 1px solid #f1f5f9;
     }
 
+    [data-theme="dark"] .movement-details-card {
+        background: #1f2937;
+        border-color: #374151;
+    }
+
     .quantity-input-group {
         position: relative;
     }
@@ -468,6 +577,12 @@
         border: 3px solid #e2e8f0;
         border-radius: 12px;
         transition: var(--transition);
+    }
+
+    [data-theme="dark"] .quantity-input {
+        background: #1f2937;
+        border-color: #4b5563;
+        color: #f9fafb;
     }
 
     .quantity-input:focus {
@@ -493,10 +608,20 @@
         cursor: pointer;
     }
 
+    [data-theme="dark"] .quantity-btn {
+        background: #1f2937;
+        border-color: #4b5563;
+        color: #9ca3af;
+    }
+
     .quantity-btn:hover {
         border-color: #667eea;
         color: #667eea;
         background: #f8fafc;
+    }
+
+    [data-theme="dark"] .quantity-btn:hover {
+        background: #374151;
     }
 
     /* Impact Preview */
@@ -506,6 +631,11 @@
         padding: 1.5rem;
         margin-top: 2rem;
         border: 1px solid #c7d2fe;
+    }
+
+    [data-theme="dark"] .impact-preview {
+        background: linear-gradient(135deg, #374151 0%, #4b5563 100%);
+        border-color: #6b7280;
     }
 
     .impact-preview-header {
@@ -534,6 +664,10 @@
         margin: 0;
     }
 
+    [data-theme="dark"] .impact-preview-title {
+        color: #f9fafb;
+    }
+
     .impact-details {
         display: grid;
         grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
@@ -548,11 +682,20 @@
         border: 1px solid rgba(102, 126, 234, 0.2);
     }
 
+    [data-theme="dark"] .impact-item {
+        background: rgba(31, 41, 55, 0.7);
+        border-color: rgba(102, 126, 234, 0.4);
+    }
+
     .impact-value {
         font-size: 1.25rem;
         font-weight: 800;
         color: #1a202c;
         margin-bottom: 0.25rem;
+    }
+
+    [data-theme="dark"] .impact-value {
+        color: #f9fafb;
     }
 
     .impact-label {
@@ -561,6 +704,10 @@
         text-transform: uppercase;
         letter-spacing: 0.025em;
         font-weight: 500;
+    }
+
+    [data-theme="dark"] .impact-label {
+        color: #9ca3af;
     }
 
     .warning-indicator {
@@ -574,6 +721,12 @@
         align-items: center;
         gap: 0.75rem;
         animation: pulse-warning 2s infinite;
+    }
+
+    [data-theme="dark"] .warning-indicator {
+        background: linear-gradient(135deg, #78350f 0%, #92400e 100%);
+        border-color: #f59e0b;
+        color: #fef3c7;
     }
 
     @keyframes pulse-warning {
@@ -590,6 +743,11 @@
         background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
         border-top: 1px solid #e2e8f0;
         margin-top: 2rem;
+    }
+
+    [data-theme="dark"] .form-actions {
+        background: #374151;
+        border-color: #4b5563;
     }
 
     .btn-group-custom {
@@ -629,10 +787,20 @@
         color: #64748b;
     }
 
+    [data-theme="dark"] .btn-secondary-custom {
+        background: #1f2937;
+        border-color: #4b5563;
+        color: #d1d5db;
+    }
+
     .btn-secondary-custom:hover {
         border-color: #667eea;
         color: #667eea;
         background: #f8fafc;
+    }
+
+    [data-theme="dark"] .btn-secondary-custom:hover {
+        background: #374151;
     }
 
     /* Sidebar */
@@ -645,9 +813,17 @@
         top: 2rem;
     }
 
+    [data-theme="dark"] .sidebar {
+        background: #1f2937;
+    }
+
     .sidebar-section {
         padding: 1.5rem;
         border-bottom: 1px solid #f1f5f9;
+    }
+
+    [data-theme="dark"] .sidebar-section {
+        border-color: #374151;
     }
 
     .sidebar-section:last-child {
@@ -664,6 +840,10 @@
         gap: 0.5rem;
     }
 
+    [data-theme="dark"] .sidebar-title {
+        color: #f9fafb;
+    }
+
     /* Recent Movements */
     .movement-item {
         display: flex;
@@ -673,12 +853,20 @@
         transition: var(--transition);
     }
 
+    [data-theme="dark"] .movement-item {
+        border-color: #374151;
+    }
+
     .movement-item:hover {
         background: #f8fafc;
         margin: 0 -1.5rem;
         padding-left: 1.5rem;
         padding-right: 1.5rem;
         border-radius: 8px;
+    }
+
+    [data-theme="dark"] .movement-item:hover {
+        background: #374151;
     }
 
     .movement-item:last-child {
@@ -727,12 +915,20 @@
         text-overflow: ellipsis;
     }
 
+    [data-theme="dark"] .movement-product {
+        color: #f9fafb;
+    }
+
     .movement-details {
         font-size: 0.75rem;
         color: #64748b;
         display: flex;
         align-items: center;
         gap: 0.5rem;
+    }
+
+    [data-theme="dark"] .movement-details {
+        color: #9ca3af;
     }
 
     .movement-quantity {
@@ -751,6 +947,11 @@
         margin-bottom: 0.5rem;
     }
 
+    [data-theme="dark"] .help-accordion .accordion-item {
+        border-color: #374151;
+        background: #1f2937;
+    }
+
     .help-accordion .accordion-button {
         background: #f8fafc;
         color: #1a202c;
@@ -758,6 +959,11 @@
         padding: 0.875rem 1rem;
         border-radius: 8px;
         border: none;
+    }
+
+    [data-theme="dark"] .help-accordion .accordion-button {
+        background: #374151;
+        color: #f9fafb;
     }
 
     .help-accordion .accordion-button:not(.collapsed) {
@@ -773,6 +979,12 @@
         padding: 1rem;
         font-size: 0.875rem;
         line-height: 1.6;
+        color: #1a202c;
+    }
+
+    [data-theme="dark"] .help-accordion .accordion-body {
+        color: #d1d5db;
+        background: #1f2937;
     }
 
     /* Statistics Cards */
@@ -791,6 +1003,11 @@
         border: 1px solid #e2e8f0;
     }
 
+    [data-theme="dark"] .stat-card {
+        background: #374151;
+        border-color: #4b5563;
+    }
+
     .stat-value {
         font-size: 1.5rem;
         font-weight: 800;
@@ -804,6 +1021,10 @@
         text-transform: uppercase;
         letter-spacing: 0.025em;
         font-weight: 500;
+    }
+
+    [data-theme="dark"] .stat-label {
+        color: #9ca3af;
     }
 
     /* Responsive Design */
@@ -1420,7 +1641,7 @@
         });
 
         // Add active class to selected card
-        const selectedCard = event.target.closest('.movement-type-card');
+        const selectedCard = event.currentTarget;
         selectedCard.classList.add('active');
 
         // Update radio button value
@@ -1434,11 +1655,10 @@
         }
 
         const radioButton = selectedCard.querySelector('input[type="radio"]');
-        radioButton.checked = true;
-        radioButton.value = movementType;
-
-        // Update the form field name
-        radioButton.name = 'movement_type';
+        if (radioButton) {
+            radioButton.checked = true;
+            radioButton.value = movementType;
+        }
 
         updateImpactPreview();
     }
@@ -1518,21 +1738,25 @@
         if (!productId || !storeId) return;
 
         try {
+            // You'll need to adjust this URL to match your Django URL structure
             const response = await fetch(`/inventory/api/stock/?product=${productId}&store=${storeId}`);
-            const data = await response.json();
-
-            if (data.results && data.results.length > 0) {
-                currentStockData = data.results[0];
-                updateStockInfo();
+            if (response.ok) {
+                const data = await response.json();
+                if (data.results && data.results.length > 0) {
+                    currentStockData = data.results[0];
+                    updateStockInfo();
+                } else {
+                    // No existing stock record
+                    currentStockData = {
+                        quantity: 0,
+                        reorder_level: 0,
+                        product_name: document.getElementById('productName').textContent,
+                        store_name: document.getElementById('id_store').options[document.getElementById('id_store').selectedIndex].text
+                    };
+                    updateStockInfo();
+                }
             } else {
-                // No existing stock record
-                currentStockData = {
-                    quantity: 0,
-                    reorder_level: 0,
-                    product_name: document.getElementById('productName').textContent,
-                    store_name: document.getElementById('id_store').options[document.getElementById('id_store').selectedIndex].text
-                };
-                updateStockInfo();
+                throw new Error('Failed to fetch stock data');
             }
         } catch (error) {
             console.error('Error loading stock data:', error);
@@ -1550,25 +1774,31 @@
         if (!currentStockData) return;
 
         // Update stock values
-        document.getElementById('currentStock').textContent = currentStockData.quantity.toFixed(2);
-        document.getElementById('reorderLevel').textContent = currentStockData.reorder_level.toFixed(2);
+        document.getElementById('currentStock').textContent = parseFloat(currentStockData.quantity).toFixed(2);
+        document.getElementById('reorderLevel').textContent = parseFloat(currentStockData.reorder_level || 0).toFixed(2);
         document.getElementById('lastMovement').textContent = '—'; // Would need API enhancement
 
         // Update stock level indicator
         const currentStockBar = document.getElementById('currentStockBar');
-        const percentage = currentStockData.reorder_level > 0
-            ? Math.min((currentStockData.quantity / (currentStockData.reorder_level * 2)) * 100, 100)
-            : (currentStockData.quantity > 0 ? 100 : 0);
+        const reorderLevel = parseFloat(currentStockData.reorder_level) || 0;
+        const currentQuantity = parseFloat(currentStockData.quantity) || 0;
+        
+        let percentage = 0;
+        if (reorderLevel > 0) {
+            percentage = Math.min((currentQuantity / (reorderLevel * 2)) * 100, 100);
+        } else {
+            percentage = currentQuantity > 0 ? 100 : 0;
+        }
 
         currentStockBar.style.width = percentage + '%';
 
         // Update color based on stock level
         currentStockBar.className = 'stock-level-fill';
-        if (currentStockData.quantity === 0) {
+        if (currentQuantity === 0) {
             currentStockBar.classList.add('level-critical');
-        } else if (currentStockData.quantity <= currentStockData.reorder_level) {
+        } else if (currentQuantity <= reorderLevel) {
             currentStockBar.classList.add('level-low');
-        } else if (currentStockData.quantity <= currentStockData.reorder_level * 2) {
+        } else if (currentQuantity <= reorderLevel * 2) {
             currentStockBar.classList.add('level-medium');
         } else {
             currentStockBar.classList.add('level-good');
@@ -1590,7 +1820,7 @@
         }
 
         let stockChange = 0;
-        let newStockLevel = currentStockData.quantity;
+        let newStockLevel = parseFloat(currentStockData.quantity) || 0;
 
         // Calculate stock change based on movement type
         if (movementType === 'PURCHASE' || movementType === 'RETURN' || movementType === 'TRANSFER_IN') {
@@ -1600,7 +1830,7 @@
             stockChange = -quantity;
             newStockLevel -= quantity;
         } else if (movementType === 'ADJUSTMENT') {
-            stockChange = quantity - currentStockData.quantity;
+            stockChange = quantity - newStockLevel;
             newStockLevel = quantity;
         }
 
@@ -1621,7 +1851,7 @@
         } else if (newStockLevel < 0) {
             status = 'Negative Stock!';
             statusClass = 'text-danger';
-        } else if (newStockLevel <= currentStockData.reorder_level) {
+        } else if (newStockLevel <= (parseFloat(currentStockData.reorder_level) || 0)) {
             status = 'Low Stock';
             statusClass = 'text-warning';
         }
@@ -1676,7 +1906,7 @@
                 e.preventDefault();
                 const type = this.classList.contains('stock-in') ? 'in' :
                             this.classList.contains('stock-out') ? 'out' : 'adjustment';
-                selectMovementType(type);
+                selectMovementType.call(this, type);
             }
         });
     });

@@ -27,9 +27,10 @@ class ReportDashboardConsumer(AsyncJsonWebsocketConsumer):
             self.channel_name
         )
 
-        # Join company-wide report group
-        if hasattr(self.user, 'company'):
-            self.company_group_name = f'company_{self.user.company.company_id}_reports'
+        # Join company-wide report group - FIX: Check company ID asynchronously
+        company_id = await self.get_user_company_id()
+        if company_id:
+            self.company_group_name = f'company_{company_id}_reports'
             await self.channel_layer.group_add(
                 self.company_group_name,
                 self.channel_name
@@ -41,6 +42,17 @@ class ReportDashboardConsumer(AsyncJsonWebsocketConsumer):
         await self.send_dashboard_stats()
 
         logger.info(f"WebSocket connected for user {self.user.id}")
+
+    # Add this new helper method
+    @database_sync_to_async
+    def get_user_company_id(self):
+        """Get user's company ID safely"""
+        try:
+            if hasattr(self.user, 'company') and self.user.company:
+                return self.user.company.company_id
+        except Exception:
+            pass
+        return None
 
     async def disconnect(self, close_code):
         # Leave groups
@@ -171,7 +183,7 @@ class ReportDashboardConsumer(AsyncJsonWebsocketConsumer):
             return cached_stats
 
         # Get user's accessible stores
-        if self.user.is_superuser or self.user.user_type == 'SUPER_ADMIN':
+        if self.user.is_superuser or self.user.primary_role and user.primary_role.priority >= 90:
             stores = Store.objects.filter(is_active=True)
         else:
             stores = self.user.stores.filter(is_active=True)
@@ -255,7 +267,7 @@ class ReportDashboardConsumer(AsyncJsonWebsocketConsumer):
         alerts = []
 
         # Get user's accessible stores
-        if self.user.is_superuser or self.user.user_type == 'SUPER_ADMIN':
+        if self.user.is_superuser or self.user.primary_role and user.primary_role.priority >= 90:
             stores = Store.objects.filter(is_active=True)
         else:
             stores = self.user.stores.filter(is_active=True)
@@ -429,7 +441,7 @@ class ReportGenerationConsumer(AsyncJsonWebsocketConsumer):
             if report.generated_by == self.user:
                 return True
 
-            if self.user.is_superuser or self.user.user_type == 'SUPER_ADMIN':
+            if self.user.is_superuser or self.user.primary_role and user.primary_role.priority >= 90:
                 return True
 
             # Check if report is shared

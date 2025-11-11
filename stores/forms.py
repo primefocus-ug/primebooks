@@ -105,7 +105,7 @@ class StoreForm(forms.ModelForm):
         self.tenant = kwargs.pop('tenant', None)
         super().__init__(*args, **kwargs)
 
-        if self.user and not self.user.is_superuser and self.tenant:
+        if self.user and not self.user.is_saas_admin:
             self.fields['company'].initial = self.tenant
             self.fields['company'].disabled = True
 
@@ -261,10 +261,8 @@ class EnhancedStoreReportForm(forms.Form):
 
         # Populate store choices based on user permissions
         if user:
-            if user.is_superuser or user.user_type == 'SUPER_ADMIN':
+            if user.is_superuser or user.primary_role and user.primary_role.priority >= 90:
                 stores = Store.objects.filter(is_active=True)
-            elif user.user_type == 'COMPANY_ADMIN':
-                stores = Store.objects.filter(company=user.company, is_active=True)
             else:
                 stores = user.stores.filter(is_active=True)
 

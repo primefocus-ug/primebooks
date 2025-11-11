@@ -1,0 +1,476 @@
+{% extends 'base.html' %}
+{% load static i18n %}
+
+{% block title %}
+    {% if account %}{% trans "Edit Account" %}{% else %}{% trans "New Account" %}{% endif %} - {{ block.super }}
+{% endblock %}
+
+{% block extra_css %}
+<style>
+.account-type-indicator {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    display: inline-block;
+    margin-right: 8px;
+}
+.asset { background-color: #28a745; }
+.liability { background-color: #dc3545; }
+.equity { background-color: #6f42c1; }
+.revenue { background-color: #20c997; }
+.expense { background-color: #fd7e14; }
+.cost-of-sales { background-color: #e83e8c; }
+
+.code-suggestions {
+    max-height: 200px;
+    overflow-y: auto;
+}
+.suggestion-item:hover {
+    background-color: #f8f9fa;
+    cursor: pointer;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2 class="mb-0">
+            <i class="bi bi-diagram-3 me-2"></i>
+            {% if account %}{% trans "Edit Account" %}{% else %}{% trans "New Account" %}{% endif %}
+        </h2>
+        <div class="dropdown">
+            <button class="btn btn-outline-primary dropdown-toggle" type="button" data-bs-toggle="dropdown">
+                <i class="bi bi-lightning me-1"></i>{% trans "Quick Create" %}
+            </button>
+            <ul class="dropdown-menu">
+                {% for value, label in account_types %}
+                <li>
+                    <a class="dropdown-item" href="{% url 'finance:chart_of_accounts_create' %}?account_type={{ value }}">
+                        <span class="account-type-indicator {{ value|lower }}"></span>
+                        {{ label }}
+                    </a>
+                </li>
+                {% endfor %}
+            </ul>
+        </div>
+    </div>
+
+    <form method="post" id="accountForm">
+        {% csrf_token %}
+
+        {% if form.non_field_errors %}
+        <div class="alert alert-danger">
+            {% for error in form.non_field_errors %}
+            {{ error }}
+            {% endfor %}
+        </div>
+        {% endif %}
+
+        <div class="row g-4">
+            <div class="col-lg-8">
+                <!-- Basic Information Card -->
+                <div class="card border-0 shadow-sm mb-4">
+                    <div class="card-header bg-transparent py-3 d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0">{% trans "Basic Information" %}</h5>
+                        <span class="badge bg-info" id="accountTypeBadge">{% trans "Select type" %}</span>
+                    </div>
+                    <div class="card-body">
+                        <div class="row g-3">
+                            <!-- Account Code with Suggestions -->
+                            <div class="col-md-4">
+    <label class="form-label">{{ form.code.label }} <span class="text-danger">*</span></label>
+    <div class="input-group">
+        {{ form.code }}
+        {% if suggested_codes %}
+        <button class="btn btn-outline-secondary" type="button" id="suggestCodeBtn" title="{% trans 'Suggest Code' %}">
+            <i class="bi bi-magic"></i>
+        </button>
+        {% endif %}
+    </div>
+    {% if form.code.errors %}
+    <div class="text-danger small">{{ form.code.errors }}</div>
+    {% endif %}
+    <small class="text-muted">{% trans "Unique account identifier" %}</small>
+
+    <!-- Code Suggestions Dropdown (only show if we have suggestions) -->
+    {% if suggested_codes %}
+    <div class="dropdown-menu code-suggestions" id="codeSuggestions">
+        <div class="p-2 border-bottom">
+            <small class="text-muted">{% trans "Common codes for" %} <span id="suggestedType"></span></small>
+        </div>
+        {% for code, name in suggested_codes %}
+        <a class="dropdown-item suggestion-item" data-code="{{ code }}">
+            <strong>{{ code }}</strong> - {{ name }}
+        </a>
+        {% endfor %}
+    </div>
+    {% endif %}
+</div>
+
+                            <div class="col-md-8">
+                                <label class="form-label">{{ form.name.label }} <span class="text-danger">*</span></label>
+                                {{ form.name }}
+                                {% if form.name.errors %}
+                                <div class="text-danger small">{{ form.name.errors }}</div>
+                                {% endif %}
+                            </div>
+
+                            <!-- Account Type with Color Coding -->
+                            <div class="col-md-6">
+                                <label class="form-label">{{ form.account_type.label }} <span class="text-danger">*</span></label>
+                                {{ form.account_type }}
+                                <div class="form-text">
+                                    {% trans "Determines account behavior in financial statements" %}
+                                </div>
+                            </div>
+
+                            <!-- Parent Account with Hierarchy -->
+                            <div class="col-md-6">
+                                <label class="form-label">{{ form.parent.label }}</label>
+                                {{ form.parent }}
+                                <div class="form-text">
+                                    {% trans "Leave empty for root accounts" %}
+                                </div>
+                                {% if form.parent.value %}
+                                <div class="mt-2">
+                                    <small class="text-muted">
+                                        {% trans "Parent:" %}
+                                        <strong id="parentInfo">{{ form.parent.selected_label }}</strong>
+                                    </small>
+                                </div>
+                                {% endif %}
+                            </div>
+
+                            <div class="col-12">
+                                <label class="form-label">{{ form.description.label }}</label>
+                                {{ form.description }}
+                                <div class="form-text">
+                                    {% trans "Detailed description of account purpose" %}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Account Behavior Card with Dynamic Rules -->
+                <div class="card border-0 shadow-sm mb-4">
+                    <div class="card-header bg-transparent py-3">
+                        <h5 class="mb-0">{% trans "Account Behavior" %}</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="alert alert-warning" id="headerAccountWarning" style="display: none;">
+                            <i class="bi bi-exclamation-triangle me-2"></i>
+                            <strong>{% trans "Header Account Selected" %}</strong> -
+                            {% trans "Manual entries will be disabled for header accounts" %}
+                        </div>
+
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <div class="form-check form-switch">
+                                    {{ form.is_active }}
+                                    <label class="form-check-label" for="{{ form.is_active.id_for_label }}">
+                                        {{ form.is_active.label }}
+                                    </label>
+                                </div>
+                                <small class="text-muted d-block">{% trans "Inactive accounts cannot be used in transactions" %}</small>
+                            </div>
+
+                            <div class="col-md-6">
+                                <div class="form-check form-switch">
+                                    {{ form.is_header }}
+                                    <label class="form-check-label" for="{{ form.is_header.id_for_label }}">
+                                        {{ form.is_header.label }}
+                                    </label>
+                                </div>
+                                <small class="text-muted d-block">{% trans "Header accounts group related accounts" %}</small>
+                            </div>
+
+                            <div class="col-md-6">
+                                <div class="form-check form-switch">
+                                    {{ form.is_reconcilable }}
+                                    <label class="form-check-label" for="{{ form.is_reconcilable.id_for_label }}">
+                                        {{ form.is_reconcilable.label }}
+                                    </label>
+                                </div>
+                                <small class="text-muted d-block">{% trans "Enable for bank and cash accounts" %}</small>
+                            </div>
+
+                            <div class="col-md-6">
+                                <div class="form-check form-switch">
+                                    {{ form.allow_manual_entries }}
+                                    <label class="form-check-label" for="{{ form.allow_manual_entries.id_for_label }}">
+                                        {{ form.allow_manual_entries.label }}
+                                    </label>
+                                </div>
+                                <small class="text-muted d-block">{% trans "Allow manual journal entries" %}</small>
+                            </div>
+
+                            <div class="col-md-6">
+                                <div class="form-check form-switch">
+                                    {{ form.require_cost_center }}
+                                    <label class="form-check-label" for="{{ form.require_cost_center.id_for_label }}">
+                                        {{ form.require_cost_center.label }}
+                                    </label>
+                                </div>
+                                <small class="text-muted d-block">{% trans "Required for expense and revenue accounts" %}</small>
+                            </div>
+
+                            <div class="col-md-6">
+                                <div class="form-check form-switch">
+                                    {{ form.allow_multi_currency }}
+                                    <label class="form-check-label" for="{{ form.allow_multi_currency.id_for_label }}">
+                                        {{ form.allow_multi_currency.label }}
+                                    </label>
+                                </div>
+                                <small class="text-muted d-block">{% trans "Allow transactions in different currencies" %}</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Financial Details Card -->
+                <div class="card border-0 shadow-sm">
+                    <div class="card-header bg-transparent py-3">
+                        <h5 class="mb-0">{% trans "Financial Details" %}</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row g-3">
+                            <div class="col-md-4">
+                                <label class="form-label">{{ form.currency.label }}</label>
+                                {{ form.currency }}
+                                <small class="text-muted d-block">{% trans "Default currency for transactions" %}</small>
+                            </div>
+
+                            <div class="col-md-4">
+                                <label class="form-label">{{ form.opening_balance.label }}</label>
+                                <div class="input-group">
+                                    <span class="input-group-text" id="currencySymbol">$</span>
+                                    {{ form.opening_balance }}
+                                </div>
+                                <small class="text-muted d-block">{% trans "Initial balance for new accounts" %}</small>
+                            </div>
+
+                            <div class="col-md-4">
+                                <label class="form-label">{{ form.efris_account_code.label }}</label>
+                                {{ form.efris_account_code }}
+                                <small class="text-muted d-block">{% trans "EFRIS integration code" %}</small>
+                            </div>
+
+                            <div class="col-12">
+                                <label class="form-label">{{ form.tax_code.label }}</label>
+                                {{ form.tax_code }}
+                                <small class="text-muted d-block">{% trans "Tax treatment for transactions" %}</small>
+                            </div>
+
+                            <div class="col-12">
+                                <label class="form-label">{{ form.tags.label }}</label>
+                                {{ form.tags }}
+                                <small class="text-muted d-block">{% trans "Comma-separated tags for categorization" %}</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Sidebar Actions -->
+            <div class="col-lg-4">
+                <div class="card border-0 shadow-sm sticky-top" style="top: 90px;">
+                    <div class="card-body">
+                        <h6 class="mb-3">{% trans "Account Actions" %}</h6>
+
+                        <div class="d-grid gap-2 mb-3">
+                            <button type="submit" name="save" class="btn btn-primary btn-lg">
+                                <i class="bi bi-save me-2"></i>{% trans "Save Account" %}
+                            </button>
+
+                            <button type="submit" name="save_and_add_another" class="btn btn-outline-primary">
+                                <i class="bi bi-plus-circle me-2"></i>{% trans "Save & Add Another" %}
+                            </button>
+
+                            <a href="{% url 'finance:chart_of_accounts_list' %}" class="btn btn-outline-secondary">
+                                <i class="bi bi-x-lg me-2"></i>{% trans "Cancel" %}
+                            </a>
+                        </div>
+
+                        <!-- Quick Help -->
+                        <div class="alert alert-info small mb-0">
+                            <h6 class="alert-heading mb-2">{% trans "Quick Tips" %}</h6>
+                            <ul class="mb-0 ps-3">
+                                <li>{% trans "Use 4-digit codes for consistency" %}</li>
+                                <li>{% trans "Header accounts group related accounts" %}</li>
+                                <li>{% trans "Set opening balance for existing accounts" %}</li>
+                                <li>{% trans "Mark reconcilable for bank accounts" %}</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Account Type Guide -->
+                <div class="card border-0 shadow-sm mt-4">
+                    <div class="card-header bg-transparent py-3">
+                        <h6 class="mb-0">{% trans "Account Type Guide" %}</h6>
+                    </div>
+                    <div class="card-body">
+                        <div class="small">
+                            {% for value, label in account_types %}
+                            <div class="d-flex align-items-center mb-2">
+                                <span class="account-type-indicator {{ value|lower }} me-2"></span>
+                                <div>
+                                    <strong>{{ label }}</strong>
+                                    <div class="text-muted">
+                                        {% if value == 'ASSET' %}{% trans "What you own" %}
+                                        {% elif value == 'LIABILITY' %}{% trans "What you owe" %}
+                                        {% elif value == 'EQUITY' %}{% trans "Owner's stake" %}
+                                        {% elif value == 'REVENUE' %}{% trans "Income earned" %}
+                                        {% elif value == 'EXPENSE' %}{% trans "Costs incurred" %}
+                                        {% elif value == 'COST_OF_SALES' %}{% trans "Direct product costs" %}
+                                        {% endif %}
+                                    </div>
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </form>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const accountTypeSelect = document.getElementById('{{ form.account_type.id_for_label }}');
+    const codeInput = document.getElementById('{{ form.code.id_for_label }}');
+    const isHeaderCheckbox = document.getElementById('{{ form.is_header.id_for_label }}');
+    const allowManualCheckbox = document.getElementById('{{ form.allow_manual_entries.id_for_label }}');
+    const accountTypeBadge = document.getElementById('accountTypeBadge');
+    const headerWarning = document.getElementById('headerAccountWarning');
+    const suggestCodeBtn = document.getElementById('suggestCodeBtn');
+    const codeSuggestions = document.getElementById('codeSuggestions');
+    const suggestedType = document.getElementById('suggestedType');
+    const currencySelect = document.getElementById('{{ form.currency.id_for_label }}');
+    const currencySymbol = document.getElementById('currencySymbol');
+
+    // Account type change handler
+    accountTypeSelect.addEventListener('change', function() {
+        updateAccountTypeBadge();
+        suggestCode();
+        updateBehaviorDefaults();
+    });
+
+    // Header account behavior
+    isHeaderCheckbox.addEventListener('change', function() {
+        if (this.checked) {
+            allowManualCheckbox.checked = false;
+            allowManualCheckbox.disabled = true;
+            headerWarning.style.display = 'block';
+        } else {
+            allowManualCheckbox.disabled = false;
+            headerWarning.style.display = 'none';
+        }
+    });
+
+    // Currency symbol update
+    currencySelect.addEventListener('change', function() {
+        const currency = this.value || 'USD';
+        const symbols = {
+            'USD': '$', 'EUR': '€', 'GBP': '£', 'UGX': 'USh',
+            'KES': 'KSh', 'TZS': 'TSh'
+        };
+        currencySymbol.textContent = symbols[currency] || currency;
+    });
+
+    // Code suggestion button
+    suggestCodeBtn.addEventListener('click', function() {
+        suggestCode();
+    });
+
+    // Code suggestions dropdown
+    document.querySelectorAll('.suggestion-item').forEach(item => {
+        item.addEventListener('click', function(e) {
+            e.preventDefault();
+            codeInput.value = this.dataset.code;
+            codeSuggestions.classList.remove('show');
+        });
+    });
+
+    // Show code suggestions on focus
+    codeInput.addEventListener('focus', function() {
+        if (accountTypeSelect.value) {
+            codeSuggestions.classList.add('show');
+        }
+    });
+
+    // Hide suggestions when clicking outside
+    document.addEventListener('click', function(e) {
+        if (!codeInput.contains(e.target) && !suggestCodeBtn.contains(e.target)) {
+            codeSuggestions.classList.remove('show');
+        }
+    });
+
+    function updateAccountTypeBadge() {
+        const selectedOption = accountTypeSelect.options[accountTypeSelect.selectedIndex];
+        if (selectedOption.value) {
+            accountTypeBadge.textContent = selectedOption.text;
+            accountTypeBadge.className = 'badge ' + getBadgeClass(selectedOption.value);
+        } else {
+            accountTypeBadge.textContent = '{% trans "Select type" %}';
+            accountTypeBadge.className = 'badge bg-secondary';
+        }
+    }
+
+    function getBadgeClass(accountType) {
+        const classes = {
+            'ASSET': 'bg-success',
+            'LIABILITY': 'bg-danger',
+            'EQUITY': 'bg-primary',
+            'REVENUE': 'bg-info',
+            'EXPENSE': 'bg-warning',
+            'COST_OF_SALES': 'bg-purple'
+        };
+        return classes[accountType] || 'bg-secondary';
+    }
+
+    function suggestCode() {
+        const accountType = accountTypeSelect.value;
+        if (!accountType) return;
+
+        // Make AJAX call to get suggested code
+        fetch(`/finance/api/suggest-account-code/?account_type=${accountType}`)
+            .then(response => response.json())
+            .then(data => {
+                if (data.suggested_code && !codeInput.value) {
+                    codeInput.value = data.suggested_code;
+                }
+                suggestedType.textContent = accountTypeSelect.options[accountTypeSelect.selectedIndex].text;
+            });
+    }
+
+    function updateBehaviorDefaults() {
+        const accountType = accountTypeSelect.value;
+
+        // Auto-set reconcilable for asset accounts
+        const reconcilableCheckbox = document.getElementById('{{ form.is_reconcilable.id_for_label }}');
+        if (accountType === 'ASSET') {
+            reconcilableCheckbox.checked = true;
+        }
+
+        // Auto-set cost center requirement for expense/revenue accounts
+        const costCenterCheckbox = document.getElementById('{{ form.require_cost_center.id_for_label }}');
+        if (['EXPENSE', 'REVENUE', 'COST_OF_SALES'].includes(accountType)) {
+            costCenterCheckbox.checked = true;
+        }
+    }
+
+    // Initialize on page load
+    updateAccountTypeBadge();
+    if (isHeaderCheckbox.checked) {
+        isHeaderCheckbox.dispatchEvent(new Event('change'));
+    }
+    currencySelect.dispatchEvent(new Event('change'));
+});
+</script>
+{% endblock %}

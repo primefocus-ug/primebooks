@@ -1,0 +1,301 @@
+{% extends 'base.html' %}
+{% load static %}
+{% load i18n %}
+
+{% block title %}{% trans "All Conversations" %} | {{ block.super }}{% endblock %}
+
+{% block breadcrumb_items %}
+<li class="breadcrumb-item"><a href="{% url 'user_dashboard' %}">{% trans "Dashboard" %}</a></li>
+<li class="breadcrumb-item"><a href="{% url 'messaging:admin_dashboard' %}">{% trans "Messaging Admin" %}</a></li>
+<li class="breadcrumb-item active">{% trans "Conversations" %}</li>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+    .filter-bar {
+        background: var(--bg-primary);
+        padding: 1.5rem;
+        border-radius: var(--border-radius);
+        box-shadow: var(--shadow-sm);
+        margin-bottom: 1.5rem;
+    }
+
+    .conversation-card {
+        background: var(--bg-primary);
+        border: 1px solid var(--border-color);
+        border-radius: var(--border-radius);
+        padding: 1.25rem;
+        margin-bottom: 1rem;
+        transition: all 0.3s ease;
+    }
+
+    .conversation-card:hover {
+        box-shadow: var(--shadow-md);
+        transform: translateY(-2px);
+        border-color: var(--primary-500);
+    }
+
+    .conversation-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: start;
+        margin-bottom: 1rem;
+    }
+
+    .conversation-title {
+        font-size: 1.125rem;
+        font-weight: 600;
+        color: var(--text-primary);
+        margin-bottom: 0.25rem;
+    }
+
+    .conversation-meta {
+        display: flex;
+        gap: 1.5rem;
+        flex-wrap: wrap;
+        font-size: 0.875rem;
+        color: var(--text-secondary);
+    }
+
+    .meta-item {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
+    .type-badge {
+        padding: 0.25rem 0.75rem;
+        border-radius: 12px;
+        font-size: 0.75rem;
+        font-weight: 600;
+        text-transform: uppercase;
+    }
+
+    .type-direct { background: #dbeafe; color: #1e40af; }
+    .type-group { background: #fce7f3; color: #9f1239; }
+    .type-channel { background: #dcfce7; color: #166534; }
+    .type-department { background: #fef3c7; color: #92400e; }
+
+    .stats-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 1rem;
+        margin-bottom: 1.5rem;
+    }
+
+    .stat-box {
+        background: var(--bg-tertiary);
+        padding: 1rem;
+        border-radius: var(--border-radius-sm);
+        text-align: center;
+    }
+
+    .stat-value {
+        font-size: 2rem;
+        font-weight: 700;
+        color: var(--primary-600);
+    }
+
+    .stat-label {
+        font-size: 0.875rem;
+        color: var(--text-secondary);
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h1 class="mb-2">
+                <i class="bi bi-chat-dots me-2"></i>
+                {% trans "All Conversations" %}
+            </h1>
+            <p class="text-muted mb-0">
+                {% trans "Monitor and manage all messaging conversations" %}
+            </p>
+        </div>
+        <a href="{% url 'messaging:admin_dashboard' %}" class="btn btn-outline-secondary">
+            <i class="bi bi-arrow-left me-2"></i>
+            {% trans "Back to Dashboard" %}
+        </a>
+    </div>
+
+    <!-- Statistics Overview -->
+    <div class="stats-grid">
+        <div class="stat-box">
+            <div class="stat-value">{{ conversations.count }}</div>
+            <div class="stat-label">{% trans "Total Conversations" %}</div>
+        </div>
+        <div class="stat-box">
+            <div class="stat-value">{{ conversations|length }}</div>
+            <div class="stat-label">{% trans "Active" %}</div>
+        </div>
+    </div>
+
+    <!-- Filters -->
+    <div class="filter-bar">
+        <form method="get" class="row g-3">
+            <div class="col-md-3">
+                <label class="form-label">{% trans "Conversation Type" %}</label>
+                <select name="type" class="form-select" onchange="this.form.submit()">
+                    <option value="">{% trans "All Types" %}</option>
+                    <option value="direct" {% if request.GET.type == 'direct' %}selected{% endif %}>
+                        {% trans "Direct Messages" %}
+                    </option>
+                    <option value="group" {% if request.GET.type == 'group' %}selected{% endif %}>
+                        {% trans "Groups" %}
+                    </option>
+                    <option value="channel" {% if request.GET.type == 'channel' %}selected{% endif %}>
+                        {% trans "Channels" %}
+                    </option>
+                    <option value="department" {% if request.GET.type == 'department' %}selected{% endif %}>
+                        {% trans "Departments" %}
+                    </option>
+                </select>
+            </div>
+
+            <div class="col-md-6">
+                <label class="form-label">{% trans "Search" %}</label>
+                <input type="text" name="search" class="form-control"
+                       placeholder="{% trans 'Search by name or creator...' %}"
+                       value="{{ request.GET.search }}">
+            </div>
+
+            <div class="col-md-3 d-flex align-items-end">
+                <button type="submit" class="btn btn-primary me-2">
+                    <i class="bi bi-search me-2"></i>
+                    {% trans "Search" %}
+                </button>
+                <a href="{% url 'messaging:admin_conversations' %}" class="btn btn-outline-secondary">
+                    {% trans "Clear" %}
+                </a>
+            </div>
+        </form>
+    </div>
+
+    <!-- Conversations List -->
+    <div class="conversations-list">
+        {% if conversations %}
+            {% for conv in conversations %}
+            <div class="conversation-card">
+                <div class="conversation-header">
+                    <div>
+                        <h3 class="conversation-title">
+                            {% if conv.name %}
+                                {{ conv.name }}
+                            {% else %}
+                                {% trans "Direct Message" %}
+                            {% endif %}
+                        </h3>
+                        <span class="type-badge type-{{ conv.conversation_type }}">
+                            {{ conv.get_conversation_type_display }}
+                        </span>
+                    </div>
+                    <a href="{% url 'messaging:admin_conversation_detail' conv.id %}"
+                       class="btn btn-outline-primary">
+                        <i class="bi bi-eye me-2"></i>
+                        {% trans "View Details" %}
+                    </a>
+                </div>
+
+                <div class="conversation-meta">
+                    <div class="meta-item">
+                        <i class="bi bi-person-fill"></i>
+                        <span>
+                            {% trans "Created by" %}
+                            <strong>{{ conv.created_by.username }}</strong>
+                        </span>
+                    </div>
+
+                    <div class="meta-item">
+                        <i class="bi bi-people-fill"></i>
+                        <span><strong>{{ conv.participant_count }}</strong> {% trans "participants" %}</span>
+                    </div>
+
+                    <div class="meta-item">
+                        <i class="bi bi-chat-dots-fill"></i>
+                        <span><strong>{{ conv.message_count }}</strong> {% trans "messages" %}</span>
+                    </div>
+
+                    <div class="meta-item">
+                        <i class="bi bi-clock-fill"></i>
+                        <span>
+                            {% if conv.last_activity %}
+                                {{ conv.last_activity|timesince }} {% trans "ago" %}
+                            {% else %}
+                                {% trans "No activity" %}
+                            {% endif %}
+                        </span>
+                    </div>
+
+                    <div class="meta-item">
+                        <i class="bi bi-calendar-fill"></i>
+                        <span>{{ conv.created_at|date:"M d, Y" }}</span>
+                    </div>
+                </div>
+
+                {% if conv.description %}
+                <div class="mt-2 text-muted small">
+                    {{ conv.description|truncatewords:30 }}
+                </div>
+                {% endif %}
+            </div>
+            {% endfor %}
+        {% else %}
+            <div class="card">
+                <div class="card-body text-center py-5">
+                    <i class="bi bi-inbox fs-1 text-muted d-block mb-3"></i>
+                    <h5 class="text-muted">{% trans "No conversations found" %}</h5>
+                    <p class="text-muted">
+                        {% if request.GET.search or request.GET.type %}
+                            {% trans "Try adjusting your filters" %}
+                        {% else %}
+                            {% trans "No conversations have been created yet" %}
+                        {% endif %}
+                    </p>
+                </div>
+            </div>
+        {% endif %}
+    </div>
+
+    <!-- Pagination -->
+    {% if conversations.has_other_pages %}
+    <nav aria-label="Page navigation" class="mt-4">
+        <ul class="pagination justify-content-center">
+            {% if conversations.has_previous %}
+                <li class="page-item">
+                    <a class="page-link" href="?page=1{% if request.GET.type %}&type={{ request.GET.type }}{% endif %}{% if request.GET.search %}&search={{ request.GET.search }}{% endif %}">
+                        {% trans "First" %}
+                    </a>
+                </li>
+                <li class="page-item">
+                    <a class="page-link" href="?page={{ conversations.previous_page_number }}{% if request.GET.type %}&type={{ request.GET.type }}{% endif %}{% if request.GET.search %}&search={{ request.GET.search }}{% endif %}">
+                        {% trans "Previous" %}
+                    </a>
+                </li>
+            {% endif %}
+
+            <li class="page-item active">
+                <span class="page-link">
+                    {% trans "Page" %} {{ conversations.number }} {% trans "of" %} {{ conversations.paginator.num_pages }}
+                </span>
+            </li>
+
+            {% if conversations.has_next %}
+                <li class="page-item">
+                    <a class="page-link" href="?page={{ conversations.next_page_number }}{% if request.GET.type %}&type={{ request.GET.type }}{% endif %}{% if request.GET.search %}&search={{ request.GET.search }}{% endif %}">
+                        {% trans "Next" %}
+                    </a>
+                </li>
+                <li class="page-item">
+                    <a class="page-link" href="?page={{ conversations.paginator.num_pages }}{% if request.GET.type %}&type={{ request.GET.type }}{% endif %}{% if request.GET.search %}&search={{ request.GET.search }}{% endif %}">
+                        {% trans "Last" %}
+                    </a>
+                </li>
+            {% endif %}
+        </ul>
+    </nav>
+    {% endif %}
+</div>
+{% endblock %}

@@ -1,15 +1,225 @@
 from django.contrib import admin
+from django.utils.html import format_html
+from django.urls import reverse
+from django.utils.translation import gettext_lazy as _
+from .models import Category, Supplier, Product, Stock, StockMovement, Service
 
-from .models import Category, Supplier, Product, Stock, StockMovement
+
+@admin.register(Service)
+class ServiceAdmin(admin.ModelAdmin):
+    list_display = [
+        'name', 'code', 'category', 'unit_price', 'final_price',
+        'tax_rate', 'efris_status_badge', 'is_active', 'created_at'
+    ]
+    list_filter = [
+        'is_active', 'tax_rate', 'efris_is_uploaded',
+        'efris_auto_sync_enabled', 'category'
+    ]
+    search_fields = ['name', 'code', 'description']
+    readonly_fields = [
+        'efris_status_display', 'efris_commodity_category_name',
+        'efris_is_uploaded', 'efris_upload_date', 'efris_service_id',
+        'created_at', 'updated_at', 'efris_configuration_status'
+    ]
+
+    fieldsets = (
+        (_('Basic Information'), {
+            'fields': ('name', 'code', 'category', 'description', 'image', 'is_active')
+        }),
+        (_('Pricing'), {
+            'fields': ('unit_price', 'unit_of_measure')
+        }),
+        (_('Tax Configuration'), {
+            'fields': ('tax_rate', 'excise_duty_rate')
+        }),
+        (_('EFRIS Information'), {
+            'fields': (
+                'efris_commodity_category_name',
+                'efris_auto_sync_enabled',
+                'efris_status_display',
+                'efris_is_uploaded',
+                'efris_upload_date',
+                'efris_service_id',
+                'efris_configuration_status'
+            ),
+            'classes': ('collapse',)
+        }),
+        (_('System Information'), {
+            'fields': ('created_by', 'created_at', 'updated_at'),
+            'classes': ('collapse',)
+        }),
+    )
+
+    actions = [
+        'mark_for_efris_upload',
+        'enable_efris_sync',
+        'disable_efris_sync',
+        'activate_services',
+        'deactivate_services'
+    ]
+
+    def efris_status_badge(self, obj):
+        """Display EFRIS status as a colored badge"""
+        if not obj.efris_auto_sync_enabled:
+            color = 'gray'
+            text = '⏸️ Sync Disabled'
+        elif obj.efris_is_uploaded:
+            color = 'green'
+            text = '✅ Uploaded'
+        else:
+            color = 'orange'
+            text = '⏳ Pending'
+
+        return format_html(
+            '<span style="background-color: {}; color: white; '
+            'padding: 3px 10px; border-radius: 3px;">{}</span>',
+            color, text
+        )
+
+    efris_status_badge.short_description = 'EFRIS Status'
+
+    def efris_configuration_status(self, obj):
+        """Display EFRIS configuration status with errors if any"""
+        if obj.efris_configuration_complete:
+            return format_html(
+                '<span style="color: green;">✅ Configuration Complete</span>'
+            )
+        else:
+            errors = obj.get_efris_errors()
+            error_list = '<br>'.join(f'• {error}' for error in errors)
+            return format_html(
+                '<span style="color: red;">❌ Configuration Incomplete</span><br>'
+                '<div style="margin-top: 10px; padding: 10px; '
+                'background-color: #fff3cd; border-left: 3px solid #ffc107;">'
+                '{}</div>',
+                error_list
+            )
+
+    efris_configuration_status.short_description = 'EFRIS Configuration'
+
+    # Actions
+    def mark_for_efris_upload(self, request, queryset):
+        count = 0
+        for service in queryset:
+            service.mark_for_efris_upload()
+            count += 1
+        self.message_user(request, f'{count} service(s) marked for EFRIS upload.')
+
+    mark_for_efris_upload.short_description = 'Mark selected for EFRIS upload'
+
+    def enable_efris_sync(self, request, queryset):
+        count = 0
+        errors = []
+        for service in queryset:
+            try:
+                service.enable_efris_sync()
+                count += 1
+            except ValueError as e:
+                errors.append(f"{service.name}: {str(e)}")
+
+        if count:
+            self.message_user(request, f'EFRIS sync enabled for {count} service(s).')
+        if errors:
+            self.message_user(
+                request,
+                f'Errors: {"; ".join(errors)}',
+                level='error'
+            )
+
+    enable_efris_sync.short_description = 'Enable EFRIS sync'
+
+    def disable_efris_sync(self, request, queryset):
+        count = queryset.count()
+        for service in queryset:
+            service.disable_efris_sync()
+        self.message_user(request, f'EFRIS sync disabled for {count} service(s).')
+
+    disable_efris_sync.short_description = 'Disable EFRIS sync'
+
+    def activate_services(self, request, queryset):
+        count = queryset.update(is_active=True)
+        self.message_user(request, f'{count} service(s) activated.')
+
+    activate_services.short_description = 'Activate selected services'
+
+    def deactivate_services(self, request, queryset):
+        count = queryset.update(is_active=False)
+        self.message_user(request, f'{count} service(s) deactivated.')
+
+    deactivate_services.short_description = 'Deactivate selected services'
+
+    def formfield_for_foreignkey(self, db_field, request, **kwargs):
+        """Limit category choices to service categories only"""
+        if db_field.name == "category":
+            kwargs["queryset"] = Category.objects.filter(
+                category_type='service',
+                is_active=True
+            )
+        return super().formfield_for_foreignkey(db_field, request, **kwargs)
 
 
 @admin.register(Category)
 class CategoryAdmin(admin.ModelAdmin):
-    list_display = ('name', 'code',  'is_active', 'created_at', 'updated_at')
-    list_filter = ('is_active', 'created_at')
-    search_fields = ('name', 'code')
-    ordering = ('name',)
-    readonly_fields = ('created_at', 'updated_at')
+    list_display = [
+        'name', 'category_type', 'code',
+        'efris_commodity_category_code',
+        'product_count', 'service_count',
+        'efris_status_badge', 'is_active'
+    ]
+    list_filter = [
+        'category_type', 'is_active',
+        'efris_is_uploaded', 'efris_auto_sync'
+    ]
+    search_fields = ['name', 'code', 'efris_commodity_category_code']
+
+    fieldsets = (
+        (_('Basic Information'), {
+            'fields': ('name', 'code', 'category_type', 'description', 'is_active')
+        }),
+        (_('EFRIS Configuration'), {
+            'fields': (
+                'efris_commodity_category_code',
+                'efris_auto_sync',
+                'efris_is_uploaded',
+                'efris_upload_date',
+                'efris_category_id'
+            )
+        }),
+    )
+
+    def service_count(self, obj):
+        """Count of active services in this category"""
+        if obj.category_type == 'service':
+            count = obj.services.filter(is_active=True).count()
+            return format_html(
+                '<a href="{}?category__id__exact={}">{} services</a>',
+                reverse('admin:inventory_service_changelist'),
+                obj.id,
+                count
+            )
+        return '-'
+
+    service_count.short_description = 'Services'
+
+    def efris_status_badge(self, obj):
+        """Display EFRIS status as a colored badge"""
+        if not obj.efris_auto_sync:
+            color = 'gray'
+            text = '⏸️ Disabled'
+        elif obj.efris_is_uploaded:
+            color = 'green'
+            text = '✅ Synced'
+        else:
+            color = 'orange'
+            text = '⏳ Pending'
+
+        return format_html(
+            '<span style="background-color: {}; color: white; '
+            'padding: 3px 10px; border-radius: 3px;">{}</span>',
+            color, text
+        )
+
+    efris_status_badge.short_description = 'EFRIS Status'
 
 
 @admin.register(Supplier)

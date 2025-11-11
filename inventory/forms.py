@@ -4,17 +4,369 @@ from django import forms
 from django.core.exceptions import ValidationError
 from decimal import Decimal
 from django.utils import timezone
-from .models import Category, Supplier, Product, Stock, StockMovement
+from .models import Category, Supplier, Product, Stock, StockMovement,Service
 from stores.models import Store
 from company.models import EFRISCommodityCategory
+from django.utils.translation import gettext_lazy as _
 
 User = get_user_model()
-# inventory/forms.py
-from django import forms
-from django.core.exceptions import ValidationError
-from .models import Category
-from company.models import EFRISCommodityCategory
 
+
+class ServiceForm(forms.ModelForm):
+    """
+    Form for creating and updating services with EFRIS integration.
+    Includes real-time validation and autocomplete for EFRIS categories.
+    """
+
+    # Override category field with custom widget
+    category = forms.ModelChoiceField(
+        queryset=Category.objects.filter(category_type='service', is_active=True),
+        required=True,
+        empty_label="-- Select Service Category --",
+        widget=forms.Select(attrs={
+            'class': 'form-select',
+            'data-live-search': 'true',
+            'id': 'id_category',
+        }),
+        label=_("Service Category"),
+        help_text=_("Select a service category. Only leaf node EFRIS categories are allowed.")
+    )
+
+    # Add hidden field for EFRIS validation
+    efris_commodity_code = forms.CharField(
+        required=False,
+        widget=forms.HiddenInput(attrs={'id': 'id_efris_commodity_code'}),
+    )
+
+    class Meta:
+        model = Service
+        fields = [
+            'name', 'code', 'category', 'description',
+            'unit_price',
+            'tax_rate', 'excise_duty_rate',
+            'unit_of_measure', 'image',
+            'efris_auto_sync_enabled', 'is_active'
+        ]
+
+        widgets = {
+            'name': forms.TextInput(attrs={
+                'class': 'form-control',
+                'placeholder': 'e.g., Software Development, Consulting',
+                'required': True,
+            }),
+            'code': forms.TextInput(attrs={
+                'class': 'form-control',
+                'placeholder': 'e.g., SRV001, DEV-001',
+                'required': True,
+            }),
+            'description': forms.Textarea(attrs={
+                'class': 'form-control',
+                'rows': 3,
+                'placeholder': 'Detailed description of the service...',
+            }),
+            'unit_price': forms.NumberInput(attrs={
+                'class': 'form-control',
+                'step': '0.01',
+                'min': '0',
+                'placeholder': '0.00',
+                'required': True,
+            }),
+            'tax_rate': forms.Select(attrs={
+                'class': 'form-select',
+            }),
+            'excise_duty_rate': forms.NumberInput(attrs={
+                'class': 'form-control',
+                'step': '0.01',
+                'min': '0',
+                'value': '0',
+            }),
+            'unit_of_measure': forms.Select(attrs={
+                'class': 'form-select',
+                'data-live-search': 'true',
+            }),
+            'image': forms.FileInput(attrs={
+                'class': 'form-control',
+                'accept': 'image/*',
+            }),
+            'efris_auto_sync_enabled': forms.CheckboxInput(attrs={
+                'class': 'form-check-input',
+            }),
+            'is_active': forms.CheckboxInput(attrs={
+                'class': 'form-check-input',
+            }),
+        }
+
+        labels = {
+            'name': _('Service Name'),
+            'code': _('Service Code'),
+            'category': _('Service Category'),
+            'description': _('Description'),
+            'unit_price': _('Unit Price (UGX)'),
+            'tax_rate': _('Tax Rate'),
+            'excise_duty_rate': _('Excise Duty Rate %'),
+            'unit_of_measure': _('Unit of Measure'),
+            'image': _('Service Image'),
+            'efris_auto_sync_enabled': _('Enable EFRIS Auto-Sync'),
+            'is_active': _('Active'),
+        }
+
+        help_texts = {
+            'code': _('Unique identifier for this service'),
+            'unit_price': _('Price per unit of service'),
+            'excise_duty_rate': _('Only applicable if tax rate is E'),
+            'unit_of_measure': _('Unit for measuring this service (e.g., Hours, Sessions)'),
+            'efris_auto_sync_enabled': _('Automatically sync changes to EFRIS'),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+        # Set initial value for EFRIS code if editing
+        if self.instance.pk and self.instance.category:
+            self.fields['efris_commodity_code'].initial = (
+                self.instance.category.efris_commodity_category_code
+            )
+
+        # Add CSS classes to all fields
+        for field_name, field in self.fields.items():
+            if field_name not in ['efris_auto_sync_enabled', 'is_active']:
+                if 'class' not in field.widget.attrs:
+                    field.widget.attrs['class'] = 'form-control'
+
+    def clean_code(self):
+        """Validate service code is unique"""
+        code = self.cleaned_data.get('code')
+        if not code:
+            raise ValidationError(_("Service code is required"))
+
+        # Check uniqueness
+        qs = Service.objects.filter(code=code)
+        if self.instance.pk:
+            qs = qs.exclude(pk=self.instance.pk)
+
+        if qs.exists():
+            raise ValidationError(
+                _("Service with this code already exists. Please use a unique code.")
+            )
+
+        return code
+
+    def clean_category(self):
+        """Validate category is a service category with valid EFRIS settings"""
+        category = self.cleaned_data.get('category')
+
+        if not category:
+            raise ValidationError(_("Service category is required"))
+
+        # Validate it's a service category
+        if category.category_type != 'service':
+            raise ValidationError(
+                _("Selected category is not a service category. "
+                  "Please select a service category.")
+            )
+
+        # Validate EFRIS commodity category exists
+        if not category.efris_commodity_category_code:
+            raise ValidationError(
+                _("Selected category does not have an EFRIS commodity category assigned. "
+                  "Please update the category settings first.")
+            )
+
+        # Validate it's a leaf node
+        if not category.efris_is_leaf_node:
+            raise ValidationError(
+                _("Selected category's EFRIS commodity category is not a leaf node. "
+                  "Only leaf nodes (terminal categories) can be used for services.")
+            )
+
+        return category
+
+    def clean_unit_price(self):
+        """Validate unit price is positive"""
+        unit_price = self.cleaned_data.get('unit_price')
+
+        if unit_price is not None and unit_price < 0:
+            raise ValidationError(_("Unit price cannot be negative"))
+
+        return unit_price
+
+
+    def clean_excise_duty_rate(self):
+        """Validate excise duty rate"""
+        excise_rate = self.cleaned_data.get('excise_duty_rate')
+        tax_rate = self.cleaned_data.get('tax_rate')
+
+        if excise_rate and excise_rate > 0:
+            if tax_rate != 'E':
+                raise ValidationError(
+                    _("Excise duty rate can only be set when tax rate is 'E' (Excise Duty rate)")
+                )
+
+        return excise_rate
+
+    def clean(self):
+        """Additional cross-field validation"""
+        cleaned_data = super().clean()
+
+        # Ensure required fields are present
+        required_fields = ['name', 'code', 'category', 'unit_price', 'tax_rate', 'unit_of_measure']
+        for field in required_fields:
+            if not cleaned_data.get(field):
+                self.add_error(field, _("This field is required"))
+
+        return cleaned_data
+
+
+class ServiceQuickCreateForm(forms.ModelForm):
+    """
+    Simplified form for quick service creation via AJAX.
+    Contains only essential fields.
+    """
+
+    class Meta:
+        model = Service
+        fields = ['name', 'code', 'category', 'unit_price', 'tax_rate', 'unit_of_measure']
+
+        widgets = {
+            'name': forms.TextInput(attrs={
+                'class': 'form-control',
+                'placeholder': 'Service Name',
+                'required': True,
+            }),
+            'code': forms.TextInput(attrs={
+                'class': 'form-control',
+                'placeholder': 'Service Code',
+                'required': True,
+            }),
+            'category': forms.Select(attrs={
+                'class': 'form-select',
+                'required': True,
+            }),
+            'unit_price': forms.NumberInput(attrs={
+                'class': 'form-control',
+                'placeholder': '0.00',
+                'step': '0.01',
+                'min': '0',
+                'required': True,
+            }),
+            'tax_rate': forms.Select(attrs={
+                'class': 'form-select',
+            }),
+            'unit_of_measure': forms.Select(attrs={
+                'class': 'form-select',
+            }),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Only show service categories
+        self.fields['category'].queryset = Category.objects.filter(
+            category_type='service',
+            is_active=True
+        )
+
+    def clean_code(self):
+        """Validate service code is unique"""
+        code = self.cleaned_data.get('code')
+        if Service.objects.filter(code=code).exists():
+            raise ValidationError(_("Service with this code already exists"))
+        return code
+
+
+class ServiceFilterForm(forms.Form):
+    """
+    Form for filtering services in list view.
+    """
+
+    search = forms.CharField(
+        required=False,
+        widget=forms.TextInput(attrs={
+            'class': 'form-control',
+            'placeholder': 'Search services...',
+        })
+    )
+
+    category = forms.ModelChoiceField(
+        queryset=Category.objects.filter(category_type='service', is_active=True),
+        required=False,
+        empty_label="All Categories",
+        widget=forms.Select(attrs={
+            'class': 'form-select',
+        })
+    )
+
+    tax_rate = forms.ChoiceField(
+        required=False,
+        choices=[('', 'All Tax Rates')] + Service.TAX_RATE_CHOICES,
+        widget=forms.Select(attrs={
+            'class': 'form-select',
+        })
+    )
+
+    efris_status = forms.ChoiceField(
+        required=False,
+        choices=[
+            ('', 'All EFRIS Status'),
+            ('uploaded', 'Uploaded to EFRIS'),
+            ('pending', 'Pending Upload'),
+            ('disabled', 'Sync Disabled'),
+        ],
+        widget=forms.Select(attrs={
+            'class': 'form-select',
+        })
+    )
+
+    is_active = forms.ChoiceField(
+        required=False,
+        choices=[
+            ('', 'All Status'),
+            ('true', 'Active'),
+            ('false', 'Inactive'),
+        ],
+        widget=forms.Select(attrs={
+            'class': 'form-select',
+        })
+    )
+
+
+class ServiceBulkActionForm(forms.Form):
+    """
+    Form for bulk actions on services.
+    """
+
+    ACTION_CHOICES = [
+        ('', '-- Select Action --'),
+        ('activate', 'Activate Selected'),
+        ('deactivate', 'Deactivate Selected'),
+        ('enable_efris', 'Enable EFRIS Sync'),
+        ('disable_efris', 'Disable EFRIS Sync'),
+        ('mark_for_upload', 'Mark for EFRIS Upload'),
+        ('delete', 'Delete Selected'),
+    ]
+
+    action = forms.ChoiceField(
+        choices=ACTION_CHOICES,
+        required=True,
+        widget=forms.Select(attrs={
+            'class': 'form-select',
+        })
+    )
+
+    service_ids = forms.CharField(
+        widget=forms.HiddenInput(),
+        required=True,
+    )
+
+    def clean_service_ids(self):
+        """Convert comma-separated IDs to list"""
+        ids_str = self.cleaned_data.get('service_ids', '')
+        try:
+            ids = [int(id.strip()) for id in ids_str.split(',') if id.strip()]
+            if not ids:
+                raise ValidationError(_("No services selected"))
+            return ids
+        except ValueError:
+            raise ValidationError(_("Invalid service IDs"))
 
 class CategoryForm(forms.ModelForm):
     efris_category_search = forms.CharField(

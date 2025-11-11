@@ -209,7 +209,7 @@ class CompanyDashboardConsumer(AsyncWebsocketConsumer):
                 created_at__gte=hour_ago,
                 is_voided=False,
                 is_completed=True
-            ).select_related('store__branch').order_by('-created_at')[:5]
+            ).select_related('company').order_by('-created_at')[:5]
 
             for sale in recent_sales:
                 recent_activities.append({
@@ -225,7 +225,7 @@ class CompanyDashboardConsumer(AsyncWebsocketConsumer):
             recent_logs = DeviceOperatorLog.objects.filter(
                 device__store__in=all_stores,
                 timestamp__gte=hour_ago
-            ).select_related('user', 'device__store__branch').order_by('-timestamp')[:3]
+            ).select_related('user', 'device__store__company').order_by('-timestamp')[:3]
 
             for log in recent_logs:
                 recent_activities.append({

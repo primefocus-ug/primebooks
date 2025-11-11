@@ -1,0 +1,367 @@
+{% extends 'base.html' %}
+{% load static %}
+{% load i18n %}
+
+{% block title %}{% trans "Services" %} | {{ block.super }}{% endblock %}
+
+{% block extra_css %}
+<!-- DataTables CSS -->
+<link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/dataTables.bootstrap5.min.css">
+<link rel="stylesheet" href="https://cdn.datatables.net/responsive/2.5.0/css/responsive.bootstrap5.min.css">
+<link rel="stylesheet" href="https://cdn.datatables.net/buttons/2.4.1/css/buttons.bootstrap5.min.css">
+
+<style>
+    .service-card {
+        transition: all 0.3s ease;
+    }
+
+    .service-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    }
+
+    .efris-badge {
+        font-size: 0.75rem;
+        padding: 0.25rem 0.5rem;
+    }
+
+    .action-buttons .btn {
+        margin: 0 2px;
+    }
+
+    .dataTables_wrapper .row {
+        margin-top: 1rem;
+    }
+
+    table.dataTable tbody tr {
+        cursor: pointer;
+    }
+
+    table.dataTable tbody tr:hover {
+        background-color: rgba(13, 110, 253, 0.04);
+    }
+
+    .stat-card {
+        border-left: 4px solid #0d6efd;
+    }
+
+    .green-500 { border-left-color: #198754 !important; }
+    .amber-500 { border-left-color: #fd7e14 !important; }
+    .red-500 { border-left-color: #dc3545 !important; }
+
+    .text-green { color: #198754 !important; }
+    .text-amber { color: #fd7e14 !important; }
+    .text-red { color: #dc3545 !important; }
+
+    .table-checkbox {
+        width: 20px;
+        height: 20px;
+    }
+
+    #bulkActionsBtn:disabled {
+        cursor: not-allowed;
+    }
+</style>
+{% endblock %}
+
+{% block breadcrumb_items %}
+<li class="breadcrumb-item"><a href="{% url 'inventory:dashboard' %}">{% trans "Inventory" %}</a></li>
+<li class="breadcrumb-item active">{% trans "Services" %}</li>
+{% endblock %}
+
+{% block page_header %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h2 class="mb-0">
+            <i class="bi bi-gear-fill text-primary me-2"></i>
+            {% trans "Services" %}
+        </h2>
+        <p class="text-muted mb-0">{% trans "Manage your service offerings and EFRIS compliance" %}</p>
+    </div>
+    <div>
+        {% if perms.inventory.add_service %}
+        <button type="button" class="btn btn-primary" id="addServiceBtn">
+            <i class="bi bi-plus-circle me-1"></i>
+            {% trans "Add Service" %}
+        </button>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<!-- Statistics Cards -->
+<div id="urls-config"
+     data-datatable-url="{% url 'inventory:service_datatable_api' %}"
+     data-create-url="{% url 'inventory:service_create' %}"
+     style="display: none;">
+</div>
+<div class="row mb-4">
+    <div class="col-md-3">
+        <div class="card stat-card">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <h6 class="text-muted mb-1">{% trans "Total Services" %}</h6>
+                        <h3 class="mb-0">{{ total_services }}</h3>
+                    </div>
+                    <div class="text-primary">
+                        <i class="bi bi-gear-fill fs-1"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card stat-card green-500">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <h6 class="text-muted mb-1">{% trans "Active Services" %}</h6>
+                        <h3 class="mb-0">{{ active_services }}</h3>
+                    </div>
+                    <div class="text-green">
+                        <i class="bi bi-check-circle-fill fs-1"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card stat-card amber-500">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <h6 class="text-muted mb-1">{% trans "EFRIS Synced" %}</h6>
+                        <h3 class="mb-0">{{ efris_uploaded }}</h3>
+                    </div>
+                    <div class="text-amber">
+                        <i class="bi bi-cloud-check-fill fs-1"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card stat-card red-500">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <h6 class="text-muted mb-1">{% trans "Pending Upload" %}</h6>
+                        <h3 class="mb-0">{{ total_services|add:"-"|add:efris_uploaded }}</h3>
+                    </div>
+                    <div class="text-red">
+                        <i class="bi bi-exclamation-triangle-fill fs-1"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Filters Card -->
+<div class="card mb-4">
+    <div class="card-header">
+        <h5 class="mb-0">
+            <i class="bi bi-funnel me-2"></i>
+            {% trans "Filters" %}
+        </h5>
+    </div>
+    <div class="card-body">
+        <form method="get" id="filterForm" class="row g-3">
+            <div class="col-md-3">
+                <label for="id_search" class="form-label">{% trans "Search" %}</label>
+                <input type="text" name="search" id="id_search" class="form-control"
+                       placeholder="{% trans 'Search services...' %}" value="{{ request.GET.search }}">
+            </div>
+            <div class="col-md-2">
+                <label for="id_category" class="form-label">{% trans "Category" %}</label>
+                <select name="category" id="id_category" class="form-select">
+                    <option value="">{% trans "All Categories" %}</option>
+                    {% for value, label in filter_form.fields.category.choices %}
+                        <option value="{{ value }}" {% if request.GET.category == value|stringformat:"s" %}selected{% endif %}>
+                            {{ label }}
+                        </option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label for="id_tax_rate" class="form-label">{% trans "Tax Rate" %}</label>
+                <select name="tax_rate" id="id_tax_rate" class="form-select">
+                    <option value="">{% trans "All Tax Rates" %}</option>
+                    {% for value, label in filter_form.fields.tax_rate.choices %}
+                        <option value="{{ value }}" {% if request.GET.tax_rate == value|stringformat:"s" %}selected{% endif %}>
+                            {{ label }}
+                        </option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label for="id_efris_status" class="form-label">{% trans "EFRIS Status" %}</label>
+                <select name="efris_status" id="id_efris_status" class="form-select">
+                    <option value="">{% trans "All Status" %}</option>
+                    <option value="uploaded" {% if request.GET.efris_status == 'uploaded' %}selected{% endif %}>
+                        {% trans "Uploaded" %}
+                    </option>
+                    <option value="pending" {% if request.GET.efris_status == 'pending' %}selected{% endif %}>
+                        {% trans "Pending" %}
+                    </option>
+                    <option value="disabled" {% if request.GET.efris_status == 'disabled' %}selected{% endif %}>
+                        {% trans "Disabled" %}
+                    </option>
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label for="id_is_active" class="form-label">{% trans "Status" %}</label>
+                <select name="is_active" id="id_is_active" class="form-select">
+                    <option value="">{% trans "All Status" %}</option>
+                    <option value="true" {% if request.GET.is_active == 'true' %}selected{% endif %}>
+                        {% trans "Active" %}
+                    </option>
+                    <option value="false" {% if request.GET.is_active == 'false' %}selected{% endif %}>
+                        {% trans "Inactive" %}
+                    </option>
+                </select>
+            </div>
+            <div class="col-md-1 d-flex align-items-end">
+                <button type="button" class="btn btn-secondary w-100" id="clearFilters" title="{% trans 'Clear Filters' %}">
+                    <i class="bi bi-x-circle"></i>
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Services Table Card -->
+<div class="card">
+    <div class="card-header">
+        <div class="d-flex justify-content-between align-items-center">
+            <h5 class="mb-0">
+                <i class="bi bi-list-ul me-2"></i>
+                {% trans "All Services" %}
+            </h5>
+            <div>
+                {% if perms.inventory.change_service %}
+                <div class="btn-group">
+                    <button type="button" class="btn btn-sm btn-outline-primary dropdown-toggle"
+                            data-bs-toggle="dropdown" id="bulkActionsBtn" disabled>
+                        <i class="bi bi-lightning me-1"></i>
+                        {% trans "Bulk Actions" %}
+                    </button>
+                    <ul class="dropdown-menu">
+                        <li><a class="dropdown-item bulk-action" data-action="activate" href="#">
+                            <i class="bi bi-check-circle me-2"></i>{% trans "Activate Selected" %}
+                        </a></li>
+                        <li><a class="dropdown-item bulk-action" data-action="deactivate" href="#">
+                            <i class="bi bi-x-circle me-2"></i>{% trans "Deactivate Selected" %}
+                        </a></li>
+                        <li><hr class="dropdown-divider"></li>
+                        <li><a class="dropdown-item bulk-action" data-action="enable_efris" href="#">
+                            <i class="bi bi-cloud-arrow-up me-2"></i>{% trans "Enable EFRIS Sync" %}
+                        </a></li>
+                        <li><a class="dropdown-item bulk-action" data-action="disable_efris" href="#">
+                            <i class="bi bi-cloud-slash me-2"></i>{% trans "Disable EFRIS Sync" %}
+                        </a></li>
+                        <li><a class="dropdown-item bulk-action" data-action="mark_for_upload" href="#">
+                            <i class="bi bi-arrow-repeat me-2"></i>{% trans "Mark for Upload" %}
+                        </a></li>
+                        {% if perms.inventory.delete_service %}
+                        <li><hr class="dropdown-divider"></li>
+                        <li><a class="dropdown-item bulk-action text-danger" data-action="delete" href="#">
+                            <i class="bi bi-trash me-2"></i>{% trans "Delete Selected" %}
+                        </a></li>
+                        {% endif %}
+                    </ul>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    <div class="card-body">
+        <div class="table-responsive">
+            <table id="servicesTable" class="table table-hover table-striped">
+                <thead>
+                    <tr>
+                        <th width="30">
+                            <input type="checkbox" id="selectAllServices" class="form-check-input table-checkbox">
+                        </th>
+                        <th>{% trans "Name" %}</th>
+                        <th>{% trans "Code" %}</th>
+                        <th>{% trans "Category" %}</th>
+                        <th>{% trans "Unit Price" %}</th>
+                        <th>{% trans "Final Price" %}</th>
+                        <th>{% trans "EFRIS Status" %}</th>
+                        <th>{% trans "Status" %}</th>
+                        <th width="150">{% trans "Actions" %}</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <!-- Data will be loaded via DataTables AJAX -->
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Service Form Modal -->
+<div class="modal fade" id="serviceModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="serviceModalLabel">
+                    <i class="bi bi-gear-fill me-2"></i>
+                    <span id="modalTitle">{% trans "Add Service" %}</span>
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="serviceModalBody">
+                <!-- Form will be loaded here -->
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Delete Confirmation Modal -->
+<div class="modal fade" id="deleteModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-danger text-white">
+                <h5 class="modal-title">
+                    <i class="bi bi-exclamation-triangle me-2"></i>
+                    {% trans "Confirm Delete" %}
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p>{% trans "Are you sure you want to delete this service?" %}</p>
+                <p class="text-danger"><strong>{% trans "This action cannot be undone." %}</strong></p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                    {% trans "Cancel" %}
+                </button>
+                <button type="button" class="btn btn-danger" id="confirmDeleteBtn">
+                    <i class="bi bi-trash me-1"></i>
+                    {% trans "Delete" %}
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<!-- jQuery MUST be loaded first -->
+<script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+
+<!-- DataTables JS -->
+<script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
+<script src="https://cdn.datatables.net/1.13.6/js/dataTables.bootstrap5.min.js"></script>
+<script src="https://cdn.datatables.net/responsive/2.5.0/js/dataTables.responsive.min.js"></script>
+<script src="https://cdn.datatables.net/responsive/2.5.0/js/responsive.bootstrap5.min.js"></script>
+<script src="https://cdn.datatables.net/buttons/2.4.1/js/dataTables.buttons.min.js"></script>
+<script src="https://cdn.datatables.net/buttons/2.4.1/js/buttons.bootstrap5.min.js"></script>
+
+<!-- Your custom JavaScript -->
+<script src="{% static 'inventory/js/service_list.js' %}"></script>
+{% endblock %}

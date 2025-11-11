@@ -1,0 +1,103 @@
+{% load static %}
+{% load humanize %}
+{% load i18n %}
+
+<tr class="{% if account.is_header %}table-active{% endif %}" style="{% if level > 0 %}padding-left: {{ level|add:level }}rem{% endif %}">
+    <td>
+        <div class="d-flex align-items-center" style="padding-left: {{ level }}rem;">
+            {% if account.children.exists %}
+            <button class="btn btn-sm btn-outline-secondary me-2 toggle-children"
+                    data-account-id="{{ account.pk }}" type="button">
+                <i class="bi bi-chevron-right"></i>
+            </button>
+            {% else %}
+            <span class="ms-4"></span>
+            {% endif %}
+            <strong class="{% if account.is_header %}text-primary{% endif %}">
+                {{ account.code }}
+            </strong>
+        </div>
+    </td>
+    <td>
+        <div class="d-flex align-items-center">
+            {% if account.is_header %}
+            <i class="bi bi-folder2 me-2 text-warning"></i>
+            <strong>{{ account.name }}</strong>
+            {% else %}
+            <i class="bi bi-file-earmark-text me-2 text-muted"></i>
+            {{ account.name }}
+            {% endif %}
+        </div>
+        {% if account.description %}
+        <small class="text-muted d-block">{{ account.description|truncatewords:10 }}</small>
+        {% endif %}
+    </td>
+    <td>
+        <span class="badge bg-{% if account.account_type == 'ASSET' %}primary{% elif account.account_type == 'LIABILITY' %}danger{% elif account.account_type == 'EQUITY' %}success{% elif account.account_type == 'REVENUE' %}info{% else %}warning{% endif %}">
+            {{ account.get_account_type_display }}
+        </span>
+    </td>
+    <td>
+        <small class="text-muted">{{ account.currency.code }}</small>
+    </td>
+    <td class="text-end">
+        {% if not account.is_header %}
+        <span class="fw-semibold {% if account.is_debit_account and account.current_balance >= 0 or not account.is_debit_account and account.current_balance < 0 %}text-success{% else %}text-danger{% endif %}">
+            {{ account.currency.symbol }}{{ account.current_balance|floatformat:2|intcomma }}
+        </span>
+        {% else %}
+        <span class="text-muted">-</span>
+        {% endif %}
+    </td>
+    <td class="text-end">
+        {% if not account.is_header %}
+        <span class="fw-semibold {% if account.is_debit_account and account.current_balance_base >= 0 or not account.is_debit_account and account.current_balance_base < 0 %}text-success{% else %}text-danger{% endif %}">
+            {{ base_currency.symbol }}{{ account.current_balance_base|floatformat:2|intcomma }}
+        </span>
+        {% else %}
+        <span class="text-muted">-</span>
+        {% endif %}
+    </td>
+    <td>
+        <span class="badge bg-{% if account.is_active %}success{% else %}secondary{% endif %}">
+            {% if account.is_active %}{% trans "Active" %}{% else %}{% trans "Inactive" %}{% endif %}
+        </span>
+        {% if account.is_system %}
+        <span class="badge bg-info">{% trans "System" %}</span>
+        {% endif %}
+    </td>
+    <td>
+        <div class="dropdown">
+            <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown">
+                {% trans "Actions" %}
+            </button>
+            <ul class="dropdown-menu dropdown-menu-end">
+                <li>
+                    <a class="dropdown-item" href="{% url 'finance:chart_of_accounts_detail' account.pk %}">
+                        <i class="bi bi-eye me-2"></i>{% trans "View" %}
+                    </a>
+                </li>
+                {% if not account.is_system %}
+                <li>
+                    <a class="dropdown-item" href="{% url 'finance:chart_of_accounts_update' account.pk %}">
+                        <i class="bi bi-pencil me-2"></i>{% trans "Edit" %}
+                    </a>
+                </li>
+                {% endif %}
+                {% if account.children.exists %}
+                <li>
+                    <a class="dropdown-item" href="{% url 'finance:chart_of_accounts_create' %}?parent={{ account.pk }}">
+                        <i class="bi bi-plus-circle me-2"></i>{% trans "Add Child" %}
+                    </a>
+                </li>
+                {% endif %}
+            </ul>
+        </div>
+    </td>
+</tr>
+
+{% for child in account.children.all %}
+    {% if child.is_active or show_inactive %}
+    {% include 'finance/chart_of_accounts/account_row.html' with account=child level=level|add:1 %}
+    {% endif %}
+{% endfor %}

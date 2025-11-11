@@ -1,0 +1,634 @@
+{% extends 'base.html' %}
+{% load i18n %}
+{% load static %}
+
+{% block title %}{% trans "Review Audit Log" %} | {{ block.super }}{% endblock %}
+
+{% block breadcrumb_items %}
+<li class="breadcrumb-item"><a href="{% url 'user_dashboard' %}">{% trans "Dashboard" %}</a></li>
+<li class="breadcrumb-item"><a href="{% url 'saas_admin_audit_log' %}">{% trans "Audit Logs" %}</a></li>
+<li class="breadcrumb-item active">{% trans "Review" %}</li>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+    .review-container {
+        max-width: 1200px;
+        margin: 0 auto;
+    }
+    
+    .review-card {
+        background: var(--bg-primary);
+        border: 1px solid var(--border-color);
+        border-radius: var(--border-radius);
+        padding: 2rem;
+        margin-bottom: 2rem;
+        box-shadow: var(--shadow-sm);
+    }
+    
+    .review-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: start;
+        margin-bottom: 2rem;
+        padding-bottom: 1.5rem;
+        border-bottom: 2px solid var(--border-color);
+    }
+    
+    .review-title {
+        font-size: 1.75rem;
+        font-weight: 700;
+        color: var(--text-primary);
+        margin-bottom: 0.5rem;
+    }
+    
+    .review-subtitle {
+        font-size: 1rem;
+        color: var(--text-secondary);
+    }
+    
+    .alert-review {
+        background: var(--amber-50);
+        border: 2px solid var(--amber-500);
+        border-radius: var(--border-radius);
+        padding: 1rem;
+        margin-bottom: 1.5rem;
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+    }
+    
+    .alert-icon {
+        font-size: 2rem;
+        color: var(--amber-600);
+        flex-shrink: 0;
+    }
+    
+    .log-summary {
+        background: var(--bg-secondary);
+        border-left: 4px solid var(--primary-600);
+        padding: 1.5rem;
+        margin-bottom: 2rem;
+        border-radius: var(--border-radius-sm);
+    }
+    
+    .summary-title {
+        font-size: 1.125rem;
+        font-weight: 600;
+        color: var(--text-primary);
+        margin-bottom: 1rem;
+    }
+    
+    .summary-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+        gap: 1rem;
+    }
+    
+    .summary-item {
+        display: flex;
+        flex-direction: column;
+        padding: 1rem;
+        background: var(--bg-primary);
+        border-radius: var(--border-radius-sm);
+    }
+    
+    .summary-label {
+        font-size: 0.75rem;
+        font-weight: 600;
+        color: var(--text-secondary);
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        margin-bottom: 0.5rem;
+    }
+    
+    .summary-value {
+        font-size: 1rem;
+        color: var(--text-primary);
+        word-break: break-word;
+    }
+    
+    .related-logs-section {
+        background: var(--bg-secondary);
+        padding: 1.5rem;
+        border-radius: var(--border-radius-sm);
+        margin-bottom: 1.5rem;
+    }
+    
+    .related-log-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 1rem;
+        background: var(--bg-primary);
+        border: 1px solid var(--border-color);
+        border-radius: var(--border-radius-sm);
+        margin-bottom: 0.75rem;
+        transition: all 0.3s ease;
+    }
+    
+    .related-log-item:hover {
+        box-shadow: var(--shadow-md);
+        transform: translateX(4px);
+    }
+    
+    .related-log-item:last-child {
+        margin-bottom: 0;
+    }
+    
+    .related-log-info {
+        flex: 1;
+    }
+    
+    .related-log-action {
+        font-weight: 600;
+        color: var(--text-primary);
+        margin-bottom: 0.25rem;
+    }
+    
+    .related-log-description {
+        font-size: 0.875rem;
+        color: var(--text-secondary);
+    }
+    
+    .review-form-section {
+        background: var(--bg-secondary);
+        padding: 1.5rem;
+        border-radius: var(--border-radius-sm);
+        border: 2px solid var(--primary-500);
+    }
+    
+    .form-section-title {
+        font-size: 1.125rem;
+        font-weight: 600;
+        color: var(--text-primary);
+        margin-bottom: 1rem;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+    
+    .form-group {
+        margin-bottom: 1.5rem;
+    }
+    
+    .form-label {
+        font-weight: 600;
+        color: var(--text-primary);
+        margin-bottom: 0.5rem;
+        display: block;
+    }
+    
+    .form-control, .form-select {
+        width: 100%;
+        padding: 0.75rem;
+        border: 1px solid var(--border-color);
+        border-radius: var(--border-radius-sm);
+        background: var(--bg-primary);
+        color: var(--text-primary);
+        font-size: 0.9375rem;
+        transition: all 0.3s ease;
+    }
+    
+    .form-control:focus, .form-select:focus {
+        outline: none;
+        border-color: var(--primary-500);
+        box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+    }
+    
+    textarea.form-control {
+        min-height: 120px;
+        resize: vertical;
+    }
+    
+    .action-buttons {
+        display: flex;
+        gap: 1rem;
+        flex-wrap: wrap;
+    }
+    
+    .btn {
+        padding: 0.75rem 1.5rem;
+        font-weight: 600;
+        border-radius: var(--border-radius-sm);
+        transition: all 0.3s ease;
+        border: none;
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+    
+    .btn-success {
+        background: linear-gradient(135deg, var(--green-500) 0%, var(--green-600) 100%);
+        color: white;
+    }
+    
+    .btn-success:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(16, 185, 129, 0.4);
+    }
+    
+    .btn-info {
+        background: linear-gradient(135deg, var(--primary-500) 0%, var(--primary-600) 100%);
+        color: white;
+    }
+    
+    .btn-info:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
+    }
+    
+    .btn-outline-secondary {
+        background: transparent;
+        border: 2px solid var(--border-color);
+        color: var(--text-primary);
+    }
+    
+    .btn-outline-secondary:hover {
+        background: var(--bg-secondary);
+        border-color: var(--text-primary);
+    }
+    
+    .context-section {
+        background: var(--bg-secondary);
+        padding: 1.5rem;
+        border-radius: var(--border-radius-sm);
+        margin-bottom: 1.5rem;
+    }
+    
+    .activity-timeline {
+        position: relative;
+        padding-left: 2rem;
+    }
+    
+    .activity-timeline::before {
+        content: '';
+        position: absolute;
+        left: 0.5rem;
+        top: 0;
+        bottom: 0;
+        width: 2px;
+        background: var(--border-color);
+    }
+    
+    .activity-item {
+        position: relative;
+        margin-bottom: 1rem;
+        padding-left: 1rem;
+    }
+    
+    .activity-item::before {
+        content: '';
+        position: absolute;
+        left: -1.625rem;
+        top: 0.25rem;
+        width: 0.75rem;
+        height: 0.75rem;
+        border-radius: 50%;
+        background: var(--primary-600);
+        border: 2px solid var(--bg-secondary);
+    }
+    
+    .activity-content {
+        font-size: 0.875rem;
+        color: var(--text-secondary);
+    }
+    
+    .activity-time {
+        font-size: 0.75rem;
+        color: var(--text-muted);
+        margin-top: 0.25rem;
+    }
+    
+    [data-theme="dark"] .alert-review {
+        background: rgba(245, 158, 11, 0.1);
+        border-color: var(--amber-700);
+    }
+    
+    [data-theme="dark"] .alert-icon {
+        color: var(--amber-500);
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="review-container">
+    <!-- Back Button -->
+    <div class="mb-4">
+        <a href="{% url 'saas_admin_audit_log' %}" class="btn btn-outline-secondary">
+            <i class="bi bi-arrow-left"></i> {% trans "Back to Audit Logs" %}
+        </a>
+    </div>
+
+    <!-- Already Reviewed Alert -->
+    {% if audit_log.reviewed %}
+    <div class="alert-review">
+        <div class="alert-icon">
+            <i class="bi bi-check-circle-fill"></i>
+        </div>
+        <div>
+            <strong>{% trans "This audit log has already been reviewed" %}</strong>
+            <div class="text-muted">
+                {% trans "Reviewed by" %} <strong>{{ audit_log.reviewed_by.get_full_name }}</strong> 
+                {% trans "on" %} {{ audit_log.reviewed_at|date:"Y-m-d H:i:s" }}
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Main Review Card -->
+    <div class="review-card">
+        <div class="review-header">
+            <div>
+                <div class="review-title">
+                    <i class="bi bi-clipboard-check me-2"></i>{% trans "Review Audit Log Entry" %}
+                </div>
+                <div class="review-subtitle">
+                    {% trans "Log ID:" %} #{{ audit_log.id }} • 
+                    {% trans "Flagged for review" %}
+                </div>
+            </div>
+            <div>
+                {% if audit_log.success %}
+                    <span class="badge bg-success fs-6 px-3 py-2">
+                        <i class="bi bi-check-circle me-1"></i>{% trans "Success" %}
+                    </span>
+                {% else %}
+                    <span class="badge bg-danger fs-6 px-3 py-2">
+                        <i class="bi bi-x-circle me-1"></i>{% trans "Failed" %}
+                    </span>
+                {% endif %}
+                <span class="badge bg-{{ audit_log.severity }} fs-6 px-3 py-2 ms-2">
+                    {{ audit_log.get_severity_display }}
+                </span>
+            </div>
+        </div>
+
+        <!-- Log Summary -->
+        <div class="log-summary">
+            <div class="summary-title">
+                <i class="bi bi-info-circle me-2"></i>{% trans "Log Details" %}
+            </div>
+            
+            <div class="summary-grid">
+                <div class="summary-item">
+                    <span class="summary-label">{% trans "Action" %}</span>
+                    <span class="summary-value">
+                        <strong>{{ audit_log.get_action_display }}</strong>
+                    </span>
+                </div>
+                
+                <div class="summary-item">
+                    <span class="summary-label">{% trans "User" %}</span>
+                    <span class="summary-value">
+                        {% if audit_log.user %}
+                            <i class="bi bi-person-circle me-1"></i>
+                            {{ audit_log.user.get_full_name|default:audit_log.user.email }}
+                            {% if audit_log.impersonated_by %}
+                                <br><small class="text-warning">
+                                    <i class="bi bi-person-badge"></i> 
+                                    {% trans "via" %} {{ audit_log.impersonated_by.get_full_name }}
+                                </small>
+                            {% endif %}
+                        {% else %}
+                            <em>{% trans "System" %}</em>
+                        {% endif %}
+                    </span>
+                </div>
+                
+                <div class="summary-item">
+                    <span class="summary-label">{% trans "Timestamp" %}</span>
+                    <span class="summary-value">
+                        <i class="bi bi-clock me-1"></i>
+                        {{ audit_log.timestamp|date:"Y-m-d H:i:s" }}
+                    </span>
+                </div>
+                
+                <div class="summary-item">
+                    <span class="summary-label">{% trans "IP Address" %}</span>
+                    <span class="summary-value">
+                        <i class="bi bi-geo-alt me-1"></i>
+                        {{ audit_log.ip_address|default:"-" }}
+                    </span>
+                </div>
+                
+                {% if audit_log.company %}
+                <div class="summary-item">
+                    <span class="summary-label">{% trans "Company" %}</span>
+                    <span class="summary-value">
+                        <i class="bi bi-building me-1"></i>
+                        {{ audit_log.company.name }}
+                    </span>
+                </div>
+                {% endif %}
+                
+                {% if audit_log.duration_ms %}
+                <div class="summary-item">
+                    <span class="summary-label">{% trans "Duration" %}</span>
+                    <span class="summary-value">
+                        <i class="bi bi-stopwatch me-1"></i>
+                        {{ audit_log.duration_ms }} ms
+                    </span>
+                </div>
+                {% endif %}
+            </div>
+
+            <div class="mt-3 p-3 bg-white border rounded" style="background: var(--bg-primary) !important;">
+                <strong>{% trans "Description:" %}</strong>
+                <p class="mb-0 mt-2">{{ audit_log.action_description }}</p>
+            </div>
+
+            {% if audit_log.error_message %}
+            <div class="alert alert-danger mt-3">
+                <strong><i class="bi bi-exclamation-triangle me-2"></i>{% trans "Error Message:" %}</strong>
+                <pre class="mb-0 mt-2">{{ audit_log.error_message }}</pre>
+            </div>
+            {% endif %}
+        </div>
+
+        <!-- User Agent & Location Info -->
+        {% if user_agent_info or location_info %}
+        <div class="context-section">
+            <div class="summary-title">
+                <i class="bi bi-laptop me-2"></i>{% trans "Request Context" %}
+            </div>
+            <div class="summary-grid">
+                {% if user_agent_info %}
+                <div class="summary-item">
+                    <span class="summary-label">{% trans "Browser" %}</span>
+                    <span class="summary-value">{{ user_agent_info.browser }}</span>
+                </div>
+                <div class="summary-item">
+                    <span class="summary-label">{% trans "Operating System" %}</span>
+                    <span class="summary-value">{{ user_agent_info.os }}</span>
+                </div>
+                <div class="summary-item">
+                    <span class="summary-label">{% trans "Device Type" %}</span>
+                    <span class="summary-value">{{ user_agent_info.device_type }}</span>
+                </div>
+                {% endif %}
+                
+                {% if location_info %}
+                <div class="summary-item">
+                    <span class="summary-label">{% trans "Location" %}</span>
+                    <span class="summary-value">
+                        {{ location_info.city }}, {{ location_info.country }}
+                    </span>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Related Logs -->
+        {% if related_logs %}
+        <div class="related-logs-section">
+            <div class="summary-title">
+                <i class="bi bi-link-45deg me-2"></i>{% trans "Related Logs (same time window)" %}
+            </div>
+            {% for log in related_logs %}
+            <div class="related-log-item">
+                <div class="related-log-info">
+                    <div class="related-log-action">
+                        {{ log.get_action_display }}
+                        {% if not log.success %}
+                            <span class="badge bg-danger ms-2">{% trans "Failed" %}</span>
+                        {% endif %}
+                    </div>
+                    <div class="related-log-description">{{ log.action_description }}</div>
+                    <small class="text-muted">
+                        <i class="bi bi-clock"></i> {{ log.timestamp|date:"H:i:s" }}
+                    </small>
+                </div>
+                <a href="{% url 'audit_log_detail' log.id %}" class="btn btn-sm btn-outline-primary">
+                    <i class="bi bi-eye"></i>
+                </a>
+            </div>
+            {% endfor %}
+        </div>
+        {% endif %}
+
+        <!-- User Recent Activity -->
+        {% if user_recent_activity %}
+        <div class="context-section">
+            <div class="summary-title">
+                <i class="bi bi-activity me-2"></i>{% trans "User's Recent Activity (1 hour before)" %}
+            </div>
+            <div class="activity-timeline">
+                {% for activity in user_recent_activity %}
+                <div class="activity-item">
+                    <div class="activity-content">
+                        <strong>{{ activity.get_action_display }}</strong> - {{ activity.action_description|truncatewords:10 }}
+                    </div>
+                    <div class="activity-time">
+                        {{ activity.timestamp|date:"H:i:s" }}
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Review Form -->
+        <div class="review-form-section">
+            <div class="form-section-title">
+                <i class="bi bi-pencil-square"></i>
+                {% trans "Review Notes" %}
+            </div>
+            <form method="post" id="reviewForm">
+                {% csrf_token %}
+                
+                <div class="form-group">
+                    <label for="id_notes" class="form-label">
+                        {% trans "Review Notes" %} <span class="text-danger">*</span>
+                    </label>
+                    {{ form.notes }}
+                    {% if form.notes.errors %}
+                        <div class="text-danger mt-2">
+                            {% for error in form.notes.errors %}
+                                <small>{{ error }}</small>
+                            {% endfor %}
+                        </div>
+                    {% endif %}
+                    <small class="text-muted">
+                        {% trans "Describe your findings and any actions taken" %}
+                    </small>
+                </div>
+                
+                <div class="form-group">
+                    <label for="id_action" class="form-label">
+                        {% trans "Review Action" %}
+                    </label>
+                    {{ form.action }}
+                    {% if form.action.errors %}
+                        <div class="text-danger mt-2">
+                            {% for error in form.action.errors %}
+                                <small>{{ error }}</small>
+                            {% endfor %}
+                        </div>
+                    {% endif %}
+                    <small class="text-muted">
+                        {% trans "Select an action if further steps are needed" %}
+                    </small>
+                </div>
+                
+                <div class="action-buttons mt-4">
+                    <button type="submit" class="btn btn-success">
+                        <i class="bi bi-check-circle"></i>
+                        {% trans "Mark as Reviewed" %}
+                    </button>
+                    <a href="{% url 'audit_log_detail' audit_log.id %}" class="btn btn-info">
+                        <i class="bi bi-eye"></i>
+                        {% trans "View Full Details" %}
+                    </a>
+                    <a href="{% url 'saas_admin_audit_log' %}" class="btn btn-outline-secondary">
+                        {% trans "Cancel" %}
+                    </a>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Form validation
+    const form = document.getElementById('reviewForm');
+    const notesField = document.querySelector('#id_notes');
+    
+    form.addEventListener('submit', function(e) {
+        if (notesField.value.trim().length < 10) {
+            e.preventDefault();
+            alert('{% trans "Please provide detailed review notes (at least 10 characters)" %}');
+            notesField.focus();
+        }
+    });
+    
+    // Auto-save draft (optional enhancement)
+    let autoSaveTimer;
+    notesField.addEventListener('input', function() {
+        clearTimeout(autoSaveTimer);
+        autoSaveTimer = setTimeout(function() {
+            // Save to localStorage as draft
+            localStorage.setItem('review_draft_{{ audit_log.id }}', notesField.value);
+        }, 1000);
+    });
+    
+    // Load draft if exists
+    const draft = localStorage.getItem('review_draft_{{ audit_log.id }}');
+    if (draft && !notesField.value) {
+        if (confirm('{% trans "A draft review was found. Would you like to load it?" %}')) {
+            notesField.value = draft;
+        }
+    }
+    
+    // Clear draft on successful submit
+    form.addEventListener('submit', function() {
+        localStorage.removeItem('review_draft_{{ audit_log.id }}');
+    });
+});
+</script>
+{% endblock %}

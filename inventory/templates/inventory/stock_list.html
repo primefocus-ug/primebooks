@@ -1,5 +1,7 @@
 {% extends 'base.html' %}
 {% load widget_tweaks %}
+{% load static %}
+{% load custom_filters %}
 
 {% block title %}Advanced Stock Management - {{ company.trading_name|default:company.name }}{% endblock %}
 {% block page_title %}Stock Management Dashboard{% endblock %}
@@ -9,6 +11,7 @@
 <link href="https://cdnjs.cloudflare.com/ajax/libs/select2/4.1.0-rc.0/css/select2.min.css" rel="stylesheet">
 <link href="https://cdnjs.cloudflare.com/ajax/libs/chartjs/4.4.0/chart.min.css" rel="stylesheet">
 <link href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/4.1.1/animate.min.css" rel="stylesheet">
+<link rel="stylesheet" href="{% static 'themes.css' %}">
 
 <style>
     :root {
@@ -41,6 +44,11 @@
         overflow: hidden;
         transition: var(--transition);
         border: 1px solid rgba(0,0,0,0.05);
+    }
+    [data-theme="dark"] .dashboard-card {
+        background: #1f2937;
+        border-color: rgba(255,255,255,0.1);
+        color: #d1d5db;
     }
 
     .dashboard-card::before {
@@ -127,9 +135,16 @@
         justify-content: between;
         align-items: center;
     }
+    [data-theme="dark"] .filters-header {
+        background: #374151;
+        border-bottom-color: #4b5563;
+    }
 
     .filters-content {
         padding: 2rem;
+    }
+    [data-theme="dark"] .filters-content {
+        background: #1f2937;
     }
 
     .filter-group {
@@ -137,6 +152,12 @@
         grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
         gap: 1.5rem;
         align-items: end;
+    }
+    [data-theme="dark"] .filter-group .form-floating .form-select,
+    [data-theme="dark"] .filter-group .form-floating .form-control {
+        background: #374151;
+        border-color: #4b5563;
+        
     }
 
     .form-floating .form-select,
@@ -182,6 +203,9 @@
     .alert-item:hover {
         background: #f8fafc;
     }
+    [data-bs-toggle="tooltip"] {
+        cursor: pointer;
+    }
 
     .alert-info {
         display: flex;
@@ -210,6 +234,9 @@
         padding: 2rem;
         margin-bottom: 2rem;
     }
+    [data-theme="dark"] .quick-actions {
+        background: #1f2937;
+    }
 
     .actions-grid {
         display: grid;
@@ -232,6 +259,11 @@
         position: relative;
         overflow: hidden;
     }
+    [data-theme="dark"] .action-card {
+        border-color: #4b5563;
+        background: #1f2937;
+        color: #d1d5db;
+    }
 
     .action-card::before {
         content: '';
@@ -250,6 +282,10 @@
         color: #667eea;
         transform: translateY(-2px);
         box-shadow: var(--shadow-medium);
+    }
+    [data-theme="dark"] .action-card:hover {
+        background: #374151;
+        color: #93c5fd;
     }
 
     .action-card:hover::before {
@@ -284,6 +320,10 @@
         display: flex;
         justify-content: space-between;
         align-items: center;
+    }
+    [data-theme="dark"] .table-header {
+        background: #374151;
+        border-bottom-color: #4b5563;
     }
 
     .table-controls {
@@ -337,6 +377,10 @@
         color: #991b1b;
         animation: pulse-critical 2s infinite;
     }
+    [data-theme="dark"] .stock-status.critical {
+        background: linear-gradient(135deg, #7f1d1d, #991b1b);
+        color: #fee2e2;
+    }
 
     .stock-status.low {
         background: linear-gradient(135deg, #fef3c7, #fde68a);
@@ -347,10 +391,18 @@
         background: linear-gradient(135deg, #dbeafe, #bfdbfe);
         color: #1e40af;
     }
+    [data-theme="dark"] .stock-status.medium {
+        background: linear-gradient(135deg, #1e3a8a, #1e40af);
+        color: #dbeafe;
+    }
 
     .stock-status.good {
         background: linear-gradient(135deg, #d1fae5, #a7f3d0);
         color: #065f46;
+    }
+    [data-theme="dark"] .stock-status.good {
+        background: linear-gradient(135deg, #064e3b, #065f46);
+        color: #d1fae5;
     }
 
     @keyframes pulse-critical {
@@ -372,6 +424,9 @@
         border-radius: 4px;
         overflow: hidden;
         position: relative;
+    }
+    [data-theme="dark"] .stock-level-bar {
+        background: #374151;
     }
 
     .stock-level-fill {
@@ -430,6 +485,10 @@
         justify-content: center;
         color: #64748b;
         font-size: 1.25rem;
+    }
+    [data-theme="dark"] .product-placeholder {
+        background: linear-gradient(135deg, #4b5563, #374151);
+        color: #9ca3af;
     }
 
     .product-info h6 {
@@ -497,6 +556,10 @@
         padding: 2rem;
         margin-bottom: 2rem;
     }
+    [data-theme="dark"] .chart-container {
+        background: #1f2937;
+        color: #d1d5db;
+    }
 
     .chart-header {
         display: flex;
@@ -509,6 +572,7 @@
         font-size: 1.25rem;
         font-weight: 600;
         color: #1a202c;
+
     }
 
     /* Responsive Design */
@@ -1037,8 +1101,8 @@
                 {% empty %}
                 <tr>
                     <td colspan="8" class="text-center py-5">
-                        <div class="text-muted">
-                            <i class="fas fa-warehouse fa-4x mb-3 opacity-25"></i>
+                        <div class="text-muted totall">
+                            <i class="fas fa-warehouse fa-4x mb-3 opacity-25 totall"></i>
                             <h5>No stock items found</h5>
                             <p class="mb-4">
                                 {% if current_filters.search %}
@@ -1105,11 +1169,11 @@
 </div>
 
 <!-- Stock Analytics Charts -->
-<div class="row mt-4">
-    <div class="col-lg-6">
+<div class="row mt-4 totall">
+    <div class="col-lg-6 totall">
         <div class="chart-container animate__animated animate__fadeInLeft animate__delay-5s">
             <div class="chart-header">
-                <div class="chart-title">Stock Distribution</div>
+                <div class="chart-title totall">Stock Distribution</div>
                 <div class="dropdown">
                     <button class="btn btn-sm btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown">
                         <i class="fas fa-cog me-1"></i>Options
@@ -1124,10 +1188,10 @@
         </div>
     </div>
 
-    <div class="col-lg-6">
-        <div class="chart-container animate__animated animate__fadeInRight animate__delay-5s">
-            <div class="chart-header">
-                <div class="chart-title">Stock Value by Category</div>
+    <div class="col-lg-6 totall">
+        <div class="chart-container animate__animated animate__fadeInRight animate__delay-5s totall">
+            <div class="chart-header totall">
+                <div class="chart-title totall">Stock Value by Category</div>
                 <div class="dropdown">
                     <button class="btn btn-sm btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown">
                         <i class="fas fa-cog me-1"></i>Options
@@ -1144,23 +1208,23 @@
 </div>
 
 <!-- Recent Movements Panel -->
-<div class="chart-container mt-4 animate__animated animate__fadeInUp animate__delay-6s">
-    <div class="chart-header">
-        <div class="chart-title">Recent Stock Movements</div>
+<div class="chart-container mt-4 animate__animated animate__fadeInUp animate__delay-6s totall">
+    <div class="chart-header totall">
+        <div class="chart-title totall">Recent Stock Movements</div>
         {% if perms.inventory.view_stockmovement %}
-        <a href="{% url 'inventory:movement_list' %}" class="btn btn-sm btn-outline-primary">
+        <a href="{% url 'inventory:movement_list' %}" class="btn btn-sm btn-outline-primary totall">
             <i class="fas fa-external-link-alt me-1"></i>View All
         </a>
         {% endif %}
     </div>
 
-    <div class="row">
+    <div class="row totall">
         {% for movement in recent_movements|slice:":8" %}
-        <div class="col-md-6 col-lg-3 mb-3">
-            <div class="card border-0 shadow-sm h-100">
-                <div class="card-body p-3">
-                    <div class="d-flex align-items-center mb-2">
-                        <div class="movement-icon {{ movement.movement_type|lower }} me-2">
+        <div class="col-md-6 col-lg-3 mb-3 totall">
+            <div class="card border-0 shadow-sm h-100 totall">
+                <div class="card-body p-3 totall">
+                    <div class="d-flex align-items-center mb-2 totall">
+                        <div class="movement-icon {{ movement.movement_type|lower }} me-2 totall">
                             {% if movement.movement_type == 'PURCHASE' or movement.movement_type == 'RETURN' or movement.movement_type == 'TRANSFER_IN' %}
                                 <i class="fas fa-plus"></i>
                             {% elif movement.movement_type == 'SALE' or movement.movement_type == 'TRANSFER_OUT' %}
@@ -1170,22 +1234,22 @@
                             {% endif %}
                         </div>
                         <div class="flex-grow-1">
-                            <h6 class="mb-1 fw-semibold">{{ movement.product.name|truncatechars:25 }}</h6>
-                            <small class="text-muted">{{ movement.store.name }}</small>
+                            <h6 class="mb-1 fw-semibold totall">{{ movement.product.name|truncatechars:25 }}</h6>
+                            <small class="text-muted totall">{{ movement.store.name }}</small>
                         </div>
                     </div>
 
-                    <div class="d-flex justify-content-between align-items-center">
+                    <div class="d-flex justify-content-between align-items-center totall">
                         <div>
                             <div class="fw-bold {% if movement.movement_type == 'PURCHASE' or movement.movement_type == 'RETURN' or movement.movement_type == 'TRANSFER_IN' %}text-success{% elif movement.movement_type == 'SALE' or movement.movement_type == 'TRANSFER_OUT' %}text-danger{% else %}text-info{% endif %}">
                                 {% if movement.movement_type == 'PURCHASE' or movement.movement_type == 'RETURN' or movement.movement_type == 'TRANSFER_IN' %}+{% elif movement.movement_type == 'SALE' or movement.movement_type == 'TRANSFER_OUT' %}-{% endif %}{{ movement.quantity|floatformat:1 }}
                             </div>
-                            <small class="text-muted">{{ movement.get_movement_type_display }}</small>
+                            <small class="text-muted totall">{{ movement.get_movement_type_display }}</small>
                         </div>
                         <div class="text-end">
-                            <small class="text-muted">{{ movement.created_at|date:"M d" }}</small>
+                            <small class="text-muted totall">{{ movement.created_at|date:"M d" }}</small>
                             <br>
-                            <small class="text-muted">{{ movement.created_at|time:"H:i" }}</small>
+                            <small class="text-muted totall">{{ movement.created_at|time:"H:i" }}</small>
                         </div>
                     </div>
                 </div>

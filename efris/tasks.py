@@ -841,6 +841,85 @@ def process_efris_task_result(task_id: str, task_name: str, result: dict):
         logger.error(f"Failed to process task result: {e}")
         return {'status': 'error', 'error': str(e)}
 
+
+@shared_task
+def process_efris_sync_queue():
+    """
+    Process EFRIS sync queue by triggering per-tenant tasks
+    """
+    from django_tenants.utils import get_tenant_model
+
+    TenantModel = get_tenant_model()
+
+    try:
+        # Get all active tenants with EFRIS enabled
+        active_tenants = TenantModel.objects.filter(
+            is_active=True,
+            efris_enabled=True
+        )
+
+        if not active_tenants.exists():
+            logger.info("No active tenants with EFRIS enabled")
+            return {
+                'success': True,
+                'message': 'No active EFRIS-enabled tenants',
+                'tasks_triggered': 0
+            }
+
+        # Trigger async task for each tenant
+        task_ids = []
+        for tenant in active_tenants:
+            task = process_efris_queue_for_tenant.delay(tenant.schema_name)
+            task_ids.append(task.id)
+
+        logger.info(f"Triggered EFRIS queue processing for {len(task_ids)} tenants")
+
+        return {
+            'success': True,
+            'tasks_triggered': len(task_ids),
+            'task_ids': task_ids,
+            'tenants': [tenant.schema_name for tenant in active_tenants]
+        }
+
+    except Exception as e:
+        logger.error(f"Error triggering tenant tasks: {e}")
+        return {
+            'success': False,
+            'error': str(e),
+            'tasks_triggered': 0
+        }
+
+
+@shared_task
+def process_efris_queue_for_tenant(schema_name):
+    """
+    Process EFRIS queue for a specific tenant schema
+    """
+    from django_tenants.utils import tenant_context, get_tenant_model
+
+    TenantModel = get_tenant_model()
+
+    try:
+        tenant = TenantModel.objects.get(schema_name=schema_name)
+
+        with tenant_context(tenant):
+            logger.info(f"Processing EFRIS queue for tenant: {schema_name}")
+            return process_efris_queue_async()
+
+    except TenantModel.DoesNotExist:
+        logger.error(f"Tenant with schema {schema_name} not found")
+        return {
+            'success': False,
+            'error': f'Tenant {schema_name} not found',
+            'processed': 0
+        }
+    except Exception as e:
+        logger.error(f"Error processing queue for tenant {schema_name}: {e}")
+        return {
+            'success': False,
+            'error': str(e),
+            'processed': 0
+        }
 #==== stock tasks ===========================================================================================================================================================================================================
 
 @shared_task(bind=True, max_retries=3, default_retry_delay=60)

@@ -1,0 +1,199 @@
+{% load static %}
+
+<!-- Team Tab Content -->
+<div class="row">
+    <div class="col-12 mb-4">
+        <div class="d-flex justify-content-between align-items-center">
+            <div>
+                <h5 class="mb-0">Team Members</h5>
+                <p class="text-muted mb-0">{{ total_employees }} total, {{ active_employees }} active</p>
+            </div>
+            {% if can_add_users %}
+            <a href="{% url 'companies:employee_create' company.company_id %}" class="btn btn-primary">
+                <i class="bi bi-person-plus me-2"></i>Add Employee
+            </a>
+            {% else %}
+            <button class="btn btn-secondary" disabled title="User limit reached">
+                <i class="bi bi-person-plus me-2"></i>Add Employee
+            </button>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<!-- Team Stats -->
+<div class="row mb-4">
+    <div class="col-md-3 mb-3">
+        <div class="card">
+            <div class="card-body text-center">
+                <h3 class="text-primary mb-0">{{ admins.count }}</h3>
+                <small class="text-muted">Administrators</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3 mb-3">
+        <div class="card">
+            <div class="card-body text-center">
+                <h3 class="text-success mb-0">{{ managers.count }}</h3>
+                <small class="text-muted">Managers</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3 mb-3">
+        <div class="card">
+            <div class="card-body text-center">
+                <h3 class="text-info mb-0">{{ cashiers.count }}</h3>
+                <small class="text-muted">Cashiers</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3 mb-3">
+        <div class="card">
+            <div class="card-body text-center">
+                <h3 class="text-warning mb-0">{{ other_employees.count }}</h3>
+                <small class="text-muted">Other</small>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Search and Filter -->
+<div class="row mb-3">
+    <div class="col-md-6">
+        <input type="text" id="employee-search" class="form-control" placeholder="Search employees...">
+    </div>
+    <div class="col-md-3">
+        <select id="role-filter" class="form-select">
+            <option value="">All Roles</option>
+            <option value="admin">Administrators</option>
+            <option value="manager">Managers</option>
+            <option value="cashier">Cashiers</option>
+            <option value="employee">Employees</option>
+        </select>
+    </div>
+    <div class="col-md-3">
+        <select id="status-filter" class="form-select">
+            <option value="">All Status</option>
+            <option value="active">Active</option>
+            <option value="inactive">Inactive</option>
+        </select>
+    </div>
+</div>
+
+<!-- Employee List -->
+<div class="row">
+    {% for employee in employees %}
+    <div class="col-md-6 col-lg-4 mb-3 employee-card"
+         data-role="{% if employee.company_admin %}admin{% else %}{{ employee.user_type|lower }}{% endif %}"
+         data-status="{% if employee.is_active %}active{% else %}inactive{% endif %}"
+         data-name="{{ employee.get_full_name|lower }} {{ employee.username|lower }}">
+        <div class="card h-100">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-start mb-3">
+                    <div class="d-flex align-items-center">
+                        <div class="avatar-circle me-3">
+                            {% if employee.profile_picture %}
+                            <img src="{{ employee.profile_picture.url }}" alt="{{ employee.get_full_name }}"
+                                 class="rounded-circle" style="width: 50px; height: 50px; object-fit: cover;">
+                            {% else %}
+                            <div class="rounded-circle bg-primary text-white d-flex align-items-center justify-content-center"
+                                 style="width: 50px; height: 50px; font-size: 1.25rem;">
+                                {{ employee.first_name|first|upper }}{{ employee.last_name|first|upper }}
+                            </div>
+                            {% endif %}
+                        </div>
+                        <div>
+                            <h6 class="mb-0">
+                                <a href="{% url 'companies:employee_detail' company.company_id employee.id %}"
+                                   class="text-decoration-none">
+                                    {{ employee.get_full_name|default:employee.username }}
+                                </a>
+                            </h6>
+                            <small class="text-muted">@{{ employee.username }}</small>
+                        </div>
+                    </div>
+                    <span class="status-dot {% if employee.is_active %}active{% else %}inactive{% endif %}"></span>
+                </div>
+
+                <div class="mb-2">
+                    {% if employee.company_admin %}
+                    <span class="badge bg-danger">
+                        <i class="bi bi-shield-fill me-1"></i>Administrator
+                    </span>
+                    {% endif %}
+                    <span class="badge bg-secondary">{{ employee.get_user_type_display }}</span>
+                </div>
+
+                <div class="small text-muted mb-2">
+                    <i class="bi bi-envelope me-1"></i>{{ employee.email }}
+                </div>
+
+                {% if employee.phone_number %}
+                <div class="small text-muted mb-3">
+                    <i class="bi bi-telephone me-1"></i>{{ employee.phone_number }}
+                </div>
+                {% endif %}
+
+                <div class="d-flex gap-2">
+                    <a href="{% url 'companies:employee_detail' company.company_id employee.id %}"
+                       class="btn btn-sm btn-outline-primary flex-fill">
+                        <i class="bi bi-eye me-1"></i>View
+                    </a>
+                    <a href="{% url 'companies:employee_update' company.company_id employee.id %}"
+                       class="btn btn-sm btn-outline-secondary flex-fill">
+                        <i class="bi bi-pencil me-1"></i>Edit
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% empty %}
+    <div class="col-12">
+        <div class="empty-state">
+            <i class="bi bi-people empty-state-icon"></i>
+            <div class="empty-state-title">No employees yet</div>
+            <p class="empty-state-description">Add your first team member to get started</p>
+            <a href="{% url 'companies:employee_create' company.company_id %}" class="btn btn-primary">
+                <i class="bi bi-person-plus me-2"></i>Add First Employee
+            </a>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+<script>
+// Search and filter functionality
+document.addEventListener('DOMContentLoaded', function() {
+    const searchInput = document.getElementById('employee-search');
+    const roleFilter = document.getElementById('role-filter');
+    const statusFilter = document.getElementById('status-filter');
+    const employeeCards = document.querySelectorAll('.employee-card');
+
+    function filterEmployees() {
+        const searchTerm = searchInput.value.toLowerCase();
+        const selectedRole = roleFilter.value;
+        const selectedStatus = statusFilter.value;
+
+        employeeCards.forEach(card => {
+            const name = card.dataset.name;
+            const role = card.dataset.role;
+            const status = card.dataset.status;
+
+            const matchesSearch = name.includes(searchTerm);
+            const matchesRole = !selectedRole || role === selectedRole;
+            const matchesStatus = !selectedStatus || status === selectedStatus;
+
+            if (matchesSearch && matchesRole && matchesStatus) {
+                card.style.display = '';
+            } else {
+                card.style.display = 'none';
+            }
+        });
+    }
+
+    searchInput.addEventListener('input', filterEmployees);
+    roleFilter.addEventListener('change', filterEmployees);
+    statusFilter.addEventListener('change', filterEmployees);
+});
+</script>
+

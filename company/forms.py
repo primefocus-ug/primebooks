@@ -3,72 +3,85 @@ from django.core.exceptions import ValidationError
 from django.utils.translation import gettext_lazy as _
 from django.forms import inlineformset_factory
 from .models import Company, Domain, SubscriptionPlan
-from branches.models import CompanyBranch
+
+# Update imports - remove CompanyBranch, add Store
+try:
+    from stores.models import Store
+except ImportError:
+    Store = None
+    print("WARNING: Store model not available")
 
 try:
-    from branches.models import CompanyBranch
+    from accounts.models import CustomUser
 except ImportError:
-    # Fallback if the import doesn't work - define a basic model
-    class CompanyBranch:
-        pass
+    CustomUser = None
 
 
 class CompanyForm(forms.ModelForm):
     """Enhanced company form with proper field configuration."""
 
-    # Define choice fields explicitly to ensure they work correctly
-    time_zone = forms.ChoiceField(
-        choices=[],  # Will be populated in __init__
-        required=True,  # Make this required
-        widget=forms.Select(attrs={
-            'class': 'form-select',
-            'required': True
-        })
-    )
-
-    date_format = forms.ChoiceField(
-        choices=[],  # Will be populated in __init__
-        required=True,  # Make this required
-        widget=forms.Select(attrs={
-            'class': 'form-select',
-            'required': True
-        })
-    )
-
-    time_format = forms.ChoiceField(
-        choices=[],  # Will be populated in __init__
-        required=True,  # Make this required
-        widget=forms.Select(attrs={
-            'class': 'form-select',
-            'required': True
-        })
-    )
-
-    preferred_currency = forms.ChoiceField(
-        choices=[],  # Will be populated in __init__
-        required=False,
-        widget=forms.Select(attrs={
-            'class': 'form-select'
-        })
-    )
-
     class Meta:
         model = Company
         fields = [
-            'name', 'trading_name', 'schema_name', 'description', 'physical_address',
-            'postal_address', 'phone', 'email', 'website', 'tin', 'brn',
-            'nin', 'vat_registration_number', 'vat_registration_date',
-            'preferred_currency', 'time_zone', 'locale', 'date_format',
-            'time_format', 'efris_enabled', 'efris_client_id',
-            'efris_device_number', 'plan', 'logo', 'favicon',
-            'two_factor_required', 'notes'
+            # Core Information
+            'name',
+            'trading_name',
+            'schema_name',
+            'description',
+
+            # Contact Information
+            'physical_address',
+            'postal_address',
+            'phone',
+            'email',
+            'website',
+
+            # Tax Information
+            'tin',
+            'brn',
+            'nin',
+            'vat_registration_number',
+            'vat_registration_date',
+            'preferred_currency',
+
+            # Subscription & Status
+            'plan',
+            'status',
+            'is_trial',
+            'trial_ends_at',
+            'subscription_starts_at',
+            'subscription_ends_at',
+
+            # EFRIS Settings - MATCHING YOUR MODEL EXACTLY
+            'efris_enabled',
+            'efris_is_production',
+            'efris_integration_mode',
+            'efris_device_number',
+            'efris_auto_fiscalize_sales',
+            'efris_auto_sync_products',
+
+            # Localization
+            'time_zone',
+            'locale',
+            'date_format',
+            'time_format',
+
+            # Branding
+            'logo',
+            'favicon',
+
+            # Security
+            'is_verified',
+            'two_factor_required',
+
+            # Admin
+            'notes'
         ]
 
         widgets = {
             'name': forms.TextInput(attrs={
                 'class': 'form-control',
                 'placeholder': 'Enter legal company name',
-                'required': True
             }),
             'trading_name': forms.TextInput(attrs={
                 'class': 'form-control',
@@ -77,7 +90,7 @@ class CompanyForm(forms.ModelForm):
             'schema_name': forms.TextInput(attrs={
                 'class': 'form-control',
                 'placeholder': 'Database schema name (auto-generated if empty)',
-                'required': True
+                'readonly': False  # Will be set readonly in __init__ for updates
             }),
             'description': forms.Textarea(attrs={
                 'class': 'form-control',
@@ -87,8 +100,7 @@ class CompanyForm(forms.ModelForm):
             'physical_address': forms.Textarea(attrs={
                 'class': 'form-control',
                 'rows': 3,
-                'placeholder': 'Enter physical address',
-                'required': True
+                'placeholder': 'Enter physical address'
             }),
             'postal_address': forms.TextInput(attrs={
                 'class': 'form-control',
@@ -97,7 +109,6 @@ class CompanyForm(forms.ModelForm):
             'phone': forms.TextInput(attrs={
                 'class': 'form-control',
                 'placeholder': 'e.g., +256700000000',
-                'pattern': r'^\+?[0-9]+$'
             }),
             'email': forms.EmailInput(attrs={
                 'class': 'form-control',
@@ -130,24 +141,65 @@ class CompanyForm(forms.ModelForm):
                 'class': 'form-control',
                 'type': 'date'
             }),
-            'locale': forms.TextInput(attrs={
-                'class': 'form-control',
-                'required': True,
-                'placeholder': 'e.g., en-US, en-GB'
-            }),
-            'efris_enabled': forms.CheckboxInput(attrs={
-                'class': 'form-check-input'
-            }),
-            'efris_client_id': forms.TextInput(attrs={
-                'class': 'form-control',
-                'placeholder': 'EFRIS Client ID'
-            }),
-            'efris_device_number': forms.TextInput(attrs={
-                'class': 'form-control',
-                'placeholder': 'EFRIS Device Number'
+            'preferred_currency': forms.Select(attrs={
+                'class': 'form-select'
             }),
             'plan': forms.Select(attrs={
                 'class': 'form-select'
+            }),
+            'status': forms.Select(attrs={
+                'class': 'form-select'
+            }),
+            'is_trial': forms.CheckboxInput(attrs={
+                'class': 'form-check-input'
+            }),
+            'trial_ends_at': forms.DateInput(attrs={
+                'class': 'form-control',
+                'type': 'date'
+            }),
+            'subscription_starts_at': forms.DateInput(attrs={
+                'class': 'form-control',
+                'type': 'date'
+            }),
+            'subscription_ends_at': forms.DateInput(attrs={
+                'class': 'form-control',
+                'type': 'date'
+            }),
+            'time_zone': forms.Select(attrs={
+                'class': 'form-select'
+            }),
+            'locale': forms.TextInput(attrs={
+                'class': 'form-control',
+                'placeholder': 'e.g., en-UG, en-US'
+            }),
+            'date_format': forms.Select(attrs={
+                'class': 'form-select'
+            }),
+            'time_format': forms.Select(attrs={
+                'class': 'form-select',
+                'required': True
+            }),
+            # EFRIS widgets - using correct field names from model
+            'efris_enabled': forms.CheckboxInput(attrs={
+                'class': 'form-check-input',
+                'id': 'id_efris_enabled'
+            }),
+            'efris_is_production': forms.CheckboxInput(attrs={
+                'class': 'form-check-input',
+                'id': 'id_efris_is_production'
+            }),
+            'efris_integration_mode': forms.Select(attrs={
+                'class': 'form-select'
+            }),
+            'efris_device_number': forms.TextInput(attrs={
+                'class': 'form-control',
+                'placeholder': 'e.g., 1026925503_01'
+            }),
+            'efris_auto_fiscalize_sales': forms.CheckboxInput(attrs={
+                'class': 'form-check-input'
+            }),
+            'efris_auto_sync_products': forms.CheckboxInput(attrs={
+                'class': 'form-check-input'
             }),
             'logo': forms.FileInput(attrs={
                 'class': 'form-control',
@@ -156,6 +208,9 @@ class CompanyForm(forms.ModelForm):
             'favicon': forms.FileInput(attrs={
                 'class': 'form-control',
                 'accept': 'image/*'
+            }),
+            'is_verified': forms.CheckboxInput(attrs={
+                'class': 'form-check-input'
             }),
             'two_factor_required': forms.CheckboxInput(attrs={
                 'class': 'form-check-input'
@@ -183,81 +238,81 @@ class CompanyForm(forms.ModelForm):
             'vat_registration_number': _('VAT Registration Number'),
             'vat_registration_date': _('VAT Registration Date'),
             'preferred_currency': _('Preferred Currency'),
+            'plan': _('Subscription Plan'),
+            'status': _('Status'),
+            'is_trial': _('Is Trial Account'),
+            'trial_ends_at': _('Trial Ends At'),
+            'subscription_starts_at': _('Subscription Starts At'),
+            'subscription_ends_at': _('Subscription Ends At'),
             'time_zone': _('Time Zone'),
             'locale': _('Locale'),
             'date_format': _('Date Format'),
             'time_format': _('Time Format'),
+            # EFRIS labels - matching model fields
             'efris_enabled': _('Enable EFRIS Integration'),
-            'efris_client_id': _('EFRIS Client ID'),
-            'efris_device_number': _('EFRIS Device Number'),
-            'plan': _('Subscription Plan'),
+            'efris_is_production': _('Use Production Mode'),
+            'efris_integration_mode': _('Integration Mode'),
+            'efris_device_number': _('Device Number'),
+            'efris_auto_fiscalize_sales': _('Auto-Fiscalize Sales'),
+            'efris_auto_sync_products': _('Auto-Sync Products'),
             'logo': _('Company Logo'),
             'favicon': _('Favicon'),
+            'is_verified': _('Verified Company'),
             'two_factor_required': _('Require Two-Factor Authentication'),
-            'notes': _('Internal Notes')
+            'notes': _('Internal Notes'),
         }
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-        # Set field requirements based on your business logic
+        # Set field requirements
         self.fields['name'].required = True
-        self.fields['schema_name'].required = True
-        self.fields['physical_address'].required = True
-        self.fields['time_zone'].required = True
-        self.fields['locale'].required = True
-        self.fields['date_format'].required = True
-        self.fields['time_format'].required = True
+        self.fields['email'].required = False
 
-        # Populate choices - this is critical!
+        # Schema name handling
+        if self.instance and self.instance.pk:
+            # For updates, make schema_name readonly
+            self.fields['schema_name'].widget.attrs['readonly'] = True
+            self.fields['schema_name'].help_text = _('Schema name cannot be changed after creation')
+            self.fields['schema_name'].required = False
+        else:
+            # For new companies, schema_name is required or will be auto-generated
+            self.fields['schema_name'].required = False
+            self.fields['schema_name'].help_text = _('Leave blank to auto-generate from company name')
+
+        # Populate timezone choices
         try:
             import pytz
             timezone_choices = [(tz, tz.replace('_', ' ')) for tz in pytz.common_timezones]
-            self.fields['time_zone'].choices = [('', 'Select timezone')] + timezone_choices
-            print(f"DEBUG: Loaded {len(timezone_choices)} timezones")
+            self.fields['time_zone'].widget.choices = timezone_choices
         except ImportError:
-            print("WARNING: pytz not available, using fallback timezones")
-            self.fields['time_zone'].choices = [
-                ('', 'Select timezone'),
+            self.fields['time_zone'].widget.choices = [
                 ('Africa/Kampala', 'Africa/Kampala'),
                 ('UTC', 'UTC'),
                 ('Africa/Nairobi', 'Africa/Nairobi'),
+                ('America/New_York', 'America/New York'),
+                ('Europe/London', 'Europe/London'),
             ]
 
         # Date format choices
-        self.fields['date_format'].choices = [
-            ('', 'Select date format'),
+        self.fields['date_format'].widget.choices = [
             ('%d/%m/%Y', 'DD/MM/YYYY (31/12/2023)'),
             ('%m/%d/%Y', 'MM/DD/YYYY (12/31/2023)'),
             ('%Y-%m-%d', 'YYYY-MM-DD (2023-12-31)'),
             ('%d-%m-%Y', 'DD-MM-YYYY (31-12-2023)'),
         ]
 
-        # Time format choices
-        self.fields['time_format'].choices = [
-            ('', 'Select time format'),
-            ('12', '12 Hour (AM/PM)'),
-            ('24', '24 Hour'),
-        ]
+        # Time format choices - These are already defined in the model
+        # No need to override, the model's choices will be used
 
-        # Currency choices
-        self.fields['preferred_currency'].choices = [
-            ('', 'Select currency'),
-            ('UGX', 'Ugandan Shilling (UGX)'),
-            ('USD', 'US Dollar (USD)'),
-            ('EUR', 'Euro (EUR)'),
-            ('GBP', 'British Pound (GBP)'),
-            ('KES', 'Kenyan Shilling (KES)'),
-        ]
-
-        # Populate plan choices safely
+        # Populate plan choices
         try:
-            # Try to import SubscriptionPlan - adjust the import path as needed
-            from companies.models import SubscriptionPlan
-            self.fields['plan'].queryset = SubscriptionPlan.objects.filter(is_active=True)
+            from .models import SubscriptionPlan
+            self.fields['plan'].queryset = SubscriptionPlan.objects.filter(is_active=True).order_by('sort_order',
+                                                                                                    'price')
             self.fields['plan'].empty_label = 'Select a plan'
-        except (ImportError, AttributeError):
-            print("DEBUG: SubscriptionPlan not available")
+            self.fields['plan'].required = False
+        except:
             pass
 
         # Set initial values for new companies
@@ -267,51 +322,85 @@ class CompanyForm(forms.ModelForm):
             self.fields['locale'].initial = 'en-UG'
             self.fields['date_format'].initial = '%d/%m/%Y'
             self.fields['time_format'].initial = '24'
-            print("DEBUG: Set initial values for new company")
+            self.fields['is_trial'].initial = True
+            self.fields['status'].initial = 'TRIAL'
 
         # Add help texts
-        self.fields['schema_name'].help_text = 'Unique database schema name (leave blank for auto-generation)'
-        self.fields['tin'].help_text = 'Tax Identification Number from URA'
+        self.fields['tin'].help_text = 'Tax Identification Number from URA (required for EFRIS)'
         self.fields['brn'].help_text = 'Business Registration Number from URSB'
         self.fields['nin'].help_text = 'National Identification Number'
-        self.fields['efris_enabled'].help_text = 'Enable integration with EFRIS system'
+        self.fields['efris_enabled'].help_text = 'Master switch for EFRIS integration'
+        self.fields['efris_is_production'].help_text = 'Use production EFRIS servers (uncheck for testing)'
+        self.fields['efris_integration_mode'].help_text = 'Online or offline mode'
+        self.fields['efris_device_number'].help_text = 'EFRIS registered device number'
         self.fields['time_zone'].help_text = 'Company timezone for operations'
         self.fields['locale'].help_text = 'Language and region settings (e.g., en-UG, en-US)'
+        self.fields['notes'].help_text = 'Internal notes visible only to administrators'
+
+        # Make EFRIS fields conditionally required in JavaScript, not in Django form
+        # They will be validated in clean() method
+        self.fields['efris_integration_mode'].required = False
+        self.fields['efris_device_number'].required = False
 
     def clean_schema_name(self):
         """Validate schema name uniqueness and format."""
-        schema_name = self.cleaned_data.get('schema_name')
-        if schema_name:
-            schema_name = schema_name.lower().strip()
+        schema_name = self.cleaned_data.get('schema_name', '').strip()
 
-            # Basic schema name validation
-            import re
-            if not re.match(r'^[a-z][a-z0-9_]*$', schema_name):
-                raise ValidationError(
-                    _('Schema name must start with a letter and contain only lowercase letters, numbers, and underscores.'))
+        # If this is an update and schema_name hasn't changed, return it
+        if self.instance and self.instance.pk:
+            if not schema_name or schema_name == self.instance.schema_name:
+                return self.instance.schema_name
 
-            # Check uniqueness
-            qs = Company.objects.filter(schema_name__iexact=schema_name)
-            if self.instance.pk:
-                qs = qs.exclude(pk=self.instance.pk)
-            if qs.exists():
-                raise ValidationError(_('A company with this schema name already exists.'))
+        # If creating new and no schema_name provided, it will be auto-generated in save()
+        if not schema_name:
+            return ''
+
+        # Validate format
+        schema_name = schema_name.lower()
+        import re
+        if not re.match(r'^[a-z][a-z0-9_]*$', schema_name):
+            raise ValidationError(
+                _('Schema name must start with a letter and contain only lowercase letters, numbers, and underscores.')
+            )
+
+        # Check length
+        if len(schema_name) > 63:
+            raise ValidationError(_('Schema name must be 63 characters or less.'))
+
+        # Check uniqueness
+        qs = Company.objects.filter(schema_name__iexact=schema_name)
+        if self.instance.pk:
+            qs = qs.exclude(pk=self.instance.pk)
+        if qs.exists():
+            raise ValidationError(_('A company with this schema name already exists.'))
 
         return schema_name
 
     def clean_tin(self):
-        """Validate TIN format."""
-        tin = self.cleaned_data.get('tin')
-        if tin:
-            tin = tin.upper().strip()
-            if len(tin) < 8 or not tin.replace('-', '').isalnum():
-                raise ValidationError(_('Enter a valid TIN format'))
+        """Validate and format TIN."""
+        tin = (self.cleaned_data.get('tin') or '').strip().upper()
         return tin
 
+    def clean_brn(self):
+        brn = self.cleaned_data.get('brn')
+        if brn:
+            brn = brn.strip()
+        else:
+            brn = ''
+        return brn
+
+    def clean_nin(self):
+        """Validate and format NIN."""
+        nin = (self.cleaned_data.get('nin') or '').strip()  # safe against None
+        if nin:
+            nin = nin.upper()
+        return nin
+
     def clean_email(self):
-        """Validate email uniqueness."""
-        email = self.cleaned_data.get('email')
+        """Validate email format and uniqueness."""
+        email = self.cleaned_data.get('email', '').strip().lower()
         if email:
+            # Check uniqueness
             qs = Company.objects.filter(email__iexact=email)
             if self.instance.pk:
                 qs = qs.exclude(pk=self.instance.pk)
@@ -319,54 +408,174 @@ class CompanyForm(forms.ModelForm):
                 raise ValidationError(_('A company with this email already exists.'))
         return email
 
+    def clean_phone(self):
+        """Clean and validate phone number."""
+        phone = self.cleaned_data.get('phone', '').strip()
+        if phone:
+            # Remove common formatting characters
+            phone = phone.replace(' ', '').replace('-', '').replace('(', '').replace(')', '')
+        return phone
+
     def clean(self):
         """Cross-field validation."""
         cleaned_data = super().clean()
 
-        # EFRIS validation
-        efris_enabled = cleaned_data.get('efris_enabled')
+        # EFRIS validation - using correct field names from model
+        efris_enabled = cleaned_data.get('efris_enabled', False)
+
         if efris_enabled:
-            if not cleaned_data.get('efris_client_id'):
-                self.add_error('efris_client_id', _('EFRIS Client ID is required when EFRIS is enabled.'))
-            if not cleaned_data.get('efris_device_number'):
-                self.add_error('efris_device_number', _('EFRIS Device Number is required when EFRIS is enabled.'))
+            # Check required business fields for EFRIS
+            tin = cleaned_data.get('tin')
+            name = cleaned_data.get('name')
+            email = cleaned_data.get('email')
+            phone = cleaned_data.get('phone')
+            physical_address = cleaned_data.get('physical_address')
+
+            # These are the actual required fields for EFRIS according to your model
+            if not tin:
+                self.add_error('tin', _('TIN is required when EFRIS is enabled.'))
+            if not name:
+                self.add_error('name', _('Company name is required when EFRIS is enabled.'))
+            if not email:
+                self.add_error('email', _('Email is required when EFRIS is enabled.'))
+            if not phone:
+                self.add_error('phone', _('Phone is required when EFRIS is enabled.'))
+            if not physical_address:
+                self.add_error('physical_address', _('Physical address is required when EFRIS is enabled.'))
+
+        # Validate subscription dates
+        is_trial = cleaned_data.get('is_trial')
+        trial_ends_at = cleaned_data.get('trial_ends_at')
+        subscription_starts_at = cleaned_data.get('subscription_starts_at')
+        subscription_ends_at = cleaned_data.get('subscription_ends_at')
+
+        if is_trial and not trial_ends_at and not self.instance.pk:
+            # For new trial accounts, trial_ends_at will be auto-generated in model save
+            pass
+
+        if not is_trial:
+            if subscription_starts_at and subscription_ends_at:
+                if subscription_ends_at <= subscription_starts_at:
+                    self.add_error('subscription_ends_at',
+                                   _('Subscription end date must be after start date.'))
 
         return cleaned_data
 
-# --------------------------------------------------------------------
-# Company Branch Formset
-# --------------------------------------------------------------------
-try:
-    from branches.models import CompanyBranch
+    def save(self, commit=True):
+        """Save with additional processing."""
+        instance = super().save(commit=False)
 
-    CompanyBranchFormSet = inlineformset_factory(
+        # Auto-generate schema_name if not provided and it's a new company
+        if not instance.pk and not instance.schema_name:
+            from django.utils.text import slugify
+            import uuid
+
+            # Generate base from company name
+            base_name = slugify(instance.name or f"company_{uuid.uuid4().hex[:8]}")
+            base_name = base_name.replace('-', '_')[:20]  # Replace hyphens with underscores
+
+            # Ensure it starts with a letter
+            if not base_name[0].isalpha():
+                base_name = f"c_{base_name}"
+
+            # Add unique suffix
+            schema_name = f"{base_name}_{uuid.uuid4().hex[:8]}"
+
+            # Ensure uniqueness
+            counter = 1
+            original_schema = schema_name
+            while Company.objects.filter(schema_name=schema_name).exists():
+                schema_name = f"{original_schema}_{counter}"
+                counter += 1
+
+            instance.schema_name = schema_name[:63]  # Respect max length
+
+        if commit:
+            instance.save()
+            self.save_m2m()
+
+        return instance
+
+
+# --------------------------------------------------------------------
+# Company Store Formset (UPDATED - replacing CompanyBranch)
+# --------------------------------------------------------------------
+if Store is not None:
+    CompanyStoreFormSet = inlineformset_factory(
         Company,
-        CompanyBranch,
-        fields=['name', 'code', 'location', 'phone', 'email', 'tin', 'is_main_branch', 'is_active'],
+        Store,
+        fields=[
+            'name', 'code', 'location', 'physical_address', 'phone',
+            'email', 'tin', 'is_main_branch', 'is_active', 'store_type',
+            'efris_enabled', 'efris_device_number'
+        ],
         extra=1,
         can_delete=True,
         widgets={
-            'name': forms.TextInput(attrs={'class': 'form-control', 'placeholder': _('Branch name')}),
-            'code': forms.TextInput(attrs={'class': 'form-control', 'placeholder': _('Branch code')}),
-            'location': forms.TextInput(attrs={'class': 'form-control', 'placeholder': _('Branch location')}),
-            'phone': forms.TextInput(attrs={'class': 'form-control', 'placeholder': _('Branch phone')}),
-            'email': forms.EmailInput(attrs={'class': 'form-control', 'placeholder': _('Branch email')}),
-            'tin': forms.TextInput(attrs={'class': 'form-control', 'placeholder': _('Branch TIN')}),
-            'is_main_branch': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
-            'is_active': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
+            'name': forms.TextInput(attrs={
+                'class': 'form-control',
+                'placeholder': _('Store name')
+            }),
+            'code': forms.TextInput(attrs={
+                'class': 'form-control',
+                'placeholder': _('Store code (auto-generated if empty)')
+            }),
+            'location': forms.TextInput(attrs={
+                'class': 'form-control',
+                'placeholder': _('Location/Area')
+            }),
+            'physical_address': forms.Textarea(attrs={
+                'class': 'form-control',
+                'rows': 2,
+                'placeholder': _('Physical address')
+            }),
+            'phone': forms.TextInput(attrs={
+                'class': 'form-control',
+                'placeholder': _('Store phone')
+            }),
+            'email': forms.EmailInput(attrs={
+                'class': 'form-control',
+                'placeholder': _('Store email')
+            }),
+            'tin': forms.TextInput(attrs={
+                'class': 'form-control',
+                'placeholder': _('Store TIN (optional)')
+            }),
+            'store_type': forms.Select(attrs={
+                'class': 'form-select'
+            }),
+            'is_main_branch': forms.CheckboxInput(attrs={
+                'class': 'form-check-input'
+            }),
+            'is_active': forms.CheckboxInput(attrs={
+                'class': 'form-check-input'
+            }),
+            'efris_enabled': forms.CheckboxInput(attrs={
+                'class': 'form-check-input'
+            }),
+            'efris_device_number': forms.TextInput(attrs={
+                'class': 'form-control',
+                'placeholder': _('EFRIS device number')
+            }),
         }
     )
-except ImportError:
-    CompanyBranchFormSet = None
+else:
+    CompanyStoreFormSet = None
 
-try:
-    from accounts.models import CustomUser
+# Keep backward compatibility alias
+CompanyBranchFormSet = CompanyStoreFormSet
+
+
+# --------------------------------------------------------------------
+# Company Employee Formset
+# --------------------------------------------------------------------
+if CustomUser is not None:
     CompanyEmployeeFormSet = inlineformset_factory(
         Company,
         CustomUser,
         fields=[
             'email', 'username', 'first_name', 'middle_name', 'last_name',
-            'user_type', 'phone_number', 'is_active', 'company_admin'
+             'phone_number', 'is_active', 'company_admin'
         ],
         extra=1,
         can_delete=True,
@@ -376,14 +585,14 @@ try:
             'first_name': forms.TextInput(attrs={'class': 'form-control', 'placeholder': _('First Name')}),
             'middle_name': forms.TextInput(attrs={'class': 'form-control', 'placeholder': _('Middle Name')}),
             'last_name': forms.TextInput(attrs={'class': 'form-control', 'placeholder': _('Last Name')}),
-            'user_type': forms.Select(attrs={'class': 'form-select'}),
             'phone_number': forms.TextInput(attrs={'class': 'form-control', 'placeholder': _('Phone Number')}),
             'is_active': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
             'company_admin': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
         }
     )
-except ImportError:
+else:
     CompanyEmployeeFormSet = None
+
 
 class DomainForm(forms.ModelForm):
     """Form for managing company domains."""
@@ -414,7 +623,7 @@ class DomainForm(forms.ModelForm):
 
         # Limit tenant to logged-in user's company
         if user and hasattr(user, 'company'):
-            company = user.company  # This has company_id
+            company = user.company
             self.fields['tenant'].queryset = Company.objects.filter(company_id=company.company_id)
             self.fields['tenant'].initial = company
         else:
@@ -642,48 +851,6 @@ class SubscriptionPlanForm(forms.ModelForm):
             self.fields[field_name].widget.attrs.update({'class': 'form-check-input'})
 
 
-# Create the formset for company branches
-CompanyBranchFormSet = inlineformset_factory(
-    Company,
-    CompanyBranch,
-    fields=['name', 'code', 'location', 'phone', 'email', 'tin', 'is_main_branch', 'is_active'],
-    extra=1,
-    can_delete=True,
-    widgets={
-        'name': forms.TextInput(attrs={
-            'class': 'form-control',
-            'placeholder': _('Branch name')
-        }),
-        'code': forms.TextInput(attrs={
-            'class': 'form-control',
-            'placeholder': _('Branch code')
-        }),
-        'location': forms.TextInput(attrs={
-            'class': 'form-control',
-            'placeholder': _('Branch location')
-        }),
-        'phone': forms.TextInput(attrs={
-            'class': 'form-control',
-            'placeholder': _('Branch phone')
-        }),
-        'email': forms.EmailInput(attrs={
-            'class': 'form-control',
-            'placeholder': _('Branch email')
-        }),
-        'tin': forms.TextInput(attrs={
-            'class': 'form-control',
-            'placeholder': _('Branch TIN')
-        }),
-        'is_main_branch': forms.CheckboxInput(attrs={
-            'class': 'form-check-input'
-        }),
-        'is_active': forms.CheckboxInput(attrs={
-            'class': 'form-check-input'
-        })
-    }
-)
-
-
 class CompanyFilterForm(forms.Form):
     """Advanced filtering form for company lists."""
 
@@ -703,10 +870,11 @@ class CompanyFilterForm(forms.Form):
         })
     )
 
-    has_branches = forms.ChoiceField(
+    has_stores = forms.ChoiceField(
         required=False,
-        choices=[('', _('Any')), ('yes', _('Has Branches')), ('no', _('No Branches'))],
-        widget=forms.Select(attrs={'class': 'form-select'})
+        choices=[('', _('Any')), ('yes', _('Has Stores')), ('no', _('No Stores'))],
+        widget=forms.Select(attrs={'class': 'form-select'}),
+        label=_('Store Status')
     )
 
     employee_count_min = forms.IntegerField(

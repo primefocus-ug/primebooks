@@ -1,0 +1,276 @@
+{% extends 'base.html' %}
+{% load static %}
+{% load i18n %}
+
+{% block title %}{% trans "Balance Sheet" %} - {{ block.super }}{% endblock %}
+
+{% block breadcrumb_items %}
+<li class="breadcrumb-item"><a href="{% url 'finance:dashboard' %}">{% trans "Finance" %}</a></li>
+<li class="breadcrumb-item"><a href="{% url 'finance:financial_reports_dashboard' %}">{% trans "Reports" %}</a></li>
+<li class="breadcrumb-item active">{% trans "Balance Sheet" %}</li>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+    @media print {
+        .no-print { display: none !important; }
+        .report-container { max-width: 100% !important; }
+        body { background: white !important; }
+    }
+    .report-header {
+        border-bottom: 3px solid var(--primary-600);
+        padding-bottom: 1rem;
+        margin-bottom: 2rem;
+    }
+    .account-group {
+        margin-bottom: 1.5rem;
+    }
+    .account-group-header {
+        background: var(--primary-50);
+        padding: 0.75rem 1rem;
+        border-left: 4px solid var(--primary-600);
+        font-weight: 600;
+        margin-bottom: 0.5rem;
+    }
+    [data-theme="dark"] .account-group-header {
+        background: rgba(59, 130, 246, 0.1);
+    }
+    .account-line {
+        padding: 0.5rem 1rem;
+        border-bottom: 1px solid var(--border-color-light);
+    }
+    .account-line:hover {
+        background: var(--bg-secondary);
+    }
+    .section-total {
+        background: var(--bg-tertiary);
+        font-weight: 600;
+        border-top: 2px solid var(--border-color);
+        border-bottom: 2px solid var(--border-color);
+    }
+    .grand-total {
+        background: var(--primary-100);
+        font-weight: 700;
+        font-size: 1.1rem;
+        border-top: 3px double var(--primary-600);
+    }
+    [data-theme="dark"] .grand-total {
+        background: rgba(59, 130, 246, 0.15);
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- Action Bar -->
+    <div class="d-flex justify-content-between align-items-center mb-4 no-print">
+        <div>
+            <h1 class="h3 mb-2 text-primary">
+                <i class="bi bi-file-earmark-spreadsheet me-2"></i>{% trans "Balance Sheet" %}
+            </h1>
+            <p class="text-muted mb-0">{% trans "Statement of Financial Position" %}</p>
+        </div>
+        <div>
+            <button onclick="window.print()" class="btn btn-primary">
+                <i class="bi bi-printer me-2"></i>{% trans "Print" %}
+            </button>
+            <a href="{% url 'finance:export_trial_balance_csv' %}?as_of_date={{ as_of_date }}" class="btn btn-success">
+                <i class="bi bi-download me-2"></i>{% trans "Export" %}
+            </a>
+            <a href="{% url 'finance:financial_reports_dashboard' %}" class="btn btn-outline-secondary">
+                <i class="bi bi-arrow-left me-2"></i>{% trans "Back" %}
+            </a>
+        </div>
+    </div>
+
+    <!-- Date Selector -->
+    <div class="card shadow-sm mb-4 no-print">
+        <div class="card-body">
+            <form method="get" class="row g-3 align-items-end">
+                <div class="col-md-4">
+                    <label for="as_of_date" class="form-label">{% trans "As of Date" %}</label>
+                    <input type="date" name="as_of_date" id="as_of_date" class="form-control" value="{{ as_of_date|date:'Y-m-d' }}">
+                </div>
+                <div class="col-md-4">
+                    <label for="comparison_date" class="form-label">{% trans "Comparison Date (Optional)" %}</label>
+                    <input type="date" name="comparison_date" id="comparison_date" class="form-control">
+                </div>
+                <div class="col-md-4">
+                    <button type="submit" class="btn btn-primary w-100">
+                        <i class="bi bi-arrow-clockwise me-2"></i>{% trans "Refresh" %}
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Report Container -->
+    <div class="card shadow-sm report-container">
+        <div class="card-body p-4">
+            <!-- Report Header -->
+            <div class="report-header text-center mb-4">
+                <h2 class="mb-1">{{ company.name|default:"Company Name" }}</h2>
+                <h4 class="text-primary mb-2">{% trans "BALANCE SHEET" %}</h4>
+                <p class="text-muted mb-0">
+                    {% trans "As of" %} {{ as_of_date|date:"F d, Y" }}
+                </p>
+            </div>
+
+            <div class="row">
+                <!-- Assets Column -->
+                <div class="col-md-6">
+                    <div class="account-group">
+                        <div class="account-group-header">
+                            <i class="bi bi-safe me-2"></i>{% trans "ASSETS" %}
+                        </div>
+
+                        <!-- Current Assets -->
+                        <div class="ps-3 mb-3">
+                            <div class="fw-semibold text-muted mb-2">{% trans "Current Assets" %}</div>
+                            {% for account in assets %}
+                            {% if account.is_current %}
+                            <div class="account-line d-flex justify-content-between">
+                                <span class="ps-2">{{ account.name }}</span>
+                                <span class="text-end">{{ account.balance|floatformat:2 }}</span>
+                            </div>
+                            {% endif %}
+                            {% endfor %}
+                            <div class="account-line d-flex justify-content-between fw-semibold bg-light">
+                                <span class="ps-2">{% trans "Total Current Assets" %}</span>
+                                <span class="text-end">{{ total_current_assets|floatformat:2 }}</span>
+                            </div>
+                        </div>
+
+                        <!-- Fixed Assets -->
+                        <div class="ps-3 mb-3">
+                            <div class="fw-semibold text-muted mb-2">{% trans "Fixed Assets" %}</div>
+                            {% for account in assets %}
+                            {% if not account.is_current %}
+                            <div class="account-line d-flex justify-content-between">
+                                <span class="ps-2">{{ account.name }}</span>
+                                <span class="text-end">{{ account.balance|floatformat:2 }}</span>
+                            </div>
+                            {% endif %}
+                            {% endfor %}
+                            <div class="account-line d-flex justify-content-between fw-semibold bg-light">
+                                <span class="ps-2">{% trans "Total Fixed Assets" %}</span>
+                                <span class="text-end">{{ total_fixed_assets|floatformat:2 }}</span>
+                            </div>
+                        </div>
+
+                        <!-- Total Assets -->
+                        <div class="section-total p-3 d-flex justify-content-between">
+                            <span>{% trans "TOTAL ASSETS" %}</span>
+                            <span>{{ total_assets|floatformat:2 }}</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Liabilities & Equity Column -->
+                <div class="col-md-6">
+                    <!-- Liabilities -->
+                    <div class="account-group">
+                        <div class="account-group-header">
+                            <i class="bi bi-credit-card me-2"></i>{% trans "LIABILITIES" %}
+                        </div>
+
+                        <!-- Current Liabilities -->
+                        <div class="ps-3 mb-3">
+                            <div class="fw-semibold text-muted mb-2">{% trans "Current Liabilities" %}</div>
+                            {% for account in liabilities %}
+                            {% if account.is_current %}
+                            <div class="account-line d-flex justify-content-between">
+                                <span class="ps-2">{{ account.name }}</span>
+                                <span class="text-end">{{ account.balance|floatformat:2 }}</span>
+                            </div>
+                            {% endif %}
+                            {% endfor %}
+                            <div class="account-line d-flex justify-content-between fw-semibold bg-light">
+                                <span class="ps-2">{% trans "Total Current Liabilities" %}</span>
+                                <span class="text-end">{{ total_current_liabilities|floatformat:2 }}</span>
+                            </div>
+                        </div>
+
+                        <!-- Long-term Liabilities -->
+                        <div class="ps-3 mb-3">
+                            <div class="fw-semibold text-muted mb-2">{% trans "Long-term Liabilities" %}</div>
+                            {% for account in liabilities %}
+                            {% if not account.is_current %}
+                            <div class="account-line d-flex justify-content-between">
+                                <span class="ps-2">{{ account.name }}</span>
+                                <span class="text-end">{{ account.balance|floatformat:2 }}</span>
+                            </div>
+                            {% endif %}
+                            {% endfor %}
+                            <div class="account-line d-flex justify-content-between fw-semibold bg-light">
+                                <span class="ps-2">{% trans "Total Long-term Liabilities" %}</span>
+                                <span class="text-end">{{ total_longterm_liabilities|floatformat:2 }}</span>
+                            </div>
+                        </div>
+
+                        <!-- Total Liabilities -->
+                        <div class="section-total p-3 d-flex justify-content-between">
+                            <span>{% trans "TOTAL LIABILITIES" %}</span>
+                            <span>{{ total_liabilities|floatformat:2 }}</span>
+                        </div>
+                    </div>
+
+                    <!-- Equity -->
+                    <div class="account-group mt-4">
+                        <div class="account-group-header">
+                            <i class="bi bi-bank me-2"></i>{% trans "EQUITY" %}
+                        </div>
+                        <div class="ps-3">
+                            {% for account in equity %}
+                            <div class="account-line d-flex justify-content-between">
+                                <span class="ps-2">{{ account.name }}</span>
+                                <span class="text-end">{{ account.balance|floatformat:2 }}</span>
+                            </div>
+                            {% endfor %}
+                        </div>
+
+                        <!-- Total Equity -->
+                        <div class="section-total p-3 d-flex justify-content-between">
+                            <span>{% trans "TOTAL EQUITY" %}</span>
+                            <span>{{ total_equity|floatformat:2 }}</span>
+                        </div>
+
+                        <!-- Total Liabilities & Equity -->
+                        <div class="grand-total p-3 d-flex justify-content-between mt-2">
+                            <span>{% trans "TOTAL LIABILITIES & EQUITY" %}</span>
+                            <span>{{ total_liabilities_equity|floatformat:2 }}</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Balance Check -->
+            <div class="mt-4 pt-3 border-top">
+                {% if total_assets == total_liabilities_equity %}
+                <div class="alert alert-success d-flex align-items-center">
+                    <i class="bi bi-check-circle-fill me-2 fs-5"></i>
+                    <strong>{% trans "Balance Sheet is Balanced" %}</strong>
+                    <span class="ms-auto">
+                        {% trans "Assets" %} = {% trans "Liabilities + Equity" %}
+                    </span>
+                </div>
+                {% else %}
+                <div class="alert alert-danger d-flex align-items-center">
+                    <i class="bi bi-exclamation-triangle-fill me-2 fs-5"></i>
+                    <strong>{% trans "Balance Sheet is NOT Balanced" %}</strong>
+                    <span class="ms-auto">
+                        {% trans "Difference" %}: {{ balance_difference|floatformat:2 }}
+                    </span>
+                </div>
+                {% endif %}
+            </div>
+
+            <!-- Report Footer -->
+            <div class="text-center mt-4 pt-3 border-top text-muted small">
+                <p class="mb-1">{% trans "Generated on" %} {{ now|date:"F d, Y H:i" }}</p>
+                <p class="mb-0">{% trans "This is a computer-generated report" %}</p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1639,6 +1639,23 @@
                 <button type="submit" class="btn btn-sm btn-outline-light">{% trans "Change" %}</button>
             </form>
         </div>
+{% if user.is_authenticated %}
+    {% load messaging_tags %}
+    <div class="me-3">
+        <a href="{% url 'messaging:index' %}"
+           class="btn btn-link text-white position-relative"
+           title="{% trans 'Messages' %}">
+            <i class="bi bi-chat-dots fs-5"></i>
+            {% with count=unread_messages_count %}
+                {% if count %}
+                <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-primary">
+                    {{ count }}
+                </span>
+                {% endif %}
+            {% endwith %}
+        </a>
+    </div>
+    {% endif %}
 
         <!-- Notifications -->
         {% if user.is_authenticated %}
@@ -1729,7 +1746,7 @@
                     {% endfor %}
                 </div>
             {% endif %}
-
+            {% include 'includes/plan_limit_warnings.html' %}
             <!-- Page Header -->
             {% block page_header %}{% endblock %}
 
@@ -1740,493 +1757,560 @@
 
     <!-- Bootstrap JS -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-
+    <script src="{% static 'company/js/plan-limits.js' %}"></script>
     <script>
         /**
-         * Professional Base Template JavaScript
-         * Handles theme switching, sidebar navigation, and core functionality
-         */
+ * =============================================================================
+ * BASE TEMPLATE MANAGER
+ * Professional JavaScript for theme switching, sidebar navigation, and core functionality
+ * =============================================================================
+ */
 
-        class BaseTemplateManager {
-            constructor() {
-                this.initThemeToggle();
-                this.initSidebar();
-                this.initNotifications();
-                this.initCSRF();
-                this.initAlerts();
-                this.initAccessibility();
+class BaseTemplateManager {
+    constructor() {
+        this.initThemeToggle();
+        this.initSidebar();
+        this.initNotifications();
+        this.initCSRF();
+        this.initAlerts();
+        this.initAccessibility();
+    }
+
+    // =========================================================================
+    // THEME MANAGEMENT
+    // =========================================================================
+
+    /**
+     * Initialize theme toggle functionality with dark/light mode support
+     */
+    initThemeToggle() {
+        const themeToggle = document.getElementById('themeToggle');
+        if (!themeToggle) return;
+
+        const prefersDarkScheme = window.matchMedia('(prefers-color-scheme: dark)');
+        const currentTheme = localStorage.getItem('theme');
+
+        // Set initial theme
+        if (currentTheme === 'dark' || (!currentTheme && prefersDarkScheme.matches)) {
+            document.documentElement.setAttribute('data-theme', 'dark');
+            themeToggle.checked = true;
+        } else {
+            document.documentElement.setAttribute('data-theme', 'light');
+            themeToggle.checked = false;
+        }
+
+        // Handle theme toggle
+        themeToggle.addEventListener('change', (e) => {
+            const theme = e.target.checked ? 'dark' : 'light';
+            document.documentElement.setAttribute('data-theme', theme);
+            localStorage.setItem('theme', theme);
+        });
+
+        // Listen for system theme changes
+        prefersDarkScheme.addEventListener('change', (e) => {
+            if (!localStorage.getItem('theme')) {
+                const theme = e.matches ? 'dark' : 'light';
+                document.documentElement.setAttribute('data-theme', theme);
+                themeToggle.checked = e.matches;
             }
+        });
+    }
 
-            /**
-             * Initialize theme toggle functionality
-             */
-            initThemeToggle() {
-                const themeToggle = document.getElementById('themeToggle');
-                if (!themeToggle) return;
+    // =========================================================================
+    // SIDEBAR NAVIGATION
+    // =========================================================================
 
-                const prefersDarkScheme = window.matchMedia('(prefers-color-scheme: dark)');
-                const currentTheme = localStorage.getItem('theme');
+    /**
+     * Initialize sidebar functionality with mobile toggle support
+     */
+    initSidebar() {
+        const sidebar = document.getElementById('sidebar');
+        const sidebarToggle = document.getElementById('sidebarToggle');
+        const sidebarClose = document.getElementById('sidebarClose');
+        const sidebarOverlay = document.getElementById('sidebarOverlay');
 
-                // Set initial theme
-                if (currentTheme === 'dark' || (!currentTheme && prefersDarkScheme.matches)) {
-                    document.documentElement.setAttribute('data-theme', 'dark');
-                    themeToggle.checked = true;
-                } else {
-                    document.documentElement.setAttribute('data-theme', 'light');
-                    themeToggle.checked = false;
-                }
+        if (!sidebar) return;
 
-                // Handle theme toggle
-                themeToggle.addEventListener('change', (e) => {
-                    if (e.target.checked) {
-                        document.documentElement.setAttribute('data-theme', 'dark');
-                        localStorage.setItem('theme', 'dark');
-                    } else {
-                        document.documentElement.setAttribute('data-theme', 'light');
-                        localStorage.setItem('theme', 'light');
-                    }
-                });
+        // Open sidebar
+        const openSidebar = () => {
+            sidebar.classList.add('show');
+            if (sidebarOverlay) sidebarOverlay.classList.add('show');
+            if (sidebarToggle) sidebarToggle.setAttribute('aria-expanded', 'true');
+            document.body.classList.add('sidebar-open');
 
-                // Listen for system theme changes
-                prefersDarkScheme.addEventListener('change', (e) => {
-                    if (!localStorage.getItem('theme')) {
-                        if (e.matches) {
-                            document.documentElement.setAttribute('data-theme', 'dark');
-                            themeToggle.checked = true;
-                        } else {
-                            document.documentElement.setAttribute('data-theme', 'light');
-                            themeToggle.checked = false;
-                        }
-                    }
-                });
-            }
+            // Focus first focusable element
+            setTimeout(() => {
+                const firstFocusable = sidebar.querySelector('.nav-link, .btn-toggle');
+                if (firstFocusable) firstFocusable.focus();
+            }, 100);
+        };
 
-            /**
-             * Initialize sidebar functionality
-             */
-            initSidebar() {
-                const sidebar = document.getElementById('sidebar');
-                const sidebarToggle = document.getElementById('sidebarToggle');
-                const sidebarOverlay = document.getElementById('sidebarOverlay');
-
-                if (!sidebar || !sidebarToggle) return;
-
-                // Sidebar toggle functionality
-                sidebarToggle.addEventListener('click', () => {
-                    sidebar.classList.toggle('show');
-                    if (sidebarOverlay) {
-                        sidebarOverlay.classList.toggle('show');
-                    }
-                });
-
-                // Close sidebar on overlay click
-                if (sidebarOverlay) {
-                    sidebarOverlay.addEventListener('click', () => {
-                        sidebar.classList.remove('show');
-                        sidebarOverlay.classList.remove('show');
-                    });
-                }
-
-                // Handle window resize
-                const handleResize = () => {
-                    if (window.innerWidth >= 992) {
-                        sidebar.classList.add('show');
-                        if (sidebarOverlay) {
-                            sidebarOverlay.classList.remove('show');
-                        }
-                    } else {
-                        sidebar.classList.remove('show');
-                    }
-                };
-
-                window.addEventListener('resize', handleResize);
-                handleResize(); // Initialize
-
-                // Close sidebar when clicking nav links on mobile
-                const navLinks = sidebar.querySelectorAll('.nav-link');
-                navLinks.forEach(link => {
-                    link.addEventListener('click', () => {
-                        if (window.innerWidth < 992) {
-                            sidebar.classList.remove('show');
-                            if (sidebarOverlay) {
-                                sidebarOverlay.classList.remove('show');
-                            }
-                        }
-                    });
-                });
-            }
-
-            /**
-             * Initialize notifications system
-             */
-            initNotifications() {
-                let previousNotifications = [];
-
-                const loadNotifications = () => {
-                    fetch("{% url 'notifications:notifications_api' %}")
-                        .then(response => response.json())
-                        .then(data => {
-                            const badge = document.getElementById('notificationBadge');
-                            const list = document.getElementById('notificationsList');
-
-                            if (!badge || !list) return;
-
-                            // Update badge
-                            badge.textContent = data.count;
-                            badge.style.display = data.count > 0 ? 'inline-block' : 'none';
-
-                            // Clear previous items except header and footer
-                            list.querySelectorAll('li.notification-item').forEach(e => e.remove());
-
-                            // Add new notifications
-                            data.notifications.forEach(notif => {
-                                const li = document.createElement('li');
-                                li.classList.add('notification-item');
-
-                                // Check if this notification is new
-                                const isNew = !previousNotifications.some(prev => prev.message === notif.message);
-
-                                li.innerHTML = `
-                                    <a class="dropdown-item ${isNew ? 'flash' : ''}" href="${notif.url}">
-                                        <i class="${notif.icon} me-2"></i>${notif.message}
-                                    </a>
-                                `;
-
-                                const divider = list.querySelector('li.dropdown-divider');
-                                if (divider) {
-                                    list.insertBefore(li, divider);
-                                }
-                            });
-
-                            // Update previousNotifications for next check
-                            previousNotifications = data.notifications;
-                        })
-                        .catch(error => {
-                            console.warn('Failed to load notifications:', error);
-                        });
-                };
-
-                // Load notifications if user is authenticated
-                if (document.getElementById('notificationBadge')) {
-                    loadNotifications();
-                    setInterval(loadNotifications, 30000); // Refresh every 30 seconds
-                }
-            }
-
-            /**
-             * Initialize CSRF token handling
-             */
-            initCSRF() {
-                // Get CSRF token from cookie
-                const getCookie = (name) => {
-                    let cookieValue = null;
-                    if (document.cookie && document.cookie !== '') {
-                        const cookies = document.cookie.split(';');
-                        for (let i = 0; i < cookies.length; i++) {
-                            const cookie = cookies[i].trim();
-                            if (cookie.substring(0, name.length + 1) === (name + '=')) {
-                                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
-                                break;
-                            }
-                        }
-                    }
-                    return cookieValue;
-                };
-
-                const csrftoken = getCookie('csrftoken');
-
-                // Set CSRF token for AJAX requests
-                const metaTag = document.querySelector('meta[name="csrf-token"]');
-                if (metaTag) {
-                    window.csrfToken = metaTag.getAttribute('content');
-                } else if (csrftoken) {
-                    window.csrfToken = csrftoken;
-                }
-
-                // Set up CSRF token for all AJAX requests
-                if (window.csrfToken && typeof jQuery !== 'undefined') {
-                    jQuery.ajaxSetup({
-                        beforeSend: function(xhr, settings) {
-                            if (!this.crossDomain) {
-                                xhr.setRequestHeader("X-CSRFToken", window.csrfToken);
-                            }
-                        }
-                    });
-                }
-            }
-
-            /**
-             * Initialize alert management
-             */
-            initAlerts() {
-                // Auto-hide success messages after 5 seconds
-                setTimeout(() => {
-                    const alerts = document.querySelectorAll('.alert:not(.alert-danger):not(.alert-warning)');
-                    alerts.forEach(alert => {
-                        const closeBtn = alert.querySelector('.btn-close');
-                        if (closeBtn) {
-                            // Add fade out animation
-                            alert.style.transition = 'opacity 0.5s ease';
-                            alert.style.opacity = '0';
-                            setTimeout(() => {
-                                closeBtn.click();
-                            }, 500);
-                        }
-                    });
-                }, 5000);
-
-                // Add close animation to alerts
-                document.addEventListener('click', (e) => {
-                    if (e.target.classList.contains('btn-close')) {
-                        const alert = e.target.closest('.alert');
-                        if (alert) {
-                            alert.style.transition = 'transform 0.3s ease, opacity 0.3s ease';
-                            alert.style.transform = 'translateX(100%)';
-                            alert.style.opacity = '0';
-                        }
-                    }
-                });
-            }
-            /**
-         * Initialize sidebar functionality with mobile toggle
-         */
-        initSidebar() {
-            const sidebar = document.getElementById('sidebar');
-            const sidebarToggle = document.getElementById('sidebarToggle');
-            const sidebarClose = document.getElementById('sidebarClose');
-            const sidebarOverlay = document.getElementById('sidebarOverlay');
-
-            if (!sidebar) return;
-
-            // Open sidebar
-            const openSidebar = () => {
-                sidebar.classList.add('show');
-                if (sidebarOverlay) {
-                    sidebarOverlay.classList.add('show');
-                }
-                if (sidebarToggle) {
-                    sidebarToggle.setAttribute('aria-expanded', 'true');
-                }
-                document.body.classList.add('sidebar-open');
-
-                // Focus first focusable element in sidebar
-                setTimeout(() => {
-                    const firstFocusable = sidebar.querySelector('.nav-link, .btn-toggle');
-                    if (firstFocusable) {
-                        firstFocusable.focus();
-                    }
-                }, 100);
-            };
-
-            // Close sidebar
-            const closeSidebar = () => {
-                sidebar.classList.add('transitioning');
-                sidebar.classList.remove('show');
-                if (sidebarOverlay) {
-                    sidebarOverlay.classList.remove('show');
-                }
-                if (sidebarToggle) {
-                    sidebarToggle.setAttribute('aria-expanded', 'false');
-                    sidebarToggle.focus();
-                }
-                document.body.classList.remove('sidebar-open');
-
-                setTimeout(() => {
-                    sidebar.classList.remove('transitioning');
-                }, 300);
-            };
-
-            // Toggle button click
+        // Close sidebar
+        const closeSidebar = () => {
+            sidebar.classList.add('transitioning');
+            sidebar.classList.remove('show');
+            if (sidebarOverlay) sidebarOverlay.classList.remove('show');
             if (sidebarToggle) {
-                sidebarToggle.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    if (sidebar.classList.contains('show')) {
-                        closeSidebar();
-                    } else {
-                        openSidebar();
-                    }
-                });
+                sidebarToggle.setAttribute('aria-expanded', 'false');
+                sidebarToggle.focus();
             }
+            document.body.classList.remove('sidebar-open');
 
-            // Close button click
-            if (sidebarClose) {
-                sidebarClose.addEventListener('click', closeSidebar);
-            }
+            setTimeout(() => sidebar.classList.remove('transitioning'), 300);
+        };
 
-            // Overlay click
-            if (sidebarOverlay) {
-                sidebarOverlay.addEventListener('click', closeSidebar);
-            }
-
-            // Close sidebar when clicking nav links on mobile
-            const navLinks = sidebar.querySelectorAll('.nav-link');
-            navLinks.forEach(link => {
-                link.addEventListener('click', () => {
-                    if (window.innerWidth < 992) {
-                        closeSidebar();
-                    }
-                });
-            });
-
-            // Handle window resize
-            let resizeTimer;
-            const handleResize = () => {
-                clearTimeout(resizeTimer);
-                resizeTimer = setTimeout(() => {
-                    if (window.innerWidth >= 992) {
-                        sidebar.classList.add('show');
-                        if (sidebarOverlay) {
-                            sidebarOverlay.classList.remove('show');
-                        }
-                        document.body.classList.remove('sidebar-open');
-                    } else if (!sidebar.classList.contains('show')) {
-                        sidebar.classList.remove('show');
-                    }
-                }, 250);
-            };
-
-            window.addEventListener('resize', handleResize);
-            handleResize(); // Initialize
-
-            // ESC key to close
-            document.addEventListener('keydown', (e) => {
-                if (e.key === 'Escape' && sidebar.classList.contains('show') && window.innerWidth < 992) {
-                    closeSidebar();
-                }
+        // Event listeners
+        if (sidebarToggle) {
+            sidebarToggle.addEventListener('click', (e) => {
+                e.stopPropagation();
+                sidebar.classList.contains('show') ? closeSidebar() : openSidebar();
             });
         }
 
-
-            /**
-             * Initialize accessibility features
-             */
-            initAccessibility() {
-                // Add keyboard navigation support
-                document.addEventListener('keydown', (e) => {
-                    // Escape key to close dropdowns and modals
-                    if (e.key === 'Escape') {
-                        // Close sidebar on mobile
-                        const sidebar = document.getElementById('sidebar');
-                        const sidebarOverlay = document.getElementById('sidebarOverlay');
-                        if (sidebar && sidebar.classList.contains('show') && window.innerWidth < 992) {
-                            sidebar.classList.remove('show');
-                            if (sidebarOverlay) {
-                                sidebarOverlay.classList.remove('show');
-                            }
-                        }
-
-                        // Close dropdowns
-                        document.querySelectorAll('.dropdown-menu.show').forEach(dropdown => {
-                            bootstrap.Dropdown.getInstance(dropdown)?.hide();
-                        });
-                    }
-
-                    // Ctrl/Cmd + D to toggle dark mode
-                    if ((e.ctrlKey || e.metaKey) && e.key === 'd') {
-                        e.preventDefault();
-                        const themeToggle = document.getElementById('themeToggle');
-                        if (themeToggle) {
-                            themeToggle.click();
-                        }
-                    }
-
-                    // Ctrl/Cmd + B to toggle sidebar
-                    if ((e.ctrlKey || e.metaKey) && e.key === 'b') {
-                        e.preventDefault();
-                        const sidebarToggle = document.getElementById('sidebarToggle');
-                        if (sidebarToggle) {
-                            sidebarToggle.click();
-                        }
-                    }
-                });
-
-                // Improve focus management
-                document.addEventListener('focusin', (e) => {
-                    // Add focus ring for keyboard navigation
-                    if (e.target.matches('.nav-link, .btn, .dropdown-item')) {
-                        e.target.style.outline = '2px solid var(--primary-500)';
-                        e.target.style.outlineOffset = '2px';
-                    }
-                });
-
-                document.addEventListener('focusout', (e) => {
-                    if (e.target.matches('.nav-link, .btn, .dropdown-item')) {
-                        e.target.style.outline = '';
-                        e.target.style.outlineOffset = '';
-                    }
-                });
-
-                // Skip link for screen readers
-                const skipLink = document.createElement('a');
-                skipLink.href = '#main-content';
-                skipLink.textContent = 'Skip to main content';
-                skipLink.className = 'sr-only sr-only-focusable position-absolute start-0 top-0 z-index-9999 p-2 bg-primary text-white';
-                skipLink.style.transform = 'translateY(-100%)';
-                skipLink.style.transition = 'transform 0.3s ease';
-
-                skipLink.addEventListener('focus', () => {
-                    skipLink.style.transform = 'translateY(0)';
-                });
-
-                skipLink.addEventListener('blur', () => {
-                    skipLink.style.transform = 'translateY(-100%)';
-                });
-
-                document.body.prepend(skipLink);
-
-                // Add main content ID for skip link
-                const mainContent = document.querySelector('.main-content');
-                if (mainContent) {
-                    mainContent.id = 'main-content';
-                    mainContent.setAttribute('tabindex', '-1');
-                }
-            }
+        if (sidebarClose) {
+            sidebarClose.addEventListener('click', closeSidebar);
         }
 
-        // Initialize when DOM is ready
-        document.addEventListener('DOMContentLoaded', () => {
-            new BaseTemplateManager();
+        if (sidebarOverlay) {
+            sidebarOverlay.addEventListener('click', closeSidebar);
+        }
 
-            // Add smooth scrolling
-            document.documentElement.style.scrollBehavior = 'smooth';
-
-            // Performance monitoring
-            window.addEventListener('load', () => {
-                const loadTime = performance.now();
-                if (loadTime > 2000) {
-                    console.warn(`Page load time: ${Math.round(loadTime)}ms - Consider optimizing`);
-                }
+        // Close sidebar when clicking nav links on mobile
+        sidebar.querySelectorAll('.nav-link').forEach(link => {
+            link.addEventListener('click', () => {
+                if (window.innerWidth < 992) closeSidebar();
             });
         });
 
-        // Global utility functions
-        window.showAlert = (message, type = 'info', duration = 5000) => {
-            const alertContainer = document.createElement('div');
-            alertContainer.className = `alert alert-${type} alert-dismissible fade show`;
-            alertContainer.innerHTML = `
-                ${message}
-                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-            `;
+        // Handle window resize
+        let resizeTimer;
+        const handleResize = () => {
+            clearTimeout(resizeTimer);
+            resizeTimer = setTimeout(() => {
+                if (window.innerWidth >= 992) {
+                    sidebar.classList.add('show');
+                    if (sidebarOverlay) sidebarOverlay.classList.remove('show');
+                    document.body.classList.remove('sidebar-open');
+                } else if (!sidebar.classList.contains('show')) {
+                    sidebar.classList.remove('show');
+                }
+            }, 250);
+        };
 
-            const mainContent = document.querySelector('.main-content');
-            if (mainContent) {
-                mainContent.prepend(alertContainer);
+        window.addEventListener('resize', handleResize);
+        handleResize(); // Initialize
 
-                if (duration > 0) {
-                    setTimeout(() => {
-                        const closeBtn = alertContainer.querySelector('.btn-close');
-                        if (closeBtn) closeBtn.click();
-                    }, duration);
+        // ESC key to close
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && sidebar.classList.contains('show') && window.innerWidth < 992) {
+                closeSidebar();
+            }
+        });
+    }
+
+    // =========================================================================
+    // NOTIFICATIONS SYSTEM
+    // =========================================================================
+
+    /**
+     * Initialize real-time notifications system
+     */
+    initNotifications() {
+        let previousNotifications = [];
+
+        const loadNotifications = () => {
+            fetch("{% url 'notifications:notifications_api' %}")
+                .then(response => response.json())
+                .then(data => {
+                    const badge = document.getElementById('notificationBadge');
+                    const list = document.getElementById('notificationsList');
+
+                    if (!badge || !list) return;
+
+                    // Update badge
+                    badge.textContent = data.count;
+                    badge.style.display = data.count > 0 ? 'inline-block' : 'none';
+
+                    // Clear previous items
+                    list.querySelectorAll('li.notification-item').forEach(e => e.remove());
+
+                    // Add new notifications
+                    data.notifications.forEach(notif => {
+                        const li = document.createElement('li');
+                        li.classList.add('notification-item');
+
+                        const isNew = !previousNotifications.some(prev => prev.message === notif.message);
+
+                        li.innerHTML = `
+                            <a class="dropdown-item ${isNew ? 'flash' : ''}" href="${notif.url}">
+                                <i class="${notif.icon} me-2"></i>${notif.message}
+                            </a>
+                        `;
+
+                        const divider = list.querySelector('li.dropdown-divider');
+                        if (divider) {
+                            list.insertBefore(li, divider);
+                        }
+                    });
+
+                    previousNotifications = data.notifications;
+                })
+                .catch(error => console.warn('Failed to load notifications:', error));
+        };
+
+        // Load notifications if user is authenticated
+        if (document.getElementById('notificationBadge')) {
+            loadNotifications();
+            setInterval(loadNotifications, 30000); // Refresh every 30 seconds
+        }
+    }
+
+    // =========================================================================
+    // CSRF TOKEN HANDLING
+    // =========================================================================
+
+    /**
+     * Initialize CSRF token handling for AJAX requests
+     */
+    initCSRF() {
+        const getCookie = (name) => {
+            let cookieValue = null;
+            if (document.cookie && document.cookie !== '') {
+                const cookies = document.cookie.split(';');
+                for (let i = 0; i < cookies.length; i++) {
+                    const cookie = cookies[i].trim();
+                    if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                        cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                        break;
+                    }
                 }
             }
+            return cookieValue;
         };
 
-        window.toggleTheme = () => {
-            const themeToggle = document.getElementById('themeToggle');
-            if (themeToggle) {
-                themeToggle.click();
+        const csrftoken = getCookie('csrftoken');
+        const metaTag = document.querySelector('meta[name="csrf-token"]');
+
+        if (metaTag) {
+            window.csrfToken = metaTag.getAttribute('content');
+        } else if (csrftoken) {
+            window.csrfToken = csrftoken;
+        }
+
+        // Set up CSRF token for all AJAX requests
+        if (window.csrfToken && typeof jQuery !== 'undefined') {
+            jQuery.ajaxSetup({
+                beforeSend: function(xhr, settings) {
+                    if (!this.crossDomain) {
+                        xhr.setRequestHeader("X-CSRFToken", window.csrfToken);
+                    }
+                }
+            });
+        }
+    }
+
+    // =========================================================================
+    // ALERT MANAGEMENT
+    // =========================================================================
+
+    /**
+     * Initialize alert management with auto-hide functionality
+     */
+    initAlerts() {
+        // Auto-hide success messages after 5 seconds
+        setTimeout(() => {
+            const alerts = document.querySelectorAll('.alert:not(.alert-danger):not(.alert-warning)');
+            alerts.forEach(alert => {
+                const closeBtn = alert.querySelector('.btn-close');
+                if (closeBtn) {
+                    alert.style.transition = 'opacity 0.5s ease';
+                    alert.style.opacity = '0';
+                    setTimeout(() => closeBtn.click(), 500);
+                }
+            });
+        }, 5000);
+
+        // Add close animation to alerts
+        document.addEventListener('click', (e) => {
+            if (e.target.classList.contains('btn-close')) {
+                const alert = e.target.closest('.alert');
+                if (alert) {
+                    alert.style.transition = 'transform 0.3s ease, opacity 0.3s ease';
+                    alert.style.transform = 'translateX(100%)';
+                    alert.style.opacity = '0';
+                }
             }
-        };
+        });
+    }
+
+    // =========================================================================
+    // ACCESSIBILITY FEATURES
+    // =========================================================================
+
+    /**
+     * Initialize accessibility features and keyboard navigation
+     */
+    initAccessibility() {
+        // Keyboard navigation
+        document.addEventListener('keydown', (e) => {
+            // Escape key to close dropdowns and modals
+            if (e.key === 'Escape') {
+                const sidebar = document.getElementById('sidebar');
+                const sidebarOverlay = document.getElementById('sidebarOverlay');
+
+                if (sidebar && sidebar.classList.contains('show') && window.innerWidth < 992) {
+                    sidebar.classList.remove('show');
+                    if (sidebarOverlay) sidebarOverlay.classList.remove('show');
+                }
+
+                document.querySelectorAll('.dropdown-menu.show').forEach(dropdown => {
+                    bootstrap.Dropdown.getInstance(dropdown)?.hide();
+                });
+            }
+
+            // Ctrl/Cmd + D to toggle dark mode
+            if ((e.ctrlKey || e.metaKey) && e.key === 'd') {
+                e.preventDefault();
+                const themeToggle = document.getElementById('themeToggle');
+                if (themeToggle) themeToggle.click();
+            }
+
+            // Ctrl/Cmd + B to toggle sidebar
+            if ((e.ctrlKey || e.metaKey) && e.key === 'b') {
+                e.preventDefault();
+                const sidebarToggle = document.getElementById('sidebarToggle');
+                if (sidebarToggle) sidebarToggle.click();
+            }
+        });
+
+        // Focus management
+        document.addEventListener('focusin', (e) => {
+            if (e.target.matches('.nav-link, .btn, .dropdown-item')) {
+                e.target.style.outline = '2px solid var(--primary-500)';
+                e.target.style.outlineOffset = '2px';
+            }
+        });
+
+        document.addEventListener('focusout', (e) => {
+            if (e.target.matches('.nav-link, .btn, .dropdown-item')) {
+                e.target.style.outline = '';
+                e.target.style.outlineOffset = '';
+            }
+        });
+
+        // Skip link for screen readers
+        const skipLink = document.createElement('a');
+        skipLink.href = '#main-content';
+        skipLink.textContent = 'Skip to main content';
+        skipLink.className = 'sr-only sr-only-focusable position-absolute start-0 top-0 z-index-9999 p-2 bg-primary text-white';
+        skipLink.style.transform = 'translateY(-100%)';
+        skipLink.style.transition = 'transform 0.3s ease';
+
+        skipLink.addEventListener('focus', () => skipLink.style.transform = 'translateY(0)');
+        skipLink.addEventListener('blur', () => skipLink.style.transform = 'translateY(-100%)');
+
+        document.body.prepend(skipLink);
+
+        // Add main content ID for skip link
+        const mainContent = document.querySelector('.main-content');
+        if (mainContent) {
+            mainContent.id = 'main-content';
+            mainContent.setAttribute('tabindex', '-1');
+        }
+    }
+}
+
+// =============================================================================
+// MESSAGING SYSTEM
+// =============================================================================
+
+/**
+ * Update messaging badge count
+ */
+function updateMessagingBadge() {
+    fetch('/messaging/notifications/count/')
+        .then(response => response.json())
+        .then(data => {
+            const badge = document.getElementById('messagingBadge');
+            if (badge) {
+                badge.textContent = data.count;
+                badge.style.display = data.count > 0 ? 'inline-block' : 'none';
+            }
+        })
+        .catch(error => console.error('Error updating message count:', error));
+}
+
+/**
+ * Alternative message count update function
+ */
+function updateMessageCount() {
+    fetch("{% url 'messaging:notifications_count' %}")
+        .then(response => response.json())
+        .then(data => {
+            const badge = document.querySelector('.messaging-badge');
+            if (badge) {
+                badge.textContent = data.count;
+                badge.style.display = data.count > 0 ? 'inline-block' : 'none';
+            }
+        })
+        .catch(error => console.error('Error updating message count:', error));
+}
+
+// =============================================================================
+// ANNOUNCEMENT SYSTEM
+// =============================================================================
+
+/**
+ * Handle system announcements
+ */
+function handleSystemAnnouncement(announcement) {
+    const announcementHTML = `
+        <div class="alert alert-${getAnnouncementColor(announcement.announcement_type)} alert-dismissible fade show" role="alert">
+            <h5 class="alert-heading">
+                <i class="bi bi-megaphone me-2"></i>
+                ${announcement.title}
+            </h5>
+            <p>${announcement.message}</p>
+            ${announcement.action_text && announcement.action_url ?
+                `<a href="${announcement.action_url}" class="btn btn-sm btn-primary mt-2">${announcement.action_text}</a>` : ''}
+            ${announcement.is_dismissible ?
+                `<button type="button" class="btn-close" data-bs-dismiss="alert" onclick="dismissAnnouncement(${announcement.id})"></button>` : ''}
+        </div>
+    `;
+
+    const mainContent = document.querySelector('.main-content');
+    if (mainContent) {
+        const announcementDiv = document.createElement('div');
+        announcementDiv.innerHTML = announcementHTML;
+        mainContent.insertBefore(announcementDiv, mainContent.firstChild);
+    }
+}
+
+/**
+ * Get announcement color based on type
+ */
+function getAnnouncementColor(type) {
+    const colors = {
+        'info': 'info',
+        'warning': 'warning',
+        'maintenance': 'primary',
+        'update': 'success',
+        'feature': 'info',
+        'critical': 'danger'
+    };
+    return colors[type] || 'info';
+}
+
+/**
+ * Dismiss an announcement
+ */
+function dismissAnnouncement(announcementId) {
+    fetch(`/api/messaging/announcements/${announcementId}/dismiss/`, {
+        method: 'POST',
+        headers: {
+            'X-CSRFToken': getCSRFToken(),
+            'Content-Type': 'application/json'
+        },
+        credentials: 'include'
+    });
+}
+
+/**
+ * Get CSRF token
+ */
+function getCSRFToken() {
+    const token = document.querySelector('meta[name="csrf-token"]');
+    return token ? token.getAttribute('content') : window.csrfToken || '';
+}
+
+// =============================================================================
+// PLAN LIMITS (Configuration)
+// =============================================================================
+
+window.planLimits = {
+    users: {
+        current: {{ request.plan_limits.users.current|default:0 }},
+        limit: {{ request.plan_limits.users.limit|default:0 }},
+        exceeded: {% if request.plan_limits.users.exceeded %}true{% else %}false{% endif %}
+    },
+    branches: {
+        current: {{ request.plan_limits.branches.current|default:0 }},
+        limit: {{ request.plan_limits.branches.limit|default:0 }},
+        exceeded: {% if request.plan_limits.branches.exceeded %}true{% else %}false{% endif %}
+    },
+    storage: {
+        percentage: {{ request.plan_limits.storage.percentage|default:0 }},
+        exceeded: {% if request.plan_limits.storage.exceeded %}true{% else %}false{% endif %}
+    }
+};
+
+// =============================================================================
+// GLOBAL UTILITY FUNCTIONS
+// =============================================================================
+
+/**
+ * Show alert message
+ */
+window.showAlert = (message, type = 'info', duration = 5000) => {
+    const alertContainer = document.createElement('div');
+    alertContainer.className = `alert alert-${type} alert-dismissible fade show`;
+    alertContainer.innerHTML = `
+        ${message}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    `;
+
+    const mainContent = document.querySelector('.main-content');
+    if (mainContent) {
+        mainContent.prepend(alertContainer);
+
+        if (duration > 0) {
+            setTimeout(() => {
+                const closeBtn = alertContainer.querySelector('.btn-close');
+                if (closeBtn) closeBtn.click();
+            }, duration);
+        }
+    }
+};
+
+/**
+ * Toggle theme
+ */
+window.toggleTheme = () => {
+    const themeToggle = document.getElementById('themeToggle');
+    if (themeToggle) themeToggle.click();
+};
+
+// =============================================================================
+// INITIALIZATION
+// =============================================================================
+
+document.addEventListener('DOMContentLoaded', () => {
+    // Initialize base template manager
+    new BaseTemplateManager();
+
+    // Add smooth scrolling
+    document.documentElement.style.scrollBehavior = 'smooth';
+
+    // Initialize messaging badge updates (if user is authenticated)
+    {% if user.is_authenticated %}
+    if (document.getElementById('messagingBadge')) {
+        updateMessagingBadge();
+        setInterval(updateMessagingBadge, 30000);
+    }
+
+    if (document.querySelector('.messaging-badge')) {
+        setInterval(updateMessageCount, 30000);
+    }
+    {% endif %}
+
+    // Performance monitoring
+    window.addEventListener('load', () => {
+        const loadTime = performance.now();
+        if (loadTime > 2000) {
+            console.warn(`Page load time: ${Math.round(loadTime)}ms - Consider optimizing`);
+        }
+    });
+});
     </script>
 
     {% block extra_js %}{% endblock %}

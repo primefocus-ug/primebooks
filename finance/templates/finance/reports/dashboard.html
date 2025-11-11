@@ -1,0 +1,455 @@
+{% extends 'base.html' %}
+{% load static %}
+{% load i18n %}
+
+{% block title %}{% trans "Financial Reports" %} - {{ block.super }}{% endblock %}
+
+{% block breadcrumb_items %}
+<li class="breadcrumb-item"><a href="{% url 'finance:dashboard' %}">{% trans "Finance" %}</a></li>
+<li class="breadcrumb-item active">{% trans "Reports" %}</li>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+    .report-card {
+        transition: all 0.3s ease;
+        border: none;
+        background: var(--bg-primary);
+    }
+    .report-card:hover {
+        transform: translateY(-5px);
+        box-shadow: var(--shadow-lg) !important;
+    }
+    .report-icon {
+        width: 60px;
+        height: 60px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 12px;
+        font-size: 1.75rem;
+    }
+    .report-category {
+        border-left: 4px solid;
+        padding-left: 1rem;
+        margin-bottom: 2rem;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- Page Header -->
+    <div class="mb-4">
+        <h1 class="h3 mb-2 text-primary">
+            <i class="bi bi-file-earmark-bar-graph me-2"></i>{% trans "Financial Reports" %}
+        </h1>
+        <p class="text-muted mb-0">{% trans "Generate and view comprehensive financial reports" %}</p>
+    </div>
+
+    <!-- Quick Filters -->
+    <div class="card shadow-sm mb-4">
+        <div class="card-body">
+            <form class="row g-3 align-items-end" method="get" id="quickFilterForm">
+                <div class="col-md-3">
+                    <label class="form-label small">{% trans "Fiscal Year" %}</label>
+                    <select class="form-select" name="fiscal_year" id="fiscalYearSelect">
+                        <option value="">{% trans "All Years" %}</option>
+                        {% for year in fiscal_years %}
+                        <option value="{{ year.id }}" {% if year.is_current %}selected{% endif %}>
+                            {{ year.name }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label small">{% trans "From Date" %}</label>
+                    <input type="date" class="form-control" name="start_date" id="startDate">
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label small">{% trans "To Date" %}</label>
+                    <input type="date" class="form-control" name="end_date" id="endDate">
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label small">{% trans "Currency" %}</label>
+                    <select class="form-select" name="currency">
+                        <option value="UGX">UGX</option>
+                        <option value="USD">USD</option>
+                        <option value="EUR">EUR</option>
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <button type="button" class="btn btn-outline-primary w-100" onclick="applyFilters()">
+                        <i class="bi bi-funnel me-2"></i>{% trans "Apply Filters" %}
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Financial Statements -->
+    <div class="report-category border-primary">
+        <h4 class="mb-3">
+            <i class="bi bi-file-earmark-text me-2"></i>{% trans "Financial Statements" %}
+        </h4>
+        <div class="row g-4">
+            <!-- Balance Sheet -->
+            <div class="col-md-4">
+                <div class="card report-card shadow-sm h-100">
+                    <div class="card-body">
+                        <div class="d-flex align-items-start mb-3">
+                            <div class="report-icon bg-primary bg-opacity-10 text-primary me-3">
+                                <i class="bi bi-file-earmark-spreadsheet"></i>
+                            </div>
+                            <div class="flex-grow-1">
+                                <h5 class="mb-1">{% trans "Balance Sheet" %}</h5>
+                                <p class="text-muted small mb-0">{% trans "Statement of financial position" %}</p>
+                            </div>
+                        </div>
+                        <p class="small mb-3">
+                            {% trans "View assets, liabilities, and equity at a specific date" %}
+                        </p>
+                        <a href="{% url 'finance:generate_balance_sheet' %}" class="btn btn-primary w-100">
+                            <i class="bi bi-eye me-2"></i>{% trans "View Report" %}
+                        </a>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Income Statement -->
+            <div class="col-md-4">
+                <div class="card report-card shadow-sm h-100">
+                    <div class="card-body">
+                        <div class="d-flex align-items-start mb-3">
+                            <div class="report-icon bg-success bg-opacity-10 text-success me-3">
+                                <i class="bi bi-graph-up"></i>
+                            </div>
+                            <div class="flex-grow-1">
+                                <h5 class="mb-1">{% trans "Income Statement" %}</h5>
+                                <p class="text-muted small mb-0">{% trans "Profit & Loss statement" %}</p>
+                            </div>
+                        </div>
+                        <p class="small mb-3">
+                            {% trans "View revenue, expenses, and net profit for a period" %}
+                        </p>
+                        <a href="{% url 'finance:generate_income_statement' %}" class="btn btn-success w-100">
+                            <i class="bi bi-eye me-2"></i>{% trans "View Report" %}
+                        </a>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Cash Flow Statement -->
+            <div class="col-md-4">
+                <div class="card report-card shadow-sm h-100">
+                    <div class="card-body">
+                        <div class="d-flex align-items-start mb-3">
+                            <div class="report-icon bg-info bg-opacity-10 text-info me-3">
+                                <i class="bi bi-cash-stack"></i>
+                            </div>
+                            <div class="flex-grow-1">
+                                <h5 class="mb-1">{% trans "Cash Flow Statement" %}</h5>
+                                <p class="text-muted small mb-0">{% trans "Cash inflows and outflows" %}</p>
+                            </div>
+                        </div>
+                        <p class="small mb-3">
+                            {% trans "Track cash movements from operations, investing, and financing" %}
+                        </p>
+                        <button class="btn btn-info w-100" disabled>
+                            <i class="bi bi-clock me-2"></i>{% trans "Coming Soon" %}
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Accounting Reports -->
+    <div class="report-category border-warning">
+        <h4 class="mb-3">
+            <i class="bi bi-calculator me-2"></i>{% trans "Accounting Reports" %}
+        </h4>
+        <div class="row g-4">
+            <!-- Trial Balance -->
+            <div class="col-md-4">
+                <div class="card report-card shadow-sm h-100">
+                    <div class="card-body">
+                        <div class="d-flex align-items-start mb-3">
+                            <div class="report-icon bg-warning bg-opacity-10 text-warning me-3">
+                                <i class="bi bi-balance-scale"></i>
+                            </div>
+                            <div class="flex-grow-1">
+                                <h5 class="mb-1">{% trans "Trial Balance" %}</h5>
+                                <p class="text-muted small mb-0">{% trans "Account balances summary" %}</p>
+                            </div>
+                        </div>
+                        <p class="small mb-3">
+                            {% trans "List of all accounts with debit and credit balances" %}
+                        </p>
+                        <a href="{% url 'finance:generate_trial_balance' %}" class="btn btn-warning w-100">
+                            <i class="bi bi-eye me-2"></i>{% trans "View Report" %}
+                        </a>
+                    </div>
+                </div>
+            </div>
+
+            <!-- General Ledger -->
+            <div class="col-md-4">
+                <div class="card report-card shadow-sm h-100">
+                    <div class="card-body">
+                        <div class="d-flex align-items-start mb-3">
+                            <div class="report-icon bg-secondary bg-opacity-10 text-secondary me-3">
+                                <i class="bi bi-journal-text"></i>
+                            </div>
+                            <div class="flex-grow-1">
+                                <h5 class="mb-1">{% trans "General Ledger" %}</h5>
+                                <p class="text-muted small mb-0">{% trans "Account transaction history" %}</p>
+                            </div>
+                        </div>
+                        <p class="small mb-3">
+                            {% trans "Detailed transaction history for any account" %}
+                        </p>
+                        <a href="{% url 'finance:general_ledger' %}" class="btn btn-secondary w-100">
+                            <i class="bi bi-eye me-2"></i>{% trans "View Report" %}
+                        </a>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Chart of Accounts -->
+            <div class="col-md-4">
+                <div class="card report-card shadow-sm h-100">
+                    <div class="card-body">
+                        <div class="d-flex align-items-start mb-3">
+                            <div class="report-icon bg-primary bg-opacity-10 text-primary me-3">
+                                <i class="bi bi-diagram-3"></i>
+                            </div>
+                            <div class="flex-grow-1">
+                                <h5 class="mb-1">{% trans "Chart of Accounts" %}</h5>
+                                <p class="text-muted small mb-0">{% trans "Account structure" %}</p>
+                            </div>
+                        </div>
+                        <p class="small mb-3">
+                            {% trans "Complete list of all accounts with hierarchy" %}
+                        </p>
+                        <a href="{% url 'finance:chart_of_accounts_list' %}" class="btn btn-primary w-100">
+                            <i class="bi bi-eye me-2"></i>{% trans "View Report" %}
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Tax Reports -->
+    <div class="report-category border-danger">
+        <h4 class="mb-3">
+            <i class="bi bi-receipt me-2"></i>{% trans "Tax Reports" %}
+        </h4>
+        <div class="row g-4">
+            <!-- Tax Summary -->
+            <div class="col-md-4">
+                <div class="card report-card shadow-sm h-100">
+                    <div class="card-body">
+                        <div class="d-flex align-items-start mb-3">
+                            <div class="report-icon bg-danger bg-opacity-10 text-danger me-3">
+                                <i class="bi bi-receipt-cutoff"></i>
+                            </div>
+                            <div class="flex-grow-1">
+                                <h5 class="mb-1">{% trans "Tax Summary" %}</h5>
+                                <p class="text-muted small mb-0">{% trans "Tax collected and paid" %}</p>
+                            </div>
+                        </div>
+                        <p class="small mb-3">
+                            {% trans "Summary of all tax transactions by tax code" %}
+                        </p>
+                        <a href="{% url 'finance:tax_report' %}" class="btn btn-danger w-100">
+                            <i class="bi bi-eye me-2"></i>{% trans "View Report" %}
+                        </a>
+                    </div>
+                </div>
+            </div>
+
+            <!-- VAT Report -->
+            <div class="col-md-4">
+                <div class="card report-card shadow-sm h-100">
+                    <div class="card-body">
+                        <div class="d-flex align-items-start mb-3">
+                            <div class="report-icon bg-danger bg-opacity-10 text-danger me-3">
+                                <i class="bi bi-percent"></i>
+                            </div>
+                            <div class="flex-grow-1">
+                                <h5 class="mb-1">{% trans "VAT Report" %}</h5>
+                                <p class="text-muted small mb-0">{% trans "Value Added Tax" %}</p>
+                            </div>
+                        </div>
+                        <p class="small mb-3">
+                            {% trans "Detailed VAT analysis for filing" %}
+                        </p>
+                        <button class="btn btn-danger w-100" disabled>
+                            <i class="bi bi-clock me-2"></i>{% trans "Coming Soon" %}
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Withholding Tax -->
+            <div class="col-md-4">
+                <div class="card report-card shadow-sm h-100">
+                    <div class="card-body">
+                        <div class="d-flex align-items-start mb-3">
+                            <div class="report-icon bg-danger bg-opacity-10 text-danger me-3">
+                                <i class="bi bi-cash-coin"></i>
+                            </div>
+                            <div class="flex-grow-1">
+                                <h5 class="mb-1">{% trans "Withholding Tax" %}</h5>
+                                <p class="text-muted small mb-0">{% trans "WHT deductions" %}</p>
+                            </div>
+                        </div>
+                        <p class="small mb-3">
+                            {% trans "Withholding tax collected and remitted" %}
+                        </p>
+                        <button class="btn btn-danger w-100" disabled>
+                            <i class="bi bi-clock me-2"></i>{% trans "Coming Soon" %}
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Management Reports -->
+    <div class="report-category border-info">
+        <h4 class="mb-3">
+            <i class="bi bi-bar-chart me-2"></i>{% trans "Management Reports" %}
+        </h4>
+        <div class="row g-4">
+            <!-- Budget Analysis -->
+            <div class="col-md-4">
+                <div class="card report-card shadow-sm h-100">
+                    <div class="card-body">
+                        <div class="d-flex align-items-start mb-3">
+                            <div class="report-icon bg-info bg-opacity-10 text-info me-3">
+                                <i class="bi bi-pie-chart"></i>
+                            </div>
+                            <div class="flex-grow-1">
+                                <h5 class="mb-1">{% trans "Budget vs Actual" %}</h5>
+                                <p class="text-muted small mb-0">{% trans "Budget performance" %}</p>
+                            </div>
+                        </div>
+                        <p class="small mb-3">
+                            {% trans "Compare actual spending against budget" %}
+                        </p>
+                        <a href="{% url 'finance:budget_list' %}" class="btn btn-info w-100">
+                            <i class="bi bi-eye me-2"></i>{% trans "View Report" %}
+                        </a>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Fixed Assets -->
+            <div class="col-md-4">
+                <div class="card report-card shadow-sm h-100">
+                    <div class="card-body">
+                        <div class="d-flex align-items-start mb-3">
+                            <div class="report-icon bg-info bg-opacity-10 text-info me-3">
+                                <i class="bi bi-building"></i>
+                            </div>
+                            <div class="flex-grow-1">
+                                <h5 class="mb-1">{% trans "Fixed Assets" %}</h5>
+                                <p class="text-muted small mb-0">{% trans "Asset register" %}</p>
+                            </div>
+                        </div>
+                        <p class="small mb-3">
+                            {% trans "Complete list of assets and depreciation" %}
+                        </p>
+                        <a href="{% url 'finance:fixed_asset_list' %}" class="btn btn-info w-100">
+                            <i class="bi bi-eye me-2"></i>{% trans "View Report" %}
+                        </a>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Bank Reconciliation -->
+            <div class="col-md-4">
+                <div class="card report-card shadow-sm h-100">
+                    <div class="card-body">
+                        <div class="d-flex align-items-start mb-3">
+                            <div class="report-icon bg-info bg-opacity-10 text-info me-3">
+                                <i class="bi bi-bank"></i>
+                            </div>
+                            <div class="flex-grow-1">
+                                <h5 class="mb-1">{% trans "Bank Reconciliation" %}</h5>
+                                <p class="text-muted small mb-0">{% trans "Bank account matching" %}</p>
+                            </div>
+                        </div>
+                        <p class="small mb-3">
+                            {% trans "Reconcile bank statements with book records" %}
+                        </p>
+                        <a href="{% url 'finance:bank_reconciliation_list' %}" class="btn btn-info w-100">
+                            <i class="bi bi-eye me-2"></i>{% trans "View Report" %}
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Export Options -->
+    <div class="card shadow-sm mt-4">
+        <div class="card-body">
+            <div class="row align-items-center">
+                <div class="col-md-8">
+                    <h5 class="mb-2">
+                        <i class="bi bi-download me-2"></i>{% trans "Export Reports" %}
+                    </h5>
+                    <p class="text-muted small mb-0">
+                        {% trans "Download financial reports in various formats" %}
+                    </p>
+                </div>
+                <div class="col-md-4 text-md-end">
+                    <div class="btn-group" role="group">
+                        <button class="btn btn-outline-primary">
+                            <i class="bi bi-file-pdf me-2"></i>PDF
+                        </button>
+                        <button class="btn btn-outline-success">
+                            <i class="bi bi-file-excel me-2"></i>Excel
+                        </button>
+                        <button class="btn btn-outline-info">
+                            <i class="bi bi-filetype-csv me-2"></i>CSV
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function applyFilters() {
+    const form = document.getElementById('quickFilterForm');
+    const formData = new FormData(form);
+    const params = new URLSearchParams(formData);
+
+    // Store in sessionStorage
+    sessionStorage.setItem('reportFilters', params.toString());
+
+    // Show toast notification
+    showAlert('{% trans "Filters applied. Reports will use these parameters." %}', 'info');
+}
+
+// Load saved filters
+document.addEventListener('DOMContentLoaded', function() {
+    const savedFilters = sessionStorage.getItem('reportFilters');
+    if (savedFilters) {
+        const params = new URLSearchParams(savedFilters);
+        params.forEach((value, key) => {
+            const input = document.querySelector(`[name="${key}"]`);
+            if (input) input.value = value;
+        });
+    }
+});
+</script>
+{% endblock %}

@@ -1,628 +1,491 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Activity Log - {{ user.get_full_name|default:user.username }}</title>
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.0/css/bootstrap.min.css" rel="stylesheet">
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
-    <style>
-        .header-section {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            padding: 2rem 0;
-            margin-bottom: 2rem;
-        }
-        .activity-timeline {
-            position: relative;
-            padding-left: 2rem;
-        }
-        .activity-timeline::before {
-            content: '';
-            position: absolute;
-            left: 15px;
-            top: 0;
-            bottom: 0;
-            width: 2px;
-            background: linear-gradient(to bottom, #007bff, #6c757d);
-        }
-        .activity-item {
-            position: relative;
-            margin-bottom: 2rem;
-            background: white;
-            border-radius: 12px;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
-            padding: 1.5rem;
-            margin-left: 1rem;
-        }
-        .activity-item::before {
-            content: '';
-            position: absolute;
-            left: -2rem;
-            top: 1.5rem;
-            width: 12px;
-            height: 12px;
-            border-radius: 50%;
-            background: white;
-            border: 3px solid #007bff;
-            z-index: 1;
-        }
-        .activity-item.success::before { border-color: #28a745; }
-        .activity-item.warning::before { border-color: #ffc107; }
-        .activity-item.danger::before { border-color: #dc3545; }
-        .activity-item.info::before { border-color: #17a2b8; }
-        .stat-card {
-            border: none;
-            border-radius: 12px;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
-            height: 100%;
-        }
-        .activity-icon {
-            width: 40px;
-            height: 40px;
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 1rem;
-        }
-        .security-alert {
-            background: linear-gradient(45deg, #ff6b6b, #feca57);
-            color: white;
-            border-radius: 8px;
-            padding: 1rem;
-            margin-bottom: 1rem;
-        }
-        .filter-tabs {
-            background: white;
-            border-radius: 12px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-            margin-bottom: 2rem;
-        }
-    </style>
-</head>
-<body class="bg-light">
-    <div class="header-section">
-        <div class="container">
-            <div class="row align-items-center">
-                <div class="col-md-8">
-                    <h1 class="mb-1">
-                        <i class="fas fa-history me-2"></i>
-                        Activity Log
-                    </h1>
-                    <p class="mb-0 opacity-75">{{ user.get_full_name|default:user.username }}</p>
-                </div>
-                <div class="col-md-4 text-end">
-                    <div class="d-flex gap-2 justify-content-end">
-                        <a href="{% url 'user_profile' %}" class="btn btn-outline-light">
-                            <i class="fas fa-arrow-left me-1"></i> Back to Profile
-                        </a>
-                        <a href="{% url 'user_security_settings' %}" class="btn btn-light">
-                            <i class="fas fa-shield-alt me-1"></i> Security
-                        </a>
-                    </div>
-                </div>
-            </div>
+{% extends 'base.html' %}
+{% load i18n %}
+{% load static %}
+
+{% block title %}{% trans "My Activity Log" %} | {{ block.super }}{% endblock %}
+
+{% block breadcrumb_items %}
+<li class="breadcrumb-item"><a href="{% url 'user_dashboard' %}">{% trans "Dashboard" %}</a></li>
+<li class="breadcrumb-item active">{% trans "Activity Log" %}</li>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+    .activity-stats {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 1rem;
+        margin-bottom: 2rem;
+    }
+
+    .stat-card {
+        background: var(--bg-primary);
+        border: 1px solid var(--border-color);
+        border-radius: var(--border-radius);
+        padding: 1.25rem;
+        text-align: center;
+        transition: all 0.3s ease;
+    }
+
+    .stat-card:hover {
+        transform: translateY(-2px);
+        box-shadow: var(--shadow-md);
+    }
+
+    .stat-icon {
+        font-size: 2rem;
+        margin-bottom: 0.5rem;
+    }
+
+    .stat-value {
+        font-size: 1.75rem;
+        font-weight: 700;
+        color: var(--primary-600);
+    }
+
+    .stat-label {
+        font-size: 0.875rem;
+        color: var(--text-secondary);
+        margin-top: 0.25rem;
+    }
+
+    .activity-chart {
+        height: 200px;
+        background: var(--bg-primary);
+        border: 1px solid var(--border-color);
+        border-radius: var(--border-radius);
+        padding: 1rem;
+        margin-bottom: 2rem;
+    }
+
+    .timeline-item {
+        position: relative;
+        padding-left: 2.5rem;
+        padding-bottom: 1.5rem;
+    }
+
+    .timeline-item::before {
+        content: '';
+        position: absolute;
+        left: 0.75rem;
+        top: 2rem;
+        bottom: 0;
+        width: 2px;
+        background: var(--border-color);
+    }
+
+    .timeline-item:last-child::before {
+        display: none;
+    }
+
+    .timeline-icon {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 2.5rem;
+        height: 2.5rem;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: var(--primary-100);
+        color: var(--primary-700);
+        font-size: 1.125rem;
+    }
+
+    .timeline-content {
+        background: var(--bg-primary);
+        border: 1px solid var(--border-color);
+        border-radius: var(--border-radius);
+        padding: 1rem;
+    }
+
+    .timeline-header {
+        display: flex;
+        justify-content: between;
+        align-items: start;
+        margin-bottom: 0.5rem;
+    }
+
+    .timeline-title {
+        font-weight: 600;
+        color: var(--text-primary);
+    }
+
+    .timeline-time {
+        font-size: 0.875rem;
+        color: var(--text-secondary);
+    }
+
+    .timeline-description {
+        font-size: 0.9rem;
+        color: var(--text-secondary);
+    }
+
+    .login-device {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+        padding: 1rem;
+        background: var(--bg-primary);
+        border: 1px solid var(--border-color);
+        border-radius: var(--border-radius);
+        margin-bottom: 1rem;
+    }
+
+    .device-icon {
+        width: 3rem;
+        height: 3rem;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: var(--primary-100);
+        color: var(--primary-700);
+        font-size: 1.5rem;
+    }
+
+    .device-info {
+        flex: 1;
+    }
+
+    .device-name {
+        font-weight: 600;
+        color: var(--text-primary);
+    }
+
+    .device-details {
+        font-size: 0.875rem;
+        color: var(--text-secondary);
+    }
+
+    [data-theme="dark"] .timeline-icon {
+        background: rgba(59, 130, 246, 0.2);
+        color: var(--primary-400);
+    }
+
+    [data-theme="dark"] .device-icon {
+        background: rgba(59, 130, 246, 0.2);
+        color: var(--primary-400);
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- Page Header -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1 class="h3 mb-0">
+            <i class="bi bi-clock-history me-2"></i>{% trans "My Activity Log" %}
+        </h1>
+        <div class="d-flex gap-2">
+            <a href="{% url 'login_history_view' %}" class="btn btn-outline-primary">
+                <i class="bi bi-shield-lock me-2"></i>{% trans "Login History" %}
+            </a>
+            <a href="" class="btn btn-outline-primary">
+                <i class="bi bi-shield-check me-2"></i>{% trans "Security" %}
+            </a>
         </div>
     </div>
 
-    <div class="container">
-        <!-- Security Alerts -->
-        {% if user.failed_login_attempts > 0 %}
-            <div class="security-alert">
-                <div class="d-flex align-items-center">
-                    <i class="fas fa-exclamation-triangle fa-2x me-3"></i>
-                    <div>
-                        <h5 class="mb-1">Security Alert</h5>
-                        <p class="mb-0">{{ user.failed_login_attempts }} failed login attempt{{ user.failed_login_attempts|pluralize }} detected.</p>
-                    </div>
-                </div>
+    <!-- Statistics -->
+    <div class="activity-stats">
+        <div class="stat-card">
+            <div class="stat-icon text-primary">
+                <i class="bi bi-activity"></i>
             </div>
-        {% endif %}
-
-        <!-- Statistics -->
-        <div class="row mb-4">
-            <div class="col-md-3">
-                <div class="card stat-card text-center">
-                    <div class="card-body">
-                        <div class="activity-icon bg-primary bg-opacity-10 text-primary mx-auto mb-3">
-                            <i class="fas fa-sign-in-alt"></i>
-                        </div>
-                        <h4 class="mb-1">{{ user.login_count }}</h4>
-                        <small class="text-muted">Total Logins</small>
-                    </div>
-                </div>
-            </div>
-            <div class="col-md-3">
-                <div class="card stat-card text-center">
-                    <div class="card-body">
-                        <div class="activity-icon bg-success bg-opacity-10 text-success mx-auto mb-3">
-                            <i class="fas fa-calendar-check"></i>
-                        </div>
-                        <h4 class="mb-1">{{ user.date_joined|timesince|split:" "|first }}</h4>
-                        <small class="text-muted">Days Active</small>
-                    </div>
-                </div>
-            </div>
-            <div class="col-md-3">
-                <div class="card stat-card text-center">
-                    <div class="card-body">
-                        <div class="activity-icon bg-warning bg-opacity-10 text-warning mx-auto mb-3">
-                            <i class="fas fa-exclamation-triangle"></i>
-                        </div>
-                        <h4 class="mb-1">{{ user.failed_login_attempts }}</h4>
-                        <small class="text-muted">Failed Attempts</small>
-                    </div>
-                </div>
-            </div>
-            <div class="col-md-3">
-                <div class="card stat-card text-center">
-                    <div class="card-body">
-                        <div class="activity-icon bg-info bg-opacity-10 text-info mx-auto mb-3">
-                            <i class="fas fa-clock"></i>
-                        </div>
-                        <h4 class="mb-1">
-                            {% if user.last_login %}
-                                {{ user.last_login|timesince|split:" "|first }}d
-                            {% else %}Never{% endif %}
-                        </h4>
-                        <small class="text-muted">Last Login</small>
-                    </div>
-                </div>
-            </div>
+            <div class="stat-value">{{ stats.total_actions|default:0 }}</div>
+            <div class="stat-label">{% trans "Total Actions" %}</div>
         </div>
-
-        <!-- Filter Tabs -->
-        <div class="filter-tabs">
-            <div class="card-body">
-                <ul class="nav nav-pills justify-content-center" id="activityTabs" role="tablist">
-                    <li class="nav-item" role="presentation">
-                        <button class="nav-link active" id="all-tab" data-bs-toggle="pill" data-bs-target="#all" type="button" role="tab">
-                            <i class="fas fa-list me-1"></i> All Activity
-                        </button>
-                    </li>
-                    <li class="nav-item" role="presentation">
-                        <button class="nav-link" id="login-tab" data-bs-toggle="pill" data-bs-target="#login" type="button" role="tab">
-                            <i class="fas fa-sign-in-alt me-1"></i> Login History
-                        </button>
-                    </li>
-                    <li class="nav-item" role="presentation">
-                        <button class="nav-link" id="security-tab" data-bs-toggle="pill" data-bs-target="#security" type="button" role="tab">
-                            <i class="fas fa-shield-alt me-1"></i> Security Events
-                        </button>
-                    </li>
-                    <li class="nav-item" role="presentation">
-                        <button class="nav-link" id="profile-tab" data-bs-toggle="pill" data-bs-target="#profile" type="button" role="tab">
-                            <i class="fas fa-user-edit me-1"></i> Profile Changes
-                        </button>
-                    </li>
-                </ul>
+        <div class="stat-card">
+            <div class="stat-icon text-success">
+                <i class="bi bi-calendar3"></i>
             </div>
+            <div class="stat-value">{{ stats.actions_last_30_days|default:0 }}</div>
+            <div class="stat-label">{% trans "Last 30 Days" %}</div>
         </div>
-
-        <!-- Activity Content -->
-        <div class="tab-content" id="activityTabsContent">
-            <!-- All Activity -->
-            <div class="tab-pane fade show active" id="all" role="tabpanel">
-                <div class="activity-timeline">
-                    <!-- Login Activity -->
-                    {% if user.last_login %}
-                        <div class="activity-item success">
-                            <div class="d-flex align-items-start">
-                                <div class="activity-icon bg-success bg-opacity-10 text-success me-3">
-                                    <i class="fas fa-sign-in-alt"></i>
-                                </div>
-                                <div class="flex-grow-1">
-                                    <h6 class="mb-1">Successful Login</h6>
-                                    <p class="text-muted mb-2">Logged in successfully from {{ user.last_login_ip|default:"unknown IP" }}</p>
-                                    <small class="text-muted">
-                                        <i class="fas fa-clock me-1"></i>
-                                        {{ user.last_login|date:"M d, Y H:i" }}
-                                    </small>
-                                </div>
-                                <div class="badge bg-success">Success</div>
-                            </div>
-                        </div>
-                    {% endif %}
-
-                    <!-- Password Change -->
-                    {% if password_changed_at %}
-                        <div class="activity-item info">
-                            <div class="d-flex align-items-start">
-                                <div class="activity-icon bg-info bg-opacity-10 text-info me-3">
-                                    <i class="fas fa-key"></i>
-                                </div>
-                                <div class="flex-grow-1">
-                                    <h6 class="mb-1">Password Changed</h6>
-                                    <p class="text-muted mb-2">User changed their password</p>
-                                    <small class="text-muted">
-                                        <i class="fas fa-clock me-1"></i>
-                                        {{ password_changed_at|date:"M d, Y H:i" }}
-                                    </small>
-                                </div>
-                                <div class="badge bg-info">Security</div>
-                            </div>
-                        </div>
-                    {% endif %}
-
-                    <!-- Two-Factor Authentication -->
-                    {% if user.two_factor_enabled %}
-                        <div class="activity-item success">
-                            <div class="d-flex align-items-start">
-                                <div class="activity-icon bg-success bg-opacity-10 text-success me-3">
-                                    <i class="fas fa-mobile-alt"></i>
-                                </div>
-                                <div class="flex-grow-1">
-                                    <h6 class="mb-1">Two-Factor Authentication Enabled</h6>
-                                    <p class="text-muted mb-2">Enhanced security enabled for account</p>
-                                    <small class="text-muted">
-                                        <i class="fas fa-clock me-1"></i>
-                                        Account security enhanced
-                                    </small>
-                                </div>
-                                <div class="badge bg-success">Security</div>
-                            </div>
-                        </div>
-                    {% endif %}
-
-                    <!-- Failed Login Attempts -->
-                    {% if failed_attempts > 0 %}
-                        <div class="activity-item danger">
-                            <div class="d-flex align-items-start">
-                                <div class="activity-icon bg-danger bg-opacity-10 text-danger me-3">
-                                    <i class="fas fa-exclamation-triangle"></i>
-                                </div>
-                                <div class="flex-grow-1">
-                                    <h6 class="mb-1">Failed Login Attempts</h6>
-                                    <p class="text-muted mb-2">{{ failed_attempts }} failed login attempt{{ failed_attempts|pluralize }} detected</p>
-                                    <small class="text-muted">
-                                        <i class="fas fa-clock me-1"></i>
-                                        Multiple failed attempts recorded
-                                    </small>
-                                </div>
-                                <div class="badge bg-danger">Alert</div>
-                            </div>
-                        </div>
-                    {% endif %}
-
-                    <!-- Account Creation -->
-                    <div class="activity-item info">
-                        <div class="d-flex align-items-start">
-                            <div class="activity-icon bg-primary bg-opacity-10 text-primary me-3">
-                                <i class="fas fa-user-plus"></i>
-                            </div>
-                            <div class="flex-grow-1">
-                                <h6 class="mb-1">Account Created</h6>
-                                <p class="text-muted mb-2">User account was created and activated</p>
-                                <small class="text-muted">
-                                    <i class="fas fa-clock me-1"></i>
-                                    {{ user.date_joined|date:"M d, Y H:i" }}
-                                </small>
-                            </div>
-                            <div class="badge bg-primary">System</div>
-                        </div>
-                    </div>
-                </div>
+        <div class="stat-card">
+            <div class="stat-icon text-info">
+                <i class="bi bi-box-arrow-in-right"></i>
             </div>
-
-            <!-- Login History -->
-            <div class="tab-pane fade" id="login" role="tabpanel">
-                <div class="activity-timeline">
-                    {% for login in login_history %}
-                        <div class="activity-item {% if login.success %}success{% else %}danger{% endif %}">
-                            <div class="d-flex align-items-start">
-                                <div class="activity-icon bg-{% if login.success %}success{% else %}danger{% endif %} bg-opacity-10 text-{% if login.success %}success{% else %}danger{% endif %} me-3">
-                                    <i class="fas fa-{% if login.success %}sign-in-alt{% else %}times-circle{% endif %}"></i>
-                                </div>
-                                <div class="flex-grow-1">
-                                    <h6 class="mb-1">
-                                        {% if login.success %}Successful Login{% else %}Failed Login{% endif %}
-                                    </h6>
-                                    <p class="text-muted mb-2">
-                                        {% if login.success %}
-                                            Logged in successfully from {{ login.ip|default:"unknown IP" }}
-                                        {% else %}
-                                            Login attempt failed from {{ login.ip|default:"unknown IP" }}
-                                        {% endif %}
-                                    </p>
-                                    <small class="text-muted">
-                                        <i class="fas fa-clock me-1"></i>
-                                        {{ login.date|date:"M d, Y H:i" }}
-                                    </small>
-                                    {% if login.ip %}
-                                        <div class="mt-2">
-                                            <span class="badge bg-light text-dark">
-                                                <i class="fas fa-map-marker-alt me-1"></i>
-                                                {{ login.ip }}
-                                            </span>
-                                        </div>
-                                    {% endif %}
-                                </div>
-                                <div class="badge bg-{% if login.success %}success{% else %}danger{% endif %}">
-                                    {% if login.success %}Success{% else %}Failed{% endif %}
-                                </div>
-                            </div>
-                        </div>
-                    {% empty %}
-                        <div class="text-center py-5">
-                            <i class="fas fa-sign-in-alt fa-3x text-muted mb-3"></i>
-                            <h5 class="text-muted">No Login History</h5>
-                            <p class="text-muted">No login attempts have been recorded yet.</p>
-                        </div>
-                    {% endfor %}
-                </div>
+            <div class="stat-value">{{ stats.successful_logins|default:0 }}</div>
+            <div class="stat-label">{% trans "Successful Logins" %}</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-icon text-danger">
+                <i class="bi bi-x-circle"></i>
             </div>
+            <div class="stat-value">{{ stats.failed_logins|default:0 }}</div>
+            <div class="stat-label">{% trans "Failed Logins" %}</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-icon text-warning">
+                <i class="bi bi-globe"></i>
+            </div>
+            <div class="stat-value">{{ stats.unique_ips|default:0 }}</div>
+            <div class="stat-label">{% trans "Unique IPs" %}</div>
+        </div>
+    </div>
 
-            <!-- Security Events -->
-            <div class="tab-pane fade" id="security" role="tabpanel">
-                <div class="activity-timeline">
-                    <!-- Password Changes -->
-                    {% if password_changed_at %}
-                        <div class="activity-item info">
-                            <div class="d-flex align-items-start">
-                                <div class="activity-icon bg-info bg-opacity-10 text-info me-3">
-                                    <i class="fas fa-key"></i>
-                                </div>
-                                <div class="flex-grow-1">
-                                    <h6 class="mb-1">Password Changed</h6>
-                                    <p class="text-muted mb-2">User successfully changed their password</p>
-                                    <small class="text-muted">
-                                        <i class="fas fa-clock me-1"></i>
-                                        {{ password_changed_at|date:"M d, Y H:i" }}
-                                    </small>
-                                </div>
-                                <div class="badge bg-info">Security</div>
-                            </div>
-                        </div>
-                    {% endif %}
+    <!-- Activity Chart -->
+    <div class="card mb-4">
+        <div class="card-header">
+            <h5 class="mb-0">
+                <i class="bi bi-graph-up me-2"></i>{% trans "Activity Over Last 7 Days" %}
+            </h5>
+        </div>
+        <div class="card-body">
+            <canvas id="activityChart"></canvas>
+        </div>
+    </div>
 
-                    <!-- Two-Factor Authentication -->
-                    {% if user.two_factor_enabled %}
-                        <div class="activity-item success">
-                            <div class="d-flex align-items-start">
-                                <div class="activity-icon bg-success bg-opacity-10 text-success me-3">
-                                    <i class="fas fa-mobile-alt"></i>
-                                </div>
-                                <div class="flex-grow-1">
-                                    <h6 class="mb-1">Two-Factor Authentication Enabled</h6>
-                                    <p class="text-muted mb-2">Additional security layer activated</p>
-                                    <small class="text-muted">
-                                        <i class="fas fa-clock me-1"></i>
-                                        Security enhancement applied
-                                    </small>
-                                </div>
-                                <div class="badge bg-success">2FA</div>
-                            </div>
-                        </div>
-                    {% else %}
-                        <div class="activity-item warning">
-                            <div class="d-flex align-items-start">
-                                <div class="activity-icon bg-warning bg-opacity-10 text-warning me-3">
-                                    <i class="fas fa-exclamation-triangle"></i>
-                                </div>
-                                <div class="flex-grow-1">
-                                    <h6 class="mb-1">Two-Factor Authentication Disabled</h6>
-                                    <p class="text-muted mb-2">Account is using basic authentication only</p>
-                                    <small class="text-muted">
-                                        <i class="fas fa-clock me-1"></i>
-                                        Consider enabling for better security
-                                    </small>
-                                </div>
-                                <div class="badge bg-warning">Recommendation</div>
-                            </div>
-                        </div>
-                    {% endif %}
+    <!-- Tabs -->
+    <ul class="nav nav-tabs mb-4" role="tablist">
+        <li class="nav-item" role="presentation">
+            <button class="nav-link active" id="activity-tab" data-bs-toggle="tab"
+                    data-bs-target="#activity" type="button" role="tab">
+                <i class="bi bi-list-ul me-2"></i>{% trans "Activity Log" %}
+            </button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="logins-tab" data-bs-toggle="tab"
+                    data-bs-target="#logins" type="button" role="tab">
+                <i class="bi bi-door-open me-2"></i>{% trans "Login History" %}
+            </button>
+        </li>
+    </ul>
 
-                    <!-- Account Lock Events -->
-                    {% if user.is_locked %}
-                        <div class="activity-item danger">
-                            <div class="d-flex align-items-start">
-                                <div class="activity-icon bg-danger bg-opacity-10 text-danger me-3">
-                                    <i class="fas fa-lock"></i>
-                                </div>
-                                <div class="flex-grow-1">
-                                    <h6 class="mb-1">Account Locked</h6>
-                                    <p class="text-muted mb-2">Account locked due to multiple failed login attempts</p>
-                                    <small class="text-muted">
-                                        <i class="fas fa-clock me-1"></i>
-                                        Locked until {{ user.locked_until|date:"M d, Y H:i" }}
-                                    </small>
-                                </div>
-                                <div class="badge bg-danger">Locked</div>
-                            </div>
-                        </div>
-                    {% endif %}
-
-                    <!-- Email Verification -->
-                    <div class="activity-item {% if user.email_verified %}success{% else %}warning{% endif %}">
-                        <div class="d-flex align-items-start">
-                            <div class="activity-icon bg-{% if user.email_verified %}success{% else %}warning{% endif %} bg-opacity-10 text-{% if user.email_verified %}success{% else %}warning{% endif %} me-3">
-                                <i class="fas fa-{% if user.email_verified %}check-circle{% else %}envelope{% endif %}"></i>
-                            </div>
-                            <div class="flex-grow-1">
-                                <h6 class="mb-1">Email Verification</h6>
-                                <p class="text-muted mb-2">
-                                    {% if user.email_verified %}
-                                        Email address has been verified
+    <div class="tab-content">
+        <!-- Activity Log Tab -->
+        <div class="tab-pane fade show active" id="activity" role="tabpanel">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">{% trans "Recent Activity" %}</h5>
+                    <form method="get" class="d-flex gap-2">
+                        <input type="date" name="date_from" class="form-control form-control-sm"
+                               value="{{ request.GET.date_from }}" placeholder="{% trans 'From' %}">
+                        <input type="date" name="date_to" class="form-control form-control-sm"
+                               value="{{ request.GET.date_to }}" placeholder="{% trans 'To' %}">
+                        <button type="submit" class="btn btn-sm btn-primary">
+                            <i class="bi bi-filter"></i> {% trans "Filter" %}
+                        </button>
+                    </form>
+                </div>
+                <div class="card-body">
+                    {% if audit_logs %}
+                        <div class="timeline">
+                            {% for log in audit_logs %}
+                            <div class="timeline-item">
+                                <div class="timeline-icon">
+                                    {% if log.success %}
+                                        <i class="bi bi-check-circle"></i>
                                     {% else %}
-                                        Email address is not yet verified
+                                        <i class="bi bi-x-circle text-danger"></i>
                                     {% endif %}
-                                </p>
-                                <small class="text-muted">
-                                    <i class="fas fa-envelope me-1"></i>
-                                    {{ user.email }}
-                                </small>
-                            </div>
-                            <div class="badge bg-{% if user.email_verified %}success{% else %}warning{% endif %}">
-                                {% if user.email_verified %}Verified{% else %}Pending{% endif %}
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Profile Changes -->
-            <div class="tab-pane fade" id="profile" role="tabpanel">
-                <div class="activity-timeline">
-                    <!-- Profile Update -->
-                    <div class="activity-item info">
-                        <div class="d-flex align-items-start">
-                            <div class="activity-icon bg-info bg-opacity-10 text-info me-3">
-                                <i class="fas fa-user-edit"></i>
-                            </div>
-                            <div class="flex-grow-1">
-                                <h6 class="mb-1">Profile Information</h6>
-                                <p class="text-muted mb-2">Current profile status and information</p>
-                                <div class="mt-2">
-                                    <div class="row g-2">
-                                        <div class="col-6">
-                                            <small class="text-muted">Name:</small><br>
-                                            <span>{{ user.get_full_name|default:"Not set" }}</span>
+                                </div>
+                                <div class="timeline-content">
+                                    <div class="timeline-header">
+                                        <div class="flex-grow-1">
+                                            <div class="timeline-title">{{ log.get_action_display }}</div>
+                                            <div class="timeline-time">
+                                                <i class="bi bi-clock me-1"></i>
+                                                {{ log.timestamp|date:"Y-m-d H:i:s" }}
+                                            </div>
                                         </div>
-                                        <div class="col-6">
-                                            <small class="text-muted">Username:</small><br>
-                                            <span>{{ user.username }}</span>
-                                        </div>
-                                        <div class="col-6">
-                                            <small class="text-muted">Phone:</small><br>
-                                            <span>{{ user.phone_number|default:"Not set" }}</span>
-                                        </div>
-                                        <div class="col-6">
-                                            <small class="text-muted">Language:</small><br>
-                                            <span>{{ user.get_language_display }}</span>
-                                        </div>
+                                        {% if log.duration_ms %}
+                                            <span class="badge bg-secondary">{{ log.duration_ms }}ms</span>
+                                        {% endif %}
                                     </div>
-                                </div>
-                                <small class="text-muted">
-                                    <i class="fas fa-clock me-1"></i>
-                                    Last updated: Profile information
-                                </small>
-                            </div>
-                            <div class="badge bg-info">Current</div>
-                        </div>
-                    </div>
-
-                    <!-- Avatar Upload -->
-                    {% if user.avatar %}
-                        <div class="activity-item success">
-                            <div class="d-flex align-items-start">
-                                <div class="activity-icon bg-success bg-opacity-10 text-success me-3">
-                                    <i class="fas fa-camera"></i>
-                                </div>
-                                <div class="flex-grow-1">
-                                    <h6 class="mb-1">Avatar Updated</h6>
-                                    <p class="text-muted mb-2">Profile picture was uploaded</p>
+                                    <div class="timeline-description">{{ log.action_description }}</div>
+                                    <div class="mt-2 d-flex gap-2 flex-wrap">
+                                        {% if log.ip_address %}
+                                            <small class="text-muted">
+                                                <i class="bi bi-geo-alt"></i> {{ log.ip_address }}
+                                            </small>
+                                        {% endif %}
+                                        {% if log.company %}
+                                            <small class="text-muted">
+                                                <i class="bi bi-building"></i> {{ log.company.name }}
+                                            </small>
+                                        {% endif %}
+                                        {% if log.store %}
+                                            <small class="text-muted">
+                                                <i class="bi bi-shop"></i> {{ log.store.name }}
+                                            </small>
+                                        {% endif %}
+                                    </div>
                                     <div class="mt-2">
-                                        <img src="{{ user.avatar.url }}" class="rounded" width="50" height="50" alt="Avatar">
+                                        <a href="{% url 'audit_log_detail' log.id %}" class="btn btn-sm btn-outline-primary">
+                                            <i class="bi bi-eye me-1"></i>{% trans "View Details" %}
+                                        </a>
                                     </div>
-                                    <small class="text-muted">
-                                        <i class="fas fa-clock me-1"></i>
-                                        Avatar uploaded successfully
-                                    </small>
                                 </div>
-                                <div class="badge bg-success">Updated</div>
                             </div>
+                            {% endfor %}
+                        </div>
+
+                        <!-- Pagination -->
+                        {% if audit_logs.has_other_pages %}
+                        <nav class="mt-4">
+                            <ul class="pagination justify-content-center">
+                                {% if audit_logs.has_previous %}
+                                    <li class="page-item">
+                                        <a class="page-link" href="?page={{ audit_logs.previous_page_number }}">
+                                            {% trans "Previous" %}
+                                        </a>
+                                    </li>
+                                {% endif %}
+                                <li class="page-item active">
+                                    <span class="page-link">
+                                        {{ audit_logs.number }} / {{ audit_logs.paginator.num_pages }}
+                                    </span>
+                                </li>
+                                {% if audit_logs.has_next %}
+                                    <li class="page-item">
+                                        <a class="page-link" href="?page={{ audit_logs.next_page_number }}">
+                                            {% trans "Next" %}
+                                        </a>
+                                    </li>
+                                {% endif %}
+                            </ul>
+                        </nav>
+                        {% endif %}
+                    {% else %}
+                        <div class="text-center py-5">
+                            <i class="bi bi-inbox fs-1 text-muted d-block mb-2"></i>
+                            <p class="text-muted">{% trans "No activity recorded yet" %}</p>
                         </div>
                     {% endif %}
-
-                    <!-- Account Creation -->
-                    <div class="activity-item primary">
-                        <div class="d-flex align-items-start">
-                            <div class="activity-icon bg-primary bg-opacity-10 text-primary me-3">
-                                <i class="fas fa-user-plus"></i>
-                            </div>
-                            <div class="flex-grow-1">
-                                <h6 class="mb-1">Account Created</h6>
-                                <p class="text-muted mb-2">User account was created with initial settings</p>
-                                <div class="mt-2">
-                                    <span class="badge bg-light text-dark">{{ user.get_user_type_display }}</span>
-                                    <span class="badge bg-light text-dark">{{ user.timezone }}</span>
-                                </div>
-                                <small class="text-muted">
-                                    <i class="fas fa-clock me-1"></i>
-                                    {{ user.date_joined|date:"M d, Y H:i" }}
-                                </small>
-                            </div>
-                            <div class="badge bg-primary">Created</div>
-                        </div>
-                    </div>
                 </div>
             </div>
         </div>
 
-        <!-- Export Options -->
-        <div class="card mt-4">
-            <div class="card-body">
-                <div class="row align-items-center">
-                    <div class="col-md-8">
-                        <h6 class="mb-1">Export Activity Log</h6>
-                        <small class="text-muted">Download your complete activity history for your records</small>
-                    </div>
-                    <div class="col-md-4 text-end">
-                        <div class="btn-group" role="group">
-                            <button type="button" class="btn btn-outline-primary">
-                                <i class="fas fa-file-pdf me-1"></i> PDF
-                            </button>
-                            <button type="button" class="btn btn-outline-primary">
-                                <i class="fas fa-file-csv me-1"></i> CSV
-                            </button>
-                            <button type="button" class="btn btn-outline-primary">
-                                <i class="fas fa-file-alt me-1"></i> JSON
-                            </button>
+        <!-- Login History Tab -->
+        <div class="tab-pane fade" id="logins" role="tabpanel">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0">{% trans "Recent Logins" %}</h5>
+                </div>
+                <div class="card-body">
+                    {% if login_history %}
+                        {% for login in login_history %}
+                        <div class="login-device">
+                            <div class="device-icon">
+                                {% if login.device_type == 'Mobile' %}
+                                    <i class="bi bi-phone"></i>
+                                {% elif login.device_type == 'Tablet' %}
+                                    <i class="bi bi-tablet"></i>
+                                {% else %}
+                                    <i class="bi bi-laptop"></i>
+                                {% endif %}
+                            </div>
+                            <div class="device-info">
+                                <div class="device-name">
+                                    {{ login.browser }} {% trans "on" %} {{ login.os }}
+                                </div>
+                                <div class="device-details">
+                                    <i class="bi bi-geo-alt"></i> {{ login.location|default:login.ip_address }}
+                                    • <i class="bi bi-clock"></i> {{ login.timestamp|date:"Y-m-d H:i:s" }}
+                                </div>
+                            </div>
+                            <div>
+                                {% if login.status == 'success' %}
+                                    <span class="badge bg-success">
+                                        <i class="bi bi-check-circle"></i> {% trans "Success" %}
+                                    </span>
+                                {% elif login.status == 'failed' %}
+                                    <span class="badge bg-danger">
+                                        <i class="bi bi-x-circle"></i> {% trans "Failed" %}
+                                    </span>
+                                {% else %}
+                                    <span class="badge bg-warning">
+                                        <i class="bi bi-shield-x"></i> {% trans "Blocked" %}
+                                    </span>
+                                {% endif %}
+                            </div>
                         </div>
-                    </div>
+                        {% endfor %}
+
+                        <!-- Pagination -->
+                        {% if login_history.has_other_pages %}
+                        <nav class="mt-3">
+                            <ul class="pagination justify-content-center">
+                                {% if login_history.has_previous %}
+                                    <li class="page-item">
+                                        <a class="page-link" href="?login_page={{ login_history.previous_page_number }}">
+                                            {% trans "Previous" %}
+                                        </a>
+                                    </li>
+                                {% endif %}
+                                <li class="page-item active">
+                                    <span class="page-link">
+                                        {{ login_history.number }} / {{ login_history.paginator.num_pages }}
+                                    </span>
+                                </li>
+                                {% if login_history.has_next %}
+                                    <li class="page-item">
+                                        <a class="page-link" href="?login_page={{ login_history.next_page_number }}">
+                                            {% trans "Next" %}
+                                        </a>
+                                    </li>
+                                {% endif %}
+                            </ul>
+                        </nav>
+                        {% endif %}
+                    {% else %}
+                        <div class="text-center py-5">
+                            <i class="bi bi-door-closed fs-1 text-muted d-block mb-2"></i>
+                            <p class="text-muted">{% trans "No login history available" %}</p>
+                        </div>
+                    {% endif %}
                 </div>
             </div>
         </div>
     </div>
+</div>
+{% endblock %}
 
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.0/js/bootstrap.bundle.min.js"></script>
-    
-    <script>
-        // Auto-refresh activity log every 5 minutes
-        setTimeout(function() {
-            location.reload();
-        }, 300000);
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Activity Chart
+    const ctx = document.getElementById('activityChart');
+    if (ctx) {
+        const activityData = {{ activity_by_day|safe }};
 
-        // Smooth scrolling for timeline navigation
-        document.addEventListener('DOMContentLoaded', function() {
-            const timelineItems = document.querySelectorAll('.activity-item');
-            
-            // Add click handlers for timeline items
-            timelineItems.forEach(item => {
-                item.addEventListener('click', function() {
-                    this.classList.toggle('expanded');
-                });
-            });
-
-            // Handle tab switching with URL hash
-            const tabTriggerList = [].slice.call(document.querySelectorAll('#activityTabs button'));
-            tabTriggerList.forEach(function (tabTriggerEl) {
-                tabTriggerEl.addEventListener('click', function (event) {
-                    const target = event.target.getAttribute('data-bs-target');
-                    window.location.hash = target;
-                });
-            });
-
-            // Load tab from URL hash
-            const hash = window.location.hash;
-            if (hash) {
-                const tabButton = document.querySelector(`[data-bs-target="${hash}"]`);
-                if (tabButton) {
-                    const tab = new bootstrap.Tab(tabButton);
-                    tab.show();
+        new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: activityData.map(d => new Date(d.date).toLocaleDateString()),
+                datasets: [{
+                    label: '{% trans "Actions" %}',
+                    data: activityData.map(d => d.count),
+                    borderColor: 'rgb(59, 130, 246)',
+                    backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                    tension: 0.4,
+                    fill: true
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        display: false
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        ticks: {
+                            stepSize: 1
+                        }
+                    }
                 }
             }
         });
-
-        // Export functionality
-        document.querySelectorAll('[data-export]').forEach(button => {
-            button.addEventListener('click', function() {
-                const format = this.getAttribute('data-export');
-                // In a real implementation, trigger export to specified format
-                alert(`Exporting activity log as ${format.toUpperCase()}...`);
-            });
-        });
-    </script>
-</body>
-</html>
+    }
+});
+</script>
+{% endblock %}
