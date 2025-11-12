@@ -1168,27 +1168,21 @@ class Product(models.Model, EFRISProductMixin):
     def clean(self):
         """Validate product data before saving"""
         super().clean()
-
-        # Validate category has EFRIS commodity category
-        if self.category and not self.category.efris_commodity_category_code:
-            raise ValidationError({
-                'category': _("Selected category does not have an EFRIS commodity category assigned. "
-                              "Please assign one in the category settings.")
-            })
-
-        # ✅ NEW: Validate it's a leaf node
-        if self.category and not self.category.efris_is_leaf_node:
-            raise ValidationError({
-                'category': _("Selected category's EFRIS commodity category is not a leaf node. "
-                              "Only leaf nodes (terminal categories) can be used for products.")
-            })
-
-        # Validate category is a product category
-        if self.category and self.category.category_type != 'product':
-            raise ValidationError({
-                'category': _("Selected category is not a product category. "
-                              "Please select a product category.")
-            })
+        
+        # Get EFRIS status - default to False for safety
+        efris_enabled = getattr(self, '_efris_enabled', False)
+        
+        # Only validate EFRIS fields if EFRIS is explicitly enabled
+        if efris_enabled:
+            if self.category and not self.category.efris_commodity_category_code:
+                raise ValidationError({
+                    'category': _("Selected category does not have an EFRIS commodity category assigned.")
+                })
+            
+            if self.category and not self.category.efris_is_leaf_node:
+                raise ValidationError({
+                    'category': _("Selected category's EFRIS commodity category is not a leaf node.")
+                })
 
     # DRY Properties - Everything inherits from Category
     @property

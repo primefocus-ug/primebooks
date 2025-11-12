@@ -54,6 +54,7 @@ from .serializers import (
 )
 from stores.models import Store
 from company.models import EFRISCommodityCategory
+from company.mixins import EFRISConditionalMixin
 from .forms import (
     CategoryForm, SupplierForm, ProductForm,  StockMovementForm,
      ProductFilterForm, StockAdjustmentForm, BulkActionForm
@@ -1557,39 +1558,53 @@ class CategoryDetailView(LoginRequiredMixin,PermissionRequiredMixin, DetailView)
     context_object_name = 'category'
     permission_required = 'inventory.view_category'
 
-class CategoryCreateView(LoginRequiredMixin, PermissionRequiredMixin, CreateView):
+class CategoryCreateView(EFRISConditionalMixin, LoginRequiredMixin, PermissionRequiredMixin, CreateView):
     model = Category
     form_class = CategoryForm
-    template_name = 'inventory/unified_form.html'  # Changed from categor_form.html
+    template_name = 'inventory/unified_form.html'
     success_url = reverse_lazy('inventory:category_list')
     permission_required = 'inventory.add_category'
 
+    def get_form_kwargs(self):
+        """Pass EFRIS status and request to form"""
+        kwargs = super().get_form_kwargs()
+        kwargs['efris_enabled'] = getattr(self.request, 'efris', {}).get('enabled', False)
+        kwargs['request'] = self.request
+        return kwargs
+
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        context['form_type'] = 'category'  # Added
+        context['form_type'] = 'category'
+        context['show_efris_fields'] = context.get('efris_enabled', False)
         return context
 
     def form_valid(self, form):
         messages.success(self.request, 'Category created successfully!')
         return super().form_valid(form)
 
-
-class CategoryUpdateView(LoginRequiredMixin, PermissionRequiredMixin, UpdateView):
+class CategoryUpdateView(EFRISConditionalMixin, LoginRequiredMixin, PermissionRequiredMixin, UpdateView):
     model = Category
     form_class = CategoryForm
-    template_name = 'inventory/unified_form.html'  # Changed
+    template_name = 'inventory/unified_form.html'
     success_url = reverse_lazy('inventory:category_list')
     permission_required = 'inventory.change_category'
 
+    def get_form_kwargs(self):
+        """Pass EFRIS status and request to form"""
+        kwargs = super().get_form_kwargs()
+        kwargs['efris_enabled'] = getattr(self.request, 'efris', {}).get('enabled', False)
+        kwargs['request'] = self.request
+        return kwargs
+
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        context['form_type'] = 'category'  # Added
+        context['form_type'] = 'category'
+        context['show_efris_fields'] = context.get('efris_enabled', False)
         return context
 
     def form_valid(self, form):
         messages.success(self.request, 'Category updated successfully!')
         return super().form_valid(form)
-
 
 class CategoryDeleteView(LoginRequiredMixin,PermissionRequiredMixin, DeleteView):
     model = Category
@@ -1786,16 +1801,25 @@ class ProductListView(LoginRequiredMixin,PermissionRequiredMixin, ListView):
         return context
 
 
-class ProductCreateView(LoginRequiredMixin, PermissionRequiredMixin, CreateView):
+class ProductCreateView(EFRISConditionalMixin, LoginRequiredMixin, PermissionRequiredMixin, CreateView):
     model = Product
     form_class = ProductForm
     permission_required = 'inventory.add_product'
-    template_name = 'inventory/unified_form.html'  # Changed
+    template_name = 'inventory/unified_form.html'
     success_url = reverse_lazy('inventory:product_list')
+
+    def get_form_kwargs(self):
+        """Pass EFRIS status to form"""
+        kwargs = super().get_form_kwargs()
+        # Get EFRIS status from request (set by middleware)
+        kwargs['efris_enabled'] = getattr(self.request, 'efris', {}).get('enabled', False)
+        return kwargs
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        context['form_type'] = 'product'  # Added
+        context['form_type'] = 'product'
+        # Add EFRIS status (already added by EFRISConditionalMixin, but being explicit)
+        context['show_efris_fields'] = context.get('efris_enabled', False)
         return context
 
     def form_valid(self, form):
@@ -1803,12 +1827,11 @@ class ProductCreateView(LoginRequiredMixin, PermissionRequiredMixin, CreateView)
             response = super().form_valid(form)
             logger.info(f"Product created successfully: {form.instance.name} (ID: {form.instance.id})")
             messages.success(self.request, 'Product created successfully!')
-
+            
             if 'save_and_add_another' in self.request.POST:
                 return redirect('inventory:product_create')
-
+            
             return response
-
         except Exception as e:
             logger.error(f"Error saving product: {str(e)}")
             messages.error(self.request, 'Error saving product. Please try again.')
@@ -1821,8 +1844,7 @@ class ProductCreateView(LoginRequiredMixin, PermissionRequiredMixin, CreateView)
                 messages.error(self.request, f"{field}: {error}")
         return super().form_invalid(form)
 
-
-class ProductCreateModalView(LoginRequiredMixin, PermissionRequiredMixin, TemplateView):
+class ProductCreateModalView(EFRISConditionalMixin, LoginRequiredMixin, PermissionRequiredMixin, TemplateView):
     """
     View to render the product creation form in a popup window
     """
@@ -1831,9 +1853,15 @@ class ProductCreateModalView(LoginRequiredMixin, PermissionRequiredMixin, Templa
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        context['form'] = ProductForm()
+        
+        # Get EFRIS status
+        efris_enabled = getattr(self.request, 'efris', {}).get('enabled', False)
+        
+        # Create form with EFRIS status
+        context['form'] = ProductForm(efris_enabled=efris_enabled)
+        context['is_modal'] = True
+        
         return context
-
 
 class ProductCreateAjaxView(LoginRequiredMixin, PermissionRequiredMixin, View):
     """
@@ -1842,18 +1870,20 @@ class ProductCreateAjaxView(LoginRequiredMixin, PermissionRequiredMixin, View):
     permission_required = 'inventory.add_product'
 
     def post(self, request, *args, **kwargs):
-        form = ProductForm(request.POST, request.FILES)
-
+        # Get EFRIS status
+        efris_enabled = getattr(request, 'efris', {}).get('enabled', False)
+        
+        # Create form with EFRIS status
+        form = ProductForm(request.POST, request.FILES, efris_enabled=efris_enabled)
+        
         if form.is_valid():
             try:
                 with transaction.atomic():
                     product = form.save(commit=False)
-                    # Add any additional fields if needed
-                    # product.created_by = request.user
                     product.save()
-
+                    
                     logger.info(f"Product created successfully via AJAX: {product.name} (ID: {product.id})")
-
+                    
                     # Return product data
                     return JsonResponse({
                         'success': True,
@@ -1867,6 +1897,7 @@ class ProductCreateAjaxView(LoginRequiredMixin, PermissionRequiredMixin, View):
                             'cost_price': str(product.cost_price),
                             'category_id': product.category.id if product.category else None,
                             'category_name': product.category.name if product.category else None,
+                            'efris_enabled': product.efris_auto_sync_enabled if efris_enabled else False,
                         }
                     })
             except Exception as e:
@@ -1883,16 +1914,23 @@ class ProductCreateAjaxView(LoginRequiredMixin, PermissionRequiredMixin, View):
             }, status=400)
 
 
-class ProductUpdateView(LoginRequiredMixin, PermissionRequiredMixin, UpdateView):
+class ProductUpdateView(EFRISConditionalMixin, LoginRequiredMixin, PermissionRequiredMixin, UpdateView):
     model = Product
     form_class = ProductForm
     permission_required = 'inventory.change_product'
-    template_name = 'inventory/unified_form.html'  # Changed
+    template_name = 'inventory/unified_form.html'
     success_url = reverse_lazy('inventory:product_list')
+
+    def get_form_kwargs(self):
+        """Pass EFRIS status to form"""
+        kwargs = super().get_form_kwargs()
+        kwargs['efris_enabled'] = getattr(self.request, 'efris', {}).get('enabled', False)
+        return kwargs
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        context['form_type'] = 'product'  # Added
+        context['form_type'] = 'product'
+        context['show_efris_fields'] = context.get('efris_enabled', False)
         return context
 
     def form_valid(self, form):
