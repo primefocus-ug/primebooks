@@ -1881,22 +1881,25 @@ class Stock(models.Model):
     # Stock status properties
     @property
     def is_low_stock(self):
-        """Check if inventory is below threshold"""
+        """Check if stock is below threshold"""
         return self.quantity <= self.low_stock_threshold
 
     @property
     def needs_reorder(self):
-        """Check if inventory needs to be reordered"""
-        return self.quantity <= self.reorder_quantity
+        """Check if stock needs to be reordered"""
+        return self.is_low_stock
 
     @property
     def status(self):
-        """Returns stock status based on quantity"""
-        if self.quantity <= 0:
-            return 'out_of_stock'
+        """Get current stock status"""
+        if self.quantity == 0:
+            return 'Out of Stock'
         elif self.is_low_stock:
-            return 'low_stock'
-        return 'in_stock'
+            return 'Low Stock'
+        elif self.quantity <= self.low_stock_threshold * 2:
+            return 'Medium Stock'
+        else:
+            return 'Good Stock'
 
     @property
     def stock_percentage(self):
@@ -1915,10 +1918,11 @@ class Stock(models.Model):
 
     @property
     def variance_percentage(self):
-        """Percentage variance from last physical count"""
-        variance = self.variance_from_last_count
-        if variance is not None and self.last_physical_count_quantity > 0:
-            return (variance / self.last_physical_count_quantity) * 100
+        """Calculate variance percentage from last physical count"""
+        if self.last_physical_count_quantity and self.last_physical_count_quantity > 0:
+            variance = self.variance_from_last_count
+            if variance is not None:
+                return (variance / self.last_physical_count_quantity) * 100
         return None
 
     def save(self, *args, **kwargs):

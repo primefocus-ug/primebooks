@@ -62,6 +62,7 @@ logger = logging.getLogger(__name__)
 
 
 @login_required
+@permission_required('stores.view_devicefingerprint', raise_exception=True)
 def user_sessions_view(request):
     """
     View to display user's active sessions

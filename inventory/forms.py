@@ -435,7 +435,7 @@ class CategoryForm(forms.ModelForm):
             # Filter by company if available (for EFRIS categories)
             if request and hasattr(request, 'user') and hasattr(request.user, 'company'):
                 self.fields['efris_commodity_category'].queryset = (
-                    EFRISCommodityCategory.objects.filter(company=request.user.company)
+                    EFRISCommodityCategory.objects.all()
                 )
             
             # Update help text when EFRIS is enabled
@@ -466,6 +466,7 @@ class CategoryForm(forms.ModelForm):
             cleaned_data['efris_commodity_category'] = None
         
         return cleaned_data
+    
 class QuickCategoryForm(forms.ModelForm):
     """
     Simplified form for quick category creation (e.g., in modals)
@@ -843,7 +844,7 @@ class ProductForm(forms.ModelForm):
     
 class StockForm(forms.ModelForm):
     """Form for creating and updating stock records"""
-
+    
     class Meta:
         model = Stock
         fields = [
@@ -892,32 +893,55 @@ class StockForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-
+        
         # Set queryset for product field
         self.fields['product'].queryset = Product.objects.filter(
             is_active=True
         ).select_related('category', 'supplier').order_by('name')
-
+        
         # Set queryset for store field
         self.fields['store'].queryset = Store.objects.filter(
             is_active=True
         ).order_by('name')
-
+        
         # Make last_physical_count_quantity read-only for display
         self.fields['last_physical_count_quantity'].required = False
         self.fields['last_physical_count_quantity'].disabled = True
-
+        
         # Set help texts
         self.fields['quantity'].help_text = 'Current stock quantity'
         self.fields['low_stock_threshold'].help_text = 'Alert when stock falls below this level'
         self.fields['reorder_quantity'].help_text = 'Suggested reorder quantity'
-
-        # If updating, make product and store read-only
+        
+        # If updating, make product and store read-only but NOT disabled
         if self.instance.pk:
-            self.fields['product'].disabled = True
-            self.fields['store'].disabled = True
-            self.fields['product'].help_text = 'Cannot change product for existing stock record'
-            self.fields['store'].help_text = 'Cannot change store for existing stock record'
+            # Use readonly instead of disabled to ensure values are submitted
+            self.fields['product'].widget.attrs['readonly'] = 'readonly'
+            self.fields['product'].widget.attrs['onclick'] = 'return false;'
+            self.fields['product'].widget.attrs['onkeydown'] = 'return false;'
+            self.fields['product'].widget.attrs['style'] = 'pointer-events: none; background-color: #e9ecef;'
+            
+            self.fields['store'].widget.attrs['readonly'] = 'readonly'
+            self.fields['store'].widget.attrs['onclick'] = 'return false;'
+            self.fields['store'].widget.attrs['onkeydown'] = 'return false;'
+            self.fields['store'].widget.attrs['style'] = 'pointer-events: none; background-color: #e9ecef;'
+            
+            self.fields['product'].help_text = '⚠️ Cannot change product for existing stock record'
+            self.fields['store'].help_text = '⚠️ Cannot change store for existing stock record'
+
+    def clean_product(self):
+        """Ensure product field isn't changed on update"""
+        if self.instance.pk:
+            # Return the original product, not the submitted one
+            return self.instance.product
+        return self.cleaned_data.get('product')
+
+    def clean_store(self):
+        """Ensure store field isn't changed on update"""
+        if self.instance.pk:
+            # Return the original store, not the submitted one
+            return self.instance.store
+        return self.cleaned_data.get('store')
 
     def clean(self):
         cleaned_data = super().clean()
@@ -938,15 +962,15 @@ class StockForm(forms.ModelForm):
         if reorder_quantity is not None and reorder_quantity < 0:
             self.add_error('reorder_quantity', 'Reorder quantity cannot be negative')
 
-        # Check for duplicate (only on create)
+        # Check for duplicate (only on create, not on update)
         if not self.instance.pk and product and store:
             if Stock.objects.filter(product=product, store=store).exists():
                 raise forms.ValidationError(
-                    f'Stock record already exists for {product.name} at {store.name}'
+                    f'Stock record already exists for {product.name} at {store.name}. '
+                    f'Please edit the existing record instead.'
                 )
 
         return cleaned_data
-
 class ProductCreateForm(ProductForm):
     """Simplified form for creating products - focuses on essential fields"""
 

@@ -21,6 +21,7 @@ urlpatterns = [
     path('', views.inventory_dashboard, name='dashboard'),
     path('category/create/ajax/', views.category_create_ajax, name='category_create_ajax'),
     path('supplier/create/ajax/', views.supplier_create_ajax, name='supplier_create_ajax'),
+    path('stock/<int:pk>/update/', views.StockUpdateView.as_view(), name='stock_update'),
 
     # Services
     path('services/', ServiceListView.as_view(), name='service_list'),
@@ -93,7 +94,6 @@ urlpatterns = [
     path('api/stock/<int:stock_id>/', views.stock_api_view, name='stock_api_detail'),
     path('api/product/<int:product_id>/', views.product_api_view, name='product_api'),
     path('stock/create/', views.StockCreateView.as_view(), name='stock_create'),
-    path('stock/<int:pk>/update/', views.StockUpdateView.as_view(), name='stock_update'),
     path('stock/<int:pk>/physical-count/', views.stock_physical_count, name='stock_physical_count'),
 
     # API endpoints

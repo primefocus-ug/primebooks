@@ -74,6 +74,7 @@ from django.http import JsonResponse
 from django.views.decorators.http import require_http_methods
 
 
+
 @login_required
 @require_http_methods(["POST"])
 @permission_required('inventory.add_category', raise_exception=True)
@@ -1800,13 +1801,27 @@ class ProductListView(LoginRequiredMixin,PermissionRequiredMixin, ListView):
 
         return context
 
-
 class ProductCreateView(EFRISConditionalMixin, LoginRequiredMixin, PermissionRequiredMixin, CreateView):
     model = Product
     form_class = ProductForm
     permission_required = 'inventory.add_product'
     template_name = 'inventory/unified_form.html'
     success_url = reverse_lazy('inventory:product_list')
+
+    def get_initial(self):
+        """Pre-populate form with supplier from query parameter"""
+        initial = super().get_initial()
+        supplier_id = self.request.GET.get('supplier')
+        if supplier_id:
+            try:
+                supplier = Supplier.objects.get(id=supplier_id)
+                initial['supplier'] = supplier
+                logger.info(f"Pre-populated supplier: {supplier.name} (ID: {supplier_id})")
+            except Supplier.DoesNotExist:
+                logger.warning(f"Supplier with ID {supplier_id} not found")
+            except ValueError:
+                logger.warning(f"Invalid supplier ID: {supplier_id}")
+        return initial
 
     def get_form_kwargs(self):
         """Pass EFRIS status to form"""
@@ -1818,6 +1833,16 @@ class ProductCreateView(EFRISConditionalMixin, LoginRequiredMixin, PermissionReq
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context['form_type'] = 'product'
+        
+        # Add supplier info to context for display
+        supplier_id = self.request.GET.get('supplier')
+        if supplier_id:
+            try:
+                supplier = Supplier.objects.get(id=supplier_id)
+                context['preselected_supplier'] = supplier
+            except (Supplier.DoesNotExist, ValueError):
+                pass
+        
         # Add EFRIS status (already added by EFRISConditionalMixin, but being explicit)
         context['show_efris_fields'] = context.get('efris_enabled', False)
         return context
@@ -1843,7 +1868,6 @@ class ProductCreateView(EFRISConditionalMixin, LoginRequiredMixin, PermissionReq
             for error in errors:
                 messages.error(self.request, f"{field}: {error}")
         return super().form_invalid(form)
-
 class ProductCreateModalView(EFRISConditionalMixin, LoginRequiredMixin, PermissionRequiredMixin, TemplateView):
     """
     View to render the product creation form in a popup window
@@ -2359,90 +2383,124 @@ class StockUpdateView(LoginRequiredMixin, PermissionRequiredMixin, UpdateView):
     template_name = 'inventory/unified_form.html'
     permission_required = 'inventory.change_stock'
     success_url = reverse_lazy('inventory:stock_list')
-
+    
+    def get_queryset(self):
+        """Ensure user can only access their company's stock"""
+        return Stock.objects.filter(store__company=self.request.user.company)
+    
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context['form_type'] = 'stock'
-        context['products'] = Product.objects.filter(is_active=True).order_by('name')
-        context['stores'] = Store.objects.filter(is_active=True).order_by('name')
-
+        context['object'] = self.object
+        context['products'] = Product.objects.filter(
+            store_inventory__store__company=self.request.user.company,
+            is_active=True
+        ).order_by('name')
+        context['stores'] = Store.objects.filter(
+            company=self.request.user.company,
+            is_active=True
+        ).order_by('name')
+        context['efris_enabled'] = self.request.user.company.efris_enabled
+        context['company'] = self.request.user.company
+        
         # Get stock movements for this record
         stock = self.object
-        context['recent_movements'] = stock.product.movements.filter(
+        context['recent_movements'] = StockMovement.objects.filter(
+            product=stock.product,
             store=stock.store
         ).select_related('created_by').order_by('-created_at')[:10]
 
+        
         # Calculate stock metrics
         context['stock_metrics'] = {
             'days_since_last_count': (
                 (timezone.now() - stock.last_physical_count).days
                 if stock.last_physical_count else None
             ),
-            'variance': stock.variance_from_last_count,
-            'variance_percentage': stock.variance_percentage,
-            'stock_status': stock.status,
-            'is_low_stock': stock.is_low_stock,
-            'needs_reorder': stock.needs_reorder,
+            'variance': getattr(stock, 'variance_from_last_count', None),
+            'variance_percentage': getattr(stock, 'variance_percentage', None),
+            'stock_status': getattr(stock, 'status', 'Unknown'),
+            'is_low_stock': getattr(stock, 'is_low_stock', False),
+            'needs_reorder': getattr(stock, 'needs_reorder', False),
         }
-
+        
         return context
-
+    
     def form_valid(self, form):
         """Update stock record with change tracking"""
         try:
             with transaction.atomic():
+                # Get old quantity before saving
+                old_stock = Stock.objects.get(pk=self.object.pk)
+                old_quantity = old_stock.quantity
+                
+                # Save the form
                 stock = form.save(commit=False)
-                old_quantity = Stock.objects.get(pk=stock.pk).quantity
                 new_quantity = stock.quantity
-
+                
+                # Ensure product and store haven't changed
+                stock.product = old_stock.product
+                stock.store = old_stock.store
+                
                 # Track quantity changes
                 if old_quantity != new_quantity:
+                    quantity_diff = new_quantity - old_quantity
                     stock.efris_sync_required = True
-
+                    
+                    # Create a stock movement record for the adjustment
+                    StockMovement.objects.create(
+                        stock=stock,
+                        movement_type='ADJ',  # Adjustment
+                        quantity=abs(quantity_diff),
+                        reference=f'Stock adjustment: {old_quantity} → {new_quantity}',
+                        notes=f'Manual adjustment by {self.request.user.get_full_name() or self.request.user.username}',
+                        company=self.request.user.company,
+                        created_by=self.request.user
+                    )
+                    
                     # Log the change
                     logger.info(
                         f"Stock quantity changed for {stock.product.name} at {stock.store.name}: "
                         f"{old_quantity} -> {new_quantity} by {self.request.user.username}"
                     )
-
+                    
                     messages.info(
                         self.request,
-                        f'Quantity changed from {old_quantity} to {new_quantity}. '
-                        f'EFRIS sync required.'
+                        f'Quantity changed from {old_quantity:.3f} to {new_quantity:.3f}. '
+                        f'Stock movement recorded. '
+                        f'{"(Increase)" if quantity_diff > 0 else "(Decrease)"}'
                     )
-
+                
                 stock.save()
-
+                
                 messages.success(
                     self.request,
-                    f'Stock record updated successfully for {stock.product.name} at {stock.store.name}'
+                    f'✓ Stock record updated successfully for {stock.product.name} at {stock.store.name}'
                 )
-
+                
                 return redirect(self.success_url)
-
+                
         except Exception as e:
             logger.error(f"Error updating stock record: {str(e)}", exc_info=True)
-            messages.error(self.request, f'Error updating stock record: {str(e)}')
+            messages.error(
+                self.request, 
+                f'❌ Error updating stock record: {str(e)}'
+            )
             return self.form_invalid(form)
-
-    def get_form(self, form_class=None):
-        form = super().get_form(form_class)
-        # Prevent editing of product and store fields
-        form.fields['product'].disabled = True
-        form.fields['store'].disabled = True
-        return form
-
+    
     def form_invalid(self, form):
         """Handle invalid form submission"""
         logger.error(f"Stock update form validation failed: {form.errors}")
-
+        
+        # Add user-friendly error messages
         for field, errors in form.errors.items():
             for error in errors:
                 if field == '__all__':
-                    messages.error(self.request, error)
+                    messages.error(self.request, f'❌ {error}')
                 else:
-                    messages.error(self.request, f"{field}: {error}")
-
+                    field_label = form.fields.get(field).label if field in form.fields else field
+                    messages.error(self.request, f'❌ {field_label}: {error}')
+        
         return super().form_invalid(form)
 
 

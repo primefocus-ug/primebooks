@@ -1,11 +1,10 @@
 {% extends 'base.html' %}
 {% load static %}
-
 {% load i18n %}
-{% load custom_filters%}
+{% load custom_filters %}
 {% load humanize %}
 
-{% block title %}Sales Analytics | {{company.trading_name|default:company.name }}{% endblock %}
+{% block title %}Sales Analytics | {{ company.trading_name|default:company.name }}{% endblock %}
 
 {% block extra_css %}
 <link href="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.css" rel="stylesheet">
@@ -161,7 +160,7 @@
                 <select name="store" class="form-select">
                     <option value="">All Stores</option>
                     {% for store in stores %}
-                    <option value="{{ store.id }}" {% if request.GET.store == store.id|stringformat:"s" %}selected{% endif %}>
+                    <option value="{{ store.id }}" {% if selected_store == store.id|stringformat:"s" %}selected{% endif %}>
                         {{ store.name }}
                     </option>
                     {% endfor %}
@@ -192,8 +191,8 @@
         <div class="col-xl-3 col-md-6 mb-3">
             <div class="stat-card revenue">
                 <div class="stat-content">
-                    <h3>{{ total_revenue|default:0|floatformat:0|intcomma }}</h3>
-                    <p>Total Revenue (UGX)</p>
+                    <h3>UGX {{ total_revenue|floatformat:0|intcomma }}</h3>
+                    <p>Total Revenue</p>
                 </div>
                 <div class="stat-icon">
                     <i class="fas fa-money-bill-wave"></i>
@@ -203,7 +202,7 @@
         <div class="col-xl-3 col-md-6 mb-3">
             <div class="stat-card sales">
                 <div class="stat-content">
-                    <h3>{{ total_sales|default:0|intcomma }}</h3>
+                    <h3>{{ total_sales|intcomma }}</h3>
                     <p>Total Sales</p>
                 </div>
                 <div class="stat-icon">
@@ -214,8 +213,8 @@
         <div class="col-xl-3 col-md-6 mb-3">
             <div class="stat-card avg">
                 <div class="stat-content">
-                    <h3>{{ avg_sale_value|default:0|floatformat:0|intcomma }}</h3>
-                    <p>Average Sale (UGX)</p>
+                    <h3>UGX {{ avg_sale_value|floatformat:0|intcomma }}</h3>
+                    <p>Average Sale</p>
                 </div>
                 <div class="stat-icon">
                     <i class="fas fa-chart-bar"></i>
@@ -225,7 +224,7 @@
         <div class="col-xl-3 col-md-6 mb-3">
             <div class="stat-card customers">
                 <div class="stat-content">
-                    <h3>{{ total_customers|default:total_sales|floatformat:0 }}</h3>
+                    <h3>{{ total_customers|intcomma }}</h3>
                     <p>Customers</p>
                 </div>
                 <div class="stat-icon">
@@ -294,26 +293,22 @@
                             <tr>
                                 <td>
                                     <i class="fas fa-circle me-2" style="color: {% cycle '#007bff' '#28a745' '#ffc107' '#dc3545' '#6f42c1' '#fd7e14' %}"></i>
-                                    {{ method.get_payment_method_display|default:method.payment_method|capfirst }}
+                                    {{ method.payment_method_display|capfirst }}
                                 </td>
                                 <td>
                                     <span class="badge bg-light text-dark">{{ method.count|intcomma }}</span>
                                 </td>
                                 <td>
-                                    <strong>UGX {{ method.total|default:0|floatformat:0|intcomma }}</strong>
+                                    <strong>UGX {{ method.total|floatformat:0|intcomma }}</strong>
                                 </td>
                                 <td>
-                                    {% if total_revenue and total_revenue > 0 %}
-                                        {% widthratio method.total total_revenue 100 %}%
-                                        <div class="progress mt-1" style="height: 5px;">
-                                            <div class="progress-bar" role="progressbar"
-                                                 style="width: {% widthratio method.total total_revenue 100 %}%"
-                                                 aria-valuenow="{% widthratio method.total total_revenue 100 %}"
-                                                 aria-valuemin="0" aria-valuemax="100"></div>
-                                        </div>
-                                    {% else %}
-                                        0%
-                                    {% endif %}
+                                    {{ method.percentage }}%
+                                    <div class="progress mt-1" style="height: 5px;">
+                                        <div class="progress-bar" role="progressbar"
+                                             style="width: {{ method.percentage }}%"
+                                             aria-valuenow="{{ method.percentage }}"
+                                             aria-valuemin="0" aria-valuemax="100"></div>
+                                    </div>
                                 </td>
                             </tr>
                             {% empty %}
@@ -365,23 +360,23 @@
                                             <div class="fw-bold" title="{{ product.product__name }}">
                                                 {{ product.product__name|truncatechars:30 }}
                                             </div>
+                                            <small class="text-muted">{{ product.product__sku|default:"No SKU" }}</small>
                                         </div>
                                     </div>
                                 </td>
                                 <td>
-                                    <span class="badge bg-primary">{{ product.quantity_sold|default:0|floatformat:0|intcomma }}</span>
+                                    <span class="badge bg-primary">{{ product.quantity_sold|floatformat:0|intcomma }}</span>
                                 </td>
                                 <td>
-                                    <strong>UGX {{ product.revenue|default:0|floatformat:0|intcomma }}</strong>
+                                    <strong>UGX {{ product.revenue|floatformat:0|intcomma }}</strong>
                                 </td>
                                 <td>
-                                    {% if top_products.0.revenue and top_products.0.revenue > 0 %}
-                                        <div class="progress" style="height: 8px;">
-                                            <div class="progress-bar bg-success" role="progressbar"
-                                                 style="width: {% widthratio product.revenue top_products.0.revenue 100 %}%"
-                                                 title="{% widthratio product.revenue top_products.0.revenue 100 %}% of top performer"></div>
-                                        </div>
-                                    {% endif %}
+                                    <div class="progress" style="height: 8px;">
+                                        <div class="progress-bar bg-success" role="progressbar"
+                                             style="width: {{ product.performance_percentage }}%"
+                                             title="{{ product.performance_percentage }}% of top performer"></div>
+                                    </div>
+                                    <small class="text-muted">{{ product.performance_percentage }}%</small>
                                 </td>
                             </tr>
                             {% empty %}
@@ -418,8 +413,8 @@
             <div class="card h-100">
                 <div class="card-body text-center">
                     <i class="fas fa-trending-up fa-3x text-success mb-3"></i>
-                    <h5 class="totall">Sales Growth</h5>
-                    <h3 class="text-success">{{ sales_growth|default:"+15.2%" }}</h3>
+                    <h5>Sales Growth</h5>
+                    <h3 class="text-success">{{ sales_growth }}</h3>
                     <p class="text-muted">vs previous period</p>
                 </div>
             </div>
@@ -428,8 +423,8 @@
             <div class="card h-100">
                 <div class="card-body text-center">
                     <i class="fas fa-users fa-3x text-info mb-3"></i>
-                    <h5 class="totall">New Customers</h5>
-                    <h3 class="text-info">{{ new_customers|default:"42" }}</h3>
+                    <h5>New Customers</h5>
+                    <h3 class="text-info">{{ new_customers }}</h3>
                     <p class="text-muted">this period</p>
                 </div>
             </div>
@@ -438,8 +433,8 @@
             <div class="card h-100">
                 <div class="card-body text-center">
                     <i class="fas fa-percentage fa-3x text-warning mb-3"></i>
-                    <h5 class="totall">Return Rate</h5>
-                    <h3 class="text-warning">{{ return_rate|default:"2.1%" }}</h3>
+                    <h5>Return Rate</h5>
+                    <h3 class="text-warning">{{ return_rate }}</h3>
                     <p class="text-muted">of total sales</p>
                 </div>
             </div>
@@ -476,20 +471,18 @@
                             <small class="d-block text-muted">{{ day.day|date:"D" }}</small>
                         </td>
                         <td>
-                            <span class="badge bg-primary">{{ day.count|default:0|intcomma }}</span>
+                            <span class="badge bg-primary">{{ day.count|intcomma }}</span>
                         </td>
                         <td>
-                            <strong>UGX {{ day.total|default:0|floatformat:0|intcomma }}</strong>
+                            <strong>UGX {{ day.total|floatformat:0|intcomma }}</strong>
                         </td>
                         <td>
-                            {% if day.count and day.count > 0 %}
-                                UGX {% widthratio day.total day.count 1 %}
-                            {% else %}
-                                UGX 0
-                            {% endif %}
+                            UGX {{ day.avg_value|floatformat:0|intcomma }}
                         </td>
                         <td>
-                            <span class="badge bg-success">{{ day.growth|default:"+5.2%" }}</span>
+                            <span class="badge {% if day.growth|slice:'1' == '+' %}bg-success{% else %}bg-danger{% endif %}">
+                                {{ day.growth }}
+                            </span>
                         </td>
                         <td>
                             <button class="btn btn-sm btn-outline-primary"
@@ -626,7 +619,7 @@ function viewDayDetails(date) {
     modal.show();
 
     // Fetch day details via AJAX
-    fetch(`/sales/analytics/day-details/?date=${date}`)
+    fetch(`/sales/analytics/day-details/?date=${date}&store={{ selected_store|default:'' }}`)
         .then(response => response.json())
         .then(data => {
             if (data.success) {
@@ -663,11 +656,109 @@ function toggleTableView() {
     }
 }
 
-// Initialize when page loads
+// Initialize charts when page loads
 document.addEventListener('DOMContentLoaded', function() {
-    // Any initialization code here
-    console.log('Analytics dashboard loaded');
+    initializeCharts();
 });
+
+function initializeCharts() {
+    // Daily Sales Chart
+    if (analyticsData.dailySales.length > 0) {
+        const dailySalesCtx = document.getElementById('dailySalesChart').getContext('2d');
+        new Chart(dailySalesCtx, {
+            type: 'line',
+            data: {
+                labels: analyticsData.dailySales.map(day => new Date(day.day).toLocaleDateString()),
+                datasets: [{
+                    label: 'Daily Revenue (UGX)',
+                    data: analyticsData.dailySales.map(day => parseFloat(day.total)),
+                    borderColor: '#007bff',
+                    backgroundColor: 'rgba(0, 123, 255, 0.1)',
+                    tension: 0.4,
+                    fill: true
+                }]
+            },
+            options: {
+                responsive: true,
+                plugins: {
+                    title: {
+                        display: true,
+                        text: 'Daily Sales Trend'
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        ticks: {
+                            callback: function(value) {
+                                return 'UGX ' + value.toLocaleString();
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    // Payment Methods Chart
+    if (analyticsData.paymentMethods.length > 0) {
+        const paymentMethodsCtx = document.getElementById('paymentMethodsChart').getContext('2d');
+        new Chart(paymentMethodsCtx, {
+            type: 'doughnut',
+            data: {
+                labels: analyticsData.paymentMethods.map(method => method.payment_method_display),
+                datasets: [{
+                    data: analyticsData.paymentMethods.map(method => method.percentage),
+                    backgroundColor: [
+                        '#007bff', '#28a745', '#ffc107', '#dc3545', '#6f42c1', '#fd7e14'
+                    ]
+                }]
+            },
+            options: {
+                responsive: true,
+                plugins: {
+                    legend: {
+                        position: 'bottom',
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                const label = context.label || '';
+                                const value = context.raw || 0;
+                                const method = analyticsData.paymentMethods[context.dataIndex];
+                                return `${label}: ${value}% (UGX ${parseFloat(method.total).toLocaleString()})`;
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    // Hourly Sales Chart
+    if (analyticsData.hourlyData.length > 0) {
+        const hourlySalesCtx = document.getElementById('hourlySalesChart').getContext('2d');
+        new Chart(hourlySalesCtx, {
+            type: 'bar',
+            data: {
+                labels: analyticsData.hourlyData.map(hour => hour.hour + ':00'),
+                datasets: [{
+                    label: 'Sales Count',
+                    data: analyticsData.hourlyData.map(hour => hour.count),
+                    backgroundColor: 'rgba(40, 167, 69, 0.8)'
+                }]
+            },
+            options: {
+                responsive: true,
+                plugins: {
+                    title: {
+                        display: true,
+                        text: 'Sales by Hour of Day'
+                    }
+                }
+            }
+        });
+    }
+}
 </script>
-<script src="{% static 'sales/js/analytics.js' %}"></script>
 {% endblock %}

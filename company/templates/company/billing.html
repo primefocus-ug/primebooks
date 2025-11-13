@@ -1,194 +1,706 @@
-{% extends 'base.html' %}
-{% load i18 %}
+{% extends "base.html" %}
+{% load static %}
+{% load i18n %}
 
-{% block title %}Billing & Subscription{% endblock %}
+{% block title %}{% trans "Billing & Subscription" %} - {{ company.display_name }}{% endblock %}
+
+{% block extra_css %}
+<style>
+    :root {
+        --bg-primary: #ffffff;
+        --bg-secondary: #f8f9fa;
+        --bg-card: #ffffff;
+        --text-primary: #212529;
+        --text-secondary: #6c757d;
+        --border-color: #dee2e6;
+        --accent-primary: #0d6efd;
+        --accent-success: #198754;
+        --accent-warning: #ffc107;
+        --accent-danger: #dc3545;
+        --shadow: rgba(0, 0, 0, 0.1);
+    }
+
+    [data-theme="dark"] {
+        --bg-primary: #1a1d20;
+        --bg-secondary: #212529;
+        --bg-card: #2b3035;
+        --text-primary: #e9ecef;
+        --text-secondary: #adb5bd;
+        --border-color: #495057;
+        --shadow: rgba(0, 0, 0, 0.3);
+    }
+
+    .billing-container {
+        background: var(--bg-primary);
+        color: var(--text-primary);
+        min-height: 100vh;
+        padding: 2rem 0;
+    }
+
+    .billing-header {
+        background: linear-gradient(135deg, var(--accent-primary), #0a58ca);
+        color: white;
+        padding: 3rem 0;
+        margin-bottom: 2rem;
+        border-radius: 0.5rem;
+    }
+
+    .billing-card {
+        background: var(--bg-card);
+        border: 1px solid var(--border-color);
+        border-radius: 0.75rem;
+        padding: 1.5rem;
+        margin-bottom: 1.5rem;
+        box-shadow: 0 2px 8px var(--shadow);
+        transition: transform 0.2s, box-shadow 0.2s;
+    }
+
+    .billing-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px var(--shadow);
+    }
+
+    .plan-badge {
+        display: inline-block;
+        padding: 0.5rem 1rem;
+        border-radius: 2rem;
+        font-weight: 600;
+        font-size: 0.875rem;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+
+    .plan-badge.free {
+        background: var(--accent-secondary);
+        color: var(--text-primary);
+    }
+
+    .plan-badge.trial {
+        background: var(--accent-warning);
+        color: #000;
+    }
+
+    .plan-badge.premium {
+        background: var(--accent-primary);
+        color: white;
+    }
+
+    .plan-badge.enterprise {
+        background: linear-gradient(135deg, #6a11cb, #2575fc);
+        color: white;
+    }
+
+    .stat-item {
+        text-align: center;
+        padding: 1rem;
+    }
+
+    .stat-value {
+        font-size: 2rem;
+        font-weight: 700;
+        color: var(--accent-primary);
+        margin-bottom: 0.5rem;
+    }
+
+    .stat-label {
+        color: var(--text-secondary);
+        font-size: 0.875rem;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+
+    .progress-custom {
+        height: 1.5rem;
+        border-radius: 0.5rem;
+        background: var(--bg-secondary);
+        overflow: hidden;
+    }
+
+    .progress-bar-custom {
+        background: linear-gradient(90deg, var(--accent-primary), var(--accent-success));
+        transition: width 0.6s ease;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: white;
+        font-weight: 600;
+        font-size: 0.875rem;
+    }
+
+    .usage-bar {
+        margin-bottom: 1rem;
+    }
+
+    .usage-label {
+        display: flex;
+        justify-content: space-between;
+        margin-bottom: 0.5rem;
+        font-size: 0.875rem;
+    }
+
+    .feature-list {
+        list-style: none;
+        padding: 0;
+        margin: 1rem 0;
+    }
+
+    .feature-list li {
+        padding: 0.75rem 0;
+        border-bottom: 1px solid var(--border-color);
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
+    .feature-list li:last-child {
+        border-bottom: none;
+    }
+
+    .feature-icon {
+        color: var(--accent-success);
+        font-size: 1.25rem;
+    }
+
+    .plan-comparison {
+        overflow-x: auto;
+    }
+
+    .plan-card {
+        background: var(--bg-card);
+        border: 2px solid var(--border-color);
+        border-radius: 1rem;
+        padding: 2rem;
+        margin: 1rem;
+        min-width: 280px;
+        transition: all 0.3s;
+    }
+
+    .plan-card.recommended {
+        border-color: var(--accent-primary);
+        box-shadow: 0 8px 24px var(--shadow);
+        transform: scale(1.05);
+    }
+
+    .plan-card:hover {
+        transform: translateY(-4px);
+        box-shadow: 0 8px 24px var(--shadow);
+    }
+
+    .plan-price {
+        font-size: 2.5rem;
+        font-weight: 700;
+        color: var(--accent-primary);
+        margin: 1rem 0;
+    }
+
+    .plan-period {
+        color: var(--text-secondary);
+        font-size: 1rem;
+    }
+
+    .btn-upgrade {
+        width: 100%;
+        padding: 0.75rem;
+        font-weight: 600;
+        border-radius: 0.5rem;
+        transition: all 0.3s;
+    }
+
+    .btn-upgrade:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px var(--shadow);
+    }
+
+    .alert-expiry {
+        background: linear-gradient(135deg, var(--accent-warning), #fd7e14);
+        color: white;
+        border: none;
+        border-radius: 0.75rem;
+        padding: 1.5rem;
+        margin-bottom: 1.5rem;
+    }
+
+    .alert-expiry .alert-heading {
+        font-weight: 700;
+        margin-bottom: 0.5rem;
+    }
+
+    .countdown-badge {
+        background: white;
+        color: var(--accent-danger);
+        padding: 0.5rem 1rem;
+        border-radius: 2rem;
+        font-weight: 700;
+        display: inline-block;
+        margin-top: 0.5rem;
+    }
+
+    @media (max-width: 768px) {
+        .billing-header {
+            padding: 2rem 1rem;
+        }
+
+        .billing-card {
+            padding: 1rem;
+        }
+
+        .stat-value {
+            font-size: 1.5rem;
+        }
+
+        .plan-card {
+            margin: 0.5rem;
+            min-width: 250px;
+        }
+
+        .plan-price {
+            font-size: 2rem;
+        }
+    }
+
+    @media (max-width: 576px) {
+        .stat-item {
+            padding: 0.5rem;
+        }
+
+        .billing-header h1 {
+            font-size: 1.75rem;
+        }
+    }
+</style>
+{% endblock %}
 
 {% block content %}
-<div class="container mx-auto px-4 py-8">
-    <div class="max-w-6xl mx-auto">
+<div class="billing-container">
+    <div class="container">
         <!-- Header -->
-        <div class="mb-8">
-            <h1 class="text-3xl font-bold text-gray-900">{% trans"Billing & Subscription" %}</h1>
-            <p class="text-gray-600 mt-2">{% trans"Manage your subscription and billing information" %}</p>
-        </div>
-
-        <!-- Current Plan Card -->
-        <div class="bg-white rounded-lg shadow-lg p-6 mb-8">
-            <div class="flex items-center justify-between mb-4">
-                <h2 class="text-xl font-semibold">Current Plan</h2>
-                <span class="px-3 py-1 rounded-full text-sm font-medium
-                    {% if company.status == 'ACTIVE' %}bg-green-100 text-green-800
-                    {% elif company.status == 'TRIAL' %}bg-blue-100 text-blue-800
-                    {% elif company.status == 'SUSPENDED' %}bg-yellow-100 text-yellow-800
-                    {% else %}bg-red-100 text-red-800{% endif %}">
-                    {{ company.access_status_display }}
-                </span>
-            </div>
-
-            <div class="grid md:grid-cols-2 gap-6">
-                <div>
-                    <h3 class="font-medium text-gray-900 mb-2">{{ current_plan.display_name|default:current_plan.get_name_display }}</h3>
-                    <p class="text-gray-600 mb-4">{{ current_plan.description }}</p>
-
-                    <div class="space-y-2">
-                        <div class="flex justify-between">
-                            <span class="text-gray-600">Price:</span>
-                            <span class="font-medium">${{ current_plan.price }}/{{ current_plan.get_billing_cycle_display|lower }}</span>
-                        </div>
-
-                        {% if company.subscription_ends_at %}
-                        <div class="flex justify-between">
-                            <span class="text-gray-600">Expires:</span>
-                            <span class="font-medium">{{ company.subscription_ends_at }}</span>
-                        </div>
-                        {% elif company.trial_ends_at %}
-                        <div class="flex justify-between">
-                            <span class="text-gray-600">Trial Ends:</span>
-                            <span class="font-medium">{{ company.trial_ends_at }}</span>
-                        </div>
-                        {% endif %}
-
-                        {% if company.days_until_expiry > 0 %}
-                        <div class="flex justify-between">
-                            <span class="text-gray-600">{% trans"Days Remaining" %}:</span>
-                            <span class="font-medium {% if company.days_until_expiry <= 7 %}text-red-600{% endif %}">
-                                {{ company.days_until_expiry }}
-                            </span>
-                        </div>
-                        {% endif %}
-                    </div>
-                </div>
-
-                <div>
-                    <h4 class="font-medium text-gray-900 mb-3">{% trans"Plan Limits" %}</h4>
-                    <div class="space-y-3">
-                        <!-- Users -->
-                        <div>
-                            <div class="flex justify-between text-sm mb-1">
-                                <span>{% trans"Users" %}</span>
-                                <span>{{ usage_stats.users_count }}/{{ current_plan.max_users }}</span>
-                            </div>
-                            <div class="w-full bg-gray-200 rounded-full h-2">
-                                <div class="bg-blue-600 h-2 rounded-full"
-                                     style="width: {{ usage_stats.users_count|mul:100|div:current_plan.max_users }}%"></div>
-                            </div>
-                        </div>
-
-                        <!-- Storage -->
-                        <div>
-                            <div class="flex justify-between text-sm mb-1">
-                                <span>{% trans"Storage" %}</span>
-                                <span>{{ usage_stats.storage_used }}MB/{{ current_plan.max_storage_gb }}GB</span>
-                            </div>
-                            <div class="w-full bg-gray-200 rounded-full h-2">
-                                <div class="bg-green-600 h-2 rounded-full"
-                                     style="width: {{ usage_stats.storage_percentage }}%"></div>
-                            </div>
-                        </div>
-
-                        <!-- Branches -->
-                        <div>
-                            <div class="flex justify-between text-sm mb-1">
-                                <span>{% trans"Branches" %}</span>
-                                <span>{{ usage_stats.branches_count }}/{{ current_plan.max_branches }}</span>
-                            </div>
-                            <div class="w-full bg-gray-200 rounded-full h-2">
-                                <div class="bg-purple-600 h-2 rounded-full"
-                                     style="width: {{ usage_stats.branches_count|mul:100|div:current_plan.max_branches }}%"></div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            {% if company.days_until_expiry <= 7 and company.days_until_expiry > 0 %}
-            <div class="mt-6 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
-                <div class="flex">
-                    <div class="flex-shrink-0">
-                        <svg class="h-5 w-5 text-yellow-400" fill="currentColor" viewBox="0 0 20 20">
-                            <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"/>
-                        </svg>
-                    </div>
-                    <div class="ml-3">
-                        <h3 class="text-sm font-medium text-yellow-800"> {% trans"Subscription Expiring Soon" %}</h3>
-                        <p class="text-sm text-yellow-700 mt-1">
-                            Your subscription expires in {{ company.days_until_expiry }} day{{ company.days_until_expiry|pluralize }}.
-                            Renew now to avoid service interruption.
+        <div class="billing-header">
+            <div class="container">
+                <div class="row align-items-center">
+                    <div class="col-md-8">
+                        <h1 class="mb-2">
+                            <i class="bi bi-credit-card-2-front me-2"></i>
+                            {% trans "Billing & Subscription" %}
+                        </h1>
+                        <p class="mb-0 opacity-75">
+                            {% trans "Manage your subscription and billing information" %}
                         </p>
                     </div>
-                </div>
-            </div>
-            {% endif %}
-        </div>
-
-        <!-- Available Plans -->
-        <div class="bg-white rounded-lg shadow-lg p-6">
-            <h2 class="text-xl font-semibold mb-6">{% trans"Available Plans" %}</h2>
-
-            <div class="grid md:grid-cols-3 gap-6">
-                {% for plan in available_plans %}
-                <div class="border rounded-lg p-6 {% if plan == current_plan %}border-blue-500 bg-blue-50{% else %}border-gray-200{% endif %}">
-                    <div class="flex items-center justify-between mb-4">
-                        <h3 class="text-lg font-semibold">{{ plan.display_name|default:plan.get_name_display }}</h3>
-                        {% if plan.is_popular %}
-                        <span class="bg-green-100 text-green-800 text-xs font-medium px-2.5 py-0.5 rounded">{% trans"Popular" %}</span>
+                    <div class="col-md-4 text-md-end mt-3 mt-md-0">
+                        {% if current_plan %}
+                            <span class="plan-badge {{ current_plan.name|lower }}">
+                                {{ current_plan.display_name }}
+                            </span>
+                        {% else %}
+                            <span class="plan-badge free">
+                                {% trans "No Active Plan" %}
+                            </span>
                         {% endif %}
                     </div>
+                </div>
+            </div>
+        </div>
 
-                    <div class="mb-4">
-                        <span class="text-3xl font-bold">${{ plan.price }}</span>
-                        <span class="text-gray-600">{{ plan.get_billing_cycle_display|lower }}</span>
+        <!-- Expiry Warning -->
+        {% if company.days_until_expiry <= 7 and company.days_until_expiry > 0 %}
+        <div class="alert alert-expiry">
+            <div class="d-flex align-items-center justify-content-between flex-wrap">
+                <div>
+                    <h5 class="alert-heading">
+                        <i class="bi bi-exclamation-triangle-fill me-2"></i>
+                        {% trans "Subscription Expiring Soon!" %}
+                    </h5>
+                    <p class="mb-0">
+                        {% blocktrans with days=company.days_until_expiry %}
+                        Your subscription will expire in {{ days }} days. Renew now to avoid service interruption.
+                        {% endblocktrans %}
+                    </p>
+                </div>
+                <div class="mt-3 mt-md-0">
+                    <span class="countdown-badge">
+                        {{ company.days_until_expiry }} {% trans "days left" %}
+                    </span>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        <div class="row">
+            <!-- Current Plan Overview -->
+            <div class="col-lg-8">
+                <div class="billing-card">
+                    <h3 class="mb-4">
+                        <i class="bi bi-box-seam me-2"></i>
+                        {% trans "Current Plan" %}
+                    </h3>
+
+                    {% if current_plan %}
+                    <div class="row">
+                        <div class="col-md-6 mb-4">
+                            <h2 class="plan-price">
+                                {{ current_plan.currency }} {{ current_plan.price|floatformat:0 }}
+                                <span class="plan-period">/{% trans "month" %}</span>
+                            </h2>
+                            <p class="text-muted">{{ current_plan.description }}</p>
+                        </div>
+
+                        <div class="col-md-6 mb-4">
+                            <div class="stat-item">
+                                <div class="stat-value">
+                                    {% if company.is_trial %}
+                                        {% trans "Trial" %}
+                                    {% elif company.subscription_ends_at %}
+                                        {{ company.subscription_ends_at|date:"M d, Y" }}
+                                    {% else %}
+                                        {% trans "Active" %}
+                                    {% endif %}
+                                </div>
+                                <div class="stat-label">
+                                    {% if company.is_trial %}
+                                        {% trans "Trial Period" %}
+                                    {% else %}
+                                        {% trans "Renewal Date" %}
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </div>
                     </div>
 
-                    <p class="text-gray-600 text-sm mb-4">{{ plan.description }}</p>
-
-                    <ul class="space-y-2 mb-6">
-                        <li class="flex items-center text-sm">
-                            <svg class="h-4 w-4 text-green-500 mr-2" fill="currentColor" viewBox="0 0 20 20">
-                                <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/>
-                            </svg>
-                            {{ plan.max_users }} user{{ plan.max_users|pluralize }}
+                    <h5 class="mb-3">{% trans "Plan Features" %}</h5>
+                    <ul class="feature-list">
+                        <li>
+                            <i class="bi bi-check-circle-fill feature-icon"></i>
+                            <span>
+                                {% if current_plan.max_users == -1 %}
+                                    {% trans "Unlimited users" %}
+                                {% else %}
+                                    {% blocktrans with max=current_plan.max_users %}Up to {{ max }} users{% endblocktrans %}
+                                {% endif %}
+                            </span>
                         </li>
-                        <li class="flex items-center text-sm">
-                            <svg class="h-4 w-4 text-green-500 mr-2" fill="currentColor" viewBox="0 0 20 20">
-                                <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/>
-                            </svg>
-                            {{ plan.max_branches }} branch{{ plan.max_branches|pluralize }}
+                        <li>
+                            <i class="bi bi-check-circle-fill feature-icon"></i>
+                            <span>
+                                {% if current_plan.max_branches == -1 %}
+                                    {% trans "Unlimited branches" %}
+                                {% else %}
+                                    {% blocktrans with max=current_plan.max_branches %}Up to {{ max }} branches{% endblocktrans %}
+                                {% endif %}
+                            </span>
                         </li>
-                        <li class="flex items-center text-sm">
-                            <svg class="h-4 w-4 text-green-500 mr-2" fill="currentColor" viewBox="0 0 20 20">
-                                <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/>
-                            </svg>
-                            {{ plan.max_storage_gb }}GB storage
+                        <li>
+                            <i class="bi bi-check-circle-fill feature-icon"></i>
+                            <span>
+                                {{ current_plan.max_storage_gb }} GB {% trans "storage" %}
+                            </span>
                         </li>
-                        {% for feature in plan.get_feature_list %}
-                        <li class="flex items-center text-sm">
-                            <svg class="h-4 w-4 text-green-500 mr-2" fill="currentColor" viewBox="0 0 20 20">
-                                <path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"/>
-                            </svg>
-                            {{ feature }}
+                        {% if current_plan.has_efris_support %}
+                        <li>
+                            <i class="bi bi-check-circle-fill feature-icon"></i>
+                            <span>{% trans "EFRIS Integration" %}</span>
                         </li>
-                        {% endfor %}
+                        {% endif %}
+                        {% if current_plan.has_api_access %}
+                        <li>
+                            <i class="bi bi-check-circle-fill feature-icon"></i>
+                            <span>{% trans "API Access" %}</span>
+                        </li>
+                        {% endif %}
+                        {% if current_plan.has_priority_support %}
+                        <li>
+                            <i class="bi bi-check-circle-fill feature-icon"></i>
+                            <span>{% trans "Priority Support" %}</span>
+                        </li>
+                        {% endif %}
                     </ul>
 
-                    {% if plan == current_plan %}
-                    <button class="w-full bg-gray-300 text-gray-600 py-2 px-4 rounded cursor-not-allowed" disabled>
-                        {% trans"Current Plan" %}
-                    </button>
+                    <div class="mt-4">
+                        <a href="{% url 'companies:subscription_plans' %}" class="btn btn-primary btn-upgrade">
+                            <i class="bi bi-arrow-up-circle me-2"></i>
+                            {% trans "Upgrade Plan" %}
+                        </a>
+                    </div>
                     {% else %}
-                    <form method="post" action="{% url 'company:upgrade_plan' %}">
-                        {% csrf_token %}
-                        <input type="hidden" name="plan_id" value="{{ plan.id }}">
-                        <button type="submit" class="w-full bg-blue-600 text-white py-2 px-4 rounded hover:bg-blue-700 transition duration-200">
-                            {% if plan.name == 'FREE' %}Downgrade{% else %}Upgrade{% endif %}
-                        </button>
-                    </form>
+                    <div class="text-center py-5">
+                        <i class="bi bi-inbox display-1 text-muted"></i>
+                        <h4 class="mt-3">{% trans "No Active Plan" %}</h4>
+                        <p class="text-muted">{% trans "Choose a plan to get started" %}</p>
+                        <a href="{% url 'companies:subscription_plans' %}" class="btn btn-primary mt-3">
+                            {% trans "View Plans" %}
+                        </a>
+                    </div>
                     {% endif %}
                 </div>
-                {% endfor %}
+
+                <!-- Usage Statistics -->
+                <div class="billing-card">
+                    <h3 class="mb-4">
+                        <i class="bi bi-bar-chart-line me-2"></i>
+                        {% trans "Usage Statistics" %}
+                    </h3>
+
+                    <!-- Storage Usage -->
+                    <div class="usage-bar">
+                        <div class="usage-label">
+                            <span>
+                                <i class="bi bi-hdd me-2"></i>
+                                {% trans "Storage" %}
+                            </span>
+                            <span>
+                                {{ usage_stats.storage_used|floatformat:2 }} MB / 
+                                {% if current_plan %}
+                                    {{ current_plan.max_storage_gb|floatformat:0 }} GB
+                                {% else %}
+                                    {% trans "N/A" %}
+                                {% endif %}
+                            </span>
+                        </div>
+                        <div class="progress-custom">
+                            <div class="progress-bar-custom" style="width: {{ usage_stats.storage_percentage }}%">
+                                {{ usage_stats.storage_percentage|floatformat:1 }}%
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Users Usage -->
+                    <div class="usage-bar">
+                        <div class="usage-label">
+                            <span>
+                                <i class="bi bi-people me-2"></i>
+                                {% trans "Users" %}
+                            </span>
+                            <span>
+                                {{ usage_stats.users_count }} / 
+                                {% if current_plan %}
+                                    {% if current_plan.max_users == -1 %}
+                                        {% trans "Unlimited" %}
+                                    {% else %}
+                                        {{ current_plan.max_users }}
+                                    {% endif %}
+                                {% else %}
+                                    {% trans "N/A" %}
+                                {% endif %}
+                            </span>
+                        </div>
+                        <div class="progress-custom">
+                            {% if current_plan and current_plan.max_users != -1 %}
+                                {% widthratio usage_stats.users_count current_plan.max_users 100 as user_percentage %}
+                                <div class="progress-bar-custom" style="width: {{ user_percentage }}%">
+                                    {{ user_percentage }}%
+                                </div>
+                            {% else %}
+                                <div class="progress-bar-custom" style="width: 0%">
+                                    {% trans "Unlimited" %}
+                                </div>
+                            {% endif %}
+                        </div>
+                    </div>
+
+                    <!-- Branches Usage -->
+                    <div class="usage-bar">
+                        <div class="usage-label">
+                            <span>
+                                <i class="bi bi-diagram-3 me-2"></i>
+                                {% trans "Branches" %}
+                            </span>
+                            <span>
+                                {{ usage_stats.branches_count }} / 
+                                {% if current_plan %}
+                                    {% if current_plan.max_branches == -1 %}
+                                        {% trans "Unlimited" %}
+                                    {% else %}
+                                        {{ current_plan.max_branches }}
+                                    {% endif %}
+                                {% else %}
+                                    {% trans "N/A" %}
+                                {% endif %}
+                            </span>
+                        </div>
+                        <div class="progress-custom">
+                            {% if current_plan and current_plan.max_branches != -1 %}
+                                {% widthratio usage_stats.branches_count current_plan.max_branches 100 as branch_percentage %}
+                                <div class="progress-bar-custom" style="width: {{ branch_percentage }}%">
+                                    {{ branch_percentage }}%
+                                </div>
+                            {% else %}
+                                <div class="progress-bar-custom" style="width: 0%">
+                                    {% trans "Unlimited" %}
+                                </div>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Quick Actions -->
+            <div class="col-lg-4">
+                <div class="billing-card">
+                    <h4 class="mb-4">
+                        <i class="bi bi-lightning-charge me-2"></i>
+                        {% trans "Quick Actions" %}
+                    </h4>
+
+                    <div class="d-grid gap-3">
+                        <a href="{% url 'companies:billing_history' %}" class="btn btn-outline-primary">
+                            <i class="bi bi-clock-history me-2"></i>
+                            {% trans "Billing History" %}
+                        </a>
+
+                        <a href="{% url 'companies:payment_methods' %}" class="btn btn-outline-primary">
+                            <i class="bi bi-credit-card me-2"></i>
+                            {% trans "Payment Methods" %}
+                        </a>
+
+                        <a href="{% url 'companies:subscription_plans' %}" class="btn btn-outline-primary">
+                            <i class="bi bi-grid-3x3-gap me-2"></i>
+                            {% trans "Compare Plans" %}
+                        </a>
+
+                        <a href="{% url 'companies:billing_settings' %}" class="btn btn-outline-secondary">
+                            <i class="bi bi-gear me-2"></i>
+                            {% trans "Billing Settings" %}
+                        </a>
+                    </div>
+                </div>
+
+                <!-- Summary Stats -->
+                <div class="billing-card">
+                    <h4 class="mb-4">
+                        <i class="bi bi-graph-up me-2"></i>
+                        {% trans "Account Summary" %}
+                    </h4>
+
+                    <div class="stat-item">
+                        <div class="stat-value">{{ usage_stats.users_count }}</div>
+                        <div class="stat-label">{% trans "Active Users" %}</div>
+                    </div>
+
+                    <div class="stat-item">
+                        <div class="stat-value">{{ usage_stats.branches_count }}</div>
+                        <div class="stat-label">{% trans "Total Branches" %}</div>
+                    </div>
+
+                    <div class="stat-item">
+                        <div class="stat-value">
+                            {{ usage_stats.storage_used|floatformat:0 }} MB
+                        </div>
+                        <div class="stat-label">{% trans "Storage Used" %}</div>
+                    </div>
+                </div>
+
+                <!-- Support Card -->
+                <div class="billing-card">
+                    <h5 class="mb-3">
+                        <i class="bi bi-headset me-2"></i>
+                        {% trans "Need Help?" %}
+                    </h5>
+                    <p class="text-muted small">
+                        {% trans "Contact our support team for billing inquiries and assistance." %}
+                    </p>
+                    <a href="#" class="btn btn-sm btn-outline-primary w-100">
+                        <i class="bi bi-envelope me-2"></i>
+                        {% trans "Contact Support" %}
+                    </a>
+                </div>
+            </div>
+        </div>
+
+        <!-- Available Plans Preview -->
+        <div class="billing-card mt-4">
+            <h3 class="mb-4">
+                <i class="bi bi-box-seam me-2"></i>
+                {% trans "Available Plans" %}
+            </h3>
+
+            <div class="plan-comparison">
+                <div class="row row-cols-1 row-cols-md-2 row-cols-lg-4 g-4">
+                    {% for plan in available_plans %}
+                    <div class="col">
+                        <div class="plan-card {% if plan == current_plan %}recommended{% endif %}">
+                            {% if plan == current_plan %}
+                            <div class="text-center mb-3">
+                                <span class="badge bg-primary">{% trans "Current Plan" %}</span>
+                            </div>
+                            {% endif %}
+
+                            <h4 class="text-center">{{ plan.display_name }}</h4>
+                            <div class="text-center plan-price">
+                                {{ plan.currency }} {{ plan.price|floatformat:0 }}
+                                <span class="plan-period">/{% trans "mo" %}</span>
+                            </div>
+
+                            <ul class="feature-list">
+                                <li>
+                                    <i class="bi bi-check2 feature-icon"></i>
+                                    <small>
+                                        {% if plan.max_users == -1 %}
+                                            {% trans "Unlimited users" %}
+                                        {% else %}
+                                            {{ plan.max_users }} {% trans "users" %}
+                                        {% endif %}
+                                    </small>
+                                </li>
+                                <li>
+                                    <i class="bi bi-check2 feature-icon"></i>
+                                    <small>
+                                        {% if plan.max_branches == -1 %}
+                                            {% trans "Unlimited branches" %}
+                                        {% else %}
+                                            {{ plan.max_branches }} {% trans "branches" %}
+                                        {% endif %}
+                                    </small>
+                                </li>
+                                <li>
+                                    <i class="bi bi-check2 feature-icon"></i>
+                                    <small>{{ plan.max_storage_gb }} GB {% trans "storage" %}</small>
+                                </li>
+                            </ul>
+
+                            {% if plan != current_plan %}
+                            <a href="{% url 'companies:subscription_upgrade' plan.id %}" class="btn btn-primary btn-upgrade mt-3">
+                                {% trans "Select Plan" %}
+                            </a>
+                            {% endif %}
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+
+            <div class="text-center mt-4">
+                <a href="{% url 'companies:subscription_plans' %}" class="btn btn-lg btn-outline-primary">
+                    {% trans "View Detailed Comparison" %}
+                    <i class="bi bi-arrow-right ms-2"></i>
+                </a>
             </div>
         </div>
     </div>
 </div>
 {% endblock %}
 
+{% block extra_js %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Animate progress bars
+        const progressBars = document.querySelectorAll('.progress-bar-custom');
+        progressBars.forEach(bar => {
+            const width = bar.style.width;
+            bar.style.width = '0%';
+            setTimeout(() => {
+                bar.style.width = width;
+            }, 100);
+        });
+
+        // Handle plan selection
+        const planButtons = document.querySelectorAll('.btn-upgrade');
+        planButtons.forEach(button => {
+            button.addEventListener('click', function(e) {
+                // Add loading state
+                const originalText = this.innerHTML;
+                this.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>{% trans "Loading..." %}';
+                this.disabled = true;
+            });
+        });
+    });
+</script>
+{% endblock %}

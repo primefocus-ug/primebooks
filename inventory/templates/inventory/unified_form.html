@@ -391,7 +391,7 @@
                                     {% endif %}
                                 </div>
                                 <small class="form-text text-muted totall">
-                                    {% if EFRIS_ENABLED %}
+                                    {% if efris_enabled %}
                                     <i class="fas fa-info-circle totall"></i> EFRIS commodity category inherited from category
                                     {% endif %}
                                 </small>
@@ -1301,14 +1301,26 @@
                         <input type="text" class="form-control" id="categoryCode" name="code">
                     </div>
                     <div class="mb-3">
+                        <label for="categoryType" class="form-label">Category Type <span class="text-danger">*</span></label>
+                        <select class="form-select" id="categoryType" name="category_type" required>
+                            <option value="">Select type...</option>
+                            <option value="product">🛍️ Product Category</option>
+                            <option value="service">⚙️ Service Category</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
                         <label for="categoryDescription" class="form-label">Description</label>
                         <textarea class="form-control" id="categoryDescription" name="description" rows="3"></textarea>
                     </div>
                 </form>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-                <button type="button" class="btn btn-primary" onclick="saveCategory()">Save Category</button>
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                    <i class="fas fa-times"></i> Close
+                </button>
+                <button type="button" class="btn btn-primary" onclick="saveCategory()">
+                    <i class="fas fa-save"></i> Save Category
+                </button>
             </div>
         </div>
     </div>
@@ -1348,8 +1360,12 @@
                 </form>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-                <button type="button" class="btn btn-primary" onclick="saveSupplier()">Save Supplier</button>
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                    <i class="fas fa-times"></i> Close
+                </button>
+                <button type="button" class="btn btn-primary" onclick="saveSupplier()">
+                    <i class="fas fa-save"></i> Save Supplier
+                </button>
             </div>
         </div>
     </div>
@@ -1372,17 +1388,226 @@
 
 {% block extra_js %}
 
-<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+<<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></>
 <script src="{% static 'js/product_popup_handler.js' %}"></script>
 <script>
-    // Add at the top of the script block
+// Add at the top of the script block
 const EFRIS_ENABLED = {{ efris_enabled|yesno:"true,false" }};
 
-// Then use throughout the script:
-if (EFRIS_ENABLED) {
-    // EFRIS-specific logic
+// CSRF token helper - GLOBAL
+function getCookie(name) {
+    let cookieValue = null;
+    if (document.cookie && document.cookie !== '') {
+        const cookies = document.cookie.split(';');
+        for (let i = 0; i < cookies.length; i++) {
+            const cookie = cookies[i].trim();
+            if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                break;
+            }
+        }
+    }
+    return cookieValue;
 }
+
+// Helper function to show success messages - GLOBAL
+function showSuccessMessage(message) {
+    const alertHtml = '<div class="alert alert-success alert-dismissible fade show position-fixed top-0 start-50 translate-middle-x mt-3" style="z-index: 9999;" role="alert">' +
+        '<i class="fas fa-check-circle"></i> ' + message +
+        '<button type="button" class="btn-close" data-bs-dismiss="alert"></button>' +
+        '</div>';
+    
+    $('body').append(alertHtml);
+    
+    setTimeout(function() {
+        $('.alert-success').fadeOut(function() {
+            $(this).remove();
+        });
+    }, 3000);
+}
+
+// GLOBAL MODAL SAVE FUNCTIONS
+window.saveCategory = function() {
+    const formData = {
+        'name': $('#categoryName').val().trim(),
+        'code': $('#categoryCode').val().trim(),
+        'description': $('#categoryDescription').val().trim(),
+        'category_type': $('#categoryType').val() || 'product',
+        'csrfmiddlewaretoken': getCookie('csrftoken')
+    };
+    
+    // Validation
+    if (!formData.name) {
+        alert('Category name is required');
+        $('#categoryName').addClass('is-invalid').focus();
+        return;
+    }
+    
+    if (!formData.category_type) {
+        alert('Please select a category type');
+        $('#categoryType').addClass('is-invalid').focus();
+        return;
+    }
+    
+    // Show loading state
+    const $saveBtn = $('#addCategoryModal').find('.btn-primary');
+    const originalText = $saveBtn.html();
+    $saveBtn.prop('disabled', true).html('<i class="fas fa-spinner fa-spin"></i> Saving...');
+    
+    $.ajax({
+        url: '{% url "inventory:category_create_ajax" %}',
+        type: 'POST',
+        data: formData,
+        dataType: 'json',
+        success: function(response) {
+            console.log('Category save response:', response);
+            
+            if (response.success) {
+                // Add new option to select dropdown
+                const newOption = new Option(
+                    response.category.name, 
+                    response.category.id, 
+                    true, 
+                    true
+                );
+                
+                $('#id_category').append(newOption).trigger('change');
+                
+                // Hide modal
+                const modal = bootstrap.Modal.getInstance(document.getElementById('addCategoryModal'));
+                if (modal) {
+                    modal.hide();
+                }
+                
+                // Reset form
+                $('#categoryQuickForm')[0].reset();
+                $('#categoryQuickForm .is-invalid').removeClass('is-invalid');
+                
+                // Show success message
+                showSuccessMessage('Category "' + response.category.name + '" created successfully!');
+            } else {
+                alert('Error: ' + (response.message || 'Failed to create category'));
+            }
+        },
+        error: function(xhr, status, error) {
+            console.error('Category save error:', xhr.responseText);
+            let errorMessage = 'Error creating category';
+            
+            if (xhr.responseJSON && xhr.responseJSON.message) {
+                errorMessage = xhr.responseJSON.message;
+            } else if (xhr.responseText) {
+                try {
+                    const response = JSON.parse(xhr.responseText);
+                    errorMessage = response.message || errorMessage;
+                } catch (e) {
+                    errorMessage = xhr.statusText || error;
+                }
+            }
+            
+            alert(errorMessage);
+        },
+        complete: function() {
+            // Reset button state
+            $saveBtn.prop('disabled', false).html(originalText);
+        }
+    });
+};
+
+window.saveSupplier = function() {
+    const formData = {
+        'name': $('#supplierName').val().trim(),
+        'tin': $('#supplierTin').val().trim(),
+        'phone': $('#supplierPhone').val().trim(),
+        'email': $('#supplierEmail').val().trim(),
+        'address': $('#supplierAddress').val().trim(),
+        'csrfmiddlewaretoken': getCookie('csrftoken')
+    };
+    
+    // Validation
+    if (!formData.name) {
+        alert('Supplier name is required');
+        $('#supplierName').addClass('is-invalid').focus();
+        return;
+    }
+    
+    if (!formData.phone) {
+        alert('Phone number is required');
+        $('#supplierPhone').addClass('is-invalid').focus();
+        return;
+    }
+    
+    // Email validation (if provided)
+    if (formData.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
+        alert('Please enter a valid email address');
+        $('#supplierEmail').addClass('is-invalid').focus();
+        return;
+    }
+    
+    // Show loading state
+    const $saveBtn = $('#addSupplierModal').find('.btn-primary');
+    const originalText = $saveBtn.html();
+    $saveBtn.prop('disabled', true).html('<i class="fas fa-spinner fa-spin"></i> Saving...');
+    
+    $.ajax({
+        url: '{% url "inventory:supplier_create_ajax" %}',
+        type: 'POST',
+        data: formData,
+        dataType: 'json',
+        success: function(response) {
+            console.log('Supplier save response:', response);
+            
+            if (response.success) {
+                // Add new option to select dropdown
+                const newOption = new Option(
+                    response.supplier.name, 
+                    response.supplier.id, 
+                    true, 
+                    true
+                );
+                
+                $('#id_supplier').append(newOption).trigger('change');
+                
+                // Hide modal
+                const modal = bootstrap.Modal.getInstance(document.getElementById('addSupplierModal'));
+                if (modal) {
+                    modal.hide();
+                }
+                
+                // Reset form
+                $('#supplierQuickForm')[0].reset();
+                $('#supplierQuickForm .is-invalid').removeClass('is-invalid');
+                
+                // Show success message
+                showSuccessMessage('Supplier "' + response.supplier.name + '" created successfully!');
+            } else {
+                alert('Error: ' + (response.message || 'Failed to create supplier'));
+            }
+        },
+        error: function(xhr, status, error) {
+            console.error('Supplier save error:', xhr.responseText);
+            let errorMessage = 'Error creating supplier';
+            
+            if (xhr.responseJSON && xhr.responseJSON.message) {
+                errorMessage = xhr.responseJSON.message;
+            } else if (xhr.responseText) {
+                try {
+                    const response = JSON.parse(xhr.responseText);
+                    errorMessage = response.message || errorMessage;
+                } catch (e) {
+                    errorMessage = xhr.statusText || error;
+                }
+            }
+            
+            alert(errorMessage);
+        },
+        complete: function() {
+            // Reset button state
+            $saveBtn.prop('disabled', false).html(originalText);
+        }
+    });
+};
+
 $(document).ready(function() {
     console.log('Unified form script loaded. Initial form type: {{ form_type }}');
 
@@ -1390,6 +1615,43 @@ $(document).ready(function() {
     var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
     var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
         return new bootstrap.Tooltip(tooltipTriggerEl);
+    });
+
+    // Modal form submission handlers
+    $('#categoryQuickForm').on('submit', function(e) {
+        e.preventDefault();
+        saveCategory();
+    });
+    
+    $('#supplierQuickForm').on('submit', function(e) {
+        e.preventDefault();
+        saveSupplier();
+    });
+    
+    // Allow Enter key to submit modal forms
+    $('#categoryName, #categoryCode, #categoryDescription').on('keypress', function(e) {
+        if (e.which === 13 && !e.shiftKey) {
+            e.preventDefault();
+            saveCategory();
+        }
+    });
+    
+    $('#supplierName, #supplierPhone, #supplierEmail').on('keypress', function(e) {
+        if (e.which === 13 && !e.shiftKey) {
+            e.preventDefault();
+            saveSupplier();
+        }
+    });
+    
+    // Clear modal forms when closed
+    $('#addCategoryModal').on('hidden.bs.modal', function() {
+        $('#categoryQuickForm')[0].reset();
+        $('#categoryQuickForm .is-invalid').removeClass('is-invalid');
+    });
+    
+    $('#addSupplierModal').on('hidden.bs.modal', function() {
+        $('#supplierQuickForm')[0].reset();
+        $('#supplierQuickForm .is-invalid').removeClass('is-invalid');
     });
 
     // Function to load form via AJAX
@@ -1891,7 +2153,7 @@ $(document).ready(function() {
                     '<div class="modal-dialog modal-lg">' +
                     '<div class="modal-content">' +
                     '<div class="modal-header">' +
-                    '<h5 class="modal-title">Product Preview</h5>' +
+                    '<h5 class="modal-title"><i class="fas fa-eye"></i> Product Preview</h5>' +
                     '<button type="button" class="btn-close" data-bs-dismiss="modal"></button>' +
                     '</div>' +
                     '<div class="modal-body">' +
@@ -1904,7 +2166,12 @@ $(document).ready(function() {
                     '<tr><th>Selling Price</th><td>UGX ' + parseFloat(previewData.selling_price || 0).toLocaleString() + '</td></tr>' +
                     '<tr><th>Discount</th><td>' + (previewData.discount || 0) + '%</td></tr>' +
                     '<tr><th>Tax Rate</th><td>' + (previewData.tax_rate || '-') + '</td></tr>' +
+                    '<tr><th>Unit of Measure</th><td>' + (previewData.unit || '-') + '</td></tr>' +
+                    '<tr><th>Min Stock Level</th><td>' + (previewData.min_stock || '-') + '</td></tr>' +
                     '</table>' +
+                    '</div>' +
+                    '<div class="modal-footer">' +
+                    '<button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>' +
                     '</div>' +
                     '</div>' +
                     '</div>' +
@@ -1915,82 +2182,6 @@ $(document).ready(function() {
                 previewModal.show();
             });
 
-            window.saveCategory = function() {
-                const formData = {
-                    'name': $('#categoryName').val().trim(),
-                    'code': $('#categoryCode').val().trim(),
-                    'description': $('#categoryDescription').val().trim(),
-                    'csrfmiddlewaretoken': $('[name=csrfmiddlewaretoken]').val()
-                };
-                if (!formData.name) {
-                    alert('Category name is required');
-                    $('#categoryName').focus();
-                    return;
-                }
-                $.ajax({
-                    url: '{% url "inventory:category_create_ajax" %}',
-                    type: 'POST',
-                    data: formData,
-                    dataType: 'json',
-                    success: function(response) {
-                        if (response.success) {
-                            const newOption = new Option(response.category.name, response.category.id, true, true);
-                            $('#id_category').append(newOption).trigger('change');
-                            var modal = bootstrap.Modal.getInstance(document.getElementById('addCategoryModal'));
-                            modal.hide();
-                            $('#categoryQuickForm')[0].reset();
-                            alert('Category created successfully!');
-                        } else {
-                            alert('Error: ' + (response.message || 'Failed to create category'));
-                        }
-                    },
-                    error: function() {
-                        alert('Error creating category. Please try again.');
-                    }
-                });
-            };
-
-            window.saveSupplier = function() {
-                const formData = {
-                    'name': $('#supplierName').val().trim(),
-                    'tin': $('#supplierTin').val().trim(),
-                    'phone': $('#supplierPhone').val().trim(),
-                    'email': $('#supplierEmail').val().trim(),
-                    'address': $('#supplierAddress').val().trim(),
-                    'csrfmiddlewaretoken': $('[name=csrfmiddlewaretoken]').val()
-                };
-                if (!formData.name) {
-                    alert('Supplier name is required');
-                    $('#supplierName').focus();
-                    return;
-                }
-                if (!formData.phone) {
-                    alert('Phone number is required');
-                    $('#supplierPhone').focus();
-                    return;
-                }
-                $.ajax({
-                    url: '{% url "inventory:supplier_create_ajax" %}',
-                    type: 'POST',
-                    data: formData,
-                    dataType: 'json',
-                    success: function(response) {
-                        if (response.success) {
-                            const newOption = new Option(response.supplier.name, response.supplier.id, true, true);
-                            $('#id_supplier').append(newOption).trigger('change');
-                            var modal = bootstrap.Modal.getInstance(document.getElementById('addSupplierModal'));
-                            modal.hide();
-                            $('#supplierQuickForm')[0].reset();
-                            alert('Supplier created successfully!');
-                        } else {
-                            alert('Error: ' + (response.message || 'Failed to create supplier'));
-                        }
-                    },
-                    error: function() {
-                        alert('Error creating supplier. Please try again.');
-                    }
-                });
-            };
         } else if (type === 'category') {
             // ENHANCED CATEGORY FORM SCRIPTS
             console.log('Initializing enhanced category form with EFRIS integration');
@@ -1998,10 +2189,14 @@ $(document).ready(function() {
             let currentCategoryType = $('#id_category_type').val() || 'product';
 
             // Load EFRIS statistics on page load
-            loadEFRISStats();
+            if (EFRIS_ENABLED) {
+                loadEFRISStats();
+            }
 
             // Initialize EFRIS Category Select2 with AJAX
             function initializeEFRISCategorySelect(categoryType) {
+                if (!EFRIS_ENABLED) return;
+                
                 // Destroy existing Select2 if present
                 if ($('#efris_commodity_category_select').data('select2')) {
                     $('#efris_commodity_category_select').select2('destroy');
@@ -2190,20 +2385,22 @@ $(document).ready(function() {
                 }
 
                 // Clear current EFRIS selection
-                $('#efris_commodity_category_select').val(null).trigger('change');
-                hideEFRISInfoCard();
+                if (EFRIS_ENABLED && $('#efris_commodity_category_select').length) {
+                    $('#efris_commodity_category_select').val(null).trigger('change');
+                    hideEFRISInfoCard();
 
-                // Reinitialize Select2 with new type filter
-                initializeEFRISCategorySelect(currentCategoryType);
+                    // Reinitialize Select2 with new type filter
+                    initializeEFRISCategorySelect(currentCategoryType);
 
-                // Update placeholder text
-                const placeholderText = currentCategoryType === 'service'
-                    ? 'Search for service categories...'
-                    : 'Search for product categories...';
+                    // Update placeholder text
+                    const placeholderText = currentCategoryType === 'service'
+                        ? 'Search for service categories...'
+                        : 'Search for product categories...';
 
-                var $select2 = $('#efris_commodity_category_select').data('select2');
-                if ($select2 && $select2.$container) {
-                    $select2.$container.find('.select2-selection__placeholder').text(placeholderText);
+                    var $select2 = $('#efris_commodity_category_select').data('select2');
+                    if ($select2 && $select2.$container) {
+                        $select2.$container.find('.select2-selection__placeholder').text(placeholderText);
+                    }
                 }
 
                 console.log('Category type changed to:', currentCategoryType);
@@ -2261,13 +2458,13 @@ $(document).ready(function() {
                     errors.push('Category Name is required');
                 }
 
-                if (!$('#efris_commodity_category_select').val()) {
+                if (EFRIS_ENABLED && $('#efris_commodity_category_select').length && !$('#efris_commodity_category_select').val()) {
                     $('#efris_commodity_category_select').next('.select2').find('.select2-selection').addClass('is-invalid');
                     errors.push('EFRIS Commodity Category is required');
                 }
 
                 // Check EFRIS auto sync requirement
-                if ($('#id_efris_auto_sync').is(':checked') && !$('#efris_commodity_category_select').val()) {
+                if (EFRIS_ENABLED && $('#id_efris_auto_sync').is(':checked') && !$('#efris_commodity_category_select').val()) {
                     errors.push('EFRIS Commodity Category is required when auto-sync is enabled');
                 }
 
@@ -2331,8 +2528,8 @@ $(document).ready(function() {
                     isValid = false;
                 }
 
-                // Validate EFRIS category
-                if (!$('#efris_commodity_category_select').val()) {
+                // Validate EFRIS category if enabled
+                if (EFRIS_ENABLED && $('#efris_commodity_category_select').length && !$('#efris_commodity_category_select').val()) {
                     $('#efris_commodity_category_select').next('.select2').find('.select2-selection').addClass('is-invalid');
                     isValid = false;
                 }
@@ -2358,21 +2555,23 @@ $(document).ready(function() {
             });
 
             // Initialize Select2 on page load
-            initializeEFRISCategorySelect(currentCategoryType);
+            if (EFRIS_ENABLED) {
+                initializeEFRISCategorySelect(currentCategoryType);
 
-            // If editing and has EFRIS code, show the info card
-            {% if form.instance.efris_commodity_category_code %}
-            const existingData = {
-                code: '{{ form.instance.efris_commodity_category_code }}',
-                name: '{{ form.instance.efris_commodity_category_name }}',
-                rate: '{{ form.instance.efris_rate|default:"18" }}',
-                is_exempt: {{ form.instance.efris_is_exempt|yesno:"true,false" }},
-                is_zero_rate: {{ form.instance.efris_is_zero_rate|yesno:"true,false" }},
-                excisable: {{ form.instance.efris_is_excisable|yesno:"true,false" }},
-                level: '{{ form.instance.efris_commodity_category.commodity_category_level|default:"-" }}'
-            };
-            updateEFRISInfoCard(existingData);
-            {% endif %}
+                // If editing and has EFRIS code, show the info card
+                {% if form.instance.efris_commodity_category_code %}
+                const existingData = {
+                    code: '{{ form.instance.efris_commodity_category_code }}',
+                    name: '{{ form.instance.efris_commodity_category_name }}',
+                    rate: '{{ form.instance.efris_rate|default:"18" }}',
+                    is_exempt: {{ form.instance.efris_is_exempt|yesno:"true,false" }},
+                    is_zero_rate: {{ form.instance.efris_is_zero_rate|yesno:"true,false" }},
+                    excisable: {{ form.instance.efris_is_excisable|yesno:"true,false" }},
+                    level: '{{ form.instance.efris_commodity_category.commodity_category_level|default:"-" }}'
+                };
+                updateEFRISInfoCard(existingData);
+                {% endif %}
+            }
 
             console.log('Enhanced category form initialization complete');
         } else if (type === 'supplier') {
@@ -2412,22 +2611,6 @@ $(document).ready(function() {
         $('.modal').on('shown.bs.modal', function() {
             $.fn.select2.defaults.set('dropdownParent', $(this));
         });
-    }
-
-    // CSRF token helper
-    function getCookie(name) {
-        let cookieValue = null;
-        if (document.cookie && document.cookie !== '') {
-            const cookies = document.cookie.split(';');
-            for (let i = 0; i < cookies.length; i++) {
-                const cookie = cookies[i].trim();
-                if (cookie.substring(0, name.length + 1) === (name + '=')) {
-                    cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
-                    break;
-                }
-            }
-        }
-        return cookieValue;
     }
 
     // Initialize scripts for initial form

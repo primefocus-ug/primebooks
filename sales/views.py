@@ -1916,7 +1916,7 @@ def sales_analytics(request):
             created_at__date__lte=date_to,
             transaction_type='SALE',
             is_voided=False
-        ).select_related('store', 'customer').prefetch_related('items', 'payments')
+        ).select_related('store', 'customer').prefetch_related('items__product', 'payments')
 
         # Filter by store if specified
         if store_id and store_id != '':
@@ -1938,7 +1938,7 @@ def sales_analytics(request):
 
         # Calculate total customers (distinct customers)
         total_customers = sales_qs.values('customer').distinct().count()
-        if total_customers == 0:  # If no customers, use sale count as fallback
+        if total_customers == 0 and total_sales > 0:  # If no customers but have sales, use sale count
             total_customers = total_sales
 
         # Sales by payment method with enhanced data
@@ -1953,6 +1953,7 @@ def sales_analytics(request):
             percentage = (method['total'] / total_revenue * 100) if total_revenue > 0 else 0
             payment_methods.append({
                 'payment_method': method['payment_method'],
+                'payment_method_display': dict(Sale.PAYMENT_METHODS).get(method['payment_method'], method['payment_method']),
                 'count': method['count'],
                 'total': method['total'],
                 'percentage': round(percentage, 1)
@@ -1993,7 +1994,7 @@ def sales_analytics(request):
             })
             previous_total = day_total
 
-        # Top products by revenue
+        # Top products by revenue - FIXED query
         top_products = SaleItem.objects.filter(
             sale__in=sales_qs
         ).select_related('product').values(
@@ -2034,7 +2035,7 @@ def sales_analytics(request):
             hour_data = next((h for h in hourly_sales if h['hour'] == hour), None)
             if hour_data:
                 hourly_data.append({
-                    'hour': hour,
+                    'hour': int(hour),
                     'count': hour_data['count'],
                     'total': hour_data['total'] or Decimal('0')
                 })
@@ -2078,7 +2079,7 @@ def sales_analytics(request):
             first_sale__date__lte=date_to
         ).count()
 
-        # Return rate calculation (simplified - in real scenario you'd have return data)
+        # Return rate calculation
         refunded_sales = Sale.objects.filter(
             created_at__date__gte=date_from,
             created_at__date__lte=date_to,
@@ -2103,7 +2104,7 @@ def sales_analytics(request):
             avg_sale_value=Avg('total_amount')
         ).order_by('-total_revenue')
 
-        # Payment method efficiency (average transaction value by method)
+        # Payment method efficiency
         payment_efficiency = sales_qs.values('payment_method').annotate(
             avg_amount=Avg('total_amount'),
             count=Count('id')
@@ -2190,7 +2191,6 @@ def sales_analytics(request):
             'period_days': 30,
             'error': True
         })
-
 
 def export_analytics_data(context, format_type):
     """Export analytics data to CSV or Excel"""

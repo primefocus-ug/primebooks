@@ -2477,12 +2477,12 @@ def upgrade_plan_view(request):
             messages.success(request, f'Successfully upgraded to {plan.display_name or plan.get_name_display()}!')
             logger.info(f"Company {company.company_id} upgraded to plan {plan.name}")
 
-            return redirect('company:billing')
+            return redirect('companiesbilling')
 
         except SubscriptionPlan.DoesNotExist:
             messages.error(request, 'Invalid plan selected.')
 
-    return redirect('company:billing')
+    return redirect('companiesbilling')
 
 
 @staff_member_required

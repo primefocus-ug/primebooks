@@ -12,6 +12,8 @@ from django.contrib import messages
 from django.urls import reverse
 from django.utils.translation import gettext as _
 
+from django.utils.functional import SimpleLazyObject
+
 logger = logging.getLogger(__name__)
 
 
@@ -284,3 +286,50 @@ class WebSocketNotificationMiddleware(MiddlewareMixin):
         except Exception as e:
             # Log error but don't break the response
             print(f"WebSocket notification error: {e}")
+
+
+
+def get_efris_status(request):
+    """Get EFRIS status for the current request"""
+    if hasattr(request, '_efris_status'):
+        return request._efris_status
+    
+    efris_status = {
+        'enabled': False,
+        'company': None,
+        'is_active': False,
+    }
+    
+    # Check tenant
+    if hasattr(request, 'tenant'):
+        company = request.tenant
+        efris_status['company'] = company
+        efris_status['enabled'] = getattr(company, 'efris_enabled', False)
+        efris_status['is_active'] = getattr(company, 'efris_is_active', False)
+    
+    # Check user's store
+    elif hasattr(request, 'user') and request.user.is_authenticated:
+        if hasattr(request.user, 'stores') and request.user.stores.exists():
+            store = request.user.stores.first()
+            if store and hasattr(store, 'company'):
+                company = store.company
+                efris_status['company'] = company
+                efris_status['enabled'] = getattr(company, 'efris_enabled', False)
+                efris_status['is_active'] = getattr(company, 'efris_is_active', False)
+    
+    request._efris_status = efris_status
+    return efris_status
+
+
+class EFRISStatusMiddleware:
+    """Add EFRIS status to all requests"""
+    
+    def __init__(self, get_response):
+        self.get_response = get_response
+    
+    def __call__(self, request):
+        # Add lazy evaluation of EFRIS status
+        request.efris = SimpleLazyObject(lambda: get_efris_status(request))
+        
+        response = self.get_response(request)
+        return response
