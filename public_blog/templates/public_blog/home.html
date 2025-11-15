@@ -1,0 +1,538 @@
+{% extends 'public_router/base.html' %}
+
+{% block title %}Blog | PRIMEBOOKS{% endblock %}
+
+{% block extra_css %}
+<style>
+    .blog-hero {
+        text-align: center;
+        padding: 4rem 0 3rem;
+        border-bottom: 1px solid var(--border-color);
+    }
+
+    .blog-hero h1 {
+        font-size: 3rem;
+        font-weight: 300;
+        margin-bottom: 1rem;
+        background: var(--accent-gradient);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+    }
+
+    .blog-hero p {
+        font-size: 1.2rem;
+        color: var(--text-secondary);
+        max-width: 600px;
+        margin: 0 auto;
+    }
+
+    .blog-search {
+        margin: 2rem 0;
+        max-width: 600px;
+        margin-left: auto;
+        margin-right: auto;
+    }
+
+    .search-form {
+        display: flex;
+        gap: 0.5rem;
+    }
+
+    .search-input {
+        flex: 1;
+        padding: 0.75rem 1rem;
+        background-color: var(--bg-secondary);
+        border: 1px solid var(--border-color-light);
+        border-radius: 8px;
+        color: var(--text-primary);
+        font-size: 1rem;
+    }
+
+    .search-input:focus {
+        outline: none;
+        border-color: var(--border-color-lighter);
+    }
+
+    .search-btn {
+        padding: 0.75rem 1.5rem;
+        background: var(--accent-gradient);
+        color: white;
+        border: none;
+        border-radius: 8px;
+        cursor: pointer;
+        font-weight: 500;
+        transition: opacity 0.3s;
+    }
+
+    .search-btn:hover {
+        opacity: 0.9;
+    }
+
+    .featured-section {
+        margin: 3rem 0;
+    }
+
+    .section-title {
+        font-size: 1.5rem;
+        font-weight: 400;
+        margin-bottom: 2rem;
+        color: var(--text-primary);
+    }
+
+    .featured-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+        gap: 2rem;
+        margin-bottom: 3rem;
+    }
+
+    .featured-card {
+        background-color: var(--bg-secondary);
+        border: 1px solid var(--border-color);
+        border-radius: 12px;
+        overflow: hidden;
+        transition: transform 0.3s, border-color 0.3s;
+        text-decoration: none;
+        color: inherit;
+        display: block;
+    }
+
+    .featured-card:hover {
+        transform: translateY(-4px);
+        border-color: var(--border-color-lighter);
+    }
+
+    .featured-image {
+        width: 100%;
+        height: 200px;
+        object-fit: cover;
+        background: var(--accent-gradient);
+    }
+
+    .featured-content {
+        padding: 1.5rem;
+    }
+
+    .featured-badge {
+        display: inline-block;
+        padding: 0.25rem 0.75rem;
+        background: var(--accent-gradient);
+        color: white;
+        font-size: 0.75rem;
+        border-radius: 4px;
+        margin-bottom: 1rem;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+
+    .featured-title {
+        font-size: 1.3rem;
+        font-weight: 500;
+        margin-bottom: 0.75rem;
+        color: var(--text-primary);
+        line-height: 1.4;
+    }
+
+    .featured-excerpt {
+        color: var(--text-secondary);
+        font-size: 0.95rem;
+        line-height: 1.6;
+        margin-bottom: 1rem;
+    }
+
+    .featured-meta {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+        font-size: 0.85rem;
+        color: var(--text-tertiary);
+    }
+
+    .categories-sidebar {
+        background-color: var(--bg-secondary);
+        border: 1px solid var(--border-color);
+        border-radius: 12px;
+        padding: 1.5rem;
+        margin-bottom: 2rem;
+    }
+
+    .categories-title {
+        font-size: 1.2rem;
+        font-weight: 500;
+        margin-bottom: 1rem;
+        color: var(--text-primary);
+    }
+
+    .category-list {
+        list-style: none;
+    }
+
+    .category-item {
+        margin-bottom: 0.75rem;
+    }
+
+    .category-link {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        color: var(--text-secondary);
+        text-decoration: none;
+        padding: 0.5rem;
+        border-radius: 6px;
+        transition: all 0.3s;
+    }
+
+    .category-link:hover {
+        color: var(--text-primary);
+        background-color: var(--bg-tertiary);
+    }
+
+    .category-count {
+        font-size: 0.85rem;
+        color: var(--text-tertiary);
+    }
+
+    .blog-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+        gap: 2rem;
+    }
+
+    .blog-card {
+        background-color: var(--bg-secondary);
+        border: 1px solid var(--border-color);
+        border-radius: 12px;
+        overflow: hidden;
+        transition: transform 0.3s, border-color 0.3s;
+        text-decoration: none;
+        color: inherit;
+        display: flex;
+        flex-direction: column;
+    }
+
+    .blog-card:hover {
+        transform: translateY(-4px);
+        border-color: var(--border-color-lighter);
+    }
+
+    .blog-image {
+        width: 100%;
+        height: 180px;
+        object-fit: cover;
+        background: linear-gradient(135deg, #2a2a2a, #1a1a1a);
+    }
+
+    .blog-content {
+        padding: 1.5rem;
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+    }
+
+    .blog-category {
+        display: inline-block;
+        font-size: 0.75rem;
+        color: var(--text-tertiary);
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        margin-bottom: 0.75rem;
+    }
+
+    .blog-title {
+        font-size: 1.2rem;
+        font-weight: 500;
+        margin-bottom: 0.75rem;
+        color: var(--text-primary);
+        line-height: 1.4;
+    }
+
+    .blog-excerpt {
+        color: var(--text-secondary);
+        font-size: 0.9rem;
+        line-height: 1.6;
+        margin-bottom: 1rem;
+        flex: 1;
+    }
+
+    .blog-meta {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+        font-size: 0.85rem;
+        color: var(--text-tertiary);
+        padding-top: 1rem;
+        border-top: 1px solid var(--border-color);
+    }
+
+    .blog-meta-left {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+    }
+
+    .pagination {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        gap: 1rem;
+        margin-top: 3rem;
+        padding: 2rem 0;
+    }
+
+    .pagination a,
+    .pagination span {
+        padding: 0.5rem 1rem;
+        background-color: var(--bg-secondary);
+        border: 1px solid var(--border-color);
+        border-radius: 6px;
+        color: var(--text-primary);
+        text-decoration: none;
+        transition: all 0.3s;
+    }
+
+    .pagination a:hover {
+        background-color: var(--bg-tertiary);
+        border-color: var(--border-color-lighter);
+    }
+
+    .pagination .current {
+        background: var(--accent-gradient);
+        color: white;
+        border-color: transparent;
+    }
+
+    .newsletter-section {
+        background-color: var(--bg-secondary);
+        border: 1px solid var(--border-color);
+        border-radius: 12px;
+        padding: 3rem;
+        text-align: center;
+        margin: 4rem 0;
+    }
+
+    .newsletter-title {
+        font-size: 2rem;
+        font-weight: 400;
+        margin-bottom: 1rem;
+        color: var(--text-primary);
+    }
+
+    .newsletter-description {
+        color: var(--text-secondary);
+        font-size: 1.1rem;
+        margin-bottom: 2rem;
+        max-width: 500px;
+        margin-left: auto;
+        margin-right: auto;
+    }
+
+    .newsletter-form {
+        display: flex;
+        gap: 0.5rem;
+        max-width: 500px;
+        margin: 0 auto;
+    }
+
+    .newsletter-input {
+        flex: 1;
+        padding: 0.75rem 1rem;
+        background-color: var(--bg-primary);
+        border: 1px solid var(--border-color-light);
+        border-radius: 8px;
+        color: var(--text-primary);
+        font-size: 1rem;
+    }
+
+    .newsletter-input:focus {
+        outline: none;
+        border-color: var(--border-color-lighter);
+    }
+
+    .newsletter-btn {
+        padding: 0.75rem 1.5rem;
+        background: var(--accent-gradient);
+        color: white;
+        border: none;
+        border-radius: 8px;
+        cursor: pointer;
+        font-weight: 500;
+        transition: opacity 0.3s;
+    }
+
+    .newsletter-btn:hover {
+        opacity: 0.9;
+    }
+
+    @media (max-width: 768px) {
+        .blog-hero h1 {
+            font-size: 2rem;
+        }
+
+        .blog-hero p {
+            font-size: 1rem;
+        }
+
+        .featured-grid,
+        .blog-grid {
+            grid-template-columns: 1fr;
+        }
+
+        .newsletter-section {
+            padding: 2rem 1.5rem;
+        }
+
+        .newsletter-title {
+            font-size: 1.5rem;
+        }
+
+        .newsletter-form {
+            flex-direction: column;
+        }
+
+        .search-form {
+            flex-direction: column;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- Hero Section -->
+<div class="blog-hero">
+    <h1>PrimeBooks Blog</h1>
+    <p>Insights, tutorials, and updates to help you get the most out of PrimeBooks</p>
+</div>
+
+<!-- Search -->
+<div class="blog-search">
+    <form action="{% url 'public_blog:search' %}" method="get" class="search-form">
+        <input
+            type="text"
+            name="q"
+            class="search-input"
+            placeholder="Search articles..."
+            value="{{ request.GET.q }}"
+        >
+        <button type="submit" class="search-btn">Search</button>
+    </form>
+</div>
+
+<!-- Categories Sidebar -->
+{% if categories %}
+<div class="categories-sidebar">
+    <h3 class="categories-title">Categories</h3>
+    <ul class="category-list">
+        {% for category in categories %}
+        <li class="category-item">
+            <a href="{{ category.get_absolute_url }}" class="category-link">
+                <span>{{ category.name }}</span>
+                <span class="category-count">{{ category.post_count }}</span>
+            </a>
+        </li>
+        {% endfor %}
+    </ul>
+</div>
+{% endif %}
+
+<!-- Featured Posts -->
+{% if featured_posts %}
+<section class="featured-section">
+    <h2 class="section-title">Featured Articles</h2>
+    <div class="featured-grid">
+        {% for post in featured_posts %}
+        <a href="{{ post.get_absolute_url }}" class="featured-card">
+            {% if post.featured_image %}
+            <img src="{{ post.featured_image.url }}" alt="{{ post.featured_image_alt }}" class="featured-image">
+            {% else %}
+            <div class="featured-image"></div>
+            {% endif %}
+            <div class="featured-content">
+                <span class="featured-badge">Featured</span>
+                <h3 class="featured-title">{{ post.title }}</h3>
+                <p class="featured-excerpt">{{ post.excerpt }}</p>
+                <div class="featured-meta">
+                    <span>{{ post.published_at|date:"M d, Y" }}</span>
+                    <span>{{ post.reading_time_minutes }} min read</span>
+                </div>
+            </div>
+        </a>
+        {% endfor %}
+    </div>
+</section>
+{% endif %}
+
+<!-- Recent Posts -->
+<section>
+    <h2 class="section-title">Recent Articles</h2>
+    <div class="blog-grid">
+        {% for post in posts %}
+        <a href="{{ post.get_absolute_url }}" class="blog-card">
+            {% if post.featured_image %}
+            <img src="{{ post.featured_image.url }}" alt="{{ post.featured_image_alt }}" class="blog-image">
+            {% else %}
+            <div class="blog-image"></div>
+            {% endif %}
+            <div class="blog-content">
+                {% if post.category %}
+                <span class="blog-category">{{ post.category.name }}</span>
+                {% endif %}
+                <h3 class="blog-title">{{ post.title }}</h3>
+                <p class="blog-excerpt">{{ post.excerpt }}</p>
+                <div class="blog-meta">
+                    <div class="blog-meta-left">
+                        <span>{{ post.published_at|date:"M d, Y" }}</span>
+                        <span>{{ post.reading_time_minutes }} min read</span>
+                    </div>
+                    <span>{{ post.view_count }} views</span>
+                </div>
+            </div>
+        </a>
+        {% empty %}
+        <p style="color: var(--text-secondary); text-align: center; grid-column: 1 / -1;">
+            No articles published yet. Check back soon!
+        </p>
+        {% endfor %}
+    </div>
+</section>
+
+<!-- Pagination -->
+{% if is_paginated %}
+<div class="pagination">
+    {% if page_obj.has_previous %}
+        <a href="?page=1">First</a>
+        <a href="?page={{ page_obj.previous_page_number }}">Previous</a>
+    {% endif %}
+
+    <span class="current">
+        Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}
+    </span>
+
+    {% if page_obj.has_next %}
+        <a href="?page={{ page_obj.next_page_number }}">Next</a>
+        <a href="?page={{ page_obj.paginator.num_pages }}">Last</a>
+    {% endif %}
+</div>
+{% endif %}
+
+<!-- Newsletter Section -->
+<div class="newsletter-section">
+    <h2 class="newsletter-title">Stay Updated</h2>
+    <p class="newsletter-description">
+        Get the latest articles and updates delivered straight to your inbox
+    </p>
+    <form action="{% url 'public_blog:newsletter_subscribe' %}" method="post" class="newsletter-form">
+        {% csrf_token %}
+        <input type="hidden" name="source" value="BLOG">
+        <input
+            type="email"
+            name="email"
+            class="newsletter-input"
+            placeholder="Enter your email"
+            required
+        >
+        <button type="submit" class="newsletter-btn">Subscribe</button>
+    </form>
+</div>
+{% endblock %}

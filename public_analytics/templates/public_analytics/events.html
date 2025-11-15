@@ -1,0 +1,230 @@
+{% extends 'public_analytics/base_analytics.html' %}
+
+{% block title %}Events | PRIMEBOOKS Analytics{% endblock %}
+
+{% block analytics_content %}
+<div class="page-header">
+    <h1 class="page-title">Event Tracking</h1>
+    <div class="page-actions">
+        <div class="date-range-selector">
+            <button class="date-btn {% if days == 7 %}active{% endif %}" onclick="window.location.href='?days=7'">7 Days</button>
+            <button class="date-btn {% if days == 30 %}active{% endif %}" onclick="window.location.href='?days=30'">30 Days</button>
+            <button class="date-btn {% if days == 90 %}active{% endif %}" onclick="window.location.href='?days=90'">90 Days</button>
+        </div>
+    </div>
+</div>
+
+<!-- Event Stats -->
+<div class="stats-grid">
+    <div class="stat-card">
+        <div class="stat-label">Total Events</div>
+        <div class="stat-value">{{ total_events }}</div>
+        <div class="stat-change neutral">
+            <span>Last {{ days }} days</span>
+        </div>
+    </div>
+
+    <div class="stat-card">
+        <div class="stat-label">Event Categories</div>
+        <div class="stat-value">{{ events_by_category|length }}</div>
+        <div class="stat-change neutral">
+            <span>Unique categories</span>
+        </div>
+    </div>
+</div>
+
+<!-- Event Trend Chart -->
+<div class="chart-container">
+    <div class="chart-header">
+        <h2 class="chart-title">Event Trend</h2>
+    </div>
+    <div class="chart-body">
+        <canvas id="eventTrendChart"></canvas>
+    </div>
+</div>
+
+<!-- Events by Category -->
+<div class="chart-container">
+    <div class="chart-header">
+        <h2 class="chart-title">Events by Category</h2>
+    </div>
+    <div class="chart-body">
+        <canvas id="eventCategoryChart"></canvas>
+    </div>
+</div>
+
+<!-- Top Events -->
+<div class="data-table-container">
+    <div class="table-header">
+        <h2 class="table-title">Top Events</h2>
+    </div>
+    {% if top_events %}
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Category</th>
+                <th>Action</th>
+                <th>Count</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for event in top_events %}
+            <tr>
+                <td>
+                    <span class="badge badge-info">{{ event.category }}</span>
+                </td>
+                <td>{{ event.action }}</td>
+                <td>{{ event.count }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <div class="empty-state">
+        <div class="empty-state-icon">🎯</div>
+        <div class="empty-state-title">No Event Data</div>
+        <p>Event tracking data will appear here once events are recorded.</p>
+    </div>
+    {% endif %}
+</div>
+
+<!-- Recent Events -->
+<div class="data-table-container">
+    <div class="table-header">
+        <h2 class="table-title">Recent Events</h2>
+    </div>
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Category</th>
+                <th>Action</th>
+                <th>Label</th>
+                <th>Page</th>
+                <th>Time</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for event in recent_events %}
+            <tr>
+                <td>
+                    <span class="badge badge-info">{{ event.category }}</span>
+                </td>
+                <td>{{ event.action }}</td>
+                <td>{{ event.label|default:"-" }}</td>
+                <td>{{ event.url_path }}</td>
+                <td>{{ event.occurred_at|date:"M d, g:i A" }}</td>
+            </tr>
+            {% empty %}
+            <tr>
+                <td colspan="5" style="text-align: center; color: var(--text-secondary);">
+                    No events recorded yet
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}
+
+{% block analytics_js %}
+<script>
+    // Event Trend Chart
+    const eventTrendData = {{ event_trend|safe }};
+    const trendCtx = document.getElementById('eventTrendChart').getContext('2d');
+
+    new Chart(trendCtx, {
+        type: 'line',
+        data: {
+            labels: eventTrendData.map(d => {
+                const date = new Date(d.date);
+                return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+            }),
+            datasets: [{
+                label: 'Events',
+                data: eventTrendData.map(d => d.events),
+                borderColor: '#3b82f6',
+                backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                tension: 0.4,
+                fill: true
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    labels: {
+                        color: getComputedStyle(document.documentElement).getPropertyValue('--text-primary').trim()
+                    }
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    ticks: {
+                        color: getComputedStyle(document.documentElement).getPropertyValue('--text-secondary').trim()
+                    },
+                    grid: {
+                        color: getComputedStyle(document.documentElement).getPropertyValue('--border-color').trim()
+                    }
+                },
+                x: {
+                    ticks: {
+                        color: getComputedStyle(document.documentElement).getPropertyValue('--text-secondary').trim()
+                    },
+                    grid: {
+                        color: getComputedStyle(document.documentElement).getPropertyValue('--border-color').trim()
+                    }
+                }
+            }
+        }
+    });
+
+    // Event Category Chart
+    const eventCategoryData = {{ events_by_category|safe }};
+    const categoryCtx = document.getElementById('eventCategoryChart').getContext('2d');
+
+    new Chart(categoryCtx, {
+        type: 'bar',
+        data: {
+            labels: eventCategoryData.map(d => d.category),
+            datasets: [{
+                label: 'Events',
+                data: eventCategoryData.map(d => d.count),
+                backgroundColor: 'rgba(59, 130, 246, 0.8)',
+                borderColor: '#3b82f6',
+                borderWidth: 1
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            indexAxis: 'y',
+            plugins: {
+                legend: {
+                    display: false
+                }
+            },
+            scales: {
+                y: {
+                    ticks: {
+                        color: getComputedStyle(document.documentElement).getPropertyValue('--text-secondary').trim()
+                    },
+                    grid: {
+                        color: getComputedStyle(document.documentElement).getPropertyValue('--border-color').trim()
+                    }
+                },
+                x: {
+                    beginAtZero: true,
+                    ticks: {
+                        color: getComputedStyle(document.documentElement).getPropertyValue('--text-secondary').trim()
+                    },
+                    grid: {
+                        color: getComputedStyle(document.documentElement).getPropertyValue('--border-color').trim()
+                    }
+                }
+            }
+        }
+    });
+</script>
+{% endblock %}

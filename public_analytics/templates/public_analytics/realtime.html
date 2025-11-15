@@ -1,0 +1,116 @@
+{% extends 'public_analytics/base_analytics.html' %}
+
+{% block title %}Real-time Analytics | PRIMEBOOKS{% endblock %}
+
+{% block analytics_content %}
+<div class="page-header">
+    <h1 class="page-title">Real-time Analytics</h1>
+    <div class="page-actions">
+        <span class="badge badge-success">Live</span>
+    </div>
+</div>
+
+<!-- Active Visitors -->
+<div class="stats-grid" style="grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));">
+    <div class="stat-card">
+        <div class="stat-label">Active Visitors</div>
+        <div class="stat-value" id="activeVisitors">{{ active_visitors }}</div>
+        <div class="stat-change neutral">
+            <span>Last 5 minutes</span>
+        </div>
+    </div>
+
+    <div class="stat-card">
+        <div class="stat-label">Active Pages</div>
+        <div class="stat-value">{{ active_pages|length }}</div>
+        <div class="stat-change neutral">
+            <span>Currently viewing</span>
+        </div>
+    </div>
+</div>
+
+<!-- Active Pages -->
+<div class="data-table-container">
+    <div class="table-header">
+        <h2 class="table-title">Active Pages (Last 30 minutes)</h2>
+    </div>
+    {% if active_pages %}
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Page</th>
+                <th>Active Views</th>
+            </tr>
+        </thead>
+        <tbody id="activePagesTable">
+            {% for page in active_pages %}
+            <tr>
+                <td>{{ page.url_path }}</td>
+                <td>{{ page.views }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <div class="empty-state">
+        <div class="empty-state-icon">⚡</div>
+        <div class="empty-state-title">No Active Visitors</div>
+        <p>No one is currently browsing your site.</p>
+    </div>
+    {% endif %}
+</div>
+
+<!-- Recent Page Views -->
+<div class="data-table-container">
+    <div class="table-header">
+        <h2 class="table-title">Recent Page Views</h2>
+    </div>
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Time</th>
+                <th>Page</th>
+                <th>Device</th>
+                <th>Location</th>
+            </tr>
+        </thead>
+        <tbody id="recentViewsTable">
+            {% for view in recent_pageviews %}
+            <tr>
+                <td>{{ view.viewed_at|timesince }} ago</td>
+                <td>{{ view.url_path }}</td>
+                <td>
+                    <span class="badge badge-info">{{ view.device_type }}</span>
+                </td>
+                <td>{{ view.city|default:view.country|default:"-" }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}
+
+{% block analytics_js %}
+<script>
+    // Auto-refresh every 10 seconds
+    let refreshInterval;
+
+    function refreshRealtimeData() {
+        fetch('{% url "public_analytics:api_data" %}?metric=realtime')
+            .then(response => response.json())
+            .then(data => {
+                document.getElementById('activeVisitors').textContent = data.active_visitors;
+                // Update timestamp or add animation
+            })
+            .catch(error => console.error('Error fetching realtime data:', error));
+    }
+
+    // Start auto-refresh
+    refreshInterval = setInterval(refreshRealtimeData, 10000);
+
+    // Stop refresh when leaving page
+    window.addEventListener('beforeunload', () => {
+        clearInterval(refreshInterval);
+    });
+</script>
+{% endblock %}

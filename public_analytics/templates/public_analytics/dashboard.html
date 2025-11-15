@@ -1,0 +1,291 @@
+{% extends 'public_analytics/base_analytics.html' %}
+
+{% block title %}Analytics Dashboard | PRIMEBOOKS{% endblock %}
+
+{% block analytics_content %}
+<div class="page-header">
+    <h1 class="page-title">Analytics Dashboard</h1>
+    <div class="page-actions">
+        <div class="date-range-selector">
+            <button class="date-btn {% if days == 7 %}active{% endif %}" onclick="window.location.href='?days=7'">7 Days</button>
+            <button class="date-btn {% if days == 30 %}active{% endif %}" onclick="window.location.href='?days=30'">30 Days</button>
+            <button class="date-btn {% if days == 90 %}active{% endif %}" onclick="window.location.href='?days=90'">90 Days</button>
+        </div>
+    </div>
+</div>
+
+<!-- Overview Stats -->
+<div class="stats-grid">
+    <div class="stat-card">
+        <div class="stat-label">Unique Visitors</div>
+        <div class="stat-value">{{ overview.visitors|floatformat:0 }}</div>
+        <div class="stat-change {% if overview.visitors_change >= 0 %}positive{% else %}negative{% endif %}">
+            <span>{% if overview.visitors_change >= 0 %}↑{% else %}↓{% endif %}</span>
+            <span>{{ overview.visitors_change|floatformat:1 }}% vs previous period</span>
+        </div>
+    </div>
+
+    <div class="stat-card">
+        <div class="stat-label">Page Views</div>
+        <div class="stat-value">{{ overview.pageviews|floatformat:0 }}</div>
+        <div class="stat-change {% if overview.pageviews_change >= 0 %}positive{% else %}negative{% endif %}">
+            <span>{% if overview.pageviews_change >= 0 %}↑{% else %}↓{% endif %}</span>
+            <span>{{ overview.pageviews_change|floatformat:1 }}% vs previous period</span>
+        </div>
+    </div>
+
+    <div class="stat-card">
+        <div class="stat-label">Sessions</div>
+        <div class="stat-value">{{ overview.sessions|floatformat:0 }}</div>
+        <div class="stat-change {% if overview.sessions_change >= 0 %}positive{% else %}negative{% endif %}">
+            <span>{% if overview.sessions_change >= 0 %}↑{% else %}↓{% endif %}</span>
+            <span>{{ overview.sessions_change|floatformat:1 }}% vs previous period</span>
+        </div>
+    </div>
+
+    <div class="stat-card">
+        <div class="stat-label">Avg. Session Duration</div>
+        <div class="stat-value">{{ overview.avg_session_duration|floatformat:0 }}s</div>
+        <div class="stat-change neutral">
+            <span>{{ overview.avg_pages_per_session|floatformat:1 }} pages/session</span>
+        </div>
+    </div>
+
+    <div class="stat-card">
+        <div class="stat-label">Conversions</div>
+        <div class="stat-value">{{ overview.conversions|floatformat:0 }}</div>
+        <div class="stat-change {% if overview.conversions_change >= 0 %}positive{% else %}negative{% endif %}">
+            <span>{% if overview.conversions_change >= 0 %}↑{% else %}↓{% endif %}</span>
+            <span>{{ overview.conversions_change|floatformat:1 }}% vs previous period</span>
+        </div>
+    </div>
+
+    <div class="stat-card">
+        <div class="stat-label">Conversion Rate</div>
+        <div class="stat-value">{{ overview.conversion_rate }}%</div>
+        <div class="stat-change neutral">
+            <span>{{ overview.conversions }} / {{ overview.visitors }} visitors</span>
+        </div>
+    </div>
+</div>
+
+<!-- Traffic Trend Chart -->
+<div class="chart-container">
+    <div class="chart-header">
+        <h2 class="chart-title">Traffic Trend</h2>
+    </div>
+    <div class="chart-body">
+        <canvas id="trafficChart"></canvas>
+    </div>
+</div>
+
+<!-- Device Breakdown -->
+<div class="chart-container">
+    <div class="chart-header">
+        <h2 class="chart-title">Device Breakdown</h2>
+    </div>
+    <div class="chart-body">
+        <canvas id="deviceChart"></canvas>
+    </div>
+</div>
+
+<!-- Top Pages -->
+<div class="data-table-container">
+    <div class="table-header">
+        <h2 class="table-title">Top Pages</h2>
+    </div>
+    {% if top_pages %}
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Page</th>
+                <th>Views</th>
+                <th>Unique Visitors</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for page in top_pages %}
+            <tr>
+                <td>{{ page.url_path }}</td>
+                <td>{{ page.views }}</td>
+                <td>{{ page.unique_visitors }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <div class="empty-state">
+        <div class="empty-state-icon">📊</div>
+        <div class="empty-state-title">No Data Yet</div>
+        <p>Page view data will appear here once visitors start browsing your site.</p>
+    </div>
+    {% endif %}
+</div>
+
+<!-- Top Sources -->
+<div class="data-table-container">
+    <div class="table-header">
+        <h2 class="table-title">Top Traffic Sources</h2>
+    </div>
+    {% if top_sources %}
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Source</th>
+                <th>Medium</th>
+                <th>Campaign</th>
+                <th>Visitors</th>
+                <th>Sessions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for source in top_sources %}
+            <tr>
+                <td>{{ source.utm_source|default:"-" }}</td>
+                <td>{{ source.utm_medium|default:"-" }}</td>
+                <td>{{ source.utm_campaign|default:"-" }}</td>
+                <td>{{ source.visitors }}</td>
+                <td>{{ source.sessions }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <div class="empty-state">
+        <div class="empty-state-icon">🔗</div>
+        <div class="empty-state-title">No Source Data</div>
+        <p>Traffic source information will appear here as visitors arrive from various channels.</p>
+    </div>
+    {% endif %}
+</div>
+
+<!-- Recent Conversions -->
+{% if recent_conversions %}
+<div class="data-table-container">
+    <div class="table-header">
+        <h2 class="table-title">Recent Conversions</h2>
+    </div>
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Type</th>
+                <th>Source</th>
+                <th>Campaign</th>
+                <th>Time</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for conversion in recent_conversions %}
+            <tr>
+                <td>
+                    <span class="badge badge-success">{{ conversion.get_conversion_type_display }}</span>
+                </td>
+                <td>{{ conversion.utm_source|default:"-" }}</td>
+                <td>{{ conversion.utm_campaign|default:"-" }}</td>
+                <td>{{ conversion.converted_at|timesince }} ago</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block analytics_js %}
+<script>
+    // Traffic Trend Chart
+    const trafficData = {{ traffic_trend|safe }};
+    const trafficCtx = document.getElementById('trafficChart').getContext('2d');
+
+    new Chart(trafficCtx, {
+        type: 'line',
+        data: {
+            labels: trafficData.map(d => {
+                const date = new Date(d.date);
+                return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+            }),
+            datasets: [
+                {
+                    label: 'Unique Visitors',
+                    data: trafficData.map(d => d.visitors),
+                    borderColor: '#0c19dd',
+                    backgroundColor: 'rgba(12, 25, 221, 0.1)',
+                    tension: 0.4,
+                    fill: true
+                },
+                {
+                    label: 'Page Views',
+                    data: trafficData.map(d => d.pageviews),
+                    borderColor: '#4c54c4',
+                    backgroundColor: 'rgba(76, 84, 196, 0.1)',
+                    tension: 0.4,
+                    fill: true
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    labels: {
+                        color: getComputedStyle(document.documentElement).getPropertyValue('--text-primary').trim()
+                    }
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    ticks: {
+                        color: getComputedStyle(document.documentElement).getPropertyValue('--text-secondary').trim()
+                    },
+                    grid: {
+                        color: getComputedStyle(document.documentElement).getPropertyValue('--border-color').trim()
+                    }
+                },
+                x: {
+                    ticks: {
+                        color: getComputedStyle(document.documentElement).getPropertyValue('--text-secondary').trim()
+                    },
+                    grid: {
+                        color: getComputedStyle(document.documentElement).getPropertyValue('--border-color').trim()
+                    }
+                }
+            }
+        }
+    });
+
+    // Device Chart
+    const deviceData = {{ devices|safe }};
+    const deviceCtx = document.getElementById('deviceChart').getContext('2d');
+
+    new Chart(deviceCtx, {
+        type: 'doughnut',
+        data: {
+            labels: deviceData.map(d => d.device_type.charAt(0).toUpperCase() + d.device_type.slice(1)),
+            datasets: [{
+                data: deviceData.map(d => d.count),
+                backgroundColor: [
+                    'rgba(12, 25, 221, 0.8)',
+                    'rgba(76, 84, 196, 0.8)',
+                    'rgba(16, 185, 129, 0.8)',
+                    'rgba(245, 158, 11, 0.8)'
+                ]
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    position: 'bottom',
+                    labels: {
+                        color: getComputedStyle(document.documentElement).getPropertyValue('--text-primary').trim(),
+                        padding: 15
+                    }
+                }
+            }
+        }
+    });
+</script>
+{% endblock %}

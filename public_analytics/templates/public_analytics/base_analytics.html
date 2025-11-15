@@ -1,0 +1,421 @@
+{% extends 'public_router/base.html' %}
+
+{% block extra_css %}
+<style>
+    /* Analytics Layout */
+    .analytics-container {
+        display: grid;
+        grid-template-columns: 250px 1fr;
+        gap: 0;
+        min-height: calc(100vh - 200px);
+    }
+
+    /* Sidebar */
+    .analytics-sidebar {
+        background-color: var(--bg-secondary);
+        border-right: 1px solid var(--border-color);
+        padding: 2rem 0;
+    }
+
+    .sidebar-nav {
+        list-style: none;
+    }
+
+    .sidebar-item {
+        margin-bottom: 0.5rem;
+    }
+
+    .sidebar-link {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        padding: 0.75rem 1.5rem;
+        color: var(--text-secondary);
+        text-decoration: none;
+        transition: all 0.3s;
+        font-size: 0.95rem;
+    }
+
+    .sidebar-link:hover {
+        color: var(--text-primary);
+        background-color: var(--bg-tertiary);
+    }
+
+    .sidebar-link.active {
+        color: var(--text-primary);
+        background: var(--accent-gradient);
+        background-clip: text;
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        border-right: 3px solid;
+        border-image: var(--accent-gradient) 1;
+    }
+
+    .sidebar-icon {
+        font-size: 1.2rem;
+        width: 24px;
+        text-align: center;
+    }
+
+    /* Main Content */
+    .analytics-main {
+        padding: 2rem;
+        overflow-x: auto;
+    }
+
+    .page-header {
+        margin-bottom: 2rem;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 1rem;
+    }
+
+    .page-title {
+        font-size: 2rem;
+        font-weight: 400;
+        color: var(--text-primary);
+    }
+
+    .page-actions {
+        display: flex;
+        gap: 1rem;
+        align-items: center;
+    }
+
+    /* Date Range Selector */
+    .date-range-selector {
+        display: flex;
+        gap: 0.5rem;
+        background-color: var(--bg-secondary);
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        padding: 0.25rem;
+    }
+
+    .date-btn {
+        padding: 0.5rem 1rem;
+        background: transparent;
+        border: none;
+        color: var(--text-secondary);
+        cursor: pointer;
+        border-radius: 6px;
+        transition: all 0.3s;
+        font-size: 0.9rem;
+    }
+
+    .date-btn:hover {
+        color: var(--text-primary);
+        background-color: var(--bg-tertiary);
+    }
+
+    .date-btn.active {
+        background: var(--accent-gradient);
+        color: white;
+    }
+
+    /* Stats Cards */
+    .stats-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+        gap: 1.5rem;
+        margin-bottom: 2rem;
+    }
+
+    .stat-card {
+        background-color: var(--bg-secondary);
+        border: 1px solid var(--border-color);
+        border-radius: 12px;
+        padding: 1.5rem;
+        transition: transform 0.3s, border-color 0.3s;
+    }
+
+    .stat-card:hover {
+        transform: translateY(-2px);
+        border-color: var(--border-color-lighter);
+    }
+
+    .stat-label {
+        font-size: 0.85rem;
+        color: var(--text-tertiary);
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        margin-bottom: 0.5rem;
+    }
+
+    .stat-value {
+        font-size: 2rem;
+        font-weight: 300;
+        color: var(--text-primary);
+        margin-bottom: 0.5rem;
+    }
+
+    .stat-change {
+        font-size: 0.85rem;
+        display: flex;
+        align-items: center;
+        gap: 0.25rem;
+    }
+
+    .stat-change.positive {
+        color: #10b981;
+    }
+
+    .stat-change.negative {
+        color: #ef4444;
+    }
+
+    .stat-change.neutral {
+        color: var(--text-tertiary);
+    }
+
+    /* Chart Container */
+    .chart-container {
+        background-color: var(--bg-secondary);
+        border: 1px solid var(--border-color);
+        border-radius: 12px;
+        padding: 1.5rem;
+        margin-bottom: 2rem;
+    }
+
+    .chart-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 1.5rem;
+    }
+
+    .chart-title {
+        font-size: 1.2rem;
+        font-weight: 500;
+        color: var(--text-primary);
+    }
+
+    .chart-body {
+        min-height: 300px;
+    }
+
+    /* Data Table */
+    .data-table-container {
+        background-color: var(--bg-secondary);
+        border: 1px solid var(--border-color);
+        border-radius: 12px;
+        overflow: hidden;
+        margin-bottom: 2rem;
+    }
+
+    .table-header {
+        padding: 1.5rem;
+        border-bottom: 1px solid var(--border-color);
+    }
+
+    .table-title {
+        font-size: 1.2rem;
+        font-weight: 500;
+        color: var(--text-primary);
+    }
+
+    .data-table {
+        width: 100%;
+        border-collapse: collapse;
+    }
+
+    .data-table thead {
+        background-color: var(--bg-tertiary);
+    }
+
+    .data-table th {
+        padding: 1rem 1.5rem;
+        text-align: left;
+        font-size: 0.85rem;
+        font-weight: 500;
+        color: var(--text-tertiary);
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+
+    .data-table td {
+        padding: 1rem 1.5rem;
+        border-top: 1px solid var(--border-color);
+        color: var(--text-primary);
+        font-size: 0.95rem;
+    }
+
+    .data-table tr:hover {
+        background-color: var(--bg-tertiary);
+    }
+
+    /* Empty State */
+    .empty-state {
+        text-align: center;
+        padding: 4rem 2rem;
+        color: var(--text-secondary);
+    }
+
+    .empty-state-icon {
+        font-size: 3rem;
+        margin-bottom: 1rem;
+        opacity: 0.5;
+    }
+
+    .empty-state-title {
+        font-size: 1.5rem;
+        color: var(--text-primary);
+        margin-bottom: 0.5rem;
+    }
+
+    /* Badge */
+    .badge {
+        display: inline-block;
+        padding: 0.25rem 0.75rem;
+        border-radius: 20px;
+        font-size: 0.75rem;
+        font-weight: 500;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+
+    .badge-success {
+        background-color: rgba(16, 185, 129, 0.1);
+        color: #10b981;
+    }
+
+    .badge-warning {
+        background-color: rgba(245, 158, 11, 0.1);
+        color: #f59e0b;
+    }
+
+    .badge-info {
+        background-color: rgba(59, 130, 246, 0.1);
+        color: #3b82f6;
+    }
+
+    /* Responsive */
+    @media (max-width: 1024px) {
+        .analytics-container {
+            grid-template-columns: 1fr;
+        }
+
+        .analytics-sidebar {
+            border-right: none;
+            border-bottom: 1px solid var(--border-color);
+            padding: 1rem 0;
+        }
+
+        .sidebar-nav {
+            display: flex;
+            overflow-x: auto;
+            gap: 0.5rem;
+            padding: 0 1rem;
+        }
+
+        .sidebar-item {
+            margin-bottom: 0;
+            flex-shrink: 0;
+        }
+
+        .sidebar-link {
+            padding: 0.5rem 1rem;
+            white-space: nowrap;
+        }
+
+        .sidebar-link.active {
+            border-right: none;
+            border-bottom: 3px solid;
+        }
+
+        .stats-grid {
+            grid-template-columns: repeat(2, 1fr);
+        }
+    }
+
+    @media (max-width: 640px) {
+        .analytics-main {
+            padding: 1rem;
+        }
+
+        .page-header {
+            flex-direction: column;
+            align-items: stretch;
+        }
+
+        .stats-grid {
+            grid-template-columns: 1fr;
+        }
+
+        .date-range-selector {
+            flex-wrap: wrap;
+        }
+
+        .data-table {
+            font-size: 0.85rem;
+        }
+
+        .data-table th,
+        .data-table td {
+            padding: 0.75rem 1rem;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="analytics-container">
+    <!-- Sidebar -->
+    <aside class="analytics-sidebar">
+        <nav class="sidebar-nav">
+            <ul style="list-style: none;">
+                <li class="sidebar-item">
+                    <a href="{% url 'public_analytics:dashboard' %}" class="sidebar-link {% if request.resolver_match.url_name == 'dashboard' %}active{% endif %}">
+                        <span class="sidebar-icon">📊</span>
+                        <span>Dashboard</span>
+                    </a>
+                </li>
+                <li class="sidebar-item">
+                    <a href="{% url 'public_analytics:realtime' %}" class="sidebar-link {% if request.resolver_match.url_name == 'realtime' %}active{% endif %}">
+                        <span class="sidebar-icon">⚡</span>
+                        <span>Realtime</span>
+                    </a>
+                </li>
+                <li class="sidebar-item">
+                    <a href="{% url 'public_analytics:pages' %}" class="sidebar-link {% if request.resolver_match.url_name == 'pages' %}active{% endif %}">
+                        <span class="sidebar-icon">📄</span>
+                        <span>Pages</span>
+                    </a>
+                </li>
+                <li class="sidebar-item">
+                    <a href="{% url 'public_analytics:sources' %}" class="sidebar-link {% if request.resolver_match.url_name == 'sources' %}active{% endif %}">
+                        <span class="sidebar-icon">🔗</span>
+                        <span>Sources</span>
+                    </a>
+                </li>
+                <li class="sidebar-item">
+                    <a href="{% url 'public_analytics:events' %}" class="sidebar-link {% if request.resolver_match.url_name == 'events' %}active{% endif %}">
+                        <span class="sidebar-icon">🎯</span>
+                        <span>Events</span>
+                    </a>
+                </li>
+                <li class="sidebar-item">
+                    <a href="{% url 'public_analytics:conversions' %}" class="sidebar-link {% if request.resolver_match.url_name == 'conversions' %}active{% endif %}">
+                        <span class="sidebar-icon">💰</span>
+                        <span>Conversions</span>
+                    </a>
+                </li>
+            </ul>
+        </nav>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="analytics-main">
+        {% block analytics_content %}
+        {% endblock %}
+    </main>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+{% block analytics_js %}
+{% endblock %}
+{% endblock %}

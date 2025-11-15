@@ -1,0 +1,164 @@
+{% extends 'public_analytics/base_analytics.html' %}
+
+{% block title %}Traffic Sources | PRIMEBOOKS Analytics{% endblock %}
+
+{% block analytics_content %}
+<div class="page-header">
+    <h1 class="page-title">Traffic Sources</h1>
+    <div class="page-actions">
+        <div class="date-range-selector">
+            <button class="date-btn {% if days == 7 %}active{% endif %}" onclick="window.location.href='?days=7'">7 Days</button>
+            <button class="date-btn {% if days == 30 %}active{% endif %}" onclick="window.location.href='?days=30'">30 Days</button>
+            <button class="date-btn {% if days == 90 %}active{% endif %}" onclick="window.location.href='?days=90'">90 Days</button>
+        </div>
+    </div>
+</div>
+
+<!-- Source Overview -->
+<div class="stats-grid">
+    <div class="stat-card">
+        <div class="stat-label">UTM Sources</div>
+        <div class="stat-value">{{ utm_sources|length }}</div>
+        <div class="stat-change neutral">
+            <span>Tracked sources</span>
+        </div>
+    </div>
+
+    <div class="stat-card">
+        <div class="stat-label">Campaigns</div>
+        <div class="stat-value">{{ campaigns|length }}</div>
+        <div class="stat-change neutral">
+            <span>Active campaigns</span>
+        </div>
+    </div>
+
+    <div class="stat-card">
+        <div class="stat-label">Direct Traffic</div>
+        <div class="stat-value">{{ direct_traffic }}</div>
+        <div class="stat-change neutral">
+            <span>Visitors</span>
+        </div>
+    </div>
+
+    <div class="stat-card">
+        <div class="stat-label">Referrers</div>
+        <div class="stat-value">{{ referrers|length }}</div>
+        <div class="stat-change neutral">
+            <span>Unique referrers</span>
+        </div>
+    </div>
+</div>
+
+<!-- UTM Sources -->
+<div class="data-table-container">
+    <div class="table-header">
+        <h2 class="table-title">UTM Sources</h2>
+    </div>
+    {% if utm_sources %}
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Source</th>
+                <th>Medium</th>
+                <th>Visitors</th>
+                <th>Page Views</th>
+                <th>Sessions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for source in utm_sources %}
+            <tr>
+                <td>{{ source.utm_source }}</td>
+                <td>{{ source.utm_medium|default:"-" }}</td>
+                <td>{{ source.visitors }}</td>
+                <td>{{ source.pageviews }}</td>
+                <td>{{ source.sessions }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <div class="empty-state">
+        <div class="empty-state-icon">🔗</div>
+        <div class="empty-state-title">No UTM Sources</div>
+        <p>UTM tracking data will appear here once visitors arrive via tagged URLs.</p>
+    </div>
+    {% endif %}
+</div>
+
+<!-- Campaigns -->
+<div class="data-table-container">
+    <div class="table-header">
+        <h2 class="table-title">Campaigns</h2>
+    </div>
+    {% if campaigns %}
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Campaign</th>
+                <th>Source</th>
+                <th>Medium</th>
+                <th>Visitors</th>
+                <th>Page Views</th>
+                <th>Sessions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for campaign in campaigns %}
+            <tr>
+                <td>
+                    <span class="badge badge-warning">{{ campaign.utm_campaign }}</span>
+                </td>
+                <td>{{ campaign.utm_source|default:"-" }}</td>
+                <td>{{ campaign.utm_medium|default:"-" }}</td>
+                <td>{{ campaign.visitors }}</td>
+                <td>{{ campaign.pageviews }}</td>
+                <td>{{ campaign.sessions }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <div class="empty-state">
+        <div class="empty-state-icon">📢</div>
+        <div class="empty-state-title">No Campaign Data</div>
+        <p>Campaign tracking will appear here once you start running campaigns with UTM parameters.</p>
+    </div>
+    {% endif %}
+</div>
+
+<!-- Referrers -->
+<div class="data-table-container">
+    <div class="table-header">
+        <h2 class="table-title">Top Referrers</h2>
+    </div>
+    {% if referrers %}
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Referrer</th>
+                <th>Visitors</th>
+                <th>Page Views</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for referrer in referrers %}
+            <tr>
+                <td style="max-width: 400px; overflow: hidden; text-overflow: ellipsis;">
+                    {{ referrer.referrer }}
+                </td>
+                <td>{{ referrer.visitors }}</td>
+                <td>{{ referrer.pageviews }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <div class="empty-state">
+        <div class="empty-state-icon">🌐</div>
+        <div class="empty-state-title">No Referrer Data</div>
+        <p>External referrer data will appear here.</p>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

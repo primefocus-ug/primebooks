@@ -1,0 +1,386 @@
+{% extends 'public_router/base.html' %}
+
+{% block title %}Frequently Asked Questions - PRIMEBOOKS{% endblock %}
+
+{% block extra_css %}
+<style>
+    .faq-header {
+        text-align: center;
+        padding: 3rem 0 2rem;
+        border-bottom: 1px solid var(--border-color);
+        margin-bottom: 3rem;
+    }
+
+    .faq-header h1 {
+        font-size: 2.5rem;
+        font-weight: 300;
+        margin-bottom: 1rem;
+    }
+
+    .faq-header p {
+        color: var(--text-secondary);
+        font-size: 1.1rem;
+        max-width: 600px;
+        margin: 0 auto 2rem;
+    }
+
+    .faq-search {
+        max-width: 600px;
+        margin: 0 auto;
+        position: relative;
+    }
+
+    .faq-search input {
+        width: 100%;
+        padding: 1rem 3rem 1rem 1.5rem;
+        background: var(--bg-secondary);
+        border: 1px solid var(--border-color-light);
+        border-radius: 50px;
+        color: var(--text-primary);
+        font-size: 1rem;
+    }
+
+    .faq-search input:focus {
+        outline: none;
+        border-color: #d4845c;
+    }
+
+    .faq-search button {
+        position: absolute;
+        right: 0.5rem;
+        top: 50%;
+        transform: translateY(-50%);
+        background: var(--accent-gradient);
+        color: white;
+        border: none;
+        padding: 0.75rem 1.5rem;
+        border-radius: 50px;
+        cursor: pointer;
+        font-size: 0.9rem;
+        font-weight: 500;
+    }
+
+    .faq-categories {
+        display: flex;
+        gap: 1rem;
+        justify-content: center;
+        flex-wrap: wrap;
+        margin-bottom: 3rem;
+    }
+
+    .category-btn {
+        padding: 0.625rem 1.25rem;
+        background: var(--bg-secondary);
+        border: 1px solid var(--border-color-light);
+        border-radius: 50px;
+        color: var(--text-primary);
+        text-decoration: none;
+        font-size: 0.9rem;
+        transition: all 0.3s;
+    }
+
+    .category-btn:hover,
+    .category-btn.active {
+        background: var(--bg-tertiary);
+        border-color: #d4845c;
+        color: #d4845c;
+    }
+
+    .faq-container {
+        max-width: 900px;
+        margin: 0 auto;
+    }
+
+    .faq-category-section {
+        margin-bottom: 3rem;
+    }
+
+    .category-title {
+        font-size: 1.5rem;
+        font-weight: 400;
+        margin-bottom: 1.5rem;
+        color: var(--text-primary);
+        padding-bottom: 0.75rem;
+        border-bottom: 1px solid var(--border-color);
+    }
+
+    .faq-item {
+        background: var(--bg-secondary);
+        border: 1px solid var(--border-color-light);
+        border-radius: 8px;
+        margin-bottom: 1rem;
+        overflow: hidden;
+        transition: all 0.3s;
+    }
+
+    .faq-item:hover {
+        border-color: var(--border-color-lighter);
+        transform: translateY(-2px);
+    }
+
+    .faq-question {
+        padding: 1.25rem 1.5rem;
+        cursor: pointer;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 1rem;
+    }
+
+    .faq-question h3 {
+        font-size: 1.05rem;
+        font-weight: 400;
+        color: var(--text-primary);
+        margin: 0;
+        flex: 1;
+    }
+
+    .faq-toggle {
+        font-size: 1.2rem;
+        color: var(--text-secondary);
+        transition: transform 0.3s;
+    }
+
+    .faq-item.active .faq-toggle {
+        transform: rotate(180deg);
+    }
+
+    .faq-answer {
+        max-height: 0;
+        overflow: hidden;
+        transition: max-height 0.3s ease;
+    }
+
+    .faq-item.active .faq-answer {
+        max-height: 500px;
+    }
+
+    .faq-answer-content {
+        padding: 0 1.5rem 1.5rem;
+        color: var(--text-secondary);
+        line-height: 1.6;
+    }
+
+    .faq-stats {
+        display: flex;
+        gap: 1rem;
+        margin-top: 1rem;
+        padding-top: 1rem;
+        border-top: 1px solid var(--border-color);
+    }
+
+    .faq-stat {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        color: var(--text-tertiary);
+        font-size: 0.85rem;
+    }
+
+    .helpful-actions {
+        display: flex;
+        gap: 0.5rem;
+        align-items: center;
+        margin-top: 1rem;
+    }
+
+    .helpful-btn {
+        padding: 0.375rem 0.875rem;
+        background: var(--bg-primary);
+        border: 1px solid var(--border-color);
+        border-radius: 4px;
+        color: var(--text-primary);
+        font-size: 0.85rem;
+        cursor: pointer;
+        transition: all 0.3s;
+    }
+
+    .helpful-btn:hover {
+        border-color: #d4845c;
+        background: var(--bg-tertiary);
+    }
+
+    .no-results {
+        text-align: center;
+        padding: 3rem;
+        color: var(--text-secondary);
+    }
+
+    .no-results h3 {
+        font-size: 1.3rem;
+        margin-bottom: 1rem;
+        color: var(--text-primary);
+    }
+
+    .still-need-help {
+        background: var(--bg-secondary);
+        border: 1px solid var(--border-color-light);
+        border-radius: 12px;
+        padding: 2rem;
+        text-align: center;
+        margin-top: 3rem;
+    }
+
+    .still-need-help h2 {
+        font-size: 1.5rem;
+        font-weight: 400;
+        margin-bottom: 1rem;
+    }
+
+    .still-need-help p {
+        color: var(--text-secondary);
+        margin-bottom: 1.5rem;
+    }
+
+    @media (max-width: 768px) {
+        .faq-header {
+            padding: 2rem 0 1.5rem;
+        }
+
+        .faq-header h1 {
+            font-size: 1.8rem;
+        }
+
+        .faq-categories {
+            gap: 0.5rem;
+        }
+
+        .category-btn {
+            padding: 0.5rem 1rem;
+            font-size: 0.85rem;
+        }
+
+        .faq-question {
+            padding: 1rem;
+        }
+
+        .faq-answer-content {
+            padding: 0 1rem 1rem;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="faq-header">
+    <h1>Frequently Asked Questions</h1>
+    <p>Find answers to common questions about PrimeBooks</p>
+
+    <div class="faq-search">
+        <form method="get">
+            <input type="text" name="q" placeholder="Search FAQs..." value="{{ request.GET.q }}">
+            <button type="submit">Search</button>
+        </form>
+    </div>
+</div>
+
+<div class="faq-categories">
+    <a href="{% url 'public_support:faq_list' %}" class="category-btn {% if not selected_category %}active{% endif %}">
+        All
+    </a>
+    {% for code, name in categories %}
+    <a href="?category={{ code }}" class="category-btn {% if selected_category == code %}active{% endif %}">
+        {{ name }}
+    </a>
+    {% endfor %}
+</div>
+
+<div class="faq-container">
+    {% if faqs %}
+        {% regroup faqs by category as faq_groups %}
+        {% for group in faq_groups %}
+        <div class="faq-category-section">
+            <h2 class="category-title">{{ group.grouper|upper }}</h2>
+
+            {% for faq in group.list %}
+            <div class="faq-item" data-faq-id="{{ faq.id }}">
+                <div class="faq-question" onclick="toggleFAQ(this)">
+                    <h3>{{ faq.question }}</h3>
+                    <span class="faq-toggle">⌄</span>
+                </div>
+                <div class="faq-answer">
+                    <div class="faq-answer-content">
+                        {{ faq.answer|safe }}
+
+                        <div class="faq-stats">
+                            <span class="faq-stat">
+                                👁️ {{ faq.view_count }} views
+                            </span>
+                            <span class="faq-stat">
+                                👍 {{ faq.helpful_count }} found helpful
+                            </span>
+                        </div>
+
+                        <div class="helpful-actions">
+                            <span style="font-size: 0.9rem; color: var(--text-secondary);">Was this helpful?</span>
+                            <button class="helpful-btn" onclick="markHelpful({{ faq.id }}, true)">
+                                Yes 👍
+                            </button>
+                            <button class="helpful-btn" onclick="markHelpful({{ faq.id }}, false)">
+                                No 👎
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        {% endfor %}
+    {% else %}
+        <div class="no-results">
+            <h3>No FAQs found</h3>
+            <p>Try adjusting your search or browse all categories.</p>
+        </div>
+    {% endif %}
+</div>
+
+<div class="still-need-help">
+    <h2>Still need help?</h2>
+    <p>Can't find what you're looking for? Our support team is here to help.</p>
+    <div style="display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap;">
+        <a href="{% url 'public_support:create_ticket' %}" class="btn btn-primary btn-large">
+            Create Support Ticket
+        </a>
+        <a href="{% url 'public_support:contact' %}" class="btn btn-outline btn-large">
+            Contact Sales
+        </a>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    function toggleFAQ(element) {
+        const faqItem = element.closest('.faq-item');
+        const wasActive = faqItem.classList.contains('active');
+
+        // Close all other FAQs
+        document.querySelectorAll('.faq-item').forEach(item => {
+            item.classList.remove('active');
+        });
+
+        // Toggle current FAQ
+        if (!wasActive) {
+            faqItem.classList.add('active');
+        }
+    }
+
+    function markHelpful(faqId, isHelpful) {
+        // In production, this would make an AJAX call to update the server
+        alert(isHelpful ? 'Thank you for your feedback!' : 'We\'ll work on improving this answer.');
+
+        // You can implement AJAX call here
+        // fetch(`/faq/${faqId}/mark-helpful/`, {...})
+    }
+
+    // Auto-expand first FAQ if coming from search
+    {% if request.GET.q %}
+    document.addEventListener('DOMContentLoaded', function() {
+        const firstFAQ = document.querySelector('.faq-item');
+        if (firstFAQ) {
+            firstFAQ.classList.add('active');
+        }
+    });
+    {% endif %}
+</script>
+{% endblock %}

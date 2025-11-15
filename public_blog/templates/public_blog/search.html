@@ -1,0 +1,327 @@
+{% extends 'public_router/base.html' %}
+
+{% block title %}Search Results{% if query %} for "{{ query }}"{% endif %} | PRIMEBOOKS Blog{% endblock %}
+
+{% block extra_css %}
+<style>
+    .search-header {
+        padding: 2rem 0 3rem;
+        border-bottom: 1px solid var(--border-color);
+        margin-bottom: 3rem;
+    }
+
+    .search-title {
+        font-size: 2rem;
+        font-weight: 400;
+        margin-bottom: 1rem;
+        color: var(--text-primary);
+    }
+
+    .search-query {
+        color: var(--text-secondary);
+        font-size: 1.1rem;
+        margin-bottom: 1.5rem;
+    }
+
+    .search-query strong {
+        color: var(--text-primary);
+        font-weight: 500;
+    }
+
+    .search-form {
+        display: flex;
+        gap: 0.5rem;
+        max-width: 600px;
+    }
+
+    .search-input {
+        flex: 1;
+        padding: 0.75rem 1rem;
+        background-color: var(--bg-secondary);
+        border: 1px solid var(--border-color-light);
+        border-radius: 8px;
+        color: var(--text-primary);
+        font-size: 1rem;
+    }
+
+    .search-input:focus {
+        outline: none;
+        border-color: var(--border-color-lighter);
+    }
+
+    .search-btn {
+        padding: 0.75rem 1.5rem;
+        background: var(--accent-gradient);
+        color: white;
+        border: none;
+        border-radius: 8px;
+        cursor: pointer;
+        font-weight: 500;
+        transition: opacity 0.3s;
+    }
+
+    .search-btn:hover {
+        opacity: 0.9;
+    }
+
+    .back-link {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        color: var(--text-secondary);
+        text-decoration: none;
+        margin-bottom: 2rem;
+        transition: color 0.3s;
+    }
+
+    .back-link:hover {
+        color: var(--text-primary);
+    }
+
+    .results-count {
+        font-size: 0.95rem;
+        color: var(--text-tertiary);
+        margin-bottom: 2rem;
+    }
+
+    .blog-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+        gap: 2rem;
+        margin-bottom: 3rem;
+    }
+
+    .blog-card {
+        background-color: var(--bg-secondary);
+        border: 1px solid var(--border-color);
+        border-radius: 12px;
+        overflow: hidden;
+        transition: transform 0.3s, border-color 0.3s;
+        text-decoration: none;
+        color: inherit;
+        display: flex;
+        flex-direction: column;
+    }
+
+    .blog-card:hover {
+        transform: translateY(-4px);
+        border-color: var(--border-color-lighter);
+    }
+
+    .blog-image {
+        width: 100%;
+        height: 200px;
+        object-fit: cover;
+        background: linear-gradient(135deg, #2a2a2a, #1a1a1a);
+    }
+
+    .blog-content {
+        padding: 1.5rem;
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+    }
+
+    .blog-category {
+        display: inline-block;
+        font-size: 0.75rem;
+        color: var(--text-tertiary);
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        margin-bottom: 0.75rem;
+    }
+
+    .blog-title {
+        font-size: 1.3rem;
+        font-weight: 500;
+        margin-bottom: 0.75rem;
+        color: var(--text-primary);
+        line-height: 1.4;
+    }
+
+    .blog-excerpt {
+        color: var(--text-secondary);
+        font-size: 0.95rem;
+        line-height: 1.6;
+        margin-bottom: 1rem;
+        flex: 1;
+    }
+
+    .blog-meta {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+        font-size: 0.85rem;
+        color: var(--text-tertiary);
+        padding-top: 1rem;
+        border-top: 1px solid var(--border-color);
+    }
+
+    .blog-meta-left {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+    }
+
+    .pagination {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        gap: 1rem;
+        margin-top: 3rem;
+        padding: 2rem 0;
+    }
+
+    .pagination a,
+    .pagination span {
+        padding: 0.5rem 1rem;
+        background-color: var(--bg-secondary);
+        border: 1px solid var(--border-color);
+        border-radius: 6px;
+        color: var(--text-primary);
+        text-decoration: none;
+        transition: all 0.3s;
+    }
+
+    .pagination a:hover {
+        background-color: var(--bg-tertiary);
+        border-color: var(--border-color-lighter);
+    }
+
+    .pagination .current {
+        background: var(--accent-gradient);
+        color: white;
+        border-color: transparent;
+    }
+
+    .empty-state {
+        text-align: center;
+        padding: 4rem 2rem;
+        color: var(--text-secondary);
+    }
+
+    .empty-state h3 {
+        font-size: 1.8rem;
+        font-weight: 400;
+        color: var(--text-primary);
+        margin-bottom: 1rem;
+    }
+
+    .empty-state p {
+        font-size: 1.1rem;
+        margin-bottom: 2rem;
+    }
+
+    @media (max-width: 768px) {
+        .search-title {
+            font-size: 1.5rem;
+        }
+
+        .search-form {
+            flex-direction: column;
+        }
+
+        .blog-grid {
+            grid-template-columns: 1fr;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<a href="{% url 'public_blog:home' %}" class="back-link">
+    ← Back to Blog
+</a>
+
+<div class="search-header">
+    <h1 class="search-title">Search Results</h1>
+    {% if query %}
+    <p class="search-query">
+        Showing results for <strong>"{{ query }}"</strong>
+    </p>
+    {% endif %}
+
+    <form action="{% url 'public_blog:search' %}" method="get" class="search-form">
+        <input
+            type="text"
+            name="q"
+            class="search-input"
+            placeholder="Search articles..."
+            value="{{ query }}"
+            required
+        >
+        <button type="submit" class="search-btn">Search</button>
+    </form>
+</div>
+
+{% if query %}
+    {% if posts %}
+    <p class="results-count">
+        Found {{ posts|length }} result{{ posts|length|pluralize }}
+    </p>
+
+    <div class="blog-grid">
+        {% for post in posts %}
+        <a href="{{ post.get_absolute_url }}" class="blog-card">
+            {% if post.featured_image %}
+            <img src="{{ post.featured_image.url }}" alt="{{ post.featured_image_alt }}" class="blog-image">
+            {% else %}
+            <div class="blog-image"></div>
+            {% endif %}
+            <div class="blog-content">
+                {% if post.category %}
+                <span class="blog-category">{{ post.category.name }}</span>
+                {% endif %}
+                <h3 class="blog-title">{{ post.title }}</h3>
+                <p class="blog-excerpt">{{ post.excerpt }}</p>
+                <div class="blog-meta">
+                    <div class="blog-meta-left">
+                        <span>{{ post.published_at|date:"M d, Y" }}</span>
+                        <span>{{ post.reading_time_minutes }} min read</span>
+                    </div>
+                    <span>{{ post.view_count }} views</span>
+                </div>
+            </div>
+        </a>
+        {% endfor %}
+    </div>
+
+    <!-- Pagination -->
+    {% if is_paginated %}
+    <div class="pagination">
+        {% if page_obj.has_previous %}
+            <a href="?q={{ query }}&page=1">First</a>
+            <a href="?q={{ query }}&page={{ page_obj.previous_page_number }}">Previous</a>
+        {% endif %}
+
+        <span class="current">
+            Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}
+        </span>
+
+        {% if page_obj.has_next %}
+            <a href="?q={{ query }}&page={{ page_obj.next_page_number }}">Next</a>
+            <a href="?q={{ query }}&page={{ page_obj.paginator.num_pages }}">Last</a>
+        {% endif %}
+    </div>
+    {% endif %}
+
+    {% else %}
+    <div class="empty-state">
+        <h3>No Results Found</h3>
+        <p>We couldn't find any articles matching "{{ query }}"</p>
+        <p style="font-size: 0.95rem; color: var(--text-tertiary);">
+            Try searching with different keywords or browse all articles
+        </p>
+        <a href="{% url 'public_blog:home' %}" class="btn btn-primary" style="margin-top: 1.5rem; display: inline-block;">
+            Browse All Articles
+        </a>
+    </div>
+    {% endif %}
+{% else %}
+<div class="empty-state">
+    <h3>Start Searching</h3>
+    <p>Enter a search term above to find articles</p>
+</div>
+{% endif %}
+{% endblock %}

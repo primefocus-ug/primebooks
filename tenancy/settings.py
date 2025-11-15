@@ -62,7 +62,12 @@ if DEBUG:
     # Site
     FRONTEND_URL = 'http://localhost:8000'
     SITE_NAME = 'Prime Books'
-    BASE_DOMAIN = 'localhost'
+    # Base domain for tenant subdomains
+    BASE_DOMAIN = os.getenv('BASE_DOMAIN', default='localhost')  # e.g., 'yoursaas.com'
+
+    # Use SSL in production
+    USE_SSL = os.getenv('USE_SSL', 'False').lower() in ('true', '1', 'yes')
+
 
     # CORS
     CORS_ALLOW_ALL_ORIGINS = True
@@ -160,6 +165,8 @@ else:
     FRONTEND_URL = os.getenv('FRONTEND_URL', 'https://primebooks.sale')
     SITE_NAME = os.getenv('SITE_NAME', 'Prime Books')
     BASE_DOMAIN = os.getenv('BASE_DOMAIN', 'primebooks.sale')
+    USE_SSL = os.getenv('USE_SSL', 'True').lower() in ('true', '1', 'yes')
+
 
     # CORS
     CORS_ALLOW_ALL_ORIGINS = False
@@ -239,7 +246,12 @@ SHARED_APPS = [
     'django_celery_results',
     'channels',
     'django_extensions',
+    'public_admin',
     'public_router',
+    'public_seo',
+    'public_blog',
+    'public_analytics',
+    'public_support',
     'channels_redis',
     'widget_tweaks',
     'django_filters',
@@ -306,6 +318,9 @@ MIDDLEWARE.extend([
     'messaging.middleware.EncryptionKeyMiddleware',
     'messaging.middleware.MessageAuditMiddleware',
     'accounts.middleware.RefreshPermissionsMiddleware',
+    'public_seo.middleware.SEORedirectMiddleware',
+    'public_admin.middleware.PublicStaffAuthMiddleware',
+    'public_analytics.middleware.AnalyticsMiddleware',
 ])
 
 # Crispy Forms
@@ -340,6 +355,7 @@ TEMPLATES = [
                 'errors.context_processors.error_context_processor',
                 'messaging.context_processors.messaging_context',
                 'expenses.context_processors.expense_context',
+                'public_seo.context_processors.seo_metadata',
             ],
         },
     },
@@ -419,7 +435,18 @@ CELERY_BEAT_SCHEDULE = {
         'task': 'messaging.tasks.generate_message_analytics',
         'schedule': crontab(hour=0, minute=5),  # Daily at 00:05
     },
-
+    'cleanup-failed-signups': {
+        'task': 'public_router.tasks.cleanup_failed_signups',
+        'schedule': crontab(minute='*/5'),  # Every 5 minutes
+    },
+    'cleanup-stale-signups': {
+        'task': 'public_router.tasks.cleanup_stale_pending_signups',
+        'schedule': crontab(minute='*/15'),  # Every 15 minutes
+    },
+    'generate-daily-analytics': {
+        'task': 'public_analytics.tasks.generate_daily_stats',
+        'schedule': crontab(hour=1, minute=0),  # 1 AM daily
+    },
     'cleanup-old-statistics': {
         'task': 'messaging.tasks.cleanup_old_statistics',
         'schedule': crontab(hour=2, minute=0, day_of_week=0),  # Weekly on Sunday at 2am
@@ -431,7 +458,19 @@ CELERY_BEAT_SCHEDULE = {
         'args': (1,),  # Replace with actual admin user ID
     },
 }
+CELERY_TASK_ROUTES = {
+    'public_router.tasks.create_tenant_async': {'queue': 'tenant_creation'},
+    'public_router.tasks.send_welcome_email': {'queue': 'emails'},
+}
+CELERY_WORKER_CONCURRENCY = 4  # Adjust based on your resources
+CELERY_WORKER_PREFETCH_MULTIPLIER = 1  # Prevent worker from grabbing too many tasks
 
+# Rate limiting for tenant creation
+CELERY_TASK_ANNOTATIONS = {
+    'public_router.tasks.create_tenant_async': {
+        'rate_limit': '10/m',  # Max 10 tenant creations per minute
+    }
+}
 # WebSocket
 WEBSOCKET_ALLOWED_ORIGINS = os.getenv('WEBSOCKET_ALLOWED_ORIGINS',
                                       'http://localhost:8000' if DEBUG else 'wss://primebooks.sale').split(',')
@@ -503,6 +542,9 @@ TENANT_MODEL = "company.Company"
 TENANT_DOMAIN_MODEL = "company.Domain"
 TENANT_HEADER = 'X-Company-ID'
 PUBLIC_SCHEMA_NAME = 'public'
+PUBLIC_SCHEMA_URLCONF = 'tenancy.public_urls'
+
+SHOW_PUBLIC_IF_NO_TENANT_FOUND = True
 
 # Static files
 STATIC_URL = '/static/'

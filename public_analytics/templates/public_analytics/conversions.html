@@ -1,0 +1,215 @@
+{% extends 'public_analytics/base_analytics.html' %}
+
+{% block title %}Conversions | PRIMEBOOKS Analytics{% endblock %}
+
+{% block analytics_content %}
+<div class="page-header">
+    <h1 class="page-title">Conversions</h1>
+    <div class="page-actions">
+        <div class="date-range-selector">
+            <button class="date-btn {% if days == 7 %}active{% endif %}" onclick="window.location.href='?days=7'">7 Days</button>
+            <button class="date-btn {% if days == 30 %}active{% endif %}" onclick="window.location.href='?days=30'">30 Days</button>
+            <button class="date-btn {% if days == 90 %}active{% endif %}" onclick="window.location.href='?days=90'">90 Days</button>
+        </div>
+    </div>
+</div>
+
+<!-- Conversion Stats -->
+<div class="stats-grid">
+    <div class="stat-card">
+        <div class="stat-label">Total Conversions</div>
+        <div class="stat-value">{{ total_conversions }}</div>
+        <div class="stat-change neutral">
+            <span>Last {{ days }} days</span>
+        </div>
+    </div>
+
+    <div class="stat-card">
+        <div class="stat-label">Conversion Rate</div>
+        <div class="stat-value">{{ conversion_rate }}%</div>
+        <div class="stat-change neutral">
+            <span>Average rate</span>
+        </div>
+    </div>
+</div>
+
+<!-- Conversion Trend Chart -->
+<div class="chart-container">
+    <div class="chart-header">
+        <h2 class="chart-title">Conversion Trend</h2>
+    </div>
+    <div class="chart-body">
+        <canvas id="conversionTrendChart"></canvas>
+    </div>
+</div>
+
+<!-- Conversions by Type -->
+<div class="chart-container">
+    <div class="chart-header">
+        <h2 class="chart-title">Conversions by Type</h2>
+    </div>
+    <div class="chart-body">
+        <canvas id="conversionTypeChart"></canvas>
+    </div>
+</div>
+
+<!-- Top Converting Sources -->
+<div class="data-table-container">
+    <div class="table-header">
+        <h2 class="table-title">Top Converting Sources</h2>
+    </div>
+    {% if top_sources %}
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Source</th>
+                <th>Campaign</th>
+                <th>Conversions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for source in top_sources %}
+            <tr>
+                <td>{{ source.utm_source }}</td>
+                <td>{{ source.utm_campaign|default:"-" }}</td>
+                <td>{{ source.conversions }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <div class="empty-state">
+        <div class="empty-state-icon">💰</div>
+        <div class="empty-state-title">No Conversion Data</div>
+        <p>Conversion tracking data will appear here.</p>
+    </div>
+    {% endif %}
+</div>
+
+<!-- Recent Conversions -->
+<div class="data-table-container">
+    <div class="table-header">
+        <h2 class="table-title">Recent Conversions</h2>
+    </div>
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Type</th>
+                <th>Source</th>
+                <th>Medium</th>
+                <th>Campaign</th>
+                <th>Time</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for conversion in recent_conversions %}
+            <tr>
+                <td>
+                    <span class="badge badge-success">{{ conversion.get_conversion_type_display }}</span>
+                </td>
+                <td>{{ conversion.utm_source|default:"-" }}</td>
+                <td>{{ conversion.utm_medium|default:"-" }}</td>
+                <td>{{ conversion.utm_campaign|default:"-" }}</td>
+                <td>{{ conversion.converted_at|date:"M d, Y g:i A" }}</td>
+            </tr>
+            {% empty %}
+            <tr>
+                <td colspan="5" style="text-align: center; color: var(--text-secondary);">
+                    No conversions recorded yet
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}
+
+{% block analytics_js %}
+<script>
+    // Conversion Trend Chart
+    const conversionTrendData = {{ conversion_trend|safe }};
+    const trendCtx = document.getElementById('conversionTrendChart').getContext('2d');
+
+    new Chart(trendCtx, {
+        type: 'bar',
+        data: {
+            labels: conversionTrendData.map(d => {
+                const date = new Date(d.date);
+                return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+            }),
+            datasets: [{
+                label: 'Conversions',
+                data: conversionTrendData.map(d => d.conversions),
+                backgroundColor: 'rgba(16, 185, 129, 0.8)',
+                borderColor: '#10b981',
+                borderWidth: 1
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    labels: {
+                        color: getComputedStyle(document.documentElement).getPropertyValue('--text-primary').trim()
+                    }
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    ticks: {
+                        color: getComputedStyle(document.documentElement).getPropertyValue('--text-secondary').trim()
+                    },
+                    grid: {
+                        color: getComputedStyle(document.documentElement).getPropertyValue('--border-color').trim()
+                    }
+                },
+                x: {
+                    ticks: {
+                        color: getComputedStyle(document.documentElement).getPropertyValue('--text-secondary').trim()
+                    },
+                    grid: {
+                        color: getComputedStyle(document.documentElement).getPropertyValue('--border-color').trim()
+                    }
+                }
+            }
+        }
+    });
+
+    // Conversion Type Chart
+    const conversionTypeData = {{ conversions_by_type|safe }};
+    const typeCtx = document.getElementById('conversionTypeChart').getContext('2d');
+
+    new Chart(typeCtx, {
+        type: 'doughnut',
+        data: {
+            labels: conversionTypeData.map(d => d.conversion_type.replace(/_/g, ' ')),
+            datasets: [{
+                data: conversionTypeData.map(d => d.count),
+                backgroundColor: [
+                    'rgba(16, 185, 129, 0.8)',
+                    'rgba(59, 130, 246, 0.8)',
+                    'rgba(245, 158, 11, 0.8)',
+                    'rgba(239, 68, 68, 0.8)',
+                    'rgba(139, 92, 246, 0.8)',
+                    'rgba(236, 72, 153, 0.8)'
+                ]
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    position: 'bottom',
+                    labels: {
+                        color: getComputedStyle(document.documentElement).getPropertyValue('--text-primary').trim(),
+                        padding: 15
+                    }
+                }
+            }
+        }
+    });
+</script>
+{% endblock %}

@@ -1,3 +1,137 @@
 from django.db import models
+from django.contrib.auth.models import AbstractUser
+from django.core.validators import RegexValidator
+import uuid
 
-# Create your models here.
+
+class TenantSignupRequest(models.Model):
+    """Track tenant signup requests in public schema"""
+
+    STATUS_CHOICES = [
+        ('PENDING', 'Pending'),
+        ('PROCESSING', 'Processing'),
+        ('COMPLETED', 'Completed'),
+        ('FAILED', 'Failed'),
+    ]
+
+    request_id = models.UUIDField(
+        primary_key=True,
+        default=uuid.uuid4,
+        editable=False
+    )
+
+    # Company Information
+    company_name = models.CharField(max_length=255)
+    trading_name = models.CharField(max_length=255, blank=True)
+    subdomain = models.SlugField(
+        max_length=63,
+        unique=True,
+        validators=[
+            RegexValidator(
+                r'^[a-z0-9-]+$',
+                'Only lowercase letters, numbers, and hyphens allowed'
+            )
+        ]
+    )
+
+    # Contact Information
+    email = models.EmailField()
+    phone = models.CharField(max_length=20)
+    country = models.CharField(max_length=100, default='Uganda')
+
+    # Admin User Information
+    first_name = models.CharField(max_length=50)
+    last_name = models.CharField(max_length=50)
+    admin_email = models.EmailField()
+    admin_phone = models.CharField(max_length=20)
+
+    # Business Details
+    industry = models.CharField(max_length=100, blank=True)
+    business_type = models.CharField(max_length=50, blank=True)
+    estimated_users = models.PositiveIntegerField(default=1)
+
+    # Plan Selection
+    selected_plan = models.CharField(
+        max_length=20,
+        choices=[
+            ('FREE', 'Free Trial'),
+            ('BASIC', 'Basic'),
+            ('PRO', 'Pro'),
+            ('ENTERPRISE', 'Enterprise'),
+        ],
+        default='FREE'
+    )
+
+    # Status Tracking
+    status = models.CharField(
+        max_length=20,
+        choices=STATUS_CHOICES,
+        default='PENDING'
+    )
+    tenant_created = models.BooleanField(default=False)
+    created_company_id = models.CharField(max_length=10, blank=True, null=True)
+    created_schema_name = models.CharField(max_length=63, blank=True, null=True)
+
+    # Error Tracking
+    error_message = models.TextField(blank=True, null=True)
+    retry_count = models.PositiveIntegerField(default=0)
+
+    # Metadata
+    ip_address = models.GenericIPAddressField(blank=True, null=True)
+    user_agent = models.TextField(blank=True)
+    referral_source = models.CharField(max_length=100, blank=True)
+
+    # Timestamps
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    completed_at = models.DateTimeField(blank=True, null=True)
+
+    class Meta:
+        db_table = 'public_tenant_signup_requests'
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['subdomain']),
+            models.Index(fields=['email']),
+            models.Index(fields=['status']),
+            models.Index(fields=['created_at']),
+        ]
+
+    def __str__(self):
+        return f"{self.company_name} ({self.subdomain}) - {self.status}"
+
+
+class SubdomainReservation(models.Model):
+    """Reserved/blacklisted subdomains"""
+
+    subdomain = models.SlugField(max_length=63, unique=True)
+    reason = models.CharField(
+        max_length=20,
+        choices=[
+            ('SYSTEM', 'System Reserved'),
+            ('BRAND', 'Brand Protection'),
+            ('BLOCKED', 'Blocked'),
+        ]
+    )
+    notes = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'public_subdomain_reservations'
+
+    def __str__(self):
+        return f"{self.subdomain} ({self.reason})"
+
+
+class PublicNewsletterSubscriber(models.Model):
+    """Newsletter subscriptions from public site"""
+
+    email = models.EmailField(unique=True)
+    name = models.CharField(max_length=255, blank=True)
+    subscribed_at = models.DateTimeField(auto_now_add=True)
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        db_table = 'public_newsletter_subscribers'
+
+    def __str__(self):
+        return self.email
