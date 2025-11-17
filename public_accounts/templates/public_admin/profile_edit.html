@@ -1,0 +1,217 @@
+{% extends 'public_admin/base.html' %}
+
+{% block extra_css %}
+<style>
+    .profile-edit-container {
+        max-width: 900px;
+        margin: 40px auto;
+    }
+
+    .profile-edit-card {
+        background: var(--bg-elevated);
+        border-radius: var(--radius-2xl);
+        box-shadow: var(--shadow-lg);
+        border: 1px solid var(--border-color);
+        overflow: hidden;
+        animation: fadeInUp 0.5s ease-out;
+    }
+
+    .profile-edit-header {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        padding: 32px 40px;
+        color: white;
+    }
+
+    .profile-edit-header h1 {
+        font-size: 26px;
+        font-weight: 800;
+        margin: 0;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+    }
+
+    .profile-edit-body {
+        padding: 40px;
+    }
+
+    .form-group-profile {
+        margin-bottom: 24px;
+    }
+
+    .form-label-profile {
+        font-weight: 700;
+        font-size: 15px;
+        color: var(--text-primary);
+        margin-bottom: 10px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+    .required-star {
+        color: #ef4444;
+        font-weight: 800;
+    }
+
+    .form-control-profile {
+        width: 100%;
+        padding: 14px 18px;
+        border: 2px solid var(--border-color);
+        border-radius: var(--radius-lg);
+        font-size: 15px;
+        font-weight: 500;
+        color: var(--text-primary);
+        background: var(--bg-primary);
+        transition: all var(--transition-base);
+    }
+
+    .form-control-profile:focus {
+        outline: none;
+        border-color: #667eea;
+        box-shadow: 0 0 0 4px rgba(102, 126, 234, 0.15);
+    }
+
+    .profile-actions {
+        display: flex;
+        justify-content: space-between;
+        gap: 16px;
+        padding-top: 32px;
+        margin-top: 32px;
+        border-top: 2px solid var(--border-color);
+    }
+
+    .btn-profile-action {
+        padding: 16px 32px;
+        border-radius: var(--radius-lg);
+        font-weight: 800;
+        font-size: 15px;
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        transition: all var(--transition-base);
+        border: none;
+        text-decoration: none;
+        cursor: pointer;
+    }
+
+    .btn-cancel-profile {
+        background: var(--bg-elevated);
+        border: 2px solid var(--border-color);
+        color: var(--text-primary);
+    }
+
+    .btn-cancel-profile:hover {
+        border-color: #667eea;
+        color: #667eea;
+        transform: translateY(-2px);
+    }
+
+    .btn-save-profile {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+    }
+
+    .btn-save-profile:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 8px 25px rgba(102, 126, 234, 0.6);
+        color: white;
+    }
+
+    @media (max-width: 768px) {
+        .profile-edit-container {
+            margin: 20px;
+            padding: 0;
+        }
+        .profile-edit-header {
+            padding: 24px;
+        }
+        .profile-edit-body {
+            padding: 24px;
+        }
+        .profile-actions {
+            flex-direction: column-reverse;
+        }
+        .btn-profile-action {
+            width: 100%;
+            justify-content: center;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="profile-edit-container">
+    <div class="profile-edit-card">
+        <div class="profile-edit-header">
+            <h1>
+                <i class="bi bi-pencil-square"></i>
+                <span>Edit Profile</span>
+            </h1>
+        </div>
+
+        <div class="profile-edit-body">
+            <form method="post" enctype="multipart/form-data" id="profileEditForm">
+                {% csrf_token %}
+
+                {% if form.non_field_errors %}
+                <div class="alert alert-danger mb-4">
+                    {{ form.non_field_errors }}
+                </div>
+                {% endif %}
+
+                <div class="row g-4">
+                    {% for field in form %}
+                    <div class="col-md-6">
+                        <div class="form-group-profile">
+                            <label for="{{ field.id_for_label }}" class="form-label-profile">
+                                <span>{{ field.label }}</span>
+                                {% if field.field.required %}
+                                <span class="required-star">*</span>
+                                {% endif %}
+                            </label>
+
+                            {{ field }}
+
+                            {% if field.help_text %}
+                            <small class="text-muted d-block mt-2">{{ field.help_text }}</small>
+                            {% endif %}
+
+                            {% if field.errors %}
+                            <div class="text-danger mt-2">{{ field.errors }}</div>
+                            {% endif %}
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+
+                <div class="profile-actions">
+                    <a href="{% url 'public_admin:public_admin_profile' %}" class="btn-profile-action btn-cancel-profile">
+                        <i class="bi bi-arrow-left"></i>
+                        <span>Cancel</span>
+                    </a>
+                    <button type="submit" class="btn-profile-action btn-save-profile">
+                        <i class="bi bi-check-circle-fill"></i>
+                        <span>Save Changes</span>
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    document.addEventListener('DOMContentLoaded', () => {
+        document.querySelectorAll('input, select, textarea').forEach(field => {
+            field.classList.add('form-control-profile');
+        });
+
+        document.getElementById('profileEditForm').addEventListener('submit', () => {
+            window.showLoading();
+        });
+    });
+</script>
+{% endblock %}

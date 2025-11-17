@@ -1,0 +1,569 @@
+{% extends 'public_admin/base.html' %}
+
+{% block extra_css %}
+<style>
+    /* Dashboard-specific enhancements */
+    .dashboard-stats {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+        gap: 24px;
+        margin-bottom: 32px;
+    }
+
+    .stat-card {
+        background: var(--bg-elevated);
+        padding: 28px;
+        border-radius: var(--radius-xl);
+        box-shadow: var(--shadow-sm);
+        border: 1px solid var(--border-color);
+        transition: all var(--transition-smooth);
+        position: relative;
+        overflow: hidden;
+    }
+
+    .stat-card::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 4px;
+        background: linear-gradient(90deg, var(--stat-color-start), var(--stat-color-end));
+        transform: scaleX(0);
+        transform-origin: left;
+        transition: transform var(--transition-smooth);
+    }
+
+    .stat-card:hover::before {
+        transform: scaleX(1);
+    }
+
+    .stat-card:hover {
+        transform: translateY(-8px);
+        box-shadow: var(--shadow-xl);
+        border-color: transparent;
+    }
+
+    .stat-card.primary {
+        --stat-color-start: #667eea;
+        --stat-color-end: #764ba2;
+    }
+
+    .stat-card.success {
+        --stat-color-start: #11998e;
+        --stat-color-end: #38ef7d;
+    }
+
+    .stat-card.warning {
+        --stat-color-start: #f093fb;
+        --stat-color-end: #f5576c;
+    }
+
+    .stat-card.info {
+        --stat-color-start: #4facfe;
+        --stat-color-end: #00f2fe;
+    }
+
+    .stat-card .icon {
+        width: 64px;
+        height: 64px;
+        border-radius: var(--radius-lg);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 28px;
+        margin-bottom: 20px;
+        position: relative;
+        transition: all var(--transition-smooth);
+    }
+
+    .stat-card:hover .icon {
+        transform: scale(1.1) rotate(5deg);
+    }
+
+    .stat-card.primary .icon {
+        background: linear-gradient(135deg, rgba(102, 126, 234, 0.15), rgba(118, 75, 162, 0.15));
+        color: #667eea;
+    }
+
+    .stat-card.success .icon {
+        background: linear-gradient(135deg, rgba(17, 153, 142, 0.15), rgba(56, 239, 125, 0.15));
+        color: #11998e;
+    }
+
+    .stat-card.warning .icon {
+        background: linear-gradient(135deg, rgba(240, 147, 251, 0.15), rgba(245, 87, 108, 0.15));
+        color: #f093fb;
+    }
+
+    .stat-card.info .icon {
+        background: linear-gradient(135deg, rgba(79, 172, 254, 0.15), rgba(0, 242, 254, 0.15));
+        color: #4facfe;
+    }
+
+    .stat-card h3 {
+        font-size: 36px;
+        font-weight: 800;
+        margin: 12px 0;
+        color: var(--text-primary);
+        line-height: 1;
+        letter-spacing: -0.5px;
+    }
+
+    .stat-card p {
+        color: var(--text-secondary);
+        font-size: 14px;
+        margin: 0;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+
+    .stat-card .trend {
+        margin-top: 12px;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 13px;
+        font-weight: 600;
+    }
+
+    .stat-card .trend.up {
+        color: var(--success-color);
+    }
+
+    .stat-card .trend.down {
+        color: var(--danger-color);
+    }
+
+    /* Quick Actions Grid */
+    .quick-actions-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+        gap: 16px;
+        margin-top: 20px;
+    }
+
+    .quick-action-btn {
+        padding: 20px;
+        border-radius: var(--radius-lg);
+        border: 2px solid var(--border-color);
+        background: var(--bg-elevated);
+        color: var(--text-primary);
+        text-decoration: none;
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        transition: all var(--transition-base);
+        font-weight: 600;
+        font-size: 14px;
+        position: relative;
+        overflow: hidden;
+    }
+
+    .quick-action-btn::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: linear-gradient(135deg, rgba(102, 126, 234, 0.1), rgba(118, 75, 162, 0.1));
+        opacity: 0;
+        transition: opacity var(--transition-base);
+    }
+
+    .quick-action-btn:hover {
+        border-color: #667eea;
+        transform: translateY(-4px);
+        box-shadow: var(--shadow-lg);
+        color: #667eea;
+    }
+
+    .quick-action-btn:hover::before {
+        opacity: 1;
+    }
+
+    .quick-action-btn i {
+        font-size: 24px;
+        transition: transform var(--transition-base);
+        position: relative;
+        z-index: 1;
+    }
+
+    .quick-action-btn:hover i {
+        transform: scale(1.15);
+    }
+
+    .quick-action-btn span {
+        position: relative;
+        z-index: 1;
+    }
+
+    /* Activity Table Enhancements */
+    .activity-table-wrapper {
+        overflow-x: auto;
+        border-radius: var(--radius-lg);
+        box-shadow: var(--shadow-sm);
+    }
+
+    .activity-table {
+        width: 100%;
+        background: var(--bg-elevated);
+        border-collapse: separate;
+        border-spacing: 0;
+    }
+
+    .activity-table thead {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    }
+
+    .activity-table thead th {
+        color: white;
+        font-weight: 700;
+        text-transform: uppercase;
+        font-size: 11px;
+        letter-spacing: 1px;
+        padding: 18px 20px;
+        border: none;
+        white-space: nowrap;
+    }
+
+    .activity-table thead th:first-child {
+        border-top-left-radius: var(--radius-lg);
+    }
+
+    .activity-table thead th:last-child {
+        border-top-right-radius: var(--radius-lg);
+    }
+
+    .activity-table tbody tr {
+        border-bottom: 1px solid var(--border-light);
+        transition: all var(--transition-base);
+    }
+
+    .activity-table tbody tr:hover {
+        background: linear-gradient(90deg, rgba(102, 126, 234, 0.05), transparent);
+        transform: scale(1.01);
+    }
+
+    .activity-table tbody tr:last-child {
+        border-bottom: none;
+    }
+
+    .activity-table tbody td {
+        padding: 18px 20px;
+        color: var(--text-primary);
+        font-size: 14px;
+        vertical-align: middle;
+    }
+
+    .activity-user-info strong {
+        display: block;
+        font-weight: 600;
+        color: var(--text-primary);
+        margin-bottom: 4px;
+    }
+
+    .activity-user-info small {
+        color: var(--text-muted);
+        font-size: 12px;
+    }
+
+    .activity-badge {
+        padding: 6px 14px;
+        border-radius: var(--radius-md);
+        font-weight: 700;
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        display: inline-block;
+        box-shadow: var(--shadow-xs);
+    }
+
+    .activity-badge.bg-success {
+        background: linear-gradient(135deg, #11998e, #38ef7d);
+        color: white;
+    }
+
+    .activity-badge.bg-secondary {
+        background: linear-gradient(135deg, #64748b, #94a3b8);
+        color: white;
+    }
+
+    .activity-badge.bg-primary {
+        background: linear-gradient(135deg, #667eea, #764ba2);
+        color: white;
+    }
+
+    .activity-badge.bg-info {
+        background: linear-gradient(135deg, #4facfe, #00f2fe);
+        color: white;
+    }
+
+    .activity-badge.bg-danger {
+        background: linear-gradient(135deg, #eb3349, #f45c43);
+        color: white;
+    }
+
+    .activity-badge.bg-warning {
+        background: linear-gradient(135deg, #f093fb, #f5576c);
+        color: white;
+    }
+
+    .activity-time {
+        color: var(--text-muted);
+        font-size: 13px;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
+
+    .activity-time i {
+        font-size: 12px;
+    }
+
+    /* Empty State */
+    .empty-state-activities {
+        text-align: center;
+        padding: 60px 20px;
+        color: var(--text-muted);
+    }
+
+    .empty-state-activities i {
+        font-size: 64px;
+        margin-bottom: 16px;
+        opacity: 0.3;
+    }
+
+    .empty-state-activities p {
+        font-size: 16px;
+        margin: 0;
+    }
+
+    /* Section Headers */
+    .section-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 20px;
+    }
+
+    .section-title {
+        font-size: 20px;
+        font-weight: 700;
+        color: var(--text-primary);
+        display: flex;
+        align-items: center;
+        gap: 12px;
+    }
+
+    .section-title i {
+        color: #667eea;
+    }
+
+    .section-action {
+        color: #667eea;
+        text-decoration: none;
+        font-weight: 600;
+        font-size: 14px;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        transition: all var(--transition-base);
+    }
+
+    .section-action:hover {
+        color: #764ba2;
+        transform: translateX(4px);
+    }
+
+    /* Responsive adjustments */
+    @media (max-width: 768px) {
+        .dashboard-stats {
+            grid-template-columns: 1fr;
+            gap: 16px;
+        }
+
+        .quick-actions-grid {
+            grid-template-columns: 1fr;
+        }
+
+        .stat-card h3 {
+            font-size: 28px;
+        }
+
+        .activity-table {
+            font-size: 13px;
+        }
+
+        .activity-table thead th,
+        .activity-table tbody td {
+            padding: 12px 10px;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- Statistics Cards -->
+<div class="dashboard-stats">
+    <div class="stat-card primary">
+        <div class="icon">
+            <i class="bi bi-people-fill"></i>
+        </div>
+        <h3>{{ stats.total_users }}</h3>
+        <p>Total Users</p>
+        <div class="trend up">
+            <i class="bi bi-arrow-up"></i>
+            <span>+12% from last month</span>
+        </div>
+    </div>
+
+    <div class="stat-card success">
+        <div class="icon">
+            <i class="bi bi-person-check-fill"></i>
+        </div>
+        <h3>{{ stats.active_users }}</h3>
+        <p>Active Users</p>
+        <div class="trend up">
+            <i class="bi bi-arrow-up"></i>
+            <span>+8% from last month</span>
+        </div>
+    </div>
+
+    <div class="stat-card warning">
+        <div class="icon">
+            <i class="bi bi-shield-fill-check"></i>
+        </div>
+        <h3>{{ stats.admin_users }}</h3>
+        <p>Administrators</p>
+        <div class="trend">
+            <i class="bi bi-dash"></i>
+            <span>No change</span>
+        </div>
+    </div>
+
+    <div class="stat-card info">
+        <div class="icon">
+            <i class="bi bi-activity"></i>
+        </div>
+        <h3>{{ stats.recent_activities|length }}</h3>
+        <p>Recent Activities</p>
+        <div class="trend up">
+            <i class="bi bi-arrow-up"></i>
+            <span>+24% this week</span>
+        </div>
+    </div>
+</div>
+
+<!-- Quick Actions -->
+<div class="card">
+    <div class="card-header">
+        <h5 class="mb-0">
+            <i class="bi bi-grid-3x3-gap me-2"></i>
+            Quick Actions
+        </h5>
+    </div>
+    <div class="card-body">
+        <div class="quick-actions-grid">
+            {% for app_label, app_config in app_configs.items %}
+                {% for model_info in app_config.models %}
+                <a href="{% url 'public_admin:public_admin_'|add:app_label|add:'_'|add:model_info.model_name|add:'_list' %}"
+                   class="quick-action-btn">
+                    <i class="bi bi-table"></i>
+                    <span>Manage {{ model_info.name }}</span>
+                </a>
+                {% endfor %}
+            {% endfor %}
+        </div>
+    </div>
+</div>
+
+<!-- Recent Activities -->
+<div class="card">
+    <div class="card-header">
+        <h5 class="mb-0">
+            <i class="bi bi-clock-history me-2"></i>
+            Recent Activities
+        </h5>
+    </div>
+    <div class="card-body p-0">
+        {% if stats.recent_activities %}
+        <div class="activity-table-wrapper">
+            <table class="activity-table">
+                <thead>
+                    <tr>
+                        <th>User</th>
+                        <th>Action</th>
+                        <th>Details</th>
+                        <th>Time</th>
+                        <th>IP Address</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for activity in stats.recent_activities %}
+                    <tr>
+                        <td>
+                            <div class="activity-user-info">
+                                <strong>{{ activity.user.get_full_name }}</strong>
+                                <small>{{ activity.user.identifier }}</small>
+                            </div>
+                        </td>
+                        <td>
+                            <span class="activity-badge
+                                {% if activity.action == 'LOGIN' %}bg-success
+                                {% elif activity.action == 'LOGOUT' %}bg-secondary
+                                {% elif activity.action == 'CREATE' %}bg-primary
+                                {% elif activity.action == 'UPDATE' %}bg-info
+                                {% elif activity.action == 'DELETE' %}bg-danger
+                                {% else %}bg-warning{% endif %}">
+                                {{ activity.get_action_display }}
+                            </span>
+                        </td>
+                        <td>
+                            <small>{{ activity.description|truncatewords:10 }}</small>
+                        </td>
+                        <td>
+                            <div class="activity-time">
+                                <i class="bi bi-clock"></i>
+                                <span>{{ activity.timestamp|timesince }} ago</span>
+                            </div>
+                        </td>
+                        <td>
+                            <small class="text-muted">{{ activity.ip_address|default:"N/A" }}</small>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="empty-state-activities">
+            <i class="bi bi-inbox"></i>
+            <p>No recent activities to display</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // Add animation on page load
+    document.addEventListener('DOMContentLoaded', () => {
+        const statCards = document.querySelectorAll('.stat-card');
+        statCards.forEach((card, index) => {
+            setTimeout(() => {
+                card.style.opacity = '0';
+                card.style.transform = 'translateY(20px)';
+                setTimeout(() => {
+                    card.style.transition = 'all 0.5s cubic-bezier(0.34, 1.56, 0.64, 1)';
+                    card.style.opacity = '1';
+                    card.style.transform = 'translateY(0)';
+                }, 50);
+            }, index * 100);
+        });
+    });
+</script>
+{% endblock %}

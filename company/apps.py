@@ -7,3 +7,7 @@ class CompanyConfig(AppConfig):
 
     def ready(self):
         import company.signals
+        try:
+            import company.public_admin  # noqa
+        except ImportError:
+            pass

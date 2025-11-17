@@ -10,7 +10,7 @@ sitemaps = {
 urlpatterns = [
     # Homepage
     path('', TemplateView.as_view(template_name='public_router/home.html'), name='home'),
-
+    path('public-admin/', include('public_accounts.urls')),
     # Marketing pages
     path('pricing/', TemplateView.as_view(template_name='public_router/pricing.html'), name='pricing'),
     path('features/', TemplateView.as_view(template_name='public_router/features.html'), name='features'),

@@ -47,6 +47,7 @@ urlpatterns = [
     path('users/export/', views.export_users, name='export_users'),
     
     path('profile/', views.user_profile, name='user_profile'),
+    path('profile/update/',views.edit_profile,name='edit_profile'),
     path('profile/upload-avatar/', views.upload_avatar_ajax, name='upload_avatar_ajax'),
     path('profile/delete-avatar/', views.delete_avatar, name='delete_avatar'),
     path('profile/export-data/', views.export_profile_data, name='export_profile_data'),

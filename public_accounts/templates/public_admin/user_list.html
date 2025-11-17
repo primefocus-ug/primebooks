@@ -1,0 +1,701 @@
+{% extends 'public_admin/base.html' %}
+
+{% block extra_css %}
+<style>
+    /* Page header */
+    .page-header-users {
+        background: linear-gradient(135deg, rgba(102, 126, 234, 0.05), rgba(118, 75, 162, 0.05));
+        border: 1px solid var(--border-color);
+        border-radius: var(--radius-xl);
+        padding: 28px 32px;
+        margin-bottom: 28px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 20px;
+    }
+
+    .page-header-title {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+    }
+
+    .page-header-icon {
+        width: 56px;
+        height: 56px;
+        background: linear-gradient(135deg, #667eea, #764ba2);
+        border-radius: var(--radius-lg);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: white;
+        font-size: 28px;
+        box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+    }
+
+    .page-header-title h1 {
+        font-size: 28px;
+        font-weight: 800;
+        color: var(--text-primary);
+        margin: 0;
+        letter-spacing: -0.5px;
+    }
+
+    .btn-create-user {
+        padding: 14px 28px;
+        background: linear-gradient(135deg, #667eea, #764ba2);
+        color: white;
+        border: none;
+        border-radius: var(--radius-lg);
+        font-weight: 800;
+        font-size: 15px;
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        cursor: pointer;
+        text-decoration: none;
+        transition: all var(--transition-base);
+        box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+    }
+
+    .btn-create-user:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 8px 25px rgba(102, 126, 234, 0.6);
+        color: white;
+    }
+
+    /* Users card */
+    .users-card {
+        background: var(--bg-elevated);
+        border-radius: var(--radius-xl);
+        box-shadow: var(--shadow-md);
+        border: 1px solid var(--border-color);
+        overflow: hidden;
+    }
+
+    .users-card-header {
+        background: var(--bg-elevated);
+        padding: 24px 32px;
+        border-bottom: 1px solid var(--border-color);
+    }
+
+    .card-header-content {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 20px;
+    }
+
+    .card-header-title {
+        font-size: 20px;
+        font-weight: 800;
+        color: var(--text-primary);
+        margin: 0;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+    }
+
+    .card-header-title i {
+        color: #667eea;
+    }
+
+    /* Search form */
+    .search-form-users {
+        position: relative;
+        width: 350px;
+    }
+
+    .search-form-users input {
+        width: 100%;
+        padding: 12px 50px 12px 44px;
+        border: 2px solid var(--border-color);
+        border-radius: var(--radius-lg);
+        background: var(--bg-secondary);
+        color: var(--text-primary);
+        font-size: 14px;
+        font-weight: 500;
+        transition: all var(--transition-base);
+    }
+
+    .search-form-users input:focus {
+        outline: none;
+        border-color: #667eea;
+        box-shadow: 0 0 0 4px rgba(102, 126, 234, 0.12);
+        background: var(--bg-primary);
+    }
+
+    .search-form-users .search-icon {
+        position: absolute;
+        left: 16px;
+        top: 50%;
+        transform: translateY(-50%);
+        color: var(--text-muted);
+        font-size: 18px;
+    }
+
+    .search-form-users button {
+        position: absolute;
+        right: 8px;
+        top: 50%;
+        transform: translateY(-50%);
+        width: 36px;
+        height: 36px;
+        background: linear-gradient(135deg, #667eea, #764ba2);
+        color: white;
+        border: none;
+        border-radius: var(--radius-md);
+        cursor: pointer;
+        transition: all var(--transition-base);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .search-form-users button:hover {
+        transform: translateY(-50%) scale(1.05);
+    }
+
+    /* Table */
+    .users-table {
+        width: 100%;
+        background: transparent;
+    }
+
+    .users-table thead {
+        background: linear-gradient(135deg, #667eea, #764ba2);
+    }
+
+    .users-table thead th {
+        color: white;
+        font-weight: 700;
+        text-transform: uppercase;
+        font-size: 11px;
+        letter-spacing: 1px;
+        padding: 18px 24px;
+        border: none;
+        white-space: nowrap;
+    }
+
+    .users-table tbody tr {
+        border-bottom: 1px solid var(--border-light);
+        transition: all var(--transition-base);
+    }
+
+    .users-table tbody tr:hover {
+        background: linear-gradient(90deg, rgba(102, 126, 234, 0.04), transparent);
+        transform: translateX(4px);
+    }
+
+    .users-table tbody td {
+        padding: 18px 24px;
+        vertical-align: middle;
+        color: var(--text-primary);
+        font-size: 14px;
+    }
+
+    .identifier-code {
+        background: linear-gradient(135deg, rgba(102, 126, 234, 0.1), rgba(118, 75, 162, 0.1));
+        padding: 6px 12px;
+        border-radius: var(--radius-md);
+        font-weight: 700;
+        color: #667eea;
+        font-size: 13px;
+        font-family: 'Courier New', monospace;
+    }
+
+    .user-info-cell {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+    }
+
+    .user-avatar-cell {
+        width: 42px;
+        height: 42px;
+        border-radius: 50%;
+        overflow: hidden;
+        border: 3px solid white;
+        box-shadow: var(--shadow-sm);
+        flex-shrink: 0;
+    }
+
+    .user-avatar-cell img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+    }
+
+    .user-avatar-placeholder {
+        width: 42px;
+        height: 42px;
+        border-radius: 50%;
+        background: linear-gradient(135deg, #667eea, #764ba2);
+        color: white;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 800;
+        font-size: 16px;
+        border: 3px solid white;
+        box-shadow: var(--shadow-sm);
+    }
+
+    .user-name-info strong {
+        display: block;
+        font-weight: 700;
+        font-size: 15px;
+        color: var(--text-primary);
+        margin-bottom: 2px;
+    }
+
+    .user-name-info small {
+        display: block;
+        font-size: 12px;
+        color: var(--text-muted);
+        font-weight: 600;
+    }
+
+    .role-badge {
+        background: linear-gradient(135deg, #667eea, #764ba2);
+        color: white;
+        padding: 6px 14px;
+        border-radius: var(--radius-md);
+        font-weight: 700;
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        display: inline-block;
+    }
+
+    .status-badges {
+        display: flex;
+        gap: 6px;
+        flex-wrap: wrap;
+    }
+
+    .status-badge {
+        padding: 6px 12px;
+        border-radius: var(--radius-md);
+        font-weight: 700;
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+    }
+
+    .status-badge.active {
+        background: linear-gradient(135deg, #10b981, #34d399);
+        color: white;
+    }
+
+    .status-badge.inactive {
+        background: linear-gradient(135deg, #ef4444, #f87171);
+        color: white;
+    }
+
+    .status-badge.superuser {
+        background: linear-gradient(135deg, #f59e0b, #fbbf24);
+        color: white;
+    }
+
+    .action-buttons-cell {
+        display: flex;
+        gap: 8px;
+    }
+
+    .action-btn-table {
+        width: 38px;
+        height: 38px;
+        border-radius: var(--radius-md);
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border: 2px solid;
+        transition: all var(--transition-base);
+        cursor: pointer;
+        font-size: 16px;
+        text-decoration: none;
+    }
+
+    .action-btn-edit {
+        border-color: #10b981;
+        color: #10b981;
+        background: rgba(16, 185, 129, 0.05);
+    }
+
+    .action-btn-edit:hover {
+        background: linear-gradient(135deg, #10b981, #34d399);
+        color: white;
+        border-color: transparent;
+        transform: translateY(-3px);
+    }
+
+    .action-btn-delete {
+        border-color: #ef4444;
+        color: #ef4444;
+        background: rgba(239, 68, 68, 0.05);
+    }
+
+    .action-btn-delete:hover {
+        background: linear-gradient(135deg, #ef4444, #f87171);
+        color: white;
+        border-color: transparent;
+        transform: translateY(-3px);
+    }
+
+    /* Empty state */
+    .empty-state-users {
+        text-align: center;
+        padding: 80px 40px;
+    }
+
+    .empty-state-icon {
+        width: 120px;
+        height: 120px;
+        margin: 0 auto 24px;
+        background: linear-gradient(135deg, rgba(102, 126, 234, 0.1), rgba(118, 75, 162, 0.1));
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 56px;
+        color: #667eea;
+    }
+
+    .empty-state-users h3 {
+        font-size: 22px;
+        color: var(--text-primary);
+        margin-bottom: 12px;
+        font-weight: 800;
+    }
+
+    .empty-state-users p {
+        color: var(--text-secondary);
+        font-size: 15px;
+        margin-bottom: 0;
+    }
+
+    /* Stats cards */
+    .stats-grid-users {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+        gap: 24px;
+        margin-top: 28px;
+    }
+
+    .stat-card-users {
+        background: var(--bg-elevated);
+        padding: 28px;
+        border-radius: var(--radius-xl);
+        box-shadow: var(--shadow-sm);
+        border: 1px solid var(--border-color);
+        transition: all var(--transition-smooth);
+        position: relative;
+        overflow: hidden;
+    }
+
+    .stat-card-users::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 4px;
+        background: var(--stat-gradient);
+        transform: scaleX(0);
+        transform-origin: left;
+        transition: transform var(--transition-smooth);
+    }
+
+    .stat-card-users:hover::before {
+        transform: scaleX(1);
+    }
+
+    .stat-card-users:hover {
+        transform: translateY(-6px);
+        box-shadow: var(--shadow-xl);
+    }
+
+    .stat-card-users.primary {
+        --stat-gradient: linear-gradient(90deg, #667eea, #764ba2);
+    }
+
+    .stat-card-users.success {
+        --stat-gradient: linear-gradient(90deg, #10b981, #34d399);
+    }
+
+    .stat-icon {
+        width: 56px;
+        height: 56px;
+        border-radius: var(--radius-lg);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 26px;
+        margin-bottom: 16px;
+        transition: all var(--transition-smooth);
+    }
+
+    .stat-card-users:hover .stat-icon {
+        transform: scale(1.1) rotate(5deg);
+    }
+
+    .stat-card-users.primary .stat-icon {
+        background: linear-gradient(135deg, rgba(102, 126, 234, 0.15), rgba(118, 75, 162, 0.15));
+        color: #667eea;
+    }
+
+    .stat-card-users.success .stat-icon {
+        background: linear-gradient(135deg, rgba(16, 185, 129, 0.15), rgba(52, 211, 153, 0.15));
+        color: #10b981;
+    }
+
+    .stat-card-users h3 {
+        font-size: 36px;
+        font-weight: 800;
+        margin: 8px 0;
+        color: var(--text-primary);
+        line-height: 1;
+        letter-spacing: -0.5px;
+    }
+
+    .stat-card-users p {
+        color: var(--text-secondary);
+        font-size: 14px;
+        margin: 0;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+
+    @media (max-width: 768px) {
+        .page-header-users {
+            flex-direction: column;
+            align-items: stretch;
+        }
+
+        .page-header-title {
+            flex-direction: column;
+            align-items: flex-start;
+        }
+
+        .btn-create-user {
+            width: 100%;
+            justify-content: center;
+        }
+
+        .card-header-content {
+            flex-direction: column;
+            align-items: stretch;
+        }
+
+        .search-form-users {
+            width: 100%;
+        }
+
+        .users-table {
+            font-size: 13px;
+        }
+
+        .users-table thead th,
+        .users-table tbody td {
+            padding: 12px 16px;
+        }
+
+        .action-buttons-cell {
+            flex-direction: column;
+        }
+
+        .stats-grid-users {
+            grid-template-columns: 1fr;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- Page Header -->
+<div class="page-header-users">
+    <div class="page-header-title">
+        <div class="page-header-icon">
+            <i class="bi bi-people-fill"></i>
+        </div>
+        <h1>Manage Users</h1>
+    </div>
+    <a href="{% url 'public_accounts:user_create' %}" class="btn-create-user">
+        <i class="bi bi-plus-lg"></i>
+        <span>Create New User</span>
+    </a>
+</div>
+
+<!-- Users Table Card -->
+<div class="users-card">
+    <div class="users-card-header">
+        <div class="card-header-content">
+            <h5 class="card-header-title">
+                <i class="bi bi-table"></i>
+                <span>All Public Admin Users</span>
+            </h5>
+            <form method="get" class="search-form-users">
+                <i class="bi bi-search search-icon"></i>
+                <input type="search"
+                       name="q"
+                       placeholder="Search users..."
+                       value="{{ search_query|default:'' }}"
+                       autocomplete="off">
+                <button type="submit">
+                    <i class="bi bi-search"></i>
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <div class="table-responsive">
+        <table class="users-table">
+            <thead>
+                <tr>
+                    <th>Identifier</th>
+                    <th>User</th>
+                    <th>Email</th>
+                    <th>Role</th>
+                    <th>Status</th>
+                    <th>Joined</th>
+                    <th style="text-align: center;">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for user_obj in users %}
+                <tr>
+                    <td>
+                        <code class="identifier-code">{{ user_obj.identifier }}</code>
+                    </td>
+                    <td>
+                        <div class="user-info-cell">
+                            {% if user_obj.avatar %}
+                            <div class="user-avatar-cell">
+                                <img src="{{ user_obj.avatar.url }}" alt="Avatar">
+                            </div>
+                            {% else %}
+                            <div class="user-avatar-placeholder">
+                                {{ user_obj.first_name.0|upper }}{{ user_obj.last_name.0|upper }}
+                            </div>
+                            {% endif %}
+                            <div class="user-name-info">
+                                <strong>{{ user_obj.get_full_name }}</strong>
+                                <small>@{{ user_obj.username }}</small>
+                            </div>
+                        </div>
+                    </td>
+                    <td>{{ user_obj.email }}</td>
+                    <td>
+                        <span class="role-badge">{{ user_obj.get_role_display }}</span>
+                    </td>
+                    <td>
+                        <div class="status-badges">
+                            {% if user_obj.is_active %}
+                            <span class="status-badge active">
+                                <i class="bi bi-check-circle-fill"></i>
+                                Active
+                            </span>
+                            {% else %}
+                            <span class="status-badge inactive">
+                                <i class="bi bi-x-circle-fill"></i>
+                                Inactive
+                            </span>
+                            {% endif %}
+
+                            {% if user_obj.is_superuser %}
+                            <span class="status-badge superuser">
+                                <i class="bi bi-shield-fill-exclamation"></i>
+                                Super
+                            </span>
+                            {% endif %}
+                        </div>
+                    </td>
+                    <td>{{ user_obj.date_joined|date:"M d, Y" }}</td>
+                    <td>
+                        <div class="action-buttons-cell">
+                            <a href="{% url 'public_accounts:user_edit' user_obj.id %}"
+                               class="action-btn-table action-btn-edit"
+                               title="Edit User"
+                               data-bs-toggle="tooltip">
+                                <i class="bi bi-pencil-square"></i>
+                            </a>
+
+                            {% if not user_obj.is_superuser %}
+                            <a href="{% url 'public_accounts:user_delete' user_obj.id %}"
+                               class="action-btn-table action-btn-delete"
+                               title="Delete User"
+                               data-bs-toggle="tooltip"
+                               onclick="return confirm('⚠️ Are you sure you want to delete this user?\n\nThis action cannot be undone.');">
+                                <i class="bi bi-trash3-fill"></i>
+                            </a>
+                            {% endif %}
+                        </div>
+                    </td>
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="7">
+                        <div class="empty-state-users">
+                            <div class="empty-state-icon">
+                                <i class="bi bi-inbox"></i>
+                            </div>
+                            <h3>No Users Found</h3>
+                            <p>{% if search_query %}Try adjusting your search criteria.{% else %}Start by creating your first user.{% endif %}</p>
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Stats Grid -->
+<div class="stats-grid-users">
+    <div class="stat-card-users primary">
+        <div class="stat-icon">
+            <i class="bi bi-people-fill"></i>
+        </div>
+        <h3>{{ users.count }}</h3>
+        <p>Total Users</p>
+    </div>
+
+    <div class="stat-card-users success">
+        <div class="stat-icon">
+            <i class="bi bi-person-check-fill"></i>
+        </div>
+        <h3>{{ users|length }}</h3>
+        <p>Active Users</p>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // Initialize tooltips
+    document.addEventListener('DOMContentLoaded', () => {
+        const tooltips = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+        tooltips.map(el => new bootstrap.Tooltip(el));
+
+        // Add entrance animations
+        const rows = document.querySelectorAll('.users-table tbody tr');
+        rows.forEach((row, index) => {
+            row.style.opacity = '0';
+            row.style.transform = 'translateX(-20px)';
+            setTimeout(() => {
+                row.style.transition = 'all 0.4s cubic-bezier(0.34, 1.56, 0.64, 1)';
+                row.style.opacity = '1';
+                row.style.transform = 'translateX(0)';
+            }, index * 30);
+        });
+    });
+</script>
+{% endblock %}

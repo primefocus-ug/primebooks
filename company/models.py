@@ -354,7 +354,7 @@ class SubscriptionPlan(models.Model):
     max_transactions_per_month = models.PositiveIntegerField(default=500)
 
     # Features
-    features = models.JSONField(default=dict, help_text=_("Feature flags for this plan"))
+    features = models.JSONField(default=dict,blank=True, help_text=_("Feature flags for this plan"))
     can_use_api = models.BooleanField(default=False)
     can_export_data = models.BooleanField(default=True)
     can_use_integrations = models.BooleanField(default=False)
@@ -545,7 +545,7 @@ class Company(TenantMixin,EFRISCompanyMixin):
     efris_api_key = models.CharField(max_length=200, blank=True, null=True, verbose_name=_("EFRIS API Key"))
     efris_device_number = models.CharField(max_length=50, blank=True, null=True, verbose_name=_("EFRIS Device Number"))
     efris_certificate_data = models.JSONField(
-        default=dict,
+        default=dict,blank=True,
         verbose_name=_("EFRIS Certificate Data"),
         help_text=_("RSA keys and certificate information")
     )
@@ -603,13 +603,13 @@ class Company(TenantMixin,EFRISCompanyMixin):
     # Branding
     logo = models.ImageField(upload_to='company/logos/', blank=True, null=True)
     favicon = models.ImageField(upload_to='company/favicons/', blank=True, null=True)
-    brand_colors = models.JSONField(default=dict, help_text="Primary and secondary brand colors")
+    brand_colors = models.JSONField(default=dict,blank=True, help_text="Primary and secondary brand colors")
 
     # Security
     is_verified = models.BooleanField(default=False)
     verification_token = models.CharField(max_length=100, blank=True, null=True)
     two_factor_required = models.BooleanField(default=False)
-    ip_whitelist = models.JSONField(default=list, help_text="Allowed IP addresses")
+    ip_whitelist = models.JSONField(default=list,blank=True, help_text="Allowed IP addresses")
 
     # Usage Tracking
     storage_used_mb = models.PositiveIntegerField(default=0)
@@ -618,7 +618,7 @@ class Company(TenantMixin,EFRISCompanyMixin):
 
     # Admin Fields
     notes = models.TextField(blank=True, help_text="Internal notes about this company")
-    tags = models.JSONField(default=list, help_text="Tags for categorizing companies")
+    tags = models.JSONField(default=list,blank=True, help_text="Tags for categorizing companies")
 
     # Tenant Settings
     auto_create_schema = True

@@ -96,7 +96,7 @@ from .forms import (
     UserProfileForm, PasswordChangeForm, UserSignatureForm, UserSearchForm,UserNotificationForm,UserPreferencesForm,
     BulkUserActionForm, TwoFactorSetupForm,RoleForm, BulkRoleAssignmentForm,BulkUserRoleAssignForm, RoleFilterForm
 )
-
+from django_otp.plugins.otp_totp.models import TOTPDevice
 logger = logging.getLogger(__name__)
 
 DASHBOARD_MAPPING = [
@@ -107,10 +107,9 @@ DASHBOARD_MAPPING = [
     {'permission': 'reports.view_savedreport', 'url_name': 'reports:dashboard'},
 ]
 
+
 def get_client_ip(request):
-    """
-    Get client IP address from request
-    """
+    """Get client IP address from request"""
     x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
     if x_forwarded_for:
         ip = x_forwarded_for.split(',')[0]
@@ -118,18 +117,16 @@ def get_client_ip(request):
         ip = request.META.get('REMOTE_ADDR')
     return ip
 
+
 def get_dashboard_url(user):
     """Return the correct dashboard URL for the user."""
-    # SaaS admins get special dashboard
     if getattr(user, 'is_saas_admin', False):
         return reverse('saas_admin_dashboard')
 
-    # Super admins and company admins → company detail
     if getattr(user, 'is_superuser', False) or getattr(user, 'company_admin', False):
-        if hasattr(user, 'company') and user.company:  # user must be linked to a company
+        if hasattr(user, 'company') and user.company:
             return reverse('companies:company_detail', kwargs={'company_id': user.company.company_id})
 
-    # Other roles → pick from mapping
     for item in DASHBOARD_MAPPING:
         if user.has_perm(item['permission']):
             return reverse(item['url_name'])
@@ -138,174 +135,346 @@ def get_dashboard_url(user):
 
 
 def custom_login(request):
-    """Enhanced login view with Google OAuth and 2FA support."""
+    """Enhanced login view with proper 2FA enforcement"""
     if request.user.is_authenticated:
         return redirect(get_dashboard_url(request.user))
 
-    form = CustomAuthenticationForm(request, data=request.POST or None)
+    # Handle AJAX requests
+    if request.method == 'POST' and request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+        return _handle_ajax_login(request)
 
+    # Handle regular form submission
     if request.method == 'POST':
-        # Handle AJAX requests
-        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
-            if not form.is_valid():
-                logger.error(f"Form validation failed: {form.errors}")
-                return JsonResponse({
-                    'success': False,
-                    'error': 'Please correct the errors below',
-                    'form_errors': form.errors.as_json()
-                }, status=400)
+        return _handle_regular_login(request)
 
-            user = form.get_user()
+    # GET request - show login form
+    form = CustomAuthenticationForm(request)
 
-            # 2FA logic
-            two_factor_enabled = TOTPDevice.objects.filter(user=user, confirmed=True).exists()
-            code = form.cleaned_data.get('code')
+    # Check if we're in 2FA step (user already authenticated credentials)
+    show_2fa = False
+    pending_user_id = request.session.get('pending_2fa_user_id')
+    if pending_user_id:
+        try:
+            pending_user = CustomUser.objects.get(id=pending_user_id)
+            show_2fa = TOTPDevice.objects.filter(user=pending_user, confirmed=True).exists()
+        except CustomUser.DoesNotExist:
+            request.session.pop('pending_2fa_user_id', None)
 
-            if two_factor_enabled and not code:
-                logger.debug(f"2FA required for user: {user.email}")
-                return JsonResponse({
-                    'success': True,
-                    'two_factor_enabled': True,
-                    'message': 'Please enter your 2FA code'
-                })
-
-            if two_factor_enabled and code:
-                try:
-                    device = TOTPDevice.objects.get(user=user, confirmed=True)
-                    if device.verify_token(code):
-                        login(request, user)
-                        if form.cleaned_data.get('remember_me'):
-                            request.session.set_expiry(60 * 60 * 24 * 30)  # 30 days
-                        else:
-                            request.session.set_expiry(0)
-
-                        # Record successful login
-                        user.record_login_attempt(success=True, ip_address=get_client_ip(request))
-                        user.last_activity_at = timezone.now()
-                        user.save(update_fields=['last_activity_at'])
-
-                        next_url = request.GET.get('next') or get_dashboard_url(user)
-                        message = (
-                            f'Welcome SaaS Admin: {user.get_short_name()}!'
-                            if getattr(user, 'is_saas_admin', False)
-                            else f'Welcome back, {user.get_short_name()}!'
-                        )
-                        logger.info(f"Successful 2FA login for user: {user.email}")
-                        return JsonResponse({
-                            'success': True,
-                            'two_factor_enabled': False,
-                            'message': message,
-                            'redirect_url': next_url
-                        })
-                    else:
-                        logger.error(f"Invalid 2FA code for user: {user.email}")
-                        user.record_login_attempt(success=False, ip_address=get_client_ip(request))
-                        return JsonResponse({
-                            'success': False,
-                            'error': 'Invalid 2FA code'
-                        }, status=401)
-                except TOTPDevice.DoesNotExist:
-                    logger.error(f"No confirmed TOTP device for user: {user.email}")
-                    return JsonResponse({
-                        'success': False,
-                        'error': '2FA device not found'
-                    }, status=500)
-
-            # No 2FA, proceed with login
-            login(request, user)
-            if form.cleaned_data.get('remember_me'):
-                request.session.set_expiry(60 * 60 * 24 * 30)
-            else:
-                request.session.set_expiry(0)
-
-            # Record successful login
-            user.record_login_attempt(success=True, ip_address=get_client_ip(request))
-            user.last_activity_at = timezone.now()
-            user.save(update_fields=['last_activity_at'])
-
-            next_url = request.GET.get('next') or get_dashboard_url(user)
-            message = (
-                f'Welcome SaaS Admin: {user.get_short_name()}!'
-                if getattr(user, 'is_saas_admin', False)
-                else f'Welcome back, {user.get_short_name()}!'
-            )
-            logger.info(f"Successful login (no 2FA) for user: {user.email}")
-            return JsonResponse({
-                'success': True,
-                'two_factor_enabled': False,
-                'message': message,
-                'redirect_url': next_url
-            })
-
-        else:
-            # Non-AJAX POST
-            if form.is_valid():
-                user = form.get_user()
-
-                # Check for 2FA in non-AJAX flow
-                two_factor_enabled = TOTPDevice.objects.filter(user=user, confirmed=True).exists()
-                code = form.cleaned_data.get('code')
-
-                if two_factor_enabled and not code:
-                    # Show 2FA form
-                    context = {
-                        'form': form,
-                        'show_2fa': True,
-                        'show_google_login': True,
-                    }
-                    return render(request, 'accounts/login.html', context)
-
-                if two_factor_enabled and code:
-                    try:
-                        device = TOTPDevice.objects.get(user=user, confirmed=True)
-                        if not device.verify_token(code):
-                            messages.error(request, 'Invalid 2FA code')
-                            context = {
-                                'form': form,
-                                'show_2fa': True,
-                                'show_google_login': True,
-                            }
-                            return render(request, 'accounts/login.html', context)
-                    except TOTPDevice.DoesNotExist:
-                        messages.error(request, '2FA device not found')
-                        context = {
-                            'form': form,
-                            'show_2fa': True,
-                            'show_google_login': True,
-                        }
-                        return render(request, 'accounts/login.html', context)
-
-                # Login successful
-                login(request, user)
-                if form.cleaned_data.get('remember_me'):
-                    request.session.set_expiry(60 * 60 * 24 * 30)
-                else:
-                    request.session.set_expiry(0)
-
-                # Record successful login
-                user.record_login_attempt(success=True, ip_address=get_client_ip(request))
-                user.last_activity_at = timezone.now()
-                user.save(update_fields=['last_activity_at'])
-
-                if getattr(user, 'is_saas_admin', False):
-                    messages.success(request, f'Welcome SaaS Admin: {user.get_short_name()}!')
-                else:
-                    messages.success(request, f'Welcome back, {user.get_short_name()}!')
-
-                next_url = request.GET.get('next') or get_dashboard_url(user)
-                return redirect(next_url)
-            else:
-                messages.error(request, 'Please correct the errors below.')
-
-    # GET request or failed POST
     context = {
         'form': form,
         'show_google_login': True,
-        'show_2fa': False,
+        'show_2fa': show_2fa,
     }
     return render(request, 'accounts/login.html', context)
 
 
+def _handle_ajax_login(request):
+    """Handle AJAX login requests with 2FA enforcement"""
+    # Check if this is a 2FA verification request
+    pending_user_id = request.session.get('pending_2fa_user_id')
+    code = request.POST.get('code', '').strip()
+
+    if pending_user_id and code:
+        # This is a 2FA verification attempt
+        return _handle_2fa_verification_ajax(request, pending_user_id, code)
+
+    # This is initial credential submission
+    form = CustomAuthenticationForm(request, data=request.POST)
+
+    if not form.is_valid():
+        logger.warning(f"Form validation failed: {form.errors}")
+        error_messages = {}
+        for field, errors in form.errors.items():
+            if field == '__all__':
+                error_messages['general'] = list(errors)
+            else:
+                error_messages[field] = list(errors)
+
+        return JsonResponse({
+            'success': False,
+            'error_type': 'validation_error',
+            'error_message': 'Please correct the errors below',
+            'field_errors': error_messages,
+        }, status=400)
+
+    # Get authenticated user from form
+    user = form.get_user()
+
+    if not user:
+        return JsonResponse({
+            'success': False,
+            'error_type': 'authentication_failed',
+            'error_message': 'Invalid credentials'
+        }, status=401)
+
+    # Check if 2FA is enabled for this user
+    two_factor_enabled = TOTPDevice.objects.filter(user=user, confirmed=True).exists()
+
+    if two_factor_enabled:
+        # Store user ID in session for 2FA verification
+        request.session['pending_2fa_user_id'] = user.id
+        request.session['pending_2fa_email'] = user.email
+        request.session['pending_2fa_remember'] = form.cleaned_data.get('remember_me', False)
+
+        logger.info(f"2FA required for user: {user.email}")
+
+        return JsonResponse({
+            'success': False,
+            'two_factor_required': True,
+            'error_type': '2fa_required',
+            'message': 'Please enter your 6-digit authentication code'
+        }, status=200)
+
+    # No 2FA required - complete login
+    return _complete_login_ajax(request, user, form.cleaned_data.get('remember_me', False))
+
+
+def _handle_regular_login(request):
+    """Handle regular (non-AJAX) form submission with 2FA enforcement"""
+    # Check if this is a 2FA verification
+    pending_user_id = request.session.get('pending_2fa_user_id')
+    code = request.POST.get('code', '').strip()
+
+    if pending_user_id and code:
+        # Verify 2FA code
+        try:
+            user = CustomUser.objects.get(id=pending_user_id, is_active=True)
+        except CustomUser.DoesNotExist:
+            request.session.pop('pending_2fa_user_id', None)
+            messages.error(request, 'Session expired. Please log in again.')
+            return redirect('login')
+
+        # Check rate limiting
+        if _is_2fa_rate_limited(user):
+            messages.error(request, 'Too many failed attempts. Please wait 5 minutes.')
+            return redirect('login')
+
+        # Verify code
+        if _verify_2fa_code(user, code):
+            # Clear session data
+            _clear_2fa_rate_limit(user)
+            request.session.pop('pending_2fa_user_id', None)
+            remember_me = request.session.pop('pending_2fa_remember', False)
+            request.session.pop('pending_2fa_email', None)
+
+            # Complete login
+            return _complete_login_regular(request, user, remember_me)
+        else:
+            # Invalid code
+            _increment_2fa_attempts(user)
+            user.record_login_attempt(success=False, ip_address=get_client_ip(request))
+            remaining = _get_remaining_attempts(user)
+            messages.error(request, f'Invalid authentication code. {remaining} attempts remaining.')
+
+            form = CustomAuthenticationForm(request)
+            return render(request, 'accounts/login.html', {
+                'form': form,
+                'show_2fa': True,
+                'show_google_login': True,
+            })
+
+    # Initial credential submission
+    form = CustomAuthenticationForm(request, data=request.POST)
+
+    if form.is_valid():
+        user = form.get_user()
+
+        if not user:
+            messages.error(request, 'Invalid credentials.')
+            return render(request, 'accounts/login.html', {
+                'form': form,
+                'show_google_login': True,
+                'show_2fa': False,
+            })
+
+        # Check if 2FA is enabled
+        two_factor_enabled = TOTPDevice.objects.filter(user=user, confirmed=True).exists()
+
+        if two_factor_enabled:
+            # Store user in session and show 2FA form
+            request.session['pending_2fa_user_id'] = user.id
+            request.session['pending_2fa_email'] = user.email
+            request.session['pending_2fa_remember'] = form.cleaned_data.get('remember_me', False)
+
+            messages.info(request, 'Please enter your 6-digit authentication code.')
+
+            return render(request, 'accounts/login.html', {
+                'form': form,
+                'show_2fa': True,
+                'show_google_login': True,
+            })
+
+        # No 2FA - complete login
+        return _complete_login_regular(request, user, form.cleaned_data.get('remember_me', False))
+
+    # Form has errors
+    for field, errors in form.errors.items():
+        for error in errors:
+            if field == '__all__':
+                messages.error(request, error)
+            else:
+                messages.error(request, f"{field.title()}: {error}")
+
+    return render(request, 'accounts/login.html', {
+        'form': form,
+        'show_google_login': True,
+        'show_2fa': False,
+    })
+
+
+def _handle_2fa_verification_ajax(request, pending_user_id, code):
+    """Handle 2FA code verification for AJAX requests"""
+    try:
+        user = CustomUser.objects.get(id=pending_user_id, is_active=True)
+    except CustomUser.DoesNotExist:
+        request.session.pop('pending_2fa_user_id', None)
+        return JsonResponse({
+            'success': False,
+            'error_type': 'invalid_session',
+            'error_message': 'Session expired. Please log in again.'
+        }, status=401)
+
+    # Check rate limiting
+    if _is_2fa_rate_limited(user):
+        logger.warning(f"2FA rate limit exceeded for user: {user.email}")
+        return JsonResponse({
+            'success': False,
+            'error_type': 'rate_limited',
+            'error_message': 'Too many failed attempts. Please wait 5 minutes.'
+        }, status=429)
+
+    # Verify the 2FA code
+    if _verify_2fa_code(user, code):
+        # Clear 2FA session data
+        _clear_2fa_rate_limit(user)
+        request.session.pop('pending_2fa_user_id', None)
+        remember_me = request.session.pop('pending_2fa_remember', False)
+        request.session.pop('pending_2fa_email', None)
+
+        # Complete login
+        return _complete_login_ajax(request, user, remember_me)
+    else:
+        # Invalid 2FA code
+        _increment_2fa_attempts(user)
+        logger.warning(f"Invalid 2FA code for user: {user.email}")
+        user.record_login_attempt(success=False, ip_address=get_client_ip(request))
+
+        return JsonResponse({
+            'success': False,
+            'error_type': 'invalid_2fa',
+            'error_message': 'Invalid authentication code. Please try again.',
+            'attempts_remaining': _get_remaining_attempts(user)
+        }, status=401)
+
+
+def _complete_login_ajax(request, user, remember_me):
+    """Complete the login process for AJAX requests"""
+    # Use backend parameter to avoid authentication issues
+    login(request, user, backend='django.contrib.auth.backends.ModelBackend')
+
+    # Set session expiry
+    if remember_me:
+        request.session.set_expiry(60 * 60 * 24 * 30)  # 30 days
+    else:
+        request.session.set_expiry(0)
+
+    # Record successful login
+    user.record_login_attempt(success=True, ip_address=get_client_ip(request))
+    user.last_activity_at = timezone.now()
+    user.save(update_fields=['last_activity_at'])
+
+    next_url = request.GET.get('next') or get_dashboard_url(user)
+    welcome_message = (
+        f'Welcome SaaS Admin: {user.get_short_name()}!'
+        if getattr(user, 'is_saas_admin', False)
+        else f'Welcome back, {user.get_short_name()}!'
+    )
+
+    logger.info(f"Successful login for user: {user.email}")
+
+    return JsonResponse({
+        'success': True,
+        'two_factor_required': False,
+        'message': welcome_message,
+        'redirect_url': next_url
+    })
+
+
+def _complete_login_regular(request, user, remember_me):
+    """Complete login for regular requests"""
+    login(request, user, backend='django.contrib.auth.backends.ModelBackend')
+
+    # Set session expiry
+    if remember_me:
+        request.session.set_expiry(60 * 60 * 24 * 30)
+    else:
+        request.session.set_expiry(0)
+
+    # Record login
+    user.record_login_attempt(success=True, ip_address=get_client_ip(request))
+    user.last_activity_at = timezone.now()
+    user.save(update_fields=['last_activity_at'])
+
+    # Success message
+    if getattr(user, 'is_saas_admin', False):
+        messages.success(request, f'Welcome SaaS Admin: {user.get_short_name()}!')
+    else:
+        messages.success(request, f'Welcome back, {user.get_short_name()}!')
+
+    # Redirect
+    next_url = request.GET.get('next') or get_dashboard_url(user)
+    logger.info(f"Successful login for user: {user.email}")
+
+    return redirect(next_url)
+
+
+# 2FA Helper Functions (FIXED - removed duplicate)
+def _verify_2fa_code(user, code):
+    """Verify 2FA code"""
+    try:
+        device = TOTPDevice.objects.get(user=user, confirmed=True)
+        is_valid = device.verify_token(code)
+        logger.info(f"2FA verification for {user.email}: {'success' if is_valid else 'failed'}")
+        return is_valid
+    except TOTPDevice.DoesNotExist:
+        logger.error(f"No confirmed TOTP device for user: {user.email}")
+        return False
+    except Exception as e:
+        logger.error(f"Error verifying 2FA code for {user.email}: {str(e)}")
+        return False
+
+
+def _is_2fa_rate_limited(user):
+    """Check if user is rate limited for 2FA attempts"""
+    cache_key = f"2fa_attempts_{user.id}"
+    attempts = cache.get(cache_key, 0)
+    logger.debug(f"2FA attempts for user {user.id}: {attempts}/5")
+    return attempts >= 5
+
+
+def _increment_2fa_attempts(user):
+    """Increment 2FA attempt counter"""
+    cache_key = f"2fa_attempts_{user.id}"
+    attempts = cache.get(cache_key, 0) + 1
+    cache.set(cache_key, attempts, timeout=300)  # 5 minutes
+    logger.info(f"2FA attempts for user {user.id}: {attempts}/5")
+
+
+def _clear_2fa_rate_limit(user):
+    """Clear 2FA rate limiting for user"""
+    cache_key = f"2fa_attempts_{user.id}"
+    cache.delete(cache_key)
+    logger.info(f"Cleared 2FA rate limit for user {user.id}")
+
+
+def _get_remaining_attempts(user):
+    """Get remaining 2FA attempts"""
+    cache_key = f"2fa_attempts_{user.id}"
+    attempts = cache.get(cache_key, 0)
+    return max(0, 5 - attempts)
+
+
+# Logout
 def custom_logout(request):
     """Instant logout without intermediate allauth page."""
     if request.user.is_authenticated:
@@ -318,23 +487,18 @@ def custom_logout(request):
     else:
         logger.info("Anonymous user attempted logout")
 
-    # Use Django's built-in logout to immediately clear session
     logout(request)
     return redirect('login')
 
 
+# Social Login
 def social_login_callback(request):
-    """
-    Callback handler after successful social login.
-    This ensures proper session setup and redirects.
-    """
+    """Callback handler after successful social login."""
     if not request.user.is_authenticated:
         messages.error(request, 'Social login failed. Please try again.')
-        return redirect('account_login')
+        return redirect('login')
 
     user = request.user
-
-    # Record the login
     client_ip = get_client_ip(request)
 
     # Update user's last login and activity
@@ -359,52 +523,45 @@ def social_login_callback(request):
     two_factor_enabled = TOTPDevice.objects.filter(user=user, confirmed=True).exists()
     if two_factor_enabled:
         # Store user in session for 2FA verification
-        request.session['pending_2fa_user'] = user.id
+        request.session['pending_2fa_user_id'] = user.id
+        request.session['pending_2fa_email'] = user.email
         messages.info(request, 'Please complete two-factor authentication.')
-        return redirect('two_factor:login')
+
+        # Log out the user temporarily until 2FA is verified
+        logout(request)
+        return redirect('login')
 
     # Determine redirect URL
     next_url = request.GET.get('next') or request.session.pop('social_login_next', None) or get_dashboard_url(user)
-
     return redirect(next_url)
 
 
 def social_login_redirect(request, provider):
-    """
-    Custom social login redirect that integrates with your flow
-    """
-    # Store the next URL in session
+    """Custom social login redirect that integrates with your flow"""
     next_url = request.GET.get('next')
     if next_url:
         request.session['social_login_next'] = next_url
 
-    # Store any additional context you need
     request.session['social_login_provider'] = provider
 
-    # Redirect to Allauth's provider login
     if provider == 'google':
         from allauth.socialaccount.providers.google.views import GoogleOAuth2Adapter
         from allauth.socialaccount.providers.oauth2.views import OAuth2LoginView
         adapter = GoogleOAuth2Adapter(request)
         return OAuth2LoginView.adapter_view(adapter)(request)
-
-    # Add other providers as needed
     else:
         messages.error(request, f'Provider {provider} is not supported.')
         return redirect('login')
 
+
 @require_http_methods(["GET"])
 def check_social_account(request):
-    """
-    AJAX endpoint to check if an email is associated with a social account.
-    Useful for providing better UX on the login page.
-    """
+    """AJAX endpoint to check if an email is associated with a social account."""
     email = request.GET.get('email', '').strip()
 
     if not email:
         return JsonResponse({'error': 'Email is required'}, status=400)
 
-    # Check if user exists in current tenant
     try:
         user = CustomUser.objects.get(email=email)
         social_accounts = SocialAccount.objects.filter(user=user)
@@ -432,9 +589,7 @@ def check_social_account(request):
 
 @login_required
 def manage_social_connections(request):
-    """
-    View to manage connected social accounts
-    """
+    """View to manage connected social accounts"""
     if request.method == 'POST':
         action = request.POST.get('action')
         provider = request.POST.get('provider')
@@ -446,7 +601,6 @@ def manage_social_connections(request):
                     provider=provider
                 )
 
-                # Check if user has password or other login method
                 if not request.user.has_usable_password():
                     other_accounts = SocialAccount.objects.filter(
                         user=request.user
@@ -469,17 +623,13 @@ def manage_social_connections(request):
 
         return redirect('manage_social_connections')
 
-    # Get user's social accounts
     social_accounts = SocialAccount.objects.filter(user=request.user)
-
-    # Available providers
     available_providers = {
         'google': {
             'name': 'Google',
             'icon': 'bi-google',
             'connected': social_accounts.filter(provider='google').exists()
         },
-        # Add more providers as needed
     }
 
     context = {
@@ -490,12 +640,10 @@ def manage_social_connections(request):
 
     return render(request, 'accounts/manage_social_connections.html', context)
 
+
 @login_required
 def set_password_after_social_login(request):
-    """
-    Allow users who signed up via social login to set a password
-    """
-    # Check if user already has a password
+    """Allow users who signed up via social login to set a password"""
     if request.user.has_usable_password():
         messages.info(request, 'You already have a password set.')
         return redirect('user_profile')
@@ -513,7 +661,6 @@ def set_password_after_social_login(request):
             request.user.password_changed_at = timezone.now()
             request.user.save()
 
-            # Update session to prevent logout
             update_session_auth_hash(request, request.user)
 
             messages.success(
@@ -533,9 +680,7 @@ def set_password_after_social_login(request):
 
 @require_http_methods(["GET"])
 def auth_status(request):
-    """
-    Check authentication status and user info
-    """
+    """Check authentication status and user info"""
     if request.user.is_authenticated:
         return JsonResponse({
             'authenticated': True,
@@ -553,26 +698,10 @@ def auth_status(request):
         })
 
 
-def handle_2fa_redirect(request, user):
-    """
-    Helper function to handle 2FA redirection
-    """
-    # Store user in session for 2FA verification
-    request.session['pending_2fa_user'] = user.id
-    request.session['pending_2fa_next'] = request.GET.get('next') or get_dashboard_url(user)
-
-    return redirect('login')
-
-
-
 @never_cache
 def token_login_complete(request):
-    """
-    Complete login using token from public router
-    This runs in tenant schema
-    """
+    """Complete login using token from public router"""
     from public_router.tenant_lookup import verify_login_token
-    from django.contrib.auth import login as auth_login
 
     token = request.GET.get('token')
 
@@ -580,64 +709,52 @@ def token_login_complete(request):
         messages.error(request, 'Invalid login link')
         return redirect('login')
 
-    # Verify token
     email, tenant_schema = verify_login_token(token)
 
     if not email:
         messages.error(request, 'Login link expired or invalid. Please try again.')
         return redirect('login')
 
-    # Verify we're on correct tenant
     current_schema = request.tenant.schema_name if hasattr(request, 'tenant') else 'public'
 
     if current_schema != tenant_schema:
         logger.error(f"Schema mismatch: expected {tenant_schema}, got {current_schema}")
         messages.error(request, 'Authentication error. Please try again.')
-        # Redirect to public login
         from django.conf import settings
         base_url = f"http{'s' if settings.USE_HTTPS else ''}://{settings.BASE_DOMAIN}"
         return redirect(f"{base_url}/accounts/login/")
 
-    # Get user from current tenant
     try:
         user = CustomUser.objects.get(email=email, is_active=True)
     except CustomUser.DoesNotExist:
         messages.error(request, 'User not found')
         return redirect('login')
 
-    # Check for 2FA
-    from django_otp.plugins.otp_totp.models import TOTPDevice
     two_factor_enabled = TOTPDevice.objects.filter(user=user, confirmed=True).exists()
 
     if two_factor_enabled:
-        # Store for 2FA verification
-        request.session['pending_2fa_user'] = user.id
+        request.session['pending_2fa_user_id'] = user.id
         request.session['pending_2fa_email'] = user.email
         messages.info(request, 'Please complete two-factor authentication.')
-        return redirect('login')  # Will show 2FA form
+        return redirect('login')
 
-    # Log user in
-    auth_login(request, user, backend='django.contrib.auth.backends.ModelBackend')
+    login(request, user, backend='django.contrib.auth.backends.ModelBackend')
 
-    # Set remember me if it was set
     remember_me = request.GET.get('remember')
     if remember_me:
-        request.session.set_expiry(60 * 60 * 24 * 30)  # 30 days
+        request.session.set_expiry(60 * 60 * 24 * 30)
     else:
         request.session.set_expiry(0)
 
-    # Record login
     user.record_login_attempt(success=True, ip_address=get_client_ip(request))
     user.last_activity_at = timezone.now()
     user.save(update_fields=['last_activity_at'])
 
-    # Success message
     if getattr(user, 'is_saas_admin', False):
         messages.success(request, f'Welcome SaaS Admin: {user.get_short_name()}!')
     else:
         messages.success(request, f'Welcome back, {user.get_short_name()}!')
 
-    # Redirect
     next_url = request.GET.get('next') or get_dashboard_url(user)
     logger.info(f"User {user.email} logged in via token to tenant {tenant_schema}")
 
@@ -821,12 +938,12 @@ class UserRoleAssignView(LoginRequiredMixin, PermissionRequiredMixin, FormView):
     """Bulk assign multiple users to a role"""
     template_name = 'accounts/roles/assign_users.html'
     form_class = BulkUserRoleAssignForm
-    permission_required = 'accounts.can_manage_users'
+    permission_required = 'accounts.add_customuser'
 
     def dispatch(self, request, *args, **kwargs):
         """Override to add better error handling"""
         # Check if user has required permission
-        if not request.user.has_perm('accounts.can_manage_users'):
+        if not request.user.has_perm('accounts.add_customuser'):
             messages.error(request, "You don't have permission to assign user roles.")
             return redirect('role_list')
 
@@ -1305,7 +1422,7 @@ class RoleHistoryView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
     template_name = 'accounts/roles/role_history.html'
     context_object_name = 'history_entries'
     paginate_by = 50
-    permission_required = 'accounts.can_manage_users'
+    permission_required = 'accounts.add_role'
 
     def get_queryset(self):
         role_pk = self.kwargs.get('pk')
@@ -1361,7 +1478,7 @@ class RoleToggleActiveView(LoginRequiredMixin, PermissionRequiredMixin, DetailVi
     Toggle role active status via AJAX
     """
     model = Role
-    permission_required = 'accounts.can_manage_users'
+    permission_required = 'accounts.add_role'
 
     def post(self, request, *args, **kwargs):
         role = self.get_object()
@@ -1500,7 +1617,7 @@ class RoleCompareView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
     """
     model = Role
     template_name = 'accounts/roles/role_compare.html'
-    permission_required = 'accounts.can_manage_users'
+    permission_required = 'accounts.add_role'
 
     def get_queryset(self):
         role_ids = self.request.GET.getlist('roles')
@@ -1592,7 +1709,7 @@ def user_dashboard(request):
         })
 
     # Add admin statistics if user has permissions
-    if user.has_perm('accounts.can_manage_users') or getattr(user, 'is_saas_admin', False):
+    if user.has_perm('accounts.add_customuser') or getattr(user, 'is_saas_admin', False):
         accessible_users = _get_accessible_users(user)
         user_stats = {
             'total': accessible_users.filter(is_hidden=False).count(),
@@ -1739,7 +1856,7 @@ def remove_user_from_company(request, user_id):
 
 
 @login_required
-@permission_required('accounts.can_manage_users', raise_exception=True)
+@permission_required('accounts.change_customuser', raise_exception=True)
 def toggle_company_admin(request, user_id):
     """Toggle admin status for user in the current tenant company."""
     company = getattr(request, 'tenant', None)
@@ -2319,66 +2436,7 @@ def generate_csv_report(registration_data, user_type_data, active_inactive_data)
 
 @login_required
 def user_profile(request):
-    """Enhanced user profile view with social accounts and AJAX support"""
-
-    if request.method == 'POST':
-        form = UserProfileForm(request.POST, request.FILES, instance=request.user)
-
-        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
-            if form.is_valid():
-                user = form.save()
-
-                if 'avatar' in request.FILES:
-                    avatar = request.FILES['avatar']
-                    processed_avatar = process_avatar_image(avatar)
-                    if processed_avatar:
-                        user.avatar.save(
-                            f"avatar_{user.id}_{avatar.name}",
-                            processed_avatar,
-                            save=True
-                        )
-
-                response_data = {
-                    'success': True,
-                    'message': 'Profile updated successfully!',
-                    'user_data': {
-                        'full_name': user.get_full_name() or user.username,
-                        'avatar_url': user.avatar.url if user.avatar else None,
-                        'email': user.email,
-                        'phone_number': user.phone_number or '',
-                        'bio': user.bio or '',
-                        'timezone': user.timezone,
-                        'language': user.language,
-                    }
-                }
-                return JsonResponse(response_data)
-            else:
-                response_data = {
-                    'success': False,
-                    'message': 'Please correct the errors below',
-                    'errors': form.errors.as_json()
-                }
-                return JsonResponse(response_data, status=400)
-        else:
-            if form.is_valid():
-                user = form.save()
-
-                if 'avatar' in request.FILES:
-                    avatar = request.FILES['avatar']
-                    processed_avatar = process_avatar_image(avatar)
-                    if processed_avatar:
-                        user.avatar.save(
-                            f"avatar_{user.id}_{avatar.name}",
-                            processed_avatar,
-                            save=True
-                        )
-
-                messages.success(request, 'Your profile has been updated successfully!')
-                return redirect('user_profile')
-            else:
-                messages.error(request, 'Please correct the errors below.')
-    else:
-        form = UserProfileForm(instance=request.user)
+    """Display user profile - READ ONLY"""
 
     user_company = getattr(request.user, 'company', None)
     company_memberships = [user_company] if user_company and user_company.is_active else []
@@ -2390,18 +2448,52 @@ def user_profile(request):
     social_accounts = SocialAccount.objects.filter(user=request.user)
 
     context = {
-        'form': form,
         'user': request.user,
         'owned_company': getattr(request.user, 'owned_company', None),
         'company_memberships': company_memberships,
         'profile_completion': profile_completion,
         'recent_activity': recent_activity,
-        'social_accounts': social_accounts,  # Add this
-        'has_password': request.user.has_usable_password(),  # Add this
+        'social_accounts': social_accounts,
+        'has_password': request.user.has_usable_password(),
     }
 
     return render(request, 'accounts/profile.html', context)
 
+
+@login_required
+def edit_profile(request):
+    """Edit user profile - EDIT FORM"""
+
+    if request.method == 'POST':
+        form = UserProfileForm(request.POST, request.FILES, instance=request.user)
+
+        if form.is_valid():
+            user = form.save()
+
+            # Handle avatar upload if present
+            if 'avatar' in request.FILES:
+                avatar = request.FILES['avatar']
+                processed_avatar = process_avatar_image(avatar)
+                if processed_avatar:
+                    user.avatar.save(
+                        f"avatar_{user.id}_{avatar.name}",
+                        processed_avatar,
+                        save=True
+                    )
+
+            messages.success(request, 'Your profile has been updated successfully!')
+            return redirect('user_profile')
+        else:
+            messages.error(request, 'Please correct the errors below.')
+    else:
+        form = UserProfileForm(instance=request.user)
+
+    context = {
+        'form': form,
+        'user': request.user,
+    }
+
+    return render(request, 'accounts/edit_profile.html', context)
 
 def process_avatar_image(image_file):
     """
@@ -3125,7 +3217,7 @@ def disable_two_factor(request):
 
 
 @login_required
-@permission_required('accounts.can_manage_users')
+@permission_required('accounts.view_customuser')
 def user_quick_stats(request):
     """Enhanced AJAX endpoint for user statistics"""
     accessible_users = _get_accessible_users(request.user)
@@ -3416,7 +3508,7 @@ class UserListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
     template_name = 'accounts/user_list.html'
     context_object_name = 'users'
     paginate_by = 25
-    permission_required = 'accounts.can_manage_users'
+    permission_required = 'accounts.view_customuser'
 
     def get_queryset(self):
         user = self.request.user
@@ -3486,7 +3578,7 @@ class UserDetailView(LoginRequiredMixin, PermissionRequiredMixin, DetailView):
     model = CustomUser
     template_name = 'accounts/user_detail.html'
     context_object_name = 'user_profile'
-    permission_required = 'accounts.can_manage_users'
+    permission_required = 'accounts.view_customuser'
 
     def get_object(self, queryset=None):
         obj = super().get_object(queryset)
@@ -3510,11 +3602,11 @@ class UserDetailView(LoginRequiredMixin, PermissionRequiredMixin, DetailView):
         context.update({
             'account_age': (timezone.now() - user_profile.date_joined).days,
             'is_locked': user_profile.is_locked,
-            'can_unlock': user_profile.is_locked and current_user.has_perm('accounts.can_manage_users'),
+            'can_unlock': user_profile.is_locked and current_user.has_perm('accounts.change_customuser'),
             'company': user_profile.company,
             'user_roles': user_roles,
             'can_edit': can_edit,
-            'can_manage_users': current_user.has_perm('accounts.can_manage_users'),
+            'can_manage_users': current_user.has_perm('accounts.add_customuser'),
             'is_saas_admin': getattr(current_user, 'is_saas_admin', False),
             'is_hidden_user': getattr(user_profile, 'is_hidden', False),
             'can_access_all_companies': getattr(user_profile, 'can_access_all_companies', False),
@@ -3528,7 +3620,7 @@ class UserCreateView(LoginRequiredMixin, PermissionRequiredMixin, CreateView):
     model = CustomUser
     form_class = CustomUserCreationForm
     template_name = 'accounts/user_create.html'
-    permission_required = 'accounts.can_manage_users'
+    permission_required = 'accounts.add_customuser'
     success_url = reverse_lazy('user_list')
 
     @method_decorator(check_user_limit)
@@ -3598,7 +3690,7 @@ class UserUpdateView(LoginRequiredMixin, PermissionRequiredMixin, UpdateView):
     model = CustomUser
     form_class = CustomUserChangeForm
     template_name = 'accounts/user_update.html'
-    permission_required = 'accounts.can_manage_users'
+    permission_required = 'accounts.change_customuser'
 
     def get_queryset(self):
         """Only show users this person can manage"""
@@ -3659,7 +3751,7 @@ class UserUpdateView(LoginRequiredMixin, PermissionRequiredMixin, UpdateView):
 class UserDeleteView(LoginRequiredMixin, PermissionRequiredMixin, DeleteView):
     model = CustomUser
     template_name = 'accounts/user_delete_options.html'
-    permission_required = 'accounts.can_manage_users'
+    permission_required = 'accounts.delete_customuser'
     success_url = reverse_lazy('user_list')
 
     def get_object(self, queryset=None):
@@ -4326,7 +4418,7 @@ def user_integrations(request):
 
 
 @login_required
-@permission_required('accounts.can_manage_users', raise_exception=True)
+@permission_required('accounts.add_customuser', raise_exception=True)
 def bulk_invite_users(request, company_id):
     """Bulk invite users via CSV upload"""
     company = get_object_or_404(Company, company_id=company_id)
@@ -4500,7 +4592,7 @@ def get_client_ip(request):
     return ip
 
 @login_required
-@permission_required('accounts.can_manage_users')
+@permission_required('accounts.change_customuser')
 def unlock_user(request, pk):
     """Unlock a locked user account with access control"""
     user = get_object_or_404(CustomUser, pk=pk)
@@ -4519,7 +4611,7 @@ def unlock_user(request, pk):
 
 
 @login_required
-@permission_required('accounts.can_manage_users')
+@permission_required('accounts.add_customuser')
 @require_http_methods(["POST"])
 def bulk_user_actions(request):
     """Enhanced bulk user actions with SaaS admin support"""
@@ -4689,7 +4781,7 @@ def switch_company(request, company_id):
 
 
 @login_required
-@permission_required('accounts.can_manage_users', raise_exception=True)
+@permission_required('accounts.add_customuser', raise_exception=True)
 def invite_user(request):
     """
     Invite a new user to the current tenant's company.

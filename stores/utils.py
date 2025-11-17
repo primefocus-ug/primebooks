@@ -6,7 +6,279 @@ from django.contrib.auth.signals import user_logged_in, user_logged_out
 from django.dispatch import receiver
 from django.db.models.signals import post_save
 from datetime import timedelta
+from django.db.models import Q, Count, Sum, F,Max
+from .models import Store
 
+
+def get_user_accessible_stores(user, include_inactive=False):
+    """
+    Get stores accessible to the user based on their role.
+
+    Args:
+        user: CustomUser instance
+        include_inactive: Whether to include inactive stores
+
+    Returns:
+        QuerySet of Store objects
+    """
+    # SaaS admins can access everything
+    if user.is_saas_admin or user.can_access_all_companies:
+        queryset = Store.objects.all()
+
+    # Company owners/admins can access all stores in their company
+    elif user.is_company_owner:
+        queryset = Store.objects.filter(company=user.company)
+
+    # Check role-based permissions
+    elif user.primary_role:
+        priority = user.primary_role.priority
+
+        # High-level roles (Manager+) can access all company stores
+        if priority >= 70:  # Manager level and above
+            queryset = Store.objects.filter(company=user.company)
+
+        # Mid-level roles can only access assigned stores
+        elif priority >= 40:  # Staff level
+            queryset = user.stores.all()
+
+        # Low-level roles have limited access
+        else:
+            queryset = user.stores.filter(
+                # Add additional restrictions for low-level roles
+                is_active=True
+            )
+
+    # Users without roles - no access
+    else:
+        queryset = Store.objects.none()
+
+    # Filter by active status if requested
+    if not include_inactive:
+        queryset = queryset.filter(is_active=True)
+
+    return queryset.select_related('company').distinct()
+
+
+def get_visible_users_for_store(store, requesting_user):
+    """
+    Get visible users for a specific store, respecting hierarchy.
+
+    Args:
+        store: Store instance
+        requesting_user: CustomUser making the request
+
+    Returns:
+        QuerySet of CustomUser objects
+    """
+    from django.contrib.auth import get_user_model
+    User = get_user_model()
+
+    # Base queryset - users in the store
+    queryset = store.staff.filter(
+        is_active=True,
+        is_hidden=False  # Exclude SaaS admins
+    )
+
+    # Apply role-based filtering
+    if not requesting_user.is_saas_admin:
+        # Only show users with equal or lower role priority
+        if requesting_user.primary_role:
+            max_priority = requesting_user.highest_role_priority
+
+            queryset = queryset.annotate(
+                max_role_priority=Max('groups__role__priority')
+            ).filter(
+                Q(max_role_priority__lte=max_priority) |
+                Q(max_role_priority__isnull=True)
+            )
+
+    return queryset.select_related('company', 'primary_role__group').distinct()
+
+
+def filter_stores_by_permissions(user, queryset=None, action='view'):
+    """
+    Filter stores based on user permissions for specific actions.
+
+    Args:
+        user: CustomUser instance
+        queryset: Optional base queryset (defaults to all stores)
+        action: Permission action ('view', 'change', 'delete', etc.)
+
+    Returns:
+        Filtered QuerySet
+    """
+    if queryset is None:
+        queryset = Store.objects.all()
+
+    # SaaS admins have full access
+    if user.is_saas_admin:
+        return queryset
+
+    # Check specific permission
+    perm = f'stores.{action}_store'
+    if not user.has_perm(perm):
+        return Store.objects.none()
+
+    # Company-level filtering
+    if user.company:
+        queryset = queryset.filter(company=user.company)
+    else:
+        return Store.objects.none()
+
+    # Role-based filtering for sensitive actions
+    if action in ['delete', 'change']:
+        if user.primary_role and user.primary_role.priority < 70:
+            # Only managers and above can modify
+            return Store.objects.none()
+
+    return queryset
+
+
+def get_stores_with_statistics(user, store_ids=None):
+    """
+    Get stores with pre-calculated statistics, filtered by user access.
+
+    Args:
+        user: CustomUser instance
+        store_ids: Optional list of specific store IDs to include
+
+    Returns:
+        QuerySet with annotations
+    """
+    queryset = get_user_accessible_stores(user)
+
+    if store_ids:
+        queryset = queryset.filter(id__in=store_ids)
+
+    return queryset.annotate(
+        inventory_count=Count('inventory_items'),
+        low_stock_count=Count(
+            'inventory_items',
+            filter=Q(inventory_items__quantity__lte=F('inventory_items__low_stock_threshold'))
+        ),
+        total_inventory_value=Sum(
+            F('inventory_items__quantity') * F('inventory_items__product__cost_price')
+        ),
+        device_count=Count('devices', filter=Q(devices__is_active=True)),
+        staff_count=Count('staff', filter=Q(staff__is_active=True, staff__is_hidden=False))
+    )
+
+
+def validate_store_access(user, store, action='view', raise_exception=True):
+    """
+    Validate if user has access to a specific store for a given action.
+
+    Args:
+        user: CustomUser instance
+        store: Store instance
+        action: Permission action string
+        raise_exception: Whether to raise exception or return boolean
+
+    Returns:
+        Boolean if raise_exception=False, otherwise raises exception
+
+    Raises:
+        PermissionDenied if access is denied and raise_exception=True
+    """
+    from django.core.exceptions import PermissionDenied
+
+    # SaaS admins always have access
+    if user.is_saas_admin or user.can_access_all_companies:
+        return True
+
+    # Check company match
+    if store.company_id != user.company_id:
+        if raise_exception:
+            raise PermissionDenied("You don't have access to this store's company")
+        return False
+
+    # Check permission
+    perm = f'stores.{action}_store'
+    if not user.has_perm(perm):
+        if raise_exception:
+            raise PermissionDenied(f"You don't have permission to {action} stores")
+        return False
+
+    # Check role-based access for specific actions
+    if action in ['delete', 'change']:
+        if not user.primary_role or user.primary_role.priority < 70:
+            if raise_exception:
+                raise PermissionDenied("Insufficient role privileges for this action")
+            return False
+
+    return True
+
+
+def filter_session_queryset(user, base_queryset=None):
+    """
+    Filter device sessions based on user access.
+
+    Args:
+        user: CustomUser instance
+        base_queryset: Optional base queryset
+
+    Returns:
+        Filtered QuerySet
+    """
+    from .models import UserDeviceSession
+
+    if base_queryset is None:
+        base_queryset = UserDeviceSession.objects.all()
+
+    # Get accessible stores
+    accessible_stores = get_user_accessible_stores(user)
+
+    # Filter sessions
+    queryset = base_queryset.filter(
+        store__in=accessible_stores,
+        user__is_hidden=False  # Exclude SaaS admin sessions
+    )
+
+    # For non-admins, only show their own sessions unless they're managers
+    if not user.is_saas_admin and not user.is_company_owner:
+        if user.primary_role and user.primary_role.priority < 70:
+            queryset = queryset.filter(user=user)
+
+    return queryset.select_related('user', 'store', 'store_device')
+
+
+def filter_security_alerts(user, base_queryset=None):
+    """
+    Filter security alerts based on user access.
+
+    Args:
+        user: CustomUser instance
+        base_queryset: Optional base queryset
+
+    Returns:
+        Filtered QuerySet
+    """
+    from .models import SecurityAlert
+
+    if base_queryset is None:
+        base_queryset = SecurityAlert.objects.all()
+
+    # Get accessible stores
+    accessible_stores = get_user_accessible_stores(user)
+
+    # Filter alerts
+    queryset = base_queryset.filter(
+        store__in=accessible_stores,
+        user__is_hidden=False  # Exclude SaaS admin alerts
+    )
+
+    # Filter by severity based on role
+    if not user.is_saas_admin and user.primary_role:
+        if user.primary_role.priority < 50:  # Low-level roles
+            # Only show alerts related to their own actions
+            queryset = queryset.filter(user=user)
+        elif user.primary_role.priority < 70:  # Mid-level roles
+            # Can see alerts for their stores but not critical system alerts
+            queryset = queryset.exclude(severity='CRITICAL', alert_type__in=[
+                'SYSTEM_BREACH', 'UNAUTHORIZED_ACCESS'
+            ])
+
+    return queryset.select_related('user', 'store', 'session', 'device')
 
 def generate_device_fingerprint(request):
     """

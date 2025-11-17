@@ -16,6 +16,7 @@ from .models import Role, CustomUser
 from django.core.exceptions import ValidationError
 import logging
 from django import forms
+from django_otp.plugins.otp_totp.models import TOTPDevice
 from django.contrib.auth.models import Group, Permission
 from .models import Role
 from django.core.exceptions import ValidationError
@@ -592,6 +593,7 @@ class CustomUserChangeForm(UserChangeForm):
         return user
 
 
+
 class CustomAuthenticationForm(AuthenticationForm):
     """Enhanced authentication form with 2FA support"""
 
@@ -631,13 +633,68 @@ class CustomAuthenticationForm(AuthenticationForm):
     def __init__(self, request=None, *args, **kwargs):
         super().__init__(request, *args, **kwargs)
         self.request = request
+        self.user_cache = None
+
+    def clean_username(self):
+        """Validate email field"""
+        username = self.cleaned_data.get('username', '').strip()
+
+        if not username:
+            raise forms.ValidationError(_('Email is required.'))
+
+        if '@' not in username:
+            raise forms.ValidationError(_('Please enter a valid email address.'))
+
+        # Check if user exists
+        try:
+            user = CustomUser.objects.get(email=username)
+            if not user.is_active:
+                raise forms.ValidationError(
+                    _('This account has been deactivated. Please contact support.')
+                )
+            if user.is_locked:
+                raise forms.ValidationError(
+                    _('Account is temporarily locked. Please try again later or reset your password.')
+                )
+        except CustomUser.DoesNotExist:
+            raise forms.ValidationError(
+                _('No account found with this email address.')
+            )
+
+        return username
+
+    def clean_password(self):
+        """Validate password field"""
+        password = self.cleaned_data.get('password')
+
+        if not password:
+            raise forms.ValidationError(_('Password is required.'))
+
+        return password
+
+    def clean_code(self):
+        """Validate 2FA code format"""
+        code = self.cleaned_data.get('code', '').strip()
+
+        if code:
+            if not code.isdigit():
+                raise forms.ValidationError(_('Code must contain only numbers.'))
+            if len(code) != 6:
+                raise forms.ValidationError(_('Code must be exactly 6 digits.'))
+
+        return code
 
     def clean(self):
-        username = self.cleaned_data.get('username')
-        password = self.cleaned_data.get('password')
-        code = self.cleaned_data.get('code')
+        """
+        Validate credentials WITHOUT enforcing 2FA here.
+        2FA enforcement is handled in the view layer.
+        """
+        cleaned_data = super(AuthenticationForm, self).clean()  # Skip AuthenticationForm.clean()
+        username = cleaned_data.get('username')
+        password = cleaned_data.get('password')
 
         if username and password:
+            # Only validate credentials, not 2FA
             self.user_cache = authenticate(
                 self.request,
                 username=username,
@@ -645,39 +702,43 @@ class CustomAuthenticationForm(AuthenticationForm):
             )
 
             if self.user_cache is None:
+                # Invalid credentials
                 try:
                     user = CustomUser.objects.get(email=username)
+                    # User exists but wrong password
                     user.record_login_attempt(success=False, ip_address=self.get_client_ip())
+                    raise forms.ValidationError(
+                        _('Incorrect password. Please try again.'),
+                        code='invalid_login'
+                    )
                 except CustomUser.DoesNotExist:
-                    pass
-                raise self.get_invalid_login_error()
+                    # This shouldn't happen due to clean_username, but just in case
+                    raise forms.ValidationError(
+                        _('Invalid credentials.'),
+                        code='invalid_login'
+                    )
+            else:
+                # Valid credentials - check if account is active
+                if not self.user_cache.is_active:
+                    raise forms.ValidationError(
+                        _('This account is inactive.'),
+                        code='inactive'
+                    )
 
-            if not self.user_cache.is_active:
-                raise forms.ValidationError(_('This account has been deactivated.'))
+        return cleaned_data
 
-            if self.user_cache.is_locked:
-                raise forms.ValidationError(
-                    _('Account is temporarily locked due to too many failed login attempts.')
-                )
-
-        if code and not code.isdigit():
-            raise forms.ValidationError(_('The 2FA code must contain only numbers.'))
-        if code and len(code) != 6:
-            raise forms.ValidationError(_('The 2FA code must be 6 digits long.'))
-
-        return self.cleaned_data
+    def get_user(self):
+        """Return the authenticated user"""
+        return self.user_cache
 
     def get_client_ip(self):
-        """Get client IP address from request"""
+        """Get client IP from request"""
         if hasattr(self, 'request') and self.request:
             x_forwarded_for = self.request.META.get('HTTP_X_FORWARDED_FOR')
             if x_forwarded_for:
-                ip = x_forwarded_for.split(',')[0]
-            else:
-                ip = self.request.META.get('REMOTE_ADDR')
-            return ip
+                return x_forwarded_for.split(',')[0]
+            return self.request.META.get('REMOTE_ADDR')
         return None
-
 
 class CompanyUserForm(forms.ModelForm):
     """Form for managing company user relationships"""

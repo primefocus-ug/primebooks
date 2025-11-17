@@ -1,0 +1,752 @@
+{% extends 'public_admin/base.html' %}
+
+{% block extra_css %}
+<style>
+    .user-form-container {
+        max-width: 1000px;
+        margin: 0 auto;
+    }
+
+    .user-form-card {
+        background: var(--bg-elevated);
+        border-radius: var(--radius-2xl);
+        box-shadow: var(--shadow-lg);
+        border: 1px solid var(--border-color);
+        overflow: hidden;
+        animation: fadeInUp 0.5s ease-out;
+    }
+
+    @keyframes fadeInUp {
+        from { opacity: 0; transform: translateY(30px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+
+    .user-form-header {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        padding: 32px 40px;
+        color: white;
+        position: relative;
+        overflow: hidden;
+    }
+
+    .user-form-header::after {
+        content: '';
+        position: absolute;
+        top: -50%;
+        right: -10%;
+        width: 300px;
+        height: 300px;
+        background: radial-gradient(circle, rgba(255,255,255,0.15) 0%, transparent 70%);
+        border-radius: 50%;
+    }
+
+    .header-content {
+        position: relative;
+        z-index: 2;
+        display: flex;
+        align-items: center;
+        gap: 20px;
+    }
+
+    .header-icon {
+        width: 64px;
+        height: 64px;
+        background: rgba(255, 255, 255, 0.2);
+        border-radius: var(--radius-xl);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 32px;
+        backdrop-filter: blur(10px);
+    }
+
+    .header-title h1 {
+        font-size: 26px;
+        font-weight: 800;
+        margin: 0;
+        letter-spacing: -0.5px;
+    }
+
+    .user-form-body {
+        padding: 40px;
+    }
+
+    .section-modern {
+        margin-bottom: 40px;
+        padding-bottom: 40px;
+        border-bottom: 2px solid var(--border-light);
+    }
+
+    .section-modern:last-child {
+        margin-bottom: 0;
+        padding-bottom: 0;
+        border-bottom: none;
+    }
+
+    .section-title {
+        font-size: 20px;
+        font-weight: 800;
+        color: var(--text-primary);
+        margin-bottom: 24px;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding-bottom: 12px;
+        border-bottom: 3px solid transparent;
+        border-image: linear-gradient(90deg, #667eea, #764ba2) 1;
+    }
+
+    .section-title i {
+        font-size: 24px;
+        color: #667eea;
+    }
+
+    .form-group-user {
+        margin-bottom: 24px;
+    }
+
+    .form-label-user {
+        font-weight: 700;
+        font-size: 15px;
+        color: var(--text-primary);
+        margin-bottom: 10px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+    .form-label-user i {
+        color: #667eea;
+        font-size: 16px;
+    }
+
+    .required-indicator {
+        color: #ef4444;
+        font-weight: 800;
+        font-size: 16px;
+    }
+
+    .form-control-user {
+        width: 100%;
+        padding: 14px 18px;
+        border: 2px solid var(--border-color);
+        border-radius: var(--radius-lg);
+        font-size: 15px;
+        font-weight: 500;
+        color: var(--text-primary);
+        background: var(--bg-primary);
+        transition: all var(--transition-base);
+    }
+
+    .form-control-user:focus {
+        outline: none;
+        border-color: #667eea;
+        box-shadow: 0 0 0 4px rgba(102, 126, 234, 0.15);
+        background: var(--bg-elevated);
+    }
+
+    .form-select-user {
+        appearance: none;
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' fill='%23667eea' viewBox='0 0 16 16'%3E%3Cpath d='M7.247 11.14 2.451 5.658C1.885 5.013 2.345 4 3.204 4h9.592a1 1 0 0 1 .753 1.659l-4.796 5.48a1 1 0 0 1-1.506 0z'/%3E%3C/svg%3E");
+        background-repeat: no-repeat;
+        background-position: right 18px center;
+        background-size: 16px;
+        padding-right: 48px;
+    }
+
+    /* Avatar upload */
+    .avatar-upload-section {
+        display: flex;
+        align-items: center;
+        gap: 24px;
+        padding: 24px;
+        background: var(--bg-secondary);
+        border-radius: var(--radius-lg);
+        border: 2px solid var(--border-color);
+    }
+
+    .current-avatar {
+        position: relative;
+    }
+
+    .current-avatar img {
+        width: 100px;
+        height: 100px;
+        border-radius: 50%;
+        object-fit: cover;
+        border: 4px solid white;
+        box-shadow: var(--shadow-md);
+    }
+
+    .avatar-placeholder {
+        width: 100px;
+        height: 100px;
+        border-radius: 50%;
+        background: linear-gradient(135deg, #667eea, #764ba2);
+        color: white;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 36px;
+        font-weight: 800;
+        border: 4px solid white;
+        box-shadow: var(--shadow-md);
+    }
+
+    .avatar-controls {
+        flex: 1;
+    }
+
+    .file-input-modern {
+        display: none;
+    }
+
+    .btn-upload-avatar {
+        padding: 12px 24px;
+        background: linear-gradient(135deg, #667eea, #764ba2);
+        color: white;
+        border: none;
+        border-radius: var(--radius-lg);
+        font-weight: 700;
+        font-size: 14px;
+        cursor: pointer;
+        transition: all var(--transition-base);
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+    }
+
+    .btn-upload-avatar:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 8px 25px rgba(102, 126, 234, 0.6);
+    }
+
+    /* Textarea */
+    textarea.form-control-user {
+        min-height: 120px;
+        resize: vertical;
+        font-family: inherit;
+    }
+
+    /* Permission checkboxes */
+    .permissions-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+        gap: 16px;
+    }
+
+    .permission-checkbox-modern {
+        padding: 18px 20px;
+        background: var(--bg-secondary);
+        border: 2px solid var(--border-color);
+        border-radius: var(--radius-lg);
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        transition: all var(--transition-base);
+        cursor: pointer;
+    }
+
+    .permission-checkbox-modern:hover {
+        background: var(--bg-elevated);
+        border-color: #667eea;
+        transform: translateX(4px);
+    }
+
+    .permission-checkbox-modern input[type="checkbox"] {
+        width: 24px;
+        height: 24px;
+        cursor: pointer;
+        accent-color: #667eea;
+        border-radius: 6px;
+    }
+
+    .permission-checkbox-modern label {
+        flex: 1;
+        font-weight: 700;
+        font-size: 14px;
+        color: var(--text-primary);
+        cursor: pointer;
+        margin: 0;
+        user-select: none;
+    }
+
+    .permission-checkbox-modern.checked {
+        background: linear-gradient(135deg, rgba(102, 126, 234, 0.1), rgba(118, 75, 162, 0.1));
+        border-color: #667eea;
+    }
+
+    /* Info alert */
+    .alert-info-modern {
+        background: linear-gradient(135deg, rgba(59, 130, 246, 0.1), rgba(96, 165, 250, 0.1));
+        border: 2px solid #3b82f6;
+        border-left: 6px solid #3b82f6;
+        border-radius: var(--radius-lg);
+        padding: 18px 24px;
+        display: flex;
+        align-items: flex-start;
+        gap: 16px;
+        margin-bottom: 28px;
+    }
+
+    .alert-info-modern i {
+        font-size: 24px;
+        color: #3b82f6;
+        flex-shrink: 0;
+    }
+
+    .alert-info-modern strong {
+        display: block;
+        color: #1e40af;
+        margin-bottom: 6px;
+        font-size: 16px;
+    }
+
+    .alert-info-modern p {
+        margin: 0;
+        color: #1e40af;
+        font-weight: 600;
+        font-size: 14px;
+        line-height: 1.6;
+    }
+
+    /* Error feedback */
+    .error-text {
+        font-size: 13px;
+        font-weight: 700;
+        margin-top: 8px;
+        padding: 10px 14px;
+        background: rgba(239, 68, 68, 0.1);
+        border-left: 4px solid #ef4444;
+        border-radius: var(--radius-md);
+        color: #ef4444;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+    /* Form actions */
+    .form-actions-user {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 16px;
+        padding-top: 32px;
+        margin-top: 32px;
+        border-top: 2px solid var(--border-color);
+    }
+
+    .btn-user-action {
+        padding: 16px 32px;
+        border-radius: var(--radius-lg);
+        font-weight: 800;
+        font-size: 15px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+        transition: all var(--transition-base);
+        border: none;
+        text-decoration: none;
+        cursor: pointer;
+    }
+
+    .btn-cancel-user {
+        background: var(--bg-elevated);
+        border: 2px solid var(--border-color);
+        color: var(--text-primary);
+    }
+
+    .btn-cancel-user:hover {
+        border-color: #667eea;
+        color: #667eea;
+        background: rgba(102, 126, 234, 0.05);
+        transform: translateY(-2px);
+    }
+
+    .btn-submit-user {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+        position: relative;
+        overflow: hidden;
+    }
+
+    .btn-submit-user::before {
+        content: '';
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        width: 0;
+        height: 0;
+        border-radius: 50%;
+        background: rgba(255, 255, 255, 0.3);
+        transform: translate(-50%, -50%);
+        transition: width 0.6s, height 0.6s;
+    }
+
+    .btn-submit-user:hover::before {
+        width: 300px;
+        height: 300px;
+    }
+
+    .btn-submit-user:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 8px 25px rgba(102, 126, 234, 0.6);
+        color: white;
+    }
+
+    .btn-submit-user i,
+    .btn-submit-user span {
+        position: relative;
+        z-index: 1;
+    }
+
+    @media (max-width: 768px) {
+        .user-form-container {
+            padding: 0 16px;
+        }
+
+        .user-form-header {
+            padding: 24px;
+        }
+
+        .header-content {
+            flex-direction: column;
+            text-align: center;
+        }
+
+        .user-form-body {
+            padding: 24px;
+        }
+
+        .permissions-grid {
+            grid-template-columns: 1fr;
+        }
+
+        .form-actions-user {
+            flex-direction: column-reverse;
+        }
+
+        .btn-user-action {
+            width: 100%;
+        }
+
+        .avatar-upload-section {
+            flex-direction: column;
+            text-align: center;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="user-form-container">
+    <div class="user-form-card">
+        <div class="user-form-header">
+            <div class="header-content">
+                <div class="header-icon">
+                    <i class="bi bi-person-plus-fill"></i>
+                </div>
+                <div class="header-title">
+                    <h1>{{ title }}</h1>
+                </div>
+            </div>
+        </div>
+
+        <div class="user-form-body">
+            <form method="post" enctype="multipart/form-data" id="userForm">
+                {% csrf_token %}
+
+                <!-- Basic Information Section -->
+                <div class="section-modern">
+                    <div class="section-title">
+                        <i class="bi bi-info-circle-fill"></i>
+                        <span>Basic Information</span>
+                    </div>
+
+                    <div class="row g-4">
+                        <div class="col-md-6">
+                            <div class="form-group-user">
+                                <label for="id_email" class="form-label-user">
+                                    <i class="bi bi-envelope-fill"></i>
+                                    <span>Email</span>
+                                    <span class="required-indicator">*</span>
+                                </label>
+                                {{ form.email }}
+                                {% if form.email.errors %}
+                                <div class="error-text">
+                                    <i class="bi bi-exclamation-circle-fill"></i>
+                                    <span>{{ form.email.errors.0 }}</span>
+                                </div>
+                                {% endif %}
+                            </div>
+                        </div>
+
+                        <div class="col-md-6">
+                            <div class="form-group-user">
+                                <label for="id_username" class="form-label-user">
+                                    <i class="bi bi-person-badge-fill"></i>
+                                    <span>Username</span>
+                                    <span class="required-indicator">*</span>
+                                </label>
+                                {{ form.username }}
+                                {% if form.username.errors %}
+                                <div class="error-text">
+                                    <i class="bi bi-exclamation-circle-fill"></i>
+                                    <span>{{ form.username.errors.0 }}</span>
+                                </div>
+                                {% endif %}
+                            </div>
+                        </div>
+
+                        <div class="col-md-6">
+                            <div class="form-group-user">
+                                <label for="id_first_name" class="form-label-user">
+                                    <i class="bi bi-person-fill"></i>
+                                    <span>First Name</span>
+                                </label>
+                                {{ form.first_name }}
+                                {% if form.first_name.errors %}
+                                <div class="error-text">
+                                    <i class="bi bi-exclamation-circle-fill"></i>
+                                    <span>{{ form.first_name.errors.0 }}</span>
+                                </div>
+                                {% endif %}
+                            </div>
+                        </div>
+
+                        <div class="col-md-6">
+                            <div class="form-group-user">
+                                <label for="id_last_name" class="form-label-user">
+                                    <i class="bi bi-person-fill"></i>
+                                    <span>Last Name</span>
+                                </label>
+                                {{ form.last_name }}
+                                {% if form.last_name.errors %}
+                                <div class="error-text">
+                                    <i class="bi bi-exclamation-circle-fill"></i>
+                                    <span>{{ form.last_name.errors.0 }}</span>
+                                </div>
+                                {% endif %}
+                            </div>
+                        </div>
+
+                        <div class="col-12">
+                            <div class="form-group-user">
+                                <label for="id_phone" class="form-label-user">
+                                    <i class="bi bi-telephone-fill"></i>
+                                    <span>Phone</span>
+                                </label>
+                                {{ form.phone }}
+                                {% if form.phone.errors %}
+                                <div class="error-text">
+                                    <i class="bi bi-exclamation-circle-fill"></i>
+                                    <span>{{ form.phone.errors.0 }}</span>
+                                </div>
+                                {% endif %}
+                            </div>
+                        </div>
+
+                        {% if user_obj %}
+                        <div class="col-12">
+                            <div class="form-group-user">
+                                <label class="form-label-user">
+                                    <i class="bi bi-image-fill"></i>
+                                    <span>Avatar</span>
+                                </label>
+                                <div class="avatar-upload-section">
+                                    <div class="current-avatar">
+                                        {% if user_obj.avatar %}
+                                        <img src="{{ user_obj.avatar.url }}" alt="Avatar" id="avatarPreview">
+                                        {% else %}
+                                        <div class="avatar-placeholder" id="avatarPlaceholder">
+                                            {{ user_obj.first_name.0|upper }}{{ user_obj.last_name.0|upper }}
+                                        </div>
+                                        {% endif %}
+                                    </div>
+                                    <div class="avatar-controls">
+                                        <label for="id_avatar" class="btn-upload-avatar">
+                                            <i class="bi bi-cloud-upload-fill"></i>
+                                            <span>Choose Image</span>
+                                        </label>
+                                        {{ form.avatar }}
+                                        <p style="margin-top: 12px; font-size: 13px; color: var(--text-muted);">
+                                            Recommended: Square image, at least 200x200px
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="col-12">
+                            <div class="form-group-user">
+                                <label for="id_bio" class="form-label-user">
+                                    <i class="bi bi-chat-quote-fill"></i>
+                                    <span>Bio</span>
+                                </label>
+                                {{ form.bio }}
+                            </div>
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <!-- Role & Permissions Section -->
+                <div class="section-modern">
+                    <div class="section-title">
+                        <i class="bi bi-shield-check"></i>
+                        <span>Role & Permissions</span>
+                    </div>
+
+                    <div class="form-group-user mb-4">
+                        <label for="id_role" class="form-label-user">
+                            <i class="bi bi-person-gear"></i>
+                            <span>Role</span>
+                        </label>
+                        {{ form.role }}
+                        {% if form.role.errors %}
+                        <div class="error-text">
+                            <i class="bi bi-exclamation-circle-fill"></i>
+                            <span>{{ form.role.errors.0 }}</span>
+                        </div>
+                        {% endif %}
+                    </div>
+
+                    <div class="permissions-grid">
+                        <div class="permission-checkbox-modern">
+                            {{ form.can_manage_seo }}
+                            <label for="id_can_manage_seo">Can Manage SEO</label>
+                        </div>
+
+                        <div class="permission-checkbox-modern">
+                            {{ form.can_manage_blog }}
+                            <label for="id_can_manage_blog">Can Manage Blog</label>
+                        </div>
+
+                        <div class="permission-checkbox-modern">
+                            {{ form.can_manage_support }}
+                            <label for="id_can_manage_support">Can Manage Support</label>
+                        </div>
+
+                        <div class="permission-checkbox-modern">
+                            {{ form.can_manage_companies }}
+                            <label for="id_can_manage_companies">Can Manage Companies</label>
+                        </div>
+
+                        <div class="permission-checkbox-modern">
+                            {{ form.can_view_analytics }}
+                            <label for="id_can_view_analytics">Can View Analytics</label>
+                        </div>
+
+                        <div class="permission-checkbox-modern">
+                            {{ form.is_active }}
+                            <label for="id_is_active">Active</label>
+                        </div>
+                    </div>
+                </div>
+
+                {% if form.non_field_errors %}
+                <div class="error-text">
+                    <i class="bi bi-exclamation-circle-fill"></i>
+                    <span>{{ form.non_field_errors }}</span>
+                </div>
+                {% endif %}
+
+                {% if action == 'Create' %}
+                <div class="alert-info-modern">
+                    <i class="bi bi-info-circle-fill"></i>
+                    <div>
+                        <strong>Automatic Setup</strong>
+                        <p>A unique login identifier will be automatically generated, and login credentials will be sent to the user's email address.</p>
+                    </div>
+                </div>
+                {% endif %}
+
+                <div class="form-actions-user">
+                    <a href="{% url 'public_accounts:user_list' %}" class="btn-user-action btn-cancel-user">
+                        <i class="bi bi-x-circle-fill"></i>
+                        <span>Cancel</span>
+                    </a>
+                    <button type="submit" class="btn-user-action btn-submit-user">
+                        <i class="bi bi-check-circle-fill"></i>
+                        <span>{{ action }} User</span>
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    document.addEventListener('DOMContentLoaded', () => {
+        // Add form-control class to inputs
+        document.querySelectorAll('input:not([type="checkbox"]), select, textarea').forEach(field => {
+            field.classList.add('form-control-user');
+        });
+
+        // Add select styling
+        document.querySelectorAll('select').forEach(select => {
+            select.classList.add('form-select-user');
+        });
+
+        // Add file input class
+        document.querySelectorAll('input[type="file"]').forEach(input => {
+            input.classList.add('file-input-modern');
+        });
+
+        // Checkbox styling
+        document.querySelectorAll('.permission-checkbox-modern input[type="checkbox"]').forEach(checkbox => {
+            const wrapper = checkbox.closest('.permission-checkbox-modern');
+
+            // Initial state
+            if (checkbox.checked) {
+                wrapper.classList.add('checked');
+            }
+
+            // On change
+            checkbox.addEventListener('change', function() {
+                if (this.checked) {
+                    wrapper.classList.add('checked');
+                } else {
+                    wrapper.classList.remove('checked');
+                }
+            });
+        });
+
+        // Avatar preview
+        const avatarInput = document.getElementById('id_avatar');
+        if (avatarInput) {
+            avatarInput.addEventListener('change', function(e) {
+                const file = e.target.files[0];
+                if (file && file.type.startsWith('image/')) {
+                    const reader = new FileReader();
+                    reader.onload = function(e) {
+                        const preview = document.getElementById('avatarPreview');
+                        const placeholder = document.getElementById('avatarPlaceholder');
+
+                        if (preview) {
+                            preview.src = e.target.result;
+                        } else if (placeholder) {
+                            const img = document.createElement('img');
+                            img.src = e.target.result;
+                            img.id = 'avatarPreview';
+                            img.style.cssText = 'width: 100px; height: 100px; border-radius: 50%; object-fit: cover; border: 4px solid white; box-shadow: var(--shadow-md);';
+                            placeholder.replaceWith(img);
+                        }
+                    };
+                    reader.readAsDataURL(file);
+                }
+            });
+        }
+
+        // Form submission
+        document.getElementById('userForm').addEventListener('submit', function() {
+            window.showLoading();
+        });
+    });
+</script>
+{% endblock %}

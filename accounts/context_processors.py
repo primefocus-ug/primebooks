@@ -1,7 +1,7 @@
 from django.contrib.auth import get_user_model
 from accounts.utils import get_accessible_companies
 from .views import get_user_type_display_from_role
-
+from public_accounts.models import PublicUser
 User = get_user_model()
 
 
@@ -32,16 +32,34 @@ def saas_admin_context(request):
 
 
 def user_role_context(request):
+    """Add user role info safely to templates"""
+    user = getattr(request, 'user', None)
 
-    if not request.user.is_authenticated:
+    if not user or not user.is_authenticated:
         return {}
 
-    return {
-        'user_primary_role': request.user.primary_role,
-        'user_all_roles': request.user.all_roles,
-        'user_role_names': request.user.role_names,
-        'user_display_role': request.user.display_role,
-        'user_role_priority': request.user.highest_role_priority,
-        # Backward compatibility
-        'user_type_display': get_user_type_display_from_role(request.user),
-    }
+    # Only apply tenant-specific attributes if this is a CustomUser
+    if isinstance(user, User):  # Your tenant user model
+        return {
+            'user_primary_role': getattr(user, 'primary_role', None),
+            'user_all_roles': getattr(user, 'all_roles', []),
+            'user_role_names': getattr(user, 'role_names', []),
+            'user_display_role': getattr(user, 'display_role', ''),
+            'user_role_priority': getattr(user, 'highest_role_priority', None),
+            # Backward compatibility
+            'user_type_display': get_user_type_display_from_role(user),
+        }
+
+    # If it's a PublicUser, return minimal info
+    elif isinstance(user, PublicUser):
+        return {
+            'user_primary_role': None,
+            'user_all_roles': [],
+            'user_role_names': [],
+            'user_display_role': 'Public',
+            'user_role_priority': None,
+            'user_type_display': 'Public',
+        }
+
+    # Fallback for other unexpected user types
+    return {}

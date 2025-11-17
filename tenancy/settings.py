@@ -33,7 +33,7 @@ if DEBUG:
 
     SECRET_KEY = 'django-insecure-9mghr4buf3l(sinf2(lez20c&*=2)lha_qkdyrxeu1#14@p&(%'
     ALLOWED_HOSTS = ['*']
-
+    PUBLIC_ADMIN_URL = 'http://localhost:8000'
     # Database
     DATABASES = {
         'default': {
@@ -130,7 +130,7 @@ else:
 
     # Clean and parse host lists
     ALLOWED_HOSTS = [h.strip() for h in os.getenv('ALLOWED_HOSTS', 'primebooks.sale').split(',')]
-
+    PUBLIC_ADMIN_URL = 'https://primebooks.sale'
     # Database
     DATABASES = {
         'default': {
@@ -246,6 +246,7 @@ SHARED_APPS = [
     'django_celery_results',
     'channels',
     'django_extensions',
+    'public_accounts',
     'public_admin',
     'public_router',
     'public_seo',
@@ -260,8 +261,8 @@ SHARED_APPS = [
 ]
 
 TENANT_APPS = [
-    'django.contrib.admin',
     'django.contrib.auth',
+    'django.contrib.admin',
     'django_otp',
     'django_otp.plugins.otp_totp',
     'allauth',
@@ -314,6 +315,7 @@ MIDDLEWARE.extend([
     'accounts.middleware.HiddenUserMiddleware',
     'accounts.middleware.SaaSAdminContextMiddleware',
     'accounts.middleware.AuditMiddleware',
+    'public_accounts.middleware.PublicSchemaAuthMiddleware',
     'errors.middleware.CustomErrorMiddleware',
     'messaging.middleware.EncryptionKeyMiddleware',
     'messaging.middleware.MessageAuditMiddleware',
@@ -346,7 +348,6 @@ TEMPLATES = [
                 'core.context_processors.navigation_context_processor',
                 'company.context_processors.efris_settings',
                 'notifications.context_processors.notifications_context',
-                'notifications.context_processors.notification_context',
                 'company.context_processors.current_company',
                 'branches.context_processors.current_store',
                 'stores.context_processors.current_store',
@@ -507,6 +508,7 @@ SESSION_CACHE_ALIAS = 'default'
 # Authentication
 AUTH_USER_MODEL = 'accounts.CustomUser'
 AUTHENTICATION_BACKENDS = [
+    'public_accounts.backends.PublicIdentifierBackend',
     'company.authentication.CompanyAwareAuthBackend',
     'accounts.backends.RoleBasedAuthBackend',
     'django.contrib.auth.backends.ModelBackend',

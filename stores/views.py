@@ -54,7 +54,13 @@ from .utils import (
     get_user_active_sessions,
     force_terminate_user_sessions,
     generate_session_report,
-    generate_security_report
+    generate_security_report,
+    get_user_accessible_stores,
+    get_visible_users_for_store,
+    filter_stores_by_permissions,
+    validate_store_access,
+    filter_session_queryset,
+    filter_security_alerts
 )
 
 User = get_user_model()
@@ -259,15 +265,10 @@ def api_extend_session(request, session_id):
     })
 
 
-
-@login_required
-@permission_required('stores.view_storedevice')
 def device_sessions_dashboard(request):
-    """
-    Dashboard for viewing all device sessions across stores
-    """
-    # Get accessible stores
-    stores = _get_user_stores(request.user)
+    """Dashboard for viewing all device sessions across stores"""
+    # Use improved filtering
+    stores = get_user_accessible_stores(request.user)
 
     # Filter options
     store_id = request.GET.get('store')
@@ -275,14 +276,18 @@ def device_sessions_dashboard(request):
     date_from = request.GET.get('date_from')
     date_to = request.GET.get('date_to')
 
-    # Base queryset
-    sessions = UserDeviceSession.objects.select_related(
-        'user', 'store', 'store_device'
-    ).filter(store__in=stores)
+    # Use improved session filtering
+    sessions = filter_session_queryset(request.user)
 
-    # Apply filters
+    # Apply additional filters
     if store_id:
-        sessions = sessions.filter(store_id=store_id)
+        # Validate access to specific store
+        try:
+            store = stores.get(id=store_id)
+            sessions = sessions.filter(store=store)
+        except Store.DoesNotExist:
+            messages.error(request, 'Invalid store selection')
+            return redirect('stores:device_sessions_dashboard')
 
     if status and status != 'ALL':
         if status == 'ACTIVE':
@@ -304,10 +309,9 @@ def device_sessions_dashboard(request):
         except ValueError:
             pass
 
-    # Order by most recent
+    # Order and paginate
     sessions = sessions.order_by('-created_at')
 
-    # Paginate
     from django.core.paginator import Paginator
     paginator = Paginator(sessions, 50)
     page_number = request.GET.get('page')
@@ -318,8 +322,10 @@ def device_sessions_dashboard(request):
         'total_sessions': sessions.count(),
         'active_sessions': sessions.filter(is_active=True, expires_at__gt=timezone.now()).count(),
         'suspicious_sessions': sessions.filter(is_suspicious=True).count(),
-        'new_device_logins': sessions.filter(is_new_device=True,
-                                             created_at__gte=timezone.now() - timedelta(days=7)).count(),
+        'new_device_logins': sessions.filter(
+            is_new_device=True,
+            created_at__gte=timezone.now() - timedelta(days=7)
+        ).count(),
     }
 
     context = {
@@ -338,10 +344,8 @@ def device_sessions_dashboard(request):
 @login_required
 @permission_required('stores.view_storedevice')
 def security_alerts_view(request):
-    """
-    View for managing security alerts
-    """
-    stores = _get_user_stores(request.user)
+    """View for managing security alerts"""
+    stores = get_user_accessible_stores(request.user)
 
     # Filter options
     store_id = request.GET.get('store')
@@ -349,14 +353,17 @@ def security_alerts_view(request):
     status = request.GET.get('status', 'OPEN')
     alert_type = request.GET.get('alert_type')
 
-    # Base queryset
-    alerts = SecurityAlert.objects.select_related(
-        'user', 'store', 'session', 'device'
-    ).filter(store__in=stores)
+    # Use improved alert filtering
+    alerts = filter_security_alerts(request.user)
 
-    # Apply filters
+    # Apply additional filters
     if store_id:
-        alerts = alerts.filter(store_id=store_id)
+        try:
+            store = stores.get(id=store_id)
+            alerts = alerts.filter(store=store)
+        except Store.DoesNotExist:
+            messages.error(request, 'Invalid store selection')
+            return redirect('stores:security_alerts')
 
     if severity:
         alerts = alerts.filter(severity=severity)
@@ -404,13 +411,11 @@ def security_alerts_view(request):
 @permission_required('stores.change_storedevice')
 @require_http_methods(["POST"])
 def resolve_security_alert(request, alert_id):
-    """
-    Resolve a security alert
-    """
+    """Resolve a security alert"""
     alert = get_object_or_404(SecurityAlert, id=alert_id)
 
-    # Check permission - user must have access to the store
-    stores = _get_user_stores(request.user)
+    # ✅ FIXED: Use permission-based filtering
+    stores = get_user_accessible_stores(request.user)
     if alert.store not in stores:
         return JsonResponse({'error': 'Permission denied'}, status=403)
 
@@ -419,14 +424,14 @@ def resolve_security_alert(request, alert_id):
 
     if action == 'resolve':
         alert.resolve(resolved_by=request.user, notes=notes)
-        messages.success(request, f'Alert resolved successfully.')
+        messages.success(request, 'Alert resolved successfully.')
     elif action == 'false_positive':
         alert.mark_false_positive(resolved_by=request.user, notes=notes)
-        messages.success(request, f'Alert marked as false positive.')
+        messages.success(request, 'Alert marked as false positive.')
     elif action == 'investigating':
         alert.status = 'INVESTIGATING'
         alert.save(update_fields=['status'])
-        messages.success(request, f'Alert marked as investigating.')
+        messages.success(request, 'Alert marked as investigating.')
 
     return redirect('stores:security_alerts')
 
@@ -488,10 +493,9 @@ from django.db.models import QuerySet
 @login_required
 @require_http_methods(["GET"])
 def device_session_report(request):
-    """
-    Generate device session report
-    """
-    stores = _get_user_stores(request.user)
+    """Generate device session report"""
+    # ✅ FIXED: Use permission-based filtering
+    stores = get_user_accessible_stores(request.user)
 
     # Date range
     date_from = request.GET.get('date_from')
@@ -523,7 +527,7 @@ def device_session_report(request):
         date_to=date_to
     )
 
-    # ✅ Convert QuerySets to lists so JsonResponse can handle them
+    # Convert QuerySets to lists
     for key, value in report.items():
         if isinstance(value, QuerySet):
             report[key] = list(value)
@@ -564,13 +568,11 @@ def device_session_report(request):
     return JsonResponse(report)
 
 
-
-from django.db.models import QuerySet
-
 @login_required
 @require_http_methods(["GET"])
 def security_report(request):
-    stores = _get_user_stores(request.user)
+    # ✅ FIXED: Use permission-based filtering
+    stores = get_user_accessible_stores(request.user)
 
     # Date range
     date_from = request.GET.get('date_from')
@@ -604,8 +606,7 @@ def security_report(request):
         date_to=date_to
     )
 
-    # Convert any QuerySets to lists for safe JSON serialization
-    from django.db.models import QuerySet
+    # Convert any QuerySets to lists
     for key, value in report.items():
         if isinstance(value, QuerySet):
             report[key] = list(value)
@@ -658,7 +659,9 @@ def _get_user_stores(user):
 
 def _get_selected_stores(store_select_value, user):
     """Get stores based on user selection and permissions."""
-    accessible_stores = _get_user_stores(user)
+    # Use permission-based filtering instead
+    accessible_stores = filter_stores_by_permissions(user, action='view')
+
     if not store_select_value:
         return accessible_stores.none()
 
@@ -701,7 +704,8 @@ def _validate_report_request(report_data, user):
     except ValueError:
         return {'valid': False, 'error': 'Invalid date format'}
 
-    accessible_stores = _get_user_stores(user)
+    # ✅ FIXED: Use permission-based filtering
+    accessible_stores = filter_stores_by_permissions(user, action='view')
     if report_data['store_select'] != 'all':
         try:
             store_ids = [int(s.strip()) for s in report_data['store_select'].split(',') if s.strip().isdigit()]
@@ -713,14 +717,24 @@ def _validate_report_request(report_data, user):
     return {'valid': True}
 
 
-def _get_report_statistics():
+def _get_report_statistics(user):
     """Get statistics for the report dashboard."""
+    # Filter by user permissions
+    accessible_stores = filter_stores_by_permissions(user, action='view')
+
     return {
-        'total_stores': Store.objects.filter(is_active=True).count(),
-        'active_stores': Store.objects.filter(is_active=True).count(),
-        'total_devices': StoreDevice.objects.filter(is_active=True).count(),
-        'low_stock_items': Stock.objects.filter(quantity__lte=F('low_stock_threshold')).count(),
+        'total_stores': accessible_stores.count(),
+        'active_stores': accessible_stores.filter(is_active=True).count(),
+        'total_devices': StoreDevice.objects.filter(
+            store__in=accessible_stores,
+            is_active=True
+        ).count(),
+        'low_stock_items': Stock.objects.filter(
+            store__in=accessible_stores,
+            quantity__lte=F('low_stock_threshold')
+        ).count(),
     }
+
 
 
 # --- POS Views ---
@@ -935,8 +949,6 @@ def pos_quick_customer(request):
         return JsonResponse({'success': False, 'error': str(e)}, status=500)
 
 
-# --- Store Views ---
-
 class StoreListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
     """List stores with filtering and bulk actions."""
     model = Store
@@ -946,7 +958,15 @@ class StoreListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
     permission_required = 'stores.view_store'
 
     def get_queryset(self):
-        queryset = Store.objects.select_related('company').prefetch_related('staff', 'devices', 'inventory_items')
+        # Use improved filtering
+        queryset = filter_stores_by_permissions(
+            self.request.user,
+            action='view'
+        ).select_related('company').prefetch_related(
+            'staff', 'devices', 'inventory_items'
+        )
+
+        # Apply form filters
         form = StoreFilterForm(self.request.GET)
         if form.is_valid():
             search = form.cleaned_data.get('search')
@@ -956,36 +976,26 @@ class StoreListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
 
             if search:
                 queryset = queryset.filter(
-                    Q(name__icontains=search) | Q(code__icontains=search) |
-                    Q(physical_address__icontains=search) | Q(region__icontains=search)
+                    Q(name__icontains=search) |
+                    Q(code__icontains=search) |
+                    Q(physical_address__icontains=search) |
+                    Q(region__icontains=search)
                 )
+
             if region:
                 queryset = queryset.filter(region__icontains=region)
+
             if status == 'active':
                 queryset = queryset.filter(is_active=True)
             elif status == 'inactive':
                 queryset = queryset.filter(is_active=False)
+
             if efris_status == 'enabled':
                 queryset = queryset.filter(efris_enabled=True)
             elif efris_status == 'disabled':
                 queryset = queryset.filter(efris_enabled=False)
 
         return queryset.order_by('-created_at')
-
-    def get_context_data(self, **kwargs):
-        context = super().get_context_data(**kwargs)
-        queryset = self.get_queryset()
-        context.update({
-            'filter_form': StoreFilterForm(self.request.GET),
-            'bulk_form': BulkStoreActionForm(),
-            'stats': {
-                'total_stores': queryset.count(),
-                'active_stores': queryset.filter(is_active=True).count(),
-                'efris_enabled': queryset.filter(efris_enabled=True).count(),
-                'has_devices': queryset.filter(devices__isnull=False).distinct().count(),
-            }
-        })
-        return context
 
 
 class StoreDetailView(LoginRequiredMixin, PermissionRequiredMixin, DetailView):
@@ -995,12 +1005,28 @@ class StoreDetailView(LoginRequiredMixin, PermissionRequiredMixin, DetailView):
     context_object_name = 'store'
     permission_required = 'stores.view_store'
 
+    def get_object(self, queryset=None):
+        obj = super().get_object(queryset)
+        # Validate access
+        validate_store_access(self.request.user, obj, action='view')
+        return obj
+
     def get_queryset(self):
-        return Store.objects.select_related('company').prefetch_related('staff', 'devices', 'inventory_items__product')
+        return filter_stores_by_permissions(
+            self.request.user,
+            action='view'
+        ).select_related('company').prefetch_related(
+            'devices',
+            'inventory_items__product'
+        )
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         store = self.object
+
+        # Get visible staff for this store
+        visible_staff = get_visible_users_for_store(store, self.request.user)
+
         context.update({
             'operating_hours': [
                 {'day': day.capitalize(), **details}
@@ -1008,10 +1034,15 @@ class StoreDetailView(LoginRequiredMixin, PermissionRequiredMixin, DetailView):
             ] if isinstance(store.operating_hours, dict) else [],
             'devices': store.devices.all().order_by('-registered_at'),
             'inventory': store.inventory_items.select_related('product').all(),
-            'low_stock_items': store.inventory_items.filter(quantity__lte=F('low_stock_threshold')).count(),
+            'low_stock_items': store.inventory_items.filter(
+                quantity__lte=F('low_stock_threshold')
+            ).count(),
+            'visible_staff': visible_staff,  # Use filtered staff
             'staff_form': StoreStaffAssignmentForm(store_instance=store),
-            'recent_logs': DeviceOperatorLog.objects.filter(device__store=store)
-            .select_related('user', 'device').order_by('-timestamp')[:10],
+            'recent_logs': DeviceOperatorLog.objects.filter(
+                device__store=store,
+                user__is_hidden=False  # Exclude SaaS admin logs
+            ).select_related('user', 'device').order_by('-timestamp')[:10],
             'store_open_now': store.is_open_now()
         })
         return context
@@ -1113,8 +1144,14 @@ class StoreDeleteView(LoginRequiredMixin, PermissionRequiredMixin, DeleteView):
 @permission_required('stores.view_store')
 def store_dashboard(request):
     """Store management dashboard with analytics."""
-    stores = _get_user_stores(request.user)
+    # ✅ Use the same filter function that works in StoreListView
+    stores = filter_stores_by_permissions(
+        request.user,
+        action='view'
+    ).select_related('company')
+
     active_stores = stores.filter(is_active=True)
+
     context = {
         'stats': {
             'total_stores': stores.count(),
@@ -1125,14 +1162,18 @@ def store_dashboard(request):
             'active_devices': StoreDevice.objects.filter(store__in=stores, is_active=True).count(),
         },
         'recent_stores': stores.order_by('-created_at')[:5],
-        'low_stock_count': Stock.objects.filter(store__in=active_stores,
-                                                quantity__lte=F('low_stock_threshold')).count(),
-        'stores_by_region': list(stores.values('region').annotate(count=Count('id')).order_by('-count')[:10]),
+        'low_stock_count': Stock.objects.filter(
+            store__in=active_stores,
+            quantity__lte=F('low_stock_threshold')
+        ).count(),
+        'stores_by_region': list(
+            stores.values('region').annotate(count=Count('id')).order_by('-count')[:10]
+        ),
         'recent_activity': DeviceOperatorLog.objects.filter(device__store__in=stores)
-        .select_related('user', 'device__store').order_by('-timestamp')[:10]
+        .select_related('user', 'device__store')
+        .order_by('-timestamp')[:10]
     }
     return render(request, 'stores/dashboard.html', context)
-
 
 @login_required
 @permission_required('stores.change_store')
@@ -1171,24 +1212,51 @@ def bulk_store_actions(request):
 def manage_store_staff(request, pk):
     """Manage staff assignments for a store."""
     store = get_object_or_404(Store, pk=pk)
-    form = StoreStaffAssignmentForm(store_instance=store, data=request.POST if request.method == 'POST' else None)
+
+    # Validate access
+    validate_store_access(request.user, store, action='change')
+
+    # Get visible staff
+    visible_current_staff = get_visible_users_for_store(store, request.user)
+
+    form = StoreStaffAssignmentForm(
+        store_instance=store,
+        data=request.POST if request.method == 'POST' else None
+    )
 
     if request.method == 'POST' and form.is_valid():
         if form.cleaned_data.get('add_staff'):
-            store.staff.add(*form.cleaned_data['add_staff'])
+            # Validate each staff member before adding
+            for staff_member in form.cleaned_data['add_staff']:
+                # Check if requesting user can manage this staff member
+                if request.user.can_manage_user(staff_member):
+                    store.staff.add(staff_member)
+                else:
+                    messages.warning(
+                        request,
+                        f'Insufficient privileges to add {staff_member.get_full_name()}'
+                    )
             messages.success(request, 'Staff members added successfully!')
+
         if form.cleaned_data.get('remove_staff'):
-            store.staff.remove(*form.cleaned_data['remove_staff'])
+            for staff_member in form.cleaned_data['remove_staff']:
+                if request.user.can_manage_user(staff_member):
+                    store.staff.remove(staff_member)
+                else:
+                    messages.warning(
+                        request,
+                        f'Insufficient privileges to remove {staff_member.get_full_name()}'
+                    )
             messages.success(request, 'Staff members removed successfully!')
+
         return redirect('stores:store_detail', pk=pk)
 
     context = {
         'store': store,
         'form': form,
-        'current_staff': store.staff.filter(is_hidden=False),
+        'current_staff': visible_current_staff,
     }
     return render(request, 'stores/manage_staff.html', context)
-
 
 # --- Operating Hours Views ---
 
@@ -1553,7 +1621,9 @@ def low_stock_alert(request):
 @permission_required('stores.view_store')
 def store_analytics(request):
     """Advanced analytics view for stores."""
-    stores = _get_user_stores(request.user)
+    # ✅ FIXED: Use permission-based filtering
+    stores = filter_stores_by_permissions(request.user, action='view')
+
     analytics_data = {
         'store_performance': [{
             'name': store.name,
@@ -1564,11 +1634,11 @@ def store_analytics(request):
             'staff_count': store.staff.filter(is_hidden=False).count(),
             'low_stock_items': store.inventory_items.filter(quantity__lte=F('low_stock_threshold')).count(),
         } for store in stores],
-        'inventory_summary': Stock.objects.aggregate(
+        'inventory_summary': Stock.objects.filter(store__in=stores).aggregate(
             total_items=Sum('quantity'),
             low_stock_count=Count('id', filter=Q(quantity__lte=F('low_stock_threshold')))
         ),
-        'device_status': StoreDevice.objects.aggregate(
+        'device_status': StoreDevice.objects.filter(store__in=stores).aggregate(
             total=Count('id'),
             active=Count('id', filter=Q(is_active=True)),
             pos_devices=Count('id', filter=Q(device_type='POS')),
@@ -1579,7 +1649,6 @@ def store_analytics(request):
     }
     context = {'analytics_data': analytics_data, 'stores': stores}
     return render(request, 'stores/analytics.html', context)
-
 
 @login_required
 @permission_required('stores.view_store')
@@ -1623,8 +1692,9 @@ def generate_store_report(request):
 
     context = {
         'form': EnhancedStoreReportForm(user=request.user),
-        'available_stores': _get_user_stores(request.user),
-        'report_stats': _get_report_statistics(),
+        # ✅ FIXED: Use permission-based filtering
+        'available_stores': filter_stores_by_permissions(request.user, action='view'),
+        'report_stats': _get_report_statistics(request.user),  # Pass user
         'excel_available': EXCEL_AVAILABLE,
         'pdf_available': PDF_AVAILABLE,
     }
@@ -2178,7 +2248,9 @@ def _add_pdf_comprehensive_report(story, stores, styles):
 @permission_required('stores.view_store')
 def export_report_direct(request, report_type):
     """Direct export endpoint for quick reports."""
-    stores = _get_user_stores(request.user)
+    # ✅ FIXED: Use permission-based filtering
+    stores = filter_stores_by_permissions(request.user, action='view')
+
     if not stores.exists():
         messages.error(request, "No accessible stores found.")
         return redirect('stores:dashboard')
@@ -2204,13 +2276,8 @@ def export_report_direct(request, report_type):
 @login_required
 def store_map_view(request):
     """Interactive map view of all store locations with enhanced features."""
-    # Get the user's company
-    user_company = getattr(request.user, 'company', None)
-
-    # Filter stores by company if user has one
-    base_queryset = Store.objects.filter(is_active=True)
-    if user_company:
-        base_queryset = base_queryset.filter(company=user_company)
+    # Use improved filtering
+    base_queryset = get_user_accessible_stores(request.user)
 
     # Get all active stores with coordinates
     stores_with_coordinates = base_queryset.filter(
@@ -2225,16 +2292,17 @@ def store_map_view(request):
             F('inventory_items__quantity') * F('inventory_items__product__cost_price')
         ),
         device_count=Count('devices', filter=Q(devices__is_active=True)),
-        efris_device_count=Count('devices', filter=Q(
-            devices__is_active=True,
-            devices__is_efris_linked=True
+        # Only count visible staff
+        staff_count=Count('staff', filter=Q(
+            staff__is_active=True,
+            staff__is_hidden=False
         ))
     ).values(
         'id', 'name', 'code', 'physical_address', 'latitude', 'longitude',
         'phone', 'email', 'region', 'store_type', 'is_main_branch',
         'manager_name', 'manager_phone', 'efris_enabled', 'efris_device_number',
         'inventory_count', 'low_stock_count', 'total_inventory_value',
-        'device_count', 'efris_device_count'
+        'device_count', 'staff_count'
     )
 
     # Get stores without coordinates for the unmapped list
@@ -2801,8 +2869,12 @@ def export_stores_data(request):
         messages.error(request, 'Permission denied.')
         return redirect('stores:store_list')
 
-    stores = _get_user_stores(request.user).select_related('company').prefetch_related('staff', 'devices',
-                                                                                       'inventory_items')
+    # ✅ FIXED: Use permission-based filtering
+    stores = filter_stores_by_permissions(
+        request.user,
+        action='view'
+    ).select_related('company').prefetch_related('staff', 'devices', 'inventory_items')
+
     response = HttpResponse(content_type='text/csv')
     response['Content-Disposition'] = f'attachment; filename="stores_export_{datetime.now().strftime("%Y%m%d")}.csv"'
     writer = csv.writer(response)

@@ -1,214 +1,366 @@
 {% extends 'base.html' %}
 {% load static %}
-{% load custom_filters %}
 {% load i18n %}
 
 {% block title %}{% trans "My Profile" %} - PrimeBooks{% endblock %}
 
 {% block extra_css %}
 <link rel="stylesheet" href="{% static 'themes.css' %}">
-{{ block.super }}
 <style>
     :root {
         --profile-primary: #2563eb;
-        --profile-primary-light: #3b82f6;
+        --profile-primary-dark: #1e40af;
         --profile-secondary: #64748b;
         --profile-success: #10b981;
         --profile-warning: #f59e0b;
         --profile-danger: #ef4444;
         --profile-dark: #1e293b;
         --profile-light: #f8fafc;
-        --profile-border: #509bfeff;
-        --profile-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
-        --profile-shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+        --profile-border: #e2e8f0;
+        --profile-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        --profile-shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
         --profile-radius: 12px;
         --profile-radius-lg: 16px;
     }
 
+    [data-theme="dark"] {
+        --profile-dark: #f1f5f9;
+        --profile-light: #1e293b;
+        --profile-border: #334155;
+        --profile-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.4);
+    }
+
     .profile-container {
-        max-width: 1200px;
+        max-width: 1400px;
         margin: 0 auto;
         padding: 2rem 1rem;
     }
-    [data-theme="dark"] .profile-container {
-        background-color: #1e293b;
-    }
 
+    /* Profile Header */
     .profile-header {
         background: linear-gradient(135deg, var(--profile-primary) 0%, #7c3aed 100%);
-        color: white;
         border-radius: var(--profile-radius-lg);
-        padding: 3rem 2rem;
+        padding: 0;
         margin-bottom: 2rem;
-        position: relative;
         overflow: hidden;
         box-shadow: var(--profile-shadow-lg);
+        position: relative;
     }
 
     .profile-header::before {
         content: '';
         position: absolute;
-        top: -50%;
-        right: -20%;
-        width: 300px;
-        height: 300px;
-        background: rgba(255, 255, 255, 0.1);
-        border-radius: 50%;
-        animation: float 6s ease-in-out infinite;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23ffffff' fill-opacity='0.05'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
+        opacity: 0.3;
     }
 
-    @keyframes float {
-        0%, 100% { transform: translate(0, 0px) rotate(0deg); }
-        50% { transform: translate(-20px, -20px) rotate(10deg); }
-    }
-
-    .profile-avatar-container {
+    .profile-cover {
+        height: 200px;
+        background: linear-gradient(135deg, rgba(37, 99, 235, 0.9) 0%, rgba(124, 58, 237, 0.9) 100%);
         position: relative;
-        display: inline-block;
+    }
+
+    .profile-main {
+        padding: 0 3rem 3rem;
+        position: relative;
+        background: white;
+    }
+
+    [data-theme="dark"] .profile-main {
+        background: var(--profile-light);
+    }
+
+    .profile-avatar-section {
+        display: flex;
+        align-items: flex-end;
+        margin-top: -80px;
+        margin-bottom: 2rem;
+        gap: 2rem;
+    }
+
+    .profile-avatar-wrapper {
+        position: relative;
+        flex-shrink: 0;
     }
 
     .profile-avatar {
-        width: 130px;
-        height: 130px;
+        width: 160px;
+        height: 160px;
         border-radius: 50%;
-        border: 5px solid white;
-        box-shadow: 0 8px 25px rgba(0, 0, 0, 0.2);
+        border: 6px solid white;
+        box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
         object-fit: cover;
-        position: relative;
-        z-index: 2;
-        transition: transform 0.3s ease;
+        background: white;
     }
 
-    .profile-avatar:hover {
-        transform: scale(1.05);
+    [data-theme="dark"] .profile-avatar {
+        border-color: var(--profile-light);
     }
 
     .avatar-placeholder {
-        width: 130px;
-        height: 130px;
+        width: 160px;
+        height: 160px;
         border-radius: 50%;
-        border: 5px solid white;
-        background: rgba(255, 255, 255, 0.2);
+        border: 6px solid white;
+        background: linear-gradient(135deg, var(--profile-primary), #7c3aed);
         display: flex;
         align-items: center;
         justify-content: center;
-        font-size: 3.5rem;
-        position: relative;
-        z-index: 2;
+        font-size: 4rem;
+        color: white;
+        box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
     }
 
     .profile-status-badge {
         position: absolute;
-        bottom: 10px;
-        right: 10px;
-        width: 25px;
-        height: 25px;
+        bottom: 15px;
+        right: 15px;
+        width: 28px;
+        height: 28px;
         border-radius: 50%;
-        border: 3px solid white;
-        z-index: 3;
+        border: 4px solid white;
+        background: var(--profile-success);
     }
 
-    .status-active { background: var(--profile-success); }
-    .status-inactive { background: var(--profile-danger); }
+    [data-theme="dark"] .profile-status-badge {
+        border-color: var(--profile-light);
+    }
 
-    .profile-info h1 {
+    .profile-info-header {
+        flex: 1;
+        padding-bottom: 1rem;
+    }
+
+    .profile-name {
         font-size: 2.5rem;
         font-weight: 700;
+        color: var(--profile-dark);
         margin-bottom: 0.5rem;
-        text-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-    }
-    [data-theme="dark"] .profile-info h1 {
-        color: #f1f5f9;
-        text-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-        background-color: #1e293b;
     }
 
-    .profile-meta {
+    .profile-username {
+        font-size: 1.1rem;
+        color: var(--profile-secondary);
+        margin-bottom: 1rem;
+    }
+
+    .profile-meta-tags {
         display: flex;
         flex-wrap: wrap;
-        gap: 2rem;
-        opacity: 0.9;
-        font-size: 1.1rem;
+        gap: 0.75rem;
+        margin-bottom: 1rem;
     }
 
-    .meta-item {
-        display: flex;
+    .meta-tag {
+        display: inline-flex;
         align-items: center;
-    }
-    [data-theme="dark"]  .meta-item {
-        color: #cbd5e1;
+        padding: 0.5rem 1rem;
+        background: var(--profile-light);
+        border: 1px solid var(--profile-border);
+        border-radius: 20px;
+        font-size: 0.9rem;
+        color: var(--profile-secondary);
     }
 
-    .meta-item i {
+    [data-theme="dark"] .meta-tag {
+        background: #334155;
+        border-color: #475569;
+    }
+
+    .meta-tag i {
         margin-right: 0.5rem;
-        font-size: 1.2rem;
-    }
-    [data-theme="dark"]  .meta-item i {
-        color: #feffffff;
+        color: var(--profile-primary);
     }
 
-    .profile-actions {
+    .profile-actions-header {
         display: flex;
         gap: 1rem;
-        margin-top: 1.5rem;
     }
 
-    .btn-glass {
-        background: rgba(255, 255, 255, 0.15);
-        border: 1px solid rgba(255, 255, 255, 0.2);
+    .btn-edit-profile {
+        background: var(--profile-primary);
         color: white;
         padding: 0.75rem 1.5rem;
         border-radius: var(--profile-radius);
         text-decoration: none;
-        font-weight: 500;
+        font-weight: 600;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
         transition: all 0.3s ease;
-        backdrop-filter: blur(10px);
+        border: none;
     }
 
-    .btn-glass:hover {
-        background: rgba(255, 255, 255, 0.25);
+    .btn-edit-profile:hover {
+        background: var(--profile-primary-dark);
         color: white;
         transform: translateY(-2px);
-        box-shadow: 0 8px 15px rgba(0, 0, 0, 0.2);
+        box-shadow: 0 6px 12px rgba(37, 99, 235, 0.3);
     }
 
-    .profile-stats {
+    .btn-secondary-action {
+        background: white;
+        color: var(--profile-secondary);
+        padding: 0.75rem 1.5rem;
+        border-radius: var(--profile-radius);
+        text-decoration: none;
+        font-weight: 500;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        transition: all 0.3s ease;
+        border: 2px solid var(--profile-border);
+    }
+
+    [data-theme="dark"] .btn-secondary-action {
+        background: #334155;
+        border-color: #475569;
+        color: #cbd5e1;
+    }
+
+    .btn-secondary-action:hover {
+        border-color: var(--profile-primary);
+        color: var(--profile-primary);
+        background: rgba(37, 99, 235, 0.05);
+    }
+
+    /* Content Grid */
+    .profile-content {
+        display: grid;
+        grid-template-columns: 2fr 1fr;
+        gap: 2rem;
+        margin-top: 2rem;
+    }
+
+    /* Cards */
+    .profile-card {
         background: white;
         border-radius: var(--profile-radius-lg);
         padding: 2rem;
-        margin-bottom: 2rem;
         box-shadow: var(--profile-shadow);
         border: 1px solid var(--profile-border);
     }
-    [data-theme="dark"] .profile-stats {
-        background: #1e293b;
-        border: 1px solid #7b8697ff;
-        color: #f1f5f9;
+
+    [data-theme="dark"] .profile-card {
+        background: var(--profile-light);
+        border-color: var(--profile-border);
     }
 
+    .card-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 1.5rem;
+        padding-bottom: 1rem;
+        border-bottom: 2px solid var(--profile-border);
+    }
+
+    .card-title {
+        font-size: 1.25rem;
+        font-weight: 600;
+        color: var(--profile-dark);
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+    }
+
+    .card-icon {
+        width: 40px;
+        height: 40px;
+        border-radius: 10px;
+        background: linear-gradient(135deg, var(--profile-primary), #7c3aed);
+        color: white;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.2rem;
+    }
+
+    /* About Section */
+    .about-content {
+        color: var(--profile-secondary);
+        line-height: 1.7;
+        font-size: 1rem;
+    }
+
+    .info-list {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+    }
+
+    .info-item {
+        display: flex;
+        align-items: center;
+        padding: 1rem 0;
+        border-bottom: 1px solid var(--profile-border);
+    }
+
+    .info-item:last-child {
+        border-bottom: none;
+    }
+
+    .info-icon {
+        width: 45px;
+        height: 45px;
+        border-radius: 10px;
+        background: var(--profile-light);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin-right: 1rem;
+        color: var(--profile-primary);
+        font-size: 1.2rem;
+    }
+
+    [data-theme="dark"] .info-icon {
+        background: #334155;
+    }
+
+    .info-content {
+        flex: 1;
+    }
+
+    .info-label {
+        font-size: 0.875rem;
+        color: var(--profile-secondary);
+        margin-bottom: 0.25rem;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        font-weight: 500;
+    }
+
+    .info-value {
+        font-size: 1rem;
+        color: var(--profile-dark);
+        font-weight: 500;
+    }
+
+    /* Stats Cards */
     .stats-grid {
         display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-        gap: 1.5rem;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 1rem;
     }
 
-    [data-theme="dark"]  .stats-grid {
-        background-color: #1e293b;
-    }
     .stat-card {
-        text-align: center;
-        padding: 1.5rem;
         background: var(--profile-light);
-        border-radius: var(--profile-radius);
         border: 1px solid var(--profile-border);
+        border-radius: var(--profile-radius);
+        padding: 1.5rem;
+        text-align: center;
         transition: all 0.3s ease;
         position: relative;
         overflow: hidden;
     }
+
     [data-theme="dark"] .stat-card {
-        background: #1e293b;
-        border: 1px solid #7b8697ff;
-        color: #f1f5f9;
+        background: #334155;
+        border-color: #475569;
     }
 
     .stat-card::before {
@@ -217,7 +369,7 @@
         top: 0;
         left: 0;
         right: 0;
-        height: 4px;
+        height: 3px;
         background: linear-gradient(90deg, var(--profile-primary), #7c3aed);
         transform: scaleX(0);
         transition: transform 0.3s ease;
@@ -232,24 +384,11 @@
         transform: scaleX(1);
     }
 
-    .stat-icon {
-        width: 50px;
-        height: 50px;
-        border-radius: 50%;
-        background: var(--profile-primary);
-        color: white;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        margin: 0 auto 1rem;
-        font-size: 1.5rem;
-    }
-
     .stat-value {
         font-size: 2rem;
         font-weight: 700;
-        color: var(--profile-dark);
-        margin-bottom: 0.25rem;
+        color: var(--profile-primary);
+        margin-bottom: 0.5rem;
     }
 
     .stat-label {
@@ -260,67 +399,50 @@
         font-weight: 500;
     }
 
-    .security-overview {
-        background: white;
-        border-radius: var(--profile-radius-lg);
-        padding: 2rem;
-        margin-bottom: 2rem;
-        box-shadow: var(--profile-shadow);
-        border: 1px solid var(--profile-border);
+    /* Security Cards */
+    .security-list {
+        list-style: none;
+        padding: 0;
+        margin: 0;
     }
 
-    .security-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-        gap: 1.5rem;
-        margin-top: 1.5rem;
-    }
-    [data-theme="dark"]  .security-grid {
-        background-color: #1e293b;
-    }
-
-    .security-card {
+    .security-item {
         display: flex;
         align-items: center;
         justify-content: space-between;
-        padding: 1.5rem;
+        padding: 1.25rem;
         background: var(--profile-light);
-        border-radius: var(--profile-radius);
         border: 1px solid var(--profile-border);
+        border-radius: var(--profile-radius);
+        margin-bottom: 1rem;
         transition: all 0.3s ease;
     }
-    [data-theme="dark"] .security-card {
-        background: #1e293b;
-        border: 1px solid #7b8697ff;
-        color: #f1f5f9;
+
+    [data-theme="dark"] .security-item {
+        background: #334155;
+        border-color: #475569;
     }
 
-    .security-card:hover {
+    .security-item:hover {
         box-shadow: var(--profile-shadow);
-        transform: translateY(-2px);
-    }
-    [data-theme="dark"] .security-card:hover {
-        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.4);
+        transform: translateX(5px);
     }
 
     .security-info {
         display: flex;
         align-items: center;
+        gap: 1rem;
     }
 
-    [data-theme="dark"] .security-icon {
-        background-color: #374151;
-    }
     .security-icon {
-        width: 40px;
-        height: 40px;
-        border-radius: 50%;
-        background: var(--profile-primary);
+        width: 45px;
+        height: 45px;
+        border-radius: 10px;
+        background: linear-gradient(135deg, var(--profile-primary), #7c3aed);
         color: white;
         display: flex;
         align-items: center;
         justify-content: center;
-        margin-right: 1rem;
         font-size: 1.2rem;
     }
 
@@ -348,1071 +470,381 @@
         color: #1e40af;
     }
 
-    .profile-form {
-        background: white;
-        border-radius: var(--profile-radius-lg);
-        box-shadow: var(--profile-shadow);
-        overflow: hidden;
-        border: 1px solid var(--profile-border);
-    }
-    [data-theme="dark"] .profile-form {
-        background: #1e293b;
-        border: 1px solid #7b8697ff;
-
+    [data-theme="dark"] .status-verified {
+        background: rgba(16, 185, 129, 0.2);
+        color: #6ee7b7;
     }
 
-    .form-section {
-        padding: 2.5rem;
-        border-bottom: 1px solid var(--profile-border);
-        position: relative;
-    }
-    [data-theme="dark"] .form-section {
-        border-bottom: 1px solid #7b8697ff;
-        background-color: #1e293b;
+    [data-theme="dark"] .status-unverified {
+        background: rgba(239, 68, 68, 0.2);
+        color: #fca5a5;
     }
 
-    .form-section:last-child {
-        border-bottom: none;
-        border-top: 1px solid var(--profile-border);
+    [data-theme="dark"] .status-enabled {
+        background: rgba(37, 99, 235, 0.2);
+        color: #93c5fd;
     }
 
-    .section-header {
-        display: flex;
-        align-items: center;
-        margin-bottom: 2rem;
-    }
-    [data-theme="dark"] .section-header {
-        background-color: #1e293b;
+    /* Progress Bar */
+    .progress-wrapper {
+        margin-top: 1rem;
     }
 
-    .section-icon {
-        width: 45px;
-        height: 45px;
-        border-radius: 50%;
-        background: linear-gradient(135deg, var(--profile-primary), #7c3aed);
-        color: white;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        margin-right: 1rem;
-        font-size: 1.3rem;
-    }
-    [data-theme="dark"] .section-icon {
-        background: linear-gradient(135deg, #3b82f6, #8b5cf6);
-    }
-
-    .section-title {
-        font-size: 1.5rem;
-        font-weight: 600;
-        color: var(--profile-dark);
-        margin: 0;
-    }
-
-    .section-subtitle {
-        font-size: 0.9rem;
-        color: var(--profile-secondary);
-        margin: 0.25rem 0 0 0;
-    }
-    [data-theme="dark"] .section-subtitle {
-
-        background-color: #1e293b;
-    }
-
-    .form-floating {
-        margin-bottom: 1.5rem;
-        position: relative;
-    }
-
-
-
-    .avatar-upload-section {
-        text-align: center;
-    }
-
-
-    .avatar-upload-area {
-        border: 3px dashed var(--profile-border);
-        border-radius: var(--profile-radius);
-        padding: 3rem 2rem;
-        transition: all 0.3s ease;
-        cursor: pointer;
-        position: relative;
-        background: var(--profile-light);
-    }
-    [data-theme="dark"] .avatar-upload-area {
-        background-color: #1e293b;
-        border: 3px dashed #7b8697ff;
-    }
-
-    .avatar-upload-area:hover {
-        border-color: var(--profile-primary);
-        background: rgba(37, 99, 235, 0.05);
-        transform: translateY(-2px);
-    }
-
-    .avatar-upload-area.dragover {
-        border-color: var(--profile-primary);
-        background: rgba(37, 99, 235, 0.1);
-        transform: scale(1.02);
-    }
-    [data-theme="dark"] .avatar-upload-area.dragover {
-        background: rgba(59, 130, 246, 0.1);
-    }
-
-    .current-avatar-display {
-        width: 120px;
-        height: 120px;
-        border-radius: 50%;
-        object-fit: cover;
-        margin: 0 auto 1.5rem;
-        border: 4px solid var(--profile-border);
-        transition: all 0.3s ease;
-    }
-    [data-theme="dark"] .current-avatar-display {
-        border: 4px solid #7b8697ff;
-        background: #1e293b;
-    }
-
-    .current-avatar-display:hover {
-        border-color: var(--profile-primary);
-        box-shadow: var(--profile-shadow-lg);
-        transform: scale(1.05);
-
-    }
-
-    .upload-icon {
-        font-size: 3rem;
-        color: var(--profile-secondary);
-        margin-bottom: 1rem;
-    }
-
-    .upload-preview {
-        max-width: 200px;
-        max-height: 200px;
-        border-radius: var(--profile-radius);
-        margin-top: 1.5rem;
-        box-shadow: var(--profile-shadow);
-        border: 3px solid var(--profile-primary);
-    }
-    [data-theme="dark"] .upload-preview {
-        border: 3px solid #3b82f6;
-        background: #1e293b;
-    }
-
-    .form-actions {
-        background: var(--profile-light);
-        padding: 2.5rem;
+    .progress-header {
         display: flex;
         justify-content: space-between;
-        align-items: center;
-        border-top: 1px solid var(--profile-border);
-    }
-    [data-theme="dark"] .security-overview {
-        background: #1e293b;
-        border-top: 1px solid #7b8697ff;
+        margin-bottom: 0.5rem;
     }
 
-
-    .btn-primary-modern {
-        background: linear-gradient(135deg, var(--profile-primary), #7c3aed);
-        border: none;
-        color: white;
-        padding: 1rem 2rem;
-        border-radius: var(--profile-radius);
-        font-weight: 600;
-        font-size: 1.1rem;
-        transition: all 0.3s ease;
-        position: relative;
-        overflow: hidden;
-    }
-    [data-theme="dark"] .btn-primary-modern {
-        background: linear-gradient(135deg, #3b82f6, #8b5cf6);
-    }
-
-    .btn-primary-modern::before {
-        content: '';
-        position: absolute;
-        top: 0;
-        left: -100%;
-        width: 100%;
-        height: 100%;
-        background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
-        transition: left 0.5s;
-    }
-    [data-theme="dark"] .btn-primary-modern::before {
-        background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.3), transparent);
-    }
-
-    .btn-primary-modern:hover::before {
-        left: 100%;
-    }
-
-    .btn-primary-modern:hover {
-        transform: translateY(-3px);
-        box-shadow: 0 10px 20px rgba(37, 99, 235, 0.4);
-    }
-
-    .btn-outline-modern {
-        background: transparent;
-        border: 2px solid var(--profile-border);
+    .progress-label {
+        font-size: 0.875rem;
         color: var(--profile-secondary);
-        padding: 1rem 2rem;
-        border-radius: var(--profile-radius);
         font-weight: 500;
-        transition: all 0.3s ease;
     }
 
-    .btn-outline-modern:hover {
-        border-color: var(--profile-primary);
+    .progress-value {
+        font-size: 0.875rem;
         color: var(--profile-primary);
-        background: rgba(37, 99, 235, 0.05);
-        transform: translateY(-2px);
+        font-weight: 600;
     }
 
-    .auto-save-indicator {
-        display: flex;
-        align-items: center;
-        color: var(--profile-secondary);
-        font-size: 0.9rem;
-        opacity: 0;
-        transition: opacity 0.3s ease;
-    }
-
-    .auto-save-indicator.show {
-        opacity: 1;
-    }
-
-    .auto-save-indicator i {
-        margin-right: 0.5rem;
-        animation: spin 1s linear infinite;
-    }
-
-    .auto-save-indicator.success i {
-        animation: none;
-        color: var(--profile-success);
-    }
-
-    .auto-save-indicator.error i {
-        animation: none;
-        color: var(--profile-danger);
-    }
-
-    @keyframes spin {
-        from { transform: rotate(0deg); }
-        to { transform: rotate(360deg); }
-    }
-
-    .file-input-wrapper {
-        position: relative;
+    .progress-bar-container {
+        height: 8px;
+        background: var(--profile-border);
+        border-radius: 10px;
         overflow: hidden;
-        display: inline-block;
     }
 
-    .file-input-wrapper input[type=file] {
-        position: absolute;
-        left: -9999px;
-        opacity: 0;
+    .progress-bar-fill {
+        height: 100%;
+        background: linear-gradient(90deg, var(--profile-primary), #7c3aed);
+        border-radius: 10px;
+        transition: width 0.5s ease;
     }
 
-    .choose-file-btn {
-        background: var(--profile-primary);
-        color: white;
-        border: none;
-        padding: 1rem 2rem;
-        border-radius: var(--profile-radius);
-        font-weight: 500;
-        transition: all 0.3s ease;
-        cursor: pointer;
+    /* Responsive */
+    @media (max-width: 1024px) {
+        .profile-content {
+            grid-template-columns: 1fr;
+        }
     }
-
-    .choose-file-btn:hover {
-        background: var(--profile-primary-light);
-        transform: translateY(-2px);
-        box-shadow: var(--profile-shadow);
-    }
-
 
     @media (max-width: 768px) {
         .profile-container {
             padding: 1rem;
         }
 
-        .profile-header {
-            padding: 2rem 1rem;
-            text-align: center;
+        .profile-main {
+            padding: 0 1.5rem 2rem;
         }
 
-        .profile-meta {
+        .profile-avatar-section {
             flex-direction: column;
-            gap: 1rem;
+            align-items: center;
+            text-align: center;
+            margin-top: -60px;
         }
 
-        .profile-actions {
+        .profile-avatar,
+        .avatar-placeholder {
+            width: 120px;
+            height: 120px;
+        }
+
+        .profile-name {
+            font-size: 1.75rem;
+        }
+
+        .profile-actions-header {
             flex-direction: column;
             width: 100%;
         }
 
-        .stats-grid,
-        .security-grid {
+        .btn-edit-profile,
+        .btn-secondary-action {
+            width: 100%;
+            justify-content: center;
+        }
+
+        .stats-grid {
             grid-template-columns: 1fr;
         }
-
-        .dre {
-            flex-direction: column;
-            gap: 1rem;
-            text-align: center;
-        }
-        [data-theme="dark"] .dre {
-            background-color: #023fa1ff!important;
-            border: 1px solid #041b52ff;
-
-        }
-
-        .form-section {
-            padding: 1.5rem;
-        }
-        [data-theme="dark"] .form-section {
-            background-color: #1e293b;
-            border: 1px solid #2a2e37;
-        }
-
-
-        .profile-info h1 {
-            font-size: 2rem;
-        }
-
     }
-
-    /* Loading states */
-    .form-loading {
-        position: relative;
-        pointer-events: none;
-        opacity: 0.6;
-    }
-
-    .form-loading::after {
-        content: '';
-        position: absolute;
-        top: 0;
-        left: 0;
-        right: 0;
-        bottom: 0;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        border-radius: var(--profile-radius);
-    }
-
 </style>
 {% endblock %}
 
 {% block content %}
 <div class="profile-container">
-    <!-- Enhanced Profile Header -->
+    <!-- Profile Header -->
     <div class="profile-header">
-        <div class="row align-items-center">
-            <div class="col-auto">
-                <div class="profile-avatar-container">
+        <div class="profile-cover"></div>
+        <div class="profile-main">
+            <div class="profile-avatar-section">
+                <div class="profile-avatar-wrapper">
                     {% if user.avatar %}
-                        <img src="{{ user.avatar.url }}" class="profile-avatar" alt="Profile Avatar">
+                        <img src="{{ user.avatar.url }}" class="profile-avatar" alt="{{ user.get_full_name }}">
                     {% else %}
                         <div class="avatar-placeholder">
                             <i class="bi bi-person"></i>
                         </div>
                     {% endif %}
-                    <div class="profile-status-badge {% if user.is_active %}status-active{% else %}status-inactive{% endif %}"></div>
-                </div>
-            </div>
-            <div class="col">
-                <div class="profile-info">
-                    <h1>{{ user.get_full_name|default:user.username }}</h1>
-                    <div class="profile-meta">
-                        <div class="meta-item">
-                            <i class="bi bi-briefcase"></i>
-                            <span>{{ user.get_user_type_display }}</span>
-                        </div>
-                        <div class="meta-item">
-                            <i class="bi bi-envelope"></i>
-                            <span>{{ user.email }}</span>
-                        </div>
-                        <div class="meta-item">
-                            <i class="bi bi-calendar"></i>
-                            <span>Member since {{ user.date_joined|date:"F Y" }}</span>
-                        </div>
-                    </div>
-                    <div class="profile-actions">
-                        <a href="{% url 'change_password' %}" class="btn-glass">
-                            <i class="bi bi-key me-2"></i>Change Password
-                        </a>
-                        <a href="{% url 'user_signature' %}" class="btn-glass">
-                            <i class="bi bi-pen me-2"></i>Digital Signature
-                        </a>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Enhanced Statistics -->
-    <div class="profile-stats">
-        <div class="d-flex justify-content-between align-items-center mb-3 totall">
-            <h3 class="mb-0 totall">Account Analytics</h3>
-            <span class="badge bg-primary totall">Last 30 days</span>
-        </div>
-        <div class="stats-grid">
-            <div class="stat-card">
-                <div class="stat-icon">
-                    <i class="bi bi-graph-up totall"></i>
-                </div>
-                <div class="stat-value totall">{{ user.login_count }}</div>
-                <div class="stat-label totall">Total Logins</div>
-            </div>
-            <div class="stat-card totall">
-                <div class="stat-icon">
-                    <i class="bi bi-clock-history"></i>
-                </div>
-                <div class="stat-value totall">{{ user.date_joined|timesince }}</div>
-                <div class="stat-label">Account Age</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-icon">
-                    <i class="bi bi-activity totall"></i>
-                </div>
-                <div class="stat-value totall">
-                    {% if user.last_login %}{{ user.last_login|timesince }}{% else %}Never{% endif %}
-                </div>
-                <div class="stat-label">Last Login</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-icon">
-                    <i class="bi bi-shield-check"></i>
-                </div>
-                <div class="stat-value">
-                    {% if user.is_active %}Active{% else %}Inactive{% endif %}
-                </div>
-                <div class="stat-label">Account Status</div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Enhanced Security Overview -->
-    <div class="security-overview">
-        <div class="d-flex justify-content-between align-items-center">
-            <h3 class="mb-0">Security Overview</h3>
-            <span class="text-muted small">Keep your account secure</span>
-        </div>
-        <div class="security-grid">
-            <div class="security-card">
-                <div class="security-info">
-                    <div class="security-icon">
-                        <i class="bi bi-envelope-check"></i>
-                    </div>
-                    <div>
-                        <div class="fw-semibold">Email Verification</div>
-                        <div class="text-muted small">{{ user.email }}</div>
-                    </div>
-                </div>
-                <span class="security-status {% if user.email_verified %}status-verified{% else %}status-unverified{% endif %}">
-                    {% if user.email_verified %}Verified{% else %}Unverified{% endif %}
-                </span>
-            </div>
-            <div class="security-card">
-                <div class="security-info">
-                    <div class="security-icon">
-                        <i class="bi bi-phone-vibrate"></i>
-                    </div>
-                    <div>
-                        <div class="fw-semibold">Phone Verification</div>
-                        <div class="text-muted small">{{ user.phone_number|default:"Not provided" }}</div>
-                    </div>
-                </div>
-                <span class="security-status {% if user.phone_verified %}status-verified{% else %}status-unverified{% endif %}">
-                    {% if user.phone_verified %}Verified{% else %}Unverified{% endif %}
-                </span>
-            </div>
-            <div class="security-card">
-                <div class="security-info">
-                    <div class="security-icon">
-                        <i class="bi bi-shield-lock"></i>
-                    </div>
-                    <div>
-                        <div class="fw-semibold">Two-Factor Authentication</div>
-                        <div class="text-muted small">Extra security layer</div>
-                    </div>
-                </div>
-                <span class="security-status {% if user.two_factor_enabled %}status-enabled{% else %}status-unverified{% endif %}">
-                    {% if user.two_factor_enabled %}Enabled{% else %}Disabled{% endif %}
-                </span>
-            </div>
-        </div>
-    </div>
-
-    <!-- Enhanced Profile Form -->
-    <div class="profile-form">
-        <form method="post" enctype="multipart/form-data" id="profileForm">
-            {% csrf_token %}
-
-            <!-- Personal Information Section -->
-            <div class="dre">
-                <div class="section-header">
-                    <div class="section-icon">
-                        <i class="bi bi-person"></i>
-                    </div>
-                    <div>
-                        <h3 class="section-title">Personal Information</h3>
-                        <p class="section-subtitle">Update your personal details and contact information</p>
-                    </div>
+                    {% if user.is_active %}
+                        <div class="profile-status-badge"></div>
+                    {% endif %}
                 </div>
 
-                <div class="row">
-                    <div class="col-md-6">
-                        <div class="form-floating">
-                            {{ form.first_name }}
-                            <label for="{{ form.first_name.id_for_label }}">First Name</label>
-                            {% if form.first_name.errors %}
-                                <div class="text-danger small mt-1">{{ form.first_name.errors.0 }}</div>
-                            {% endif %}
-                        </div>
-                    </div>
-                    <div class="col-md-6">
-                        <div class="form-floating">
-                            {{ form.last_name }}
-                            <label for="{{ form.last_name.id_for_label }}">Last Name</label>
-                            {% if form.last_name.errors %}
-                                <div class="text-danger small mt-1">{{ form.last_name.errors.0 }}</div>
-                            {% endif %}
-                        </div>
-                    </div>
-                </div>
+                <div class="profile-info-header">
+                    <h1 class="profile-name">{{ user.get_full_name|default:user.username }}</h1>
+                    <div class="profile-username">@{{ user.username }}</div>
 
-                <div class="row">
-                    <div class="col-md-6">
-                        <div class="form-floating">
-                            {{ form.middle_name }}
-                            <label for="{{ form.middle_name.id_for_label }}">Middle Name (Optional)</label>
-                            {% if form.middle_name.errors %}
-                                <div class="text-danger small mt-1">{{ form.middle_name.errors.0 }}</div>
-                            {% endif %}
-                        </div>
-                    </div>
-                    <div class="col-md-6">
-                        <div class="form-floating">
-                            {{ form.phone_number }}
-                            <label for="{{ form.phone_number.id_for_label }}">Phone Number</label>
-                            {% if form.phone_number.errors %}
-                                <div class="text-danger small mt-1">{{ form.phone_number.errors.0 }}</div>
-                            {% endif %}
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Profile Picture Section -->
-            <div class="dre">
-                <div class="section-header">
-                    <div class="section-icon">
-                        <i class="bi bi-camera"></i>
-                    </div>
-                    <div>
-                        <h3 class="section-title">Profile Picture</h3>
-                        <p class="section-subtitle">Upload a professional photo to personalize your profile</p>
-                    </div>
-                </div>
-
-                <div class="avatar-upload-section">
-                    <div class="avatar-upload-area" id="avatarUpload">
-                        {% if user.avatar %}
-                            <img src="{{ user.avatar.url }}" class="current-avatar-display" alt="Current Avatar">
-                            <p class="fw-semibold mb-2">Current Profile Picture</p>
-                        {% else %}
-                            <div class="upload-icon">
-                                <i class="bi bi-cloud-upload"></i>
-                            </div>
-                            <p class="fw-semibold mb-2">No Profile Picture Set</p>
+                    <div class="profile-meta-tags">
+                        <span class="meta-tag">
+                            <i class="bi bi-briefcase-fill"></i>
+                            {{ user.get_user_type_display }}
+                        </span>
+                        <span class="meta-tag">
+                            <i class="bi bi-calendar-check-fill"></i>
+                            Joined {{ user.date_joined|date:"F Y" }}
+                        </span>
+                        {% if user.is_active %}
+                            <span class="meta-tag">
+                                <i class="bi bi-check-circle-fill"></i>
+                                Active Account
+                            </span>
                         {% endif %}
-
-                        <div class="file-input-wrapper">
-                            {{ form.avatar }}
-                            <button type="button" id="chooseAvatarBtn" class="choose-file-btn">
-                                <i class="bi bi-upload me-2"></i>Choose New Picture
-                            </button>
-                        </div>
-
-                        <p class="text-muted small mt-3 mb-0">
-                            <i class="bi bi-info-circle me-1"></i>
-                            Drag and drop an image here, or click to select. Max size: 5MB (JPG, PNG, GIF)
-                        </p>
-                        <img id="uploadPreview" class="upload-preview" style="display: none;">
                     </div>
+                </div>
 
-                    {% if form.avatar.errors %}
-                        <div class="text-danger small mt-2">{{ form.avatar.errors.0 }}</div>
-                    {% endif %}
+                <div class="profile-actions-header">
+                    <a href="{% url 'edit_profile' %}" class="btn-edit-profile">
+                        <i class="bi bi-pencil-square"></i>
+                        Edit Profile
+                    </a>
+                    <a href="{% url 'change_password' %}" class="btn-secondary-action">
+                        <i class="bi bi-key"></i>
+                        Security
+                    </a>
                 </div>
             </div>
+        </div>
+    </div>
 
+    <!-- Profile Content -->
+    <div class="profile-content">
+        <!-- Left Column -->
+        <div>
             <!-- About Section -->
-            <div class="dre">
-                <div class="section-header">
-                    <div class="section-icon">
-                        <i class="bi bi-card-text"></i>
-                    </div>
-                    <div>
-                        <h3 class="section-title">About Me</h3>
-                        <p class="section-subtitle">Tell others about yourself and your role</p>
-                    </div>
+            <div class="profile-card">
+                <div class="card-header">
+                    <h3 class="card-title">
+                        <div class="card-icon">
+                            <i class="bi bi-person-circle"></i>
+                        </div>
+                        About
+                    </h3>
                 </div>
-                <div class="form-floating">
-                    {{ form.bio }}
-                    <label for="{{ form.bio.id_for_label }}">Bio</label>
-                    {% if form.bio.errors %}
-                        <div class="text-danger small mt-1">{{ form.bio.errors.0 }}</div>
+                <div class="about-content">
+                    {% if user.bio %}
+                        <p>{{ user.bio }}</p>
+                    {% else %}
+                        <p class="text-muted">No bio added yet. <a href="{% url 'edit_profile' %}">Add your bio</a> to let others know more about you.</p>
                     {% endif %}
                 </div>
             </div>
 
-            <!-- Preferences Section -->
-            <div class="form-section">
-                <div class="section-header">
-                    <div class="section-icon">
-                        <i class="bi bi-gear"></i>
-                    </div>
-                    <div>
-                        <h3 class="section-title">Preferences</h3>
-                        <p class="section-subtitle">Customize your experience and regional settings</p>
-                    </div>
+            <!-- Contact Information -->
+            <div class="profile-card mt-4">
+                <div class="card-header">
+                    <h3 class="card-title">
+                        <div class="card-icon">
+                            <i class="bi bi-telephone"></i>
+                        </div>
+                        Contact Information
+                    </h3>
                 </div>
+                <ul class="info-list">
+                    <li class="info-item">
+                        <div class="info-icon">
+                            <i class="bi bi-envelope-fill"></i>
+                        </div>
+                        <div class="info-content">
+                            <div class="info-label">Email Address</div>
+                            <div class="info-value">{{ user.email }}</div>
+                        </div>
+                    </li>
+                    <li class="info-item">
+                        <div class="info-icon">
+                            <i class="bi bi-phone-fill"></i>
+                        </div>
+                        <div class="info-content">
+                            <div class="info-label">Phone Number</div>
+                            <div class="info-value">{{ user.phone_number|default:"Not provided" }}</div>
+                        </div>
+                    </li>
+                    <li class="info-item">
+                        <div class="info-icon">
+                            <i class="bi bi-globe"></i>
+                        </div>
+                        <div class="info-content">
+                            <div class="info-label">Timezone</div>
+                            <div class="info-value">{{ user.timezone|default:"Not set" }}</div>
+                        </div>
+                    </li>
+                    <li class="info-item">
+                        <div class="info-icon">
+                            <i class="bi bi-translate"></i>
+                        </div>
+                        <div class="info-content">
+                            <div class="info-label">Language</div>
+                            <div class="info-value">{{ user.get_language_display|default:"English" }}</div>
+                        </div>
+                    </li>
+                </ul>
+            </div>
 
-                <div class="row">
-                    <div class="col-md-6">
-                        <div class="form-floating">
-                            {{ form.timezone }}
-                            <label for="{{ form.timezone.id_for_label }}">Timezone</label>
-                            {% if form.timezone.errors %}
-                                <div class="text-danger small mt-1">{{ form.timezone.errors.0 }}</div>
-                            {% endif %}
+            <!-- Activity Stats -->
+            <div class="profile-card mt-4">
+                <div class="card-header">
+                    <h3 class="card-title">
+                        <div class="card-icon">
+                            <i class="bi bi-graph-up"></i>
                         </div>
+                        Activity Overview
+                    </h3>
+                </div>
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-value">{{ user.login_count|default:0 }}</div>
+                        <div class="stat-label">Total Logins</div>
                     </div>
-                    <div class="col-md-6">
-                        <div class="form-floating">
-                            {{ form.language }}
-                            <label for="{{ form.language.id_for_label }}">Language</label>
-                            {% if form.language.errors %}
-                                <div class="text-danger small mt-1">{{ form.language.errors.0 }}</div>
+                    <div class="stat-card">
+                        <div class="stat-value">{{ user.date_joined|timesince }}</div>
+                        <div class="stat-label">Account Age</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value">
+                            {% if user.last_login %}
+                                {{ user.last_login|timesince }}
+                            {% else %}
+                                Never
                             {% endif %}
                         </div>
+                        <div class="stat-label">Last Login</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value">
+                            {% if user.is_active %}Active{% else %}Inactive{% endif %}
+                        </div>
+                        <div class="stat-label">Status</div>
                     </div>
                 </div>
             </div>
+        </div>
 
-            <!-- Form Actions -->
-            <div class="dre">
-                <div class="d-flex align-items-center">
-                    <button type="submit" class="btn-primary-modern me-3">
-                        <i class="bi bi-check-circle me-2"></i>Save All Changes
-                    </button>
-                    <button type="reset" class="btn-outline-modern">
-                        <i class="bi bi-arrow-clockwise me-2"></i>Reset Form
-                    </button>
+        <!-- Right Column -->
+        <div>
+            <!-- Profile Completion -->
+            {% if profile_completion %}
+            <div class="profile-card">
+                <div class="card-header">
+                    <h3 class="card-title">
+                        <div class="card-icon">
+                            <i class="bi bi-list-check"></i>
+                        </div>
+                        Profile Completion
+                    </h3>
                 </div>
-                <div class="auto-save-indicator" id="autoSaveIndicator">
-                    <i class="bi bi-check-circle"></i>
-                    <span id="autoSaveText">Auto-save enabled</span>
+                <div class="progress-wrapper">
+                    <div class="progress-header">
+                        <span class="progress-label">Complete your profile</span>
+                        <span class="progress-value">{{ profile_completion }}%</span>
+                    </div>
+                    <div class="progress-bar-container">
+                        <div class="progress-bar-fill" style="width: {{ profile_completion }}%"></div>
+                    </div>
                 </div>
             </div>
-        </form>
+            {% endif %}
+
+            <!-- Security Status -->
+            <div class="profile-card mt-4">
+                <div class="card-header">
+                    <h3 class="card-title">
+                        <div class="card-icon">
+                            <i class="bi bi-shield-check"></i>
+                        </div>
+                        Security Status
+                    </h3>
+                </div>
+                <ul class="security-list">
+                    <li class="security-item">
+                        <div class="security-info">
+                            <div class="security-icon">
+                                <i class="bi bi-envelope-check-fill"></i>
+                            </div>
+                            <div>
+                                <div class="fw-semibold">Email Verification</div>
+                                <div class="text-muted small">{{ user.email }}</div>
+                            </div>
+                        </div>
+                        <span class="security-status {% if user.email_verified %}status-verified{% else %}status-unverified{% endif %}">
+                            {% if user.email_verified %}Verified{% else %}Unverified{% endif %}
+                        </span>
+                    </li>
+                    <li class="security-item">
+                        <div class="security-info">
+                            <div class="security-icon">
+                                <i class="bi bi-phone-fill"></i>
+                            </div>
+                            <div>
+                                <div class="fw-semibold">Phone Verification</div>
+                                <div class="text-muted small">{{ user.phone_number|default:"Not provided" }}</div>
+                            </div>
+                        </div>
+                        <span class="security-status {% if user.phone_verified %}status-verified{% else %}status-unverified{% endif %}">
+                            {% if user.phone_verified %}Verified{% else %}Unverified{% endif %}
+                        </span>
+                    </li>
+                    <li class="security-item">
+                        <div class="security-info">
+                            <div class="security-icon">
+                                <i class="bi bi-shield-lock-fill"></i>
+                            </div>
+                            <div>
+                                <div class="fw-semibold">Two-Factor Auth</div>
+                                <div class="text-muted small">Extra security layer</div>
+                            </div>
+                        </div>
+                        <span class="security-status {% if user.two_factor_enabled %}status-enabled{% else %}status-unverified{% endif %}">
+                            {% if user.two_factor_enabled %}Enabled{% else %}Disabled{% endif %}
+                        </span>
+                    </li>
+                </ul>
+            </div>
+
+            <!-- Quick Actions -->
+            <div class="profile-card mt-4">
+                <div class="card-header">
+                    <h3 class="card-title">
+                        <div class="card-icon">
+                            <i class="bi bi-lightning-charge"></i>
+                        </div>
+                        Quick Actions
+                    </h3>
+                </div>
+                <div class="d-grid gap-2">
+                    <a href="{% url 'edit_profile' %}" class="btn btn-outline-primary">
+                        <i class="bi bi-pencil me-2"></i>Edit Profile
+                    </a>
+                    <a href="{% url 'change_password' %}" class="btn btn-outline-primary">
+                        <i class="bi bi-key me-2"></i>Change Password
+                    </a>
+                    <a href="{% url 'user_signature' %}" class="btn btn-outline-primary">
+                        <i class="bi bi-pen me-2"></i>Digital Signature
+                    </a>
+                </div>
+            </div>
+        </div>
     </div>
 </div>
-{% endblock %}
-
-{% block extra_js %}
-<script>
-document.addEventListener('DOMContentLoaded', function() {
-    // Form elements
-    const form = document.getElementById('profileForm');
-    const avatarUpload = document.getElementById('avatarUpload');
-    const avatarInput = document.getElementById('{{ form.avatar.id_for_label }}');
-    const chooseAvatarBtn = document.getElementById('chooseAvatarBtn');
-    const uploadPreview = document.getElementById('uploadPreview');
-    const autoSaveIndicator = document.getElementById('autoSaveIndicator');
-    const autoSaveText = document.getElementById('autoSaveText');
-
-    // Auto-save configuration
-    let autoSaveTimeout;
-    let isAutoSaving = false;
-
-    // Initialize auto-save indicator
-    showAutoSaveStatus('ready', 'Auto-save ready');
-
-    // Auto-save functionality
-    function autoSave() {
-        if (isAutoSaving) return;
-
-        clearTimeout(autoSaveTimeout);
-        autoSaveTimeout = setTimeout(() => {
-            if (!isFormValid()) return;
-
-            isAutoSaving = true;
-            showAutoSaveStatus('saving', 'Saving changes...');
-
-            const formData = new FormData(form);
-
-            fetch(form.action || window.location.href, {
-                method: 'POST',
-                body: formData,
-                headers: {
-                    'X-Requested-With': 'XMLHttpRequest',
-                }
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    showAutoSaveStatus('success', 'Changes saved automatically');
-
-                    // Update any dynamic content if needed
-                    if (data.user_data) {
-                        updateUserInterface(data.user_data);
-                    }
-                } else {
-                    showAutoSaveStatus('error', 'Failed to save changes');
-                    console.error('Auto-save error:', data.errors);
-                }
-            })
-            .catch(error => {
-                showAutoSaveStatus('error', 'Connection error');
-                console.error('Auto-save error:', error);
-            })
-            .finally(() => {
-                isAutoSaving = false;
-                setTimeout(() => {
-                    if (!isAutoSaving) {
-                        showAutoSaveStatus('ready', 'Auto-save ready');
-                    }
-                }, 3000);
-            });
-        }, 2000); // 2-second delay
-    }
-
-    // Form validation
-    function isFormValid() {
-        const requiredFields = form.querySelectorAll('[required]');
-        for (let field of requiredFields) {
-            if (!field.value.trim()) {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    // Show auto-save status
-    function showAutoSaveStatus(status, message) {
-        autoSaveIndicator.className = `auto-save-indicator show ${status}`;
-        autoSaveText.textContent = message;
-
-        const icon = autoSaveIndicator.querySelector('i');
-        icon.className = status === 'saving' ? 'bi bi-arrow-repeat' :
-                        status === 'success' ? 'bi bi-check-circle' :
-                        status === 'error' ? 'bi bi-exclamation-triangle' :
-                        'bi bi-circle-fill';
-    }
-
-    // Update user interface with new data
-    function updateUserInterface(userData) {
-        // Update profile header if name changed
-        const profileName = document.querySelector('.profile-info h1');
-        if (profileName && userData.full_name) {
-            profileName.textContent = userData.full_name;
-        }
-
-        // Update avatar if changed
-        if (userData.avatar_url) {
-            const avatarImages = document.querySelectorAll('.profile-avatar, .current-avatar-display');
-            avatarImages.forEach(img => {
-                img.src = userData.avatar_url;
-                img.style.display = 'block';
-            });
-
-            // Hide avatar placeholder
-            const placeholder = document.querySelector('.avatar-placeholder');
-            if (placeholder) {
-                placeholder.style.display = 'none';
-            }
-        }
-    }
-
-    // Attach auto-save to form inputs
-    const formInputs = form.querySelectorAll('input, select, textarea');
-    formInputs.forEach(input => {
-        if (input.type !== 'file' && input.type !== 'submit' && input.type !== 'reset') {
-            input.addEventListener('input', autoSave);
-            input.addEventListener('change', autoSave);
-        }
-    });
-
-    // Avatar upload functionality
-    chooseAvatarBtn.addEventListener('click', (e) => {
-        e.preventDefault();
-        avatarInput.click();
-    });
-
-    // Preview selected file
-    avatarInput.addEventListener('change', function(e) {
-        const file = e.target.files[0];
-        if (!file) return;
-
-        // Validate file
-        if (file.size > 5 * 1024 * 1024) {
-            showNotification('error', 'File size must be less than 5MB');
-            avatarInput.value = '';
-            return;
-        }
-
-        if (!file.type.startsWith('image/')) {
-            showNotification('error', 'Please select an image file');
-            avatarInput.value = '';
-            return;
-        }
-
-        // Show preview
-        const reader = new FileReader();
-        reader.onload = function(e) {
-            uploadPreview.src = e.target.result;
-            uploadPreview.style.display = 'block';
-
-            // Add upload animation
-            uploadPreview.style.opacity = '0';
-            uploadPreview.style.transform = 'scale(0.8)';
-
-            setTimeout(() => {
-                uploadPreview.style.transition = 'all 0.3s ease';
-                uploadPreview.style.opacity = '1';
-                uploadPreview.style.transform = 'scale(1)';
-            }, 100);
-        };
-        reader.readAsDataURL(file);
-
-        // Auto-save avatar upload
-        setTimeout(autoSave, 500);
-    });
-
-    // Drag & drop support
-    avatarUpload.addEventListener('dragover', function(e) {
-        e.preventDefault();
-        e.stopPropagation();
-        this.classList.add('dragover');
-    });
-
-    avatarUpload.addEventListener('dragleave', function(e) {
-        e.preventDefault();
-        e.stopPropagation();
-        this.classList.remove('dragover');
-    });
-
-    avatarUpload.addEventListener('drop', function(e) {
-        e.preventDefault();
-        e.stopPropagation();
-        this.classList.remove('dragover');
-
-        const files = e.dataTransfer.files;
-        if (files.length > 0) {
-            avatarInput.files = files;
-            avatarInput.dispatchEvent(new Event('change'));
-        }
-    });
-
-    // Form submission with loading state
-    form.addEventListener('submit', function(e) {
-        e.preventDefault();
-
-        if (isAutoSaving) {
-            showNotification('info', 'Please wait, auto-save is in progress...');
-            return;
-        }
-
-        // Add loading state
-        form.classList.add('form-loading');
-        showAutoSaveStatus('saving', 'Saving all changes...');
-
-        const formData = new FormData(form);
-
-        fetch(form.action || window.location.href, {
-            method: 'POST',
-            body: formData,
-            headers: {
-                'X-Requested-With': 'XMLHttpRequest',
-            }
-        })
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                showAutoSaveStatus('success', 'Profile updated successfully!');
-                showNotification('success', 'Your profile has been updated successfully!');
-
-                if (data.user_data) {
-                    updateUserInterface(data.user_data);
-                }
-
-                // Redirect if needed
-                if (data.redirect_url) {
-                    setTimeout(() => {
-                        window.location.href = data.redirect_url;
-                    }, 1500);
-                }
-            } else {
-                showAutoSaveStatus('error', 'Failed to save changes');
-                showNotification('error', 'Please correct the errors below');
-
-                // Display form errors
-                if (data.errors) {
-                    displayFormErrors(data.errors);
-                }
-            }
-        })
-        .catch(error => {
-            showAutoSaveStatus('error', 'Connection error');
-            showNotification('error', 'Connection error. Please try again.');
-            console.error('Form submission error:', error);
-        })
-        .finally(() => {
-            form.classList.remove('form-loading');
-            setTimeout(() => {
-                showAutoSaveStatus('ready', 'Auto-save ready');
-            }, 3000);
-        });
-    });
-
-    // Reset form handler
-    const resetBtn = form.querySelector('button[type="reset"]');
-    if (resetBtn) {
-        resetBtn.addEventListener('click', function(e) {
-            e.preventDefault();
-
-            if (confirm('Are you sure you want to reset all changes? This will restore the original values.')) {
-                form.reset();
-                uploadPreview.style.display = 'none';
-                showNotification('info', 'Form has been reset');
-                showAutoSaveStatus('ready', 'Auto-save ready');
-            }
-        });
-    }
-
-    // Notification system
-    function showNotification(type, message) {
-        // Create notification element if it doesn't exist
-        let notification = document.querySelector('.notification-toast');
-        if (!notification) {
-            notification = document.createElement('div');
-            notification.className = 'notification-toast';
-            document.body.appendChild(notification);
-        }
-
-        // Set notification content and type
-        notification.className = `notification-toast show ${type}`;
-        notification.innerHTML = `
-            <i class="bi ${type === 'success' ? 'bi-check-circle' :
-                         type === 'error' ? 'bi-exclamation-triangle' :
-                         'bi-info-circle'}"></i>
-            <span>${message}</span>
-            <button class="notification-close" onclick="this.parentElement.classList.remove('show')">
-                <i class="bi bi-x"></i>
-            </button>
-        `;
-
-        // Auto-hide after 5 seconds
-        setTimeout(() => {
-            notification.classList.remove('show');
-        }, 5000);
-    }
-
-    // Display form errors
-    function displayFormErrors(errors) {
-        // Clear previous errors
-        document.querySelectorAll('.text-danger.small').forEach(el => el.remove());
-
-        // Display new errors
-        Object.entries(errors).forEach(([field, messages]) => {
-            const fieldElement = document.getElementById(`id_${field}`);
-            if (fieldElement) {
-                const errorDiv = document.createElement('div');
-                errorDiv.className = 'text-danger small mt-1';
-                errorDiv.textContent = Array.isArray(messages) ? messages[0] : messages;
-                fieldElement.parentNode.appendChild(errorDiv);
-
-                // Add error styling to field
-                fieldElement.classList.add('is-invalid');
-
-                // Remove error styling on input
-                fieldElement.addEventListener('input', function() {
-                    this.classList.remove('is-invalid');
-                    const errorEl = this.parentNode.querySelector('.text-danger.small');
-                    if (errorEl) errorEl.remove();
-                }, { once: true });
-            }
-        });
-    }
-
-    // Add CSS for notifications
-    if (!document.querySelector('#notification-styles')) {
-        const notificationStyles = document.createElement('style');
-        notificationStyles.id = 'notification-styles';
-        notificationStyles.textContent = `
-            .notification-toast {
-                position: fixed;
-                top: 20px;
-                right: 20px;
-                background: white;
-                border-radius: var(--profile-radius);
-                box-shadow: var(--profile-shadow-lg);
-                padding: 1rem 1.5rem;
-                display: flex;
-                align-items: center;
-                gap: 1rem;
-                z-index: 9999;
-                min-width: 300px;
-                transform: translateX(400px);
-                transition: transform 0.3s ease;
-                border-left: 4px solid var(--profile-primary);
-            }
-
-            .notification-toast.show {
-                transform: translateX(0);
-            }
-
-            .notification-toast.success {
-                border-left-color: var(--profile-success);
-                color: var(--profile-success);
-            }
-
-            .notification-toast.error {
-                border-left-color: var(--profile-danger);
-                color: var(--profile-danger);
-            }
-
-            .notification-toast.info {
-                border-left-color: var(--profile-primary);
-                color: var(--profile-primary);
-            }
-
-            .notification-close {
-                background: none;
-                border: none;
-                color: var(--profile-secondary);
-                cursor: pointer;
-                padding: 0;
-                margin-left: auto;
-            }
-
-            .notification-close:hover {
-                color: var(--profile-dark);
-            }
-
-            .is-invalid {
-                border-color: var(--profile-danger) !important;
-                box-shadow: 0 0 0 0.2rem rgba(239, 68, 68, 0.25) !important;
-            }
-        `;
-        document.head.appendChild(notificationStyles);
-    }
-});
-</script>
 {% endblock %}

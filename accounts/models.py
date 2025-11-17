@@ -304,36 +304,25 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
     # ============================================
 
     def has_perm(self, perm, obj=None):
-        """Check permissions through assigned roles"""
+        """Check permissions through assigned roles and direct permissions"""
+        # SaaS admins have all permissions
         if self.is_saas_admin:
             return True
 
+        # Inactive users have no permissions
         if not self.is_active:
             return False
 
-        # 🔥 FIX: Explicitly check if user is in group with permission
+        # Superusers have all permissions
         if self.is_superuser:
             return True
 
-        # Check user's direct permissions
-        if super().has_perm(perm, obj):
-            return True
-
-        # 🔥 NEW: Explicitly check group permissions
-        from django.contrib.auth.models import Permission
-
-        # Get permission object
-        try:
-            app_label, codename = perm.split('.', 1)
-            permission = Permission.objects.get(
-                content_type__app_label=app_label,
-                codename=codename
-            )
-
-            # Check if any of user's groups have this permission
-            return self.groups.filter(permissions=permission).exists()
-        except (Permission.DoesNotExist, ValueError):
-            return False
+        # ✅ Let Django's default permission checking handle the rest
+        # This automatically checks:
+        # 1. User's direct permissions (user_permissions)
+        # 2. Group permissions (through groups)
+        # 3. Custom model permissions
+        return super().has_perm(perm, obj)
 
     def has_module_perms(self, app_label):
         """Control admin access - only SaaS admins"""

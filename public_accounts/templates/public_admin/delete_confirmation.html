@@ -1,0 +1,511 @@
+{% extends 'public_admin/base.html' %}
+
+{% block extra_css %}
+<style>
+    .delete-container {
+        max-width: 700px;
+        margin: 60px auto;
+        animation: fadeInUp 0.5s ease-out;
+    }
+
+    @keyframes fadeInUp {
+        from {
+            opacity: 0;
+            transform: translateY(30px);
+        }
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+
+    .delete-card-modern {
+        background: var(--bg-elevated);
+        border-radius: var(--radius-2xl);
+        box-shadow: var(--shadow-2xl);
+        border: 2px solid #ef4444;
+        overflow: hidden;
+        position: relative;
+    }
+
+    .delete-card-modern::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 6px;
+        background: linear-gradient(90deg, #ef4444, #dc2626);
+    }
+
+    .delete-header-modern {
+        background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+        padding: 32px 40px;
+        color: white;
+        position: relative;
+        overflow: hidden;
+    }
+
+    .delete-header-modern::after {
+        content: '';
+        position: absolute;
+        top: -50%;
+        right: -10%;
+        width: 300px;
+        height: 300px;
+        background: radial-gradient(circle, rgba(255,255,255,0.15) 0%, transparent 70%);
+        border-radius: 50%;
+    }
+
+    .delete-header-content {
+        position: relative;
+        z-index: 2;
+        display: flex;
+        align-items: center;
+        gap: 20px;
+    }
+
+    .delete-icon-wrapper {
+        width: 72px;
+        height: 72px;
+        background: rgba(255, 255, 255, 0.2);
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 36px;
+        backdrop-filter: blur(10px);
+        animation: shake 0.5s ease-in-out;
+    }
+
+    @keyframes shake {
+        0%, 100% { transform: translateX(0); }
+        25% { transform: translateX(-10px) rotate(-5deg); }
+        75% { transform: translateX(10px) rotate(5deg); }
+    }
+
+    .delete-header-title {
+        flex: 1;
+    }
+
+    .delete-header-title h1 {
+        font-size: 28px;
+        font-weight: 800;
+        margin: 0 0 8px 0;
+        letter-spacing: -0.5px;
+    }
+
+    .delete-header-subtitle {
+        font-size: 15px;
+        opacity: 0.9;
+        font-weight: 500;
+    }
+
+    .delete-body-modern {
+        padding: 40px;
+    }
+
+    .warning-alert-modern {
+        background: linear-gradient(135deg, rgba(245, 158, 11, 0.1), rgba(251, 191, 36, 0.1));
+        border: 2px solid #f59e0b;
+        border-left: 6px solid #f59e0b;
+        border-radius: var(--radius-xl);
+        padding: 20px 24px;
+        margin-bottom: 32px;
+        display: flex;
+        align-items: flex-start;
+        gap: 16px;
+        animation: pulse 2s ease-in-out infinite;
+    }
+
+    @keyframes pulse {
+        0%, 100% {
+            box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.4);
+        }
+        50% {
+            box-shadow: 0 0 0 10px rgba(245, 158, 11, 0);
+        }
+    }
+
+    .warning-icon {
+        width: 48px;
+        height: 48px;
+        background: linear-gradient(135deg, #f59e0b, #d97706);
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: white;
+        font-size: 24px;
+        flex-shrink: 0;
+        box-shadow: 0 4px 15px rgba(245, 158, 11, 0.4);
+    }
+
+    .warning-content {
+        flex: 1;
+    }
+
+    .warning-content strong {
+        display: block;
+        font-size: 16px;
+        font-weight: 800;
+        color: #b45309;
+        margin-bottom: 8px;
+    }
+
+    .warning-content p {
+        margin: 0;
+        color: #92400e;
+        font-weight: 600;
+        font-size: 14px;
+        line-height: 1.6;
+    }
+
+    .delete-message {
+        font-size: 18px;
+        font-weight: 600;
+        color: var(--text-primary);
+        margin-bottom: 28px;
+        line-height: 1.6;
+    }
+
+    .object-detail-card {
+        background: linear-gradient(135deg, var(--bg-secondary), var(--bg-tertiary));
+        border: 2px solid var(--border-color);
+        border-radius: var(--radius-xl);
+        padding: 24px;
+        margin-bottom: 32px;
+    }
+
+    .object-detail-header {
+        font-size: 14px;
+        font-weight: 700;
+        color: var(--text-muted);
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        margin-bottom: 12px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+    .object-detail-header i {
+        color: #ef4444;
+    }
+
+    .object-detail-content {
+        font-size: 20px;
+        font-weight: 800;
+        color: var(--text-primary);
+        padding: 16px;
+        background: var(--bg-elevated);
+        border-radius: var(--radius-lg);
+        border-left: 4px solid #ef4444;
+    }
+
+    .consequences-list {
+        background: rgba(239, 68, 68, 0.05);
+        border: 2px dashed #ef4444;
+        border-radius: var(--radius-lg);
+        padding: 20px 24px;
+        margin-bottom: 32px;
+    }
+
+    .consequences-title {
+        font-size: 16px;
+        font-weight: 800;
+        color: #dc2626;
+        margin-bottom: 16px;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+
+    .consequences-title i {
+        font-size: 20px;
+    }
+
+    .consequences-list ul {
+        margin: 0;
+        padding-left: 24px;
+    }
+
+    .consequences-list li {
+        color: #991b1b;
+        font-weight: 600;
+        font-size: 14px;
+        margin-bottom: 8px;
+        line-height: 1.6;
+    }
+
+    .delete-actions {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 16px;
+        padding-top: 24px;
+        border-top: 2px solid var(--border-color);
+    }
+
+    .btn-delete-action {
+        padding: 16px 32px;
+        border-radius: var(--radius-lg);
+        font-weight: 800;
+        font-size: 16px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 12px;
+        transition: all var(--transition-base);
+        border: none;
+        text-decoration: none;
+        min-width: 180px;
+        cursor: pointer;
+    }
+
+    .btn-cancel-modern {
+        background: var(--bg-elevated);
+        border: 2px solid var(--border-color);
+        color: var(--text-primary);
+    }
+
+    .btn-cancel-modern:hover {
+        border-color: #667eea;
+        color: #667eea;
+        background: rgba(102, 126, 234, 0.05);
+        transform: translateY(-2px);
+    }
+
+    .btn-delete-confirm {
+        background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+        color: white;
+        box-shadow: 0 4px 20px rgba(239, 68, 68, 0.4);
+        position: relative;
+        overflow: hidden;
+    }
+
+    .btn-delete-confirm::before {
+        content: '';
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        width: 0;
+        height: 0;
+        border-radius: 50%;
+        background: rgba(255, 255, 255, 0.3);
+        transform: translate(-50%, -50%);
+        transition: width 0.6s, height 0.6s;
+    }
+
+    .btn-delete-confirm:hover::before {
+        width: 300px;
+        height: 300px;
+    }
+
+    .btn-delete-confirm:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 8px 30px rgba(239, 68, 68, 0.6);
+        color: white;
+    }
+
+    .btn-delete-confirm i,
+    .btn-delete-confirm span {
+        position: relative;
+        z-index: 1;
+    }
+
+    /* Confirmation checkbox */
+    .confirmation-check {
+        background: rgba(239, 68, 68, 0.05);
+        border: 2px solid #ef4444;
+        border-radius: var(--radius-lg);
+        padding: 16px 20px;
+        margin-bottom: 24px;
+        display: flex;
+        align-items: center;
+        gap: 16px;
+    }
+
+    .confirmation-check input[type="checkbox"] {
+        width: 24px;
+        height: 24px;
+        cursor: pointer;
+        accent-color: #ef4444;
+    }
+
+    .confirmation-check label {
+        flex: 1;
+        font-weight: 700;
+        color: #dc2626;
+        cursor: pointer;
+        margin: 0;
+        font-size: 15px;
+    }
+
+    /* Responsive */
+    @media (max-width: 768px) {
+        .delete-container {
+            margin: 20px auto;
+            padding: 0 16px;
+        }
+
+        .delete-header-modern {
+            padding: 24px;
+        }
+
+        .delete-header-content {
+            flex-direction: column;
+            text-align: center;
+        }
+
+        .delete-icon-wrapper {
+            width: 60px;
+            height: 60px;
+            font-size: 28px;
+        }
+
+        .delete-header-title h1 {
+            font-size: 22px;
+        }
+
+        .delete-body-modern {
+            padding: 24px;
+        }
+
+        .delete-actions {
+            flex-direction: column-reverse;
+        }
+
+        .btn-delete-action {
+            width: 100%;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="delete-container">
+    <div class="delete-card-modern">
+        <div class="delete-header-modern">
+            <div class="delete-header-content">
+                <div class="delete-icon-wrapper">
+                    <i class="bi bi-exclamation-triangle-fill"></i>
+                </div>
+                <div class="delete-header-title">
+                    <h1>{{ title }}</h1>
+                    <div class="delete-header-subtitle">This action requires confirmation</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="delete-body-modern">
+            <div class="warning-alert-modern">
+                <div class="warning-icon">
+                    <i class="bi bi-shield-fill-exclamation"></i>
+                </div>
+                <div class="warning-content">
+                    <strong>⚠️ Critical Action Warning</strong>
+                    <p>This is a permanent action that cannot be reversed. All data associated with this item will be permanently deleted from the system.</p>
+                </div>
+            </div>
+
+            <p class="delete-message">
+                Are you absolutely sure you want to permanently delete this <strong>{{ verbose_name }}</strong>?
+            </p>
+
+            <div class="object-detail-card">
+                <div class="object-detail-header">
+                    <i class="bi bi-file-text-fill"></i>
+                    <span>Item to be deleted:</span>
+                </div>
+                <div class="object-detail-content">
+                    {{ object }}
+                </div>
+            </div>
+
+            <div class="consequences-list">
+                <div class="consequences-title">
+                    <i class="bi bi-exclamation-octagon-fill"></i>
+                    <span>Consequences of this action:</span>
+                </div>
+                <ul>
+                    <li>This {{ verbose_name }} will be permanently removed</li>
+                    <li>All associated data will be deleted</li>
+                    <li>This action cannot be undone</li>
+                    <li>No backup will be created</li>
+                </ul>
+            </div>
+
+            <div class="confirmation-check">
+                <input type="checkbox" id="confirmDelete" required>
+                <label for="confirmDelete">
+                    I understand that this action is permanent and cannot be reversed
+                </label>
+            </div>
+
+            <form method="post" id="deleteForm">
+                {% csrf_token %}
+                <div class="delete-actions">
+                    <a href="{% url 'public_admin:public_admin_'|add:app_label|add:'_'|add:model_name_lower|add:'_list' %}"
+                       class="btn-delete-action btn-cancel-modern">
+                        <i class="bi bi-x-circle-fill"></i>
+                        <span>Cancel</span>
+                    </a>
+
+                    <button type="submit" class="btn-delete-action btn-delete-confirm" id="deleteButton" disabled>
+                        <i class="bi bi-trash3-fill"></i>
+                        <span>Yes, Delete Forever</span>
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // Enable delete button only when checkbox is checked
+    const checkbox = document.getElementById('confirmDelete');
+    const deleteButton = document.getElementById('deleteButton');
+    const deleteForm = document.getElementById('deleteForm');
+
+    checkbox.addEventListener('change', function() {
+        if (this.checked) {
+            deleteButton.disabled = false;
+            deleteButton.style.opacity = '1';
+            deleteButton.style.cursor = 'pointer';
+        } else {
+            deleteButton.disabled = true;
+            deleteButton.style.opacity = '0.5';
+            deleteButton.style.cursor = 'not-allowed';
+        }
+    });
+
+    // Final confirmation on submit
+    deleteForm.addEventListener('submit', function(e) {
+        if (!checkbox.checked) {
+            e.preventDefault();
+            alert('⚠️ Please confirm that you understand this action is permanent.');
+            return false;
+        }
+
+        const confirmed = confirm(
+            '🗑️ FINAL CONFIRMATION\n\n' +
+            'This is your last chance to cancel.\n\n' +
+            'Are you absolutely certain you want to delete this {{ verbose_name }}?\n\n' +
+            'Click OK to permanently delete, or Cancel to abort.'
+        );
+
+        if (confirmed) {
+            window.showLoading();
+        } else {
+            e.preventDefault();
+        }
+    });
+
+    // Set initial button state
+    deleteButton.style.opacity = '0.5';
+    deleteButton.style.cursor = 'not-allowed';
+</script>
+{% endblock %}

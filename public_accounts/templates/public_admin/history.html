@@ -1,0 +1,154 @@
+{% extends 'public_admin/base.html' %}
+
+{% block content %}
+<div class="form-card-modern">
+    <div class="form-header-modern">
+        <div class="form-header-content">
+            <div class="form-header-icon">
+                <i class="bi bi-clock-history"></i>
+            </div>
+            <div class="form-header-title">
+                <h1>Change History: {{ object }}</h1>
+                <div class="form-header-breadcrumb">
+                    <a href="{% url 'public_admin:public_admin_index' %}">
+                        <i class="bi bi-house-door-fill"></i>
+                        Dashboard
+                    </a>
+                    <i class="bi bi-chevron-right"></i>
+                    <a href="{% url 'public_admin:public_admin_'|add:app_label|add:'_'|add:model_name|add:'_list' %}">
+                        {{ verbose_name_plural }}
+                    </a>
+                    <i class="bi bi-chevron-right"></i>
+                    <a href="{% url 'public_admin:public_admin_'|add:app_label|add:'_'|add:model_name|add:'_change' object.pk %}">
+                        {{ object }}
+                    </a>
+                    <i class="bi bi-chevron-right"></i>
+                    <span>History</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="form-body-modern">
+        {% if activities %}
+        <div class="timeline">
+            {% for activity in activities %}
+            <div class="timeline-item">
+                <div class="timeline-marker">
+                    <i class="bi bi-{% if activity.action == 'CREATE' %}plus-circle{% elif activity.action == 'UPDATE' %}pencil{% elif activity.action == 'DELETE' %}trash{% else %}circle{% endif %}"></i>
+                </div>
+                <div class="timeline-content">
+                    <div class="timeline-header">
+                        <strong>{{ activity.get_action_display }}</strong>
+                        <span class="timeline-date">{{ activity.created_at|date:"Y-m-d H:i:s" }}</span>
+                    </div>
+                    <div class="timeline-body">
+                        {{ activity.description }}
+                        <br>
+                        <small class="text-muted">
+                            by {{ activity.user.get_full_name }} from {{ activity.ip_address }}
+                        </small>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+
+        <!-- Pagination -->
+        {% if activities.has_other_pages %}
+        <nav class="mt-4">
+            <ul class="pagination justify-content-center">
+                {% if activities.has_previous %}
+                <li class="page-item">
+                    <a class="page-link" href="?page={{ activities.previous_page_number }}">Previous</a>
+                </li>
+                {% endif %}
+
+                {% for num in activities.paginator.page_range %}
+                <li class="page-item {% if activities.number == num %}active{% endif %}">
+                    <a class="page-link" href="?page={{ num }}">{{ num }}</a>
+                </li>
+                {% endfor %}
+
+                {% if activities.has_next %}
+                <li class="page-item">
+                    <a class="page-link" href="?page={{ activities.next_page_number }}">Next</a>
+                </li>
+                {% endif %}
+            </ul>
+        </nav>
+        {% endif %}
+        {% else %}
+        <div class="alert alert-info">
+            <i class="bi bi-info-circle"></i>
+            No history available for this object.
+        </div>
+        {% endif %}
+    </div>
+
+    <div class="form-actions-modern">
+        <a href="{% url 'public_admin:public_admin_'|add:app_label|add:'_'|add:model_name|add:'_change' object.pk %}"
+           class="btn-modern btn-modern-secondary">
+            <i class="bi bi-arrow-left"></i>
+            <span>Back to {{ verbose_name }}</span>
+        </a>
+    </div>
+</div>
+
+<style>
+.timeline {
+    position: relative;
+    padding: 20px 0;
+}
+
+.timeline::before {
+    content: '';
+    position: absolute;
+    left: 30px;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background: var(--border-color);
+}
+
+.timeline-item {
+    position: relative;
+    padding-left: 70px;
+    padding-bottom: 30px;
+}
+
+.timeline-marker {
+    position: absolute;
+    left: 18px;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    background: #667eea;
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    z-index: 1;
+}
+
+.timeline-content {
+    background: var(--bg-elevated);
+    border-radius: var(--radius-lg);
+    padding: 20px;
+    border: 1px solid var(--border-color);
+}
+
+.timeline-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+}
+
+.timeline-date {
+    font-size: 13px;
+    color: var(--text-muted);
+}
+</style>
+{% endblock %}

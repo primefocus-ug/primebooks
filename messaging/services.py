@@ -16,20 +16,8 @@ logger = logging.getLogger(__name__)
 
 
 class EncryptionService:
-    """
-    Central service for all encryption/decryption operations
-
-    TENANT-AWARE: All operations respect tenant boundaries
-    """
-
     @staticmethod
     def generate_user_keys(user):
-        """
-        Generate RSA key pair for a user
-
-        TENANT-AWARE: Keys generated within user's tenant
-        Returns: EncryptionKeyManager instance
-        """
         # Generate keys
         private_pem, public_pem = EncryptionKeyManager.generate_rsa_keys()
 
@@ -54,10 +42,6 @@ class EncryptionService:
 
     @staticmethod
     def _encrypt_private_key(private_pem, user):
-        """
-        Encrypt user's private key with password-derived key
-        Uses PBKDF2 to derive encryption key from user password hash
-        """
         password_bytes = user.password.encode('utf-8')
 
         # Use user-specific salt for better security
@@ -421,29 +405,12 @@ class MessageIntegrityService:
 
 
 class TenantMessagingService:
-    """
-    NEW SERVICE: Handles tenant-specific messaging operations
-    """
-
     @staticmethod
     def can_create_cross_tenant_conversation(user):
-        """
-        Check if user can create cross-tenant conversations
-        Only SaaS admins can do this
-        """
         return getattr(user, 'is_saas_admin', False)
 
     @staticmethod
     def get_user_conversations(user, include_archived=False):
-        """
-        Get all conversations for user in current tenant
-
-        Args:
-            user: User instance
-            include_archived: Include archived conversations
-
-        Returns: QuerySet of Conversation objects
-        """
         from .models import Conversation, ConversationParticipant
 
         queryset = Conversation.objects.filter(
@@ -459,12 +426,6 @@ class TenantMessagingService:
 
     @staticmethod
     def search_users_for_conversation(search_term, current_user, limit=20):
-        """
-        Search users in current tenant for adding to conversations
-
-        TENANT-AWARE: Only searches within current tenant
-        Excludes hidden users (SaaS admins) unless current user is SaaS admin
-        """
         from django.contrib.auth import get_user_model
         from django.db.models import Q
 

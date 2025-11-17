@@ -1,0 +1,780 @@
+{% extends 'base.html' %}
+{% load static %}
+{% load i18n %}
+
+{% block title %}{% trans "Edit Profile" %} - PrimeBooks{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'themes.css' %}">
+<style>
+    :root {
+        --edit-primary: #2563eb;
+        --edit-primary-dark: #1e40af;
+        --edit-secondary: #64748b;
+        --edit-success: #10b981;
+        --edit-danger: #ef4444;
+        --edit-dark: #1e293b;
+        --edit-light: #f8fafc;
+        --edit-border: #e2e8f0;
+        --edit-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        --edit-radius: 12px;
+        --edit-radius-lg: 16px;
+    }
+
+    [data-theme="dark"] {
+        --edit-dark: #f1f5f9;
+        --edit-light: #1e293b;
+        --edit-border: #334155;
+        --edit-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.4);
+    }
+
+    .edit-container {
+        max-width: 1000px;
+        margin: 0 auto;
+        padding: 2rem 1rem;
+    }
+
+    /* Page Header */
+    .edit-header {
+        background: white;
+        border-radius: var(--edit-radius-lg);
+        padding: 2rem;
+        margin-bottom: 2rem;
+        box-shadow: var(--edit-shadow);
+        border: 1px solid var(--edit-border);
+    }
+
+    [data-theme="dark"] .edit-header {
+        background: var(--edit-light);
+        border-color: var(--edit-border);
+    }
+
+    .edit-header-content {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+    }
+
+    .edit-title-section {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+    }
+
+    .edit-icon-wrapper {
+        width: 60px;
+        height: 60px;
+        border-radius: var(--edit-radius);
+        background: linear-gradient(135deg, var(--edit-primary), #7c3aed);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: white;
+        font-size: 1.75rem;
+    }
+
+    .edit-title {
+        font-size: 2rem;
+        font-weight: 700;
+        color: var(--edit-dark);
+        margin: 0;
+    }
+
+    .edit-subtitle {
+        color: var(--edit-secondary);
+        margin: 0.25rem 0 0 0;
+    }
+
+    .btn-back {
+        background: white;
+        border: 2px solid var(--edit-border);
+        color: var(--edit-secondary);
+        padding: 0.75rem 1.5rem;
+        border-radius: var(--edit-radius);
+        text-decoration: none;
+        font-weight: 500;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        transition: all 0.3s ease;
+    }
+
+    [data-theme="dark"] .btn-back {
+        background: #334155;
+        border-color: #475569;
+        color: #cbd5e1;
+    }
+
+    .btn-back:hover {
+        border-color: var(--edit-primary);
+        color: var(--edit-primary);
+        transform: translateX(-3px);
+    }
+
+    /* Form Container */
+    .edit-form {
+        background: white;
+        border-radius: var(--edit-radius-lg);
+        box-shadow: var(--edit-shadow);
+        overflow: hidden;
+        border: 1px solid var(--edit-border);
+    }
+
+    [data-theme="dark"] .edit-form {
+        background: var(--edit-light);
+        border-color: var(--edit-border);
+    }
+
+    /* Form Sections */
+    .form-section {
+        padding: 2.5rem;
+        border-bottom: 1px solid var(--edit-border);
+    }
+
+    .form-section:last-of-type {
+        border-bottom: none;
+    }
+
+    .section-header {
+        display: flex;
+        align-items: center;
+        margin-bottom: 2rem;
+        padding-bottom: 1rem;
+        border-bottom: 2px solid var(--edit-border);
+    }
+
+    .section-icon {
+        width: 45px;
+        height: 45px;
+        border-radius: 10px;
+        background: linear-gradient(135deg, var(--edit-primary), #7c3aed);
+        color: white;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin-right: 1rem;
+        font-size: 1.3rem;
+    }
+
+    .section-title {
+        font-size: 1.5rem;
+        font-weight: 600;
+        color: var(--edit-dark);
+        margin: 0;
+    }
+
+    .section-subtitle {
+        font-size: 0.9rem;
+        color: var(--edit-secondary);
+        margin: 0.25rem 0 0 0;
+    }
+
+    /* Form Controls */
+    .form-floating {
+        margin-bottom: 1.5rem;
+    }
+
+    .form-control,
+    .form-select {
+        border: 2px solid var(--edit-border);
+        border-radius: var(--edit-radius);
+        padding: 1rem;
+        font-size: 1rem;
+        transition: all 0.3s ease;
+    }
+
+    [data-theme="dark"] .form-control,
+    [data-theme="dark"] .form-select {
+        background: #334155;
+        border-color: #475569;
+        color: #f1f5f9;
+    }
+
+    .form-control:focus,
+    .form-select:focus {
+        border-color: var(--edit-primary);
+        box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+    }
+
+    .form-floating > label {
+        color: var(--edit-secondary);
+        padding: 1rem;
+    }
+
+    textarea.form-control {
+        min-height: 120px;
+        resize: vertical;
+    }
+
+    /* Avatar Upload Section */
+    .avatar-upload-wrapper {
+        text-align: center;
+    }
+
+    .current-avatar-preview {
+        width: 150px;
+        height: 150px;
+        border-radius: 50%;
+        margin: 0 auto 1.5rem;
+        object-fit: cover;
+        border: 4px solid var(--edit-primary);
+        box-shadow: var(--edit-shadow);
+    }
+
+    .avatar-placeholder-edit {
+        width: 150px;
+        height: 150px;
+        border-radius: 50%;
+        margin: 0 auto 1.5rem;
+        background: linear-gradient(135deg, var(--edit-primary), #7c3aed);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 4rem;
+        color: white;
+        border: 4px solid var(--edit-primary);
+        box-shadow: var(--edit-shadow);
+    }
+
+    .upload-area {
+        border: 3px dashed var(--edit-border);
+        border-radius: var(--edit-radius);
+        padding: 2rem;
+        background: var(--edit-light);
+        transition: all 0.3s ease;
+        cursor: pointer;
+    }
+
+    [data-theme="dark"] .upload-area {
+        background: #334155;
+        border-color: #475569;
+    }
+
+    .upload-area:hover {
+        border-color: var(--edit-primary);
+        background: rgba(37, 99, 235, 0.05);
+    }
+
+    .upload-area.dragover {
+        border-color: var(--edit-primary);
+        background: rgba(37, 99, 235, 0.1);
+        transform: scale(1.02);
+    }
+
+    .upload-icon {
+        font-size: 3rem;
+        color: var(--edit-secondary);
+        margin-bottom: 1rem;
+    }
+
+    .upload-text {
+        color: var(--edit-secondary);
+        font-size: 0.9rem;
+    }
+
+    .file-input-hidden {
+        display: none;
+    }
+
+    .btn-choose-file {
+        background: var(--edit-primary);
+        color: white;
+        border: none;
+        padding: 0.75rem 2rem;
+        border-radius: var(--edit-radius);
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        margin-top: 1rem;
+    }
+
+    .btn-choose-file:hover {
+        background: var(--edit-primary-dark);
+        transform: translateY(-2px);
+        box-shadow: 0 4px 8px rgba(37, 99, 235, 0.3);
+    }
+
+    .upload-preview {
+        max-width: 200px;
+        max-height: 200px;
+        border-radius: var(--edit-radius);
+        margin-top: 1.5rem;
+        box-shadow: var(--edit-shadow);
+        border: 3px solid var(--edit-primary);
+        display: none;
+    }
+
+    /* Form Actions */
+    .form-actions {
+        background: var(--edit-light);
+        padding: 2.5rem;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 1rem;
+        border-top: 1px solid var(--edit-border);
+    }
+
+    [data-theme="dark"] .form-actions {
+        background: #334155;
+    }
+
+    .btn-primary-large {
+        background: linear-gradient(135deg, var(--edit-primary), #7c3aed);
+        border: none;
+        color: white;
+        padding: 1rem 2.5rem;
+        border-radius: var(--edit-radius);
+        font-weight: 600;
+        font-size: 1.1rem;
+        transition: all 0.3s ease;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.75rem;
+        cursor: pointer;
+    }
+
+    .btn-primary-large:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 10px 20px rgba(37, 99, 235, 0.4);
+    }
+
+    .btn-secondary-large {
+        background: transparent;
+        border: 2px solid var(--edit-border);
+        color: var(--edit-secondary);
+        padding: 1rem 2rem;
+        border-radius: var(--edit-radius);
+        font-weight: 500;
+        transition: all 0.3s ease;
+        cursor: pointer;
+    }
+
+    .btn-secondary-large:hover {
+        border-color: var(--edit-danger);
+        color: var(--edit-danger);
+    }
+
+    /* Validation */
+    .is-invalid {
+        border-color: var(--edit-danger) !important;
+    }
+
+    .invalid-feedback {
+        display: block;
+        color: var(--edit-danger);
+        font-size: 0.875rem;
+        margin-top: 0.5rem;
+    }
+
+    /* Loading State */
+    .form-loading {
+        position: relative;
+        pointer-events: none;
+        opacity: 0.6;
+    }
+
+    .form-loading::after {
+        content: '';
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        width: 50px;
+        height: 50px;
+        border: 4px solid var(--edit-border);
+        border-top-color: var(--edit-primary);
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+    }
+
+    @keyframes spin {
+        to { transform: translate(-50%, -50%) rotate(360deg); }
+    }
+
+    /* Responsive */
+    @media (max-width: 768px) {
+        .edit-container {
+            padding: 1rem;
+        }
+
+        .edit-header {
+            padding: 1.5rem;
+        }
+
+        .edit-header-content {
+            flex-direction: column;
+            gap: 1rem;
+        }
+
+        .edit-title {
+            font-size: 1.5rem;
+        }
+
+        .form-section {
+            padding: 1.5rem;
+        }
+
+        .form-actions {
+            flex-direction: column;
+            padding: 1.5rem;
+        }
+
+        .btn-primary-large,
+        .btn-secondary-large {
+            width: 100%;
+            justify-content: center;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="edit-container">
+    <!-- Page Header -->
+    <div class="edit-header">
+        <div class="edit-header-content">
+            <div class="edit-title-section">
+                <div class="edit-icon-wrapper">
+                    <i class="bi bi-pencil-square"></i>
+                </div>
+                <div>
+                    <h1 class="edit-title">Edit Profile</h1>
+                    <p class="edit-subtitle">Update your personal information and preferences</p>
+                </div>
+            </div>
+            <a href="{% url 'user_profile' %}" class="btn-back">
+                <i class="bi bi-arrow-left"></i>
+                Back to Profile
+            </a>
+        </div>
+    </div>
+
+    <!-- Edit Form -->
+    <form method="post" enctype="multipart/form-data" id="editProfileForm" class="edit-form">
+        {% csrf_token %}
+
+        <!-- Personal Information -->
+        <div class="form-section">
+            <div class="section-header">
+                <div class="section-icon">
+                    <i class="bi bi-person-fill"></i>
+                </div>
+                <div>
+                    <h3 class="section-title">Personal Information</h3>
+                    <p class="section-subtitle">Your basic profile details</p>
+                </div>
+            </div>
+
+            <div class="row">
+                <div class="col-md-6">
+                    <div class="form-floating">
+                        {{ form.first_name }}
+                        <label for="{{ form.first_name.id_for_label }}">First Name *</label>
+                        {% if form.first_name.errors %}
+                            <div class="invalid-feedback">{{ form.first_name.errors.0 }}</div>
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="form-floating">
+                        {{ form.last_name }}
+                        <label for="{{ form.last_name.id_for_label }}">Last Name *</label>
+                        {% if form.last_name.errors %}
+                            <div class="invalid-feedback">{{ form.last_name.errors.0 }}</div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+
+            <div class="row">
+                <div class="col-md-6">
+                    <div class="form-floating">
+                        {{ form.middle_name }}
+                        <label for="{{ form.middle_name.id_for_label }}">Middle Name (Optional)</label>
+                        {% if form.middle_name.errors %}
+                            <div class="invalid-feedback">{{ form.middle_name.errors.0 }}</div>
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="form-floating">
+                        {{ form.phone_number }}
+                        <label for="{{ form.phone_number.id_for_label }}">Phone Number</label>
+                        {% if form.phone_number.errors %}
+                            <div class="invalid-feedback">{{ form.phone_number.errors.0 }}</div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Profile Picture -->
+        <div class="form-section">
+            <div class="section-header">
+                <div class="section-icon">
+                    <i class="bi bi-camera-fill"></i>
+                </div>
+                <div>
+                    <h3 class="section-title">Profile Picture</h3>
+                    <p class="section-subtitle">Upload a professional photo</p>
+                </div>
+            </div>
+
+            <div class="avatar-upload-wrapper">
+                {% if user.avatar %}
+                    <img src="{{ user.avatar.url }}" class="current-avatar-preview" alt="Current Avatar" id="currentAvatar">
+                {% else %}
+                    <div class="avatar-placeholder-edit" id="avatarPlaceholder">
+                        <i class="bi bi-person"></i>
+                    </div>
+                {% endif %}
+
+                <div class="upload-area" id="uploadArea">
+                    <div class="upload-icon">
+                        <i class="bi bi-cloud-upload"></i>
+                    </div>
+                    <p class="fw-semibold mb-2">Drag and drop your photo here</p>
+                    <p class="upload-text mb-3">or click the button below to browse</p>
+                    <input type="file" name="avatar" id="avatarInput" class="file-input-hidden" accept="image/*">
+                    <button type="button" class="btn-choose-file" id="chooseFileBtn">
+                        <i class="bi bi-upload me-2"></i>Choose File
+                    </button>
+                    <p class="upload-text mt-3 mb-0">
+                        <i class="bi bi-info-circle me-1"></i>
+                        Max size: 5MB (JPG, PNG, GIF)
+                    </p>
+                </div>
+
+                <img id="uploadPreview" class="upload-preview mx-auto">
+
+                {% if form.avatar.errors %}
+                    <div class="invalid-feedback d-block mt-2">{{ form.avatar.errors.0 }}</div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- About -->
+        <div class="form-section">
+            <div class="section-header">
+                <div class="section-icon">
+                    <i class="bi bi-card-text"></i>
+                </div>
+                <div>
+                    <h3 class="section-title">About</h3>
+                    <p class="section-subtitle">Tell others about yourself</p>
+                </div>
+            </div>
+
+            <div class="form-floating">
+                {{ form.bio }}
+                <label for="{{ form.bio.id_for_label }}">Bio</label>
+                {% if form.bio.errors %}
+                    <div class="invalid-feedback">{{ form.bio.errors.0 }}</div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Preferences -->
+        <div class="form-section">
+            <div class="section-header">
+                <div class="section-icon">
+                    <i class="bi bi-gear-fill"></i>
+                </div>
+                <div>
+                    <h3 class="section-title">Preferences</h3>
+                    <p class="section-subtitle">Customize your experience</p>
+                </div>
+            </div>
+
+            <div class="row">
+                <div class="col-md-6">
+                    <div class="form-floating">
+                        {{ form.timezone }}
+                        <label for="{{ form.timezone.id_for_label }}">Timezone</label>
+                        {% if form.timezone.errors %}
+                            <div class="invalid-feedback">{{ form.timezone.errors.0 }}</div>
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="form-floating">
+                        {{ form.language }}
+                        <label for="{{ form.language.id_for_label }}">Language</label>
+                        {% if form.language.errors %}
+                            <div class="invalid-feedback">{{ form.language.errors.0 }}</div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Form Actions -->
+        <div class="form-actions">
+            <button type="submit" class="btn-primary-large">
+                <i class="bi bi-check-circle-fill"></i>
+                Save Changes
+            </button>
+            <button type="reset" class="btn-secondary-large">
+                <i class="bi bi-x-circle"></i>
+                Cancel
+            </button>
+        </div>
+    </form>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const form = document.getElementById('editProfileForm');
+    const uploadArea = document.getElementById('uploadArea');
+    const avatarInput = document.getElementById('avatarInput');
+    const chooseFileBtn = document.getElementById('chooseFileBtn');
+    const uploadPreview = document.getElementById('uploadPreview');
+    const currentAvatar = document.getElementById('currentAvatar');
+    const avatarPlaceholder = document.getElementById('avatarPlaceholder');
+
+    // Choose file button
+    chooseFileBtn.addEventListener('click', () => {
+        avatarInput.click();
+    });
+
+    // File input change
+    avatarInput.addEventListener('change', function(e) {
+        handleFile(e.target.files[0]);
+    });
+
+    // Drag and drop
+    uploadArea.addEventListener('dragover', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        this.classList.add('dragover');
+    });
+
+    uploadArea.addEventListener('dragleave', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        this.classList.remove('dragover');
+    });
+
+    uploadArea.addEventListener('drop', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        this.classList.remove('dragover');
+
+        const file = e.dataTransfer.files[0];
+        if (file) {
+            avatarInput.files = e.dataTransfer.files;
+            handleFile(file);
+        }
+    });
+
+    // Handle file
+    function handleFile(file) {
+        if (!file) return;
+
+        // Validate file
+        if (file.size > 5 * 1024 * 1024) {
+            alert('File size must be less than 5MB');
+            avatarInput.value = '';
+            return;
+        }
+
+        if (!file.type.startsWith('image/')) {
+            alert('Please select an image file');
+            avatarInput.value = '';
+            return;
+        }
+
+        // Show preview
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            uploadPreview.src = e.target.result;
+            uploadPreview.style.display = 'block';
+
+            // Hide current avatar/placeholder
+            if (currentAvatar) currentAvatar.style.display = 'none';
+            if (avatarPlaceholder) avatarPlaceholder.style.display = 'none';
+        };
+        reader.readAsDataURL(file);
+    }
+
+    // Form submission
+    form.addEventListener('submit', function(e) {
+        e.preventDefault();
+
+        // Add loading state
+        form.classList.add('form-loading');
+
+        // Submit form
+        const formData = new FormData(form);
+
+        fetch(form.action || window.location.href, {
+            method: 'POST',
+            body: formData,
+            headers: {
+                'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value
+            }
+        })
+        .then(response => {
+            if (response.redirected) {
+                window.location.href = response.url;
+            } else {
+                return response.text();
+            }
+        })
+        .then(html => {
+            if (html) {
+                // If there are errors, Django will return the form with errors
+                document.open();
+                document.write(html);
+                document.close();
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('An error occurred. Please try again.');
+        })
+        .finally(() => {
+            form.classList.remove('form-loading');
+        });
+    });
+
+    // Reset button
+    const resetBtn = form.querySelector('button[type="reset"]');
+    if (resetBtn) {
+        resetBtn.addEventListener('click', function(e) {
+            e.preventDefault();
+            if (confirm('Are you sure you want to discard all changes?')) {
+                window.location.href = "{% url 'user_profile' %}";
+            }
+        });
+    }
+
+    // Add form-control class to all inputs
+    const formInputs = form.querySelectorAll('input, select, textarea');
+    formInputs.forEach(input => {
+        if (!input.classList.contains('file-input-hidden')) {
+            input.classList.add('form-control');
+        }
+
+        // Mark invalid fields
+        if (input.parentElement.querySelector('.invalid-feedback')) {
+            input.classList.add('is-invalid');
+        }
+    });
+
+    // Remove invalid class on input
+    formInputs.forEach(input => {
+        input.addEventListener('input', function() {
+            this.classList.remove('is-invalid');
+            const feedback = this.parentElement.querySelector('.invalid-feedback');
+            if (feedback) {
+                feedback.style.display = 'none';
+            }
+        });
+    });
+});
+</script>
+{% endblock %}

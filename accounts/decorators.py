@@ -30,7 +30,7 @@ def company_admin_required(view_func):
     def _wrapped_view(request, *args, **kwargs):
         if not (request.user.is_staff or 
                 request.user.company_admin or
-                request.user.has_perm('accounts.can_manage_users')):
+                request.user.has_perm('accounts.add_customuser')):
             messages.error(request, 'You do not have permission to access this page.')
             return HttpResponseForbidden("Admin access required")
         return view_func(request, *args, **kwargs)
