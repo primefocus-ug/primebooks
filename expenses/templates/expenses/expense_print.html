@@ -1,0 +1,484 @@
+{% extends 'base.html' %}
+{% load static %}
+{% load i18n %}
+{% load humanize %}
+{% load expense_tags %}
+
+{% block title %}{% trans "Print Expense" %} - {{ expense.expense_number }}{% endblock %}
+
+{% block extra_css %}
+<style>
+    @media print {
+        .no-print {
+            display: none !important;
+        }
+        
+        body {
+            font-size: 12pt;
+            line-height: 1.4;
+        }
+        
+        .container {
+            max-width: 100% !important;
+            padding: 0 !important;
+        }
+        
+        .card {
+            border: 1px solid #000 !important;
+            box-shadow: none !important;
+            margin-bottom: 20px;
+            page-break-inside: avoid;
+        }
+        
+        .card-header {
+            background: #f8f9fa !important;
+            border-bottom: 2px solid #000 !important;
+        }
+        
+        .badge {
+            border: 1px solid #000;
+            background: white !important;
+            color: black !important;
+        }
+        
+        .table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        
+        .table th,
+        .table td {
+            border: 1px solid #000;
+            padding: 8px;
+        }
+        
+        .table th {
+            background: #f8f9fa;
+            font-weight: bold;
+        }
+        
+        .text-primary {
+            color: #000 !important;
+            font-weight: bold;
+        }
+        
+        .text-muted {
+            color: #666 !important;
+        }
+        
+        h1, h2, h3, h4, h5, h6 {
+            color: #000 !important;
+        }
+        
+        a {
+            color: #000 !important;
+            text-decoration: none !important;
+        }
+    }
+
+    @media screen {
+        .print-container {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        .print-actions {
+            margin-bottom: 20px;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 8px;
+        }
+    }
+
+    .company-header {
+        text-align: center;
+        margin-bottom: 30px;
+        padding-bottom: 20px;
+        border-bottom: 2px solid #000;
+    }
+
+    .expense-number {
+        font-size: 1.5em;
+        font-weight: bold;
+        margin-bottom: 10px;
+    }
+
+    .amount-highlight {
+        font-size: 1.8em;
+        font-weight: bold;
+        text-align: center;
+        padding: 20px;
+        border: 2px solid #000;
+        margin: 20px 0;
+    }
+
+    .signature-section {
+        margin-top: 50px;
+        padding-top: 20px;
+        border-top: 1px solid #000;
+    }
+
+    .signature-line {
+        border-bottom: 1px solid #000;
+        margin: 40px 0 10px 0;
+        min-height: 20px;
+    }
+
+    .footer {
+        margin-top: 50px;
+        padding-top: 20px;
+        border-top: 1px solid #000;
+        font-size: 0.9em;
+        color: #666;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="print-container">
+    <!-- Print Actions (Visible only on screen) -->
+    <div class="print-actions no-print">
+        <div class="d-flex justify-content-between align-items-center">
+            <h4>
+                <i class="bi bi-printer me-2"></i>
+                {% trans "Print Preview" %}
+            </h4>
+            <div class="btn-group">
+                <button onclick="window.print()" class="btn btn-primary">
+                    <i class="bi bi-printer me-2"></i>
+                    {% trans "Print" %}
+                </button>
+                <a href="{% url 'expenses:expense_detail' expense.pk %}" class="btn btn-outline-secondary">
+                    <i class="bi bi-arrow-left me-2"></i>
+                    {% trans "Back to Expense" %}
+                </a>
+            </div>
+        </div>
+        <p class="mb-0 mt-2 text-muted">
+            {% trans "Use the print button to print this expense. The print version is optimized for A4 paper." %}
+        </p>
+    </div>
+
+    <!-- Printable Content -->
+    <div class="printable-content">
+        <!-- Company Header -->
+        <div class="company-header">
+            <h1>{{ request.site.name|default:"Company Name" }}</h1>
+            <h3>{% trans "Expense Report" %}</h3>
+            <p class="text-muted">
+                {% trans "Generated on" %} {% now "F d, Y H:i" %}
+            </p>
+        </div>
+
+        <!-- Expense Header -->
+        <div class="card">
+            <div class="card-header">
+                <h4 class="mb-0">{% trans "Expense Details" %}</h4>
+            </div>
+            <div class="card-body">
+                <div class="row mb-3">
+                    <div class="col-12">
+                        <div class="expense-number">{{ expense.expense_number }}</div>
+                        <h3>{{ expense.title }}</h3>
+                        {% if expense.description %}
+                        <p class="text-muted">{{ expense.description }}</p>
+                        {% endif %}
+                    </div>
+                </div>
+                
+                <div class="row">
+                    <div class="col-6">
+                        <strong>{% trans "Expense Date:" %}</strong><br>
+                        {{ expense.expense_date|date:"F d, Y" }}
+                    </div>
+                    <div class="col-6">
+                        <strong>{% trans "Status:" %}</strong><br>
+                        {% expense_status_badge expense %}
+                    </div>
+                </div>
+                
+                <div class="row mt-2">
+                    <div class="col-6">
+                        <strong>{% trans "Category:" %}</strong><br>
+                        {{ expense.category.name }}
+                    </div>
+                    <div class="col-6">
+                        <strong>{% trans "Reference:" %}</strong><br>
+                        {{ expense.reference_number|default:"-" }}
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Amount Information -->
+        <div class="card">
+            <div class="card-header">
+                <h4 class="mb-0">{% trans "Amount Information" %}</h4>
+            </div>
+            <div class="card-body">
+                <div class="amount-highlight">
+                    {{ expense.total_amount|floatformat:0|intcomma }} {{ expense.currency }}
+                </div>
+                
+                <div class="row text-center">
+                    <div class="col-4">
+                        <strong>{% trans "Amount" %}</strong><br>
+                        {{ expense.amount|floatformat:0|intcomma }} {{ expense.currency }}
+                    </div>
+                    {% if expense.tax_amount %}
+                    <div class="col-4">
+                        <strong>{% trans "Tax" %} ({{ expense.tax_rate }}%)</strong><br>
+                        {{ expense.tax_amount|floatformat:0|intcomma }} {{ expense.currency }}
+                    </div>
+                    {% endif %}
+                    <div class="col-4">
+                        <strong>{% trans "Total" %}</strong><br>
+                        {{ expense.total_amount|floatformat:0|intcomma }} {{ expense.currency }}
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Vendor Information -->
+        {% if expense.vendor_name %}
+        <div class="card">
+            <div class="card-header">
+                <h4 class="mb-0">{% trans "Vendor Information" %}</h4>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-6">
+                        <strong>{% trans "Vendor Name:" %}</strong><br>
+                        {{ expense.vendor_name }}
+                    </div>
+                    {% if expense.vendor_phone %}
+                    <div class="col-6">
+                        <strong>{% trans "Phone:" %}</strong><br>
+                        {{ expense.vendor_phone }}
+                    </div>
+                    {% endif %}
+                </div>
+                
+                {% if expense.vendor_email or expense.vendor_tin %}
+                <div class="row mt-2">
+                    {% if expense.vendor_email %}
+                    <div class="col-6">
+                        <strong>{% trans "Email:" %}</strong><br>
+                        {{ expense.vendor_email }}
+                    </div>
+                    {% endif %}
+                    {% if expense.vendor_tin %}
+                    <div class="col-6">
+                        <strong>{% trans "TIN:" %}</strong><br>
+                        {{ expense.vendor_tin }}
+                    </div>
+                    {% endif %}
+                </div>
+                {% endif %}
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Payment Information -->
+        {% if expense.status == 'PAID' %}
+        <div class="card">
+            <div class="card-header">
+                <h4 class="mb-0">{% trans "Payment Information" %}</h4>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-4">
+                        <strong>{% trans "Payment Method:" %}</strong><br>
+                        {{ expense.get_payment_method_display }}
+                    </div>
+                    {% if expense.payment_reference %}
+                    <div class="col-4">
+                        <strong>{% trans "Reference:" %}</strong><br>
+                        {{ expense.payment_reference }}
+                    </div>
+                    {% endif %}
+                    <div class="col-4">
+                        <strong>{% trans "Paid On:" %}</strong><br>
+                        {{ expense.paid_at|date:"F d, Y" }}
+                    </div>
+                </div>
+                <div class="row mt-2">
+                    <div class="col-12">
+                        <strong>{% trans "Paid By:" %}</strong><br>
+                        {{ expense.paid_by.get_full_name }}
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Timeline -->
+        <div class="card">
+            <div class="card-header">
+                <h4 class="mb-0">{% trans "Expense Timeline" %}</h4>
+            </div>
+            <div class="card-body">
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>{% trans "Date" %}</th>
+                            <th>{% trans "Action" %}</th>
+                            <th>{% trans "User" %}</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>{{ expense.created_at|date:"M d, Y H:i" }}</td>
+                            <td>{% trans "Created" %}</td>
+                            <td>{{ expense.created_by.get_full_name }}</td>
+                        </tr>
+                        
+                        {% if expense.submitted_at %}
+                        <tr>
+                            <td>{{ expense.submitted_at|date:"M d, Y H:i" }}</td>
+                            <td>{% trans "Submitted" %}</td>
+                            <td>{{ expense.created_by.get_full_name }}</td>
+                        </tr>
+                        {% endif %}
+                        
+                        {% if expense.approved_at %}
+                        <tr>
+                            <td>{{ expense.approved_at|date:"M d, Y H:i" }}</td>
+                            <td>{% trans "Approved" %}</td>
+                            <td>{{ expense.approved_by.get_full_name }}</td>
+                        </tr>
+                        {% endif %}
+                        
+                        {% if expense.rejected_at %}
+                        <tr>
+                            <td>{{ expense.rejected_at|date:"M d, Y H:i" }}</td>
+                            <td>{% trans "Rejected" %}</td>
+                            <td>{{ expense.approved_by.get_full_name }}</td>
+                        </tr>
+                        {% endif %}
+                        
+                        {% if expense.paid_at %}
+                        <tr>
+                            <td>{{ expense.paid_at|date:"M d, Y H:i" }}</td>
+                            <td>{% trans "Paid" %}</td>
+                            <td>{{ expense.paid_by.get_full_name }}</td>
+                        </tr>
+                        {% endif %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Attachments -->
+        {% if attachments %}
+        <div class="card">
+            <div class="card-header">
+                <h4 class="mb-0">{% trans "Attachments" %}</h4>
+            </div>
+            <div class="card-body">
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>{% trans "File Name" %}</th>
+                            <th>{% trans "Type" %}</th>
+                            <th>{% trans "Size" %}</th>
+                            <th>{% trans "Uploaded" %}</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for attachment in attachments %}
+                        <tr>
+                            <td>{{ attachment.filename }}</td>
+                            <td>{{ attachment.file_type|upper }}</td>
+                            <td>{{ attachment.file_size|filesizeformat }}</td>
+                            <td>{{ attachment.uploaded_at|date:"M d, Y" }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Approval Signatures -->
+        <div class="signature-section">
+            <div class="row">
+                <div class="col-6">
+                    <strong>{% trans "Submitted By:" %}</strong>
+                    <div class="signature-line"></div>
+                    <div class="text-center">
+                        {{ expense.created_by.get_full_name }}<br>
+                        <small class="text-muted">{% trans "Employee" %}</small>
+                    </div>
+                </div>
+                
+                {% if expense.status == 'APPROVED' or expense.status == 'PAID' %}
+                <div class="col-6">
+                    <strong>{% trans "Approved By:" %}</strong>
+                    <div class="signature-line"></div>
+                    <div class="text-center">
+                        {{ expense.approved_by.get_full_name }}<br>
+                        <small class="text-muted">{% trans "Approver" %}</small>
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+            
+            {% if expense.status == 'PAID' %}
+            <div class="row mt-4">
+                <div class="col-6">
+                    <strong>{% trans "Processed By:" %}</strong>
+                    <div class="signature-line"></div>
+                    <div class="text-center">
+                        {{ expense.paid_by.get_full_name }}<br>
+                        <small class="text-muted">{% trans "Finance" %}</small>
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+
+        <!-- Footer -->
+        <div class="footer">
+            <div class="row">
+                <div class="col-6">
+                    <strong>{% trans "Document ID:" %}</strong> {{ expense.expense_number }}<br>
+                    <strong>{% trans "Print Date:" %}</strong> {% now "F d, Y H:i" %}
+                </div>
+                <div class="col-6 text-end">
+                    <strong>{% trans "Page:" %}</strong> <span class="page-number"></span><br>
+                    <strong>{% trans "Confidential" %}</strong>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Add page numbers for print
+    function addPageNumbers() {
+        const totalPages = Math.ceil(document.querySelector('.printable-content').scrollHeight / 1123); // A4 height in pixels at 96 DPI
+        const pageNumbers = document.querySelectorAll('.page-number');
+        
+        pageNumbers.forEach((el, index) => {
+            el.textContent = `${index + 1} of ${totalPages}`;
+        });
+    }
+
+    addPageNumbers();
+
+    // Update page numbers on print
+    window.addEventListener('beforeprint', addPageNumbers);
+});
+
+// Auto-print option
+const urlParams = new URLSearchParams(window.location.search);
+if (urlParams.get('autoprint') === 'true') {
+    window.print();
+}
+</script>
+{% endblock %}

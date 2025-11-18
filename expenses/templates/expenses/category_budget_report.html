@@ -1,64 +1,118 @@
-{% extends "base.html" %}
+{% extends 'base.html' %}
 {% load static %}
+{% load i18n %}
+{% load humanize %}
+{% load expense_tags %}
 
-{% block title %}Budget Report - PrimeBooks{% endblock %}
+{% block title %}{% trans "Budget Analysis Report" %}{% endblock %}
+
+{% block extra_css %}
+<style>
+    .budget-card {
+        border-left: 4px solid;
+        transition: all 0.3s ease;
+    }
+
+    .budget-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    }
+
+    .budget-meter {
+        height: 8px;
+        border-radius: 4px;
+        overflow: hidden;
+        background: #e9ecef;
+        margin: 10px 0;
+    }
+
+    .budget-progress {
+        height: 100%;
+        transition: width 0.3s ease;
+    }
+
+    .stat-number {
+        font-size: 2rem;
+        font-weight: bold;
+        line-height: 1;
+    }
+
+    .over-budget {
+        border: 2px solid #dc3545;
+        background: rgba(220, 53, 69, 0.05);
+    }
+
+    .near-budget {
+        border: 2px solid #fd7e14;
+        background: rgba(253, 126, 20, 0.05);
+    }
+
+    .on-track {
+        border: 2px solid #28a745;
+        background: rgba(40, 167, 69, 0.05);
+    }
+
+    .summary-card {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        border: none;
+    }
+
+    @media (max-width: 767.98px) {
+        .stat-number {
+            font-size: 1.5rem;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block breadcrumb_items %}
+    <li class="breadcrumb-item"><a href="{% url 'user_dashboard' %}">{% trans "Home" %}</a></li>
+    <li class="breadcrumb-item"><a href="{% url 'expenses:dashboard' %}">{% trans "Expenses" %}</a></li>
+    <li class="breadcrumb-item"><a href="{% url 'expenses:reports' %}">{% trans "Reports" %}</a></li>
+    <li class="breadcrumb-item active">{% trans "Budget Analysis" %}</li>
+{% endblock %}
 
 {% block content %}
 <div class="container-fluid">
-    <!-- Header -->
-    <div class="row">
-        <div class="col-12">
-            <div class="page-header d-flex justify-content-between align-items-center mb-4">
-                <h1 class="h2 mb-0">
-                    <i class="bi bi-graph-up me-2"></i>Budget Utilization Report
-                </h1>
-                <a href="{% url 'expenses:category_list' %}" class="btn btn-outline-secondary">
-                    <i class="bi bi-arrow-left me-1"></i>Back to Categories
-                </a>
-            </div>
+    <!-- Page Header -->
+    <div class="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center mb-4">
+        <div>
+            <h1 class="h3 mb-2">
+                <i class="bi bi-wallet2 me-2"></i>
+                {% trans "Budget Analysis Report" %}
+            </h1>
+            <p class="text-muted mb-0">
+                {% trans "Monthly budget utilization across all categories" %}
+            </p>
+        </div>
+        <div class="mt-3 mt-md-0">
+            <button onclick="window.print()" class="btn btn-outline-secondary">
+                <i class="bi bi-printer me-2"></i>
+                {% trans "Print Report" %}
+            </button>
         </div>
     </div>
 
-    <!-- Overall Summary -->
-    <div class="row">
-        <div class="col-12">
-            <div class="card">
-                <div class="card-body">
-                    <div class="row text-center">
-                        <div class="col-md-3">
-                            <h3 class="text-primary">{{ budget_data|length }}</h3>
-                            <p class="text-muted mb-0">Categories with Budget</p>
-                        </div>
-                        <div class="col-md-3">
-                            <h3 class="text-info">{{ total_budget|floatformat:2 }}</h3>
-                            <p class="text-muted mb-0">Total Budget</p>
-                        </div>
-                        <div class="col-md-3">
-                            <h3 class="text-warning">{{ total_spent|floatformat:2 }}</h3>
-                            <p class="text-muted mb-0">Total Spent</p>
-                        </div>
-                        <div class="col-md-3">
-                            <h3 class="{% if overall_percentage > 100 %}text-danger{% elif overall_percentage > 80 %}text-warning{% else %}text-success{% endif %}">
-                                {{ overall_percentage|floatformat:1 }}%
-                            </h3>
-                            <p class="text-muted mb-0">Overall Utilization</p>
-                        </div>
-                    </div>
-
-                    <!-- Overall Progress -->
-                    <div class="mt-4">
-                        <h6>Overall Budget Utilization</h6>
-                        <div class="progress" style="height: 25px;">
-                            <div class="progress-bar {% if overall_percentage > 100 %}bg-danger{% elif overall_percentage > 80 %}bg-warning{% else %}bg-success{% endif %}" 
-                                 role="progressbar" 
-                                 style="width: {{ overall_percentage }}%;"
-                                 aria-valuenow="{{ overall_percentage }}" 
-                                 aria-valuemin="0" 
-                                 aria-valuemax="100">
-                                {{ overall_percentage|floatformat:1 }}%
-                            </div>
-                        </div>
-                    </div>
+    <!-- Summary Statistics -->
+    <div class="card summary-card mb-4">
+        <div class="card-body">
+            <div class="row text-center">
+                <div class="col-12 col-md-3">
+                    <div class="stat-number">{{ total_budget|floatformat:0|intcomma }}</div>
+                    <small>{% trans "Total Budget" %}</small>
+                </div>
+                <div class="col-12 col-md-3">
+                    <div class="stat-number">{{ total_spent|floatformat:0|intcomma }}</div>
+                    <small>{% trans "Total Spent" %}</small>
+                </div>
+                <div class="col-12 col-md-3">
+                    <div class="stat-number">{{ total_remaining|floatformat:0|intcomma }}</div>
+                    <small>{% trans "Total Remaining" %}</small>
+                </div>
+                <div class="col-12 col-md-3">
+                    <div class="stat-number">{{ overall_percentage|floatformat:1 }}%</div>
+                    <small>{% trans "Overall Utilization" %}</small>
                 </div>
             </div>
         </div>
@@ -66,112 +120,232 @@
 
     <!-- Over Budget Warning -->
     {% if over_budget_categories %}
-    <div class="row mt-4">
+    <div class="alert alert-danger mb-4">
+        <h5 class="alert-heading">
+            <i class="bi bi-exclamation-triangle me-2"></i>
+            {% trans "Budget Exceeded" %}
+        </h5>
+        <p class="mb-2">
+            {% blocktrans count count=over_budget_categories|length %}
+                {{ count }} category has exceeded its monthly budget.
+            {% plural %}
+                {{ count }} categories have exceeded their monthly budgets.
+            {% endblocktrans %}
+        </p>
+        <ul class="mb-0">
+            {% for item in over_budget_categories %}
+            <li>
+                <strong>{{ item.category.name }}</strong>:
+                {{ item.spent|floatformat:0|intcomma }} UGX / {{ item.budget|floatformat:0|intcomma }} UGX
+                ({{ item.utilization|floatformat:1 }}%)
+            </li>
+            {% endfor %}
+        </ul>
+    </div>
+    {% endif %}
+
+    <!-- Budget Analysis Grid -->
+    <div class="row g-3">
+        {% for item in budget_data %}
+        <div class="col-12 col-md-6 col-lg-4">
+            <div class="card border-0 shadow-sm h-100 budget-card
+                {% if item.is_over_budget %}over-budget{% elif item.percentage > 80 %}near-budget{% else %}on-track{% endif %}"
+                style="border-left-color: {{ item.category.color_code }};">
+
+                <div class="card-body">
+                    <!-- Category Header -->
+                    <div class="d-flex justify-content-between align-items-start mb-3">
+                        <div class="d-flex align-items-center">
+                            {% if item.category.icon %}
+                            <i class="{{ item.category.icon }} me-2" style="color: {{ item.category.color_code }}; font-size: 1.25rem;"></i>
+                            {% endif %}
+                            <h6 class="mb-0">{{ item.category.name }}</h6>
+                        </div>
+                        <span class="badge {% if item.is_over_budget %}bg-danger{% elif item.percentage > 80 %}bg-warning{% else %}bg-success{% endif %}">
+                            {{ item.percentage|floatformat:1 }}%
+                        </span>
+                    </div>
+
+                    <!-- Amount Information -->
+                    <div class="mb-3">
+                        <div class="d-flex justify-content-between align-items-center mb-1">
+                            <small class="text-muted">{% trans "Spent" %}</small>
+                            <strong>{{ item.spent|floatformat:0|intcomma }} UGX</strong>
+                        </div>
+                        <div class="d-flex justify-content-between align-items-center mb-1">
+                            <small class="text-muted">{% trans "Budget" %}</small>
+                            <strong>{{ item.budget|floatformat:0|intcomma }} UGX</strong>
+                        </div>
+                        <div class="d-flex justify-content-between align-items-center">
+                            <small class="text-muted">{% trans "Remaining" %}</small>
+                            <strong class="{% if item.remaining < 0 %}text-danger{% else %}text-success{% endif %}">
+                                {{ item.remaining|floatformat:0|intcomma }} UGX
+                            </strong>
+                        </div>
+                    </div>
+
+                    <!-- Budget Meter -->
+                    <div class="budget-meter">
+                        <div class="budget-progress {% if item.is_over_budget %}bg-danger{% elif item.percentage > 80 %}bg-warning{% else %}bg-success{% endif %}"
+                             style="width: {% if item.is_over_budget %}100{% else %}{{ item.percentage }}{% endif %}%"></div>
+                    </div>
+
+                    <!-- Variance -->
+                    {% if item.variance != 0 %}
+                    <div class="mt-2 text-center">
+                        <small class="{% if item.variance > 0 %}text-danger{% else %}text-success{% endif %}">
+                            <i class="bi bi-{% if item.variance > 0 %}arrow-up{% else %}arrow-down{% endif %} me-1"></i>
+                            {{ item.variance|abs|floatformat:0|intcomma }} UGX
+                            {% if item.variance > 0 %}
+                                {% trans "over budget" %}
+                            {% else %}
+                                {% trans "under budget" %}
+                            {% endif %}
+                        </small>
+                    </div>
+                    {% endif %}
+
+                    <!-- Action Buttons -->
+                    <div class="d-grid gap-2 mt-3">
+                        <a href="{% url 'expenses:category_expenses' item.category.pk %}" class="btn btn-sm btn-outline-primary">
+                            <i class="bi bi-receipt me-1"></i>
+                            {% trans "View Expenses" %}
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+        {% empty %}
         <div class="col-12">
-            <div class="alert alert-danger">
-                <h5 class="alert-heading">
-                    <i class="bi bi-exclamation-triangle-fill me-2"></i>
-                    Over Budget Categories
-                </h5>
-                <p class="mb-0">
-                    The following categories have exceeded their monthly budget:
-                    {% for item in over_budget_categories %}
-                    <strong>{{ item.category.name }}</strong>{% if not forloop.last %}, {% endif %}
-                    {% endfor %}
-                </p>
+            <div class="card border-0 shadow-sm">
+                <div class="card-body text-center py-5">
+                    <i class="bi bi-wallet2 text-muted" style="font-size: 4rem;"></i>
+                    <h4 class="mt-3 text-muted">{% trans "No Budget Data" %}</h4>
+                    <p class="text-muted">{% trans "No categories have monthly budgets configured" %}</p>
+                    <a href="{% url 'expenses:category_list' %}" class="btn btn-primary">
+                        <i class="bi bi-tags me-2"></i>
+                        {% trans "Manage Categories" %}
+                    </a>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+
+    <!-- Detailed Analysis -->
+    {% if budget_data %}
+    <div class="card border-0 shadow-sm mt-4">
+        <div class="card-header bg-white border-0 py-3">
+            <h5 class="mb-0">
+                <i class="bi bi-table me-2"></i>
+                {% trans "Detailed Budget Analysis" %}
+            </h5>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>{% trans "Category" %}</th>
+                            <th class="text-end">{% trans "Budget" %}</th>
+                            <th class="text-end">{% trans "Spent" %}</th>
+                            <th class="text-end">{% trans "Remaining" %}</th>
+                            <th class="text-end">{% trans "Utilization" %}</th>
+                            <th class="text-end">{% trans "Variance" %}</th>
+                            <th>{% trans "Status" %}</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for item in budget_data %}
+                        <tr>
+                            <td>
+                                <div class="d-flex align-items-center">
+                                    <span class="badge me-2" style="background-color: {{ item.category.color_code }}; width: 8px; height: 8px; border-radius: 50%;"></span>
+                                    {{ item.category.name }}
+                                </div>
+                            </td>
+                            <td class="text-end">{{ item.budget|floatformat:0|intcomma }} UGX</td>
+                            <td class="text-end">{{ item.spent|floatformat:0|intcomma }} UGX</td>
+                            <td class="text-end {% if item.remaining < 0 %}text-danger{% else %}text-success{% endif %}">
+                                {{ item.remaining|floatformat:0|intcomma }} UGX
+                            </td>
+                            <td class="text-end">{{ item.percentage|floatformat:1 }}%</td>
+                            <td class="text-end {% if item.variance > 0 %}text-danger{% else %}text-success{% endif %}">
+                                {{ item.variance|floatformat:0|intcomma }} UGX
+                            </td>
+                            <td>
+                                {% if item.is_over_budget %}
+                                <span class="badge bg-danger">{% trans "Over Budget" %}</span>
+                                {% elif item.percentage > 80 %}
+                                <span class="badge bg-warning">{% trans "Near Limit" %}</span>
+                                {% else %}
+                                <span class="badge bg-success">{% trans "On Track" %}</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                    <tfoot class="table-light">
+                        <tr>
+                            <th>{% trans "Total" %}</th>
+                            <th class="text-end">{{ total_budget|floatformat:0|intcomma }} UGX</th>
+                            <th class="text-end">{{ total_spent|floatformat:0|intcomma }} UGX</th>
+                            <th class="text-end {% if total_remaining < 0 %}text-danger{% else %}text-success{% endif %}">
+                                {{ total_remaining|floatformat:0|intcomma }} UGX
+                            </th>
+                            <th class="text-end">{{ overall_percentage|floatformat:1 }}%</th>
+                            <th class="text-end {% if total_spent > total_budget %}text-danger{% else %}text-success{% endif %}">
+                                {{ total_spent|subtract:total_budget|floatformat:0|intcomma }} UGX
+                            </th>
+                            <th>
+                                {% if total_spent > total_budget %}
+                                <span class="badge bg-danger">{% trans "Over Budget" %}</span>
+                                {% elif overall_percentage > 80 %}
+                                <span class="badge bg-warning">{% trans "Near Limit" %}</span>
+                                {% else %}
+                                <span class="badge bg-success">{% trans "On Track" %}</span>
+                                {% endif %}
+                            </th>
+                        </tr>
+                    </tfoot>
+                </table>
             </div>
         </div>
     </div>
     {% endif %}
 
-    <!-- Category Budget Details -->
-    <div class="row mt-4">
-        <div class="col-12">
-            <div class="card">
-                <div class="card-header">
-                    <h5 class="card-title mb-0">Category Budget Details</h5>
-                </div>
-                <div class="card-body">
-                    <div class="table-responsive">
-                        <table class="table table-hover">
-                            <thead>
-                                <tr>
-                                    <th>Category</th>
-                                    <th>Budget</th>
-                                    <th>Spent</th>
-                                    <th>Remaining</th>
-                                    <th>Utilization</th>
-                                    <th>Status</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {% for item in budget_data %}
-                                <tr>
-                                    <td>
-                                        <div class="d-flex align-items-center">
-                                            <span class="color-indicator me-2" 
-                                                  style="background-color: {{ item.category.color_code }}; width: 16px; height: 16px; border-radius: 50%;"></span>
-                                            {% if item.category.icon %}
-                                            <i class="{{ item.category.icon }} me-2"></i>
-                                            {% endif %}
-                                            <strong>{{ item.category.name }}</strong>
-                                        </div>
-                                    </td>
-                                    <td>
-                                        <strong>{{ item.budget|floatformat:2 }}</strong>
-                                    </td>
-                                    <td>
-                                        {{ item.spent|floatformat:2 }}
-                                    </td>
-                                    <td>
-                                        <strong class="{% if item.remaining < 0 %}text-danger{% else %}text-success{% endif %}">
-                                            {{ item.remaining|floatformat:2 }}
-                                        </strong>
-                                    </td>
-                                    <td>
-                                        <div class="d-flex align-items-center">
-                                            <div class="progress flex-grow-1 me-2" style="height: 8px;">
-                                                <div class="progress-bar {% if item.percentage > 100 %}bg-danger{% elif item.percentage > 80 %}bg-warning{% else %}bg-success{% endif %}" 
-                                                     role="progressbar" 
-                                                     style="width: {{ item.percentage }}%;"
-                                                     aria-valuenow="{{ item.percentage }}" 
-                                                     aria-valuemin="0" 
-                                                     aria-valuemax="100">
-                                                </div>
-                                            </div>
-                                            <span class="text-muted" style="font-size: 0.875rem;">
-                                                {{ item.percentage|floatformat:1 }}%
-                                            </span>
-                                        </div>
-                                    </td>
-                                    <td>
-                                        {% if item.percentage > 100 %}
-                                        <span class="badge bg-danger">Over Budget</span>
-                                        {% elif item.percentage > 80 %}
-                                        <span class="badge bg-warning">Near Limit</span>
-                                        {% else %}
-                                        <span class="badge bg-success">Within Budget</span>
-                                        {% endif %}
-                                    </td>
-                                </tr>
-                                {% endfor %}
-                            </tbody>
-                        </table>
+    <!-- Recommendations -->
+    <div class="card border-0 shadow-sm mt-4">
+        <div class="card-header bg-info bg-opacity-10 border-0 py-3">
+            <h5 class="mb-0">
+                <i class="bi bi-lightbulb me-2"></i>
+                {% trans "Recommendations" %}
+            </h5>
+        </div>
+        <div class="card-body">
+            <div class="row">
+                {% if over_budget_categories %}
+                <div class="col-12 col-md-6">
+                    <div class="alert alert-warning">
+                        <h6 class="alert-heading">{% trans "Budget Adjustments Needed" %}</h6>
+                        <ul class="mb-0">
+                            <li>{% trans "Review and adjust budgets for over-spent categories" %}</li>
+                            <li>{% trans "Consider reallocating funds from under-utilized categories" %}</li>
+                            <li>{% trans "Implement spending controls for high-utilization categories" %}</li>
+                        </ul>
                     </div>
                 </div>
-            </div>
-        </div>
-    </div>
+                {% endif %}
 
-    <!-- Budget Utilization Chart -->
-    <div class="row mt-4">
-        <div class="col-12">
-            <div class="card">
-                <div class="card-header">
-                    <h5 class="card-title mb-0">Budget Utilization Visualization</h5>
-                </div>
-                <div class="card-body">
-                    <canvas id="budgetChart" width="400" height="200"></canvas>
+                <div class="col-12 col-md-6">
+                    <div class="alert alert-info">
+                        <h6 class="alert-heading">{% trans "Best Practices" %}</h6>
+                        <ul class="mb-0">
+                            <li>{% trans "Set realistic monthly budgets based on historical spending" %}</li>
+                            <li>{% trans "Monitor budget utilization regularly throughout the month" %}</li>
+                            <li>{% trans "Set up alerts for categories approaching their budget limits" %}</li>
+                        </ul>
+                    </div>
                 </div>
             </div>
         </div>
@@ -180,71 +354,10 @@
 {% endblock %}
 
 {% block extra_js %}
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
 document.addEventListener('DOMContentLoaded', function() {
-    const ctx = document.getElementById('budgetChart').getContext('2d');
-    
-    const categories = [{% for item in budget_data %}'{{ item.category.name }}',{% endfor %}];
-    const budgets = [{% for item in budget_data %}{{ item.budget }},{% endfor %}];
-    const spent = [{% for item in budget_data %}{{ item.spent }},{% endfor %}];
-    const backgroundColors = [{% for item in budget_data %}'{{ item.category.color_code }}',{% endfor %}];
-
-    const chart = new Chart(ctx, {
-        type: 'bar',
-        data: {
-            labels: categories,
-            datasets: [
-                {
-                    label: 'Budget',
-                    data: budgets,
-                    backgroundColor: backgroundColors,
-                    borderColor: backgroundColors,
-                    borderWidth: 1
-                },
-                {
-                    label: 'Spent',
-                    data: spent,
-                    backgroundColor: backgroundColors.map(color => color + '80'), // Add transparency
-                    borderColor: backgroundColors,
-                    borderWidth: 1
-                }
-            ]
-        },
-        options: {
-            responsive: true,
-            scales: {
-                x: {
-                    title: {
-                        display: true,
-                        text: 'Categories'
-                    }
-                },
-                y: {
-                    title: {
-                        display: true,
-                        text: 'Amount'
-                    },
-                    beginAtZero: true
-                }
-            },
-            plugins: {
-                legend: {
-                    display: true,
-                    position: 'top'
-                },
-                tooltip: {
-                    callbacks: {
-                        label: function(context) {
-                            const label = context.dataset.label || '';
-                            const value = context.parsed.y;
-                            return `${label}: ${value.toFixed(2)}`;
-                        }
-                    }
-                }
-            }
-        }
-    });
+    // Add any interactive functionality here
+    console.log('Budget analysis report loaded');
 });
 </script>
 {% endblock %}

@@ -455,9 +455,16 @@ NAVIGATION_ITEMS = [
             ),
             NavigationItem(
                 name="Reports",
-                url_name="expense:expense_create",
-                icon="bbi bi-plus-circle",
-            ),],),
+                url_name="expense:reports",
+                icon="bi bi-file-earmark-bar-graph",
+            ),
+            NavigationItem(
+                name="Category List",
+                url_name="expenses:category_list",
+                icon="bi bi-coin",
+            ),
+
+        ],),
     NavigationItem(
         name="Customers",
         icon="bi bi-people",

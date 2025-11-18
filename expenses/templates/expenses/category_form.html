@@ -1,249 +1,368 @@
-{% extends "base.html" %}
+{% extends 'base.html' %}
 {% load static %}
+{% load i18n %}
+{% load widget_tweaks %}
 
-{% block title %}{{ title }} - PrimeBooks{% endblock %}
+{% block title %}
+    {% if form.instance.pk %}{% trans "Edit Category" %}{% else %}{% trans "Create Category" %}{% endif %}
+{% endblock %}
+
+{% block extra_css %}
+<style>
+    .color-preview {
+        width: 30px;
+        height: 30px;
+        border-radius: 6px;
+        border: 2px solid #dee2e6;
+        display: inline-block;
+        vertical-align: middle;
+        margin-right: 10px;
+    }
+
+    .icon-preview {
+        width: 40px;
+        height: 40px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 8px;
+        font-size: 1.25rem;
+        margin-right: 10px;
+    }
+
+    .form-section {
+        margin-bottom: 2rem;
+    }
+
+    .section-title {
+        border-bottom: 2px solid #e9ecef;
+        padding-bottom: 0.5rem;
+        margin-bottom: 1.5rem;
+        font-weight: 600;
+    }
+
+    .budget-warning {
+        border-left: 4px solid #fd7e14;
+        padding-left: 1rem;
+    }
+
+    @media (max-width: 767.98px) {
+        .btn {
+            width: 100%;
+            margin-bottom: 0.5rem;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block breadcrumb_items %}
+    <li class="breadcrumb-item"><a href="{% url 'user_dashboard' %}">{% trans "Home" %}</a></li>
+    <li class="breadcrumb-item"><a href="{% url 'expenses:dashboard' %}">{% trans "Expenses" %}</a></li>
+    <li class="breadcrumb-item"><a href="{% url 'expenses:category_list' %}">{% trans "Categories" %}</a></li>
+    <li class="breadcrumb-item active">
+        {% if form.instance.pk %}{% trans "Edit" %}{% else %}{% trans "Create" %}{% endif %}
+    </li>
+{% endblock %}
 
 {% block content %}
 <div class="container-fluid">
-    <div class="row">
-        <div class="col-12">
-            <div class="page-header d-flex justify-content-between align-items-center mb-4">
-                <h1 class="h2 mb-0">
-                    <i class="bi bi-tag me-2"></i>{{ title }}
+    <div class="row justify-content-center">
+        <div class="col-12 col-lg-8 col-xl-6">
+            <!-- Page Header -->
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h1 class="h3 mb-0">
+                    <i class="bi {% if form.instance.pk %}bi-pencil-square{% else %}bi-plus-circle{% endif %} me-2"></i>
+                    {% if form.instance.pk %}
+                        {% trans "Edit Category" %}
+                    {% else %}
+                        {% trans "Create New Category" %}
+                    {% endif %}
                 </h1>
                 <a href="{% url 'expenses:category_list' %}" class="btn btn-outline-secondary">
-                    <i class="bi bi-arrow-left me-1"></i>Back to Categories
+                    <i class="bi bi-arrow-left me-2"></i>
+                    {% trans "Back to List" %}
                 </a>
             </div>
-        </div>
-    </div>
 
-    <div class="row">
-        <div class="col-lg-8">
-            <div class="card">
-                <div class="card-header">
-                    <h5 class="card-title mb-0">Category Details</h5>
+            <form method="post" id="categoryForm">
+                {% csrf_token %}
+
+                {% if form.non_field_errors %}
+                <div class="alert alert-danger">
+                    <i class="bi bi-exclamation-triangle me-2"></i>
+                    {% for error in form.non_field_errors %}
+                        {{ error }}
+                    {% endfor %}
                 </div>
-                <div class="card-body">
-                    <form method="post" id="categoryForm">
-                        {% csrf_token %}
-                        
-                        {% if form.non_field_errors %}
-                            <div class="alert alert-danger">
-                                {% for error in form.non_field_errors %}
-                                    {{ error }}
-                                {% endfor %}
-                            </div>
-                        {% endif %}
+                {% endif %}
 
-                        <div class="row">
-                            <div class="col-md-6">
-                                <div class="mb-3">
-                                    <label for="{{ form.name.id_for_label }}" class="form-label">
-                                        Category Name *
-                                    </label>
-                                    {{ form.name }}
-                                    {% if form.name.errors %}
-                                        <div class="text-danger small">{{ form.name.errors }}</div>
-                                    {% endif %}
-                                </div>
-                            </div>
-                            <div class="col-md-6">
-                                <div class="mb-3">
-                                    <label for="{{ form.code.id_for_label }}" class="form-label">
-                                        Code *
-                                    </label>
-                                    {{ form.code }}
-                                    {% if form.code.errors %}
-                                        <div class="text-danger small">{{ form.code.errors }}</div>
-                                    {% endif %}
-                                    <div class="form-text">{{ form.fields.code.help_text }}</div>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div class="mb-3">
-                            <label for="{{ form.description.id_for_label }}" class="form-label">
-                                Description
-                            </label>
-                            {{ form.description }}
-                            {% if form.description.errors %}
-                                <div class="text-danger small">{{ form.description.errors }}</div>
-                            {% endif %}
-                        </div>
-
-                        <div class="row">
-                            <div class="col-md-6">
-                                <div class="mb-3">
-                                    <label for="{{ form.gl_account.id_for_label }}" class="form-label">
-                                        GL Account
-                                    </label>
-                                    {{ form.gl_account }}
-                                    {% if form.gl_account.errors %}
-                                        <div class="text-danger small">{{ form.gl_account.errors }}</div>
-                                    {% endif %}
-                                </div>
-                            </div>
-                            <div class="col-md-6">
-                                <div class="mb-3">
-                                    <label for="{{ form.sort_order.id_for_label }}" class="form-label">
-                                        Sort Order
-                                    </label>
-                                    {{ form.sort_order }}
-                                    {% if form.sort_order.errors %}
-                                        <div class="text-danger small">{{ form.sort_order.errors }}</div>
-                                    {% endif %}
-                                </div>
-                            </div>
-                        </div>
-
-                        <div class="row">
-                            <div class="col-md-6">
-                                <div class="mb-3">
-                                    <label for="{{ form.monthly_budget.id_for_label }}" class="form-label">
-                                        Monthly Budget
-                                    </label>
-                                    {{ form.monthly_budget }}
-                                    {% if form.monthly_budget.errors %}
-                                        <div class="text-danger small">{{ form.monthly_budget.errors }}</div>
-                                    {% endif %}
-                                </div>
-                            </div>
-                            <div class="col-md-6">
-                                <div class="mb-3">
-                                    <label for="{{ form.color_code.id_for_label }}" class="form-label">
-                                        Color
-                                    </label>
-                                    <div class="d-flex align-items-center">
-                                        {{ form.color_code }}
-                                        <span class="ms-2 color-preview" 
-                                              style="width: 30px; height: 30px; border-radius: 4px; background-color: {{ form.color_code.value|default:'#6c757d' }};"></span>
-                                    </div>
-                                    {% if form.color_code.errors %}
-                                        <div class="text-danger small">{{ form.color_code.errors }}</div>
-                                    {% endif %}
-                                </div>
-                            </div>
-                        </div>
-
-                        <div class="row">
-                            <div class="col-md-6">
-                                <div class="mb-3">
-                                    <label for="{{ form.icon.id_for_label }}" class="form-label">
-                                        Icon
-                                    </label>
-                                    {{ form.icon }}
-                                    {% if form.icon.errors %}
-                                        <div class="text-danger small">{{ form.icon.errors }}</div>
-                                    {% endif %}
-                                    <div class="form-text">{{ form.fields.icon.help_text }}</div>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div class="card bg-light mt-4">
-                            <div class="card-body">
-                                <h6 class="card-title">Approval Settings</h6>
-                                
-                                <div class="mb-3">
-                                    <div class="form-check form-switch">
-                                        {{ form.requires_approval }}
-                                        <label class="form-check-label" for="{{ form.requires_approval.id_for_label }}">
-                                            Requires Approval
-                                        </label>
-                                    </div>
-                                </div>
-
-                                <div class="mb-3" id="approvalThresholdSection">
-                                    <label for="{{ form.approval_threshold.id_for_label }}" class="form-label">
-                                        Auto-approve Below Amount
-                                    </label>
-                                    {{ form.approval_threshold }}
-                                    {% if form.approval_threshold.errors %}
-                                        <div class="text-danger small">{{ form.approval_threshold.errors }}</div>
-                                    {% endif %}
-                                    <div class="form-text">{{ form.fields.approval_threshold.help_text }}</div>
-                                </div>
-                            </div>
-                        </div>
-
-                        <div class="mb-3 mt-4">
-                            <div class="form-check form-switch">
-                                {{ form.is_active }}
-                                <label class="form-check-label" for="{{ form.is_active.id_for_label }}">
-                                    Active Category
+                <!-- Basic Information -->
+                <div class="card border-0 shadow-sm mb-4">
+                    <div class="card-header bg-primary bg-opacity-10 border-0 py-3">
+                        <h5 class="mb-0">
+                            <i class="bi bi-info-circle me-2"></i>
+                            {% trans "Basic Information" %}
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row g-3">
+                            <!-- Name -->
+                            <div class="col-12 col-md-6">
+                                <label for="{{ form.name.id_for_label }}" class="form-label required">
+                                    {% trans "Category Name" %}
                                 </label>
+                                {{ form.name|add_class:"form-control" }}
+                                {% if form.name.errors %}
+                                    <div class="invalid-feedback d-block">
+                                        {{ form.name.errors }}
+                                    </div>
+                                {% endif %}
+                                <div class="form-text">
+                                    {% trans "Descriptive name for the category" %}
+                                </div>
                             </div>
-                            <div class="form-text">Inactive categories won't be available for new expenses.</div>
+
+                            <!-- Code -->
+                            <div class="col-12 col-md-6">
+                                <label for="{{ form.code.id_for_label }}" class="form-label">
+                                    {% trans "Category Code" %}
+                                </label>
+                                {{ form.code|add_class:"form-control" }}
+                                {% if form.code.errors %}
+                                    <div class="invalid-feedback d-block">
+                                        {{ form.code.errors }}
+                                    </div>
+                                {% endif %}
+                                <div class="form-text">
+                                    {% trans "Short code or abbreviation (optional)" %}
+                                </div>
+                            </div>
+
+                            <!-- Description -->
+                            <div class="col-12">
+                                <label for="{{ form.description.id_for_label }}" class="form-label">
+                                    {% trans "Description" %}
+                                </label>
+                                {{ form.description|add_class:"form-control"|attr:"rows:3" }}
+                                {% if form.description.errors %}
+                                    <div class="invalid-feedback d-block">
+                                        {{ form.description.errors }}
+                                    </div>
+                                {% endif %}
+                                <div class="form-text">
+                                    {% trans "Detailed description of what this category is for" %}
+                                </div>
+                            </div>
+
+                            <!-- GL Account -->
+                            <div class="col-12 col-md-6">
+                                <label for="{{ form.gl_account.id_for_label }}" class="form-label">
+                                    {% trans "GL Account" %}
+                                </label>
+                                {{ form.gl_account|add_class:"form-control" }}
+                                {% if form.gl_account.errors %}
+                                    <div class="invalid-feedback d-block">
+                                        {{ form.gl_account.errors }}
+                                    </div>
+                                {% endif %}
+                                <div class="form-text">
+                                    {% trans "General Ledger account code (optional)" %}
+                                </div>
+                            </div>
+
+                            <!-- Sort Order -->
+                            <div class="col-12 col-md-6">
+                                <label for="{{ form.sort_order.id_for_label }}" class="form-label">
+                                    {% trans "Sort Order" %}
+                                </label>
+                                {{ form.sort_order|add_class:"form-control"|attr:"type:number" }}
+                                {% if form.sort_order.errors %}
+                                    <div class="invalid-feedback d-block">
+                                        {{ form.sort_order.errors }}
+                                    </div>
+                                {% endif %}
+                                <div class="form-text">
+                                    {% trans "Display order in lists (lower numbers first)" %}
+                                </div>
+                            </div>
                         </div>
+                    </div>
+                </div>
 
-                        <div class="d-flex justify-content-between mt-4">
-                            <a href="{% url 'expenses:category_list' %}" class="btn btn-outline-secondary">
-                                Cancel
-                            </a>
-                            <button type="submit" class="btn btn-primary">
-                                {% if form.instance.pk %}Update Category{% else %}Create Category{% endif %}
-                            </button>
+                <!-- Appearance -->
+                <div class="card border-0 shadow-sm mb-4">
+                    <div class="card-header bg-success bg-opacity-10 border-0 py-3">
+                        <h5 class="mb-0">
+                            <i class="bi bi-palette me-2"></i>
+                            {% trans "Appearance" %}
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row g-3">
+                            <!-- Color Code -->
+                            <div class="col-12 col-md-6">
+                                <label for="{{ form.color_code.id_for_label }}" class="form-label">
+                                    {% trans "Color" %}
+                                </label>
+                                <div class="input-group">
+                                    {{ form.color_code|add_class:"form-control"|attr:"type:color" }}
+                                    <span class="input-group-text">
+                                        <div class="color-preview" id="colorPreview" style="background-color: {{ form.color_code.value|default:'#6c757d' }};"></div>
+                                    </span>
+                                </div>
+                                {% if form.color_code.errors %}
+                                    <div class="invalid-feedback d-block">
+                                        {{ form.color_code.errors }}
+                                    </div>
+                                {% endif %}
+                                <div class="form-text">
+                                    {% trans "Color used for badges and visual identification" %}
+                                </div>
+                            </div>
+
+                            <!-- Icon -->
+                            <div class="col-12 col-md-6">
+                                <label for="{{ form.icon.id_for_label }}" class="form-label">
+                                    {% trans "Icon" %}
+                                </label>
+                                <div class="input-group">
+                                    {{ form.icon|add_class:"form-control" }}
+                                    <span class="input-group-text">
+                                        <div class="icon-preview" id="iconPreview" style="background-color: {{ form.color_code.value|default:'#6c757d' }}; color: white;">
+                                            <i class="{{ form.icon.value|default:'bi-tag' }}"></i>
+                                        </div>
+                                    </span>
+                                </div>
+                                {% if form.icon.errors %}
+                                    <div class="invalid-feedback d-block">
+                                        {{ form.icon.errors }}
+                                    </div>
+                                {% endif %}
+                                <div class="form-text">
+                                    {% trans "Bootstrap Icons class name (e.g., bi-tag, bi-cart)" %}
+                                </div>
+                            </div>
                         </div>
-                    </form>
-                </div>
-            </div>
-        </div>
-
-        <div class="col-lg-4">
-            <div class="card">
-                <div class="card-header">
-                    <h6 class="card-title mb-0">Tips & Guidelines</h6>
-                </div>
-                <div class="card-body">
-                    <div class="alert alert-info">
-                        <h6 class="alert-heading">
-                            <i class="bi bi-lightbulb me-2"></i>Category Setup
-                        </h6>
-                        <ul class="mb-0 ps-3">
-                            <li>Use clear, descriptive names</li>
-                            <li>Assign unique codes for reporting</li>
-                            <li>Set realistic monthly budgets</li>
-                            <li>Configure approval rules appropriately</li>
-                        </ul>
                     </div>
-
-                    <div class="alert alert-warning">
-                        <h6 class="alert-heading">
-                            <i class="bi bi-exclamation-triangle me-2"></i>Approval Settings
-                        </h6>
-                        <p class="mb-0">
-                            Expenses below the threshold will be auto-approved when submitted. 
-                            Set this carefully to balance control and efficiency.
-                        </p>
-                    </div>
-
-                    {% if form.instance.pk and form.instance.expenses.exists %}
-                    <div class="alert alert-warning">
-                        <h6 class="alert-heading">
-                            <i class="bi bi-archive me-2"></i>Existing Expenses
-                        </h6>
-                        <p class="mb-0">
-                            This category has {{ form.instance.expenses.count }} expenses. 
-                            Changes will affect all existing expenses in this category.
-                        </p>
-                    </div>
-                    {% endif %}
                 </div>
-            </div>
 
-            <!-- Icon Preview -->
-            <div class="card mt-4">
-                <div class="card-header">
-                    <h6 class="card-title mb-0">Icon Preview</h6>
-                </div>
-                <div class="card-body text-center">
-                    <div id="iconPreview" class="display-4 text-muted mb-3">
-                        <i class="bi bi-tag"></i>
+                <!-- Budget & Approval Settings -->
+                <div class="card border-0 shadow-sm mb-4">
+                    <div class="card-header bg-warning bg-opacity-10 border-0 py-3">
+                        <h5 class="mb-0">
+                            <i class="bi bi-gear me-2"></i>
+                            {% trans "Budget & Approval Settings" %}
+                        </h5>
                     </div>
-                    <small class="text-muted">Icon will appear here</small>
+                    <div class="card-body">
+                        <div class="row g-3">
+                            <!-- Monthly Budget -->
+                            <div class="col-12 col-md-6">
+                                <label for="{{ form.monthly_budget.id_for_label }}" class="form-label">
+                                    {% trans "Monthly Budget" %}
+                                </label>
+                                <div class="input-group">
+                                    {{ form.monthly_budget|add_class:"form-control"|attr:"step:0.01" }}
+                                    <span class="input-group-text">UGX</span>
+                                </div>
+                                {% if form.monthly_budget.errors %}
+                                    <div class="invalid-feedback d-block">
+                                        {{ form.monthly_budget.errors }}
+                                    </div>
+                                {% endif %}
+                                <div class="form-text">
+                                    {% trans "Monthly spending limit for this category (optional)" %}
+                                </div>
+                            </div>
+
+                            <!-- Approval Threshold -->
+                            <div class="col-12 col-md-6">
+                                <label for="{{ form.approval_threshold.id_for_label }}" class="form-label">
+                                    {% trans "Approval Threshold" %}
+                                </label>
+                                <div class="input-group">
+                                    {{ form.approval_threshold|add_class:"form-control"|attr:"step:0.01" }}
+                                    <span class="input-group-text">UGX</span>
+                                </div>
+                                {% if form.approval_threshold.errors %}
+                                    <div class="invalid-feedback d-block">
+                                        {{ form.approval_threshold.errors }}
+                                    </div>
+                                {% endif %}
+                                <div class="form-text">
+                                    {% trans "Amount above which approval is required (optional)" %}
+                                </div>
+                            </div>
+
+                            <!-- Requires Approval -->
+                            <div class="col-12">
+                                <div class="form-check form-switch">
+                                    {{ form.requires_approval|add_class:"form-check-input" }}
+                                    <label class="form-check-label" for="{{ form.requires_approval.id_for_label }}">
+                                        <strong>{% trans "Always require approval for expenses in this category" %}</strong>
+                                    </label>
+                                    <div class="form-text">
+                                        {% trans "If checked, all expenses in this category will require approval regardless of amount" %}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
-            </div>
+
+                <!-- Status -->
+                <div class="card border-0 shadow-sm mb-4">
+                    <div class="card-header bg-info bg-opacity-10 border-0 py-3">
+                        <h5 class="mb-0">
+                            <i class="bi bi-toggle-on me-2"></i>
+                            {% trans "Status" %}
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row g-3">
+                            <!-- Is Active -->
+                            <div class="col-12">
+                                <div class="form-check form-switch">
+                                    {{ form.is_active|add_class:"form-check-input" }}
+                                    <label class="form-check-label" for="{{ form.is_active.id_for_label }}">
+                                        <strong>{% trans "Category is active" %}</strong>
+                                    </label>
+                                    <div class="form-text">
+                                        {% trans "Inactive categories cannot be selected for new expenses" %}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Action Buttons -->
+                <div class="card border-0 shadow-sm">
+                    <div class="card-body">
+                        <div class="d-flex flex-column flex-md-row justify-content-between align-items-center gap-3">
+                            <div class="text-muted">
+                                <small>
+                                    {% if form.instance.pk %}
+                                        {% trans "Last updated:" %} {{ form.instance.updated_at|date:"M d, Y H:i" }}
+                                    {% else %}
+                                        {% trans "Fields marked with * are required" %}
+                                    {% endif %}
+                                </small>
+                            </div>
+                            <div class="d-flex flex-column flex-md-row gap-2 w-100 w-md-auto">
+                                <a href="{% url 'expenses:category_list' %}" class="btn btn-outline-secondary order-2 order-md-1">
+                                    <i class="bi bi-x-lg me-2"></i>
+                                    {% trans "Cancel" %}
+                                </a>
+                                <button type="submit" class="btn btn-primary order-1 order-md-2">
+                                    <i class="bi bi-check-lg me-2"></i>
+                                    {{ submit_text|default:"Save Category" }}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </form>
         </div>
     </div>
 </div>
@@ -253,53 +372,66 @@
 <script>
 document.addEventListener('DOMContentLoaded', function() {
     const form = document.getElementById('categoryForm');
-    const colorInput = document.getElementById('{{ form.color_code.id_for_label }}');
-    const colorPreview = document.querySelector('.color-preview');
-    const iconInput = document.getElementById('{{ form.icon.id_for_label }}');
+    const colorInput = document.querySelector('input[name="color_code"]');
+    const colorPreview = document.getElementById('colorPreview');
+    const iconInput = document.querySelector('input[name="icon"]');
     const iconPreview = document.getElementById('iconPreview');
-    const requiresApproval = document.getElementById('{{ form.requires_approval.id_for_label }}');
-    const approvalThresholdSection = document.getElementById('approvalThresholdSection');
 
-    // Color preview
+    // Update color preview
     if (colorInput && colorPreview) {
         colorInput.addEventListener('input', function() {
             colorPreview.style.backgroundColor = this.value;
+            iconPreview.style.backgroundColor = this.value;
         });
     }
 
-    // Icon preview
+    // Update icon preview
     if (iconInput && iconPreview) {
         iconInput.addEventListener('input', function() {
-            const iconClass = this.value.trim();
-            if (iconClass) {
-                iconPreview.innerHTML = `<i class="${iconClass}"></i>`;
+            const iconClass = this.value || 'bi-tag';
+            iconPreview.innerHTML = `<i class="${iconClass}"></i>`;
+        });
+    }
+
+    // Form validation
+    form.addEventListener('submit', function(e) {
+        const requiredFields = form.querySelectorAll('[required]');
+        let isValid = true;
+        let firstInvalidField = null;
+
+        requiredFields.forEach(field => {
+            if (!field.value.trim()) {
+                isValid = false;
+                field.classList.add('is-invalid');
+                if (!firstInvalidField) {
+                    firstInvalidField = field;
+                }
             } else {
-                iconPreview.innerHTML = '<i class="bi bi-tag"></i>';
+                field.classList.remove('is-invalid');
             }
         });
-    }
 
-    // Toggle approval threshold section
-    function toggleApprovalThreshold() {
-        if (approvalThresholdSection) {
-            approvalThresholdSection.style.display = requiresApproval.checked ? 'block' : 'none';
+        if (!isValid) {
+            e.preventDefault();
+            if (firstInvalidField) {
+                firstInvalidField.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                firstInvalidField.focus();
+            }
+            return false;
         }
+    });
+
+    // Set default color if empty
+    if (colorInput && !colorInput.value) {
+        colorInput.value = '#6c757d';
+        colorPreview.style.backgroundColor = '#6c757d';
+        iconPreview.style.backgroundColor = '#6c757d';
     }
 
-    if (requiresApproval) {
-        requiresApproval.addEventListener('change', toggleApprovalThreshold);
-        toggleApprovalThreshold(); // Initial state
-    }
-
-    // Form submission handling
-    if (form) {
-        form.addEventListener('submit', function() {
-            const submitButton = form.querySelector('button[type="submit"]');
-            if (submitButton) {
-                submitButton.disabled = true;
-                submitButton.innerHTML = '<i class="bi bi-hourglass-split me-1"></i>Saving...';
-            }
-        });
+    // Set default icon if empty
+    if (iconInput && !iconInput.value) {
+        iconInput.value = 'bi-tag';
+        iconPreview.innerHTML = '<i class="bi-tag"></i>';
     }
 });
 </script>

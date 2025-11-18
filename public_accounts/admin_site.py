@@ -90,9 +90,11 @@ class PublicAdminSite:
             for model_class, model_admin in models_dict.items():
                 model_name = model_class.__name__.lower()
 
-                # Check if model uses string PK (like Company with company_id)
+                # Check if model uses UUID, string PK, or integer PK
                 pk_field = model_class._meta.pk
-                if isinstance(pk_field, django_models.CharField):
+                if pk_field.get_internal_type() == 'UUIDField':
+                    pk_pattern = '<uuid:pk>'
+                elif isinstance(pk_field, django_models.CharField):
                     pk_pattern = '<str:pk>'
                 else:
                     pk_pattern = '<int:pk>'

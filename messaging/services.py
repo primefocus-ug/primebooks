@@ -18,6 +18,22 @@ logger = logging.getLogger(__name__)
 class EncryptionService:
     @staticmethod
     def generate_user_keys(user):
+        """
+        Generate encryption keys for a CustomUser.
+
+        Args:
+            user: CustomUser instance
+
+        Returns:
+            EncryptionKeyManager instance
+        """
+        from django.db import connection
+
+        # Validate we're in a tenant schema
+        if connection.schema_name == 'public':
+            logger.warning(f"Attempted to generate encryption keys in public schema for user {user.id}")
+            raise ValueError("Cannot generate encryption keys in public schema")
+
         # Generate keys
         private_pem, public_pem = EncryptionKeyManager.generate_rsa_keys()
 
@@ -37,7 +53,7 @@ class EncryptionService:
             }
         )
 
-        logger.info(f"Generated encryption keys for user {user.id} in tenant")
+        logger.info(f"Generated encryption keys for user {user.id} in tenant {connection.schema_name}")
         return key_manager
 
     @staticmethod

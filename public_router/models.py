@@ -135,3 +135,79 @@ class PublicNewsletterSubscriber(models.Model):
 
     def __str__(self):
         return self.email
+
+
+
+class TenantApprovalWorkflow(models.Model):
+    """Track approval workflow steps"""
+
+    signup_request = models.OneToOneField(
+        TenantSignupRequest,
+        on_delete=models.CASCADE,
+        related_name='approval_workflow'
+    )
+
+    # Approval tracking
+    reviewed_by = models.ForeignKey(
+        'public_accounts.PublicUser',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='approved_signups'
+    )
+    reviewed_at = models.DateTimeField(blank=True, null=True)
+    approval_notes = models.TextField(blank=True, null=True)
+
+    # Email notifications tracking
+    signup_notification_sent = models.BooleanField(default=False)
+    signup_notification_sent_at = models.DateTimeField(blank=True, null=True)
+
+    approval_notification_sent = models.BooleanField(default=False)
+    approval_notification_sent_at = models.DateTimeField(blank=True, null=True)
+
+    # Generated credentials
+    generated_password = models.CharField(max_length=255, blank=True, null=True)
+    login_url = models.URLField(blank=True, null=True)
+
+    # Metadata
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'public_tenant_approval_workflow'
+
+    def __str__(self):
+        return f"Approval workflow for {self.signup_request.company_name}"
+
+
+class TenantNotificationLog(models.Model):
+    """Log all notifications sent"""
+
+    NOTIFICATION_TYPES = [
+        ('SIGNUP_TO_ADMIN', 'Signup Notification to Admin'),
+        ('APPROVAL_TO_CLIENT', 'Approval Notification to Client'),
+        ('REJECTION_TO_CLIENT', 'Rejection Notification to Client'),
+        ('REMINDER_TO_ADMIN', 'Reminder to Admin'),
+    ]
+
+    signup_request = models.ForeignKey(
+        TenantSignupRequest,
+        on_delete=models.CASCADE,
+        related_name='notification_logs'
+    )
+
+    notification_type = models.CharField(max_length=30, choices=NOTIFICATION_TYPES)
+    recipient_email = models.EmailField()
+    subject = models.CharField(max_length=255)
+
+    sent_successfully = models.BooleanField(default=False)
+    error_message = models.TextField(blank=True, null=True)
+
+    sent_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'public_tenant_notification_log'
+        ordering = ['-sent_at']
+
+    def __str__(self):
+        return f"{self.get_notification_type_display()} - {self.recipient_email}"

@@ -1,56 +1,144 @@
-{% extends "base.html" %}
+{% extends 'base.html' %}
 {% load static %}
+{% load i18n %}
 
-{% block title %}Delete Category - PrimeBooks{% endblock %}
+{% block title %}{% trans "Delete Category" %} - {{ category.name }}{% endblock %}
 
 {% block content %}
 <div class="container-fluid">
     <div class="row justify-content-center">
-        <div class="col-lg-6">
-            <div class="card">
-                <div class="card-header">
-                    <h5 class="card-title mb-0">
-                        <i class="bi bi-exclamation-triangle text-warning me-2"></i>
-                        Delete Category
+        <div class="col-12 col-md-8 col-lg-6">
+            <!-- Page Header -->
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h1 class="h3 mb-0 text-danger">
+                    <i class="bi bi-exclamation-triangle me-2"></i>
+                    {% trans "Delete Category" %}
+                </h1>
+                <a href="{% url 'expenses:category_list' %}" class="btn btn-outline-secondary">
+                    <i class="bi bi-arrow-left me-2"></i>
+                    {% trans "Back" %}
+                </a>
+            </div>
+
+            <!-- Warning Card -->
+            <div class="card border-danger">
+                <div class="card-header bg-danger text-white">
+                    <h5 class="mb-0">
+                        <i class="bi bi-exclamation-triangle me-2"></i>
+                        {% trans "Confirm Deletion" %}
                     </h5>
                 </div>
                 <div class="card-body">
-                    <div class="alert alert-warning">
-                        <h6 class="alert-heading">Warning!</h6>
-                        <p class="mb-0">
-                            You are about to delete the category <strong>"{{ object.name }}"</strong>. 
-                            This action cannot be undone.
-                        </p>
-                    </div>
-
-                    {% if object.expenses.exists %}
                     <div class="alert alert-danger">
-                        <h6 class="alert-heading">Cannot Delete</h6>
+                        <h6 class="alert-heading">
+                            <i class="bi bi-exclamation-octagon me-2"></i>
+                            {% trans "Warning: This action cannot be undone!" %}
+                        </h6>
                         <p class="mb-0">
-                            This category has <strong>{{ object.expenses.count }}</strong> associated expenses. 
-                            You cannot delete a category that has expenses. 
-                            Consider deactivating the category instead.
+                            {% trans "You are about to permanently delete this category and all associated data." %}
                         </p>
                     </div>
-                    {% endif %}
 
+                    <!-- Category Information -->
+                    <div class="card border-0 bg-light mb-4">
+                        <div class="card-body">
+                            <div class="d-flex align-items-center mb-3">
+                                <div class="rounded-circle d-flex align-items-center justify-content-center me-3"
+                                     style="width: 50px; height: 50px; background-color: {{ category.color_code }}; color: white;">
+                                    {% if category.icon %}
+                                        <i class="{{ category.icon }}"></i>
+                                    {% else %}
+                                        <i class="bi bi-tag"></i>
+                                    {% endif %}
+                                </div>
+                                <div>
+                                    <h5 class="mb-1">{{ category.name }}</h5>
+                                    {% if category.code %}
+                                    <span class="badge bg-secondary">{{ category.code }}</span>
+                                    {% endif %}
+                                </div>
+                            </div>
+
+                            {% if category.description %}
+                            <p class="text-muted mb-0">{{ category.description }}</p>
+                            {% endif %}
+                        </div>
+                    </div>
+
+                    <!-- Impact Analysis -->
+                    <div class="mb-4">
+                        <h6 class="text-danger mb-3">{% trans "This will affect:" %}</h6>
+
+                        <div class="row g-3">
+                            <div class="col-12 col-md-6">
+                                <div class="card border-warning">
+                                    <div class="card-body text-center">
+                                        <div class="h4 text-warning mb-1">{{ expense_count }}</div>
+                                        <small class="text-muted">{% trans "Associated Expenses" %}</small>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-12 col-md-6">
+                                <div class="card border-info">
+                                    <div class="card-body text-center">
+                                        <div class="h4 text-info mb-1">{{ category.total_spent|floatformat:0|intcomma }}</div>
+                                        <small class="text-muted">{% trans "Total Amount" %}</small>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        {% if expense_count > 0 %}
+                        <div class="alert alert-warning mt-3">
+                            <i class="bi bi-info-circle me-2"></i>
+                            {% blocktrans count count=expense_count %}
+                                There is {{ count }} expense associated with this category.
+                            {% plural %}
+                                There are {{ count }} expenses associated with this category.
+                            {% endblocktrans %}
+                            <strong>{% trans "These expenses will become orphaned and may cause issues in reporting." %}</strong>
+                        </div>
+                        {% endif %}
+                    </div>
+
+                    <!-- Alternative Options -->
+                    <div class="alert alert-info">
+                        <h6 class="alert-heading">
+                            <i class="bi bi-lightbulb me-2"></i>
+                            {% trans "Consider these alternatives:" %}
+                        </h6>
+                        <ul class="mb-0">
+                            <li>{% trans "Deactivate the category instead of deleting it" %}</li>
+                            <li>{% trans "Merge this category with another existing category" %}</li>
+                            <li>{% trans "Update existing expenses to use a different category before deletion" %}</li>
+                        </ul>
+                    </div>
+
+                    <!-- Confirmation Form -->
                     <form method="post">
                         {% csrf_token %}
-                        
-                        <div class="d-flex justify-content-between">
-                            <a href="{% url 'expenses:category_list' %}" class="btn btn-secondary">
-                                Cancel
+
+                        <div class="mb-3">
+                            <label for="confirmationText" class="form-label required">
+                                {% trans "Type the category name to confirm deletion" %}
+                            </label>
+                            <input type="text" class="form-control" id="confirmationText"
+                                   placeholder="{% trans 'Enter category name here' %}"
+                                   oninput="checkConfirmation()">
+                            <div class="form-text">
+                                {% trans "Type exactly:" %} <strong>"{{ category.name }}"</strong>
+                            </div>
+                        </div>
+
+                        <div class="d-flex flex-column flex-md-row justify-content-between gap-2">
+                            <a href="{% url 'expenses:category_list' %}" class="btn btn-outline-secondary order-2 order-md-1">
+                                <i class="bi bi-x-lg me-2"></i>
+                                {% trans "Cancel" %}
                             </a>
-                            
-                            {% if not object.expenses.exists %}
-                            <button type="submit" class="btn btn-danger">
-                                <i class="bi bi-trash me-1"></i>Delete Category
+                            <button type="submit" class="btn btn-danger order-1 order-md-2" id="deleteButton" disabled>
+                                <i class="bi bi-trash me-2"></i>
+                                {% trans "Permanently Delete Category" %}
                             </button>
-                            {% else %}
-                            <a href="{% url 'expenses:category_toggle_active' object.pk %}" class="btn btn-warning">
-                                <i class="bi bi-eye-slash me-1"></i>Deactivate Instead
-                            </a>
-                            {% endif %}
                         </div>
                     </form>
                 </div>
@@ -58,4 +146,25 @@
         </div>
     </div>
 </div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+function checkConfirmation() {
+    const confirmationText = document.getElementById('confirmationText');
+    const deleteButton = document.getElementById('deleteButton');
+    const requiredText = "{{ category.name }}";
+
+    if (confirmationText.value === requiredText) {
+        deleteButton.disabled = false;
+    } else {
+        deleteButton.disabled = true;
+    }
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    // Focus on confirmation input
+    document.getElementById('confirmationText').focus();
+});
+</script>
 {% endblock %}
