@@ -1,21 +1,23 @@
-from django.shortcuts import render, redirect
-from django.contrib import messages
 from django.views.decorators.csrf import csrf_protect
 from django.views.decorators.cache import never_cache
 from django.views.decorators.http import require_http_methods
 from django.http import JsonResponse
-from django.conf import settings
 from django.views.generic import CreateView, TemplateView
 from django.urls import reverse_lazy
-from django.conf import settings
-from django.utils import timezone
-from django.db import transaction
-from django_tenants.utils import schema_context
 from django.core.cache import cache
-import logging
 from django_ratelimit.decorators import ratelimit
 from django.utils.decorators import method_decorator
-
+from django.shortcuts import render, redirect, get_object_or_404
+from django.contrib import messages
+from django.contrib.auth.decorators import login_required
+from django.db import transaction
+from django.utils import timezone
+from django.conf import settings
+from django.urls import reverse
+from .models import TenantSignupRequest, TenantApprovalWorkflow, TenantNotificationLog
+import secrets
+import string
+import logging
 from .forms import TenantSignupForm
 from .tasks import create_tenant_async
 from .models import TenantSignupRequest
@@ -34,6 +36,356 @@ from .tenant_lookup import (
 logger = logging.getLogger(__name__)
 
 
+def tenant_signup_view(request):
+    """Public-facing tenant signup form"""
+    if request.method == 'POST':
+        form = TenantSignupForm(request.POST)
+
+        if form.is_valid():
+            try:
+                with transaction.atomic():
+                    # Save signup request
+                    signup_request = form.save(commit=False)
+
+                    # Capture request metadata
+                    signup_request.ip_address = get_client_ip(request)
+                    signup_request.user_agent = request.META.get('HTTP_USER_AGENT', '')
+                    signup_request.referral_source = request.GET.get('ref', '')
+
+                    signup_request.save()
+
+                    logger.info(f"New tenant signup: {signup_request.company_name}")
+
+                    # Redirect to success page
+                    return redirect('public_router:signup_success', request_id=signup_request.request_id)
+
+            except Exception as e:
+                logger.error(f"Signup error: {str(e)}")
+                messages.error(request, f'An error occurred: {str(e)}')
+        else:
+            messages.error(request, 'Please correct the errors below.')
+    else:
+        form = TenantSignupForm()
+
+    return render(request, 'public_router/signup.html', {
+        'form': form,
+        'title': 'Try Primebooks - Sign Up'
+    })
+
+
+def signup_success_view(request, request_id):
+    """Show success message after signup"""
+    signup_request = get_object_or_404(TenantSignupRequest, request_id=request_id)
+
+    return render(request, 'public_router/signup_success.html', {
+        'signup': signup_request,
+        'support_email': 'primefocusug@gmail.com',
+        'support_phone': '+256 XXX XXX XXX',
+        'whatsapp_link': 'https://wa.me/256XXXXXXXXX',
+        'title': 'Signup Successful'
+    })
+
+
+def get_client_ip(request):
+    """Get client IP address from request"""
+    x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
+    if x_forwarded_for:
+        ip = x_forwarded_for.split(',')[0]
+    else:
+        ip = request.META.get('REMOTE_ADDR')
+    return ip
+
+
+# ============================================
+# ADMIN VIEWS (for public_admin panel)
+# ============================================
+
+@login_required(login_url='public_accounts:login')
+def admin_tenant_signups_list(request):
+    """List all tenant signup requests"""
+    status_filter = request.GET.get('status', 'PENDING')
+
+    signups = TenantSignupRequest.objects.select_related(
+        'approval_workflow'
+    ).order_by('-created_at')
+
+    if status_filter and status_filter != 'ALL':
+        signups = signups.filter(status=status_filter)
+
+    return render(request, 'public_admin/tenant_signups/list.html', {
+        'signups': signups,
+        'status_filter': status_filter,
+        'title': 'Tenant Signups'
+    })
+
+
+@login_required(login_url='public_accounts:login')
+def admin_tenant_signup_detail(request, request_id):
+    """View and manage individual signup request"""
+    signup = get_object_or_404(
+        TenantSignupRequest.objects.select_related('approval_workflow'),
+        request_id=request_id
+    )
+
+    workflow = signup.approval_workflow
+    notifications = signup.notification_logs.all()[:10]
+
+    return render(request, 'public_admin/tenant_signups/detail.html', {
+        'signup': signup,
+        'workflow': workflow,
+        'notifications': notifications,
+        'title': f'Signup: {signup.company_name}'
+    })
+
+
+@login_required(login_url='public_accounts:login')
+def admin_approve_signup(request, request_id):
+    """Approve tenant signup and create company"""
+    signup = get_object_or_404(TenantSignupRequest, request_id=request_id)
+
+    if request.method == 'POST':
+        approval_notes = request.POST.get('approval_notes', '')
+
+        try:
+            with transaction.atomic():
+                # Update signup status
+                signup.status = 'PROCESSING'
+                signup.save()
+
+                # Create tenant company
+                company = create_tenant_company(signup)
+
+                # Generate login credentials
+                password = generate_secure_password()
+
+                # Create admin user in tenant schema
+                admin_user = create_tenant_admin_user(company, signup, password)
+
+                # Update signup request
+                signup.status = 'COMPLETED'
+                signup.tenant_created = True
+                signup.created_company_id = company.company_id
+                signup.created_schema_name = company.schema_name
+                signup.completed_at = timezone.now()
+                signup.save()
+
+                # Update workflow
+                workflow = signup.approval_workflow
+                workflow.reviewed_by = request.user
+                workflow.reviewed_at = timezone.now()
+                workflow.approval_notes = approval_notes
+                workflow.generated_password = password
+                workflow.login_url = company.get_absolute_url()
+                workflow.save()
+
+                # Send approval email to client
+                send_approval_email(signup, password, company)
+
+                messages.success(
+                    request,
+                    f'Tenant "{company.display_name}" created successfully! '
+                    f'Login credentials sent to {signup.admin_email}'
+                )
+
+                return redirect('public_admin:tenant_signup_detail', request_id=request_id)
+
+        except Exception as e:
+            logger.error(f"Approval failed: {str(e)}")
+            signup.status = 'FAILED'
+            signup.error_message = str(e)
+            signup.retry_count += 1
+            signup.save()
+
+            messages.error(request, f'Failed to approve signup: {str(e)}')
+            return redirect('public_admin:tenant_signup_detail', request_id=request_id)
+
+    return redirect('public_admin:tenant_signup_detail', request_id=request_id)
+
+
+def generate_secure_password(length=12):
+    """Generate a secure random password"""
+    alphabet = string.ascii_letters + string.digits + "!@#$%^&*"
+    password = ''.join(secrets.choice(alphabet) for i in range(length))
+    return password
+
+
+def create_tenant_company(signup):
+    """Create Company (Tenant) from signup request"""
+    from company.models import Company, Domain, SubscriptionPlan
+    from django.utils.text import slugify
+    from django_tenants.utils import tenant_context
+
+    # Get or create plan
+    plan = SubscriptionPlan.objects.filter(name=signup.selected_plan).first()
+    if not plan:
+        plan = SubscriptionPlan.objects.get(name='FREE')
+
+    # Create company
+    company = Company()
+    company.name = signup.company_name
+    company.trading_name = signup.trading_name or signup.company_name
+    company.email = signup.email
+    company.phone = signup.phone
+    company.physical_address = f"{signup.country}"
+    company.plan = plan
+    company.status = 'TRIAL' if signup.selected_plan == 'FREE' else 'ACTIVE'
+    company.is_trial = signup.selected_plan == 'FREE'
+
+    # Set trial period
+    if company.is_trial:
+        from datetime import timedelta
+        company.trial_ends_at = timezone.now().date() + timedelta(days=plan.trial_days)
+
+    # Generate schema name
+    base_schema = slugify(signup.subdomain).replace('-', '_')[:50]
+    schema_name = f"tenant_{base_schema}"
+    counter = 1
+    while Company.objects.filter(schema_name=schema_name).exists():
+        schema_name = f"tenant_{base_schema}_{counter}"
+        counter += 1
+
+    company.schema_name = schema_name
+    company.save()
+
+    logger.info(f"Created company: {company.company_id}")
+
+    # Create domain
+    base_domain = getattr(settings, 'BASE_DOMAIN', 'localhost')
+    base_domain_clean = base_domain.split(':')[0]
+    domain_name = f"{signup.subdomain}.{base_domain_clean}"
+
+    domain = Domain()
+    domain.domain = domain_name
+    domain.tenant = company
+    domain.is_primary = True
+    domain.ssl_enabled = True
+    domain.save()
+
+    logger.info(f"Created domain: {domain.domain}")
+
+    # Run migrations for tenant
+    try:
+        from django.core.management import call_command
+        call_command('migrate_schemas',
+                     schema_name=company.schema_name,
+                     interactive=False,
+                     verbosity=1)
+        logger.info(f"Migrations completed for {company.schema_name}")
+    except Exception as e:
+        logger.warning(f"Migration warning: {str(e)}")
+
+    return company
+
+
+def create_tenant_admin_user(company, signup, password):
+    """Create admin user in tenant schema"""
+    from django_tenants.utils import schema_context
+    from accounts.models import CustomUser, Role
+    from django.contrib.auth.models import Group
+
+    with schema_context(company.schema_name):
+        # Create user
+        user = CustomUser.objects.create(
+            email=signup.admin_email,
+            username=signup.admin_email.split('@')[0],
+            first_name=signup.first_name,
+            last_name=signup.last_name,
+            phone_number=signup.admin_phone,
+            company=company,
+            is_active=True,
+            is_staff=False,
+            company_admin=True,
+            email_verified=False
+        )
+        user.set_password(password)
+        user.save()
+
+        # Assign Company Admin role
+        try:
+            admin_group, _ = Group.objects.get_or_create(name='Company Admin')
+            admin_role, _ = Role.objects.get_or_create(
+                group=admin_group,
+                company=company,
+                defaults={
+                    'description': 'Full administrative access to company',
+                    'is_system_role': False,
+                    'priority': 100,
+                    'is_active': True
+                }
+            )
+            user.groups.add(admin_group)
+            user.primary_role = admin_role
+            user.save()
+        except Exception as e:
+            logger.warning(f"Could not assign role: {str(e)}")
+
+        logger.info(f"Created admin user: {user.email}")
+
+        return user
+
+
+def send_approval_email(signup, password, company):
+    """Send approval and login credentials to client"""
+    from django.core.mail import send_mail
+    from django.template.loader import render_to_string
+
+    try:
+        subject = f"🎉 Your Primebooks Account is Ready!"
+
+        context = {
+            'signup': signup,
+            'company': company,
+            'password': password,
+            'login_url': company.get_absolute_url(),
+            'support_email': 'primefocusug@gmail.com'
+        }
+
+        html_message = render_to_string(
+            'public_router/emails/approval_notification.html',
+            context
+        )
+
+        plain_message = render_to_string(
+            'public_router/emails/approval_notification.txt',
+            context
+        )
+
+        send_mail(
+            subject=subject,
+            message=plain_message,
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            recipient_list=[signup.admin_email],
+            html_message=html_message,
+            fail_silently=False,
+        )
+
+        # Log notification
+        TenantNotificationLog.objects.create(
+            signup_request=signup,
+            notification_type='APPROVAL_TO_CLIENT',
+            recipient_email=signup.admin_email,
+            subject=subject,
+            sent_successfully=True
+        )
+
+        # Update workflow
+        workflow = signup.approval_workflow
+        workflow.approval_notification_sent = True
+        workflow.approval_notification_sent_at = timezone.now()
+        workflow.save()
+
+        logger.info(f"Approval email sent to {signup.admin_email}")
+
+    except Exception as e:
+        logger.error(f"Failed to send approval email: {str(e)}")
+        TenantNotificationLog.objects.create(
+            signup_request=signup,
+            notification_type='APPROVAL_TO_CLIENT',
+            recipient_email=signup.admin_email,
+            subject=subject,
+            sent_successfully=False,
+            error_message=str(e)
+        )
 
 @method_decorator(ratelimit(key='ip', rate='5/h', method='POST'), name='post')
 @method_decorator(ratelimit(key='ip', rate='10/h', method='GET'), name='get')

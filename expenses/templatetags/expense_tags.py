@@ -5,6 +5,13 @@ from django.utils import timezone
 
 register = template.Library()
 
+@register.simple_tag
+def query_transform(request, **kwargs):
+    updated = request.GET.copy()
+    for k, v in kwargs.items():
+        updated[k] = v
+    return updated.urlencode()
+
 
 @register.filter
 def currency_format(value, currency='UGX'):
@@ -82,10 +89,15 @@ def get_category_color(category):
 
 
 @register.inclusion_tag('expenses/includes/expense_status_badge.html')
-def expense_status_badge(expense):
-    """Render expense status badge"""
-    return {'expense': expense}
+def expense_status_badge(expense, css_class=None):
+    return {'expense': expense, 'css_class': css_class}
 
+@register.filter
+def abs(value):
+    try:
+        return builtins.abs(value)
+    except Exception:
+        return value
 
 @register.inclusion_tag('expenses/includes/expense_card.html')
 def expense_card(expense):

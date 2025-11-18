@@ -1,0 +1,528 @@
+{% extends 'base.html' %}
+{% load static %}
+{% load i18n %}
+{% load humanize %}
+{% load expense_tags %}
+
+{% block title %}{{ category.name }} - {% trans "Category Details" %}{% endblock %}
+
+{% block extra_css %}
+<style>
+    .category-header {
+        border-left: 6px solid {{ category.color_code }};
+        padding-left: 1.5rem;
+    }
+
+    .stat-card {
+        border-left: 4px solid;
+        transition: all 0.3s ease;
+    }
+
+    .stat-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    }
+
+    .stat-number {
+        font-size: 2rem;
+        font-weight: bold;
+        line-height: 1;
+    }
+
+    .budget-meter {
+        height: 8px;
+        border-radius: 4px;
+        overflow: hidden;
+        background: #e9ecef;
+        margin: 10px 0;
+    }
+
+    .budget-progress {
+        height: 100%;
+        transition: width 0.3s ease;
+    }
+
+    .category-icon-large {
+        width: 80px;
+        height: 80px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 16px;
+        font-size: 2.5rem;
+    }
+
+    .timeline {
+        position: relative;
+        padding-left: 2rem;
+    }
+
+    .timeline::before {
+        content: '';
+        position: absolute;
+        left: 0.5rem;
+        top: 0;
+        bottom: 0;
+        width: 2px;
+        background: var(--bs-border-color);
+    }
+
+    .timeline-item {
+        position: relative;
+        padding-bottom: 1.5rem;
+    }
+
+    .timeline-item:last-child {
+        padding-bottom: 0;
+    }
+
+    .timeline-marker {
+        position: absolute;
+        left: -1.65rem;
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        border: 2px solid white;
+        box-shadow: 0 0 0 2px var(--bs-border-color);
+    }
+
+    @media (max-width: 767.98px) {
+        .category-icon-large {
+            width: 60px;
+            height: 60px;
+            font-size: 2rem;
+        }
+
+        .stat-number {
+            font-size: 1.5rem;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block breadcrumb_items %}
+    <li class="breadcrumb-item"><a href="{% url 'user_dashboard' %}">{% trans "Home" %}</a></li>
+    <li class="breadcrumb-item"><a href="{% url 'expenses:dashboard' %}">{% trans "Expenses" %}</a></li>
+    <li class="breadcrumb-item"><a href="{% url 'expenses:category_list' %}">{% trans "Categories" %}</a></li>
+    <li class="breadcrumb-item active">{{ category.name }}</li>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- Page Header -->
+    <div class="d-flex flex-column flex-md-row justify-content-between align-items-start align-items-md-center mb-4">
+        <div class="category-header">
+            <div class="d-flex align-items-center mb-2">
+                <div class="category-icon-large me-3" style="background-color: {{ category.color_code }}; color: white;">
+                    {% if category.icon %}
+                        <i class="{{ category.icon }}"></i>
+                    {% else %}
+                        <i class="bi bi-tag"></i>
+                    {% endif %}
+                </div>
+                <div>
+                    <h1 class="h3 mb-1">{{ category.name }}</h1>
+                    <div class="d-flex flex-wrap gap-2 align-items-center">
+                        {% if category.code %}
+                        <span class="badge bg-secondary">{{ category.code }}</span>
+                        {% endif %}
+                        {% if not category.is_active %}
+                        <span class="badge bg-danger">
+                            <i class="bi bi-pause me-1"></i>
+                            {% trans "Inactive" %}
+                        </span>
+                        {% endif %}
+                        {% if category.requires_approval %}
+                        <span class="badge bg-info">
+                            <i class="bi bi-shield-check me-1"></i>
+                            {% trans "Requires Approval" %}
+                        </span>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+            {% if category.description %}
+            <p class="text-muted mb-0">{{ category.description }}</p>
+            {% endif %}
+        </div>
+        <div class="mt-3 mt-md-0">
+            <div class="btn-group">
+                <a href="{% url 'expenses:category_list' %}" class="btn btn-outline-secondary">
+                    <i class="bi bi-arrow-left me-2"></i>
+                    {% trans "Back" %}
+                </a>
+                {% if perms.expenses.change_expensecategory %}
+                <a href="{% url 'expenses:category_edit' category.pk %}" class="btn btn-outline-primary">
+                    <i class="bi bi-pencil me-2"></i>
+                    {% trans "Edit" %}
+                </a>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Statistics -->
+    <div class="row g-3 mb-4">
+        <!-- Total Expenses -->
+        <div class="col-12 col-sm-6 col-lg-3">
+            <div class="card border-0 shadow-sm stat-card" style="border-left-color: #3b82f6;">
+                <div class="card-body text-center">
+                    <div class="stat-number text-primary">{{ total_expenses }}</div>
+                    <small class="text-muted">{% trans "Total Expenses" %}</small>
+                </div>
+            </div>
+        </div>
+
+        <!-- Total Amount -->
+        <div class="col-12 col-sm-6 col-lg-3">
+            <div class="card border-0 shadow-sm stat-card" style="border-left-color: #10b981;">
+                <div class="card-body text-center">
+                    <div class="stat-number text-success">{{ total_amount|floatformat:0|intcomma }}</div>
+                    <small class="text-muted">{% trans "Total Amount" %}</small>
+                </div>
+            </div>
+        </div>
+
+        <!-- Average Amount -->
+        <div class="col-12 col-sm-6 col-lg-3">
+            <div class="card border-0 shadow-sm stat-card" style="border-left-color: #f59e0b;">
+                <div class="card-body text-center">
+                    <div class="stat-number text-warning">
+                        {% if total_expenses > 0 %}
+                            {{ average_amount|floatformat:0|intcomma }}
+                        {% else %}
+                            0
+                        {% endif %}
+                    </div>
+                    <small class="text-muted">{% trans "Average Expense" %}</small>
+                </div>
+            </div>
+        </div>
+
+        <!-- Approved Amount -->
+        <div class="col-12 col-sm-6 col-lg-3">
+            <div class="card border-0 shadow-sm stat-card" style="border-left-color: #8b5cf6;">
+                <div class="card-body text-center">
+                    <div class="stat-number text-info">{{ approved_amount|floatformat:0|intcomma }}</div>
+                    <small class="text-muted">{% trans "Approved Amount" %}</small>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row g-4">
+        <!-- Main Content -->
+        <div class="col-12 col-lg-8">
+            <!-- Budget Utilization -->
+            {% if budget_utilization %}
+            <div class="card border-0 shadow-sm mb-4">
+                <div class="card-header bg-white border-0 py-3">
+                    <h5 class="mb-0">
+                        <i class="bi bi-wallet2 me-2"></i>
+                        {% trans "Budget Utilization" %}
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div class="row align-items-center mb-4">
+                        <div class="col-12 col-md-6">
+                            <h4 class="mb-2">{{ budget_utilization.spent|floatformat:0|intcomma }} UGX</h4>
+                            <p class="text-muted mb-0">
+                                {% trans "Spent of" %} {{ budget_utilization.budget|floatformat:0|intcomma }} UGX
+                            </p>
+                        </div>
+                        <div class="col-12 col-md-6 text-end">
+                            <div class="display-4 fw-bold {% if budget_utilization.is_over %}text-danger{% elif budget_utilization.percentage > 80 %}text-warning{% else %}text-success{% endif %}">
+                                {{ budget_utilization.percentage|floatformat:1 }}%
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="budget-meter">
+                        <div class="budget-progress {% if budget_utilization.is_over %}bg-danger{% elif budget_utilization.percentage > 80 %}bg-warning{% else %}bg-success{% endif %}"
+                             style="width: {% if budget_utilization.is_over %}100{% else %}{{ budget_utilization.percentage }}{% endif %}%"></div>
+                    </div>
+
+                    <div class="row text-center mt-3">
+                        <div class="col-4">
+                            <strong>{{ budget_utilization.spent|floatformat:0|intcomma }} UGX</strong>
+                            <div class="text-muted small">{% trans "Spent" %}</div>
+                        </div>
+                        <div class="col-4">
+                            <strong>{{ budget_utilization.remaining|floatformat:0|intcomma }} UGX</strong>
+                            <div class="text-muted small">{% trans "Remaining" %}</div>
+                        </div>
+                        <div class="col-4">
+                            <strong>{{ budget_utilization.budget|floatformat:0|intcomma }} UGX</strong>
+                            <div class="text-muted small">{% trans "Budget" %}</div>
+                        </div>
+                    </div>
+
+                    {% if budget_utilization.is_over %}
+                    <div class="alert alert-danger mt-3">
+                        <i class="bi bi-exclamation-triangle me-2"></i>
+                        {% trans "This category has exceeded its monthly budget by" %} {{ budget_utilization.variance|floatformat:0|intcomma }} UGX
+                    </div>
+                    {% elif budget_utilization.percentage > 80 %}
+                    <div class="alert alert-warning mt-3">
+                        <i class="bi bi-exclamation-triangle me-2"></i>
+                        {% trans "This category is close to exceeding its monthly budget" %}
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+            {% endif %}
+
+            <!-- Recent Expenses -->
+            <div class="card border-0 shadow-sm mb-4">
+                <div class="card-header bg-white border-0 py-3 d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">
+                        <i class="bi bi-receipt me-2"></i>
+                        {% trans "Recent Expenses" %}
+                    </h5>
+                    <a href="{% url 'expenses:category_expenses' category.pk %}" class="btn btn-sm btn-outline-primary">
+                        {% trans "View All" %}
+                    </a>
+                </div>
+                <div class="card-body p-0">
+                    {% if expenses %}
+                        <div class="table-responsive">
+                            <table class="table table-hover mb-0">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>{% trans "Expense #" %}</th>
+                                        <th>{% trans "Date" %}</th>
+                                        <th>{% trans "Title" %}</th>
+                                        <th class="text-end">{% trans "Amount" %}</th>
+                                        <th>{% trans "Status" %}</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for expense in expenses %}
+                                    <tr>
+                                        <td>
+                                            <a href="{% url 'expenses:expense_detail' expense.pk %}" class="text-decoration-none fw-medium">
+                                                {{ expense.expense_number }}
+                                            </a>
+                                        </td>
+                                        <td>{{ expense.expense_date|date:"M d, Y" }}</td>
+                                        <td>{{ expense.title|truncatewords:5 }}</td>
+                                        <td class="text-end fw-bold">{{ expense.amount|floatformat:0|intcomma }} {{ expense.currency }}</td>
+                                        <td>
+                                            {% expense_status_badge expense %}
+                                        </td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    {% else %}
+                        <div class="text-center py-5">
+                            <i class="bi bi-inbox text-muted" style="font-size: 3rem;"></i>
+                            <p class="text-muted mt-3">{% trans "No expenses in this category" %}</p>
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+
+            <!-- Monthly Trend -->
+            {% if monthly_trend %}
+            <div class="card border-0 shadow-sm">
+                <div class="card-header bg-white border-0 py-3">
+                    <h5 class="mb-0">
+                        <i class="bi bi-graph-up me-2"></i>
+                        {% trans "Monthly Trend (Last 6 Months)" %}
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div class="chart-container" style="height: 250px;">
+                        <canvas id="monthlyTrendChart"></canvas>
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+
+        <!-- Sidebar -->
+        <div class="col-12 col-lg-4">
+            <!-- Category Information -->
+            <div class="card border-0 shadow-sm mb-4">
+                <div class="card-header bg-white border-0 py-3">
+                    <h5 class="mb-0">
+                        <i class="bi bi-info-circle me-2"></i>
+                        {% trans "Category Information" %}
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div class="mb-3">
+                        <label class="text-muted small d-block">{% trans "GL Account" %}</label>
+                        <div class="fw-medium">{{ category.gl_account|default:"-" }}</div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="text-muted small d-block">{% trans "Sort Order" %}</label>
+                        <div class="fw-medium">{{ category.sort_order|default:"0" }}</div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="text-muted small d-block">{% trans "Monthly Budget" %}</label>
+                        <div class="fw-medium">
+                            {% if category.monthly_budget %}
+                                {{ category.monthly_budget|floatformat:0|intcomma }} UGX
+                            {% else %}
+                                <span class="text-muted">{% trans "Not set" %}</span>
+                            {% endif %}
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="text-muted small d-block">{% trans "Approval Threshold" %}</label>
+                        <div class="fw-medium">
+                            {% if category.approval_threshold %}
+                                {{ category.approval_threshold|floatformat:0|intcomma }} UGX
+                            {% else %}
+                                <span class="text-muted">{% trans "Not set" %}</span>
+                            {% endif %}
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="text-muted small d-block">{% trans "Status" %}</label>
+                        <div class="fw-medium">
+                            {% if category.is_active %}
+                                <span class="badge bg-success">{% trans "Active" %}</span>
+                            {% else %}
+                                <span class="badge bg-danger">{% trans "Inactive" %}</span>
+                            {% endif %}
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="text-muted small d-block">{% trans "Requires Approval" %}</label>
+                        <div class="fw-medium">
+                            {% if category.requires_approval %}
+                                <span class="badge bg-info">{% trans "Yes" %}</span>
+                            {% else %}
+                                <span class="badge bg-secondary">{% trans "No" %}</span>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Monthly Statistics -->
+            <div class="card border-0 shadow-sm mb-4">
+                <div class="card-header bg-white border-0 py-3">
+                    <h5 class="mb-0">
+                        <i class="bi bi-bar-chart me-2"></i>
+                        {% trans "This Month" %}
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div class="text-center mb-3">
+                        <div class="display-6 fw-bold text-primary">{{ monthly_stats.total|floatformat:0|intcomma }}</div>
+                        <small class="text-muted">{% trans "Total Amount" %}</small>
+                    </div>
+
+                    <div class="row text-center">
+                        <div class="col-6">
+                            <div class="fw-bold">{{ monthly_stats.count|default:0 }}</div>
+                            <small class="text-muted">{% trans "Expenses" %}</small>
+                        </div>
+                        <div class="col-6">
+                            <div class="fw-bold">{{ monthly_stats.avg|floatformat:0|intcomma }}</div>
+                            <small class="text-muted">{% trans "Average" %}</small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Quick Actions -->
+            <div class="card border-0 shadow-sm">
+                <div class="card-header bg-white border-0 py-3">
+                    <h5 class="mb-0">
+                        <i class="bi bi-lightning me-2"></i>
+                        {% trans "Quick Actions" %}
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div class="d-grid gap-2">
+                        <a href="{% url 'expenses:category_expenses' category.pk %}" class="btn btn-outline-primary">
+                            <i class="bi bi-receipt me-2"></i>
+                            {% trans "View All Expenses" %}
+                        </a>
+                        <a href="{% url 'expenses:expense_create' %}?category={{ category.pk }}" class="btn btn-outline-success">
+                            <i class="bi bi-plus-lg me-2"></i>
+                            {% trans "New Expense" %}
+                        </a>
+                        {% if perms.expenses.change_expensecategory %}
+                        <a href="{% url 'expenses:category_edit' category.pk %}" class="btn btn-outline-secondary">
+                            <i class="bi bi-pencil me-2"></i>
+                            {% trans "Edit Category" %}
+                        </a>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Initialize monthly trend chart
+    {% if monthly_trend %}
+    const ctx = document.getElementById('monthlyTrendChart').getContext('2d');
+    new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: [
+                {% for item in monthly_trend %}
+                    '{{ item.month|date:"M Y" }}'{% if not forloop.last %},{% endif %}
+                {% endfor %}
+            ],
+            datasets: [{
+                label: '{% trans "Total Amount" %}',
+                data: [
+                    {% for item in monthly_trend %}
+                        {{ item.total }}{% if not forloop.last %},{% endif %}
+                    {% endfor %}
+                ],
+                backgroundColor: '{{ category.color_code }}',
+                borderColor: '{{ category.color_code }}',
+                borderWidth: 1
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    display: false
+                },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            return `${context.dataset.label}: ${context.parsed.y.toLocaleString('en-US', {style: 'currency', currency: 'UGX'})}`;
+                        }
+                    }
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    ticks: {
+                        callback: function(value) {
+                            return value.toLocaleString('en-US', {style: 'currency', currency: 'UGX'});
+                        }
+                    }
+                }
+            }
+        }
+    });
+    {% endif %}
+});
+</script>
+{% endblock %}
