@@ -16,6 +16,18 @@ from public_support.models import SupportTicket
 from public_seo.models import SEOPage
 from public_blog.models import BlogPost
 from company.models import Company
+from django.shortcuts import render
+from django.contrib.auth.decorators import login_required
+from .dashboard_widgets import get_signup_stats
+
+@login_required(login_url='public_accounts:login')
+def dashboard_view(request):
+    """Admin dashboard with signup statistics"""
+    context = {
+        'title': 'Dashboard',
+        'signup_stats': get_signup_stats(),
+    }
+    return render(request, 'public_admin/dashboard.html', context)
 
 
 def get_client_ip(request):

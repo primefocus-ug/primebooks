@@ -15,7 +15,6 @@ from accounts.models import CustomUser
 logger = logging.getLogger(__name__)
 
 
-
 @shared_task(
     bind=True,
     max_retries=3,
@@ -30,38 +29,42 @@ logger = logging.getLogger(__name__)
     reject_on_worker_lost=True,
 )
 def create_tenant_async(self, signup_request_id, password):
-
     try:
         # Track execution time
         start_time = timezone.now()
 
         logger.info(f"Starting tenant creation for request {signup_request_id}")
 
-        # Get signup request with lock
+        # Get signup request with lock - MUST be inside transaction
         try:
-            signup_request = TenantSignupRequest.objects.select_for_update(
-                nowait=False  # Wait for lock
-            ).get(request_id=signup_request_id)
+            with transaction.atomic():
+                signup_request = TenantSignupRequest.objects.select_for_update(
+                    nowait=False  # Wait for lock
+                ).get(request_id=signup_request_id)
+
+                # Skip if already completed
+                if signup_request.status == 'COMPLETED':
+                    logger.info(f"Request {signup_request_id} already completed")
+                    return {
+                        'success': True,
+                        'company_id': signup_request.created_company_id,
+                        'already_completed': True
+                    }
+
+                # Mark as processing
+                signup_request.status = 'PROCESSING'
+                signup_request.save(update_fields=['status', 'updated_at'])
+
         except TenantSignupRequest.DoesNotExist:
             logger.error(f"Signup request {signup_request_id} not found")
             return {'success': False, 'error': 'Request not found'}
 
-        # Skip if already completed
-        if signup_request.status == 'COMPLETED':
-            logger.info(f"Request {signup_request_id} already completed")
-            return {
-                'success': True,
-                'company_id': signup_request.created_company_id,
-                'already_completed': True
-            }
-
-        # Mark as processing
-        signup_request.status = 'PROCESSING'
-        signup_request.save(update_fields=['status', 'updated_at'])
-
-        # Track metrics
-        from .monitoring import track_signup_metrics
-        track_signup_metrics(signup_request)
+        # Track metrics (non-blocking - don't fail signup if metrics fail)
+        try:
+            from .monitoring import track_signup_metrics
+            track_signup_metrics(signup_request)
+        except Exception as metrics_error:
+            logger.warning(f"Failed to track metrics: {str(metrics_error)}")
 
         # Create tenant with lock
         company = create_tenant_with_lock(signup_request, password)
@@ -69,13 +72,14 @@ def create_tenant_async(self, signup_request_id, password):
         # Calculate execution time
         execution_time = (timezone.now() - start_time).total_seconds()
 
-        # Update signup request
-        signup_request.status = 'COMPLETED'
-        signup_request.tenant_created = True
-        signup_request.created_company_id = company.company_id
-        signup_request.created_schema_name = company.schema_name
-        signup_request.completed_at = timezone.now()
-        signup_request.save()
+        # Update signup request - also in transaction
+        with transaction.atomic():
+            signup_request.status = 'COMPLETED'
+            signup_request.tenant_created = True
+            signup_request.created_company_id = company.company_id
+            signup_request.created_schema_name = company.schema_name
+            signup_request.completed_at = timezone.now()
+            signup_request.save()
 
         logger.info(
             f"Successfully created tenant {company.company_id} "
@@ -96,11 +100,14 @@ def create_tenant_async(self, signup_request_id, password):
         logger.error(f"Tenant creation timed out for request {signup_request_id}")
 
         try:
-            signup_request = TenantSignupRequest.objects.get(request_id=signup_request_id)
-            signup_request.status = 'FAILED'
-            signup_request.error_message = 'Operation timed out. Retrying...'
-            signup_request.retry_count = self.request.retries
-            signup_request.save()
+            with transaction.atomic():
+                signup_request = TenantSignupRequest.objects.select_for_update().get(
+                    request_id=signup_request_id
+                )
+                signup_request.status = 'FAILED'
+                signup_request.error_message = 'Operation timed out. Retrying...'
+                signup_request.retry_count = self.request.retries
+                signup_request.save()
         except:
             pass
 
@@ -117,13 +124,16 @@ def create_tenant_async(self, signup_request_id, password):
             }
         )
 
-        # Update signup request
+        # Update signup request - in transaction
         try:
-            signup_request = TenantSignupRequest.objects.get(request_id=signup_request_id)
-            signup_request.status = 'FAILED'
-            signup_request.error_message = str(e)[:1000]  # Limit error message length
-            signup_request.retry_count = self.request.retries
-            signup_request.save()
+            with transaction.atomic():
+                signup_request = TenantSignupRequest.objects.select_for_update().get(
+                    request_id=signup_request_id
+                )
+                signup_request.status = 'FAILED'
+                signup_request.error_message = str(e)[:1000]  # Limit error message length
+                signup_request.retry_count = self.request.retries
+                signup_request.save()
         except Exception as save_error:
             logger.error(f"Failed to update signup request: {str(save_error)}")
 
@@ -136,12 +146,13 @@ def create_tenant_async(self, signup_request_id, password):
             alert_on_high_failure_rate()
             raise
 
+
 def create_tenant_with_lock(signup_request, password):
     """
     Create tenant with database-level locking to prevent race conditions.
-
     Uses advisory locks for PostgreSQL.
     """
+    from .signal_utils import suppress_signals
 
     schema_name = f"tenant_{signup_request.subdomain}"
 
@@ -157,10 +168,18 @@ def create_tenant_with_lock(signup_request, password):
             if Company.objects.filter(schema_name=schema_name).exists():
                 raise ValueError(f"Schema {schema_name} already exists")
 
-            # Create tenant in atomic transaction
-            with transaction.atomic():
-                company = create_company(signup_request, schema_name)
-                domain = create_domain(signup_request, company)
+            # Suppress ALL signals during tenant infrastructure creation
+            with suppress_signals():
+                # Create tenant infrastructure in atomic transaction
+                with transaction.atomic():
+                    company = create_company(signup_request, schema_name)
+                    domain = create_domain(signup_request, company)
+
+            # Wait for schema to be created and migrated
+            wait_for_schema_ready(company.schema_name)
+
+            # Create admin user (after migrations complete, still with suppressed signals)
+            with suppress_signals():
                 admin_user = create_admin_user(signup_request, company, password)
 
             logger.info(f"Created tenant infrastructure for {schema_name}")
@@ -171,8 +190,59 @@ def create_tenant_with_lock(signup_request, password):
             cursor.execute("SELECT pg_advisory_unlock(%s)", [lock_id])
 
 
+def wait_for_schema_ready(schema_name, max_retries=10, delay=2):
+    """
+    Wait for tenant schema to be fully created and migrated.
+
+    Args:
+        schema_name: Name of the tenant schema
+        max_retries: Maximum number of retry attempts
+        delay: Delay between retries in seconds
+    """
+    from django_tenants.utils import schema_context
+
+    for attempt in range(max_retries):
+        try:
+            with schema_context(schema_name):
+                # Check if schema is ready by verifying key tables exist
+                with connection.cursor() as cursor:
+                    # Check if auth_user table exists (basic requirement)
+                    cursor.execute("""
+                        SELECT EXISTS (
+                            SELECT FROM information_schema.tables 
+                            WHERE table_schema = %s 
+                            AND table_name = 'accounts_customuser'
+                        )
+                    """, [schema_name])
+
+                    table_exists = cursor.fetchone()[0]
+
+                    if table_exists:
+                        logger.info(f"Schema {schema_name} is ready")
+                        return True
+
+            logger.warning(
+                f"Schema {schema_name} not ready, "
+                f"retry {attempt + 1}/{max_retries}"
+            )
+            time.sleep(delay)
+
+        except Exception as e:
+            if attempt < max_retries - 1:
+                logger.warning(
+                    f"Error checking schema readiness: {e}, "
+                    f"retry {attempt + 1}/{max_retries}"
+                )
+                time.sleep(delay)
+            else:
+                logger.error(f"Schema {schema_name} failed to become ready: {e}")
+                raise
+
+    raise TimeoutError(f"Schema {schema_name} did not become ready after {max_retries} attempts")
+
+
 def create_company(signup_request, schema_name):
-    """Create company/tenant"""
+    """Create company/tenant without triggering audit signals"""
 
     # Get or create subscription plan
     plan, _ = SubscriptionPlan.objects.get_or_create(
@@ -187,7 +257,7 @@ def create_company(signup_request, schema_name):
         }
     )
 
-    # Create company
+    # Create company (audit logs already suppressed by context manager)
     company = Company.objects.create(
         schema_name=schema_name,
         name=signup_request.company_name,
@@ -229,22 +299,8 @@ def create_domain(signup_request, company):
 
 def create_admin_user(signup_request, company, password):
     """Create admin user in tenant schema"""
-
-    # Wait for schema to be fully created
-    max_retries = 5
-    for attempt in range(max_retries):
-        try:
-            with schema_context(company.schema_name):
-                # Check if schema is ready
-                with connection.cursor() as cursor:
-                    cursor.execute("SELECT 1")
-                break
-        except Exception as e:
-            if attempt < max_retries - 1:
-                logger.warning(f"Schema not ready, retry {attempt + 1}/{max_retries}")
-                time.sleep(2)
-            else:
-                raise e
+    from django_tenants.utils import schema_context
+    from django.contrib.auth.models import Group
 
     # Create admin user in tenant schema
     with schema_context(company.schema_name):
@@ -257,6 +313,7 @@ def create_admin_user(signup_request, company, password):
             logger.info(f"Admin user already exists: {existing_user.email}")
             return existing_user
 
+        # Create user (signals already suppressed by caller)
         admin_user = CustomUser.objects.create_user(
             email=signup_request.admin_email,
             username=signup_request.admin_email.split('@')[0],
@@ -265,7 +322,6 @@ def create_admin_user(signup_request, company, password):
             last_name=signup_request.last_name,
             phone_number=signup_request.admin_phone,
             company=company,
-            user_type='COMPANY_ADMIN',
             company_admin=True,
             is_staff=True,
             is_superuser=True,
@@ -273,9 +329,33 @@ def create_admin_user(signup_request, company, password):
             email_verified=True
         )
 
+        # Assign Company Admin role
+        try:
+            from accounts.models import Role
+
+            # Get or create Company Admin group
+            company_admin_group, _ = Group.objects.get_or_create(name='Company Admin')
+
+            # Get the Company Admin role for this company
+            admin_role = Role.objects.filter(
+                group=company_admin_group,
+                company=company
+            ).first()
+
+            if admin_role:
+                # Assign the role
+                admin_user.groups.add(company_admin_group)
+                admin_user.primary_role = admin_role
+                admin_user.save(update_fields=['primary_role'])
+                logger.info(f"Assigned Company Admin role to {admin_user.email}")
+            else:
+                logger.warning(f"Company Admin role not found for {company.schema_name}")
+
+        except Exception as e:
+            logger.warning(f"Could not assign Company Admin role: {str(e)}")
+
         logger.info(f"Created admin user: {admin_user.email}")
         return admin_user
-
 
 @shared_task
 def send_welcome_email(company_id, signup_request_id):

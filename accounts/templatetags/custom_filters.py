@@ -10,6 +10,22 @@ def filter_attr(queryset, attr_name):
     return [item for item in queryset if getattr(item, attr_name, False)]
 
 @register.filter
+def divide(value, arg):
+    """Divides the value by the argument"""
+    try:
+        return float(value) / float(arg) if arg != 0 else 0
+    except (ValueError, TypeError):
+        return 0
+
+@register.filter
+def multiply(value, arg):
+    """Multiplies the value by the argument"""
+    try:
+        return float(value) * float(arg)
+    except (ValueError, TypeError):
+        return 0
+
+@register.filter
 def absolute(value):
     try:
         return abs(float(value))

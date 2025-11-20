@@ -1,0 +1,282 @@
+<!-- public_admin/templates/public_admin/tenant_signups/list.html -->
+
+{% extends 'public_admin/base.html' %}
+{% load static %}
+
+{% block title %}{{ title }}{% endblock %}
+
+{% block extra_css %}
+<style>
+    .status-badge {
+        padding: 6px 12px;
+        border-radius: 20px;
+        font-size: 12px;
+        font-weight: 600;
+        text-transform: uppercase;
+    }
+
+    .status-pending {
+        background: #fff3e0;
+        color: #e65100;
+    }
+
+    .status-processing {
+        background: #e3f2fd;
+        color: #1565c0;
+    }
+
+    .status-completed {
+        background: #e8f5e9;
+        color: #2e7d32;
+    }
+
+    .status-failed {
+        background: #ffebee;
+        color: #c62828;
+    }
+
+    .filter-tabs {
+        border-bottom: 2px solid #e0e0e0;
+        margin-bottom: 30px;
+    }
+
+    .filter-tab {
+        display: inline-block;
+        padding: 12px 24px;
+        margin-right: 10px;
+        text-decoration: none;
+        color: #666;
+        border-bottom: 3px solid transparent;
+        transition: all 0.3s;
+    }
+
+    .filter-tab:hover {
+        color: #667eea;
+    }
+
+    .filter-tab.active {
+        color: #667eea;
+        border-bottom-color: #667eea;
+        font-weight: 600;
+    }
+
+    .signup-card {
+        background: white;
+        border: 1px solid #e0e0e0;
+        border-radius: 8px;
+        padding: 20px;
+        margin-bottom: 20px;
+        transition: all 0.3s;
+    }
+
+    .signup-card:hover {
+        box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+        transform: translateY(-2px);
+    }
+
+    .signup-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: start;
+        margin-bottom: 15px;
+    }
+
+    .signup-title {
+        font-size: 18px;
+        font-weight: bold;
+        color: #333;
+        margin: 0;
+    }
+
+    .signup-subtitle {
+        color: #666;
+        font-size: 14px;
+    }
+
+    .signup-meta {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 15px;
+        margin-top: 15px;
+        padding-top: 15px;
+        border-top: 1px solid #f0f0f0;
+    }
+
+    .meta-item {
+        display: flex;
+        align-items: center;
+    }
+
+    .meta-icon {
+        margin-right: 8px;
+        color: #667eea;
+    }
+
+    .meta-label {
+        font-size: 12px;
+        color: #888;
+        display: block;
+    }
+
+    .meta-value {
+        font-size: 14px;
+        color: #333;
+        font-weight: 500;
+    }
+
+    .action-buttons {
+        display: flex;
+        gap: 10px;
+        margin-top: 15px;
+    }
+
+    .btn-view {
+        background: #667eea;
+        color: white;
+        border: none;
+        padding: 8px 20px;
+        border-radius: 5px;
+        text-decoration: none;
+        font-size: 14px;
+        transition: all 0.3s;
+    }
+
+    .btn-view:hover {
+        background: #5568d3;
+        color: white;
+    }
+
+    .empty-state {
+        text-align: center;
+        padding: 60px 20px;
+        color: #999;
+    }
+
+    .empty-state i {
+        font-size: 64px;
+        margin-bottom: 20px;
+        color: #ddd;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2><i class="fas fa-users"></i> {{ title }}</h2>
+        <div>
+            <span class="badge bg-primary">Total: {{ signups.count }}</span>
+        </div>
+    </div>
+
+    <!-- Filter Tabs -->
+    <div class="filter-tabs">
+        <a href="?status=ALL" class="filter-tab {% if status_filter == 'ALL' %}active{% endif %}">
+            All Requests
+        </a>
+        <a href="?status=PENDING" class="filter-tab {% if status_filter == 'PENDING' or not status_filter %}active{% endif %}">
+            <i class="fas fa-clock"></i> Pending
+        </a>
+        <a href="?status=PROCESSING" class="filter-tab {% if status_filter == 'PROCESSING' %}active{% endif %}">
+            <i class="fas fa-spinner"></i> Processing
+        </a>
+        <a href="?status=COMPLETED" class="filter-tab {% if status_filter == 'COMPLETED' %}active{% endif %}">
+            <i class="fas fa-check-circle"></i> Completed
+        </a>
+        <a href="?status=FAILED" class="filter-tab {% if status_filter == 'FAILED' %}active{% endif %}">
+            <i class="fas fa-exclamation-circle"></i> Failed
+        </a>
+    </div>
+
+    <!-- Signups List -->
+    {% if signups %}
+        {% for signup in signups %}
+        <div class="signup-card">
+            <div class="signup-header">
+                <div>
+                    <h3 class="signup-title">{{ signup.company_name }}</h3>
+                    <p class="signup-subtitle">
+                        <i class="fas fa-globe"></i> {{ signup.subdomain }}.primebooks.ug
+                    </p>
+                </div>
+                <span class="status-badge status-{{ signup.status|lower }}">
+                    {{ signup.get_status_display }}
+                </span>
+            </div>
+
+            <div class="signup-meta">
+                <div class="meta-item">
+                    <i class="fas fa-user meta-icon"></i>
+                    <div>
+                        <span class="meta-label">Admin</span>
+                        <span class="meta-value">{{ signup.first_name }} {{ signup.last_name }}</span>
+                    </div>
+                </div>
+
+                <div class="meta-item">
+                    <i class="fas fa-envelope meta-icon"></i>
+                    <div>
+                        <span class="meta-label">Email</span>
+                        <span class="meta-value">{{ signup.admin_email }}</span>
+                    </div>
+                </div>
+
+                <div class="meta-item">
+                    <i class="fas fa-phone meta-icon"></i>
+                    <div>
+                        <span class="meta-label">Phone</span>
+                        <span class="meta-value">{{ signup.admin_phone }}</span>
+                    </div>
+                </div>
+
+                <div class="meta-item">
+                    <i class="fas fa-tag meta-icon"></i>
+                    <div>
+                        <span class="meta-label">Plan</span>
+                        <span class="meta-value">{{ signup.get_selected_plan_display }}</span>
+                    </div>
+                </div>
+
+                <div class="meta-item">
+                    <i class="fas fa-calendar meta-icon"></i>
+                    <div>
+                        <span class="meta-label">Submitted</span>
+                        <span class="meta-value">{{ signup.created_at|date:"M d, Y H:i" }}</span>
+                    </div>
+                </div>
+
+                {% if signup.tenant_created %}
+                <div class="meta-item">
+                    <i class="fas fa-check-circle meta-icon" style="color: #4caf50;"></i>
+                    <div>
+                        <span class="meta-label">Tenant ID</span>
+                        <span class="meta-value">{{ signup.created_company_id }}</span>
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+
+            <div class="action-buttons">
+                <a href="{% url 'public_admin:tenant_signup_detail' signup.request_id %}" class="btn-view">
+                    <i class="fas fa-eye"></i> View Details
+                </a>
+
+                {% if signup.status == 'PENDING' %}
+                <a href="{% url 'public_admin:approve_signup' signup.request_id %}"
+                   class="btn btn-success btn-sm"
+                   onclick="return confirm('Approve this signup request?')">
+                    <i class="fas fa-check"></i> Quick Approve
+                </a>
+                {% endif %}
+            </div>
+        </div>
+        {% endfor %}
+    {% else %}
+        <div class="empty-state">
+            <i class="fas fa-inbox"></i>
+            <h4>No Signup Requests</h4>
+            <p>There are no {{ status_filter|lower }} signup requests at the moment.</p>
+        </div>
+    {% endif %}
+</div>
+{% endblock %}

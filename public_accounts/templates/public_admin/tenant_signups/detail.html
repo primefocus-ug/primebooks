@@ -1,0 +1,531 @@
+<!-- public_admin/templates/public_admin/tenant_signups/detail.html -->
+
+{% extends 'public_admin/base.html' %}
+{% load static %}
+
+{% block title %}{{ title }}{% endblock %}
+
+{% block extra_css %}
+<style>
+    .detail-header {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 30px;
+        border-radius: 10px;
+        margin-bottom: 30px;
+    }
+
+    .detail-header h2 {
+        margin: 0 0 10px 0;
+    }
+
+    .status-badge {
+        padding: 8px 16px;
+        border-radius: 20px;
+        font-size: 14px;
+        font-weight: 600;
+        display: inline-block;
+    }
+
+    .status-pending {
+        background: #fff3e0;
+        color: #e65100;
+    }
+
+    .status-processing {
+        background: #e3f2fd;
+        color: #1565c0;
+    }
+
+    .status-completed {
+        background: #e8f5e9;
+        color: #2e7d32;
+    }
+
+    .status-failed {
+        background: #ffebee;
+        color: #c62828;
+    }
+
+    .info-section {
+        background: white;
+        border: 1px solid #e0e0e0;
+        border-radius: 8px;
+        padding: 25px;
+        margin-bottom: 20px;
+    }
+
+    .section-title {
+        font-size: 18px;
+        font-weight: bold;
+        color: #333;
+        margin-bottom: 20px;
+        padding-bottom: 10px;
+        border-bottom: 2px solid #f0f0f0;
+    }
+
+    .info-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+        gap: 20px;
+    }
+
+    .info-item {
+        display: flex;
+        flex-direction: column;
+    }
+
+    .info-label {
+        font-size: 12px;
+        color: #888;
+        text-transform: uppercase;
+        margin-bottom: 5px;
+        font-weight: 600;
+    }
+
+    .info-value {
+        font-size: 15px;
+        color: #333;
+        font-weight: 500;
+    }
+
+    .action-card {
+        background: #f8f9fa;
+        border: 2px dashed #667eea;
+        border-radius: 8px;
+        padding: 30px;
+        text-align: center;
+        margin-bottom: 20px;
+    }
+
+    .btn-approve {
+        background: #4caf50;
+        color: white;
+        border: none;
+        padding: 15px 40px;
+        font-size: 16px;
+        font-weight: bold;
+        border-radius: 8px;
+        transition: all 0.3s;
+    }
+
+    .btn-approve:hover {
+        background: #45a049;
+        transform: translateY(-2px);
+        box-shadow: 0 5px 15px rgba(76, 175, 80, 0.3);
+    }
+
+    .btn-reject {
+        background: #f44336;
+        color: white;
+        border: none;
+        padding: 10px 30px;
+        font-size: 14px;
+        border-radius: 8px;
+    }
+
+    .notification-item {
+        background: #f8f9fa;
+        padding: 15px;
+        border-left: 4px solid #667eea;
+        margin-bottom: 10px;
+        border-radius: 5px;
+    }
+
+    .notification-success {
+        border-left-color: #4caf50;
+    }
+
+    .notification-failed {
+        border-left-color: #f44336;
+    }
+
+    .timeline {
+        position: relative;
+        padding-left: 40px;
+    }
+
+    .timeline::before {
+        content: '';
+        position: absolute;
+        left: 15px;
+        top: 0;
+        bottom: 0;
+        width: 2px;
+        background: #e0e0e0;
+    }
+
+    .timeline-item {
+        position: relative;
+        margin-bottom: 20px;
+    }
+
+    .timeline-dot {
+        position: absolute;
+        left: -33px;
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        background: #667eea;
+        border: 3px solid white;
+        box-shadow: 0 0 0 2px #667eea;
+    }
+
+    .timeline-dot.completed {
+        background: #4caf50;
+        box-shadow: 0 0 0 2px #4caf50;
+    }
+
+    .approval-form {
+        background: white;
+        padding: 25px;
+        border-radius: 8px;
+        border: 1px solid #e0e0e0;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- Back Button -->
+    <div class="mb-3">
+        <a href="{% url 'public_admin:tenant_signups_list' %}" class="btn btn-outline-secondary">
+            <i class="fas fa-arrow-left"></i> Back to List
+        </a>
+    </div>
+
+    <!-- Header -->
+    <div class="detail-header">
+        <div class="d-flex justify-content-between align-items-start">
+            <div>
+                <h2><i class="fas fa-building"></i> {{ signup.company_name }}</h2>
+                <p class="mb-2">
+                    <i class="fas fa-globe"></i> {{ signup.subdomain }}.primebooks.ug
+                </p>
+                <p class="mb-0">
+                    <small>Request ID: {{ signup.request_id }}</small>
+                </p>
+            </div>
+            <span class="status-badge status-{{ signup.status|lower }}">
+                {{ signup.get_status_display }}
+            </span>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-lg-8">
+            <!-- Company Information -->
+            <div class="info-section">
+                <h3 class="section-title"><i class="fas fa-building"></i> Company Information</h3>
+                <div class="info-grid">
+                    <div class="info-item">
+                        <span class="info-label">Company Name</span>
+                        <span class="info-value">{{ signup.company_name }}</span>
+                    </div>
+                    {% if signup.trading_name %}
+                    <div class="info-item">
+                        <span class="info-label">Trading Name</span>
+                        <span class="info-value">{{ signup.trading_name }}</span>
+                    </div>
+                    {% endif %}
+                    <div class="info-item">
+                        <span class="info-label">Subdomain</span>
+                        <span class="info-value">{{ signup.subdomain }}</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">Email</span>
+                        <span class="info-value">{{ signup.email }}</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">Phone</span>
+                        <span class="info-value">{{ signup.phone }}</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">Country</span>
+                        <span class="info-value">{{ signup.country }}</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Admin Contact -->
+            <div class="info-section">
+                <h3 class="section-title"><i class="fas fa-user-shield"></i> Admin Contact</h3>
+                <div class="info-grid">
+                    <div class="info-item">
+                        <span class="info-label">Name</span>
+                        <span class="info-value">{{ signup.first_name }} {{ signup.last_name }}</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">Email</span>
+                        <span class="info-value">{{ signup.admin_email }}</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">Phone</span>
+                        <span class="info-value">{{ signup.admin_phone }}</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Business Details -->
+            <div class="info-section">
+                <h3 class="section-title"><i class="fas fa-briefcase"></i> Business Details</h3>
+                <div class="info-grid">
+                    {% if signup.industry %}
+                    <div class="info-item">
+                        <span class="info-label">Industry</span>
+                        <span class="info-value">{{ signup.industry }}</span>
+                    </div>
+                    {% endif %}
+                    {% if signup.business_type %}
+                    <div class="info-item">
+                        <span class="info-label">Business Type</span>
+                        <span class="info-value">{{ signup.business_type }}</span>
+                    </div>
+                    {% endif %}
+                    <div class="info-item">
+                        <span class="info-label">Estimated Users</span>
+                        <span class="info-value">{{ signup.estimated_users }}</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">Selected Plan</span>
+                        <span class="info-value">
+                            <span class="badge bg-primary">{{ signup.get_selected_plan_display }}</span>
+                        </span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Request Details -->
+            <div class="info-section">
+                <h3 class="section-title"><i class="fas fa-info-circle"></i> Request Details</h3>
+                <div class="info-grid">
+                    <div class="info-item">
+                        <span class="info-label">Submitted</span>
+                        <span class="info-value">{{ signup.created_at|date:"F d, Y H:i" }}</span>
+                    </div>
+                    {% if signup.completed_at %}
+                    <div class="info-item">
+                        <span class="info-label">Completed</span>
+                        <span class="info-value">{{ signup.completed_at|date:"F d, Y H:i" }}</span>
+                    </div>
+                    {% endif %}
+                    {% if signup.ip_address %}
+                    <div class="info-item">
+                        <span class="info-label">IP Address</span>
+                        <span class="info-value">{{ signup.ip_address }}</span>
+                    </div>
+                    {% endif %}
+                    {% if signup.referral_source %}
+                    <div class="info-item">
+                        <span class="info-label">Referral Source</span>
+                        <span class="info-value">{{ signup.referral_source }}</span>
+                    </div>
+                    {% endif %}
+                    <div class="info-item">
+                        <span class="info-label">Retry Count</span>
+                        <span class="info-value">{{ signup.retry_count }}</span>
+                    </div>
+                </div>
+
+                {% if signup.tenant_created %}
+                <div class="mt-3 p-3 bg-success bg-opacity-10 border border-success rounded">
+                    <h5 class="text-success mb-2">
+                        <i class="fas fa-check-circle"></i> Tenant Created Successfully
+                    </h5>
+                    <p class="mb-1"><strong>Company ID:</strong> {{ signup.created_company_id }}</p>
+                    <p class="mb-0"><strong>Schema Name:</strong> {{ signup.created_schema_name }}</p>
+                </div>
+                {% endif %}
+
+                {% if signup.error_message %}
+                <div class="mt-3 p-3 bg-danger bg-opacity-10 border border-danger rounded">
+                    <h5 class="text-danger mb-2">
+                        <i class="fas fa-exclamation-triangle"></i> Error Details
+                    </h5>
+                    <p class="mb-0"><code>{{ signup.error_message }}</code></p>
+                </div>
+                {% endif %}
+            </div>
+
+            <!-- Notification Log -->
+            {% if notifications %}
+            <div class="info-section">
+                <h3 class="section-title"><i class="fas fa-envelope"></i> Notification Log</h3>
+                {% for notification in notifications %}
+                <div class="notification-item {% if notification.sent_successfully %}notification-success{% else %}notification-failed{% endif %}">
+                    <div class="d-flex justify-content-between align-items-start">
+                        <div>
+                            <strong>{{ notification.get_notification_type_display }}</strong><br>
+                            <small>To: {{ notification.recipient_email }}</small><br>
+                            <small>Subject: {{ notification.subject }}</small>
+                            {% if not notification.sent_successfully %}
+                            <br><small class="text-danger">Error: {{ notification.error_message }}</small>
+                            {% endif %}
+                        </div>
+                        <div class="text-end">
+                            {% if notification.sent_successfully %}
+                            <i class="fas fa-check-circle text-success"></i>
+                            {% else %}
+                            <i class="fas fa-times-circle text-danger"></i>
+                            {% endif %}
+                            <br>
+                            <small class="text-muted">{{ notification.sent_at|date:"M d, H:i" }}</small>
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+            {% endif %}
+        </div>
+
+        <div class="col-lg-4">
+            <!-- Action Card -->
+            {% if signup.status == 'PENDING' %}
+            <div class="action-card">
+                <h4><i class="fas fa-tasks"></i> Approve Signup</h4>
+                <p class="text-muted">Review the information and approve this signup request</p>
+
+                <form method="post" action="{% url 'public_admin:approve_signup' signup.request_id %}" class="mt-4">
+                    {% csrf_token %}
+                    <div class="mb-3">
+                        <label for="approval_notes" class="form-label">Approval Notes (Optional)</label>
+                        <textarea name="approval_notes" id="approval_notes" class="form-control" rows="3" placeholder="Add any notes about this approval..."></textarea>
+                    </div>
+
+                    <button type="submit" class="btn-approve w-100" onclick="return confirm('This will create the tenant company and send login credentials. Continue?')">
+                        <i class="fas fa-check-circle"></i> Approve & Create Tenant
+                    </button>
+                </form>
+
+                <hr class="my-3">
+
+                <button type="button" class="btn-reject" onclick="alert('Rejection feature coming soon')">
+                    <i class="fas fa-times-circle"></i> Reject Request
+                </button>
+            </div>
+            {% elif signup.status == 'COMPLETED' %}
+            <div class="info-section">
+                <h4 class="section-title"><i class="fas fa-check-circle text-success"></i> Approved</h4>
+                <div class="timeline">
+                    <div class="timeline-item">
+                        <div class="timeline-dot completed"></div>
+                        <div>
+                            <strong>Request Submitted</strong><br>
+                            <small class="text-muted">{{ signup.created_at|date:"M d, Y H:i" }}</small>
+                        </div>
+                    </div>
+                    <div class="timeline-item">
+                        <div class="timeline-dot completed"></div>
+                        <div>
+                            <strong>Approved by {{ workflow.reviewed_by.username }}</strong><br>
+                            <small class="text-muted">{{ workflow.reviewed_at|date:"M d, Y H:i" }}</small>
+                            {% if workflow.approval_notes %}
+                            <p class="mb-0 mt-1"><em>{{ workflow.approval_notes }}</em></p>
+                            {% endif %}
+                        </div>
+                    </div>
+                    <div class="timeline-item">
+                        <div class="timeline-dot completed"></div>
+                        <div>
+                            <strong>Tenant Created</strong><br>
+                            <small class="text-muted">{{ signup.completed_at|date:"M d, Y H:i" }}</small>
+                        </div>
+                    </div>
+                    <div class="timeline-item">
+                        <div class="timeline-dot completed"></div>
+                        <div>
+                            <strong>Credentials Sent</strong><br>
+                            <small class="text-muted">{{ workflow.approval_notification_sent_at|date:"M d, Y H:i" }}</small>
+                        </div>
+                    </div>
+                </div>
+
+                {% if workflow.login_url %}
+                <div class="mt-4 p-3 bg-light rounded">
+                    <h6>Login Details</h6>
+                    <p class="mb-1"><strong>URL:</strong> <a href="{{ workflow.login_url }}" target="_blank">{{ workflow.login_url }}</a></p>
+                    <p class="mb-0"><strong>Email:</strong> {{ signup.admin_email }}</p>
+                </div>
+                {% endif %}
+            </div>
+            {% elif signup.status == 'FAILED' %}
+            <div class="info-section">
+                <h4 class="section-title"><i class="fas fa-exclamation-triangle text-danger"></i> Failed</h4>
+                <div class="alert alert-danger">
+                    <p class="mb-2"><strong>This signup failed to complete.</strong></p>
+                    <p class="mb-0">Error: {{ signup.error_message }}</p>
+                </div>
+                <form method="post" action="{% url 'public_admin:approve_signup' signup.request_id %}">
+                {% csrf_token %}
+                <button type="submit" class="btn btn-primary w-100" onclick="return confirm('Retry creating this tenant?')">
+                    <i class="fas fa-redo"></i> Retry Creation
+                </button>
+            </form>
+        </div>
+        {% endif %}
+
+        <!-- Quick Info -->
+        <div class="info-section mt-3">
+            <h4 class="section-title"><i class="fas fa-chart-bar"></i> Quick Stats</h4>
+            <div class="info-item mb-3">
+                <span class="info-label">Status</span>
+                <span class="info-value">
+                    <span class="status-badge status-{{ signup.status|lower }}">
+                        {{ signup.get_status_display }}
+                    </span>
+                </span>
+            </div>
+            <div class="info-item mb-3">
+                <span class="info-label">Notifications Sent</span>
+                <span class="info-value">{{ notifications.count }}</span>
+            </div>
+            <div class="info-item mb-3">
+                <span class="info-label">Signup Notification</span>
+                <span class="info-value">
+                    {% if workflow.signup_notification_sent %}
+                    <i class="fas fa-check-circle text-success"></i> Sent
+                    {% else %}
+                    <i class="fas fa-times-circle text-danger"></i> Not Sent
+                    {% endif %}
+                </span>
+            </div>
+            {% if signup.status == 'COMPLETED' %}
+            <div class="info-item mb-3">
+                <span class="info-label">Approval Notification</span>
+                <span class="info-value">
+                    {% if workflow.approval_notification_sent %}
+                    <i class="fas fa-check-circle text-success"></i> Sent
+                    {% else %}
+                    <i class="fas fa-times-circle text-danger"></i> Not Sent
+                    {% endif %}
+                </span>
+            </div>
+            {% endif %}
+        </div>
+
+        <!-- Contact Actions -->
+        <div class="info-section mt-3">
+            <h4 class="section-title"><i class="fas fa-phone"></i> Contact Client</h4>
+            <div class="d-grid gap-2">
+                <a href="mailto:{{ signup.admin_email }}" class="btn btn-outline-primary">
+                    <i class="fas fa-envelope"></i> Email Client
+                </a>
+                <a href="tel:{{ signup.admin_phone }}" class="btn btn-outline-success">
+                    <i class="fas fa-phone"></i> Call Client
+                </a>
+                <a href="https://wa.me/{{ signup.admin_phone|cut:'+' }}" target="_blank" class="btn btn-outline-success">
+                    <i class="fab fa-whatsapp"></i> WhatsApp
+                </a>
+            </div>
+        </div>
+    </div>
+    </div>
+</div>
+{% endblock %}
+{% block extra_js %}
+<script>
+    console.log('Signup Detail Page Loaded');
+    console.log('Request ID: {{ signup.request_id }}');
+    console.log('Status: {{ signup.status }}');
+</script>
+{% endblock %}

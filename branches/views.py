@@ -748,27 +748,56 @@ class BranchListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
 
 
 class BranchDetailView(LoginRequiredMixin, PermissionRequiredMixin, DetailView):
-    """Store detail view (backward compatible as branch)."""
+    """Store detail view (backward compatible as branch). Shows company-wide analytics."""
     model = Store
     template_name = 'company/branch_detail.html'
     context_object_name = 'branch'
     permission_required = 'stores.view_store'
 
     def get_queryset(self):
-        return Store.objects.select_related('company')
+        return Store.objects.select_related('company').prefetch_related('staff', 'devices')
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         store = self.get_object()
 
+        # Provide both 'store' and 'branch' for backward compatibility
         context['store'] = store
-        context["active_store_count"] = Store.objects.filter(
-            company=store.company,
-            is_active=True
+        context['company'] = store.company
+
+        # Get all stores/branches in the same company
+        # These are sibling stores, not child stores
+        all_stores = Store.objects.filter(
+            company=store.company
+        ).select_related('company').prefetch_related('staff', 'devices').order_by('-is_main_branch', 'name')
+
+        # Attach stores to the branch object so template can use branch.stores.all
+        store.stores = all_stores
+
+        # Store counts
+        context["active_store_count"] = all_stores.filter(is_active=True).count()
+        context['total_stores'] = all_stores.count()
+
+        # Get basic metrics for quick stats
+        thirty_days_ago = timezone.now().date() - timedelta(days=30)
+
+        # Company-wide revenue (all stores)
+        context['company_revenue'] = Sale.objects.filter(
+            store__company=store.company,
+            created_at__date__gte=thirty_days_ago,
+            is_voided=False,
+            is_completed=True
+        ).aggregate(total=Sum('total_amount'))['total'] or Decimal('0')
+
+        # Company-wide sales count
+        context['company_sales_count'] = Sale.objects.filter(
+            store__company=store.company,
+            created_at__date__gte=thirty_days_ago,
+            is_voided=False,
+            is_completed=True
         ).count()
 
         return context
-
 
 class BranchCreateView(LoginRequiredMixin, PermissionRequiredMixin, CreateView):
     """Create new store (backward compatible as branch)."""

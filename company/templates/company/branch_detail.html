@@ -5,7 +5,6 @@
 {% block title %}{{ branch.name }} - {{ company.trading_name|default:company.name}}{% endblock %}
 
 {% block extra_css %}
-<link rel="stylesheet" href="{% static 'css/company_branch_detail.css' %}">
 <link rel="stylesheet" href="{% static 'themes.css' %}">
 <style>
     [data-theme="dark"] {
@@ -621,6 +620,20 @@
 {% block extra_js %}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
 <script>
+// Store the branch ID globally
+const BRANCH_ID = {{ branch.id }};
+
+// URL patterns using Django's URL resolver
+const URLS = {
+    analytics: "{% url 'companies:branch_analytics' branch.id %}",
+    storeStats: "{% url 'companies:branch_store_stats' branch.id %}",
+    performance: "{% url 'companies:branch_performance' branch.id %}",
+    staffOverview: "{% url 'companies:branch_staff_overview' branch.id %}",
+    revenueData: "{% url 'companies:branch_revenue_data' branch.id %}",
+    exportData: "{% url 'companies:export_branch_data' branch.id %}",
+    generateReport: "{% url 'companies:generate_branch_report' branch.id %}"
+};
+
 document.addEventListener('DOMContentLoaded', function() {
     // Initialize all functionality
     initializeAnalytics();
@@ -651,10 +664,13 @@ function initializeAnalytics() {
 
 // Load main analytics data
 function loadAnalyticsData() {
-    const branchId = {{ branch.id }};
-
-    fetch(`/branches/${branchId}/analytics/`)
-        .then(response => response.json())
+    fetch(URLS.analytics)
+        .then(response => {
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            return response.json();
+        })
         .then(data => {
             updateMetrics(data.metrics);
             updateRevenueChart(data.revenue_data);
@@ -663,7 +679,7 @@ function loadAnalyticsData() {
         })
         .catch(error => {
             console.error('Error loading analytics:', error);
-            showErrorMessage('Failed to load analytics data');
+            showErrorMessage('Failed to load analytics data: ' + error.message);
         });
 }
 
@@ -854,7 +870,7 @@ function updatePerformanceTable(stores) {
                 </td>
                 <td>
                     <div class="btn-group btn-group-sm">
-                        <a href="/stores/${store.id}/" class="btn btn-outline-primary" title="View Store">
+                        <a href="{% url 'stores:store_detail' 0 %}".replace('0', store.id) class="btn btn-outline-primary" title="View Store">
                             <i class="bi bi-eye"></i>
                         </a>
                         <a href="/stores/analytics/?store=${store.id}" class="btn btn-outline-info" title="Analytics">
@@ -970,14 +986,16 @@ function resetFilters() {
 
 // Load branch data
 function loadBranchData() {
-    const branchId = {{ branch.id }};
-
-    // Load store sales counts
-    fetch(`/branches/${branchId}/store-stats/`)
-        .then(response => response.json())
+    fetch(URLS.storeStats)
+        .then(response => {
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            return response.json();
+        })
         .then(data => {
             data.stores.forEach(store => {
-                const element = document.querySelector(`[data-store-id="${store.id}"]`);
+                const element = document.querySelector(`.store-sales-count[data-store-id="${store.id}"]`);
                 if (element) {
                     element.textContent = store.sales_count;
                 }
@@ -988,10 +1006,13 @@ function loadBranchData() {
 
 // Load performance data
 function loadPerformanceData() {
-    const branchId = {{ branch.id }};
-
-    fetch(`/branches/${branchId}/performance/`)
-        .then(response => response.json())
+    fetch(URLS.performance)
+        .then(response => {
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            return response.json();
+        })
         .then(data => {
             updateTopStores(data.top_stores);
             updateAttentionStores(data.attention_stores);
@@ -999,7 +1020,7 @@ function loadPerformanceData() {
         })
         .catch(error => {
             console.error('Error loading performance data:', error);
-            showErrorMessage('Failed to load performance data');
+            showErrorMessage('Failed to load performance data: ' + error.message);
         });
 }
 
@@ -1035,8 +1056,9 @@ function updateAttentionStores(stores) {
 
     let html = '';
     stores.forEach(store => {
-        const issueClass = store.issue === 'low_sales' ? 'warning' :
-                          store.issue === 'inactive' ? 'danger' : 'info';
+        const issueClass = store.issue === 'low_performance' ? 'warning' :
+                          store.issue === 'no_sales' ? 'danger' :
+                          store.issue === 'inactive' ? 'secondary' : 'info';
 
         html += `
             <div class="d-flex align-items-center mb-3 p-2 border-start border-${issueClass} border-3 bg-light">
@@ -1045,7 +1067,7 @@ function updateAttentionStores(stores) {
                     <strong>${store.name}</strong>
                     <br><small class="text-muted">${store.issue_description}</small>
                 </div>
-                <a href="/stores/${store.id}/" class="btn btn-outline-${issueClass} btn-sm">
+                <a href="{% url 'stores:store_detail' 0 %}".replace('0', store.id) class="btn btn-outline-${issueClass} btn-sm">
                     <i class="bi bi-arrow-right"></i>
                 </a>
             </div>
@@ -1057,16 +1079,19 @@ function updateAttentionStores(stores) {
 
 // Load staff overview
 function loadStaffOverview() {
-    const branchId = {{ branch.id }};
-
-    fetch(`/branches/${branchId}/staff-overview/`)
-        .then(response => response.json())
+    fetch(URLS.staffOverview)
+        .then(response => {
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            return response.json();
+        })
         .then(data => {
             updateStaffOverview(data);
         })
         .catch(error => {
             console.error('Error loading staff overview:', error);
-            showErrorMessage('Failed to load staff overview');
+            showErrorMessage('Failed to load staff overview: ' + error.message);
         });
 }
 
@@ -1213,43 +1238,36 @@ function showErrorMessage(message) {
 
 // Export and bulk action functions
 function exportBranchData() {
-    const branchId = {{ branch.id }};
-    window.open(`/branches/${branchId}/export/`, '_blank');
+    window.open(URLS.exportData, '_blank');
 }
 
 function exportStoresData() {
-    const branchId = {{ branch.id }};
-    window.open(`/stores/export/?branch=${branchId}`, '_blank');
+    window.open(`/stores/export/?company={{ company.id }}`, '_blank');
 }
 
 function generateReport() {
-    const branchId = {{ branch.id }};
     const loadingModal = new bootstrap.Modal(document.getElementById('loadingModal'));
     loadingModal.show();
 
-    fetch(`/branches/${branchId}/generate-report/`, {
+    fetch(URLS.generateReport, {
         method: 'POST',
         headers: {
-            'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value,
+            'X-CSRFToken': '{{ csrf_token }}',
             'Content-Type': 'application/json',
         }
     })
-    .then(response => response.blob())
-    .then(blob => {
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `branch_${branchId}_report.pdf`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        window.URL.revokeObjectURL(url);
+    .then(response => response.json())
+    .then(data => {
+        loadingModal.hide();
+        if (data.status === 'success') {
+            alert('Report generated successfully!');
+        } else {
+            showErrorMessage('Failed to generate report');
+        }
     })
     .catch(error => {
         console.error('Error generating report:', error);
-        showErrorMessage('Failed to generate report');
-    })
-    .finally(() => {
+        showErrorMessage('Failed to generate report: ' + error.message);
         loadingModal.hide();
     });
 }
@@ -1270,10 +1288,13 @@ document.addEventListener('change', function(e) {
 });
 
 function updateRevenueChartRange(range) {
-    const branchId = {{ branch.id }};
-
-    fetch(`/branches/${branchId}/revenue-data/?range=${range}`)
-        .then(response => response.json())
+    fetch(`${URLS.revenueData}?range=${range}`)
+        .then(response => {
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            return response.json();
+        })
         .then(data => {
             updateRevenueChart(data);
         })

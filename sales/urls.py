@@ -28,6 +28,9 @@ urlpatterns = [
     
     # Search and Utility (AJAX)
     path('product-search/', views.search_products, name='product_search'),
+    path('service-search/', views.search_services, name='service_search'),
+    path('analytics/day-details/', views.analytics_day_details, name='analytics_day_details'),# NEW
+    path('search-items/', views.search_products_and_services, name='search_items'),
     path('customer-search/', views.search_customers, name='customer_search'),
     path("<int:sale_id>/duplicate/", views.duplicate_sale, name="duplicate_sale"),
     path("<int:sale_id>/send-receipt/", views.send_receipt, name="send_receipt"),

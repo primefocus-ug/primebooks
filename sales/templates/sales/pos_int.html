@@ -1,1496 +1,482 @@
 {% extends 'base.html' %}
+{% load static %}
+{% load i18n %}
+{% load custom_filters %}
+{% load humanize %}
 
-{% block title %}POS Terminal - Sales Pro{% endblock %}
+{% block title %}Sales Analytics | {{ company.trading_name|default:company.name }}{% endblock %}
 
 {% block extra_css %}
+<link href="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.css" rel="stylesheet">
+<link rel="stylesheet" href="{% static 'themes.css' %}">
 <style>
-    .pos-container {
-        height: calc(100vh - 120px);
-        display: flex;
-        gap: 1rem;
-    }
+/* ... (keep all existing styles) ... */
 
-    .products-panel {
-        flex: 2;
-        background: white;
-        border-radius: 0.75rem;
-        overflow: hidden;
-        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-        display: flex;
-        flex-column;
-    }
+/* NEW: Item Type Badge Styles */
+.item-type-badge {
+    font-size: 0.7rem;
+    padding: 0.25rem 0.5rem;
+    border-radius: 0.25rem;
+    font-weight: 600;
+}
 
-    .cart-panel {
-        flex: 1;
-        background: white;
-        border-radius: 0.75rem;
-        overflow: hidden;
-        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-        display: flex;
-        flex-direction: column;
-        min-width: 400px;
-    }
+.item-type-badge.product {
+    background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+    color: white;
+}
 
-    .panel-header {
-        padding: 1.5rem;
-        border-bottom: 1px solid #e5e7eb;
-        background: linear-gradient(135deg, var(--primary-color), #3b82f6);
-        color: white;
-    }
+.item-type-badge.service {
+    background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+    color: white;
+}
 
-    .panel-title {
-        font-size: 1.25rem;
-        font-weight: 600;
-        margin: 0;
-    }
+/* Item Type Breakdown Card */
+.item-breakdown-card {
+    background: white;
+    border-radius: 0.5rem;
+    padding: 1.5rem;
+    box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
+    border: 1px solid rgba(0, 0, 0, 0.125);
+    margin-bottom: 1.5rem;
+}
 
-    .products-search {
-        padding: 1rem;
-        border-bottom: 1px solid #e5e7eb;
-    }
+[data-theme="dark"] .item-breakdown-card {
+    background: #2c2f33;
+    color: #ddd;
+    border-color: #444;
+}
 
-    .product-grid {
-        flex: 1;
-        padding: 1rem;
-        overflow-y: auto;
-        display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-        gap: 1rem;
-        max-height: calc(100vh - 300px);
-    }
+.breakdown-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 1rem;
+    background: #f8f9fa;
+    border-radius: 0.5rem;
+    margin-bottom: 0.75rem;
+}
 
-    .product-card {
-        border: 2px solid #e5e7eb;
-        border-radius: 0.75rem;
-        padding: 1rem;
-        cursor: pointer;
-        transition: all 0.2s ease;
-        background: white;
-        position: relative;
-    }
+[data-theme="dark"] .breakdown-item {
+    background: #23272a;
+}
 
-    .product-card:hover {
-        border-color: var(--primary-color);
-        transform: translateY(-2px);
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-    }
-
-    .product-card.selected {
-        border-color: var(--primary-color);
-        background: rgba(37, 99, 235, 0.05);
-    }
-
-    .product-image {
-        width: 60px;
-        height: 60px;
-        background: #f3f4f6;
-        border-radius: 0.5rem;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        margin-bottom: 0.75rem;
-        font-size: 1.5rem;
-        color: var(--secondary-color);
-    }
-
-    .product-name {
-        font-weight: 600;
-        font-size: 0.9rem;
-        margin-bottom: 0.25rem;
-        color: var(--dark-color);
-    }
-
-    .product-price {
-        font-weight: 700;
-        color: var(--success-color);
-        font-size: 1rem;
-    }
-
-    .product-stock {
-        position: absolute;
-        top: 0.5rem;
-        right: 0.5rem;
-        background: var(--warning-color);
-        color: white;
-        font-size: 0.75rem;
-        padding: 0.25rem 0.5rem;
-        border-radius: 1rem;
-        font-weight: 600;
-    }
-
-    .product-stock.out-of-stock {
-        background: var(--danger-color);
-    }
-
-    .cart-items {
-        flex: 1;
-        overflow-y: auto;
-        max-height: 400px;
-    }
-
-    .cart-item {
-        padding: 1rem;
-        border-bottom: 1px solid #f3f4f6;
-        display: flex;
-        align-items: center;
-        gap: 0.75rem;
-    }
-
-    .cart-item:hover {
-        background: #f9fafb;
-    }
-
-    .cart-item-image {
-        width: 40px;
-        height: 40px;
-        background: #f3f4f6;
-        border-radius: 0.5rem;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 1rem;
-        color: var(--secondary-color);
-    }
-
-    .cart-item-details {
-        flex: 1;
-    }
-
-    .cart-item-name {
-        font-weight: 600;
-        font-size: 0.9rem;
-        margin-bottom: 0.25rem;
-    }
-
-    .cart-item-price {
-        color: var(--secondary-color);
-        font-size: 0.875rem;
-    }
-
-    .quantity-controls {
-        display: flex;
-        align-items: center;
-        gap: 0.5rem;
-    }
-
-    .qty-btn {
-        width: 32px;
-        height: 32px;
-        border: 1px solid #d1d5db;
-        background: white;
-        border-radius: 0.375rem;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        cursor: pointer;
-        font-weight: 600;
-        transition: all 0.2s ease;
-    }
-
-    .qty-btn:hover {
-        background: var(--primary-color);
-        color: white;
-        border-color: var(--primary-color);
-    }
-
-    .qty-input {
-        width: 60px;
-        text-align: center;
-        border: 1px solid #d1d5db;
-        border-radius: 0.375rem;
-        padding: 0.375rem;
-        font-weight: 600;
-    }
-
-    .cart-summary {
-        padding: 1.5rem;
-        border-top: 2px solid #e5e7eb;
-        background: #f9fafb;
-    }
-
-    .summary-row {
-        display: flex;
-        justify-content: between;
-        align-items: center;
-        margin-bottom: 0.5rem;
-    }
-
-    .summary-row.total {
-        font-size: 1.25rem;
-        font-weight: 700;
-        padding-top: 0.75rem;
-        border-top: 1px solid #d1d5db;
-        margin-top: 0.75rem;
-    }
-
-    .payment-section {
-        padding: 1.5rem;
-        border-top: 1px solid #e5e7eb;
-    }
-
-    .payment-methods {
-        display: grid;
-        grid-template-columns: repeat(2, 1fr);
-        gap: 0.5rem;
-        margin-bottom: 1rem;
-    }
-
-    .payment-method {
-        padding: 0.75rem;
-        border: 2px solid #e5e7eb;
-        border-radius: 0.5rem;
-        text-align: center;
-        cursor: pointer;
-        transition: all 0.2s ease;
-        background: white;
-    }
-
-    .payment-method:hover {
-        border-color: var(--primary-color);
-    }
-
-    .payment-method.active {
-        border-color: var(--primary-color);
-        background: rgba(37, 99, 235, 0.05);
-        color: var(--primary-color);
-    }
-
-    .cash-input {
-        margin-bottom: 1rem;
-    }
-
-    .change-display {
-        background: var(--success-color);
-        color: white;
-        padding: 1rem;
-        border-radius: 0.5rem;
-        text-align: center;
-        font-size: 1.125rem;
-        font-weight: 700;
-        margin-bottom: 1rem;
-    }
-
-    .checkout-btn {
-        width: 100%;
-        padding: 1rem;
-        font-size: 1.125rem;
-        font-weight: 700;
-        border-radius: 0.5rem;
-        background: var(--success-color);
-        border: none;
-        color: white;
-        cursor: pointer;
-        transition: all 0.2s ease;
-    }
-
-    .checkout-btn:hover:not(:disabled) {
-        background: #059669;
-        transform: translateY(-1px);
-    }
-
-    .checkout-btn:disabled {
-        background: #9ca3af;
-        cursor: not-allowed;
-    }
-
-    .category-tabs {
-        display: flex;
-        padding: 0 1rem;
-        gap: 0.5rem;
-        border-bottom: 1px solid #e5e7eb;
-        overflow-x: auto;
-    }
-
-    .category-tab {
-        padding: 0.75rem 1rem;
-        border: none;
-        background: none;
-        cursor: pointer;
-        font-weight: 500;
-        white-space: nowrap;
-        border-bottom: 3px solid transparent;
-        transition: all 0.2s ease;
-    }
-
-    .category-tab:hover {
-        background: #f3f4f6;
-    }
-
-    .category-tab.active {
-        color: var(--primary-color);
-        border-bottom-color: var(--primary-color);
-    }
-
-    .customer-section {
-        padding: 1rem 1.5rem;
-        border-bottom: 1px solid #e5e7eb;
-        background: #f9fafb;
-    }
-
-    .customer-display {
-        display: flex;
-        align-items: center;
-        justify-content: between;
-    }
-
-    .customer-info {
-        display: flex;
-        align-items: center;
-        gap: 0.75rem;
-    }
-
-    .customer-avatar {
-        width: 40px;
-        height: 40px;
-        background: var(--primary-color);
-        color: white;
-        border-radius: 50%;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-weight: 600;
-    }
-
-    .barcode-scanner {
-        position: fixed;
-        top: 50%;
-        left: 50%;
-        transform: translate(-50%, -50%);
-        background: white;
-        padding: 2rem;
-        border-radius: 1rem;
-        box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
-        z-index: 1000;
-        display: none;
-    }
-
-    .scanner-animation {
-        width: 200px;
-        height: 200px;
-        border: 2px solid var(--primary-color);
-        border-radius: 0.5rem;
-        position: relative;
-        margin-bottom: 1rem;
-        background: #f9fafb;
-    }
-
-    .scanner-line {
-        position: absolute;
-        top: 0;
-        left: 0;
-        right: 0;
-        height: 2px;
-        background: var(--success-color);
-        animation: scan 2s linear infinite;
-    }
-
-    @keyframes scan {
-        0% { top: 0; }
-        100% { top: calc(100% - 2px); }
-    }
-
-    .shortcut-keys {
-        position: fixed;
-        bottom: 1rem;
-        left: 1rem;
-        background: rgba(0, 0, 0, 0.8);
-        color: white;
-        padding: 1rem;
-        border-radius: 0.5rem;
-        font-size: 0.875rem;
-        z-index: 100;
-        opacity: 0;
-        transition: opacity 0.3s ease;
-    }
-
-    .shortcut-keys.show {
-        opacity: 1;
-    }
-
-    .empty-cart {
-        padding: 3rem 1.5rem;
-        text-align: center;
-        color: var(--secondary-color);
-    }
-
-    .recent-sales {
-        position: absolute;
-        top: 100%;
-        left: 0;
-        right: 0;
-        background: white;
-        border: 1px solid #d1d5db;
-        border-top: none;
-        border-radius: 0 0 0.5rem 0.5rem;
-        max-height: 200px;
-        overflow-y: auto;
-        z-index: 10;
-        display: none;
-    }
-
-    .recent-sale-item {
-        padding: 0.75rem;
-        border-bottom: 1px solid #f3f4f6;
-        cursor: pointer;
-        transition: background 0.2s ease;
-    }
-
-    .recent-sale-item:hover {
-        background: #f9fafb;
-    }
-
-    @media (max-width: 1200px) {
-        .pos-container {
-            flex-direction: column;
-            height: auto;
-        }
-        
-        .cart-panel {
-            min-width: auto;
-        }
-        
-        .product-grid {
-            grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-            max-height: 400px;
-        }
-    }
-
-    @media (max-width: 768px) {
-        .product-grid {
-            grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
-        }
-        
-        .payment-methods {
-            grid-template-columns: 1fr;
-        }
-    }
+.breakdown-icon {
+    font-size: 2rem;
+    margin-right: 1rem;
+}
 </style>
 {% endblock %}
 
 {% block content %}
-<div class="pos-container animate-fade-in">
-    <!-- Products Panel -->
-    <div class="products-panel">
-        <div class="panel-header">
-            <h2 class="panel-title">
-                <i class="fas fa-box me-2"></i>
-                Products - {{ store.name }}
-            </h2>
+<div class="container-fluid">
+    <!-- Header -->
+    <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap">
+        <div class="mb-3 mb-md-0">
+            <h2><i class="fas fa-chart-line me-3"></i>Sales Analytics</h2>
+            <p class="text-muted mb-0">Comprehensive sales performance overview - Products & Services</p>
         </div>
-        
-        <!-- Product Search -->
-        <div class="products-search">
-            <div class="row g-2">
-                <div class="col-md-6">
-                    <div class="input-group">
-                        <span class="input-group-text">
-                            <i class="fas fa-search"></i>
-                        </span>
-                        <input type="text" 
-                               class="form-control" 
-                               id="productSearch" 
-                               placeholder="Search products, SKU, or scan barcode..."
-                               autocomplete="off">
-                    </div>
-                    <div class="recent-sales" id="searchResults"></div>
+        <div class="d-flex gap-2 flex-wrap">
+            <button class="btn btn-outline-primary" onclick="exportData('csv')">
+                <i class="fas fa-file-csv me-2"></i>Export CSV
+            </button>
+            <button class="btn btn-outline-success" onclick="exportData('excel')">
+                <i class="fas fa-file-excel me-2"></i>Export Excel
+            </button>
+            <button class="btn btn-primary" onclick="window.print()">
+                <i class="fas fa-print me-2"></i>Print Report
+            </button>
+        </div>
+    </div>
+
+    <!-- Date Filter Section -->
+    <div class="filter-section">
+        <h5 class="mb-3"><i class="fas fa-filter me-2"></i>Filter Options</h5>
+        <form method="GET" class="row g-3">
+            <div class="col-md-3">
+                <label class="form-label">Date From</label>
+                <input type="date" name="date_from" class="form-control"
+                       value="{{ date_from|date:'Y-m-d' }}"
+                       max="{{ date_to|date:'Y-m-d' }}">
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">Date To</label>
+                <input type="date" name="date_to" class="form-control"
+                       value="{{ date_to|date:'Y-m-d' }}"
+                       min="{{ date_from|date:'Y-m-d' }}"
+                       max="{% now 'Y-m-d' %}">
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">Store</label>
+                <select name="store" class="form-select">
+                    <option value="">All Stores</option>
+                    {% for store in stores %}
+                    <option value="{{ store.id }}" {% if selected_store == store.id|stringformat:"s" %}selected{% endif %}>
+                        {{ store.name }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-3 d-flex align-items-end">
+                <button type="submit" class="btn btn-primary w-100">
+                    <i class="fas fa-search me-2"></i>Apply Filter
+                </button>
+            </div>
+        </form>
+
+        <!-- Quick Date Ranges -->
+        <div class="mt-3 d-flex flex-wrap align-items-center">
+            <small class="text-muted me-3">Quick ranges:</small>
+            <div class="btn-group" role="group">
+                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="setDateRange('today')">Today</button>
+                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="setDateRange('week')">This Week</button>
+                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="setDateRange('month')">This Month</button>
+                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="setDateRange('quarter')">This Quarter</button>
+                <button type="button" class="btn btn-sm btn-outline-secondary" onclick="setDateRange('year')">This Year</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- KPI Cards -->
+    <div class="row mb-4">
+        <div class="col-xl-3 col-md-6 mb-3">
+            <div class="stat-card revenue">
+                <div class="stat-content">
+                    <h3>UGX {{ total_revenue|floatformat:0|intcomma }}</h3>
+                    <p>Total Revenue</p>
                 </div>
-                <div class="col-md-3">
-                    <select class="form-select" id="categoryFilter">
-                        <option value="">All Categories</option>
-                        <option value="electronics">Electronics</option>
-                        <option value="clothing">Clothing</option>
-                        <option value="food">Food & Beverages</option>
-                        <option value="books">Books</option>
-                        <option value="other">Other</option>
-                    </select>
-                </div>
-                <div class="col-md-3">
-                    <button class="btn btn-outline-primary w-100" id="scanBarcodeBtn">
-                        <i class="fas fa-barcode me-2"></i>Scan Barcode
-                    </button>
+                <div class="stat-icon">
+                    <i class="fas fa-money-bill-wave"></i>
                 </div>
             </div>
         </div>
-        
-        <!-- Category Tabs -->
-        <div class="category-tabs">
-            <button class="category-tab active" data-category="">All</button>
-            <button class="category-tab" data-category="electronics">Electronics</button>
-            <button class="category-tab" data-category="clothing">Clothing</button>
-            <button class="category-tab" data-category="food">Food</button>
-            <button class="category-tab" data-category="books">Books</button>
-        </div>
-        
-        <!-- Products Grid -->
-        <div class="product-grid" id="productGrid">
-            {% for product in products %}
-            <div class="product-card" 
-                 data-product-id="{{ product.id }}"
-                 data-product-name="{{ product.name }}"
-                 data-product-price="{{ product.selling_price }}"
-                 data-product-stock="{{ product.stock_level }}"
-                 data-category="{{ product.category|default:'other' }}">
-                
-                <div class="product-image">
-                    {% if product.image %}
-                        <img src="{{ product.image.url }}" alt="{{ product.name }}" style="width: 100%; height: 100%; object-fit: cover; border-radius: 0.5rem;">
-                    {% else %}
-                        <i class="fas fa-cube"></i>
-                    {% endif %}
+        <div class="col-xl-3 col-md-6 mb-3">
+            <div class="stat-card sales">
+                <div class="stat-content">
+                    <h3>{{ total_sales|intcomma }}</h3>
+                    <p>Total Sales</p>
                 </div>
-                
-                {% if product.track_stock %}
-                    <div class="product-stock {% if product.stock_level <= 0 %}out-of-stock{% endif %}">
-                        {{ product.stock_level|floatformat:0 }}
+                <div class="stat-icon">
+                    <i class="fas fa-shopping-cart"></i>
+                </div>
+            </div>
+        </div>
+        <div class="col-xl-3 col-md-6 mb-3">
+            <div class="stat-card avg">
+                <div class="stat-content">
+                    <h3>UGX {{ avg_sale_value|floatformat:0|intcomma }}</h3>
+                    <p>Average Sale</p>
+                </div>
+                <div class="stat-icon">
+                    <i class="fas fa-chart-bar"></i>
+                </div>
+            </div>
+        </div>
+        <div class="col-xl-3 col-md-6 mb-3">
+            <div class="stat-card customers">
+                <div class="stat-content">
+                    <h3>{{ total_customers|intcomma }}</h3>
+                    <p>Customers</p>
+                </div>
+                <div class="stat-icon">
+                    <i class="fas fa-users"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- NEW: Item Type Breakdown -->
+    {% if item_type_breakdown %}
+    <div class="item-breakdown-card">
+        <h5 class="mb-3">
+            <i class="fas fa-pie-chart me-2"></i>Sales by Item Type
+        </h5>
+        <div class="row">
+            {% for item_type in item_type_breakdown %}
+            <div class="col-md-6 mb-3">
+                <div class="breakdown-item">
+                    <div class="d-flex align-items-center">
+                        <div class="breakdown-icon">
+                            {% if item_type.item_type == 'PRODUCT' %}
+                                <i class="fas fa-box text-success"></i>
+                            {% else %}
+                                <i class="fas fa-cogs text-info"></i>
+                            {% endif %}
+                        </div>
+                        <div>
+                            <h6 class="mb-1">
+                                {{ item_type.item_type|title }}s
+                                <span class="item-type-badge {{ item_type.item_type|lower }}">
+                                    {{ item_type.count }} items
+                                </span>
+                            </h6>
+                            <small class="text-muted">Qty: {{ item_type.total_quantity|floatformat:0|intcomma }}</small>
+                        </div>
                     </div>
-                {% endif %}
-                
-                <div class="product-name">{{ product.name }}</div>
-                <div class="product-price">{{ product.selling_price|floatformat:0 }} UGX</div>
-                
-                {% if product.sku %}
-                    <div style="font-size: 0.75rem; color: #6b7280; margin-top: 0.25rem;">
-                        SKU: {{ product.sku }}
+                    <div class="text-end">
+                        <strong class="d-block">UGX {{ item_type.total_revenue|floatformat:0|intcomma }}</strong>
+                        <small class="text-muted">
+                            {{ item_type.total_revenue|divide:total_revenue|multiply:100|floatformat:1 }}%
+                        </small>
                     </div>
-                {% endif %}
+                </div>
             </div>
             {% endfor %}
         </div>
     </div>
-    
-    <!-- Cart Panel -->
-    <div class="cart-panel">
-        <div class="panel-header">
-            <h2 class="panel-title">
-                <i class="fas fa-shopping-cart me-2"></i>
-                Cart
-                <span class="badge bg-white text-primary ms-2" id="cartItemCount">0</span>
-            </h2>
-        </div>
-        
-        <!-- Customer Section -->
-        <div class="customer-section">
-            <div class="customer-display">
-                <div class="customer-info" id="customerInfo">
-                    <div class="customer-avatar">
-                        <i class="fas fa-user"></i>
-                    </div>
-                    <div>
-                        <div class="fw-bold">Walk-in Customer</div>
-                        <div class="text-muted small">No customer selected</div>
-                    </div>
+    {% endif %}
+
+    <!-- Charts Row -->
+    <div class="row mb-4">
+        <!-- Daily Sales Trend -->
+        <div class="col-lg-8 mb-4">
+            <div class="chart-container">
+                <h5 class="mb-3">
+                    <i class="fas fa-line-chart me-2"></i>Daily Sales Trend
+                    <small class="text-muted ms-2">({{ date_from|date:"M d" }} - {{ date_to|date:"M d, Y" }})</small>
+                </h5>
+                <canvas id="dailySalesChart" height="300"></canvas>
+                {% if not daily_sales %}
+                <div class="text-center text-muted py-4">
+                    <i class="fas fa-chart-line fa-3x mb-3 opacity-25"></i>
+                    <p>No sales data available for the selected period</p>
                 </div>
-                <button class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#customerModal">
-                    Change
-                </button>
+                {% endif %}
             </div>
         </div>
-        
-        <!-- Cart Items -->
-        <div class="cart-items" id="cartItems">
-            <div class="empty-cart">
-                <i class="fas fa-shopping-cart fa-3x mb-3 text-muted"></i>
-                <p>Your cart is empty</p>
-                <small class="text-muted">Start adding products to see them here</small>
-            </div>
-        </div>
-        
-        <!-- Cart Summary -->
-        <div class="cart-summary" id="cartSummary" style="display: none;">
-            <div class="summary-row">
-                <span>Subtotal:</span>
-                <span id="cartSubtotal">0 UGX</span>
-            </div>
-            <div class="summary-row">
-                <span>Tax (18%):</span>
-                <span id="cartTax">0 UGX</span>
-            </div>
-            <div class="summary-row">
-                <span>Discount:</span>
-                <span id="cartDiscount">0 UGX</span>
-            </div>
-            <div class="summary-row total">
-                <span>Total:</span>
-                <span id="cartTotal">0 UGX</span>
-            </div>
-        </div>
-        
-        <!-- Payment Section -->
-        <div class="payment-section">
-            <h6 class="mb-3">Payment Method</h6>
-            <div class="payment-methods">
-                <div class="payment-method active" data-method="CASH">
-                    <i class="fas fa-money-bill-wave d-block mb-1"></i>
-                    Cash
+
+        <!-- Payment Methods -->
+        <div class="col-lg-4 mb-4">
+            <div class="chart-container">
+                <h5 class="mb-3">
+                    <i class="fas fa-credit-card me-2"></i>Payment Methods
+                </h5>
+                <canvas id="paymentMethodsChart" height="300"></canvas>
+                {% if not payment_methods %}
+                <div class="text-center text-muted py-4">
+                    <i class="fas fa-credit-card fa-3x mb-3 opacity-25"></i>
+                    <p>No payment data available</p>
                 </div>
-                <div class="payment-method" data-method="CARD">
-                    <i class="fas fa-credit-card d-block mb-1"></i>
-                    Card
-                </div>
-                <div class="payment-method" data-method="MOBILE_MONEY">
-                    <i class="fas fa-mobile-alt d-block mb-1"></i>
-                    Mobile Money
-                </div>
-                <div class="payment-method" data-method="BANK_TRANSFER">
-                    <i class="fas fa-university d-block mb-1"></i>
-                    Transfer
-                </div>
+                {% endif %}
             </div>
-            
-            <div class="cash-input" id="cashInput">
-                <label class="form-label">Cash Received</label>
-                <input type="number" 
-                       class="form-control form-control-lg" 
-                       id="cashReceived" 
-                       placeholder="0.00"
-                       step="0.01">
-            </div>
-            
-            <div class="change-display" id="changeDisplay" style="display: none;">
-                <div>Change Due</div>
-                <div id="changeDue">0 UGX</div>
-            </div>
-            
-            <button class="checkout-btn" id="checkoutBtn" disabled>
-                <i class="fas fa-cash-register me-2"></i>
-                Complete Sale
-            </button>
         </div>
     </div>
+
+    <!-- Payment Methods Breakdown & Top Items (Products + Services) -->
+    <div class="row mb-4">
+        <!-- Payment Methods Details -->
+        <div class="col-lg-6 mb-4">
+            <div class="table-container">
+                <h5 class="mb-3">
+                    <i class="fas fa-credit-card me-2"></i>Payment Methods Breakdown
+                </h5>
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Payment Method</th>
+                                <th>Count</th>
+                                <th>Total Amount</th>
+                                <th>Percentage</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for method in payment_methods %}
+                            <tr>
+                                <td>
+                                    <i class="fas fa-circle me-2" style="color: {% cycle '#007bff' '#28a745' '#ffc107' '#dc3545' '#6f42c1' '#fd7e14' %}"></i>
+                                    {{ method.payment_method_display|capfirst }}
+                                </td>
+                                <td>
+                                    <span class="badge bg-light text-dark">{{ method.count|intcomma }}</span>
+                                </td>
+                                <td>
+                                    <strong>UGX {{ method.total|floatformat:0|intcomma }}</strong>
+                                </td>
+                                <td>
+                                    {{ method.percentage }}%
+                                    <div class="progress mt-1" style="height: 5px;">
+                                        <div class="progress-bar" role="progressbar"
+                                             style="width: {{ method.percentage }}%"
+                                             aria-valuenow="{{ method.percentage }}"
+                                             aria-valuemin="0" aria-valuemax="100"></div>
+                                    </div>
+                                </td>
+                            </tr>
+                            {% empty %}
+                            <tr>
+                                <td colspan="4" class="text-center text-muted py-4">
+                                    <i class="fas fa-info-circle me-2"></i>No payment data available
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Top Items (Products & Services Combined) -->
+        <div class="col-lg-6 mb-4">
+            <div class="table-container">
+                <h5 class="mb-3">
+                    <i class="fas fa-trophy me-2"></i>Top Selling Items
+                    <small class="text-muted">(Products & Services)</small>
+                </h5>
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Item</th>
+                                <th>Qty Sold</th>
+                                <th>Revenue</th>
+                                <th>Performance</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for item in top_items %}
+                            <tr>
+                                <td>
+                                    <div class="d-flex align-items-center">
+                                        <div class="rank-badge me-2">
+                                            {% if forloop.counter == 1 %}
+                                                <i class="fas fa-medal text-warning" title="1st Place"></i>
+                                            {% elif forloop.counter == 2 %}
+                                                <i class="fas fa-medal text-secondary" title="2nd Place"></i>
+                                            {% elif forloop.counter == 3 %}
+                                                <i class="fas fa-medal text-bronze" title="3rd Place"></i>
+                                            {% else %}
+                                                <span class="badge bg-light text-dark">{{ forloop.counter }}</span>
+                                            {% endif %}
+                                        </div>
+                                        <div>
+                                            <div class="d-flex align-items-center">
+                                                <span class="fw-bold me-2" title="{{ item.name }}">
+                                                    {{ item.name|truncatechars:30 }}
+                                                </span>
+                                                <span class="item-type-badge {{ item.item_type|lower }}">
+                                                    {{ item.item_type }}
+                                                </span>
+                                            </div>
+                                            <small class="text-muted">{{ item.code|default:"No Code" }}</small>
+                                        </div>
+                                    </div>
+                                </td>
+                                <td>
+                                    <span class="badge bg-primary">{{ item.quantity_sold|floatformat:0|intcomma }}</span>
+                                </td>
+                                <td>
+                                    <strong>UGX {{ item.revenue|floatformat:0|intcomma }}</strong>
+                                </td>
+                                <td>
+                                    <div class="progress" style="height: 8px;">
+                                        <div class="progress-bar bg-success" role="progressbar"
+                                             style="width: {{ item.performance_percentage }}%"
+                                             title="{{ item.performance_percentage }}% of top performer"></div>
+                                    </div>
+                                    <small class="text-muted">{{ item.performance_percentage }}%</small>
+                                </td>
+                            </tr>
+                            {% empty %}
+                            <tr>
+                                <td colspan="4" class="text-center text-muted py-4">
+                                    <i class="fas fa-box-open me-2"></i>No item data available
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Hourly Sales Pattern -->
+    {% if hourly_sales %}
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="chart-container">
+                <h5 class="mb-3">
+                    <i class="fas fa-clock me-2"></i>Hourly Sales Pattern
+                </h5>
+                <canvas id="hourlySalesChart" height="100"></canvas>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Additional Insights -->
+    <div class="row mb-4">
+        <div class="col-lg-4 mb-4">
+            <div class="card h-100">
+                <div class="card-body text-center">
+                    <i class="fas fa-trending-up fa-3x text-success mb-3"></i>
+                    <h5>Sales Growth</h5>
+                    <h3 class="text-success">{{ sales_growth }}</h3>
+                    <p class="text-muted">vs previous period</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-4 mb-4">
+            <div class="card h-100">
+                <div class="card-body text-center">
+                    <i class="fas fa-users fa-3x text-info mb-3"></i>
+                    <h5>New Customers</h5>
+                    <h3 class="text-info">{{ new_customers }}</h3>
+                    <p class="text-muted">this period</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-4 mb-4">
+            <div class="card h-100">
+                <div class="card-body text-center">
+                    <i class="fas fa-percentage fa-3x text-warning mb-3"></i>
+                    <h5>Return Rate</h5>
+                    <h3 class="text-warning">{{ return_rate }}</h3>
+                    <p class="text-muted">of total sales</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Detailed Sales Table (keep existing code) -->
+    <!-- ... -->
+
 </div>
 
-<!-- Customer Selection Modal -->
-<div class="modal fade" id="customerModal" tabindex="-1">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title">Select Customer</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-            </div>
-            <div class="modal-body">
-                <div class="mb-3">
-                    <input type="text" 
-                           class="form-control" 
-                           id="customerSearch" 
-                           placeholder="Search customer by name or phone..."
-                           autocomplete="off">
-                    <div id="customerResults" class="mt-2"></div>
-                </div>
-                
-                <div class="text-center">
-                    <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#newCustomerModal">
-                        <i class="fas fa-plus me-2"></i>Add New Customer
-                    </button>
-                </div>
-            </div>
-        </div>
-    </div>
-</div>
+<!-- Day Details Modal (keep existing) -->
+<!-- ... -->
 
-<!-- New Customer Modal -->
-<div class="modal fade" id="newCustomerModal" tabindex="-1">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title">Add New Customer</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-            </div>
-            <div class="modal-body">
-                <form id="newCustomerForm">
-                    <div class="row g-3">
-                        <div class="col-12">
-                            <label class="form-label">Full Name</label>
-                            <input type="text" class="form-control" name="name" required>
-                        </div>
-                        <div class="col-md-6">
-                            <label class="form-label">Phone</label>
-                            <input type="tel" class="form-control" name="phone" required>
-                        </div>
-                        <div class="col-md-6">
-                            <label class="form-label">Email</label>
-                            <input type="email" class="form-control" name="email">
-                        </div>
-                        <div class="col-12">
-                            <label class="form-label">Address</label>
-                            <textarea class="form-control" name="address" rows="2"></textarea>
-                        </div>
-                    </div>
-                </form>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                <button type="button" class="btn btn-primary" onclick="saveNewCustomer()">Save Customer</button>
-            </div>
-        </div>
-    </div>
-</div>
-
-<!-- Barcode Scanner -->
-<div class="barcode-scanner" id="barcodeScanner">
-    <div class="scanner-animation">
-        <div class="scanner-line"></div>
-    </div>
-    <div class="text-center">
-        <h5>Scanning for barcode...</h5>
-        <p class="text-muted">Position barcode in front of camera</p>
-        <button class="btn btn-secondary" onclick="closeBarcodeScanner()">Cancel</button>
-    </div>
-</div>
-
-<!-- Keyboard Shortcuts Help -->
-<div class="shortcut-keys" id="shortcutKeys">
-    <div class="fw-bold mb-2">Keyboard Shortcuts:</div>
-    <div><kbd>F1</kbd> - Show/Hide shortcuts</div>
-    <div><kbd>F2</kbd> - Focus product search</div>
-    <div><kbd>F3</kbd> - Select customer</div>
-    <div><kbd>F4</kbd> - Scan barcode</div>
-    <div><kbd>Enter</kbd> - Complete sale</div>
-    <div><kbd>Esc</kbd> - Clear cart</div>
-</div>
+<!-- Loading Overlay (keep existing) -->
+<!-- ... -->
 
 {% endblock %}
 
 {% block extra_js %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
 <script>
-// POS Application State
-let cart = {
-    items: [],
-    customer: null,
-    paymentMethod: 'CASH',
-    subtotal: 0,
-    tax: 0,
-    discount: 0,
-    total: 0
+// Analytics data for JavaScript
+const analyticsData = {
+    dailySales: {{ daily_sales|safe }},
+    paymentMethods: {{ payment_methods|safe }},
+    hourlyData: {{ hourly_sales|default:"[]"|safe }},
+    itemTypeBreakdown: {{ item_type_breakdown|default:"[]"|safe }},
+    dateRange: {
+        from: '{{ date_from|date:"Y-m-d" }}',
+        to: '{{ date_to|date:"Y-m-d" }}'
+    }
 };
 
-let currentStore = {{ store.id }};
-let selectedProducts = [];
+// ... (keep existing functions: exportData, setDateRange, viewDayDetails, toggleTableView)
 
-$(document).ready(function() {
-    initializePOS();
-    setupEventListeners();
-    loadCart();
+// Initialize charts when page loads
+document.addEventListener('DOMContentLoaded', function() {
+    initializeCharts();
 });
 
-function initializePOS() {
-    // Initialize product search
-    setupProductSearch();
-    
-    // Initialize keyboard shortcuts
-    setupKeyboardShortcuts();
-    
-    // Initialize barcode scanner
-    setupBarcodeScanner();
-    
-    // Load initial cart state
-    updateCartDisplay();
+function initializeCharts() {
+    // Daily Sales Chart (keep existing)
+    // Payment Methods Chart (keep existing)
+    // Hourly Sales Chart (keep existing)
 }
-
-function setupEventListeners() {
-    // Product card clicks
-    $(document).on('click', '.product-card', function() {
-        const productId = $(this).data('product-id');
-        const productName = $(this).data('product-name');
-        const productPrice = $(this).data('product-price');
-        const productStock = $(this).data('product-stock');
-        
-        if (productStock <= 0) {
-            showNotification('Product out of stock', 'warning');
-            return;
-        }
-        
-        addToCart(productId, productName, productPrice, 1);
-        $(this).addClass('selected');
-        setTimeout(() => $(this).removeClass('selected'), 200);
-    });
-    
-    // Payment method selection
-    $('.payment-method').click(function() {
-        $('.payment-method').removeClass('active');
-        $(this).addClass('active');
-        cart.paymentMethod = $(this).data('method');
-        
-        // Show/hide cash input
-        if (cart.paymentMethod === 'CASH') {
-            $('#cashInput').show();
-        } else {
-            $('#cashInput').hide();
-            $('#changeDisplay').hide();
-        }
-        
-        updateCheckoutButton();
-    });
-    
-    // Cash received input
-    $('#cashReceived').on('input', function() {
-        const cashReceived = parseFloat($(this).val()) || 0;
-        const change = cashReceived - cart.total;
-        
-        if (change >= 0) {
-            $('#changeDue').text(formatCurrency(change));
-            $('#changeDisplay').show();
-        } else {
-            $('#changeDisplay').hide();
-        }
-        
-        updateCheckoutButton();
-    });
-    
-    // Category filter
-    $('.category-tab').click(function() {
-        $('.category-tab').removeClass('active');
-        $(this).addClass('active');
-        
-        const category = $(this).data('category');
-        filterProductsByCategory(category);
-    });
-    
-    // Checkout button
-    $('#checkoutBtn').click(function() {
-        if (!$(this).prop('disabled')) {
-            processCheckout();
-        }
-    });
-    
-    // Product search
-    $('#productSearch').on('input debounce', function() {
-        const query = $(this).val();
-        if (query.length > 2) {
-            searchProducts(query);
-        } else {
-            $('#searchResults').hide();
-        }
-    });
-    
-    // Customer search
-    $('#customerSearch').on('input debounce', function() {
-        const query = $(this).val();
-        if (query.length > 2) {
-            searchCustomers(query);
-        }
-    });
-}
-
-function setupProductSearch() {
-    let searchTimeout;
-    $('#productSearch').on('input', function() {
-        clearTimeout(searchTimeout);
-        const query = $(this).val();
-        
-        searchTimeout = setTimeout(function() {
-            if (query.length > 2) {
-                searchProducts(query);
-            } else {
-                $('#searchResults').hide();
-                showAllProducts();
-            }
-        }, 300);
-    });
-}
-
-function setupKeyboardShortcuts() {
-    $(document).keydown(function(e) {
-        switch(e.key) {
-            case 'F1':
-                e.preventDefault();
-                $('#shortcutKeys').toggleClass('show');
-                break;
-            case 'F2':
-                e.preventDefault();
-                $('#productSearch').focus();
-                break;
-            case 'F3':
-                e.preventDefault();
-                $('#customerModal').modal('show');
-                break;
-            case 'F4':
-                e.preventDefault();
-                openBarcodeScanner();
-                break;
-            case 'Enter':
-                if (e.ctrlKey) {
-                    e.preventDefault();
-                    if (!$('#checkoutBtn').prop('disabled')) {
-                        processCheckout();
-                    }
-                }
-                break;
-            case 'Escape':
-                e.preventDefault();
-                if (confirm('Clear cart?')) {
-                    clearCart();
-                }
-                break;
-        }
-    });
-}
-
-function setupBarcodeScanner() {
-    $('#scanBarcodeBtn').click(openBarcodeScanner);
-}
-
-function addToCart(productId, productName, productPrice, quantity) {
-    const existingItem = cart.items.find(item => item.productId === productId);
-    
-    if (existingItem) {
-        existingItem.quantity += quantity;
-    } else {
-        cart.items.push({
-            productId: productId,
-            productName: productName,
-            unitPrice: productPrice,
-            quantity: quantity,
-            total: productPrice * quantity
-        });
-    }
-    
-    updateCartDisplay();
-    saveCartToServer();
-    
-    // Visual feedback
-    showNotification(`${productName} added to cart`, 'success');
-}
-
-function removeFromCart(productId) {
-    cart.items = cart.items.filter(item => item.productId !== productId);
-    updateCartDisplay();
-    saveCartToServer();
-}
-
-function updateCartQuantity(productId, newQuantity) {
-    const item = cart.items.find(item => item.productId === productId);
-    if (item) {
-        if (newQuantity <= 0) {
-            removeFromCart(productId);
-        } else {
-            item.quantity = newQuantity;
-            item.total = item.unitPrice * newQuantity;
-            updateCartDisplay();
-            saveCartToServer();
-        }
-    }
-}
-
-function updateCartDisplay() {
-    const cartItemsContainer = $('#cartItems');
-    const cartSummary = $('#cartSummary');
-    
-    if (cart.items.length === 0) {
-        cartItemsContainer.html(`
-            <div class="empty-cart">
-                <i class="fas fa-shopping-cart fa-3x mb-3 text-muted"></i>
-                <p>Your cart is empty</p>
-                <small class="text-muted">Start adding products to see them here</small>
-            </div>
-        `);
-        cartSummary.hide();
-    } else {
-        let itemsHtml = '';
-        cart.subtotal = 0;
-        
-        cart.items.forEach(item => {
-            cart.subtotal += item.total;
-            itemsHtml += `
-                <div class="cart-item" data-product-id="${item.productId}">
-                    <div class="cart-item-image">
-                        <i class="fas fa-cube"></i>
-                    </div>
-                    <div class="cart-item-details">
-                        <div class="cart-item-name">${item.productName}</div>
-                        <div class="cart-item-price">${formatCurrency(item.unitPrice)} each</div>
-                    </div>
-                    <div class="quantity-controls">
-                        <button class="qty-btn" onclick="updateCartQuantity(${item.productId}, ${item.quantity - 1})">
-                            <i class="fas fa-minus"></i>
-                        </button>
-                        <input type="number" class="qty-input" value="${item.quantity}" 
-                               onchange="updateCartQuantity(${item.productId}, parseInt(this.value))">
-                        <button class="qty-btn" onclick="updateCartQuantity(${item.productId}, ${item.quantity + 1})">
-                            <i class="fas fa-plus"></i>
-                        </button>
-                    </div>
-                    <div class="text-end">
-                        <div class="fw-bold">${formatCurrency(item.total)}</div>
-                        <button class="btn btn-sm btn-outline-danger mt-1" onclick="removeFromCart(${item.productId})">
-                            <i class="fas fa-trash"></i>
-                        </button>
-                    </div>
-                </div>
-            `;
-        });
-        
-        cartItemsContainer.html(itemsHtml);
-        
-        // Calculate totals
-        cart.tax = cart.subtotal * 0.18; // 18% VAT
-        cart.total = cart.subtotal + cart.tax - cart.discount;
-        
-        // Update summary
-        $('#cartSubtotal').text(formatCurrency(cart.subtotal));
-        $('#cartTax').text(formatCurrency(cart.tax));
-        $('#cartDiscount').text(formatCurrency(cart.discount));
-        $('#cartTotal').text(formatCurrency(cart.total));
-        
-        cartSummary.show();
-    }
-    
-    // Update cart item count
-    $('#cartItemCount').text(cart.items.length);
-    
-    updateCheckoutButton();
-}
-
-function updateCheckoutButton() {
-    const checkoutBtn = $('#checkoutBtn');
-    const canCheckout = cart.items.length > 0 && 
-                       (cart.paymentMethod !== 'CASH' || 
-                        parseFloat($('#cashReceived').val()) >= cart.total);
-    
-    checkoutBtn.prop('disabled', !canCheckout);
-    
-    if (canCheckout) {
-        checkoutBtn.removeClass('btn-secondary').addClass('btn-success');
-    } else {
-        checkoutBtn.removeClass('btn-success').addClass('btn-secondary');
-    }
-}
-
-function processCheckout() {
-    if (cart.items.length === 0) {
-        showNotification('Cart is empty', 'warning');
-        return;
-    }
-    
-    showLoading();
-    
-    const checkoutData = {
-        cart_id: {{ cart.id }},
-        payment_method: cart.paymentMethod,
-        cash_received: cart.paymentMethod === 'CASH' ? $('#cashReceived').val() : null,
-        customer_id: cart.customer ? cart.customer.id : null
-    };
-    
-            $.ajax({
-        url: '{% url "sales:checkout_cart" %}',
-        method: 'POST',
-        data: JSON.stringify(checkoutData),
-        contentType: 'application/json',
-        headers: {
-            'X-CSRFToken': $('[name=csrfmiddlewaretoken]').val()
-        },
-        success: function(response) {
-            hideLoading();
-            
-            if (response.success) {
-                showSaleComplete(response);
-                clearCart();
-                
-                // Show success message
-                showNotification(`Sale completed! Invoice: ${response.invoice_number}`, 'success');
-                
-                // Ask if user wants to print receipt
-                if (confirm('Sale completed successfully! Print receipt?')) {
-                    printReceipt(response.sale_id);
-                }
-            } else {
-                showNotification(response.error || 'Checkout failed', 'error');
-            }
-        },
-        error: function(xhr) {
-            hideLoading();
-            showNotification('Checkout failed. Please try again.', 'error');
-        }
-    });
-}
-
-function clearCart() {
-    cart.items = [];
-    cart.customer = null;
-    cart.subtotal = 0;
-    cart.tax = 0;
-    cart.discount = 0;
-    cart.total = 0;
-    
-    $('#cashReceived').val('');
-    $('#changeDisplay').hide();
-    
-    updateCartDisplay();
-    resetCustomerDisplay();
-}
-
-function showSaleComplete(saleData) {
-    const modal = $(`
-        <div class="modal fade" id="saleCompleteModal" tabindex="-1">
-            <div class="modal-dialog">
-                <div class="modal-content">
-                    <div class="modal-header bg-success text-white">
-                        <h5 class="modal-title">
-                            <i class="fas fa-check-circle me-2"></i>Sale Completed
-                        </h5>
-                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-                    </div>
-                    <div class="modal-body text-center">
-                        <div class="mb-4">
-                            <i class="fas fa-receipt fa-4x text-success mb-3"></i>
-                            <h4>Invoice: ${saleData.invoice_number}</h4>
-                            <p class="text-muted">Total: ${formatCurrency(saleData.total_amount)}</p>
-                            ${saleData.change_due > 0 ? `<p class="text-success">Change Due: ${formatCurrency(saleData.change_due)}</p>` : ''}
-                        </div>
-                        
-                        <div class="d-grid gap-2">
-                            <button class="btn btn-primary" onclick="printReceipt(${saleData.sale_id})">
-                                <i class="fas fa-print me-2"></i>Print Receipt
-                            </button>
-                            <button class="btn btn-outline-secondary" onclick="emailReceipt(${saleData.sale_id})">
-                                <i class="fas fa-envelope me-2"></i>Email Receipt
-                            </button>
-                        </div>
-                    </div>
-                    <div class="modal-footer">
-                        <button type="button" class="btn btn-success" data-bs-dismiss="modal">
-                            Start New Sale
-                        </button>
-                    </div>
-                </div>
-            </div>
-        </div>
-    `);
-    
-    $('body').append(modal);
-    $('#saleCompleteModal').modal('show');
-    
-    $('#saleCompleteModal').on('hidden.bs.modal', function() {
-        $(this).remove();
-    });
-}
-
-function searchProducts(query) {
-    $.ajax({
-        url: '{% url "sales:product_search" %}',
-        data: { 
-            q: query, 
-            store_id: currentStore 
-        },
-        success: function(response) {
-            displaySearchResults(response.products);
-        }
-    });
-}
-
-function displaySearchResults(products) {
-    if (products.length === 0) {
-        $('#searchResults').hide();
-        return;
-    }
-    
-    let resultsHtml = '';
-    products.forEach(product => {
-        resultsHtml += `
-            <div class="recent-sale-item" onclick="addToCart(${product.id}, '${product.name}', ${product.price}, 1)">
-                <div class="d-flex justify-content-between align-items-center">
-                    <div>
-                        <div class="fw-bold">${product.name}</div>
-                        <small class="text-muted">SKU: ${product.sku} | Stock: ${product.stock}</small>
-                    </div>
-                    <div class="text-end">
-                        <div class="fw-bold text-success">${formatCurrency(product.price)}</div>
-                    </div>
-                </div>
-            </div>
-        `;
-    });
-    
-    $('#searchResults').html(resultsHtml).show();
-}
-
-function searchCustomers(query) {
-    $.ajax({
-        url: '{% url "sales:customer_search" %}',
-        data: { 
-            q: query, 
-            store_id: currentStore 
-        },
-        success: function(response) {
-            displayCustomerResults(response.customers);
-        }
-    });
-}
-
-function displayCustomerResults(customers) {
-    let resultsHtml = '';
-    customers.forEach(customer => {
-        resultsHtml += `
-            <div class="list-group-item list-group-item-action" onclick="selectCustomer(${customer.id}, '${customer.name}', '${customer.phone}')">
-                <div class="d-flex justify-content-between align-items-center">
-                    <div>
-                        <div class="fw-bold">${customer.name}</div>
-                        <small class="text-muted">${customer.phone}</small>
-                    </div>
-                    <i class="fas fa-check text-success"></i>
-                </div>
-            </div>
-        `;
-    });
-    
-    $('#customerResults').html(`<div class="list-group">${resultsHtml}</div>`);
-}
-
-function selectCustomer(id, name, phone) {
-    cart.customer = { id, name, phone };
-    updateCustomerDisplay();
-    $('#customerModal').modal('hide');
-}
-
-function updateCustomerDisplay() {
-    if (cart.customer) {
-        $('#customerInfo').html(`
-            <div class="customer-avatar">
-                ${cart.customer.name.charAt(0).toUpperCase()}
-            </div>
-            <div>
-                <div class="fw-bold">${cart.customer.name}</div>
-                <div class="text-muted small">${cart.customer.phone}</div>
-            </div>
-        `);
-    } else {
-        resetCustomerDisplay();
-    }
-}
-
-function resetCustomerDisplay() {
-    $('#customerInfo').html(`
-        <div class="customer-avatar">
-            <i class="fas fa-user"></i>
-        </div>
-        <div>
-            <div class="fw-bold">Walk-in Customer</div>
-            <div class="text-muted small">No customer selected</div>
-        </div>
-    `);
-}
-
-function saveNewCustomer() {
-    const formData = $('#newCustomerForm').serialize();
-    
-    $.ajax({
-        url: '/customers/create/',
-        method: 'POST',
-        data: formData,
-        headers: {
-            'X-CSRFToken': $('[name=csrfmiddlewaretoken]').val()
-        },
-        success: function(response) {
-            if (response.success) {
-                selectCustomer(response.customer.id, response.customer.name, response.customer.phone);
-                $('#newCustomerModal').modal('hide');
-                $('#customerModal').modal('hide');
-                showNotification('Customer created successfully!', 'success');
-            } else {
-                showNotification('Error creating customer', 'error');
-            }
-        },
-        error: function() {
-            showNotification('Error creating customer', 'error');
-        }
-    });
-}
-
-function filterProductsByCategory(category) {
-    if (category === '') {
-        $('.product-card').show();
-    } else {
-        $('.product-card').hide();
-        $(`.product-card[data-category="${category}"]`).show();
-    }
-}
-
-function showAllProducts() {
-    $('.product-card').show();
-}
-
-function openBarcodeScanner() {
-    $('#barcodeScanner').show();
-    
-    // Simulate barcode scanning
-    setTimeout(function() {
-        const mockBarcode = '1234567890123';
-        processBarcodeResult(mockBarcode);
-    }, 3000);
-}
-
-function closeBarcodeScanner() {
-    $('#barcodeScanner').hide();
-}
-
-function processBarcodeResult(barcode) {
-    closeBarcodeScanner();
-    
-    // Search for product by barcode
-    $.ajax({
-        url: '{% url "sales:product_search" %}',
-        data: { 
-            q: barcode, 
-            store_id: currentStore 
-        },
-        success: function(response) {
-            if (response.products.length > 0) {
-                const product = response.products[0];
-                addToCart(product.id, product.name, product.price, 1);
-                showNotification(`Product found: ${product.name}`, 'success');
-            } else {
-                showNotification('Product not found', 'warning');
-            }
-        }
-    });
-}
-
-function saveCartToServer() {
-    // Save current cart state to server
-    const cartData = {
-        cart_id: {{ cart.id }},
-        items: cart.items
-    };
-    
-    $.ajax({
-        url: '{% url "sales:add_to_cart" %}',
-        method: 'POST',
-        data: JSON.stringify(cartData),
-        contentType: 'application/json',
-        headers: {
-            'X-CSRFToken': $('[name=csrfmiddlewaretoken]').val()
-        },
-        success: function(response) {
-            // Cart saved successfully
-        }
-    });
-}
-
-function loadCart() {
-    // Load existing cart items from server
-    const existingItems = {{ cart.items.all|safe }};
-    if (existingItems && existingItems.length > 0) {
-        cart.items = existingItems.map(item => ({
-            productId: item.product.id,
-            productName: item.product.name,
-            unitPrice: item.unit_price,
-            quantity: item.quantity,
-            total: item.unit_price * item.quantity
-        }));
-        updateCartDisplay();
-    }
-}
-
-function printReceipt(saleId) {
-    window.open(`/sales/${saleId}/print-receipt/`, '_blank');
-}
-
-function emailReceipt(saleId) {
-    const email = prompt('Enter email address:');
-    if (email) {
-        $.ajax({
-            url: `/sales/${saleId}/email-receipt/`,
-            method: 'POST',
-            data: {
-                'csrfmiddlewaretoken': $('[name=csrfmiddlewaretoken]').val(),
-                'email': email
-            },
-            success: function(response) {
-                showNotification('Receipt sent successfully!', 'success');
-            },
-            error: function() {
-                showNotification('Error sending receipt', 'error');
-            }
-        });
-    }
-}
-
-function formatCurrency(amount) {
-    return new Intl.NumberFormat('en-UG', {
-        style: 'currency',
-        currency: 'UGX',
-        minimumFractionDigits: 0
-    }).format(amount);
-}
-
-// Auto-save cart every 30 seconds
-setInterval(saveCartToServer, 30000);
-
-// Handle page unload
-$(window).on('beforeunload', function() {
-    if (cart.items.length > 0) {
-        return 'You have items in your cart. Are you sure you want to leave?';
-    }
-});
-
-// Add debounce utility
-$.fn.extend({
-    debounce: function(delay, callback) {
-        let timeout;
-        return this.each(function() {
-            const self = this;
-            $(this).on('input', function(e) {
-                clearTimeout(timeout);
-                timeout = setTimeout(() => callback.call(self, e), delay);
-            });
-        });
-    }
-});
-
-// Initialize focus management
-$('#productSearch').focus();
-
-// Add sound effects for better UX
-function playSound(type) {
-    // You can add actual sound files here
-    if (type === 'add') {
-        // Play add to cart sound
-    } else if (type === 'checkout') {
-        // Play checkout sound
-    } else if (type === 'error') {
-        // Play error sound
-    }
-}
-
-// Add haptic feedback for mobile devices
-function vibrate(pattern) {
-    if (navigator.vibrate) {
-        navigator.vibrate(pattern);
-    }
-}
-
-// Enhanced error handling
-function handleAjaxError(xhr, textStatus, errorThrown) {
-    console.error('AJAX Error:', textStatus, errorThrown);
-    
-    let errorMessage = 'An error occurred. Please try again.';
-    
-    if (xhr.responseJSON && xhr.responseJSON.error) {
-        errorMessage = xhr.responseJSON.error;
-    } else if (xhr.status === 403) {
-        errorMessage = 'Permission denied. Please refresh the page.';
-    } else if (xhr.status === 500) {
-        errorMessage = 'Server error. Please contact support.';
-    }
-    
-    showNotification(errorMessage, 'error');
-}
-
-// Set up global AJAX error handler
-$(document).ajaxError(handleAjaxError);
 </script>
-
-<!-- Add CSRF token for AJAX requests -->
-<script>
-    // Add CSRF token to all AJAX requests
-    $.ajaxSetup({
-        beforeSend: function(xhr, settings) {
-            if (!/^(GET|HEAD|OPTIONS|TRACE)$/i.test(settings.type) && !this.crossDomain) {
-                xhr.setRequestHeader("X-CSRFToken", $('[name=csrfmiddlewaretoken]').val());
-            }
-        }
-    });
-</script>
-
-<!-- CSRF Token -->
-{% csrf_token %}
 {% endblock %}

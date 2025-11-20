@@ -1,17 +1,10 @@
 from django.db.models.signals import post_save, post_migrate
-from django.dispatch import receiver
 from django.conf import settings
 from django.contrib.auth.models import Group, Permission
-from django.db import connection
 from django.contrib.contenttypes.models import ContentType
 from company.models import Company
 from .models import Role, CustomUser
-import logging
-from django.utils.deprecation import MiddlewareMixin
-from django.contrib.auth.signals import user_logged_in, user_logged_out, user_login_failed
-from django.db.models.signals import post_save, post_delete
-from django.dispatch import receiver
-from django.utils import timezone
+import threading
 from .models import AuditLog, LoginHistory
 from .utils import get_client_ip, parse_user_agent
 
@@ -25,26 +18,51 @@ from django.db import connection
 
 logger = logging.getLogger(__name__)
 
-from django_tenants.utils import schema_context, get_tenant_model
+
+
+def should_suppress_signals():
+    """Check if signals should be suppressed for current thread"""
+    return getattr(threading.current_thread(), '_suppress_signals', False)
+
+
+def table_exists(table_name: str) -> bool:
+    """Check if a given database table exists in current schema"""
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute("""
+                SELECT EXISTS (
+                    SELECT 1 FROM information_schema.tables 
+                    WHERE table_schema = %s 
+                    AND table_name = %s
+                )
+            """, [connection.schema_name, table_name])
+            return cursor.fetchone()[0]
+    except Exception as e:
+        logger.debug(f"Could not check table existence: {e}")
+        return False
+
 
 def safe_schema_context(f):
-    """Decorator to ensure signals always run in an active tenant schema"""
+    """Decorator to ensure signals run safely in tenant schemas"""
+
     def wrapper(*args, **kwargs):
         try:
-            # If schema is already active, run directly
+            # Skip if signals suppressed
+            if should_suppress_signals():
+                return
+
+            # Skip if in public schema
+            if connection.schema_name == 'public':
+                return
+
+            # Run the signal handler
             return f(*args, **kwargs)
+
         except Exception as e:
-            # Try fallback to each tenant schema if needed
-            TenantModel = get_tenant_model()
-            for tenant in TenantModel.objects.all():
-                try:
-                    with schema_context(tenant.schema_name):
-                        return f(*args, **kwargs)
-                except Exception:
-                    continue
-            import logging
-            logging.getLogger(__name__).warning(f"Signal skipped due to schema issues: {e}")
+            logger.warning(f"Signal {f.__name__} failed: {e}")
+
     return wrapper
+
 
 @receiver(post_migrate)
 def create_saas_admin_if_needed(sender, **kwargs):
@@ -527,13 +545,17 @@ def create_default_roles_for_tenant(sender, instance, created, **kwargs):
     if instance.schema_name == 'public':
         return
 
+    # Skip if signals are suppressed (during tenant creation)
+    if should_suppress_signals():
+        logger.info(f"Skipping role creation for {instance.schema_name} - signals suppressed")
+        return
+
     from django_tenants.utils import schema_context
 
     with schema_context(instance.schema_name):
         try:
             # Check if tables exist
-            existing_tables = connection.introspection.table_names()
-            if "auth_group" not in existing_tables or "accounts_role" not in existing_tables:
+            if not table_exists('auth_group') or not table_exists('accounts_role'):
                 logger.warning(
                     f"Skipping role creation for {instance.schema_name} — auth tables not ready"
                 )
@@ -579,11 +601,11 @@ def create_default_roles_for_tenant(sender, instance, created, **kwargs):
                                         )
                                         permissions_to_add.append(permission)
                                     except Permission.DoesNotExist:
-                                        logger.warning(
+                                        logger.debug(
                                             f"Permission {codename} not found for {app_label}.{model_name}"
                                         )
                             except ContentType.DoesNotExist:
-                                logger.warning(f"ContentType not found for {model_path}")
+                                logger.debug(f"ContentType not found for {model_path}")
 
                         if permissions_to_add:
                             group.permissions.add(*permissions_to_add)
@@ -601,7 +623,6 @@ def create_default_roles_for_tenant(sender, instance, created, **kwargs):
                 f"❌ Error creating default roles for tenant {instance.schema_name}: {e}",
                 exc_info=True
             )
-
 
 
 def create_default_roles_on_migrate(sender, **kwargs):
@@ -628,91 +649,72 @@ def create_default_roles_on_migrate(sender, **kwargs):
         create_default_roles_for_tenant(Company, tenant, created=True)
 
 
-def table_exists(table_name: str) -> bool:
-    """Check if a given database table exists."""
-    try:
-        with connection.cursor() as cursor:
-            cursor.execute(
-                "SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = %s)",
-                [table_name],
-            )
-            return cursor.fetchone()[0]
-    except Exception:
-        return False
-
-
-# ------------------- AUTH EVENT LOGGING -------------------
-
 @receiver(user_logged_in)
 @safe_schema_context
 def log_user_login(sender, request, user, **kwargs):
     """Log successful user login"""
-    from .utils import get_location_from_ip
-    from .models import LoginHistory, AuditLog
-
-    # ✅ Skip if tables aren't ready
-    if not table_exists(LoginHistory._meta.db_table) or not table_exists(AuditLog._meta.db_table):
+    # Check if tables exist
+    if not table_exists('accounts_loginhistory') or not table_exists('accounts_auditlog'):
         return
 
-    from .utils import get_client_ip, parse_user_agent
+    from .utils import get_location_from_ip
 
     ip_address = get_client_ip(request)
     user_agent = request.META.get('HTTP_USER_AGENT', '')
     browser_info = parse_user_agent(user_agent)
 
-    # Create login history
-    login_history = LoginHistory.objects.create(
-        user=user,
-        status='success',
-        ip_address=ip_address,
-        user_agent=user_agent,
-        browser=browser_info.get('browser', ''),
-        os=browser_info.get('os', ''),
-        device_type=browser_info.get('device_type', ''),
-        session_key=request.session.session_key
-    )
-
-    # Get location (optional)
     try:
-        location_data = get_location_from_ip(ip_address)
-        if location_data:
-            login_history.location = location_data.get('city', '')
-            login_history.latitude = location_data.get('latitude')
-            login_history.longitude = location_data.get('longitude')
-            login_history.save(update_fields=['location', 'latitude', 'longitude'])
-    except Exception:
-        pass  # Don't fail login if location lookup fails
+        # Create login history
+        login_history = LoginHistory.objects.create(
+            user=user,
+            status='success',
+            ip_address=ip_address,
+            user_agent=user_agent,
+            browser=browser_info.get('browser', ''),
+            os=browser_info.get('os', ''),
+            device_type=browser_info.get('device_type', ''),
+            session_key=request.session.session_key
+        )
 
-    # Create audit log
-    AuditLog.objects.create(
-        user=user,
-        action='login_success',
-        action_description=f"User {user.get_full_name()} logged in successfully",
-        ip_address=ip_address,
-        user_agent=user_agent,
-        request_path=request.path,
-        request_method=request.method,
-        company=getattr(user, 'company', None),
-        metadata={
-            'browser': browser_info.get('browser', ''),
-            'os': browser_info.get('os', ''),
-            'device_type': browser_info.get('device_type', '')
-        }
-    )
+        # Get location (optional)
+        try:
+            location_data = get_location_from_ip(ip_address)
+            if location_data:
+                login_history.location = location_data.get('city', '')
+                login_history.latitude = location_data.get('latitude')
+                login_history.longitude = location_data.get('longitude')
+                login_history.save(update_fields=['location', 'latitude', 'longitude'])
+        except Exception:
+            pass
+
+        # Create audit log
+        AuditLog.objects.create(
+            user=user,
+            action='login_success',
+            action_description=f"User {user.get_full_name()} logged in successfully",
+            ip_address=ip_address,
+            user_agent=user_agent,
+            request_path=request.path,
+            request_method=request.method,
+            company=getattr(user, 'company', None),
+            metadata={
+                'browser': browser_info.get('browser', ''),
+                'os': browser_info.get('os', ''),
+                'device_type': browser_info.get('device_type', '')
+            }
+        )
+    except Exception as e:
+        logger.error(f"Failed to log user login: {e}")
 
 
 @receiver(user_login_failed)
 @safe_schema_context
 def log_failed_login(sender, credentials, request, **kwargs):
     """Log failed login attempt"""
-    from .models import LoginHistory, AuditLog
-
-    # ✅ Skip if tables aren't ready
-    if not table_exists(LoginHistory._meta.db_table) or not table_exists(AuditLog._meta.db_table):
+    if not table_exists('accounts_loginhistory') or not table_exists('accounts_auditlog'):
         return
 
     from django.contrib.auth import get_user_model
-    from .utils import get_client_ip
 
     ip_address = get_client_ip(request)
     user_agent = request.META.get('HTTP_USER_AGENT', '')
@@ -729,63 +731,65 @@ def log_failed_login(sender, credentials, request, **kwargs):
         except User.DoesNotExist:
             pass
 
-    if user:
-        LoginHistory.objects.create(
+    try:
+        if user:
+            LoginHistory.objects.create(
+                user=user,
+                status='failed',
+                ip_address=ip_address,
+                user_agent=user_agent,
+                failure_reason='Invalid credentials'
+            )
+
+        AuditLog.objects.create(
             user=user,
-            status='failed',
+            action='login_failed',
+            action_description=f"Failed login attempt for username: {username}",
             ip_address=ip_address,
             user_agent=user_agent,
-            failure_reason='Invalid credentials'
+            request_path=getattr(request, 'path', ''),
+            request_method=getattr(request, 'method', ''),
+            success=False,
+            severity='warning',
+            metadata={'username_attempted': username}
         )
-
-    AuditLog.objects.create(
-        user=user,
-        action='login_failed',
-        action_description=f"Failed login attempt for username: {username}",
-        ip_address=ip_address,
-        user_agent=user_agent,
-        request_path=getattr(request, 'path', ''),
-        request_method=getattr(request, 'method', ''),
-        success=False,
-        severity='warning',
-        metadata={'username_attempted': username}
-    )
+    except Exception as e:
+        logger.error(f"Failed to log failed login: {e}")
 
 
 @receiver(user_logged_out)
 @safe_schema_context
 def log_user_logout(sender, request, user, **kwargs):
     """Log user logout"""
-    from .models import LoginHistory, AuditLog
-    from .utils import get_client_ip
-
-    # ✅ Skip if tables aren't ready
-    if not table_exists(LoginHistory._meta.db_table) or not table_exists(AuditLog._meta.db_table):
+    if not table_exists('accounts_loginhistory') or not table_exists('accounts_auditlog'):
         return
 
     ip_address = get_client_ip(request)
 
-    # Update login history
-    if hasattr(request, 'session') and request.session.session_key:
-        LoginHistory.objects.filter(
+    try:
+        # Update login history
+        if hasattr(request, 'session') and request.session.session_key:
+            LoginHistory.objects.filter(
+                user=user,
+                session_key=request.session.session_key,
+                logout_timestamp__isnull=True
+            ).update(logout_timestamp=timezone.now())
+
+        AuditLog.objects.create(
             user=user,
-            session_key=request.session.session_key,
-            logout_timestamp__isnull=True
-        ).update(logout_timestamp=timezone.now())
-
-    AuditLog.objects.create(
-        user=user,
-        action='logout',
-        action_description=f"User {user.get_full_name()} logged out",
-        ip_address=ip_address,
-        user_agent=request.META.get('HTTP_USER_AGENT', ''),
-        request_path=request.path,
-        request_method=request.method,
-        company=getattr(user, 'company', None)
-    )
+            action='logout',
+            action_description=f"User {user.get_full_name()} logged out",
+            ip_address=ip_address,
+            user_agent=request.META.get('HTTP_USER_AGENT', ''),
+            request_path=request.path,
+            request_method=request.method,
+            company=getattr(user, 'company', None)
+        )
+    except Exception as e:
+        logger.error(f"Failed to log user logout: {e}")
 
 
-# ------------------- GENERIC MODEL CHANGE TRACKING -------------------
+# ================= GENERIC MODEL CHANGE TRACKING =================
 
 def should_audit_model(model_class):
     """Check if model should be audited"""
@@ -800,10 +804,8 @@ def should_audit_model(model_class):
 @safe_schema_context
 def log_model_save(sender, instance, created, **kwargs):
     """Log model creation/update"""
-    from .models import AuditLog
-
-    # ✅ Skip if AuditLog table doesn't exist yet
-    if not table_exists(AuditLog._meta.db_table):
+    # Skip if AuditLog table doesn't exist yet
+    if not table_exists('accounts_auditlog'):
         return
 
     if not should_audit_model(sender) or sender.__name__ == 'AuditLog':
@@ -836,10 +838,7 @@ def log_model_save(sender, instance, created, **kwargs):
 @safe_schema_context
 def log_model_delete(sender, instance, **kwargs):
     """Log model deletion"""
-    from .models import AuditLog
-
-    # ✅ Skip if AuditLog table doesn't exist yet
-    if not table_exists(AuditLog._meta.db_table):
+    if not table_exists('accounts_auditlog'):
         return
 
     if not should_audit_model(sender) or sender.__name__ == 'AuditLog':

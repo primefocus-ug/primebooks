@@ -1428,6 +1428,7 @@ class Product(models.Model, EFRISProductMixin):
             'currency': 'UGX'
         }
 
+
 class Service(models.Model):
     TAX_RATE_CHOICES = [
         ('A', 'Standard rate (18%)'),
@@ -1482,6 +1483,7 @@ class Service(models.Model):
         verbose_name=_("Unit Price (UGX)"),
         help_text=_("Price per unit of service")
     )
+
     # Tax Information
     tax_rate = models.CharField(
         max_length=1,
@@ -1502,7 +1504,7 @@ class Service(models.Model):
     # Unit of Measure (for services like hours, sessions, etc.)
     unit_of_measure = models.CharField(
         max_length=20,
-        choices=Product.UNIT_CHOICES,  # Reuse Product's unit choices
+        choices=Product.UNIT_CHOICES,
         default='207',  # Hours
         verbose_name=_("Unit of Measure"),
         help_text=_("Unit for measuring this service (e.g., Hours, Sessions)")
@@ -1583,24 +1585,37 @@ class Service(models.Model):
         """Validate service data before saving"""
         super().clean()
 
+        # Get EFRIS status - default to False for safety
+        efris_enabled = getattr(self, '_efris_enabled', False)
+
         # Validate category is a service category
         if self.category and self.category.category_type != 'service':
             raise ValidationError({
                 'category': _("Selected category is not a service category. Please select a service category.")
             })
 
-        # Validate EFRIS commodity category if category is set
-        if self.category and not self.category.efris_commodity_category_code:
-            raise ValidationError({
-                'category': _("Selected category does not have an EFRIS commodity category assigned.")
-            })
+        # Only validate EFRIS fields if EFRIS is explicitly enabled
+        if efris_enabled:
+            # Validate category is set when EFRIS sync is enabled
+            if self.efris_auto_sync_enabled and not self.category:
+                raise ValidationError({
+                    'category': _("Service category is required when EFRIS auto-sync is enabled.")
+                })
 
-        # Validate it's a leaf node
-        if self.category and not self.category.efris_is_leaf_node:
-            raise ValidationError({
-                'category': _(
-                    "Selected category's EFRIS commodity category is not a leaf node. Only leaf nodes can be used.")
-            })
+            # Validate EFRIS commodity category exists
+            if self.category and not self.category.efris_commodity_category_code:
+                raise ValidationError({
+                    'category': _("Selected category does not have an EFRIS commodity category assigned. "
+                                  "Please update the category settings first or disable EFRIS auto-sync.")
+                })
+
+            # Validate it's a leaf node
+            if self.category and not self.category.efris_is_leaf_node:
+                raise ValidationError({
+                    'category': _(
+                        "Selected category's EFRIS commodity category is not a leaf node. "
+                        "Only leaf nodes can be used for services.")
+                })
 
     # Properties - Inherit from Category
     @property
@@ -1608,7 +1623,7 @@ class Service(models.Model):
         """Get EFRIS commodity category code from the service's category."""
         if self.category and self.category.efris_commodity_category:
             return self.category.efris_commodity_category.commodity_category_code
-        return '100000000'
+        return '100000000'  # Default fallback
 
     @property
     def efris_commodity_category_name(self):
@@ -1699,7 +1714,7 @@ class Service(models.Model):
             self.category,
             self.efris_commodity_category_id
         ]
-        return all(required_fields) and self.category.efris_is_leaf_node
+        return all(required_fields) and (self.category and self.category.efris_is_leaf_node)
 
     # EFRIS Methods
     def mark_for_efris_upload(self):
@@ -1716,7 +1731,32 @@ class Service(models.Model):
         self.save(update_fields=['efris_is_uploaded', 'efris_upload_date', 'efris_service_id'])
 
     def enable_efris_sync(self):
-        """Enable EFRIS auto-sync"""
+        """Enable EFRIS auto-sync with validation"""
+        if not self.category:
+            raise ValueError(
+                f"Service '{self.name}' must have a category assigned before enabling EFRIS sync."
+            )
+
+        if not self.category.efris_commodity_category_code:
+            raise ValueError(
+                f"Category '{self.category.name}' must have an EFRIS commodity category assigned before enabling EFRIS sync."
+            )
+
+        # Validate the EFRIS category before enabling sync
+        if self.category.efris_commodity_category_code:
+            from company.models import EFRISCommodityCategory
+            efris_cat = EFRISCommodityCategory.objects.get(
+                commodity_category_code=self.category.efris_commodity_category_code
+            )
+
+            # Validate it's a leaf node
+            if efris_cat.is_leaf_node != '101':
+                raise ValueError("Selected EFRIS category is not a leaf node.")
+
+            # Validate type matches (should be service)
+            if efris_cat.service_mark != '102':
+                raise ValueError("Selected EFRIS category is not a service category.")
+
         self.efris_auto_sync_enabled = True
         self.save(update_fields=['efris_auto_sync_enabled'])
 

@@ -835,24 +835,99 @@ def validate_customer_row(row_data, mapped_columns, row_number):
     return is_valid, errors, cleaned
 
 
-import logging
-import traceback
-from django.db import transaction
-from efris.services import EFRISCustomerService
+# Replace your customer_import and process_customer_import functions with these fixed versions
 
-logger = logging.getLogger(__name__)
+@login_required
+@permission_required('customers.add_customer', raise_exception=True)
+def customer_import(request):
+    """Main customer import view"""
+
+    if request.method == 'GET':
+        # Clear any previous import errors from session
+        if 'import_errors' in request.session:
+            del request.session['import_errors']
+
+        context = {
+            'stores': Store.objects.filter(is_active=True).order_by('name'),
+        }
+        return render(request, 'customers/customer_import.html', context)
+
+    elif request.method == 'POST':
+        try:
+            uploaded_file = request.FILES.get('import_file')
+            conflict_resolution = request.POST.get('conflict_resolution', 'overwrite')
+            auto_sync_efris = request.POST.get('auto_sync_efris') == 'on'
+
+            logger.info(f"Import started - File: {uploaded_file.name if uploaded_file else 'None'}")
+            logger.info(f"Conflict resolution: {conflict_resolution}, Auto sync EFRIS: {auto_sync_efris}")
+
+            if not uploaded_file:
+                messages.error(request, 'No file uploaded. Please select a file to import.')
+                return redirect('customers:customer_import')
+
+            # Validate file type
+            file_extension = uploaded_file.name.split('.')[-1].lower()
+            if file_extension not in ['csv', 'xlsx', 'xls']:
+                messages.error(request,
+                               'Invalid file type. Only CSV and Excel files (.csv, .xlsx, .xls) are supported.')
+                return redirect('customers:customer_import')
+
+            # Validate file size (10MB max)
+            if uploaded_file.size > 10 * 1024 * 1024:
+                messages.error(request, 'File size exceeds 10MB limit.')
+                return redirect('customers:customer_import')
+
+            # Process import
+            results = process_customer_import(
+                file_obj=uploaded_file,
+                conflict_resolution=conflict_resolution,
+                auto_sync_efris=auto_sync_efris,
+                user=request.user
+            )
+
+            logger.info(f"Import completed - Results: {results}")
+
+            # Show success messages
+            if results['created_count'] > 0:
+                messages.success(request, f'Successfully created {results["created_count"]} customers.')
+            if results['updated_count'] > 0:
+                messages.success(request, f'Successfully updated {results["updated_count"]} customers.')
+            if results['efris_synced'] > 0:
+                messages.success(request, f'{results["efris_synced"]} customers synced to EFRIS.')
+            if results['skipped_count'] > 0:
+                messages.info(request, f'{results["skipped_count"]} customers were skipped (already exist).')
+            if results['error_count'] > 0:
+                messages.warning(request, f'{results["error_count"]} rows had errors and were not imported.')
+                # Store errors in session for display
+                request.session['import_errors'] = results['errors'][:50]
+
+            # Show warnings
+            if results.get('warnings'):
+                for warning in results['warnings'][:10]:  # Limit to 10 warnings
+                    messages.warning(request, f"Row {warning['row']}: {warning['warning']}")
+
+            return redirect('customers:customer_list')  # Redirect to customer list instead
+
+        except Exception as e:
+            error_message = f'Import failed: {str(e)}'
+            logger.error(error_message, exc_info=True)
+            messages.error(request, error_message)
+            return redirect('customers:customer_import')
+
 
 @transaction.atomic
 def process_customer_import(file_obj, conflict_resolution, auto_sync_efris, user):
-    """Process customer import file"""
+    """Process customer import file - FIXED VERSION"""
     try:
         # Parse file
         headers, data = parse_uploaded_file(file_obj)
-        logger.info(f"Processing file {file_obj.name} with {len(data)} rows")
 
         # Map columns
         mapped_columns = CustomerColumnMapper.map_columns(headers)
-        logger.debug(f"Mapped columns: {mapped_columns}")
+
+        if not mapped_columns:
+            raise ValueError(
+                "Could not map any columns from the uploaded file. Please ensure the file uses the correct template format.")
 
         results = {
             'total_rows': len(data),
@@ -865,9 +940,11 @@ def process_customer_import(file_obj, conflict_resolution, auto_sync_efris, user
             'warnings': []
         }
 
+        # Initialize EFRIS service if needed
         service = None
         if auto_sync_efris:
             try:
+                from efris.services import EFRISCustomerService
                 service = EFRISCustomerService()
                 logger.info("Initialized EFRISCustomerService")
             except Exception as e:
@@ -876,10 +953,17 @@ def process_customer_import(file_obj, conflict_resolution, auto_sync_efris, user
                     'row': 0,
                     'warning': f"EFRIS service initialization failed: {str(e)}"
                 })
-                auto_sync_efris = False  # Disable EFRIS sync if initialization fails
+                auto_sync_efris = False
 
         for idx, row_data in enumerate(data, start=2):
             try:
+                logger.debug(f"Processing row {idx}: {row_data}")
+
+                # Skip completely empty rows
+                if not any(str(v).strip() for v in row_data.values() if v is not None):
+                    logger.debug(f"Row {idx}: Skipping empty row")
+                    continue
+
                 # Validate row
                 is_valid, errors, cleaned_data = validate_customer_row(
                     row_data,
@@ -896,10 +980,13 @@ def process_customer_import(file_obj, conflict_resolution, auto_sync_efris, user
                     logger.warning(f"Row {idx} invalid: {errors}")
                     continue
 
+                logger.debug(f"Row {idx} cleaned data: {cleaned_data}")
+
                 # Check if store exists
                 store_name = cleaned_data['store_name']
                 try:
                     store = Store.objects.get(name__iexact=store_name)
+                    logger.debug(f"Row {idx}: Found store '{store_name}'")
                 except Store.DoesNotExist:
                     results['error_count'] += 1
                     results['errors'].append({
@@ -924,24 +1011,29 @@ def process_customer_import(file_obj, conflict_resolution, auto_sync_efris, user
                         existing_customer.name = cleaned_data['name']
                         existing_customer.customer_type = cleaned_data['customer_type']
                         existing_customer.store = store
+
+                        # Update optional fields
                         for field in ['email', 'tin', 'nin', 'brn', 'physical_address',
                                       'postal_address', 'district', 'country', 'is_vat_registered',
                                       'credit_limit', 'passport_number', 'driving_license',
                                       'voter_id', 'alien_id', 'efris_customer_type']:
                             if field in cleaned_data:
                                 setattr(existing_customer, field, cleaned_data[field])
+
                         existing_customer.save()
                         results['updated_count'] += 1
                         logger.info(f"Row {idx}: Updated customer with phone {phone}")
 
+                        # EFRIS sync for updated customer
                         if auto_sync_efris and service and existing_customer.is_efris_registered:
                             try:
                                 result = service.update_customer(existing_customer)
-                                if result['success']:
+                                if result.get('success'):
                                     results['efris_synced'] += 1
                                     logger.info(f"Row {idx}: Successfully synced customer {phone} to EFRIS")
                                 else:
-                                    logger.warning(f"Row {idx}: EFRIS update failed: {result.get('error', 'Unknown error')}")
+                                    logger.warning(
+                                        f"Row {idx}: EFRIS update failed: {result.get('error', 'Unknown error')}")
                                     results['warnings'].append({
                                         'row': idx,
                                         'warning': f"EFRIS update failed: {result.get('error', 'Unknown error')}"
@@ -987,18 +1079,21 @@ def process_customer_import(file_obj, conflict_resolution, auto_sync_efris, user
                             'efris_customer_type': cleaned_data.get('efris_customer_type', ''),
                             'created_by': user,
                         }
+
                         customer = Customer.objects.create(**customer_data)
                         results['created_count'] += 1
                         logger.info(f"Row {idx}: Created customer with phone {phone}")
 
+                        # EFRIS sync for new customer
                         if auto_sync_efris and service and customer.can_sync_to_efris:
                             try:
                                 result = service.register_customer(customer)
-                                if result['success']:
+                                if result.get('success'):
                                     results['efris_synced'] += 1
                                     logger.info(f"Row {idx}: Successfully synced customer {phone} to EFRIS")
                                 else:
-                                    logger.warning(f"Row {idx}: EFRIS registration failed: {result.get('error', 'Unknown error')}")
+                                    logger.warning(
+                                        f"Row {idx}: EFRIS registration failed: {result.get('error', 'Unknown error')}")
                                     results['warnings'].append({
                                         'row': idx,
                                         'warning': f"EFRIS registration failed: {result.get('error', 'Unknown error')}"
@@ -1033,85 +1128,6 @@ def process_customer_import(file_obj, conflict_resolution, auto_sync_efris, user
     except Exception as e:
         logger.error(f"Customer import failed for file {file_obj.name}: {str(e)}", exc_info=True)
         raise
-
-
-# ============================================================================
-# MAIN IMPORT VIEW
-# ============================================================================
-
-from django.http import JsonResponse
-import traceback
-
-@login_required
-@permission_required('customers.add_customer', raise_exception=True)
-def customer_import(request):
-    """Main customer import view"""
-
-    def render_error(message, status=400):
-        logger.error(f"Import error: {message}")
-        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
-            return JsonResponse({'success': False, 'error': message}, status=status)
-        else:
-            messages.error(request, message)
-            return redirect('customers:customer_import')
-
-    def render_success(results):
-        logger.info(f"Import results: {results}")
-        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
-            return JsonResponse({'success': True, 'results': results})
-        else:
-            if results['created_count'] > 0:
-                messages.success(request, f'Successfully created {results["created_count"]} customers.')
-            if results['updated_count'] > 0:
-                messages.success(request, f'Successfully updated {results["updated_count"]} customers.')
-            if results['efris_synced'] > 0:
-                messages.success(request, f'{results["efris_synced"]} customers synced to EFRIS.')
-            if results['skipped_count'] > 0:
-                messages.info(request, f'{results["skipped_count"]} customers were skipped (already exist).')
-            if results['error_count'] > 0:
-                messages.warning(request, f'{results["error_count"]} rows had errors and were not imported.')
-                request.session['import_errors'] = results['errors'][:50]
-            return redirect('customers:customer_import')
-
-    if request.method == 'GET':
-        context = {
-            'stores': Store.objects.filter(is_active=True).order_by('name'),
-        }
-        return render(request, 'customers/customer_import.html', context)
-
-    elif request.method == 'POST':
-        try:
-            uploaded_file = request.FILES.get('import_file')
-            conflict_resolution = request.POST.get('conflict_resolution', 'overwrite')
-            auto_sync_efris = request.POST.get('auto_sync_efris') == 'on'
-
-            if not uploaded_file:
-                return render_error('No file uploaded. Please select a file to import.')
-
-            # Validate file type
-            file_extension = uploaded_file.name.split('.')[-1].lower()
-            if file_extension not in ['csv', 'xlsx', 'xls']:
-                return render_error('Invalid file type. Only CSV and Excel files (.csv, .xlsx, .xls) are supported.')
-
-            # Validate file size (10MB max)
-            if uploaded_file.size > 10 * 1024 * 1024:
-                return render_error('File size exceeds 10MB limit.')
-
-            # Process import
-            results = process_customer_import(
-                file_obj=uploaded_file,
-                conflict_resolution=conflict_resolution,
-                auto_sync_efris=auto_sync_efris,
-                user=request.user
-            )
-
-            return render_success(results)
-
-        except Exception as e:
-            error_message = f'Import failed: {str(e)}\n{traceback.format_exc()}'
-            logger.error(error_message)
-            return render_error(f'Import failed: {str(e)}', status=500)
-
 
 @login_required
 def preview_customer_import(request):

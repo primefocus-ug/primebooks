@@ -54,14 +54,14 @@ class EFRISSaleMixin:
     def get_efris_basic_info(self):
         """Get basic information for EFRIS invoice"""
         return {
-            "invoiceNo": "",  # Will be assigned by EFRIS
+            "invoiceNo": "",
             "issuedDate": self.created_at.strftime('%Y-%m-%d %H:%M:%S'),
             "operator": getattr(self, 'operator_name', 'System'),
             "currency": self.currency or 'UGX',
-            "invoiceType": "1",  # Standard invoice
-            "invoiceKind": "1",  # Normal invoice
-            "dataSource": "103",  # WebService API
-            "invoiceIndustryCode": "101"  # General Industry
+            "invoiceType": "1",
+            "invoiceKind": "1",
+            "dataSource": "103",
+            "invoiceIndustryCode": "101"
         }
 
     def get_efris_summary(self):
@@ -73,41 +73,67 @@ class EFRISSaleMixin:
             "taxAmount": str(self.tax_amount or 0),
             "grossAmount": str(self.total_amount),
             "itemCount": str(self.item_count),
-            "modeCode": "1",  # Online mode
+            "modeCode": "1",
             "remarks": self.notes or "Sale processed via system"
         }
 
     def get_efris_goods_details(self):
-        """Get goods details for EFRIS from sale items"""
+        """Get goods/services details for EFRIS from sale items"""
         goods_details = []
 
-        for idx, item in enumerate(self.items.select_related('product').all(), 1):
-            # Get EFRIS product data if available
-            product_efris_data = {}
-            if hasattr(item.product, 'get_efris_goods_data'):
-                try:
-                    product_efris_data = item.product.get_efris_goods_data()
-                except:
-                    pass
+        for idx, item in enumerate(self.items.select_related('product', 'service').all(), 1):
+            # Determine if it's a product or service
+            is_product = item.product is not None
+
+            if is_product:
+                item_name = item.product.name
+                item_code = item.product.sku or f'ITEM{idx:04d}'
+                unit_measure = getattr(item.product, 'unit_of_measure', 'U')
+
+                # Get EFRIS product data if available
+                product_efris_data = {}
+                if hasattr(item.product, 'get_efris_goods_data'):
+                    try:
+                        product_efris_data = item.product.get_efris_goods_data()
+                    except:
+                        pass
+
+                category_id = product_efris_data.get('commodityCategoryId', '1010101000')
+                category_name = product_efris_data.get('commodityCategoryName', 'General Goods')
+            else:
+                # Service
+                item_name = item.service.name
+                item_code = item.service.code or f'SVC{idx:04d}'
+                unit_measure = getattr(item.service, 'unit_of_measure', '207')  # Hours
+
+                # Get EFRIS service data if available
+                service_efris_data = {}
+                if hasattr(item.service, 'get_efris_data'):
+                    try:
+                        service_efris_data = item.service.get_efris_data()
+                    except:
+                        pass
+
+                category_id = service_efris_data.get('commodityCategoryId', '100000000')
+                category_name = service_efris_data.get('commodityCategoryName', 'General Services')
 
             goods_detail = {
-                "item": product_efris_data.get('goodsName', item.product.name),
-                "itemCode": product_efris_data.get('goodsCode', item.product.sku or f'ITEM{idx:04d}'),
+                "item": item_name,
+                "itemCode": item_code,
                 "qty": str(item.quantity),
-                "unitOfMeasure": product_efris_data.get('measureUnit', 'U'),
+                "unitOfMeasure": unit_measure,
                 "unitPrice": str(item.unit_price),
                 "total": str(item.total_price),
                 "taxRate": self._get_efris_tax_rate_string(item.tax_rate),
                 "tax": str(item.tax_amount or 0),
                 "orderNumber": str(idx),
                 "discountFlag": "1" if (item.discount_amount or 0) > 0 else "2",
-                "deemedFlag": "2",  # Not deemed
-                "exciseFlag": "2",  # No excise duty by default
-                "goodsCategoryId": product_efris_data.get('commodityCategoryId', '1010101000'),
-                "goodsCategoryName": "General Goods"
+                "deemedFlag": "2",
+                "exciseFlag": "2",
+                "goodsCategoryId": category_id,
+                "goodsCategoryName": category_name
             }
 
-            # Add discount information if applicable
             if item.discount_amount and item.discount_amount > 0:
                 goods_detail["discountTotal"] = str(item.discount_amount)
 
@@ -128,7 +154,6 @@ class EFRISSaleMixin:
                     "orderNumber": chr(ord('a') + idx - 1)
                 })
         else:
-            # Default payment based on sale payment method
             payment_mode = self._get_efris_payment_mode(self.payment_method)
             payment_details.append({
                 "paymentMode": payment_mode,
@@ -141,11 +166,11 @@ class EFRISSaleMixin:
     def _get_efris_tax_rate_string(self, tax_rate_code):
         """Convert tax rate code to EFRIS string value"""
         tax_rate_mapping = {
-            'A': '0.18',  # Standard VAT 18%
-            'B': '0.00',  # Zero rate
-            'C': '-',  # Exempt
-            'D': '0.18',  # Deemed rate
-            'E': '0.18'  # Excise duty (fallback)
+            'A': '0.18',
+            'B': '0.00',
+            'C': '-',
+            'D': '0.18',
+            'E': '0.18'
         }
         return tax_rate_mapping.get(str(tax_rate_code).upper(), '0.18')
 
@@ -731,8 +756,20 @@ class SaleItem(models.Model):
         ('E', 'Excise Duty rate (per product)'),
     ]
 
+    ITEM_TYPE_CHOICES = [
+        ('PRODUCT', 'Product'),
+        ('SERVICE', 'Service'),
+    ]
+
     sale = models.ForeignKey(Sale, related_name='items', on_delete=models.CASCADE)
-    product = models.ForeignKey('inventory.Product', on_delete=models.PROTECT, related_name='sale_items')
+    item_type = models.CharField(
+        max_length=10,
+        choices=ITEM_TYPE_CHOICES,
+        default='PRODUCT',
+        help_text="Type of item being sold"
+    )
+    product = models.ForeignKey('inventory.Product', on_delete=models.PROTECT,blank=True,null=True, related_name='sale_items')
+    service = models.ForeignKey('inventory.Service', on_delete=models.PROTECT, related_name='sale_items', null=True, blank=True)
     quantity = models.PositiveIntegerField(validators=[MinValueValidator(1)])
     unit_price = models.DecimalField(max_digits=12, decimal_places=2, validators=[MinValueValidator(0)])
     total_price = models.DecimalField(max_digits=12, decimal_places=2, validators=[MinValueValidator(0)])
@@ -749,28 +786,72 @@ class SaleItem(models.Model):
         constraints = [
             models.CheckConstraint(
                 check=models.Q(quantity__gt=0),
-                name='positive_quantity'
+                name='positive_quantity_saleitem'
             ),
             models.CheckConstraint(
                 check=models.Q(unit_price__gte=0),
-                name='non_negative_unit_price'
+                name='non_negative_unit_price_saleitem'
+            ),
+            # Ensure either product OR service is set, but not both
+            models.CheckConstraint(
+                check=(
+                    models.Q(product__isnull=False, service__isnull=True) |
+                    models.Q(product__isnull=True, service__isnull=False)
+                ),
+                name='product_or_service_required'
             ),
         ]
 
     def __str__(self):
-        return f"{self.product.name} x {self.quantity} - {self.sale.invoice_number}"
+        """String representation that works for both products and services - FIXED"""
+        # ✅ FIXED: Use _id fields first to avoid RelatedObjectDoesNotExist
+        if self.product_id:
+            try:
+                item_name = self.product.name
+            except:
+                item_name = f"Product #{self.product_id}"
+        elif self.service_id:
+            try:
+                item_name = self.service.name
+            except:
+                item_name = f"Service #{self.service_id}"
+        else:
+            item_name = 'Unknown'
+
+        invoice_num = self.sale.invoice_number if self.sale else 'N/A'
+        return f"{item_name} x {self.quantity} - {invoice_num}"
 
     def clean(self):
-        """Model-level validation"""
+        """Enhanced model-level validation - FIXED VERSION"""
         super().clean()
+
+        # ✅ FIXED: Use _id fields to avoid RelatedObjectDoesNotExist error
+        # Validate that exactly one of product or service is set
+        if not self.product_id and not self.service_id:
+            raise ValidationError("Either product or service must be specified")
+
+        if self.product_id and self.service_id:
+            raise ValidationError("Cannot have both product and service in the same item")
 
         # Validate discount percentage
         if self.discount < 0 or self.discount > 100:
             raise ValidationError("Discount must be between 0 and 100 percent")
 
+        # Set item_type based on what's provided
+        if self.product_id:
+            self.item_type = 'PRODUCT'
+        elif self.service_id:
+            self.item_type = 'SERVICE'
+        else:
+            raise ValidationError("Item type cannot be determined - no product or service")
+
     def save(self, *args, **kwargs):
+        """
+        Enhanced save method that properly handles both products and services
+        FIXED VERSION: Handles None values for product/service properly
+        """
         # Calculate totals with proper rounding
-        self.total_price = (self.unit_price * Decimal(self.quantity)).quantize(
+        self.total_price = (self.unit_price * self.quantity).quantize(
             Decimal('0.01'), rounding=ROUND_HALF_UP
         )
 
@@ -780,30 +861,38 @@ class SaleItem(models.Model):
 
         final_price = self.total_price - self.discount_amount
 
-        # ========== FIXED TAX CALCULATION - Extract tax from selling price ==========
-        # The selling price (final_price) INCLUDES tax, so we extract it
+        # Calculate tax (extracted from selling price)
         if self.tax_rate in ['A', 'D']:
-            # For 18% VAT: tax = price / 1.18 * 0.18
             self.tax_amount = (final_price / Decimal('1.18') * Decimal('0.18')).quantize(
                 Decimal('0.01'), rounding=ROUND_HALF_UP
             )
-        elif self.tax_rate == 'E' and getattr(self.product, 'excise_duty_rate', None):
-            excise_rate = self.product.excise_duty_rate / Decimal('100')
-            # Extract excise tax from selling price
-            self.tax_amount = (final_price / (Decimal('1') + excise_rate) * excise_rate).quantize(
-                Decimal('0.01'), rounding=ROUND_HALF_UP
-            )
+        elif self.tax_rate == 'E':
+            # ✅ FIXED: Check product_id first to avoid accessing None
+            # Only products can have excise duty
+            if self.product_id and self.product and getattr(self.product, 'excise_duty_rate', None):
+                excise_rate = self.product.excise_duty_rate / Decimal('100')
+                self.tax_amount = (final_price / (Decimal('1') + excise_rate) * excise_rate).quantize(
+                    Decimal('0.01'), rounding=ROUND_HALF_UP
+                )
+            else:
+                self.tax_amount = Decimal('0.00')
         else:
-            # Tax rates B (Zero) and C (Exempt) have no tax
             self.tax_amount = Decimal('0.00')
-        # ============================================================================
 
         # Run model validation
         self.full_clean()
 
-        # Only deduct stock for new items in completed sales
+        # ✅ FIXED: Only deduct stock for new PRODUCT items in completed sales
         is_new = not self.pk
-        if is_new and self.sale.is_completed and self.sale.transaction_type == 'SALE':
+        should_deduct_stock = (
+                is_new and
+                self.sale.is_completed and
+                self.sale.transaction_type == 'SALE' and
+                self.item_type == 'PRODUCT' and  # Check item_type first
+                self.product_id is not None  # Then check if product_id exists (safer than checking self.product)
+        )
+
+        if should_deduct_stock:
             self.deduct_stock()
 
         super().save(*args, **kwargs)
@@ -812,14 +901,76 @@ class SaleItem(models.Model):
         if not getattr(self, '_skip_sale_update', False):
             self.sale.update_totals()
 
+    @property
+    def item_name(self):
+        """Get the name of the item (product or service) - FIXED"""
+        # ✅ FIXED: Check _id fields first
+        if self.product_id:
+            try:
+                return self.product.name
+            except:
+                return f"Product #{self.product_id}"
+        elif self.service_id:
+            try:
+                return self.service.name
+            except:
+                return f"Service #{self.service_id}"
+        return "Unknown Item"
+
+    @property
+    def item_code(self):
+        """Get the code/SKU of the item - FIXED"""
+        # ✅ FIXED: Check _id fields first
+        if self.product_id:
+            try:
+                return self.product.sku or ''
+            except:
+                return ''
+        elif self.service_id:
+            try:
+                return self.service.code or ''
+            except:
+                return ''
+        return ''
+
+    @property
+    def line_total(self):
+        """Compute total line amount"""
+        total = self.total_price or Decimal("0.00")
+        discount = self.discount_amount or Decimal("0.00")
+        return total - discount
+
+    @property
+    def net_amount(self):
+        """Return total price minus discount and tax"""
+        total = self.total_price or Decimal("0.00")
+        discount = self.discount_amount or Decimal("0.00")
+        tax = self.tax_amount or Decimal("0.00")
+        return total - discount - tax
+
+    @property
+    def unit_of_measure(self):
+        """Get unit of measure from product or service"""
+        if self.product:
+            return getattr(self.product, 'unit_of_measure', 'pcs')
+        elif self.service:
+            return getattr(self.service, 'unit_of_measure', '207')  # Hours
+        return 'unit'
+
+
     @transaction.atomic
     def deduct_stock(self):
-        """Enhanced stock deduction with better error handling and EFRIS tracking"""
-        try:
-            import logging
-            logger = logging.getLogger(__name__)
+        """
+        Deduct stock for product items only.
+        Services don't have stock to deduct.
+        """
+        if self.item_type != 'PRODUCT' or not self.product:
+            logger.info(f"Skipping stock deduction for service item: {self.item_name}")
+            return  # Services don't have stock
 
-            # BEFORE deduction
+        try:
+            logger.info(f"Deducting stock for product: {self.product.name}")
+
             store_stock = Stock.objects.select_for_update().filter(
                 product=self.product,
                 store=self.sale.store
@@ -831,7 +982,6 @@ class SaleItem(models.Model):
                 )
 
             old_quantity = store_stock.quantity
-            logger.info(f"🔴 BEFORE DEDUCTION: {self.product.name} stock = {old_quantity}")
 
             if store_stock.quantity < self.quantity:
                 raise ValidationError(
@@ -845,12 +995,8 @@ class SaleItem(models.Model):
                 last_updated=timezone.now()
             )
 
-            # Refresh to see the new value
-            store_stock.refresh_from_db()
-            logger.info(f"🟢 AFTER F() DEDUCTION: {self.product.name} stock = {store_stock.quantity}")
-
             if updated_rows == 0:
-                raise ValidationError("Stock update failed - record may have been modified by another transaction")
+                raise ValidationError("Stock update failed")
 
             # Create stock movement record
             movement_reference = (
@@ -859,13 +1005,11 @@ class SaleItem(models.Model):
                     f"SALE-{self.sale.id}"
             )
 
-            logger.info(f"📝 Creating StockMovement with quantity={self.quantity}, type=SALE")
-
-            movement = StockMovement.objects.create(
+            StockMovement.objects.create(
                 product=self.product,
                 store=self.sale.store,
                 movement_type='SALE',
-                quantity=self.quantity,  # Positive quantity
+                quantity=self.quantity,
                 reference=movement_reference,
                 unit_price=self.unit_price,
                 total_value=self.total_price,
@@ -873,20 +1017,25 @@ class SaleItem(models.Model):
                 notes=f'Sale item: {self.product.name} - Qty: {self.quantity}',
             )
 
-            # Check stock AFTER movement creation
-            store_stock.refresh_from_db()
-            logger.info(f"🔵 AFTER StockMovement.create(): {self.product.name} stock = {store_stock.quantity}")
-            logger.info(f"Movement ID: {movement.id}, Type: {movement.movement_type}, Qty: {movement.quantity}")
+            logger.info(f"✅ Stock deducted successfully: {self.product.name} - Qty: {self.quantity}")
 
         except Exception as e:
-            logger.error(f"❌ Stock deduction error: {e}")
+            logger.error(f"❌ Stock deduction error for {self.product.name}: {e}", exc_info=True)
             raise
 
     @transaction.atomic
     def restore_stock(self):
-        """Enhanced stock restoration with EFRIS audit trail"""
+        """
+        Restore stock for product items only when voiding/refunding.
+        Services don't have stock to restore.
+        """
+        if self.item_type != 'PRODUCT' or not self.product:
+            logger.info(f"Skipping stock restoration for service item: {self.item_name}")
+            return  # Services don't have stock
+
         try:
-            # Restore store stock
+            logger.info(f"Restoring stock for product: {self.product.name}")
+
             store_stock = Stock.objects.select_for_update().filter(
                 product=self.product,
                 store=self.sale.store
@@ -897,20 +1046,15 @@ class SaleItem(models.Model):
                     quantity=F('quantity') + self.quantity,
                     last_updated=timezone.now()
                 )
-
-            # Restore general stock
-            general_stock = Stock.objects.select_for_update().filter(
-                product=self.product,
-                store__isnull=True
-            ).first()
-
-            if general_stock:
-                Stock.objects.filter(id=general_stock.id).update(
-                    quantity=F('quantity') + self.quantity,
+            else:
+                # Create stock record if it doesn't exist
+                Stock.objects.create(
+                    product=self.product,
+                    store=self.sale.store,
+                    quantity=self.quantity,
                     last_updated=timezone.now()
                 )
 
-            # Create restoration movement record
             movement_type = 'VOID' if self.sale.is_voided else 'REFUND'
             movement_reference = (
                     self.sale.efris_invoice_number or
@@ -922,7 +1066,7 @@ class SaleItem(models.Model):
                 product=self.product,
                 store=self.sale.store,
                 movement_type=movement_type,
-                quantity=self.quantity,  # ✅ Keep positive
+                quantity=self.quantity,
                 reference=movement_reference,
                 unit_price=self.unit_price,
                 total_value=self.total_price,
@@ -931,36 +1075,11 @@ class SaleItem(models.Model):
                 efris_reference=self.sale.efris_invoice_number if self.sale.is_fiscalized else None
             )
 
-            import logging
-            logger = logging.getLogger(__name__)
-            logger.info(
-                f"Stock restored successfully: {self.product.name} "
-                f"(Qty: {self.quantity}) to store {self.sale.store.name}"
-            )
+            logger.info(f"✅ Stock restored successfully: {self.product.name} - Qty: {self.quantity}")
 
-        except IntegrityError as e:
-            import logging
-            logger = logging.getLogger(__name__)
-            logger.error(f"Stock restoration failed: {e}")
         except Exception as e:
-            import logging
-            logger = logging.getLogger(__name__)
-            logger.error(f"Unexpected error during stock restoration: {e}")
-
-    @property
-    def line_total(self):
-        """Compute total line amount (since tax is already in total_price, just subtract discount)"""
-        total = self.total_price or Decimal("0.00")
-        discount = self.discount_amount or Decimal("0.00")
-        return total - discount
-
-    @property
-    def net_amount(self):
-        """Return total price minus discount and tax (net before tax amount)"""
-        total = self.total_price or Decimal("0.00")
-        discount = self.discount_amount or Decimal("0.00")
-        tax = self.tax_amount or Decimal("0.00")
-        return total - discount - tax
+            logger.error(f"❌ Stock restoration error for {self.product.name}: {e}", exc_info=True)
+            raise ValidationError(f"Failed to restore stock: {str(e)}")
 
 
 class Receipt(models.Model):

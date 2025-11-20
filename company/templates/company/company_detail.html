@@ -1810,144 +1810,463 @@ function initializeResponsiveBehavior() {
 }
 
 // Branch Analytics Modal
+/**
+ * Branch Analytics and Company Dashboard Functions
+ * Updated to use correct URL patterns and improved error handling
+ */
+
+// Show branch analytics modal
 function showBranchAnalytics(branchId) {
     const modal = new bootstrap.Modal(document.getElementById('branchAnalyticsModal'));
     const content = document.getElementById('branchAnalyticsContent');
 
     // Reset content
     content.innerHTML = `
-        <div class="loading-state">
-            <div class="spinner"></div>
-            <p>Loading analytics...</p>
+        <div class="loading-state text-center py-5">
+            <div class="spinner-border text-primary mb-3" role="status">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+            <p class="text-muted">Loading analytics...</p>
         </div>
     `;
 
     modal.show();
 
-    // Load analytics data
-    fetch(`/branches/${branchId}/analytics/`, {
+    // Load analytics data using the correct URL pattern
+    fetch(`/companies/branches/${branchId}/analytics/`, {
         headers: {
-            'X-Requested-With': 'XMLHttpRequest'
+            'X-Requested-With': 'XMLHttpRequest',
+            'Accept': 'application/json'
         }
     })
-    .then(response => response.json())
-    .then(data => {
-        if (data.success) {
-            renderBranchAnalytics(data, content);
-        } else {
-            content.innerHTML = `
-                <div class="alert alert-danger">
-                    <i class="bi bi-exclamation-triangle"></i>
-                    Failed to load analytics data.
-                </div>
-            `;
+    .then(response => {
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
         }
+        return response.json();
+    })
+    .then(data => {
+        renderBranchAnalytics(data, content);
     })
     .catch(error => {
         console.error('Error loading branch analytics:', error);
         content.innerHTML = `
             <div class="alert alert-danger">
-                <i class="bi bi-exclamation-triangle"></i>
-                Error loading analytics. Please try again.
+                <i class="bi bi-exclamation-triangle me-2"></i>
+                <strong>Error loading analytics</strong>
+                <p class="mb-0 mt-2">Unable to load analytics data. Please try again later.</p>
+                <small class="text-muted d-block mt-1">Error: ${error.message}</small>
             </div>
         `;
     });
 }
 
+// Render branch analytics in modal
 function renderBranchAnalytics(data, container) {
     const metrics = data.metrics;
+    const stores = data.store_details || [];
+    const revenueData = data.revenue_data || {};
 
     container.innerHTML = `
+        <!-- Key Metrics -->
         <div class="row mb-4">
-            <div class="col-md-3 col-6">
-                <div class="text-center">
-                    <h4 class="text-primary">${new Intl.NumberFormat().format(metrics.total_revenue)}</h4>
-                    <small class="text-muted">Total Revenue</small>
+            <div class="col-md-3 col-6 mb-3">
+                <div class="card border-0 shadow-sm">
+                    <div class="card-body text-center">
+                        <div class="text-primary mb-2">
+                            <i class="bi bi-currency-dollar fs-1"></i>
+                        </div>
+                        <h4 class="text-primary mb-1">${formatCurrency(metrics.total_revenue)} UGX</h4>
+                        <small class="text-muted">Total Revenue (30D)</small>
+                        <div class="mt-2">
+                            <small class="${metrics.revenue_growth >= 0 ? 'text-success' : 'text-danger'}">
+                                <i class="bi bi-arrow-${metrics.revenue_growth >= 0 ? 'up' : 'down'}"></i>
+                                ${Math.abs(metrics.revenue_growth)}%
+                            </small>
+                        </div>
+                    </div>
                 </div>
             </div>
-            <div class="col-md-3 col-6">
-                <div class="text-center">
-                    <h4 class="text-success">${metrics.total_sales}</h4>
-                    <small class="text-muted">Total Sales</small>
+            <div class="col-md-3 col-6 mb-3">
+                <div class="card border-0 shadow-sm">
+                    <div class="card-body text-center">
+                        <div class="text-success mb-2">
+                            <i class="bi bi-receipt fs-1"></i>
+                        </div>
+                        <h4 class="text-success mb-1">${metrics.total_sales.toLocaleString()}</h4>
+                        <small class="text-muted">Total Sales</small>
+                        <div class="mt-2">
+                            <small class="${metrics.sales_growth >= 0 ? 'text-success' : 'text-danger'}">
+                                <i class="bi bi-arrow-${metrics.sales_growth >= 0 ? 'up' : 'down'}"></i>
+                                ${Math.abs(metrics.sales_growth)}%
+                            </small>
+                        </div>
+                    </div>
                 </div>
             </div>
-            <div class="col-md-3 col-6">
-                <div class="text-center">
-                    <h4 class="text-info">${metrics.total_customers}</h4>
-                    <small class="text-muted">Customers</small>
+            <div class="col-md-3 col-6 mb-3">
+                <div class="card border-0 shadow-sm">
+                    <div class="card-body text-center">
+                        <div class="text-info mb-2">
+                            <i class="bi bi-people fs-1"></i>
+                        </div>
+                        <h4 class="text-info mb-1">${metrics.total_customers.toLocaleString()}</h4>
+                        <small class="text-muted">Customers</small>
+                        <div class="mt-2">
+                            <small class="${metrics.customer_growth >= 0 ? 'text-success' : 'text-danger'}">
+                                <i class="bi bi-arrow-${metrics.customer_growth >= 0 ? 'up' : 'down'}"></i>
+                                ${Math.abs(metrics.customer_growth)}%
+                            </small>
+                        </div>
+                    </div>
                 </div>
             </div>
-            <div class="col-md-3 col-6">
-                <div class="text-center">
-                    <h4 class="text-warning">${metrics.low_stock_items}</h4>
-                    <small class="text-muted">Low Stock</small>
+            <div class="col-md-3 col-6 mb-3">
+                <div class="card border-0 shadow-sm">
+                    <div class="card-body text-center">
+                        <div class="text-warning mb-2">
+                            <i class="bi bi-box-seam fs-1"></i>
+                        </div>
+                        <h4 class="text-warning mb-1">${metrics.low_stock_items}</h4>
+                        <small class="text-muted">Low Stock Items</small>
+                        <div class="mt-2">
+                            <small class="text-muted">${metrics.total_products} total products</small>
+                        </div>
+                    </div>
                 </div>
             </div>
+        </div>
+
+        <!-- Store Performance Table -->
+        ${stores.length > 0 ? `
+        <div class="card border-0 shadow-sm mb-3">
+            <div class="card-header bg-transparent">
+                <h6 class="mb-0">
+                    <i class="bi bi-shop me-2"></i>Store Performance
+                </h6>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Store</th>
+                                <th class="text-end">Revenue</th>
+                                <th class="text-end">Sales</th>
+                                <th class="text-center">Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${stores.map(store => `
+                                <tr>
+                                    <td>
+                                        <div class="d-flex align-items-center">
+                                            ${store.logo ?
+                                                `<img src="${store.logo}" class="rounded me-2" width="24" height="24" alt="${store.name}">` :
+                                                `<div class="bg-primary text-white rounded d-flex align-items-center justify-content-center me-2" style="width: 24px; height: 24px; font-size: 10px;">
+                                                    <i class="bi bi-shop"></i>
+                                                </div>`
+                                            }
+                                            <div>
+                                                <strong>${store.name}</strong>
+                                                <br><small class="text-muted">${store.code}</small>
+                                            </div>
+                                        </div>
+                                    </td>
+                                    <td class="text-end">
+                                        <strong>${formatCurrency(store.revenue_30d)}</strong>
+                                        <br><small class="text-muted ${store.revenue_growth >= 0 ? 'text-success' : 'text-danger'}">
+                                            ${store.revenue_growth >= 0 ? '+' : ''}${store.revenue_growth}%
+                                        </small>
+                                    </td>
+                                    <td class="text-end">
+                                        <strong>${store.sales_count}</strong>
+                                        <br><small class="text-muted">${formatCurrency(store.avg_sale)} avg</small>
+                                    </td>
+                                    <td class="text-center">
+                                        <span class="badge bg-${store.is_active ? 'success' : 'secondary'}">
+                                            ${store.is_active ? 'Active' : 'Inactive'}
+                                        </span>
+                                        ${store.efris_enabled ? '<br><span class="badge bg-info mt-1">EFRIS</span>' : ''}
+                                    </td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        ` : ''}
+
+        <!-- Quick Actions -->
+        <div class="d-flex gap-2 justify-content-end">
+            <button class="btn btn-outline-primary btn-sm" onclick="viewBranch(${data.store_details[0]?.id || ''})">
+                <i class="bi bi-eye me-1"></i>View Details
+            </button>
+            <button class="btn btn-outline-secondary btn-sm" onclick="exportBranchAnalytics(${data.store_details[0]?.id || ''})">
+                <i class="bi bi-download me-1"></i>Export
+            </button>
         </div>
     `;
 }
 
 // Action Functions
 function viewBranch(branchId) {
+    if (!branchId) {
+        console.error('Invalid branch ID');
+        return;
+    }
     window.location.href = `/companies/branches/${branchId}/`;
 }
 
+function editBranch(branchId) {
+    if (!branchId) {
+        console.error('Invalid branch ID');
+        return;
+    }
+    window.location.href = `/companies/branches/${branchId}/edit/`;
+}
+
+function deleteBranch(branchId, branchName) {
+    if (!branchId) {
+        console.error('Invalid branch ID');
+        return;
+    }
+
+    if (confirm(`Are you sure you want to delete "${branchName}"? This action cannot be undone.`)) {
+        window.location.href = `/companies/branches/${branchId}/delete/`;
+    }
+}
+
 function viewEmployee(employeeId) {
-    // Implementation depends on your URL structure
-    console.log('View employee:', employeeId);
+    if (!employeeId) {
+        console.error('Invalid employee ID');
+        return;
+    }
+    window.location.href = `/accounts/users/${employeeId}/`;
 }
 
 function editEmployee(employeeId) {
-    // Implementation depends on your URL structure
-    console.log('Edit employee:', employeeId);
+    if (!employeeId) {
+        console.error('Invalid employee ID');
+        return;
+    }
+    window.location.href = `/accounts/users/${employeeId}/edit/`;
+}
+
+function exportBranchAnalytics(branchId) {
+    if (!branchId) {
+        console.error('Invalid branch ID');
+        return;
+    }
+    window.open(`/companies/branches/${branchId}/export/`, '_blank');
+}
+
+// Utility function for currency formatting
+function formatCurrency(amount) {
+    return new Intl.NumberFormat('en-UG', {
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 0
+    }).format(amount || 0);
 }
 
 // Auto-refresh data every 5 minutes
-setInterval(function() {
-    refreshMetrics();
-}, 300000);
+let metricsRefreshInterval = null;
 
-function refreshMetrics() {
+function startMetricsRefresh(companyId) {
+    if (!companyId) {
+        console.error('Company ID is required for metrics refresh');
+        return;
+    }
+
+    // Clear any existing interval
+    if (metricsRefreshInterval) {
+        clearInterval(metricsRefreshInterval);
+    }
+
+    // Set up new interval
+    metricsRefreshInterval = setInterval(function() {
+        refreshMetrics(companyId);
+    }, 300000); // 5 minutes
+}
+
+function stopMetricsRefresh() {
+    if (metricsRefreshInterval) {
+        clearInterval(metricsRefreshInterval);
+        metricsRefreshInterval = null;
+    }
+}
+
+function refreshMetrics(companyId) {
+    if (!companyId) {
+        console.error('Company ID is required');
+        return;
+    }
+
     // Update metrics via API
-    fetch(`/api/company/{{ company.company_id }}/metrics/`, {
+    fetch(`/companies/api/${companyId}/metrics/`, {
         headers: {
-            'X-Requested-With': 'XMLHttpRequest'
+            'X-Requested-With': 'XMLHttpRequest',
+            'Accept': 'application/json'
         }
     })
-    .then(response => response.json())
-    .then(data => {
-        if (data.success) {
-            updateMetricValues(data.metrics);
+    .then(response => {
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
         }
+        return response.json();
+    })
+    .then(data => {
+        updateMetricValues(data.metrics || data);
     })
     .catch(error => {
         console.error('Error refreshing metrics:', error);
+        // Don't show error to user for background refresh failures
     });
 }
 
 function updateMetricValues(metrics) {
     const elements = {
         '#total-branches': metrics.total_branches,
-        '#total-employees': metrics.total_employees
+        '#total-stores': metrics.total_stores,
+        '#total-employees': metrics.total_employees,
+        '#active-employees': metrics.active_employees,
+        '#total-revenue': metrics.total_revenue,
+        '#total-sales': metrics.total_sales
     };
 
     Object.entries(elements).forEach(([selector, value]) => {
         const element = document.querySelector(selector);
-        if (element && element.textContent !== value.toString()) {
-            element.textContent = value;
-            element.classList.add('updated');
-            setTimeout(() => element.classList.remove('updated'), 500);
+        if (element && value !== undefined && value !== null) {
+            const currentValue = element.textContent.trim();
+            const newValue = typeof value === 'number' ? value.toLocaleString() : value.toString();
+
+            if (currentValue !== newValue) {
+                element.textContent = newValue;
+                element.classList.add('updated');
+                setTimeout(() => element.classList.remove('updated'), 500);
+            }
         }
     });
 }
 
 // Keyboard shortcuts
 document.addEventListener('keydown', function(e) {
+    // Ctrl/Cmd + E: Edit company
     if ((e.ctrlKey || e.metaKey) && e.key === 'e') {
         e.preventDefault();
-        const editBtn = document.querySelector('a[href*="company_update"]');
+        const editBtn = document.querySelector('a[href*="company_update"], a[href*="/edit"]');
         if (editBtn) editBtn.click();
     }
+
+    // Ctrl/Cmd + N: New branch/store
+    if ((e.ctrlKey || e.metaKey) && e.key === 'n') {
+        e.preventDefault();
+        const newBtn = document.querySelector('a[href*="branch/create"], a[href*="store/create"]');
+        if (newBtn) newBtn.click();
+    }
+
+    // Escape: Close modals
+    if (e.key === 'Escape') {
+        const modals = document.querySelectorAll('.modal.show');
+        modals.forEach(modal => {
+            const bsModal = bootstrap.Modal.getInstance(modal);
+            if (bsModal) bsModal.hide();
+        });
+    }
 });
+
+// Add CSS for updated animation
+const style = document.createElement('style');
+style.textContent = `
+    .updated {
+        animation: highlight 0.5s ease-in-out;
+    }
+
+    @keyframes highlight {
+        0%, 100% {
+            background-color: transparent;
+        }
+        50% {
+            background-color: rgba(40, 167, 69, 0.2);
+        }
+    }
+
+    .loading-state {
+        min-height: 200px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+    }
+`;
+document.head.appendChild(style);
+
+// Initialize when document is ready
+document.addEventListener('DOMContentLoaded', function() {
+    // Start metrics refresh if company ID is available
+    const companyElement = document.querySelector('[data-company-id]');
+    if (companyElement) {
+        const companyId = companyElement.dataset.companyId;
+        if (companyId) {
+            startMetricsRefresh(companyId);
+        }
+    }
+
+    // Add smooth scrolling to anchor links
+    document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+        anchor.addEventListener('click', function (e) {
+            const href = this.getAttribute('href');
+            if (href !== '#' && href !== '#!') {
+                e.preventDefault();
+                const target = document.querySelector(href);
+                if (target) {
+                    target.scrollIntoView({
+                        behavior: 'smooth',
+                        block: 'start'
+                    });
+                }
+            }
+        });
+    });
+
+    // Initialize tooltips if Bootstrap is available
+    if (typeof bootstrap !== 'undefined' && bootstrap.Tooltip) {
+        const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+        tooltipTriggerList.map(function (tooltipTriggerEl) {
+            return new bootstrap.Tooltip(tooltipTriggerEl);
+        });
+    }
+
+    // Initialize popovers if Bootstrap is available
+    if (typeof bootstrap !== 'undefined' && bootstrap.Popover) {
+        const popoverTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="popover"]'));
+        popoverTriggerList.map(function (popoverTriggerEl) {
+            return new bootstrap.Popover(popoverTriggerEl);
+        });
+    }
+});
+
+// Clean up on page unload
+window.addEventListener('beforeunload', function() {
+    stopMetricsRefresh();
+});
+
+// Export functions for use in other scripts
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports = {
+        showBranchAnalytics,
+        viewBranch,
+        editBranch,
+        deleteBranch,
+        viewEmployee,
+        editEmployee,
+        exportBranchAnalytics,
+        refreshMetrics,
+        startMetricsRefresh,
+        stopMetricsRefresh,
+        formatCurrency
+    };
+}
 </script>
 {% endblock %}

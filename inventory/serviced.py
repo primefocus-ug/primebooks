@@ -593,7 +593,7 @@ def service_efris_sync(request, pk):
             logger.warning("Celery not available, running sync synchronously")
 
             from company.models import Company
-            from efris.api_client import EFRISServiceManager
+            from efris.services import EFRISServiceManager
 
             company = Company.objects.get(schema_name=schema_name)
 
@@ -662,7 +662,7 @@ def service_bulk_efris_sync(request):
         except ImportError:
             # Run synchronously
             from company.models import Company
-            from efris.api_client import bulk_register_services_with_efris
+            from efris.services import bulk_register_services_with_efris
 
             company = Company.objects.get(schema_name=schema_name)
 

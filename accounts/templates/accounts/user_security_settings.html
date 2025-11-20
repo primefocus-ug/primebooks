@@ -344,9 +344,14 @@
                             <i class="fas fa-exclamation-triangle me-2"></i>
                             {% trans "Your email" %} <strong>{{ user.email }}</strong> {% trans "is not verified." %}
                         </div>
-                        <a href="{% url 'send_verification' %}" class="btn btn-outline-primary btn-sm">
-                            <i class="fas fa-envelope me-1"></i> {% trans "Resend Verification Email" %}
-                        </a>
+                        <form id="resendVerificationForm" class="d-inline">
+                            {% csrf_token %}
+                            <input type="hidden" name="type" value="email">
+                            <button type="submit" class="btn btn-outline-primary btn-sm">
+                                <i class="fas fa-envelope me-1"></i> {% trans "Resend Verification Email" %}
+                            </button>
+                        </form>
+
                     {% endif %}
                 </div>
 
@@ -486,6 +491,30 @@
 
 {% block extra_js %}
 <script>
+document.getElementById("resendVerificationForm").addEventListener("submit", function (e) {
+    e.preventDefault();  // stop normal redirect
+
+    fetch("{% url 'send_verification' %}", {
+        method: "POST",
+        headers: {
+            "X-CSRFToken": "{{ csrf_token }}",
+            "Accept": "application/json"
+        },
+        body: new FormData(this)
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            alert("Verification email sent!");
+        } else {
+            alert("Error: " + data.error);
+        }
+    })
+    .catch(err => {
+        alert("Something went wrong.");
+    });
+});
+
 document.addEventListener('DOMContentLoaded', function() {
     // Initialize progress rings
     const progressRing = document.querySelector('.progress-ring__circle.progress');

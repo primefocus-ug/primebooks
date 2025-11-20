@@ -367,7 +367,7 @@ class CustomerCreateView(LoginRequiredMixin, PermissionRequiredMixin, CreateView
     form_class = CustomerForm
     permission_required = 'customers.add_customer'
     template_name = 'customers/customer_form.html'
-    success_url = reverse_lazy('customers:list')
+    success_url = reverse_lazy('customers:customer_list')
 
     def get_form_kwargs(self):
         kwargs = super().get_form_kwargs()
@@ -512,7 +512,7 @@ def bulk_customer_action(request):
 
         if not selected_ids:
             messages.error(request, _('No customers selected.'))
-            return redirect('customers:list')
+            return redirect('customers:customer_list')
 
         customers = Customer.objects.filter(id__in=selected_ids)
 
@@ -532,7 +532,7 @@ def bulk_customer_action(request):
 
             if not eligible_customers.exists():
                 messages.warning(request, _('No customers eligible for eFRIS sync.'))
-                return redirect('customers:list')
+                return redirect('customers:customer_list')
 
             try:
                 service = EFRISCustomerService()
@@ -602,7 +602,7 @@ def bulk_customer_action(request):
             customers.delete()
             messages.success(request, _('%(count)d customers deleted.') % {'count': count})
 
-    return redirect('customers:list')
+    return redirect('customers:customer_list')
 
 
 def export_customers(request, customers=None):
@@ -959,7 +959,7 @@ class CustomerDeleteView(LoginRequiredMixin,PermissionRequiredMixin, DeleteView)
     model = Customer
     permission_required = 'customers.delete_customer'
     template_name = 'customers/customer_confirm_delete.html'
-    success_url = reverse_lazy('customers:list')
+    success_url = reverse_lazy('customers:customer_list')
 
     def delete(self, request, *args, **kwargs):
         messages.success(self.request, _('Customer deleted successfully.'))

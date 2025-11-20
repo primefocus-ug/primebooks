@@ -71,7 +71,55 @@ body {
     flex: 1;
     max-width: 500px;
 }
+.item-type-toggle {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 1.5rem;
+    background: var(--bg-secondary);
+    padding: 0.5rem;
+    border-radius: 12px;
+}
 
+.item-type-btn {
+    flex: 1;
+    padding: 0.75rem;
+    border: 2px solid transparent;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--text-secondary);
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.item-type-btn.active {
+    background: var(--accent-gradient);
+    color: white;
+    border-color: transparent;
+}
+
+.item-type-btn:hover:not(.active) {
+    background: var(--card-hover);
+}
+
+/* Service-specific badges */
+.service-badge {
+    background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+    color: white;
+    padding: 0.25rem 0.75rem;
+    border-radius: 20px;
+    font-size: 0.75rem;
+    font-weight: 600;
+}
+
+.product-badge {
+    background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+    color: white;
+    padding: 0.25rem 0.75rem;
+    border-radius: 20px;
+    font-size: 0.75rem;
+    font-weight: 600;
+}
 .product-search-input {
     width: 100%;
     padding: 0.75rem 1rem 0.75rem 3rem;
@@ -631,7 +679,7 @@ body {
                 {% trans "Create New Sale" %}
             </h1>
             <p class="mb-0 opacity-90">
-                {% trans "Browse products and build your sale" %}
+                {% trans "Browse products & services and build your sale" %}
             </p>
         </div>
         <div class="text-end">
@@ -651,7 +699,7 @@ body {
     {% csrf_token %}
 
     <div class="row">
-        <!-- Products Section (Left/Main) -->
+        <!-- Products/Services Section (Left/Main) -->
         <div class="col-lg-8">
             <!-- Store Selection -->
             <div class="customer-section">
@@ -668,22 +716,34 @@ body {
                 </select>
             </div>
 
-            <!-- Products Grid -->
+            <!-- Item Type Toggle -->
             <div class="products-section">
+                <div class="item-type-toggle">
+                    <button type="button" class="item-type-btn active" data-type="all" onclick="switchItemType('all')">
+                        <i class="bi bi-grid me-2"></i>{% trans "All Items" %}
+                    </button>
+                    <button type="button" class="item-type-btn" data-type="product" onclick="switchItemType('product')">
+                        <i class="bi bi-box-seam me-2"></i>{% trans "Products Only" %}
+                    </button>
+                    <button type="button" class="item-type-btn" data-type="service" onclick="switchItemType('service')">
+                        <i class="bi bi-gear me-2"></i>{% trans "Services Only" %}
+                    </button>
+                </div>
+
                 <div class="products-header">
                     <h5 class="mb-0">
-                        <i class="bi bi-grid me-2"></i>{% trans "Products" %}
+                        <i class="bi bi-grid me-2"></i><span id="itemsHeaderText">{% trans "Products & Services" %}</span>
                     </h5>
                     <div class="product-search-bar">
                         <i class="bi bi-search search-icon-overlay"></i>
                         <input type="text" class="product-search-input" id="productSearchBar"
-                               placeholder="{% trans 'Search products by name, SKU, or barcode...' %}">
+                               placeholder="{% trans 'Search products or services...' %}">
                     </div>
                 </div>
 
-                <!-- Products Grid -->
+                <!-- Items Grid -->
                 <div class="products-grid" id="productsGrid">
-                    <!-- Products will be loaded here -->
+                    <!-- Items will be loaded here -->
                 </div>
 
                 <!-- Pagination -->
@@ -700,13 +760,13 @@ body {
                 <!-- Loading State -->
                 <div class="text-center py-5" id="productsLoading" style="display: none;">
                     <div class="spinner mx-auto mb-3"></div>
-                    <p>{% trans "Loading products..." %}</p>
+                    <p>{% trans "Loading items..." %}</p>
                 </div>
 
                 <!-- Empty State -->
                 <div class="cart-empty" id="productsEmpty" style="display: none;">
                     <div class="empty-icon"><i class="bi bi-box-seam"></i></div>
-                    <h5>{% trans "No Products Found" %}</h5>
+                    <h5>{% trans "No Items Found" %}</h5>
                     <p>{% trans "Try adjusting your search or select a store" %}</p>
                 </div>
             </div>
@@ -754,7 +814,7 @@ body {
                     <div class="cart-empty">
                         <div class="empty-icon"><i class="bi bi-cart-x"></i></div>
                         <h6>{% trans "Cart is Empty" %}</h6>
-                        <p class="mb-0">{% trans "Add products to start" %}</p>
+                        <p class="mb-0">{% trans "Add products or services to start" %}</p>
                     </div>
                 </div>
 
@@ -815,6 +875,7 @@ body {
     <input type="hidden" name="discount_amount" value="0" id="discountAmountField">
 </form>
 
+
 <!-- Quick Add Modal -->
 <div class="modal fade" id="quickAddModal" tabindex="-1">
     <div class="modal-dialog">
@@ -827,14 +888,14 @@ body {
                 <div id="modalProductDetails"></div>
                 <div class="mb-3">
                     <label class="form-label">{% trans "Quantity" %}</label>
-                    <input type="number" class="form-control" id="modalQuantity" value="1" min="1" step="1">
+                    <input type="number" class="form-control" id="modalQuantity" value="1" min="0.001" step="0.001">
                 </div>
                 <div class="mb-3">
                     <label class="form-label">{% trans "Unit Price" %}</label>
                     <input type="number" class="form-control" id="modalPrice" step="0.01">
                 </div>
                 <div class="mb-3">
-                    <label class="form-label">{% trans "Discount" %}</label>
+                    <label class="form-label">{% trans "Discount (%)" %}</label>
                     <input type="number" class="form-control" id="modalDiscount" value="0" step="0.01">
                 </div>
             </div>
@@ -845,6 +906,7 @@ body {
         </div>
     </div>
 </div>
+
 
 <!-- New Customer Modal -->
 <div class="modal fade" id="newCustomerModal" tabindex="-1">
@@ -892,63 +954,86 @@ body {
 <script>
 // Global variables
 let cart = [];
-let products = [];
+let items = [];
 let currentPage = 1;
 let totalPages = 1;
-let selectedProduct = null;
+let selectedItem = null;
 let selectedCustomer = null;
 let searchTimeout = null;
+let currentItemType = 'all';  // 'all', 'product', or 'service'
 
 // Initialize
 document.addEventListener('DOMContentLoaded', function() {
-    loadProducts();
+    loadItems();
     setupEventListeners();
 });
 
 function setupEventListeners() {
-    // Store change
     document.getElementById('storeSelect').addEventListener('change', function() {
         currentPage = 1;
-        loadProducts();
+        loadItems();
     });
 
-    // Product search
     document.getElementById('productSearchBar').addEventListener('input', function() {
         clearTimeout(searchTimeout);
         searchTimeout = setTimeout(() => {
             currentPage = 1;
-            loadProducts();
+            loadItems();
         }, 300);
     });
 
-    // Pagination
     document.getElementById('prevPage').addEventListener('click', () => {
         if (currentPage > 1) {
             currentPage--;
-            loadProducts();
+            loadItems();
         }
     });
 
     document.getElementById('nextPage').addEventListener('click', () => {
         if (currentPage < totalPages) {
             currentPage++;
-            loadProducts();
+            loadItems();
         }
     });
 
-    // Customer search
     document.getElementById('customerSearch').addEventListener('input', function() {
         clearTimeout(searchTimeout);
         searchTimeout = setTimeout(() => searchCustomers(), 300);
     });
 }
 
-// Load Products
-async function loadProducts() {
+// Switch item type (products, services, or all)
+function switchItemType(type) {
+    currentItemType = type;
+    currentPage = 1;
+
+    // Update button states
+    document.querySelectorAll('.item-type-btn').forEach(btn => {
+        btn.classList.remove('active');
+        if (btn.dataset.type === type) {
+            btn.classList.add('active');
+        }
+    });
+
+    // Update header text
+    const headerText = document.getElementById('itemsHeaderText');
+    if (type === 'product') {
+        headerText.textContent = '{% trans "Products" %}';
+    } else if (type === 'service') {
+        headerText.textContent = '{% trans "Services" %}';
+    } else {
+        headerText.textContent = '{% trans "Products & Services" %}';
+    }
+
+    loadItems();
+}
+
+// Load items (products and/or services)
+async function loadItems() {
     const storeId = document.getElementById('storeSelect').value;
     const searchQuery = document.getElementById('productSearchBar').value;
 
-    if (!storeId) {
+    if (!storeId && currentItemType !== 'service') {
         showProductsEmpty();
         return;
     }
@@ -956,50 +1041,37 @@ async function loadProducts() {
     showProductsLoading();
 
     try {
-        // If no search query, use a wildcard to get all products
         const params = new URLSearchParams({
-            q: searchQuery || 'a', // Send 'a' to match most products if empty
+            q: searchQuery || 'a',
             store_id: storeId,
-            page: currentPage
+            page: currentPage,
+            item_type: currentItemType
         });
 
-        const response = await fetch(`/sales/product-search/?${params}`);
+        const response = await fetch(`/sales/search-items/?${params}`);
         const data = await response.json();
 
-        if (data.products && data.products.length > 0) {
-            products = data.products;
+        if (data.items && data.items.length > 0) {
+            items = data.items;
 
-            // Paginate products on frontend (20 per page)
-            const productsPerPage = 20;
-            const startIndex = (currentPage - 1) * productsPerPage;
-            const endIndex = startIndex + productsPerPage;
-            const paginatedProducts = data.products.slice(startIndex, endIndex);
+            const itemsPerPage = 20;
+            const startIndex = (currentPage - 1) * itemsPerPage;
+            const endIndex = startIndex + itemsPerPage;
+            const paginatedItems = data.items.slice(startIndex, endIndex);
 
-            displayProducts(paginatedProducts);
-            updatePagination(data.products.length, productsPerPage);
+            displayItems(paginatedItems);
+            updatePagination(data.items.length, itemsPerPage);
         } else {
             showProductsEmpty();
         }
     } catch (error) {
-        console.error('Error loading products:', error);
-        showError('Failed to load products');
+        console.error('Error loading items:', error);
+        showError('Failed to load items');
         showProductsEmpty();
     }
 }
 
-function updatePagination(totalProducts, productsPerPage) {
-    const prevBtn = document.getElementById('prevPage');
-    const nextBtn = document.getElementById('nextPage');
-    const info = document.getElementById('paginationInfo');
-
-    totalPages = Math.ceil(totalProducts / productsPerPage);
-
-    prevBtn.disabled = currentPage <= 1;
-    nextBtn.disabled = currentPage >= totalPages;
-    info.textContent = `Page ${currentPage} of ${totalPages} (${totalProducts} products)`;
-}
-
-function displayProducts(products) {
+function displayItems(items) {
     const grid = document.getElementById('productsGrid');
     const loading = document.getElementById('productsLoading');
     const empty = document.getElementById('productsEmpty');
@@ -1008,49 +1080,74 @@ function displayProducts(products) {
     empty.style.display = 'none';
     grid.style.display = 'grid';
 
-    grid.innerHTML = products.map(product => {
-        const hasStock = product.stock && product.stock.available > 0;
-        const isLowStock = hasStock && product.stock.available < 10;
-        const stockClass = !hasStock ? 'out-of-stock' : isLowStock ? 'low-stock' : 'in-stock';
-        const stockText = hasStock ? `${product.stock.available} in stock` : 'Out of stock';
+    grid.innerHTML = items.map(item => {
+        const isProduct = item.item_type === 'PRODUCT';
+        const isService = item.item_type === 'SERVICE';
 
-        const hasDiscount = product.discount_percentage > 0;
+        // Stock handling (products only)
+        let hasStock = true;
+        let stockClass = 'in-stock';
+        let stockText = 'Available';
+
+        if (isProduct && item.stock) {
+            hasStock = item.stock.available > 0;
+            const isLowStock = hasStock && item.stock.available < 10;
+            stockClass = !hasStock ? 'out-of-stock' : isLowStock ? 'low-stock' : 'in-stock';
+            stockText = hasStock ? `${item.stock.available} in stock` : 'Out of stock';
+        } else if (isService) {
+            stockText = 'Service';
+            stockClass = 'in-stock';
+        }
+
+        const hasDiscount = item.discount_percentage > 0;
         const finalPrice = hasDiscount ?
-            (product.price * (1 - product.discount_percentage / 100)).toFixed(2) :
-            product.price;
+            (item.price * (1 - item.discount_percentage / 100)).toFixed(2) :
+            item.price;
+
+        const badgeHtml = isProduct ?
+            '<span class="product-badge"><i class="bi bi-box-seam me-1"></i>Product</span>' :
+            '<span class="service-badge"><i class="bi bi-gear me-1"></i>Service</span>';
 
         return `
-            <div class="product-card ${!hasStock ? 'out-of-stock' : ''}" data-product-id="${product.id}">
-                ${hasDiscount ? `<div class="product-discount-badge">-${product.discount_percentage}%</div>` : ''}
+            <div class="product-card ${(!hasStock && isProduct) ? 'out-of-stock' : ''}" data-item-id="${item.id}" data-item-type="${item.item_type}">
+                ${hasDiscount ? `<div class="product-discount-badge">-${item.discount_percentage}%</div>` : ''}
+                ${badgeHtml}
 
                 <div class="product-image-placeholder">
-                    <i class="bi bi-box-seam"></i>
+                    <i class="bi bi-${isProduct ? 'box-seam' : 'gear'}"></i>
                 </div>
 
                 <div class="product-info">
-                    <div class="product-name" title="${product.name}">${product.name}</div>
-                    <div class="product-sku">SKU: ${product.sku || 'N/A'}</div>
+                    <div class="product-name" title="${item.name}">${item.name}</div>
+                    <div class="product-sku">${isProduct ? 'SKU' : 'Code'}: ${item.code || 'N/A'}</div>
 
                     <div class="product-price">
                         <span class="price-current">${finalPrice} UGX</span>
-                        ${hasDiscount ? `<span class="price-original">${product.price} UGX</span>` : ''}
+                        ${hasDiscount ? `<span class="price-original">${item.price} UGX</span>` : ''}
                     </div>
 
+                    ${isProduct ? `
                     <div class="product-stock">
                         <span class="stock-indicator ${stockClass}"></span>
                         <span>${stockText}</span>
                     </div>
+                    ` : `
+                    <div class="product-stock">
+                        <span class="stock-indicator in-stock"></span>
+                        <span>Available</span>
+                    </div>
+                    `}
                 </div>
 
                 <div class="product-actions">
                     <button type="button" class="btn-add-to-cart"
-                            onclick="quickAddToCart(${product.id})"
-                            ${!hasStock ? 'disabled' : ''}>
+                            onclick="quickAddToCart(${item.id}, '${item.item_type}')"
+                            ${(!hasStock && isProduct) ? 'disabled' : ''}>
                         <i class="bi bi-cart-plus"></i>
                         Add to Cart
                     </button>
                     <button type="button" class="btn-quick-view"
-                            onclick="showQuickView(${product.id})"
+                            onclick="showQuickView(${item.id}, '${item.item_type}')"
                             title="Quick View">
                         <i class="bi bi-eye"></i>
                     </button>
@@ -1060,18 +1157,16 @@ function displayProducts(products) {
     }).join('');
 }
 
-function updatePagination(data) {
+function updatePagination(totalItems, itemsPerPage) {
     const prevBtn = document.getElementById('prevPage');
     const nextBtn = document.getElementById('nextPage');
     const info = document.getElementById('paginationInfo');
 
-    // Calculate pagination from products length
-    const productsPerPage = 20;
-    totalPages = Math.ceil((data.products?.length || 0) / productsPerPage) || 1;
+    totalPages = Math.ceil(totalItems / itemsPerPage);
 
     prevBtn.disabled = currentPage <= 1;
     nextBtn.disabled = currentPage >= totalPages;
-    info.textContent = `Page ${currentPage} of ${totalPages}`;
+    info.textContent = `Page ${currentPage} of ${totalPages} (${totalItems} items)`;
 }
 
 function showProductsLoading() {
@@ -1086,46 +1181,85 @@ function showProductsEmpty() {
     document.getElementById('productsEmpty').style.display = 'block';
 }
 
-// Quick add to cart (single click)
-function quickAddToCart(productId) {
-    const product = products.find(p => p.id === productId);
-    if (!product) return;
+// Quick add to cart
+// Add to cart function - FIXED VERSION
+function addToCart(item) {
+    // Ensure we have the correct ID fields based on item type
+    if (item.item_type === 'PRODUCT' && !item.product_id) {
+        console.error('Product item missing product_id:', item);
+        showError('Error adding product to cart');
+        return;
+    }
 
-    addToCart({
-        product_id: product.id,
-        name: product.name,
-        quantity: 1,
-        unit_price: product.final_price || product.price,
-        tax_rate: product.tax_rate || 'A',
-        discount: 0,
-        unit: product.unit_of_measure || 'pcs'
-    });
+    if (item.item_type === 'SERVICE' && !item.service_id) {
+        console.error('Service item missing service_id:', item);
+        showError('Error adding service to cart');
+        return;
+    }
 
-    showSuccess(`${product.name} added to cart`);
+    // Check if item already exists (same type and id)
+    const existingIndex = cart.findIndex(i =>
+        i.item_type === item.item_type &&
+        ((item.item_type === 'PRODUCT' && i.product_id === item.product_id) ||
+         (item.item_type === 'SERVICE' && i.service_id === item.service_id))
+    );
+
+    if (existingIndex >= 0) {
+        cart[existingIndex].quantity += item.quantity;
+    } else {
+        // Ensure the item has all required fields before adding
+        const cartItem = {
+            item_type: item.item_type,
+            name: item.name,
+            quantity: item.quantity,
+            unit_price: item.unit_price,
+            tax_rate: item.tax_rate || 'A',
+            discount: item.discount || 0,
+            unit: item.unit || 'pcs',
+            description: item.description || ''
+        };
+
+        // Add the appropriate ID field
+        if (item.item_type === 'PRODUCT') {
+            cartItem.product_id = item.product_id;
+            cartItem.service_id = null;
+        } else {
+            cartItem.product_id = null;
+            cartItem.service_id = item.service_id;
+        }
+
+        cart.push(cartItem);
+    }
+
+    updateCartDisplay();
 }
 
 // Show quick view modal
-function showQuickView(productId) {
-    const product = products.find(p => p.id === productId);
-    if (!product) return;
+function showQuickView(itemId, itemType) {
+    const item = items.find(i => i.id === itemId && i.item_type === itemType);
+    if (!item) return;
 
-    selectedProduct = product;
+    selectedItem = item;
 
     const modalDetails = document.getElementById('modalProductDetails');
+    const isProduct = itemType === 'PRODUCT';
+
     modalDetails.innerHTML = `
         <div class="mb-3">
-            <h5>${product.name}</h5>
-            <p class="text-muted mb-1">SKU: ${product.sku || 'N/A'}</p>
-            <p class="text-muted mb-1">Category: ${product.category || 'N/A'}</p>
+            <h5>${item.name}</h5>
+            <p class="text-muted mb-1">${isProduct ? 'SKU' : 'Code'}: ${item.code || 'N/A'}</p>
+            <p class="text-muted mb-1">Category: ${item.category || 'N/A'}</p>
+            ${isProduct && item.stock ? `
             <p class="mb-0">
                 <strong>Available Stock:</strong>
-                ${product.stock ? product.stock.available + ' ' + (product.unit_of_measure || 'pcs') : 'N/A'}
+                ${item.stock.available + ' ' + (item.unit_of_measure || 'pcs')}
             </p>
+            ` : `<p class="mb-0"><strong>Type:</strong> Service</p>`}
         </div>
     `;
 
     document.getElementById('modalQuantity').value = 1;
-    document.getElementById('modalPrice').value = product.final_price || product.price;
+    document.getElementById('modalPrice').value = item.final_price || item.price;
     document.getElementById('modalDiscount').value = 0;
 
     const modal = new bootstrap.Modal(document.getElementById('quickAddModal'));
@@ -1134,7 +1268,7 @@ function showQuickView(productId) {
 
 // Confirm add to cart from modal
 function confirmAddToCart() {
-    if (!selectedProduct) return;
+    if (!selectedItem) return;
 
     const quantity = parseFloat(document.getElementById('modalQuantity').value);
     const price = parseFloat(document.getElementById('modalPrice').value);
@@ -1145,36 +1279,40 @@ function confirmAddToCart() {
         return;
     }
 
-    // Check stock
-    if (selectedProduct.stock && quantity > selectedProduct.stock.available) {
-        showError(`Only ${selectedProduct.stock.available} available in stock`);
+    // Check stock for products
+    if (selectedItem.item_type === 'PRODUCT' && selectedItem.stock && quantity > selectedItem.stock.available) {
+        showError(`Only ${selectedItem.stock.available} available in stock`);
         return;
     }
 
     addToCart({
-        product_id: selectedProduct.id,
-        name: selectedProduct.name,
+        item_type: selectedItem.item_type,
+        product_id: selectedItem.item_type === 'PRODUCT' ? selectedItem.id : null,
+        service_id: selectedItem.item_type === 'SERVICE' ? selectedItem.id : null,
+        name: selectedItem.name,
         quantity: quantity,
         unit_price: price,
-        tax_rate: selectedProduct.tax_rate || 'A',
+        tax_rate: selectedItem.tax_rate || 'A',
         discount: discount,
-        unit: selectedProduct.unit_of_measure || 'pcs'
+        unit: selectedItem.unit_of_measure || 'pcs'
     });
 
     bootstrap.Modal.getInstance(document.getElementById('quickAddModal')).hide();
-    showSuccess(`${selectedProduct.name} added to cart`);
+    showSuccess(`${selectedItem.name} added to cart`);
 }
 
 // Add to cart function
 function addToCart(item) {
-    // Check if item already exists
-    const existingIndex = cart.findIndex(i => i.product_id === item.product_id);
+    // Check if item already exists (same type and id)
+    const existingIndex = cart.findIndex(i =>
+        i.item_type === item.item_type &&
+        ((item.item_type === 'PRODUCT' && i.product_id === item.product_id) ||
+         (item.item_type === 'SERVICE' && i.service_id === item.service_id))
+    );
 
     if (existingIndex >= 0) {
-        // Update quantity
         cart[existingIndex].quantity += item.quantity;
     } else {
-        // Add new item
         cart.push(item);
     }
 
@@ -1194,7 +1332,7 @@ function updateCartDisplay() {
             <div class="cart-empty">
                 <div class="empty-icon"><i class="bi bi-cart-x"></i></div>
                 <h6>Cart is Empty</h6>
-                <p class="mb-0">Add products to start</p>
+                <p class="mb-0">Add products or services to start</p>
             </div>
         `;
         cartSummary.style.display = 'none';
@@ -1205,21 +1343,27 @@ function updateCartDisplay() {
     cartItems.innerHTML = cart.map((item, index) => {
         const lineTotal = (item.quantity * item.unit_price - item.discount).toFixed(2);
         const initial = item.name.charAt(0).toUpperCase();
+        const isProduct = item.item_type === 'PRODUCT';
+        const badgeClass = isProduct ? 'product-badge' : 'service-badge';
+        const badgeText = isProduct ? 'Product' : 'Service';
 
         return `
             <div class="cart-item">
                 <div class="cart-item-image">${initial}</div>
                 <div class="cart-item-details">
-                    <div class="cart-item-name" title="${item.name}">${item.name}</div>
+                    <div class="cart-item-name" title="${item.name}">
+                        ${item.name}
+                        <span class="${badgeClass}" style="font-size: 0.65rem; margin-left: 0.5rem;">${badgeText}</span>
+                    </div>
                     <div class="cart-item-meta">${item.unit_price.toFixed(2)} UGX × ${item.quantity} ${item.unit}</div>
                     <div class="cart-item-controls">
                         <div class="qty-control">
-                            <button type="button" class="qty-btn" onclick="updateQuantity(${index}, -1)">
+                            <button type="button" class="qty-btn" onclick="updateQuantity(${index}, -0.5)">
                                 <i class="bi bi-dash"></i>
                             </button>
                             <input type="number" class="qty-input" value="${item.quantity}"
-                                   onchange="setQuantity(${index}, this.value)" min="1" step="0.001">
-                            <button type="button" class="qty-btn" onclick="updateQuantity(${index}, 1)">
+                                   onchange="setQuantity(${index}, this.value)" min="0.001" step="0.001">
+                            <button type="button" class="qty-btn" onclick="updateQuantity(${index}, 0.5)">
                                 <i class="bi bi-plus"></i>
                             </button>
                         </div>
@@ -1313,8 +1457,6 @@ async function searchCustomers() {
         const data = await response.json();
 
         if (data.customers && data.customers.length > 0) {
-            // For simplicity, auto-select first customer
-            // You can show a dropdown here
             selectCustomer(data.customers[0]);
         }
     } catch (error) {
@@ -1395,7 +1537,6 @@ function saveDraft() {
         return;
     }
 
-    // Add draft input
     let draftInput = document.getElementById('isDraftInput');
     if (!draftInput) {
         draftInput = document.createElement('input');

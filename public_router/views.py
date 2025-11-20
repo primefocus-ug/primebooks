@@ -485,7 +485,7 @@ class TenantSignupView(CreateView):
                             'Please check your email.'
                         )
                         self.request.session['signup_request_id'] = str(existing_request.request_id)
-                        return redirect('public_router:signup_processing')
+                    return redirect('public_router:signup_processing')
 
                 # Create new signup request
                 signup_request = form.save(commit=False)

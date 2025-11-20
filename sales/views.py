@@ -112,6 +112,198 @@ def create_customer_ajax(request):
         return JsonResponse({'success': False, 'error': str(e)})
 
 
+@login_required
+def search_products_and_services(request):
+    """
+    Combined search endpoint for both products and services
+    """
+    try:
+        query = request.GET.get('q', '').strip()
+        store_id = request.GET.get('store_id')
+        item_type = request.GET.get('item_type', 'all')  # 'product', 'service', or 'all'
+
+        if len(query) < 2 and item_type == 'all':
+            return JsonResponse({'items': []})
+
+        # Validate store access
+        store = None
+        if store_id:
+            try:
+                store_id = int(store_id)
+                if request.user.is_superuser:
+                    store = Store.objects.get(id=store_id)
+                else:
+                    store = Store.objects.filter(
+                        Q(staff=request.user) | Q(company__staff=request.user),
+                        id=store_id
+                    ).first()
+                    if not store:
+                        return JsonResponse({'error': 'Access denied to store'}, status=403)
+            except (ValueError, Store.DoesNotExist):
+                return JsonResponse({'error': 'Invalid store'}, status=400)
+
+        items_data = []
+
+        # Search products if requested
+        if item_type in ['product', 'all']:
+            products = Product.objects.filter(
+                is_active=True
+            ).filter(
+                Q(name__icontains=query) |
+                Q(sku__icontains=query) |
+                Q(barcode__icontains=query)
+            ).select_related('category', 'supplier')
+
+            # Filter by store stock if store is selected
+            if store:
+                products = products.filter(
+                    store_inventory__store=store,
+                    store_inventory__quantity__gt=0
+                )
+
+            products = products.distinct()[:15]
+
+            for product in products:
+                stock_info = None
+                if store:
+                    try:
+                        stock = product.store_inventory.get(store=store)
+                        stock_info = {
+                            'available': float(stock.quantity),
+                            'unit': product.unit_of_measure or 'pcs'
+                        }
+                    except product.store_inventory.model.DoesNotExist:
+                        stock_info = {'available': 0, 'unit': product.unit_of_measure or 'pcs'}
+
+                items_data.append({
+                    'id': product.id,
+                    'name': product.name,
+                    'code': product.sku or '',
+                    'price': float(product.selling_price or 0),
+                    'final_price': float(product.selling_price or 0),
+                    'discount_percentage': float(getattr(product, 'discount_percentage', 0)),
+                    'tax_rate': getattr(product, 'tax_rate', 'A'),
+                    'unit_of_measure': product.unit_of_measure or 'pcs',
+                    'stock': stock_info,
+                    'category': product.category.name if product.category else '',
+                    'item_type': 'PRODUCT',
+                })
+
+        # Search services if requested
+        if item_type in ['service', 'all']:
+            from inventory.models import Service
+
+            services = Service.objects.filter(
+                is_active=True
+            ).filter(
+                Q(name__icontains=query) |
+                Q(code__icontains=query) |
+                Q(description__icontains=query)
+            ).select_related('category')
+
+            services = services.distinct()[:15]
+
+            for service in services:
+                items_data.append({
+                    'id': service.id,
+                    'name': service.name,
+                    'code': service.code or '',
+                    'price': float(service.unit_price or 0),
+                    'final_price': float(service.unit_price or 0),
+                    'tax_rate': getattr(service, 'tax_rate', 'A'),
+                    'unit_of_measure': service.unit_of_measure or '207',
+                    'category': service.category.name if service.category else '',
+                    'description': service.description or '',
+                    'item_type': 'SERVICE',
+                    'stock': None,  # Services don't have stock
+                })
+
+        return JsonResponse({'items': items_data})
+
+    except Exception as e:
+        logger.error(f"Error in combined search: {e}")
+        return JsonResponse({'error': 'Search failed'}, status=500)
+
+
+@login_required
+def search_services(request):
+    """
+    AJAX endpoint for searching services (similar to product search)
+    """
+    try:
+        query = request.GET.get('q', '').strip()
+        store_id = request.GET.get('store_id')
+
+        if len(query) < 2:
+            return JsonResponse({'services': []})
+
+        # Validate store access
+        store = None
+        if store_id:
+            try:
+                store_id = int(store_id)
+                if request.user.is_superuser:
+                    store = Store.objects.get(id=store_id)
+                else:
+                    store = Store.objects.filter(
+                        Q(staff=request.user) | Q(company__staff=request.user),
+                        id=store_id
+                    ).first()
+                    if not store:
+                        return JsonResponse({'error': 'Access denied to store'}, status=403)
+            except (ValueError, Store.DoesNotExist):
+                return JsonResponse({'error': 'Invalid store'}, status=400)
+
+        # Import Service model
+        from inventory.models import Service
+
+        # Base service query
+        services = Service.objects.filter(
+            is_active=True
+        ).filter(
+            Q(name__icontains=query) |
+            Q(code__icontains=query) |
+            Q(description__icontains=query)
+        ).select_related('category')
+
+        services = services.distinct()[:20]
+
+        service_data = []
+        for service in services:
+            efris_data = {}
+            if hasattr(service, 'get_efris_data'):
+                try:
+                    efris_data = {
+                        'efris_service_name': service.efris_service_name if hasattr(service,
+                                                                                    'efris_service_name') else None,
+                        'efris_service_code': service.efris_service_code if hasattr(service,
+                                                                                    'efris_service_code') else None,
+                        'efris_uploaded': getattr(service, 'efris_is_uploaded', False),
+                    }
+                except Exception as e:
+                    logger.warning(f"Error getting EFRIS data for service {service.id}: {e}")
+
+            service_data.append({
+                'id': service.id,
+                'name': service.name,
+                'code': service.code or '',
+                'price': float(service.unit_price or 0),
+                'final_price': float(service.unit_price or 0),
+                'tax_rate': getattr(service, 'tax_rate', 'A'),
+                'unit_of_measure': service.unit_of_measure or '207',  # Hours
+                'category': service.category.name if service.category else '',
+                'description': service.description or '',
+                'efris': efris_data,
+                'item_type': 'SERVICE',
+            })
+
+        return JsonResponse({'services': service_data})
+
+    except Exception as e:
+        logger.error(f"Error in service search: {e}")
+        return JsonResponse({'error': 'Search failed'}, status=500)
+
+
 class SalesListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
     """Enhanced sales list with advanced filtering and pagination"""
     model = Sale
@@ -657,8 +849,7 @@ def validate_sale_data(post_data, user):
 
 def validate_items_data(items_json):
     """
-    Enhanced items validation with EFRIS-ready product checks.
-    Now validates products for EFRIS compliance where applicable.
+    Enhanced items validation supporting both products and services
     """
     try:
         items_data = json.loads(items_json) if items_json else []
@@ -675,60 +866,93 @@ def validate_items_data(items_json):
 
     for i, item in enumerate(items_data):
         try:
-            # Validate product exists
-            try:
-                product = Product.objects.select_related('category', 'supplier').get(
-                    id=item.get('product_id')
-                )
-                if not product.is_active:
-                    raise ValidationError(f'Product {product.name} is not active.')
+            item_type = item.get('item_type', 'PRODUCT')
 
-                # EFRIS validation for products if they support it
-                if hasattr(product, 'validate_for_efris_upload'):
-                    is_valid, errors = product.validate_for_efris_upload()
-                    if not is_valid:
-                        logger.warning(f"Product EFRIS validation warning for {product.name}: {errors}")
-                        # Don't fail the sale, but log the warning
+            if item_type == 'PRODUCT':
+                # Validate product
+                product_id = item.get('product_id')
+                if not product_id:
+                    raise ValidationError(f'Missing product_id in item {i + 1}.')
 
-            except Product.DoesNotExist:
-                raise ValidationError(f'Invalid product in item {i + 1}.')
-            except (TypeError, ValueError):
-                raise ValidationError(f'Invalid product ID in item {i + 1}.')
+                try:
+                    product = Product.objects.select_related('category', 'supplier').get(
+                        id=product_id
+                    )
+                    if not product.is_active:
+                        raise ValidationError(f'Product {product.name} is not active.')
+
+                    # EFRIS validation for products if they support it
+                    if hasattr(product, 'validate_for_efris_upload'):
+                        is_valid, errors = product.validate_for_efris_upload()
+                        if not is_valid:
+                            logger.warning(f"Product EFRIS validation warning for {product.name}: {errors}")
+
+                except Product.DoesNotExist:
+                    raise ValidationError(f'Invalid product in item {i + 1}.')
+
+                validated_item = {
+                    'item_type': 'PRODUCT',
+                    'product': product,
+                    'service': None,
+                }
+
+            elif item_type == 'SERVICE':
+                # Validate service
+                service_id = item.get('service_id')
+                if not service_id:
+                    raise ValidationError(f'Missing service_id in item {i + 1}.')
+
+                from inventory.models import Service
+                try:
+                    service = Service.objects.select_related('category').get(
+                        id=service_id
+                    )
+                    if not service.is_active:
+                        raise ValidationError(f'Service {service.name} is not active.')
+
+                except Service.DoesNotExist:
+                    raise ValidationError(f'Invalid service in item {i + 1}.')
+
+                validated_item = {
+                    'item_type': 'SERVICE',
+                    'product': None,
+                    'service': service,
+                }
+            else:
+                raise ValidationError(f'Invalid item type in item {i + 1}: {item_type}')
 
             # Validate quantity
             try:
                 quantity = Decimal(str(item.get('quantity', '0')))
                 if quantity <= 0:
-                    raise ValidationError(f'Quantity for {product.name} must be greater than 0.')
+                    item_name = validated_item.get('product', validated_item.get('service')).name
+                    raise ValidationError(f'Quantity for {item_name} must be greater than 0.')
             except (InvalidOperation, ValueError, TypeError):
-                raise ValidationError(f'Invalid quantity for {product.name}.')
+                raise ValidationError(f'Invalid quantity in item {i + 1}.')
 
             # Validate unit price
             try:
                 unit_price = Decimal(str(item.get('unit_price', '0')))
                 if unit_price < 0:
-                    raise ValidationError(f'Unit price for {product.name} cannot be negative.')
+                    raise ValidationError(f'Unit price in item {i + 1} cannot be negative.')
             except (InvalidOperation, ValueError, TypeError):
-                raise ValidationError(f'Invalid unit price for {product.name}.')
+                raise ValidationError(f'Invalid unit price in item {i + 1}.')
 
             # Validate tax rate
-            valid_tax_rates = [choice[0] for choice in SaleItem.TAX_RATE_CHOICES] if hasattr(SaleItem,
-                                                                                             'TAX_RATE_CHOICES') else [
-                'A']
+            valid_tax_rates = [choice[0] for choice in SaleItem.TAX_RATE_CHOICES]
             tax_rate = item.get('tax_rate', 'A')
             if tax_rate not in valid_tax_rates:
-                tax_rate = 'A'  # Default to standard rate
+                tax_rate = 'A'
 
             # Validate discount
             try:
                 discount = Decimal(str(item.get('discount', '0')))
                 if discount < 0 or discount > 100:
-                    discount = Decimal('0')  # Reset to zero if invalid
+                    discount = Decimal('0')
             except (InvalidOperation, ValueError, TypeError):
                 discount = Decimal('0')
 
-            validated_items.append({
-                'product': product,
+            validated_item.update({
                 'quantity': quantity,
                 'unit_price': unit_price,
                 'tax_rate': tax_rate,
@@ -736,13 +960,14 @@ def validate_items_data(items_json):
                 'description': item.get('description', '').strip(),
             })
 
+            validated_items.append(validated_item)
+
         except ValidationError:
             raise
         except Exception as e:
             raise ValidationError(f'Error validating item {i + 1}: {str(e)}')
 
     return validated_items
-
 
 def create_sale_record(request, sale_data):
     """Create the main Sale record - FIXED VERSION"""
@@ -766,25 +991,58 @@ def create_sale_record(request, sale_data):
 
 
 def create_sale_items(sale, items_data):
-    """Create SaleItem records for the sale"""
+    """
+    Create SaleItem records for both products and services
+    FIXED: Properly handle both products and services
+    """
     for item_data in items_data:
         try:
-            # Create sale item (stock deduction will happen automatically in save())
+            item_type = item_data.get('item_type', 'PRODUCT')
+
+            # Get the product or service object
+            product = item_data.get('product')
+            service = item_data.get('service')
+
+            # Validate that we have either product or service
+            if not product and not service:
+                raise ValidationError(f"Item data missing both product and service")
+
+            # Get the item name for logging
+            if product:
+                item_name = product.name
+            elif service:
+                item_name = service.name
+            else:
+                item_name = "Unknown Item"
+
+            # Create sale item with the appropriate product or service
             sale_item = SaleItem.objects.create(
                 sale=sale,
-                product=item_data['product'],
+                item_type=item_type,
+                product=product,  # Will be None for services
+                service=service,  # Will be None for products
                 quantity=item_data['quantity'],
                 unit_price=item_data['unit_price'],
-                tax_rate=item_data['tax_rate'],
+                tax_rate=item_data.get('tax_rate', 'A'),
                 discount=item_data.get('discount', 0),
-                description=item_data['description'],
+                description=item_data.get('description', ''),
             )
-            logger.info(f"Created sale item {sale_item.id} for sale {sale.id}")
+
+            logger.info(
+                f"Created sale item {sale_item.id} for sale {sale.id}: "
+                f"{item_name} (Type: {item_type})"
+            )
 
         except Exception as e:
-            logger.error(f"Error creating sale item for product {item_data['product'].id}: {e}")
-            raise ValidationError(f"Failed to create sale item for {item_data['product'].name}: {str(e)}")
+            # Better error message with item details
+            item_identifier = "Unknown"
+            if item_data.get('product'):
+                item_identifier = f"Product: {item_data['product'].name}"
+            elif item_data.get('service'):
+                item_identifier = f"Service: {item_data['service'].name}"
 
+            logger.error(f"Error creating sale item for {item_identifier}: {e}", exc_info=True)
+            raise ValidationError(f"Failed to create sale item for {item_identifier}: {str(e)}")
 
 def handle_payment(sale, post_data):
     """Handle payment creation if payment information is provided"""
@@ -812,9 +1070,18 @@ def handle_payment(sale, post_data):
 
 
 def create_stock_movements(sale):
-    """Create stock movement records for the sale"""
+    """Create stock movement records for product-based sale items only."""
     try:
         for item in sale.items.select_related('product'):
+
+            # Skip services or invalid items
+            if item.product is None:
+                logger.warning(
+                    f"Skipping stock movement for sale item {item.id} "
+                    f"(Type: {item.item_type}) because it has no product."
+                )
+                continue
+
             StockMovement.objects.create(
                 product=item.product,
                 store=sale.store,
@@ -824,9 +1091,14 @@ def create_stock_movements(sale):
                 unit_price=item.unit_price,
                 total_value=item.total_price,
                 created_by=sale.created_by,
-                notes=f'Sale: {sale.invoice_number or sale.transaction_id}'
+                notes=f"Sale: {sale.invoice_number or sale.transaction_id}"
             )
-            logger.info(f"Created stock movement for {item.product.name} in sale {sale.id}")
+
+            logger.info(
+                f"Created stock movement for product '{item.product.name}' "
+                f"in sale {sale.id}"
+            )
+
     except Exception as e:
         logger.error(f"Error creating stock movements for sale {sale.id}: {e}")
 
@@ -1198,10 +1470,17 @@ def bulk_actions(request):
 
 
 def validate_stock_availability(store, items_data):
-    """Pre-validate stock availability for all items"""
+    """
+    Pre-validate stock availability for product items only
+    Services don't have stock, so they're skipped
+    """
     errors = []
 
     for item_data in items_data:
+        # Only validate stock for products
+        if item_data['item_type'] != 'PRODUCT' or not item_data.get('product'):
+            continue
+
         try:
             stock = Stock.objects.select_for_update().filter(
                 product=item_data['product'],
@@ -1225,7 +1504,6 @@ def validate_stock_availability(store, items_data):
             errors.append(f'Stock validation failed for {item_data["product"].name}')
 
     return errors
-
 
 @login_required
 @permission_required('sales.view_sale', raise_exception=True)
@@ -1888,7 +2166,9 @@ def store_sales_api(request):
 @login_required
 @permission_required('sales.view_sale', raise_exception=True)
 def sales_analytics(request):
-    """Advanced sales analytics dashboard with comprehensive metrics"""
+    """
+    Enhanced sales analytics dashboard supporting both products and services
+    """
     try:
         # Date range filtering with validation
         date_from = request.GET.get('date_from')
@@ -1916,7 +2196,7 @@ def sales_analytics(request):
             created_at__date__lte=date_to,
             transaction_type='SALE',
             is_voided=False
-        ).select_related('store', 'customer').prefetch_related('items__product', 'payments')
+        ).select_related('store', 'customer').prefetch_related('items__product', 'items__service', 'payments')
 
         # Filter by store if specified
         if store_id and store_id != '':
@@ -1938,7 +2218,7 @@ def sales_analytics(request):
 
         # Calculate total customers (distinct customers)
         total_customers = sales_qs.values('customer').distinct().count()
-        if total_customers == 0 and total_sales > 0:  # If no customers but have sales, use sale count
+        if total_customers == 0 and total_sales > 0:
             total_customers = total_sales
 
         # Sales by payment method with enhanced data
@@ -1953,7 +2233,8 @@ def sales_analytics(request):
             percentage = (method['total'] / total_revenue * 100) if total_revenue > 0 else 0
             payment_methods.append({
                 'payment_method': method['payment_method'],
-                'payment_method_display': dict(Sale.PAYMENT_METHODS).get(method['payment_method'], method['payment_method']),
+                'payment_method_display': dict(Sale.PAYMENT_METHODS).get(method['payment_method'],
+                                                                         method['payment_method']),
                 'count': method['count'],
                 'total': method['total'],
                 'percentage': round(percentage, 1)
@@ -1994,9 +2275,14 @@ def sales_analytics(request):
             })
             previous_total = day_total
 
-        # Top products by revenue - FIXED query
-        top_products = SaleItem.objects.filter(
-            sale__in=sales_qs
+        # Top products by revenue - UPDATED to handle both products and services
+        from inventory.models import Service
+
+        # Get top products
+        top_products_data = SaleItem.objects.filter(
+            sale__in=sales_qs,
+            item_type='PRODUCT',
+            product__isnull=False
         ).select_related('product').values(
             'product__id', 'product__name', 'product__sku'
         ).annotate(
@@ -2005,21 +2291,55 @@ def sales_analytics(request):
             sale_count=Count('sale', distinct=True)
         ).order_by('-revenue')[:10]
 
-        # Enhanced top products with performance metrics
-        enhanced_top_products = []
-        max_revenue = top_products[0]['revenue'] if top_products else Decimal('1')
+        # Get top services
+        top_services_data = SaleItem.objects.filter(
+            sale__in=sales_qs,
+            item_type='SERVICE',
+            service__isnull=False
+        ).select_related('service').values(
+            'service__id', 'service__name', 'service__code'
+        ).annotate(
+            quantity_sold=Sum('quantity'),
+            revenue=Sum('total_price'),
+            sale_count=Count('sale', distinct=True)
+        ).order_by('-revenue')[:10]
 
-        for product in top_products:
-            performance_percentage = (product['revenue'] / max_revenue * 100) if max_revenue > 0 else 0
-            enhanced_top_products.append({
-                'product__id': product['product__id'],
-                'product__name': product['product__name'],
-                'product__sku': product['product__sku'],
+        # Combine and sort top items (products + services)
+        top_items = []
+
+        # Add products
+        for product in top_products_data:
+            top_items.append({
+                'id': product['product__id'],
+                'name': product['product__name'],
+                'code': product['product__sku'],
+                'item_type': 'PRODUCT',
                 'quantity_sold': product['quantity_sold'] or 0,
                 'revenue': product['revenue'] or Decimal('0'),
                 'sale_count': product['sale_count'],
-                'performance_percentage': round(performance_percentage, 1)
             })
+
+        # Add services
+        for service in top_services_data:
+            top_items.append({
+                'id': service['service__id'],
+                'name': service['service__name'],
+                'code': service['service__code'],
+                'item_type': 'SERVICE',
+                'quantity_sold': service['quantity_sold'] or 0,
+                'revenue': service['revenue'] or Decimal('0'),
+                'sale_count': service['sale_count'],
+            })
+
+        # Sort by revenue and take top 10
+        top_items.sort(key=lambda x: x['revenue'], reverse=True)
+        top_items = top_items[:10]
+
+        # Calculate performance percentage
+        max_revenue = top_items[0]['revenue'] if top_items else Decimal('1')
+        for item in top_items:
+            performance_percentage = (item['revenue'] / max_revenue * 100) if max_revenue > 0 else 0
+            item['performance_percentage'] = round(performance_percentage, 1)
 
         # Hourly sales pattern
         hourly_sales = sales_qs.extra(
@@ -2046,7 +2366,6 @@ def sales_analytics(request):
                     'total': Decimal('0')
                 })
 
-        # Additional insights calculations
         # Sales growth vs previous period
         previous_period_start = date_from - (date_to - date_from) - timedelta(days=1)
         previous_period_end = date_from - timedelta(days=1)
@@ -2110,6 +2429,15 @@ def sales_analytics(request):
             count=Count('id')
         ).order_by('-avg_amount')
 
+        # Item type breakdown (NEW: Products vs Services analysis)
+        item_type_breakdown = SaleItem.objects.filter(
+            sale__in=sales_qs
+        ).values('item_type').annotate(
+            count=Count('id'),
+            total_quantity=Sum('quantity'),
+            total_revenue=Sum('total_price')
+        ).order_by('-total_revenue')
+
         context = {
             # Date range
             'date_from': date_from,
@@ -2124,7 +2452,7 @@ def sales_analytics(request):
             # Charts data
             'payment_methods': payment_methods,
             'daily_sales': daily_sales,
-            'top_products': enhanced_top_products,
+            'top_items': top_items,  # Changed from top_products to top_items
             'hourly_sales': hourly_data,
 
             # Additional insights
@@ -2139,6 +2467,7 @@ def sales_analytics(request):
             # Additional analytics
             'store_performance': store_performance,
             'payment_efficiency': payment_efficiency,
+            'item_type_breakdown': item_type_breakdown,  # NEW
 
             # Period information
             'period_days': (date_to - date_from).days + 1,
@@ -2159,7 +2488,6 @@ def sales_analytics(request):
         default_date_from = timezone.now().date() - timedelta(days=30)
         default_date_to = timezone.now().date()
 
-        # Get stores for the filter dropdown even on error
         if request.user.is_superuser:
             stores = Store.objects.filter(is_active=True).order_by('name')
         else:
@@ -2173,24 +2501,104 @@ def sales_analytics(request):
             'date_to': default_date_to,
             'stores': stores,
             'selected_store': request.GET.get('store'),
-
-            # Provide default values for all required template variables
             'total_sales': 0,
             'total_revenue': Decimal('0'),
             'avg_sale_value': Decimal('0'),
             'total_customers': 0,
             'payment_methods': [],
             'daily_sales': [],
-            'top_products': [],
+            'top_items': [],
             'hourly_sales': [],
             'sales_growth': '+0.0%',
             'new_customers': 0,
             'return_rate': '0.0%',
             'store_performance': [],
             'payment_efficiency': [],
+            'item_type_breakdown': [],
             'period_days': 30,
             'error': True
         })
+
+
+@login_required
+def analytics_day_details(request):
+    """
+    AJAX endpoint for day details in analytics - UPDATED to show products and services
+    """
+    try:
+        date_str = request.GET.get('date')
+        store_id = request.GET.get('store')
+
+        if not date_str:
+            return JsonResponse({'success': False, 'error': 'Date parameter required'})
+
+        target_date = datetime.strptime(date_str, '%Y-%m-%d').date()
+
+        # Get sales for the specific day
+        sales_qs = Sale.objects.filter(
+            created_at__date=target_date,
+            transaction_type='SALE',
+            is_voided=False
+        ).select_related('store', 'customer').prefetch_related('items__product', 'items__service', 'payments')
+
+        if store_id and store_id != '':
+            sales_qs = sales_qs.filter(store_id=store_id)
+
+        sales_data = []
+        for sale in sales_qs:
+            # Count products and services separately
+            product_count = sale.items.filter(item_type='PRODUCT').count()
+            service_count = sale.items.filter(item_type='SERVICE').count()
+
+            item_summary = []
+            if product_count > 0:
+                item_summary.append(f"{product_count} product{'s' if product_count > 1 else ''}")
+            if service_count > 0:
+                item_summary.append(f"{service_count} service{'s' if service_count > 1 else ''}")
+
+            sales_data.append({
+                'invoice_number': sale.invoice_number,
+                'customer': sale.customer.name if sale.customer else 'Walk-in',
+                'total_amount': float(sale.total_amount),
+                'payment_method': sale.get_payment_method_display(),
+                'created_at': sale.created_at.strftime('%H:%M'),
+                'item_count': sale.items.count(),
+                'product_count': product_count,
+                'service_count': service_count,
+                'item_summary': ' + '.join(item_summary),
+                'is_fiscalized': sale.is_fiscalized
+            })
+
+        # Calculate day statistics
+        day_stats = sales_qs.aggregate(
+            total_sales=Count('id'),
+            total_revenue=Sum('total_amount'),
+            avg_sale=Avg('total_amount')
+        )
+
+        # Item type statistics for the day
+        item_stats = SaleItem.objects.filter(
+            sale__in=sales_qs
+        ).values('item_type').annotate(
+            count=Count('id'),
+            revenue=Sum('total_price')
+        )
+
+        html_content = render_to_string('sales/includes/day_details.html', {
+            'date': target_date,
+            'sales': sales_data,
+            'stats': day_stats,
+            'item_stats': item_stats
+        })
+
+        return JsonResponse({
+            'success': True,
+            'html': html_content
+        })
+
+    except Exception as e:
+        logger.error(f"Error fetching day details: {str(e)}")
+        return JsonResponse({'success': False, 'error': str(e)})
 
 def export_analytics_data(context, format_type):
     """Export analytics data to CSV or Excel"""

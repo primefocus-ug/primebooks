@@ -1,41 +1,64 @@
-<div class="day-details">
+{% load humanize %}
+{% load i18n %}
+
+<!-- sales/includes/day_details.html -->
+<div class="day-details-content">
+    <!-- Day Statistics Summary -->
     <div class="row mb-4">
         <div class="col-md-4">
-            <div class="card bg-primary text-white">
-                <div class="card-body text-center">
-                    <h4>{{ stats.total_sales|default:0 }}</h4>
-                    <p class="mb-0">Total Sales</p>
-                </div>
+            <div class="stat-box text-center p-3 bg-primary text-white rounded">
+                <h4>{{ stats.total_sales|intcomma }}</h4>
+                <p class="mb-0">Total Sales</p>
             </div>
         </div>
         <div class="col-md-4">
-            <div class="card bg-success text-white">
-                <div class="card-body text-center">
-                    <h4>UGX {{ stats.total_revenue|default:0|floatformat:0|intcomma }}</h4>
-                    <p class="mb-0">Total Revenue</p>
-                </div>
+            <div class="stat-box text-center p-3 bg-success text-white rounded">
+                <h4>UGX {{ stats.total_revenue|floatformat:0|intcomma }}</h4>
+                <p class="mb-0">Revenue</p>
             </div>
         </div>
         <div class="col-md-4">
-            <div class="card bg-info text-white">
-                <div class="card-body text-center">
-                    <h4>UGX {{ stats.avg_sale|default:0|floatformat:0|intcomma }}</h4>
-                    <p class="mb-0">Average Sale</p>
-                </div>
+            <div class="stat-box text-center p-3 bg-info text-white rounded">
+                <h4>UGX {{ stats.avg_sale|floatformat:0|intcomma }}</h4>
+                <p class="mb-0">Avg Sale</p>
             </div>
         </div>
     </div>
 
+    <!-- Item Type Breakdown for the Day -->
+    {% if item_stats %}
+    <div class="mb-4">
+        <h6 class="mb-3">Item Type Breakdown</h6>
+        <div class="row">
+            {% for stat in item_stats %}
+            <div class="col-md-6 mb-2">
+                <div class="d-flex justify-content-between align-items-center p-2 bg-light rounded">
+                    <div>
+                        <i class="fas fa-{{ stat.item_type|lower == 'product'|yesno:'box,cogs' }} me-2"></i>
+                        <strong>{{ stat.item_type|title }}s</strong>
+                    </div>
+                    <div class="text-end">
+                        <span class="badge bg-primary me-2">{{ stat.count }} items</span>
+                        <span class="text-muted">UGX {{ stat.revenue|floatformat:0|intcomma }}</span>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Sales List -->
     <div class="table-responsive">
-        <table class="table table-sm table-striped">
-            <thead>
+        <table class="table table-hover">
+            <thead class="table-light">
                 <tr>
                     <th>Invoice</th>
-                    <th>Customer</th>
                     <th>Time</th>
-                    <th>Amount</th>
-                    <th>Payment</th>
+                    <th>Customer</th>
                     <th>Items</th>
+                    <th>Payment</th>
+                    <th>Amount</th>
                     <th>Status</th>
                 </tr>
             </thead>
@@ -43,28 +66,48 @@
                 {% for sale in sales %}
                 <tr>
                     <td>
-                        <a href="{% url 'sales:sale_detail' sale.invoice_number %}" target="_blank">
-                            {{ sale.invoice_number }}
-                        </a>
+                        <strong>{{ sale.invoice_number }}</strong>
+                    </td>
+                    <td>
+                        <small>{{ sale.created_at }}</small>
                     </td>
                     <td>{{ sale.customer }}</td>
-                    <td>{{ sale.created_at }}</td>
-                    <td><strong>UGX {{ sale.total_amount|floatformat:0|intcomma }}</strong></td>
-                    <td>{{ sale.payment_method }}</td>
                     <td>
-                        <span class="badge bg-secondary">{{ sale.item_count }}</span>
+                        <div class="d-flex flex-column">
+                            <small>{{ sale.item_count }} total</small>
+                            {% if sale.product_count > 0 %}
+                            <small class="text-success">
+                                <i class="fas fa-box me-1"></i>{{ sale.product_count }} product{{ sale.product_count|pluralize }}
+                            </small>
+                            {% endif %}
+                            {% if sale.service_count > 0 %}
+                            <small class="text-info">
+                                <i class="fas fa-cogs me-1"></i>{{ sale.service_count }} service{{ sale.service_count|pluralize }}
+                            </small>
+                            {% endif %}
+                        </div>
+                    </td>
+                    <td>
+                        <span class="badge bg-secondary">{{ sale.payment_method }}</span>
+                    </td>
+                    <td>
+                        <strong>UGX {{ sale.total_amount|floatformat:0|intcomma }}</strong>
                     </td>
                     <td>
                         {% if sale.is_fiscalized %}
-                        <span class="badge bg-success">Fiscalized</span>
+                        <span class="badge bg-success">
+                            <i class="fas fa-check-circle me-1"></i>Fiscalized
+                        </span>
                         {% else %}
-                        <span class="badge bg-warning">Pending</span>
+                        <span class="badge bg-warning">
+                            <i class="fas fa-clock me-1"></i>Pending
+                        </span>
                         {% endif %}
                     </td>
                 </tr>
                 {% empty %}
                 <tr>
-                    <td colspan="7" class="text-center text-muted py-3">
+                    <td colspan="7" class="text-center text-muted py-4">
                         No sales found for this date
                     </td>
                 </tr>

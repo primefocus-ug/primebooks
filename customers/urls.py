@@ -15,7 +15,7 @@ urlpatterns = [
     path('', views.CustomerDashboardView.as_view(), name='dashboard'),
 
     # Customer CRUD operations
-    path('list/', views.CustomerListView.as_view(), name='list'),
+    path('list/', views.CustomerListView.as_view(), name='customer_list'),  # Changed name for consistency
     path('create/', views.CustomerCreateView.as_view(), name='create'),
     path('<int:pk>/', views.CustomerDetailView.as_view(), name='detail'),
     path('<int:pk>/edit/', views.CustomerUpdateView.as_view(), name='update'),
@@ -27,7 +27,6 @@ urlpatterns = [
     # Bulk operations
     path('bulk-action/', views.bulk_customer_action, name='bulk_action'),
     path('export/', views.export_customers, name='export'),
-    path('import/', views.customer_import, name='importt'),
 
     # Customer Groups
     path('groups/', views.CustomerGroupListView.as_view(), name='group_list'),
@@ -39,17 +38,20 @@ urlpatterns = [
     path('api/autocomplete/', views.customer_autocomplete, name='autocomplete'),
     path('api/stats/', views.customer_stats_api, name='stats_api'),
     path('api/validate-field/', views.validate_customer_field, name='validate_field'),
+
+    # Sample file downloads (must come BEFORE import/ to avoid conflicts)
     path('import/sample/csv/', view.download_sample_customers_csv, name='download_sample_csv'),
     path('import/sample/excel/', view.download_sample_customers_excel, name='download_sample_excel'),
 
+    # Import views (validation and preview must come BEFORE main import)
+    path('import/preview/', view.preview_customer_import, name='preview_import'),
+    path('import/validate/', view.validate_customer_import, name='validate_import'),
+    path('import/', view.customer_import, name='customer_import'),  # Main import - must be LAST
     # Export views
     path('export/csv/', view.export_customers_csv, name='export_csv'),
     path('export/excel/', view.export_customers_excel, name='export_excel'),
     path('export/pdf/', view.export_customers_pdf, name='export_pdf'),
 
-    # Import views
-    path('import/', view.customer_import, name='customer_import'),
-    path('import/preview/', view.preview_customer_import, name='preview_import'),
-    path('import/validate/', view.validate_customer_import, name='validate_import'),
+    # API router (must be last)
     path('api/', include(router.urls)),
 ]

@@ -7,6 +7,7 @@
 {% block extra_css %}
 <link rel="stylesheet" href="{% static 'themes.css' %}">
 <style>
+    /* Keep all your existing styles - they're fine */
     .import-card {
         background: white;
         border-radius: 12px;
@@ -111,7 +112,6 @@
     [data-theme="dark"] .download-icon{
         background:black;
     }
-
 
     .upload-zone {
         border: 2px dashed #D1D5DB;
@@ -315,6 +315,7 @@
         {% endfor %}
     </div>
     {% endif %}
+
     <div class="import-card">
         <div class="import-header">
             <div>
@@ -381,7 +382,7 @@
             </div>
         </div>
 
-        <!-- Upload Section -->
+        <!-- Upload Section - FIXED: Remove AJAX, use standard form submission -->
         <form id="import-form" method="post" enctype="multipart/form-data" action="{% url 'customers:customer_import' %}">
             {% csrf_token %}
 
@@ -389,7 +390,7 @@
                 <h2 class="text-xl font-bold text-gray-900 mb-4">Step 2: Upload Your File</h2>
 
                 <div class="upload-zone" id="upload-zone">
-                    <input type="file" name="import_file" id="import_file" accept=".csv,.xlsx,.xls" class="hidden">
+                    <input type="file" name="import_file" id="import_file" accept=".csv,.xlsx,.xls" class="hidden" required>
                     <div class="upload-icon">
                         <svg class="w-8 h-8 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/>
@@ -715,10 +716,17 @@ function showValidationResults(validation) {
     updateStep(3);
 }
 
-// Form Submission
-document.getElementById('import-form').addEventListener('submit', async function(e) {
-    e.preventDefault(); // Prevent default form submission
+// FIXED: Form Submission - Use standard form submission instead of AJAX
+document.getElementById('import-form').addEventListener('submit', function(e) {
+    const file = fileInput.files[0];
 
+    if (!file) {
+        e.preventDefault();
+        alert('Please select a file to import');
+        return false;
+    }
+
+    // Show loading state
     const btn = document.getElementById('import-btn');
     const btnText = document.getElementById('import-btn-text');
 
@@ -726,54 +734,8 @@ document.getElementById('import-form').addEventListener('submit', async function
     btnText.innerHTML = '<span class="loading-spinner mr-2"></span> Processing...';
     updateStep(4);
 
-    try {
-        const formData = new FormData(this);
-        const response = await fetch('{% url "customers:customer_import" %}', {
-            method: 'POST',
-            headers: {
-                'X-CSRFToken': '{{ csrf_token }}',
-                'Accept': 'application/json' // Explicitly request JSON
-            },
-            body: formData
-        });
-
-        // Log response details for debugging
-        console.log('Response status:', response.status);
-        console.log('Response headers:', [...response.headers]);
-
-        if (response.redirected) {
-            console.warn('Request redirected to:', response.url);
-            window.location.href = response.url;
-            return;
-        }
-
-        // Check if response is JSON
-        const contentType = response.headers.get('content-type');
-        if (!contentType || !contentType.includes('application/json')) {
-            const text = await response.text();
-            console.error('Non-JSON response received:', text.slice(0, 500)); // Log first 500 chars
-            throw new Error(`Expected JSON, got ${contentType || 'unknown content type'}`);
-        }
-
-        const data = await response.json();
-        if (data.success) {
-            showValidationResults(data.results);
-            const message = `Import successful! Created: ${data.results.created_count}, Updated: ${data.results.updated_count}, Skipped: ${data.results.skipped_count}, Errors: ${data.results.error_count}`;
-            console.log(message);
-            alert(message);
-            window.location.reload(); // Reload to show session errors
-        } else {
-            console.error('Server error:', data.error);
-            alert(`Import failed: ${data.error}`);
-        }
-    } catch (error) {
-        console.error('Client-side error during import:', error);
-        console.error('Response body (if available):', error.responseText || 'Not available');
-        alert(`Import error: ${error.message}. Check the console for details.`);
-    } finally {
-        btn.disabled = false;
-        btnText.innerHTML = 'Import Customers';
-    }
+    // Allow form to submit normally
+    return true;
 });
 </script>
 {% endblock %}
