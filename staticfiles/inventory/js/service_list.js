@@ -1,659 +1,848 @@
-$(document).ready(function() {
+/**
+ * Service List Management
+ * Handles AJAX operations, sorting, pagination, and filtering for services
+ */
+
+(function() {
     'use strict';
 
-    // ============================================
-    // CONFIGURATION - Get URLs from data attributes
-    // ============================================
-
-    const urlConfig = document.getElementById('urls-config');
-    const URLS = {
-        datatable: urlConfig ? urlConfig.dataset.datatableUrl : '/inventory/api/services/datatable/',
-        create: urlConfig ? urlConfig.dataset.createUrl : '/inventory/services/add/',
-        update: (id) => `/inventory/services/${id}/edit/`,
-        delete: (id) => `/inventory/services/${id}/delete/`,
-        detail: (id) => `/inventory/services/${id}/`,
-        bulkActions: '/inventory/api/services/bulk-actions/',
-        efrisSync: (id) => `/inventory/api/services/${id}/efris-sync/`,
-        categoryDetail: (id) => `/inventory/api/categories/${id}/`,
+    // Configuration
+    const CONFIG = {
+        datatableUrl: document.getElementById('urls-config')?.dataset.datatableUrl || '',
+        createUrl: document.getElementById('urls-config')?.dataset.createUrl || '',
+        debounceDelay: 300,
+        defaultPageSize: 25
     };
 
-    console.log('Datatable URL:', URLS.datatable); // Debug log
+    // State management
+    const state = {
+        currentPage: 1,
+        pageSize: CONFIG.defaultPageSize,
+        sortColumn: 'name',
+        sortOrder: 'asc',
+        filters: {
+            search: '',
+            category: '',
+            tax_rate: '',
+            efris_status: '',
+            is_active: ''
+        },
+        selectedServices: new Set(),
+        loading: false
+    };
 
-    let selectedServices = [];
-    let servicesTable;
-    let deleteServiceId = null;
+    // DOM Elements
+    const elements = {
+        servicesTable: document.getElementById('servicesTable'),
+        servicesTableBody: document.getElementById('servicesTableBody'),
+        loadingOverlay: document.getElementById('loadingOverlay'),
+        pagination: document.getElementById('pagination'),
+        entriesInfo: document.getElementById('entriesInfo'),
+        pageSize: document.getElementById('pageSize'),
+        selectAllServices: document.getElementById('selectAllServices'),
+        bulkActionsBtn: document.getElementById('bulkActionsBtn'),
+        addServiceBtn: document.getElementById('addServiceBtn'),
+        serviceModal: document.getElementById('serviceModal'),
+        deleteModal: document.getElementById('deleteModal'),
+        confirmDeleteBtn: document.getElementById('confirmDeleteBtn'),
+        clearFilters: document.getElementById('clearFilters'),
+        filterForm: document.getElementById('filterForm')
+    };
 
-    // ============================================
-    // DATATABLES INITIALIZATION
-    // ============================================
+    // Utility Functions
+    const utils = {
+        debounce: function(func, wait) {
+            let timeout;
+            return function executedFunction(...args) {
+                const later = () => {
+                    clearTimeout(timeout);
+                    func(...args);
+                };
+                clearTimeout(timeout);
+                timeout = setTimeout(later, wait);
+            };
+        },
 
-    function initializeDataTable() {
-        servicesTable = $('#servicesTable').DataTable({
-            processing: true,
-            serverSide: true,
-            ajax: {
-                url: URLS.datatable,
-                type: 'GET',
-                data: function(d) {
-                    // Add filter parameters to match your Django view
-                    d.search = $('#id_search').val();
-                    d.category = $('#id_category').val();
-                    d.tax_rate = $('#id_tax_rate').val();
-                    d.efris_status = $('#id_efris_status').val();
-                    d.is_active = $('#id_is_active').val();
-
-                    console.log('DataTables request data:', d);
-                },
-                dataSrc: function (json) {
-                    console.log('DataTables response:', json);
-                    if (json.error) {
-                        console.error('Server error:', json.error);
-                        showAlert('Error loading services: ' + json.error, 'danger');
-                        return [];
-                    }
-                    return json.data;
-                },
-                error: function(xhr, error, thrown) {
-                    console.error('DataTables AJAX error:', error, thrown);
-                    console.error('Response:', xhr.responseText);
-                    showAlert('Error loading services data. Please check console for details.', 'danger');
-                }
-            },
-            columns: [
-                {
-                    data: null,
-                    orderable: false,
-                    searchable: false,
-                    render: function(data, type, row) {
-                        return `<input type="checkbox" class="form-check-input service-checkbox table-checkbox" data-id="${row.id}">`;
-                    }
-                },
-                {
-                    data: 'name',
-                    render: function(data) {
-                        return data || '-';
-                    }
-                },
-                {
-                    data: 'code',
-                    render: function(data) {
-                        return data || '-';
-                    }
-                },
-                {
-                    data: 'category',
-                    render: function(data) {
-                        return data || '-';
-                    }
-                },
-                {
-                    data: 'unit_price',
-                    className: 'text-end',
-                    render: function(data) {
-                        return data || '-';
-                    }
-                },
-                {
-                    data: 'final_price',
-                    className: 'text-end',
-                    render: function(data) {
-                        return data || '-';
-                    }
-                },
-                {
-                    data: 'efris_status',
-                    orderable: false,
-                    searchable: false,
-                    render: function(data) {
-                        return data || '-';
-                    }
-                },
-                {
-                    data: 'status',
-                    orderable: false,
-                    searchable: false,
-                    render: function(data) {
-                        return data || '-';
-                    }
-                },
-                {
-                    data: 'actions',
-                    orderable: false,
-                    searchable: false,
-                    className: 'text-center',
-                    render: function(data) {
-                        return data || 'No actions available';
-                    }
-                }
-            ],
-            order: [[1, 'asc']],
-            pageLength: 25,
-            lengthMenu: [[10, 25, 50, 100], [10, 25, 50, 100]],
-            responsive: true,
-            language: {
-                processing: '<i class="bi bi-hourglass-split"></i> Loading...',
-                emptyTable: 'No services found',
-                zeroRecords: 'No matching services found',
-                info: 'Showing _START_ to _END_ of _TOTAL_ entries',
-                infoEmpty: 'Showing 0 to 0 of 0 entries',
-                infoFiltered: '(filtered from _MAX_ total entries)',
-                lengthMenu: 'Show _MENU_ entries',
-                loadingRecords: 'Loading...',
-                search: 'Search:',
-                paginate: {
-                    first: 'First',
-                    last: 'Last',
-                    next: 'Next',
-                    previous: 'Previous'
-                }
-            },
-            drawCallback: function() {
-                // Reinitialize tooltips
-                $('[data-bs-toggle="tooltip"]').tooltip();
-
-                // Update checkbox states
-                updateCheckboxStates();
-            },
-            initComplete: function() {
-                console.log('DataTable initialized successfully');
+        showLoading: function() {
+            if (elements.loadingOverlay) {
+                elements.loadingOverlay.style.display = 'flex';
             }
-        });
-    }
+            state.loading = true;
+        },
 
-    // ============================================
-    // FILTER HANDLING
-    // ============================================
-
-    function initializeFilters() {
-        // Apply filters when form values change
-        $('#id_search, #id_category, #id_tax_rate, #id_efris_status, #id_is_active').on('change keyup', function() {
-            servicesTable.ajax.reload();
-        });
-
-        // Clear filters
-        $('#clearFilters').on('click', function() {
-            $('#filterForm')[0].reset();
-            servicesTable.ajax.reload();
-        });
-
-        // Enter key in search field
-        $('#id_search').on('keypress', function(e) {
-            if (e.which === 13) {
-                servicesTable.ajax.reload();
-                e.preventDefault();
+        hideLoading: function() {
+            if (elements.loadingOverlay) {
+                elements.loadingOverlay.style.display = 'none';
             }
-        });
-    }
+            state.loading = false;
+        },
 
-    // ============================================
-    // CHECKBOX SELECTION
-    // ============================================
-
-    function initializeCheckboxes() {
-        // Select all checkbox
-        $('#selectAllServices').on('change', function() {
-            const isChecked = $(this).prop('checked');
-            $('.service-checkbox:visible').prop('checked', isChecked);
-            updateSelectedServices();
-        });
-
-        // Individual checkbox change
-        $(document).on('change', '.service-checkbox', function() {
-            updateSelectedServices();
-        });
-    }
-
-    function updateSelectedServices() {
-        selectedServices = [];
-        $('.service-checkbox:checked').each(function() {
-            selectedServices.push($(this).data('id'));
-        });
-
-        // Enable/disable bulk actions button
-        $('#bulkActionsBtn').prop('disabled', selectedServices.length === 0);
-
-        // Update select all checkbox state
-        const visibleCheckboxes = $('.service-checkbox:visible').length;
-        const checkedCheckboxes = $('.service-checkbox:checked:visible').length;
-        $('#selectAllServices').prop('checked', checkedCheckboxes === visibleCheckboxes && visibleCheckboxes > 0);
-        $('#selectAllServices').prop('indeterminate', checkedCheckboxes > 0 && checkedCheckboxes < visibleCheckboxes);
-    }
-
-    function updateCheckboxStates() {
-        $('.service-checkbox').each(function() {
-            const id = $(this).data('id');
-            $(this).prop('checked', selectedServices.includes(id));
-        });
-        updateSelectedServices();
-    }
-
-    // ============================================
-    // SERVICE MODAL HANDLING
-    // ============================================
-
-    function initializeModals() {
-        // Add Service button
-        $('#addServiceBtn').on('click', function() {
-            loadServiceForm(URLS.create, 'Add Service');
-        });
-
-        // Edit Service button
-        $(document).on('click', '.edit-service', function(e) {
-            e.preventDefault();
-            const serviceId = $(this).data('id');
-            loadServiceForm(URLS.update(serviceId), 'Edit Service');
-        });
-
-        // Delete Service button
-        $(document).on('click', '.delete-service', function(e) {
-            e.preventDefault();
-            deleteServiceId = $(this).data('id');
-            $('#deleteModal').modal('show');
-        });
-
-        // Confirm delete
-        $('#confirmDeleteBtn').on('click', function() {
-            if (!deleteServiceId) return;
-
-            const $btn = $(this);
-            const originalText = $btn.html();
-
-            $btn.prop('disabled', true).html('<i class="bi bi-hourglass-split"></i> Deleting...');
-
-            $.ajax({
-                url: URLS.delete(deleteServiceId),
-                type: 'POST',
-                headers: {
-                    'X-CSRFToken': getCSRFToken()
-                },
-                success: function(response) {
-                    if (response.success) {
-                        showAlert('Service deleted successfully', 'success');
-                        $('#deleteModal').modal('hide');
-                        servicesTable.ajax.reload(null, false);
-                    } else {
-                        showAlert(response.error || 'Error deleting service', 'danger');
-                    }
-                },
-                error: function(xhr) {
-                    showAlert('Error deleting service. Please try again.', 'danger');
-                },
-                complete: function() {
-                    $btn.prop('disabled', false).html(originalText);
-                    deleteServiceId = null;
-                }
-            });
-        });
-
-        // Modal hidden event
-        $('#serviceModal').on('hidden.bs.modal', function() {
-            $('#serviceModalBody').html('');
-        });
-    }
-
-    // ============================================
-    // LOAD SERVICE FORM
-    // ============================================
-
-    function loadServiceForm(url, title) {
-        $('#modalTitle').text(title);
-        $('#serviceModalBody').html(`
-            <div class="text-center py-4">
-                <div class="spinner-border text-primary" role="status">
-                    <span class="visually-hidden">Loading...</span>
-                </div>
-                <p class="mt-2">Loading form...</p>
-            </div>
-        `);
-        $('#serviceModal').modal('show');
-
-        $.ajax({
-            url: url,
-            type: 'GET',
-            success: function(response) {
-                $('#serviceModalBody').html(response);
-                initializeServiceForm();
-            },
-            error: function(xhr) {
-                showAlert('Error loading form. Please try again.', 'danger');
-                $('#serviceModal').modal('hide');
-            }
-        });
-    }
-
-    // ============================================
-    // INITIALIZE SERVICE FORM
-    // ============================================
-
-    function initializeServiceForm() {
-        const $form = $('#serviceModalBody').find('form');
-
-        // Initialize EFRIS category validation
-        const categorySelect = $('#id_category');
-        if (categorySelect.length) {
-            categorySelect.on('change', function() {
-                const categoryId = $(this).val();
-                if (categoryId) {
-                    validateEFRISCategory(categoryId);
-                } else {
-                    $('#efris-validation-message').remove();
-                }
-            });
-
-            // Trigger change on load if category is preselected
-            if (categorySelect.val()) {
-                categorySelect.trigger('change');
-            }
-        }
-
-        // Form submission
-        $form.on('submit', function(e) {
-            e.preventDefault();
-            submitServiceForm($(this));
-        });
-
-        // Price calculations
-        $('#id_unit_price, #id_discount_percentage').on('input', function() {
-            calculateFinalPrice();
-        });
-
-        // Tax rate changes
-        $('#id_tax_rate').on('change', function() {
-            toggleExciseDutyField();
-        });
-
-        // Initialize form state
-        calculateFinalPrice();
-        toggleExciseDutyField();
-    }
-
-    // ============================================
-    // VALIDATE EFRIS CATEGORY
-    // ============================================
-
-    function validateEFRISCategory(categoryId) {
-        $.ajax({
-            url: URLS.categoryDetail(categoryId),
-            type: 'GET',
-            success: function(data) {
-                const validationDiv = $('#efris-validation-message');
-                validationDiv.remove();
-
-                let message = '';
-                let alertClass = '';
-
-                if (!data.efris_commodity_category_code) {
-                    message = '⚠️ This category does not have an EFRIS commodity category assigned.';
-                    alertClass = 'alert-warning';
-                } else if (!data.efris_is_leaf_node) {
-                    message = '❌ This category\'s EFRIS commodity category is not a leaf node. Services cannot use non-leaf nodes.';
-                    alertClass = 'alert-danger';
-                } else if (data.category_type !== 'service') {
-                    message = '❌ This is not a service category. Please select a service category.';
-                    alertClass = 'alert-danger';
-                } else {
-                    message = `✅ Valid EFRIS Category: ${data.efris_commodity_category_name}`;
-                    alertClass = 'alert-success';
-                }
-
-                const alertHtml = `
-                    <div id="efris-validation-message" class="alert ${alertClass} mt-2">
-                        ${message}
+        showToast: function(message, type = 'success') {
+            // Using Bootstrap Toast or simple alert
+            if (typeof bootstrap !== 'undefined' && bootstrap.Toast) {
+                const toastHtml = `
+                    <div class="toast align-items-center text-white bg-${type}" role="alert" aria-live="assertive" aria-atomic="true">
+                        <div class="d-flex">
+                            <div class="toast-body">${message}</div>
+                            <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+                        </div>
                     </div>
                 `;
-
-                $('#id_category').closest('.mb-3').append(alertHtml);
-            },
-            error: function() {
-                console.error('Failed to validate EFRIS category');
+                const toastContainer = document.querySelector('.toast-container') || createToastContainer();
+                toastContainer.insertAdjacentHTML('beforeend', toastHtml);
+                const toastElement = toastContainer.lastElementChild;
+                const toast = new bootstrap.Toast(toastElement);
+                toast.show();
+                toastElement.addEventListener('hidden.bs.toast', () => toastElement.remove());
+            } else {
+                alert(message);
             }
-        });
-    }
+        },
 
-    // ============================================
-    // CALCULATE FINAL PRICE
-    // ============================================
-
-    function calculateFinalPrice() {
-        const unitPrice = parseFloat($('#id_unit_price').val()) || 0;
-        const discount = parseFloat($('#id_discount_percentage').val()) || 0;
-        const finalPrice = unitPrice - (unitPrice * discount / 100);
-
-        let priceDisplay = $('#final-price-display');
-        if (priceDisplay.length === 0) {
-            priceDisplay = $('<div id="final-price-display" class="alert alert-info mt-2"></div>');
-            $('#id_discount_percentage').closest('.mb-3').after(priceDisplay);
-        }
-
-        priceDisplay.html(`<strong>Final Price:</strong> UGX ${finalPrice.toLocaleString('en-UG', {minimumFractionDigits: 2})}`);
-    }
-
-    // ============================================
-    // TOGGLE EXCISE DUTY FIELD
-    // ============================================
-
-    function toggleExciseDutyField() {
-        const taxRate = $('#id_tax_rate').val();
-        const exciseDutyGroup = $('#id_excise_duty_rate').closest('.mb-3');
-
-        if (taxRate === 'E') {
-            exciseDutyGroup.show();
-            $('#id_excise_duty_rate').prop('required', true);
-        } else {
-            exciseDutyGroup.hide();
-            $('#id_excise_duty_rate').prop('required', false);
-            $('#id_excise_duty_rate').val('0');
-        }
-    }
-
-    // ============================================
-    // SUBMIT SERVICE FORM
-    // ============================================
-
-    function submitServiceForm($form) {
-        const submitBtn = $form.find('[type="submit"]');
-        const originalBtnText = submitBtn.html();
-
-        submitBtn.prop('disabled', true).html('<i class="bi bi-hourglass-split"></i> Saving...');
-
-        // Clear previous errors
-        $('.is-invalid').removeClass('is-invalid');
-        $('.invalid-feedback').remove();
-        $('.alert-danger').remove();
-
-        const formData = new FormData($form[0]);
-
-        $.ajax({
-            url: $form.attr('action'),
-            type: 'POST',
-            data: formData,
-            processData: false,
-            contentType: false,
-            headers: {
-                'X-CSRFToken': getCSRFToken()
-            },
-            success: function(response) {
-                if (response.success) {
-                    showAlert(response.message || 'Service saved successfully', 'success');
-                    $('#serviceModal').modal('hide');
-                    servicesTable.ajax.reload(null, false);
-                } else {
-                    displayFormErrors(response.errors || {});
+        getCookie: function(name) {
+            let cookieValue = null;
+            if (document.cookie && document.cookie !== '') {
+                const cookies = document.cookie.split(';');
+                for (let i = 0; i < cookies.length; i++) {
+                    const cookie = cookies[i].trim();
+                    if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                        cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                        break;
+                    }
                 }
-            },
-            error: function(xhr) {
-                if (xhr.status === 400 && xhr.responseJSON) {
-                    displayFormErrors(xhr.responseJSON.errors || {});
-                } else {
-                    showAlert('Error saving service. Please try again.', 'danger');
+            }
+            return cookieValue;
+        },
+
+        formatCurrency: function(amount) {
+            return new Intl.NumberFormat('en-US', {
+                style: 'currency',
+                currency: 'UGX',
+                minimumFractionDigits: 0
+            }).format(amount);
+        },
+
+        getUrlWithParams: function(baseUrl, params) {
+            const url = new URL(baseUrl, window.location.origin);
+            Object.keys(params).forEach(key => {
+                if (params[key] !== '' && params[key] !== null && params[key] !== undefined) {
+                    url.searchParams.append(key, params[key]);
                 }
-            },
-            complete: function() {
-                submitBtn.prop('disabled', false).html(originalBtnText);
-            }
-        });
+            });
+            return url.toString();
+        }
+    };
+
+    // Create toast container if it doesn't exist
+    function createToastContainer() {
+        const container = document.createElement('div');
+        container.className = 'toast-container position-fixed top-0 end-0 p-3';
+        container.style.zIndex = '9999';
+        document.body.appendChild(container);
+        return container;
     }
 
-    // ============================================
-    // DISPLAY FORM ERRORS
-    // ============================================
+    // API Functions
+    const api = {
+        fetchServices: async function() {
+            const params = {
+                page: state.currentPage,
+                page_size: state.pageSize,
+                ordering: state.sortOrder === 'desc' ? `-${state.sortColumn}` : state.sortColumn,
+                ...state.filters
+            };
 
-    function displayFormErrors(errors) {
-        for (const [field, messages] of Object.entries(errors)) {
-            const $field = $(`#id_${field}`);
+            const url = utils.getUrlWithParams(CONFIG.datatableUrl, params);
 
-            if ($field.length) {
-                $field.addClass('is-invalid');
-                const errorHtml = `<div class="invalid-feedback">${Array.isArray(messages) ? messages.join(', ') : messages}</div>`;
-                $field.after(errorHtml);
-            } else if (field === 'non_field_errors' || field === '__all__') {
-                const errorHtml = `<div class="alert alert-danger">${Array.isArray(messages) ? messages.join('<br>') : messages}</div>`;
-                $('#serviceModalBody form').prepend(errorHtml);
+            try {
+                const response = await fetch(url, {
+                    method: 'GET',
+                    headers: {
+                        'X-Requested-With': 'XMLHttpRequest'
+                    }
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
+                const data = await response.json();
+                return data;
+            } catch (error) {
+                console.error('Error fetching services:', error);
+                utils.showToast('Error loading services. Please try again.', 'danger');
+                throw error;
+            }
+        },
+
+        loadServiceForm: async function(serviceId = null) {
+            const url = serviceId
+                ? `/inventory/services/${serviceId}/edit/`
+                : CONFIG.createUrl;
+
+            try {
+                const response = await fetch(url, {
+                    headers: {
+                        'X-Requested-With': 'XMLHttpRequest'
+                    }
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
+                return await response.text();
+            } catch (error) {
+                console.error('Error loading form:', error);
+                utils.showToast('Error loading form. Please try again.', 'danger');
+                throw error;
+            }
+        },
+
+        deleteService: async function(serviceId) {
+            try {
+                const response = await fetch(`/inventory/services/${serviceId}/delete/`, {
+                    method: 'POST',
+                    headers: {
+                        'X-CSRFToken': utils.getCookie('csrftoken'),
+                        'X-Requested-With': 'XMLHttpRequest'
+                    }
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
+                return await response.json();
+            } catch (error) {
+                console.error('Error deleting service:', error);
+                throw error;
+            }
+        },
+
+        bulkAction: async function(action, serviceIds) {
+            try {
+                const response = await fetch('/inventory/api/services/bulk-actions/', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': utils.getCookie('csrftoken'),
+                        'X-Requested-With': 'XMLHttpRequest'
+                    },
+                    body: JSON.stringify({
+                        action: action,
+                        service_ids: Array.from(serviceIds)
+                    })
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
+                return await response.json();
+            } catch (error) {
+                console.error('Error performing bulk action:', error);
+                throw error;
+            }
+        },
+
+        efrisSync: async function(serviceId) {
+            try {
+                const response = await fetch(`/inventory/api/services/${serviceId}/efris-sync/`, {
+                    method: 'POST',
+                    headers: {
+                        'X-CSRFToken': utils.getCookie('csrftoken'),
+                        'X-Requested-With': 'XMLHttpRequest'
+                    }
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
+                return await response.json();
+            } catch (error) {
+                console.error('Error syncing with EFRIS:', error);
+                throw error;
             }
         }
+    };
 
-        // Scroll to first error
-        const firstError = $('.is-invalid').first();
-        if (firstError.length) {
-            firstError[0].scrollIntoView({ behavior: 'smooth', block: 'center' });
-        }
-    }
-
-    // ============================================
-    // BULK ACTIONS
-    // ============================================
-
-    function initializeBulkActions() {
-        $('.bulk-action').on('click', function(e) {
-            e.preventDefault();
-
-            if (selectedServices.length === 0) {
-                showAlert('Please select at least one service.', 'warning');
+    // Render Functions
+    const render = {
+        servicesTable: function(data) {
+            if (!data.results || data.results.length === 0) {
+                elements.servicesTableBody.innerHTML = `
+                    <tr>
+                        <td colspan="9" class="text-center text-muted py-4">
+                            <i class="bi bi-inbox fs-1 d-block mb-2"></i>
+                            No services found
+                        </td>
+                    </tr>
+                `;
                 return;
             }
 
-            const action = $(this).data('action');
-            const actionText = $(this).text().trim();
+            const rows = data.results.map(service => this.serviceRow(service)).join('');
+            elements.servicesTableBody.innerHTML = rows;
+        },
 
-            // Confirm dangerous actions
+        serviceRow: function(service) {
+            const isChecked = state.selectedServices.has(service.id) ? 'checked' : '';
+            const efrisEnabled = document.querySelector('[data-efris-enabled]') !== null;
+
+            return `
+                <tr data-service-id="${service.id}">
+                    <td>
+                        <input type="checkbox" class="form-check-input table-checkbox service-checkbox"
+                               value="${service.id}" ${isChecked}>
+                    </td>
+                    <td>
+                        <strong>${service.name}</strong>
+                        ${service.description ? `<br><small class="text-muted">${service.description}</small>` : ''}
+                    </td>
+                    <td><code>${service.code || 'N/A'}</code></td>
+                    <td>${service.category_display || 'N/A'}</td>
+                    <td>${utils.formatCurrency(service.unit_price)}</td>
+                    <td>
+                        <strong>${utils.formatCurrency(service.final_price)}</strong>
+                        ${service.tax_rate > 0 ? `<br><small class="text-muted">Tax: ${service.tax_rate}%</small>` : ''}
+                    </td>
+                    ${efrisEnabled ? `
+                    <td>
+                        ${this.efrisStatusBadge(service)}
+                    </td>
+                    ` : ''}
+                    <td>
+                        ${service.is_active
+                            ? '<span class="badge bg-success">Active</span>'
+                            : '<span class="badge bg-secondary">Inactive</span>'}
+                    </td>
+                    <td>
+                        <div class="btn-group btn-group-sm action-buttons" role="group">
+                            <a href="/inventory/services/${service.id}/"
+                               class="btn btn-outline-primary" title="View">
+                                <i class="bi bi-eye"></i>
+                            </a>
+                            <button type="button" class="btn btn-outline-secondary edit-service-btn"
+                                    data-service-id="${service.id}" title="Edit">
+                                <i class="bi bi-pencil"></i>
+                            </button>
+                            ${efrisEnabled && !service.efris_uploaded ? `
+                            <button type="button" class="btn btn-outline-info sync-efris-btn"
+                                    data-service-id="${service.id}" title="Sync to EFRIS">
+                                <i class="bi bi-cloud-arrow-up"></i>
+                            </button>
+                            ` : ''}
+                            <button type="button" class="btn btn-outline-danger delete-service-btn"
+                                    data-service-id="${service.id}" title="Delete">
+                                <i class="bi bi-trash"></i>
+                            </button>
+                        </div>
+                    </td>
+                </tr>
+            `;
+        },
+
+        efrisStatusBadge: function(service) {
+            if (!service.enable_efris_sync) {
+                return '<span class="badge bg-secondary">Disabled</span>';
+            }
+            if (service.efris_uploaded) {
+                return `
+                    <span class="badge bg-success">
+                        <i class="bi bi-cloud-check"></i> Synced
+                    </span>
+                `;
+            }
+            return `
+                <span class="badge bg-warning">
+                    <i class="bi bi-clock"></i> Pending
+                </span>
+            `;
+        },
+
+        pagination: function(data) {
+            if (!data.count || data.count <= state.pageSize) {
+                elements.pagination.innerHTML = '';
+                return;
+            }
+
+            const totalPages = Math.ceil(data.count / state.pageSize);
+            const currentPage = state.currentPage;
+
+            let paginationHtml = '';
+
+            // Previous button
+            paginationHtml += `
+                <li class="page-item ${currentPage === 1 ? 'disabled' : ''}">
+                    <a class="page-link" href="#" data-page="${currentPage - 1}">Previous</a>
+                </li>
+            `;
+
+            // Page numbers
+            const maxVisiblePages = 5;
+            let startPage = Math.max(1, currentPage - Math.floor(maxVisiblePages / 2));
+            let endPage = Math.min(totalPages, startPage + maxVisiblePages - 1);
+
+            if (endPage - startPage < maxVisiblePages - 1) {
+                startPage = Math.max(1, endPage - maxVisiblePages + 1);
+            }
+
+            if (startPage > 1) {
+                paginationHtml += `<li class="page-item"><a class="page-link" href="#" data-page="1">1</a></li>`;
+                if (startPage > 2) {
+                    paginationHtml += `<li class="page-item disabled"><span class="page-link">...</span></li>`;
+                }
+            }
+
+            for (let i = startPage; i <= endPage; i++) {
+                paginationHtml += `
+                    <li class="page-item ${i === currentPage ? 'active' : ''}">
+                        <a class="page-link" href="#" data-page="${i}">${i}</a>
+                    </li>
+                `;
+            }
+
+            if (endPage < totalPages) {
+                if (endPage < totalPages - 1) {
+                    paginationHtml += `<li class="page-item disabled"><span class="page-link">...</span></li>`;
+                }
+                paginationHtml += `<li class="page-item"><a class="page-link" href="#" data-page="${totalPages}">${totalPages}</a></li>`;
+            }
+
+            // Next button
+            paginationHtml += `
+                <li class="page-item ${currentPage === totalPages ? 'disabled' : ''}">
+                    <a class="page-link" href="#" data-page="${currentPage + 1}">Next</a>
+                </li>
+            `;
+
+            elements.pagination.innerHTML = paginationHtml;
+        },
+
+        entriesInfo: function(data) {
+            if (!data.count) {
+                elements.entriesInfo.textContent = 'Showing 0 to 0 of 0 entries';
+                return;
+            }
+
+            const start = (state.currentPage - 1) * state.pageSize + 1;
+            const end = Math.min(state.currentPage * state.pageSize, data.count);
+            elements.entriesInfo.textContent = `Showing ${start} to ${end} of ${data.count} entries`;
+        },
+
+        updateStatistics: function(data) {
+            if (data.statistics) {
+                const stats = data.statistics;
+
+                if (document.getElementById('totalServicesCount')) {
+                    document.getElementById('totalServicesCount').textContent = stats.total || 0;
+                }
+                if (document.getElementById('activeServicesCount')) {
+                    document.getElementById('activeServicesCount').textContent = stats.active || 0;
+                }
+                if (document.getElementById('efrisSyncedCount')) {
+                    document.getElementById('efrisSyncedCount').textContent = stats.efris_synced || 0;
+                }
+                if (document.getElementById('pendingUploadCount')) {
+                    document.getElementById('pendingUploadCount').textContent = stats.pending_upload || 0;
+                }
+            }
+        }
+    };
+
+    // Event Handlers
+    const handlers = {
+        loadServices: async function() {
+            if (state.loading) return;
+
+            utils.showLoading();
+            try {
+                const data = await api.fetchServices();
+                render.servicesTable(data);
+                render.pagination(data);
+                render.entriesInfo(data);
+                render.updateStatistics(data);
+            } catch (error) {
+                console.error('Error loading services:', error);
+            } finally {
+                utils.hideLoading();
+            }
+        },
+
+        handleSort: function(column) {
+            if (state.sortColumn === column) {
+                state.sortOrder = state.sortOrder === 'asc' ? 'desc' : 'asc';
+            } else {
+                state.sortColumn = column;
+                state.sortOrder = 'asc';
+            }
+
+            // Update sort icons
+            document.querySelectorAll('.sortable').forEach(th => {
+                th.classList.remove('sort-asc', 'sort-desc');
+            });
+
+            const sortedHeader = document.querySelector(`[data-column="${column}"]`);
+            if (sortedHeader) {
+                sortedHeader.classList.add(`sort-${state.sortOrder}`);
+            }
+
+            state.currentPage = 1;
+            this.loadServices();
+        },
+
+        handlePageChange: function(page) {
+            page = parseInt(page);
+            if (page < 1 || isNaN(page)) return;
+
+            state.currentPage = page;
+            this.loadServices();
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        },
+
+        handlePageSizeChange: function(newSize) {
+            state.pageSize = parseInt(newSize);
+            state.currentPage = 1;
+            this.loadServices();
+        },
+
+        handleFilterChange: function() {
+            state.filters.search = document.getElementById('id_search')?.value || '';
+            state.filters.category = document.getElementById('id_category')?.value || '';
+            state.filters.tax_rate = document.getElementById('id_tax_rate')?.value || '';
+            state.filters.efris_status = document.getElementById('id_efris_status')?.value || '';
+            state.filters.is_active = document.getElementById('id_is_active')?.value || '';
+
+            state.currentPage = 1;
+            this.loadServices();
+        },
+
+        handleClearFilters: function() {
+            document.getElementById('id_search').value = '';
+            document.getElementById('id_category').value = '';
+            document.getElementById('id_tax_rate').value = '';
+            document.getElementById('id_efris_status').value = '';
+            document.getElementById('id_is_active').value = '';
+
+            state.filters = {
+                search: '',
+                category: '',
+                tax_rate: '',
+                efris_status: '',
+                is_active: ''
+            };
+
+            state.currentPage = 1;
+            this.loadServices();
+        },
+
+        handleSelectAll: function(checked) {
+            document.querySelectorAll('.service-checkbox').forEach(checkbox => {
+                checkbox.checked = checked;
+                const serviceId = parseInt(checkbox.value);
+                if (checked) {
+                    state.selectedServices.add(serviceId);
+                } else {
+                    state.selectedServices.delete(serviceId);
+                }
+            });
+            this.updateBulkActionsButton();
+        },
+
+        handleServiceSelect: function(serviceId, checked) {
+            if (checked) {
+                state.selectedServices.add(serviceId);
+            } else {
+                state.selectedServices.delete(serviceId);
+            }
+
+            // Update "select all" checkbox
+            const allCheckboxes = document.querySelectorAll('.service-checkbox');
+            const checkedCheckboxes = document.querySelectorAll('.service-checkbox:checked');
+            elements.selectAllServices.checked = allCheckboxes.length === checkedCheckboxes.length;
+            elements.selectAllServices.indeterminate = checkedCheckboxes.length > 0 && allCheckboxes.length !== checkedCheckboxes.length;
+
+            this.updateBulkActionsButton();
+        },
+
+        updateBulkActionsButton: function() {
+            if (elements.bulkActionsBtn) {
+                elements.bulkActionsBtn.disabled = state.selectedServices.size === 0;
+            }
+        },
+
+        handleBulkAction: async function(action) {
+            if (state.selectedServices.size === 0) {
+                utils.showToast('Please select at least one service', 'warning');
+                return;
+            }
+
+            const actionMessages = {
+                activate: 'activate',
+                deactivate: 'deactivate',
+                enable_efris: 'enable EFRIS sync for',
+                disable_efris: 'disable EFRIS sync for',
+                mark_for_upload: 'mark for upload',
+                delete: 'delete'
+            };
+
+            const message = actionMessages[action] || 'perform action on';
+
             if (action === 'delete') {
-                if (!confirm(`Are you sure you want to delete ${selectedServices.length} service(s)? This action cannot be undone.`)) {
+                if (!confirm(`Are you sure you want to delete ${state.selectedServices.size} service(s)? This action cannot be undone.`)) {
+                    return;
+                }
+            } else {
+                if (!confirm(`Are you sure you want to ${message} ${state.selectedServices.size} service(s)?`)) {
                     return;
                 }
             }
 
-            performBulkAction(action, actionText);
-        });
-    }
-
-    function performBulkAction(action, actionText) {
-        $.ajax({
-            url: URLS.bulkActions,
-            type: 'POST',
-            data: {
-                action: action,
-                service_ids: selectedServices.join(',')
-            },
-            headers: {
-                'X-CSRFToken': getCSRFToken()
-            },
-            success: function(response) {
-                if (response.success) {
-                    showAlert(response.message || `Bulk action completed successfully`, 'success');
-                    selectedServices = [];
-                    $('#selectAllServices').prop('checked', false);
-                    servicesTable.ajax.reload(null, false);
-                } else {
-                    showAlert(response.error || 'Bulk action failed', 'danger');
-                }
-            },
-            error: function(xhr) {
-                showAlert('Error performing bulk action. Please try again.', 'danger');
+            utils.showLoading();
+            try {
+                const result = await api.bulkAction(action, state.selectedServices);
+                utils.showToast(result.message || 'Bulk action completed successfully', 'success');
+                state.selectedServices.clear();
+                elements.selectAllServices.checked = false;
+                await this.loadServices();
+            } catch (error) {
+                utils.showToast('Error performing bulk action. Please try again.', 'danger');
+            } finally {
+                utils.hideLoading();
             }
-        });
-    }
+        },
 
-    // ============================================
-    // UTILITY FUNCTIONS
-    // ============================================
+        handleAddService: async function() {
+            try {
+                const formHtml = await api.loadServiceForm();
+                document.getElementById('serviceModalBody').innerHTML = formHtml;
+                document.getElementById('modalTitle').textContent = 'Add Service';
 
-    function showAlert(message, type = 'info') {
-        // Remove existing alerts
-        $('.alert-dismissible').alert('close');
+                const modal = new bootstrap.Modal(elements.serviceModal);
+                modal.show();
 
-        const alertHtml = `
-            <div class="alert alert-${type} alert-dismissible fade show" role="alert">
-                <i class="bi ${getAlertIcon(type)} me-2"></i>
-                ${message}
-                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-            </div>
-        `;
+                // Initialize form handler
+                this.initializeServiceForm();
+            } catch (error) {
+                utils.showToast('Error loading service form', 'danger');
+            }
+        },
 
-        $('.main-content').prepend(alertHtml);
+        handleEditService: async function(serviceId) {
+            try {
+                const formHtml = await api.loadServiceForm(serviceId);
+                document.getElementById('serviceModalBody').innerHTML = formHtml;
+                document.getElementById('modalTitle').textContent = 'Edit Service';
 
-        // Auto-dismiss after 5 seconds (except for danger alerts)
-        if (type !== 'danger') {
-            setTimeout(function() {
-                $('.alert').alert('close');
-            }, 5000);
+                const modal = new bootstrap.Modal(elements.serviceModal);
+                modal.show();
+
+                // Initialize form handler
+                this.initializeServiceForm(serviceId);
+            } catch (error) {
+                utils.showToast('Error loading service form', 'danger');
+            }
+        },
+
+        initializeServiceForm: function(serviceId = null) {
+            const form = document.querySelector('#serviceModalBody form');
+            if (!form) return;
+
+            form.addEventListener('submit', async (e) => {
+                e.preventDefault();
+
+                const formData = new FormData(form);
+                const url = serviceId
+                    ? `/inventory/services/${serviceId}/edit/`
+                    : CONFIG.createUrl;
+
+                try {
+                    const response = await fetch(url, {
+                        method: 'POST',
+                        body: formData,
+                        headers: {
+                            'X-CSRFToken': utils.getCookie('csrftoken'),
+                            'X-Requested-With': 'XMLHttpRequest'
+                        }
+                    });
+
+                    const result = await response.json();
+
+                    if (result.success) {
+                        utils.showToast(result.message || 'Service saved successfully', 'success');
+                        bootstrap.Modal.getInstance(elements.serviceModal).hide();
+                        await handlers.loadServices();
+                    } else {
+                        // Display form errors
+                        if (result.errors) {
+                            Object.keys(result.errors).forEach(field => {
+                                const input = form.querySelector(`[name="${field}"]`);
+                                if (input) {
+                                    const errorDiv = document.createElement('div');
+                                    errorDiv.className = 'invalid-feedback d-block';
+                                    errorDiv.textContent = result.errors[field].join(', ');
+                                    input.classList.add('is-invalid');
+                                    input.parentNode.appendChild(errorDiv);
+                                }
+                            });
+                        }
+                        utils.showToast(result.message || 'Error saving service', 'danger');
+                    }
+                } catch (error) {
+                    console.error('Error saving service:', error);
+                    utils.showToast('Error saving service. Please try again.', 'danger');
+                }
+            });
+        },
+
+        handleDeleteService: function(serviceId) {
+            const modal = new bootstrap.Modal(elements.deleteModal);
+            modal.show();
+
+            // Remove previous event listeners
+            const newConfirmBtn = elements.confirmDeleteBtn.cloneNode(true);
+            elements.confirmDeleteBtn.parentNode.replaceChild(newConfirmBtn, elements.confirmDeleteBtn);
+            elements.confirmDeleteBtn = newConfirmBtn;
+
+            elements.confirmDeleteBtn.addEventListener('click', async () => {
+                try {
+                    await api.deleteService(serviceId);
+                    utils.showToast('Service deleted successfully', 'success');
+                    modal.hide();
+                    await handlers.loadServices();
+                } catch (error) {
+                    utils.showToast('Error deleting service. Please try again.', 'danger');
+                }
+            });
+        },
+
+        handleEfrisSync: async function(serviceId) {
+            if (!confirm('Are you sure you want to sync this service to EFRIS?')) {
+                return;
+            }
+
+            try {
+                const result = await api.efrisSync(serviceId);
+                utils.showToast(result.message || 'Service synced to EFRIS successfully', 'success');
+                await this.loadServices();
+            } catch (error) {
+                utils.showToast('Error syncing to EFRIS. Please try again.', 'danger');
+            }
+        }
+    };
+
+    // Initialize event listeners
+    function initEventListeners() {
+        // Page size change
+        if (elements.pageSize) {
+            elements.pageSize.addEventListener('change', (e) => {
+                handlers.handlePageSizeChange(e.target.value);
+            });
         }
 
-        // Scroll to top
-        $('html, body').animate({ scrollTop: 0 }, 300);
-    }
+        // Sortable headers
+        document.querySelectorAll('.sortable').forEach(header => {
+            header.addEventListener('click', () => {
+                const column = header.dataset.column;
+                handlers.handleSort(column);
+            });
+        });
 
-    function getAlertIcon(type) {
-        const icons = {
-            success: 'bi-check-circle-fill',
-            danger: 'bi-exclamation-triangle-fill',
-            warning: 'bi-exclamation-triangle-fill',
-            info: 'bi-info-circle-fill'
-        };
-        return icons[type] || 'bi-info-circle-fill';
-    }
-
-    function getCSRFToken() {
-        return $('[name=csrfmiddlewaretoken]').val() || getCookie('csrftoken');
-    }
-
-    function getCookie(name) {
-        let cookieValue = null;
-        if (document.cookie && document.cookie !== '') {
-            const cookies = document.cookie.split(';');
-            for (let i = 0; i < cookies.length; i++) {
-                const cookie = cookies[i].trim();
-                if (cookie.substring(0, name.length + 1) === (name + '=')) {
-                    cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
-                    break;
+        // Pagination
+        if (elements.pagination) {
+            elements.pagination.addEventListener('click', (e) => {
+                e.preventDefault();
+                if (e.target.tagName === 'A' && e.target.dataset.page) {
+                    handlers.handlePageChange(e.target.dataset.page);
                 }
-            }
+            });
         }
-        return cookieValue;
-    }
 
-    // ============================================
-    // INITIALIZATION
-    // ============================================
+        // Filter inputs with debounce
+        const debouncedFilter = utils.debounce(() => handlers.handleFilterChange(), CONFIG.debounceDelay);
 
-    function initialize() {
-        initializeDataTable();
-        initializeFilters();
-        initializeCheckboxes();
-        initializeModals();
-        initializeBulkActions();
-
-        // Setup CSRF for AJAX
-        $.ajaxSetup({
-            beforeSend: function(xhr, settings) {
-                if (!this.crossDomain) {
-                    xhr.setRequestHeader("X-CSRFToken", getCSRFToken());
-                }
+        ['id_search', 'id_category', 'id_tax_rate', 'id_efris_status', 'id_is_active'].forEach(id => {
+            const element = document.getElementById(id);
+            if (element) {
+                element.addEventListener('input', debouncedFilter);
+                element.addEventListener('change', debouncedFilter);
             }
         });
 
-        console.log('Service management initialized');
+        // Clear filters
+        if (elements.clearFilters) {
+            elements.clearFilters.addEventListener('click', () => {
+                handlers.handleClearFilters();
+            });
+        }
+
+        // Select all checkbox
+        if (elements.selectAllServices) {
+            elements.selectAllServices.addEventListener('change', (e) => {
+                handlers.handleSelectAll(e.target.checked);
+            });
+        }
+
+        // Service table events (using event delegation)
+        if (elements.servicesTableBody) {
+            elements.servicesTableBody.addEventListener('change', (e) => {
+                if (e.target.classList.contains('service-checkbox')) {
+                    const serviceId = parseInt(e.target.value);
+                    handlers.handleServiceSelect(serviceId, e.target.checked);
+                }
+            });
+
+            elements.servicesTableBody.addEventListener('click', (e) => {
+                const target = e.target.closest('button');
+                if (!target) return;
+
+                const serviceId = parseInt(target.dataset.serviceId);
+
+                if (target.classList.contains('edit-service-btn')) {
+                    handlers.handleEditService(serviceId);
+                } else if (target.classList.contains('delete-service-btn')) {
+                    handlers.handleDeleteService(serviceId);
+                } else if (target.classList.contains('sync-efris-btn')) {
+                    handlers.handleEfrisSync(serviceId);
+                }
+            });
+        }
+
+        // Add service button
+        if (elements.addServiceBtn) {
+            elements.addServiceBtn.addEventListener('click', () => {
+                handlers.handleAddService();
+            });
+        }
+
+        // Bulk actions
+        document.querySelectorAll('.bulk-action').forEach(link => {
+            link.addEventListener('click', (e) => {
+                e.preventDefault();
+                const action = link.dataset.action;
+                handlers.handleBulkAction(action);
+            });
+        });
     }
 
-    // Start the application
-    initialize();
-});
+    // Initialize
+    function init() {
+        if (!CONFIG.datatableUrl) {
+            console.error('Datatable URL not configured');
+            return;
+        }
+
+        initEventListeners();
+        handlers.loadServices();
+    }
+
+    // Start when DOM is ready
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', init);
+    } else {
+        init();
+    }
+
+})();

@@ -7,10 +7,6 @@
 {% block title %}{% trans "Services" %} | {{ block.super }}{% endblock %}
 
 {% block extra_css %}
-<!-- DataTables CSS -->
-<link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/dataTables.bootstrap5.min.css">
-<link rel="stylesheet" href="https://cdn.datatables.net/responsive/2.5.0/css/responsive.bootstrap5.min.css">
-<link rel="stylesheet" href="https://cdn.datatables.net/buttons/2.4.1/css/buttons.bootstrap5.min.css">
 <link rel="stylesheet" href="{% static 'themes.css' %}">
 
 <style>
@@ -32,15 +28,11 @@
         margin: 0 2px;
     }
 
-    .dataTables_wrapper .row {
-        margin-top: 1rem;
-    }
-
-    table.dataTable tbody tr {
+    .table tbody tr {
         cursor: pointer;
     }
 
-    table.dataTable tbody tr:hover {
+    .table tbody tr:hover {
         background-color: rgba(13, 110, 253, 0.04);
     }
 
@@ -63,6 +55,68 @@
 
     #bulkActionsBtn:disabled {
         cursor: not-allowed;
+    }
+
+    .table-wrapper {
+        position: relative;
+        min-height: 300px;
+    }
+
+    .loading-overlay {
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(255, 255, 255, 0.8);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 10;
+    }
+
+    .pagination {
+        margin-top: 1rem;
+    }
+
+    .table-info {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-top: 1rem;
+        padding: 0.5rem 0;
+    }
+
+    .entries-info {
+        color: #6c757d;
+        font-size: 0.9rem;
+    }
+
+    .page-size-selector {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        margin-bottom: 1rem;
+    }
+
+    .sort-icon {
+        opacity: 0.3;
+        font-size: 0.8rem;
+        margin-left: 0.25rem;
+    }
+
+    th.sortable {
+        cursor: pointer;
+        user-select: none;
+    }
+
+    th.sortable:hover {
+        background-color: rgba(0, 0, 0, 0.05);
+    }
+
+    th.sort-asc .sort-icon-asc,
+    th.sort-desc .sort-icon-desc {
+        opacity: 1;
     }
 </style>
 {% endblock %}
@@ -106,7 +160,7 @@
                 <div class="d-flex justify-content-between align-items-center">
                     <div>
                         <h6 class="text-muted mb-1">{% trans "Total Services" %}</h6>
-                        <h3 class="mb-0">{{ total_services }}</h3>
+                        <h3 class="mb-0" id="totalServicesCount">{{ total_services }}</h3>
                     </div>
                     <div class="text-primary">
                         <i class="bi bi-gear-fill fs-1"></i>
@@ -121,7 +175,7 @@
                 <div class="d-flex justify-content-between align-items-center">
                     <div>
                         <h6 class="text-muted mb-1">{% trans "Active Services" %}</h6>
-                        <h3 class="mb-0">{{ active_services }}</h3>
+                        <h3 class="mb-0" id="activeServicesCount">{{ active_services }}</h3>
                     </div>
                     <div class="text-green">
                         <i class="bi bi-check-circle-fill fs-1"></i>
@@ -133,12 +187,11 @@
     {% if efris_enabled %}
     <div class="col-md-3">
         <div class="card stat-card amber-500">
-            
             <div class="card-body">
                 <div class="d-flex justify-content-between align-items-center">
                     <div>
                         <h6 class="text-muted mb-1">{% trans "EFRIS Synced" %}</h6>
-                        <h3 class="mb-0">{{ efris_uploaded }}</h3>
+                        <h3 class="mb-0" id="efrisSyncedCount">{{ efris_uploaded }}</h3>
                     </div>
                     <div class="text-amber">
                         <i class="bi bi-cloud-check-fill fs-1"></i>
@@ -154,7 +207,7 @@
                 <div class="d-flex justify-content-between align-items-center">
                     <div>
                         <h6 class="text-muted mb-1">{% trans "Pending Upload" %}</h6>
-                        <h3 class="mb-0">{{ total_services|add:"-"|add:efris_uploaded }}</h3>
+                        <h3 class="mb-0" id="pendingUploadCount">{{ total_services|add:"-"|add:efris_uploaded }}</h3>
                     </div>
                     <div class="text-red">
                         <i class="bi bi-exclamation-triangle-fill fs-1"></i>
@@ -284,29 +337,86 @@
         </div>
     </div>
     <div class="card-body">
-        <div class="table-responsive">
-            <table id="servicesTable" class="table table-hover table-striped">
-                <thead>
-                    <tr>
-                        <th width="30">
-                            <input type="checkbox" id="selectAllServices" class="form-check-input table-checkbox">
-                        </th>
-                        <th>{% trans "Name" %}</th>
-                        <th>{% trans "Code" %}</th>
-                        <th>{% trans "Category" %}</th>
-                        <th>{% trans "Unit Price" %}</th>
-                        <th>{% trans "Final Price" %}</th>
-                        {% if efris_enabled %}
-                        <th>{% trans "EFRIS Status" %}</th>
-                        {% endif %}
-                        <th>{% trans "Status" %}</th>
-                        <th width="150">{% trans "Actions" %}</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <!-- Data will be loaded via DataTables AJAX -->
-                </tbody>
-            </table>
+        <!-- Page Size Selector -->
+        <div class="page-size-selector">
+            <label for="pageSize">{% trans "Show" %}</label>
+            <select id="pageSize" class="form-select form-select-sm" style="width: auto;">
+                <option value="10">10</option>
+                <option value="25" selected>25</option>
+                <option value="50">50</option>
+                <option value="100">100</option>
+            </select>
+            <span>{% trans "entries" %}</span>
+        </div>
+
+        <div class="table-wrapper">
+            <!-- Loading Overlay -->
+            <div class="loading-overlay" id="loadingOverlay" style="display: none;">
+                <div class="spinner-border text-primary" role="status">
+                    <span class="visually-hidden">{% trans "Loading..." %}</span>
+                </div>
+            </div>
+
+            <div class="table-responsive">
+                <table id="servicesTable" class="table table-hover table-striped">
+                    <thead>
+                        <tr>
+                            <th width="30">
+                                <input type="checkbox" id="selectAllServices" class="form-check-input table-checkbox">
+                            </th>
+                            <th class="sortable" data-column="name">
+                                {% trans "Name" %}
+                                <i class="bi bi-chevron-expand sort-icon"></i>
+                            </th>
+                            <th class="sortable" data-column="code">
+                                {% trans "Code" %}
+                                <i class="bi bi-chevron-expand sort-icon"></i>
+                            </th>
+                            <th class="sortable" data-column="category">
+                                {% trans "Category" %}
+                                <i class="bi bi-chevron-expand sort-icon"></i>
+                            </th>
+                            <th class="sortable" data-column="unit_price">
+                                {% trans "Unit Price" %}
+                                <i class="bi bi-chevron-expand sort-icon"></i>
+                            </th>
+                            <th class="sortable" data-column="final_price">
+                                {% trans "Final Price" %}
+                                <i class="bi bi-chevron-expand sort-icon"></i>
+                            </th>
+                            {% if efris_enabled %}
+                            <th>{% trans "EFRIS Status" %}</th>
+                            {% endif %}
+                            <th class="sortable" data-column="is_active">
+                                {% trans "Status" %}
+                                <i class="bi bi-chevron-expand sort-icon"></i>
+                            </th>
+                            <th width="150">{% trans "Actions" %}</th>
+                        </tr>
+                    </thead>
+                    <tbody id="servicesTableBody">
+                        <tr>
+                            <td colspan="9" class="text-center">
+                                <div class="spinner-border text-primary" role="status">
+                                    <span class="visually-hidden">{% trans "Loading..." %}</span>
+                                </div>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Table Info and Pagination -->
+        <div class="table-info">
+            <div class="entries-info" id="entriesInfo">
+                {% trans "Showing 0 to 0 of 0 entries" %}
+            </div>
+            <nav aria-label="Page navigation">
+                <ul class="pagination mb-0" id="pagination">
+                    <!-- Pagination will be generated by JavaScript -->
+                </ul>
+            </nav>
         </div>
     </div>
 </div>
@@ -359,17 +469,6 @@
 {% endblock %}
 
 {% block extra_js %}
-<!-- jQuery MUST be loaded first -->
-<script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
-
-<!-- DataTables JS -->
-<script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
-<script src="https://cdn.datatables.net/1.13.6/js/dataTables.bootstrap5.min.js"></script>
-<script src="https://cdn.datatables.net/responsive/2.5.0/js/dataTables.responsive.min.js"></script>
-<script src="https://cdn.datatables.net/responsive/2.5.0/js/responsive.bootstrap5.min.js"></script>
-<script src="https://cdn.datatables.net/buttons/2.4.1/js/dataTables.buttons.min.js"></script>
-<script src="https://cdn.datatables.net/buttons/2.4.1/js/buttons.bootstrap5.min.js"></script>
-
 <!-- Your custom JavaScript -->
 <script src="{% static 'inventory/js/service_list.js' %}"></script>
 {% endblock %}

@@ -478,7 +478,7 @@ NAVIGATION_ITEMS = [
             ),
             NavigationItem(
                 name="All Customers",
-                url_name="customers:list",
+                url_name="customers:customer_list",
                 icon="bi bi-people-fill",
                 permission="customers.view_customer"
             ),
@@ -501,7 +501,7 @@ NAVIGATION_ITEMS = [
                 permission="customers.add_customergroup"
             ),
             NavigationItem(
-                name="Add Many Customers Once",
+                name="Import Customers",
                 url_name="customers:customer_import",
                 icon="bi bi-upload",
                 permission="customers.add_customer"
