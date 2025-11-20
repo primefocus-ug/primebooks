@@ -277,11 +277,6 @@ NAVIGATION_ITEMS = [
                 icon="bi bi-person-lines-fill"
             ),
             NavigationItem(
-                name="Terminate All Sessions",
-                url_name="stores:terminate_all_sessions",
-                icon="bi bi-x-circle"
-            ),
-            NavigationItem(
                 name="Device Fingerprints",
                 url_name="stores:device_fingerprints",
                 icon="bi bi-fingerprint"
