@@ -8,22 +8,30 @@ from django.core.serializers.json import DjangoJSONEncoder
 from django.core.cache import cache
 from django.utils import timezone
 from datetime import timedelta, datetime
+from django_tenants.utils import tenant_context, get_tenant_model
+from django.db.models import F
 
 logger = logging.getLogger(__name__)
 
 
 class BaseInventoryConsumer(AsyncWebsocketConsumer):
-    """Base consumer with common functionality"""
+    """Base consumer with common functionality and tenant support"""
 
     async def connect(self):
         from django.contrib.auth.models import AnonymousUser
 
-        self.user = self.scope["user"]
+        self.user = self.scope.get("user")
         if isinstance(self.user, AnonymousUser) or not self.user.is_authenticated:
             await self.close(code=4001)  # Unauthorized
             return
 
-        # Check user permissions
+        # Get tenant from scope or determine from host
+        self.tenant = await self.get_current_tenant()
+        if not self.tenant:
+            await self.close(code=4004)  # Tenant not found
+            return
+
+        # Check user permissions within tenant context
         if not await self.check_permissions():
             await self.close(code=4003)  # Forbidden
             return
@@ -31,6 +39,46 @@ class BaseInventoryConsumer(AsyncWebsocketConsumer):
         await self.setup_connection()
         await self.accept()
         await self.send_initial_data()
+
+    @database_sync_to_async
+    def get_current_tenant(self):
+        """Get current tenant from scope or host header"""
+        try:
+            # Get tenant from scope (set by middleware)
+            if "tenant" in self.scope and self.scope["tenant"]:
+                return self.scope["tenant"]
+
+            # Fallback: get tenant from host header
+            host = self.get_host_from_headers()
+            if host:
+                TenantModel = get_tenant_model()
+                try:
+                    hostname = host.split(':')[0]
+                    from django_tenants.models import Domain
+                    domain = Domain.objects.get(domain=hostname)
+                    return domain.tenant
+                except (Domain.DoesNotExist, Exception) as e:
+                    logger.warning(f"Tenant not found for host: {host}, error: {str(e)}")
+
+            logger.warning("No tenant found in scope or via host header")
+            return None
+
+        except Exception as e:
+            logger.error(f"Error getting tenant: {str(e)}")
+            return None
+
+    def get_host_from_headers(self):
+        """Extract host from headers (headers is a list of tuples)"""
+        try:
+            headers = self.scope.get('headers', [])
+            for header_name, header_value in headers:
+                if header_name == b'host':
+                    return header_value.decode('utf-8')
+            return None
+
+        except Exception as e:
+            logger.error(f"Error extracting host from headers: {str(e)}")
+            return None
 
     async def setup_connection(self):
         """Override in subclasses"""
@@ -42,8 +90,12 @@ class BaseInventoryConsumer(AsyncWebsocketConsumer):
 
     @database_sync_to_async
     def check_permissions(self) -> bool:
-        """Check if user has required permissions"""
-        return self.user.has_perm('inventory.view_product')
+        """Check if user has required permissions within tenant context"""
+        if not self.tenant:
+            return False
+
+        with tenant_context(self.tenant):
+            return self.user.has_perm('inventory.view_product')
 
     async def send_error(self, error_message: str, error_code: str = "GENERAL_ERROR"):
         """Send standardized error message"""
@@ -53,7 +105,6 @@ class BaseInventoryConsumer(AsyncWebsocketConsumer):
             'message': error_message,
             'timestamp': timezone.now().isoformat()
         }, cls=DjangoJSONEncoder))
-
 
 class ImportProgressConsumer(BaseInventoryConsumer):
     """WebSocket consumer for real-time import progress updates"""
@@ -65,12 +116,12 @@ class ImportProgressConsumer(BaseInventoryConsumer):
             await self.close(code=4000)  # Bad request
             return
 
-        # Verify session belongs to user
-        if not await self.verify_session_ownership():
+        # Verify session belongs to user within tenant context
+        if not await self.execute_in_tenant_context(self.verify_session_ownership):
             await self.close(code=4003)  # Forbidden
             return
 
-        self.room_group_name = f'import_{self.import_session_id}'
+        self.room_group_name = f'import_{self.tenant.schema_name}_{self.import_session_id}'
 
         # Join room group
         await self.channel_layer.group_add(
@@ -99,7 +150,7 @@ class ImportProgressConsumer(BaseInventoryConsumer):
             if message_type == 'get_status':
                 await self.send_import_status()
             elif message_type == 'cancel_import':
-                success = await self.cancel_import()
+                success = await self.execute_in_tenant_context(self.cancel_import)
                 await self.send(text_data=json.dumps({
                     'type': 'cancel_response',
                     'success': success,
@@ -117,7 +168,7 @@ class ImportProgressConsumer(BaseInventoryConsumer):
     async def send_import_status(self):
         """Send current import session status"""
         try:
-            session_data = await self.get_import_session()
+            session_data = await self.execute_in_tenant_context(self.get_import_session)
             if session_data:
                 await self.send(text_data=json.dumps({
                     'type': 'import_status',
@@ -155,7 +206,6 @@ class ImportProgressConsumer(BaseInventoryConsumer):
             'timestamp': timezone.now().isoformat()
         }, cls=DjangoJSONEncoder))
 
-    @database_sync_to_async
     def verify_session_ownership(self) -> bool:
         """Verify that the import session belongs to the current user"""
         from .models import ImportSession
@@ -166,13 +216,12 @@ class ImportProgressConsumer(BaseInventoryConsumer):
         except ImportSession.DoesNotExist:
             return False
 
-    @database_sync_to_async
     def get_import_session(self) -> Optional[Dict[str, Any]]:
         """Get import session data with caching"""
         from .models import ImportSession
         from .serializers import ImportSessionSerializer
 
-        cache_key = f'import_session_{self.import_session_id}'
+        cache_key = f'import_session_{self.tenant.schema_name}_{self.import_session_id}'
         cached_data = cache.get(cache_key)
 
         if cached_data and cached_data.get('status') not in ['processing']:
@@ -194,7 +243,6 @@ class ImportProgressConsumer(BaseInventoryConsumer):
         except ImportSession.DoesNotExist:
             return None
 
-    @database_sync_to_async
     def cancel_import(self) -> bool:
         """Cancel import session with better error handling"""
         from .models import ImportSession
@@ -211,7 +259,7 @@ class ImportProgressConsumer(BaseInventoryConsumer):
                 session.save(update_fields=['status', 'error_message', 'completed_at'])
 
                 # Clear cache
-                cache.delete(f'import_session_{self.import_session_id}')
+                cache.delete(f'import_session_{self.tenant.schema_name}_{self.import_session_id}')
                 return True
         except ImportSession.DoesNotExist:
             pass
@@ -225,7 +273,7 @@ class InventoryDashboardConsumer(BaseInventoryConsumer):
     """WebSocket consumer for real-time dashboard updates"""
 
     async def setup_connection(self):
-        self.room_group_name = f'inventory_dashboard_user_{self.user.id}'
+        self.room_group_name = f'inventory_dashboard_tenant_{self.tenant.schema_name}_user_{self.user.id}'
 
         # Join room group
         await self.channel_layer.group_add(
@@ -270,7 +318,8 @@ class InventoryDashboardConsumer(BaseInventoryConsumer):
     async def send_dashboard_data(self):
         """Send dashboard statistics with caching"""
         try:
-            stats = await self.get_dashboard_stats()
+            # Use database_sync_to_async directly for synchronous functions
+            stats = await self.get_dashboard_stats_async()
             await self.send(text_data=json.dumps({
                 'type': 'dashboard_data',
                 'data': stats,
@@ -283,7 +332,7 @@ class InventoryDashboardConsumer(BaseInventoryConsumer):
     async def send_stock_alerts(self):
         """Send stock alerts"""
         try:
-            alerts = await self.get_stock_alerts()
+            alerts = await self.get_stock_alerts_async()
             await self.send(text_data=json.dumps({
                 'type': 'stock_alerts',
                 'data': alerts,
@@ -297,7 +346,7 @@ class InventoryDashboardConsumer(BaseInventoryConsumer):
     async def send_recent_movements(self, limit: int = 10):
         """Send recent stock movements"""
         try:
-            movements = await self.get_recent_movements(limit)
+            movements = await self.get_recent_movements_async(limit)
             await self.send(text_data=json.dumps({
                 'type': 'recent_movements',
                 'data': movements,
@@ -333,10 +382,29 @@ class InventoryDashboardConsumer(BaseInventoryConsumer):
             'timestamp': timezone.now().isoformat()
         }, cls=DjangoJSONEncoder))
 
+    # Async wrapper methods for synchronous database operations
     @database_sync_to_async
+    def get_dashboard_stats_async(self) -> Dict[str, Any]:
+        """Async wrapper for get_dashboard_stats"""
+        with tenant_context(self.tenant):
+            return self.get_dashboard_stats()
+
+    @database_sync_to_async
+    def get_stock_alerts_async(self) -> List[Dict[str, Any]]:
+        """Async wrapper for get_stock_alerts"""
+        with tenant_context(self.tenant):
+            return self.get_stock_alerts()
+
+    @database_sync_to_async
+    def get_recent_movements_async(self, limit: int = 10) -> List[Dict[str, Any]]:
+        """Async wrapper for get_recent_movements"""
+        with tenant_context(self.tenant):
+            return self.get_recent_movements(limit)
+
+    # Synchronous database methods
     def get_dashboard_stats(self) -> Dict[str, Any]:
         """Get dashboard statistics with caching"""
-        cache_key = f'dashboard_stats_{self.user.id}'
+        cache_key = f'dashboard_stats_{self.tenant.schema_name}_{self.user.id}'
         cached_stats = cache.get(cache_key)
 
         if cached_stats:
@@ -349,61 +417,73 @@ class InventoryDashboardConsumer(BaseInventoryConsumer):
         week_ago = today - timedelta(days=7)
         month_ago = today - timedelta(days=30)
 
-        # Get stats efficiently with single queries
-        product_stats = Product.objects.filter(is_active=True).aggregate(
-            total_products=Count('id'),
-            total_active=Count('id', filter=Q(is_active=True))
-        )
+        try:
+            # Get stats efficiently with single queries
+            product_stats = Product.objects.aggregate(
+                total_products=Count('id'),
+                total_active=Count('id', filter=Q(is_active=True))
+            )
 
-        stock_stats = Stock.objects.aggregate(
-            total_stock_items=Count('id'),
-            low_stock_count=Count('id', filter=Q(quantity__lte=F('low_stock_threshold'))),
-            out_of_stock_count=Count('id', filter=Q(quantity=0)),
-            total_stock_value=Sum(F('quantity') * F('product__cost_price')),
-            critical_items=Count('id', filter=Q(quantity__lte=F('low_stock_threshold') / 2))
-        )
+            stock_stats = Stock.objects.aggregate(
+                total_stock_items=Count('id'),
+                low_stock_count=Count('id', filter=Q(quantity__lte=F('low_stock_threshold'))),
+                out_of_stock_count=Count('id', filter=Q(quantity=0)),
+                total_stock_value=Sum(F('quantity') * F('product__cost_price')),
+                critical_items=Count('id', filter=Q(quantity__lte=F('low_stock_threshold') / 2))
+            )
 
-        movement_stats = StockMovement.objects.aggregate(
-            today_movements=Count('id', filter=Q(created_at__date=today)),
-            week_movements=Count('id', filter=Q(created_at__date__gte=week_ago)),
-            month_movements=Count('id', filter=Q(created_at__date__gte=month_ago))
-        )
+            movement_stats = StockMovement.objects.aggregate(
+                today_movements=Count('id', filter=Q(created_at__date=today)),
+                week_movements=Count('id', filter=Q(created_at__date__gte=week_ago)),
+                month_movements=Count('id', filter=Q(created_at__date__gte=month_ago))
+            )
 
-        stats = {
-            'products': {
-                'total': product_stats['total_products'] or 0,
-                'active': product_stats['total_active'] or 0,
-                'low_stock': stock_stats['low_stock_count'] or 0,
-                'out_of_stock': stock_stats['out_of_stock_count'] or 0,
-                'critical': stock_stats['critical_items'] or 0,
-            },
-            'inventory': {
-                'total_items': stock_stats['total_stock_items'] or 0,
-                'total_value': float(stock_stats['total_stock_value'] or 0),
-                'low_stock_percentage': round(
-                    (stock_stats['low_stock_count'] or 0) / max(stock_stats['total_stock_items'] or 1, 1) * 100, 2
-                )
-            },
-            'movements': {
-                'today': movement_stats['today_movements'] or 0,
-                'this_week': movement_stats['week_movements'] or 0,
-                'this_month': movement_stats['month_movements'] or 0,
-            },
-            'alerts': {
-                'critical_count': stock_stats['out_of_stock_count'] or 0,
-                'warning_count': (stock_stats['low_stock_count'] or 0) - (stock_stats['out_of_stock_count'] or 0)
-            },
-            'last_updated': timezone.now().isoformat()
-        }
+            stats = {
+                'products': {
+                    'total': product_stats['total_products'] or 0,
+                    'active': product_stats['total_active'] or 0,
+                    'low_stock': stock_stats['low_stock_count'] or 0,
+                    'out_of_stock': stock_stats['out_of_stock_count'] or 0,
+                    'critical': stock_stats['critical_items'] or 0,
+                },
+                'inventory': {
+                    'total_items': stock_stats['total_stock_items'] or 0,
+                    'total_value': float(stock_stats['total_stock_value'] or 0),
+                    'low_stock_percentage': round(
+                        (stock_stats['low_stock_count'] or 0) / max(stock_stats['total_stock_items'] or 1, 1) * 100, 2
+                    )
+                },
+                'movements': {
+                    'today': movement_stats['today_movements'] or 0,
+                    'this_week': movement_stats['week_movements'] or 0,
+                    'this_month': movement_stats['month_movements'] or 0,
+                },
+                'alerts': {
+                    'critical_count': stock_stats['out_of_stock_count'] or 0,
+                    'warning_count': (stock_stats['low_stock_count'] or 0) - (stock_stats['out_of_stock_count'] or 0)
+                },
+                'last_updated': timezone.now().isoformat()
+            }
 
-        # Cache for 2 minutes
-        cache.set(cache_key, stats, 120)
-        return stats
+            # Cache for 2 minutes
+            cache.set(cache_key, stats, 120)
+            return stats
 
-    @database_sync_to_async
+        except Exception as e:
+            logger.error(f"Error fetching dashboard stats: {str(e)}")
+            # Return default stats on error
+            return {
+                'products': {'total': 0, 'active': 0, 'low_stock': 0, 'out_of_stock': 0, 'critical': 0},
+                'inventory': {'total_items': 0, 'total_value': 0, 'low_stock_percentage': 0},
+                'movements': {'today': 0, 'this_week': 0, 'this_month': 0},
+                'alerts': {'critical_count': 0, 'warning_count': 0},
+                'last_updated': timezone.now().isoformat(),
+                'error': str(e)
+            }
+
     def get_stock_alerts(self) -> List[Dict[str, Any]]:
         """Get current stock alerts with caching"""
-        cache_key = f'stock_alerts_{self.user.id}'
+        cache_key = f'stock_alerts_{self.tenant.schema_name}_{self.user.id}'
         cached_alerts = cache.get(cache_key)
 
         if cached_alerts:
@@ -412,69 +492,78 @@ class InventoryDashboardConsumer(BaseInventoryConsumer):
         from django.db.models import Q, F
         from .models import Stock
 
-        alerts = Stock.objects.select_related(
-            'product', 'store'
-        ).filter(
-            Q(quantity=0) | Q(quantity__lte=F('low_stock_threshold'))
-        ).order_by('quantity', 'product__name')[:20]
+        try:
+            alerts = Stock.objects.select_related(
+                'product', 'store'
+            ).filter(
+                Q(quantity=0) | Q(quantity__lte=F('low_stock_threshold'))
+            ).order_by('quantity', 'product__name')[:20]
 
-        alert_data = []
-        for alert in alerts:
-            severity = 'critical' if alert.quantity == 0 else 'warning'
-            if alert.quantity > 0 and alert.quantity <= (alert.low_stock_threshold / 2):
-                severity = 'critical'
+            alert_data = []
+            for alert in alerts:
+                severity = 'critical' if alert.quantity == 0 else 'warning'
+                if alert.quantity > 0 and alert.quantity <= (alert.low_stock_threshold / 2):
+                    severity = 'critical'
 
-            alert_data.append({
-                'id': alert.id,
-                'product_name': alert.product.name,
-                'product_sku': alert.product.sku,
-                'store_name': alert.store.name,
-                'current_stock': float(alert.quantity),
-                'threshold': float(alert.low_stock_threshold),
-                'unit_of_measure': alert.product.unit_of_measure,
-                'severity': severity,
-                'stock_percentage': round(
-                    (alert.quantity / max(alert.low_stock_threshold, 1)) * 100, 1
-                ),
-                'cost_per_unit': float(alert.product.cost_price),
-                'total_value_at_risk': float(alert.quantity * alert.product.cost_price)
-            })
+                alert_data.append({
+                    'id': alert.id,
+                    'product_name': alert.product.name,
+                    'product_sku': alert.product.sku,
+                    'store_name': alert.store.name,
+                    'current_stock': float(alert.quantity),
+                    'threshold': float(alert.low_stock_threshold),
+                    'unit_of_measure': alert.product.unit_of_measure,
+                    'severity': severity,
+                    'stock_percentage': round(
+                        (alert.quantity / max(alert.low_stock_threshold, 1)) * 100, 1
+                    ),
+                    'cost_per_unit': float(alert.product.cost_price),
+                    'total_value_at_risk': float(alert.quantity * alert.product.cost_price)
+                })
 
-        # Cache for 1 minute
-        cache.set(cache_key, alert_data, 60)
-        return alert_data
+            # Cache for 1 minute
+            cache.set(cache_key, alert_data, 60)
+            return alert_data
 
-    @database_sync_to_async
+        except Exception as e:
+            logger.error(f"Error fetching stock alerts: {str(e)}")
+            return []
+
     def get_recent_movements(self, limit: int = 10) -> List[Dict[str, Any]]:
         """Get recent stock movements"""
         from .models import StockMovement
 
-        movements = StockMovement.objects.select_related(
-            'product', 'store', 'created_by'
-        ).order_by('-created_at')[:limit]
+        try:
+            movements = StockMovement.objects.select_related(
+                'product', 'store', 'created_by'
+            ).order_by('-created_at')[:limit]
 
-        movement_data = []
-        for movement in movements:
-            movement_data.append({
-                'id': movement.id,
-                'product_name': movement.product.name,
-                'product_sku': movement.product.sku,
-                'store_name': movement.store.name,
-                'movement_type': movement.movement_type,
-                'movement_type_display': movement.get_movement_type_display(),
-                'quantity': float(movement.quantity),
-                'unit_price': float(movement.unit_price) if movement.unit_price else None,
-                'total_value': float(movement.total_value) if movement.total_value else None,
-                'reference': movement.reference or '',
-                'created_at': movement.created_at.isoformat(),
-                'created_by': {
-                    'id': movement.created_by.id,
-                    'username': movement.created_by.username,
-                    'full_name': movement.created_by.get_full_name() or movement.created_by.username
-                }
-            })
+            movement_data = []
+            for movement in movements:
+                movement_data.append({
+                    'id': movement.id,
+                    'product_name': movement.product.name,
+                    'product_sku': movement.product.sku,
+                    'store_name': movement.store.name,
+                    'movement_type': movement.movement_type,
+                    'movement_type_display': movement.get_movement_type_display(),
+                    'quantity': float(movement.quantity),
+                    'unit_price': float(movement.unit_price) if movement.unit_price else None,
+                    'total_value': float(movement.total_value) if movement.total_value else None,
+                    'reference': movement.reference or '',
+                    'created_at': movement.created_at.isoformat(),
+                    'created_by': {
+                        'id': movement.created_by.id,
+                        'username': movement.created_by.username,
+                        'full_name': movement.created_by.get_full_name() or movement.created_by.username
+                    }
+                })
 
-        return movement_data
+            return movement_data
+
+        except Exception as e:
+            logger.error(f"Error fetching recent movements: {str(e)}")
+            return []
 
 
 class StockLevelsConsumer(BaseInventoryConsumer):
@@ -512,7 +601,7 @@ class StockLevelsConsumer(BaseInventoryConsumer):
 
     def _get_room_name(self) -> str:
         """Generate room name based on filters"""
-        room_name = f'stock_levels_user_{self.user.id}'
+        room_name = f'stock_levels_tenant_{self.tenant.schema_name}_user_{self.user.id}'
 
         if self.filters.get('store'):
             room_name += f'_store_{self.filters["store"]}'
@@ -556,7 +645,7 @@ class StockLevelsConsumer(BaseInventoryConsumer):
     async def send_stock_levels(self):
         """Send current stock levels"""
         try:
-            stock_data = await self.get_stock_levels()
+            stock_data = await self.get_stock_levels_async()
             await self.send(text_data=json.dumps({
                 'type': 'stock_levels',
                 'data': stock_data,
@@ -571,7 +660,7 @@ class StockLevelsConsumer(BaseInventoryConsumer):
     async def send_product_stock(self, product_id: str):
         """Send stock levels for a specific product"""
         try:
-            stock_data = await self.get_product_stock_levels(product_id)
+            stock_data = await self.get_product_stock_levels_async(product_id)
             await self.send(text_data=json.dumps({
                 'type': 'product_stock',
                 'product_id': product_id,
@@ -612,10 +701,23 @@ class StockLevelsConsumer(BaseInventoryConsumer):
         # Send updated data
         await self.send_stock_levels()
 
+    # Async wrapper methods
     @database_sync_to_async
+    def get_stock_levels_async(self) -> List[Dict[str, Any]]:
+        """Async wrapper for get_stock_levels"""
+        with tenant_context(self.tenant):
+            return self.get_stock_levels()
+
+    @database_sync_to_async
+    def get_product_stock_levels_async(self, product_id: str) -> List[Dict[str, Any]]:
+        """Async wrapper for get_product_stock_levels"""
+        with tenant_context(self.tenant):
+            return self.get_product_stock_levels(product_id)
+
+    # Synchronous database methods
     def get_stock_levels(self) -> List[Dict[str, Any]]:
         """Get stock levels data with filtering and caching"""
-        cache_key = f'stock_levels_{hash(frozenset(self.filters.items()))}_{self.user.id}'
+        cache_key = f'stock_levels_{self.tenant.schema_name}_{hash(frozenset(self.filters.items()))}_{self.user.id}'
         cached_data = cache.get(cache_key)
 
         if cached_data:
@@ -678,7 +780,6 @@ class StockLevelsConsumer(BaseInventoryConsumer):
         cache.set(cache_key, stock_data, 30)
         return stock_data
 
-    @database_sync_to_async
     def get_product_stock_levels(self, product_id: str) -> List[Dict[str, Any]]:
         """Get stock levels for a specific product across all stores"""
         from .models import Stock
@@ -711,7 +812,11 @@ class StockLevelsConsumer(BaseInventoryConsumer):
     @database_sync_to_async
     def check_permissions(self) -> bool:
         """Check if user has required permissions for stock viewing"""
-        return (
-                self.user.has_perm('inventory.view_stock') and
-                self.user.has_perm('inventory.view_product')
-        )
+        if not self.tenant:
+            return False
+
+        with tenant_context(self.tenant):
+            return (
+                    self.user.has_perm('inventory.view_stock') and
+                    self.user.has_perm('inventory.view_product')
+            )

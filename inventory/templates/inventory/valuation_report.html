@@ -4,631 +4,348 @@
 {% load custom_filters %}
 {% load i18n %}
 
-{% block title %}Inventory Valuation Report - {{ company.trading_name|default:company.name }}{% endblock %}
+{% block title %}Inventory Valuation Report{% endblock %}
 
 {% block extra_css %}
-<link href="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.css" rel="stylesheet">
 <link rel="stylesheet" href="{% static 'themes.css' %}">
 <style>
     .valuation-header {
         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
         color: white;
         border-radius: 15px;
-        padding: 2.5rem;
+        padding: 2rem;
         margin-bottom: 2rem;
-        position: relative;
-        overflow: hidden;
     }
-
-    .valuation-header::before {
-        content: '';
-        position: absolute;
-        top: 0;
-        left: 0;
-        right: 0;
-        bottom: 0;
-        background: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 20"><defs><radialGradient id="a" cx="50%" cy="50%"><stop offset="0%" stop-color="white" stop-opacity="0.15"/><stop offset="100%" stop-color="white" stop-opacity="0"/></radialGradient></defs><circle cx="25" cy="10" r="20" fill="url(%23a)"/><circle cx="75" cy="10" r="15" fill="url(%23a)"/></svg>');
-        opacity: 0.3;
-    }
-
-    .valuation-header h2,
-    .valuation-header p {
-        position: relative;
-        z-index: 1;
-        margin: 0;
-    }
-
-    .valuation-header h2 {
-        font-weight: 700;
-        font-size: 2.25rem;
-    }
-
-    .valuation-header p {
-        opacity: 0.9;
-        margin-top: 0.5rem;
-        font-size: 1.1rem;
-    }
+    .valuation-header h2 { font-weight: 700; margin: 0; }
+    .valuation-header p { opacity: 0.9; margin: 0.5rem 0 0; }
 
     .valuation-summary {
         display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
         gap: 1.5rem;
         margin-bottom: 2rem;
     }
 
     .summary-card {
         background: white;
-        border-radius: 15px;
-        padding: 2rem;
-        box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1);
-        position: relative;
-        overflow: hidden;
-        border: 1px solid #f1f5f9;
-        transition: all 0.3s ease;
+        border-radius: 12px;
+        padding: 1.5rem;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.08);
+        border-top: 4px solid #3b82f6;
+        transition: transform 0.2s;
     }
-
-    .summary-card:hover {
-        transform: translateY(-4px);
-        box-shadow: 0 12px 35px rgba(0, 0, 0, 0.15);
-    }
-
-    .summary-card::before {
-        content: '';
-        position: absolute;
-        top: 0;
-        left: 0;
-        right: 0;
-        height: 4px;
-        background: var(--accent-color, #3b82f6);
-    }
-
-    .summary-card.primary::before { background: #3b82f6; }
-    .summary-card.success::before { background: #10b981; }
-    .summary-card.warning::before { background: #f59e0b; }
-    .summary-card.info::before { background: #06b6d4; }
+    .summary-card:hover { transform: translateY(-3px); }
+    .summary-card.success { border-top-color: #10b981; }
+    .summary-card.info { border-top-color: #06b6d4; }
+    .summary-card.warning { border-top-color: #f59e0b; }
 
     .summary-number {
-        font-size: 2.5rem;
-        font-weight: 800;
+        font-size: 1.75rem;
+        font-weight: 700;
         color: #1f2937;
-        line-height: 1;
-        margin-bottom: 0.5rem;
     }
-
     .summary-label {
         color: #6b7280;
-        font-size: 0.875rem;
+        font-size: 0.8rem;
         text-transform: uppercase;
         letter-spacing: 0.05em;
         font-weight: 600;
-        margin-bottom: 0.5rem;
     }
-
     .summary-change {
-        font-size: 0.875rem;
-        font-weight: 500;
-        display: flex;
-        align-items: center;
-        gap: 0.25rem;
+        font-size: 0.8rem;
+        margin-top: 0.5rem;
     }
-
     .summary-change.positive { color: #10b981; }
     .summary-change.negative { color: #dc2626; }
 
     .valuation-charts {
         display: grid;
         grid-template-columns: 1fr 1fr;
-        gap: 2rem;
+        gap: 1.5rem;
         margin-bottom: 2rem;
     }
 
-    .chart-container {
+    .chart-card {
         background: white;
-        border-radius: 15px;
+        border-radius: 12px;
         padding: 1.5rem;
-        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);
-        border: 1px solid #e5e7eb;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.08);
     }
-
-    .chart-container h5 {
-        margin-bottom: 1.5rem;
-        color: #1f2937;
-        font-weight: 600;
-    }
-
-    .valuation-table {
-        background: white;
-        border-radius: 15px;
-        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);
-        overflow: hidden;
-        border: 1px solid #e5e7eb;
-    }
-
-    .table-header {
-        background: #f8fafc;
-        padding: 1.5rem;
-        border-bottom: 1px solid #e5e7eb;
-    }
-
-    .valuation-filters {
-        background: #f8fafc;
-        padding: 1.5rem;
-        border-bottom: 1px solid #e5e7eb;
-    }
-
-    .export-section {
-        background: white;
-        padding: 1rem 1.5rem;
-        border-bottom: 1px solid #e5e7eb;
-        display: flex;
-        justify-content: between;
-        align-items: center;
-    }
-
-    .table-responsive {
-        border-radius: 0 0 15px 15px;
-    }
-
-    .table th {
-        background: #f8fafc;
-        border: none;
-        font-weight: 600;
-        color: #374151;
-        padding: 1rem;
-        font-size: 0.875rem;
-        text-transform: uppercase;
-        letter-spacing: 0.025em;
-    }
-
-    .table td {
-        padding: 1rem;
-        border: none;
-        border-bottom: 1px solid #f1f5f9;
-        vertical-align: middle;
-    }
-
-    .table tbody tr:hover {
-        background: #f8fafc;
-    }
-
-    .product-info {
-        display: flex;
-        align-items: center;
-        gap: 0.75rem;
-    }
-
-    .product-image {
-        width: 48px;
-        height: 48px;
-        border-radius: 8px;
-        object-fit: cover;
-        background: #f3f4f6;
-        border: 1px solid #e5e7eb;
-    }
-
-    .product-image-placeholder {
-        width: 48px;
-        height: 48px;
-        border-radius: 8px;
-        background: #f3f4f6;
-        border: 1px solid #e5e7eb;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        color: #9ca3af;
-    }
-
-    .product-details h6 {
-        margin: 0;
-        font-weight: 600;
-        color: #1f2937;
-    }
-
-    .product-details .text-muted {
-        font-size: 0.875rem;
-        margin-top: 0.25rem;
-    }
-
-    .value-cell {
-        text-align: right;
-        font-weight: 600;
-    }
-
-    .value-primary { color: #3b82f6; }
-    .value-success { color: #10b981; }
-    .value-warning { color: #f59e0b; }
-
-    .table-actions {
-        display: flex;
-        gap: 0.5rem;
-    }
-
-    .btn-icon {
-        width: 36px;
-        height: 36px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        border-radius: 8px;
-        border: 1px solid;
-        transition: all 0.3s ease;
-    }
-
-    .btn-icon:hover {
-        transform: translateY(-1px);
-    }
-
-    .empty-state {
-        text-align: center;
-        padding: 4rem 2rem;
-        color: #6b7280;
-    }
-
-    .empty-state i {
-        font-size: 4rem;
-        color: #d1d5db;
+    .chart-card h5 {
         margin-bottom: 1rem;
+        color: #374151;
+        font-weight: 600;
     }
-
-    .top-products-section {
-        background: white;
-        border-radius: 15px;
-        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);
-        margin-bottom: 2rem;
-        border: 1px solid #e5e7eb;
-    }
+    .chart-wrapper { height: 280px; position: relative; }
 
     .insights-grid {
         display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-        gap: 2rem;
+        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+        gap: 1.5rem;
         margin-bottom: 2rem;
     }
 
     .insight-card {
         background: white;
-        border-radius: 15px;
+        border-radius: 12px;
         padding: 1.5rem;
-        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);
-        border: 1px solid #e5e7eb;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.08);
     }
+    .insight-card h6 { color: #374151; margin-bottom: 1rem; }
 
     .insight-item {
         display: flex;
-        justify-content: between;
-        align-items: center;
+        justify-content: space-between;
         padding: 0.75rem 0;
-        border-bottom: 1px solid #f1f5f9;
+        border-bottom: 1px solid #f3f4f6;
     }
+    .insight-item:last-child { border-bottom: none; }
+    .insight-name { color: #374151; font-weight: 500; }
+    .insight-value { color: #1f2937; font-weight: 600; }
 
-    .insight-item:last-child {
-        border-bottom: none;
-    }
-
-    .insight-name {
-        font-weight: 500;
-        color: #374151;
-    }
-
-    .insight-value {
-        font-weight: 600;
-        color: #1f2937;
-    }
-
-    .category-badge {
-        font-size: 0.75rem;
-        padding: 0.375rem 0.75rem;
+    .valuation-table {
+        background: white;
         border-radius: 12px;
-        font-weight: 500;
-        text-transform: uppercase;
-        letter-spacing: 0.025em;
-    }
-
-    .badge-info {
-        background: #dbeafe;
-        color: #1e40af;
-        border: 1px solid #bfdbfe;
-    }
-
-    .badge-success {
-        background: #d1fae5;
-        color: #059669;
-        border: 1px solid #a7f3d0;
-    }
-
-    .badge-warning {
-        background: #fef3c7;
-        color: #d97706;
-        border: 1px solid #fde68a;
-    }
-
-    .progress-bar-container {
-        width: 60px;
-        height: 6px;
-        background: #f3f4f6;
-        border-radius: 3px;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.08);
         overflow: hidden;
     }
 
-    .progress-bar {
-        height: 100%;
-        background: #3b82f6;
-        border-radius: 3px;
-        transition: width 0.3s ease;
+    .table-header, .valuation-filters, .export-section {
+        padding: 1rem 1.5rem;
+        border-bottom: 1px solid #e5e7eb;
+        background: #f9fafb;
     }
+
+    .table th {
+        background: #f9fafb;
+        font-weight: 600;
+        font-size: 0.8rem;
+        text-transform: uppercase;
+        color: #6b7280;
+        padding: 1rem;
+        border: none;
+    }
+    .table td {
+        padding: 1rem;
+        border-bottom: 1px solid #f3f4f6;
+        vertical-align: middle;
+    }
+    .table tbody tr:hover { background: #f9fafb; }
+
+    .product-info { display: flex; align-items: center; gap: 0.75rem; }
+    .product-thumb {
+        width: 40px; height: 40px;
+        border-radius: 8px;
+        background: #f3f4f6;
+        display: flex; align-items: center; justify-content: center;
+        color: #9ca3af;
+    }
+    .product-name { font-weight: 600; color: #1f2937; margin: 0; }
+    .product-sku { font-size: 0.8rem; color: #6b7280; }
+
+    .value-cell { text-align: right; font-weight: 600; }
+    .value-primary { color: #3b82f6; }
+    .value-success { color: #10b981; }
+
+    .category-badge {
+        display: inline-block;
+        padding: 0.25rem 0.75rem;
+        border-radius: 20px;
+        font-size: 0.75rem;
+        font-weight: 500;
+        background: #dbeafe;
+        color: #1e40af;
+    }
+
+    .empty-state {
+        text-align: center;
+        padding: 3rem;
+        color: #6b7280;
+    }
+    .empty-state i { font-size: 3rem; color: #d1d5db; }
 
     @media (max-width: 992px) {
-        .valuation-charts {
-            grid-template-columns: 1fr;
-        }
-
-        .valuation-summary {
-            grid-template-columns: repeat(2, 1fr);
-        }
-
-        .insights-grid {
-            grid-template-columns: 1fr;
-        }
+        .valuation-charts { grid-template-columns: 1fr; }
     }
-
     @media (max-width: 576px) {
-        .valuation-summary {
-            grid-template-columns: 1fr;
-        }
-
-        .valuation-header {
-            text-align: center;
-        }
-
-        .export-section {
-            flex-direction: column;
-            gap: 1rem;
-        }
-    }
-
-    .loading-spinner {
-        display: inline-block;
-        width: 20px;
-        height: 20px;
-        border: 3px solid #f3f3f3;
-        border-top: 3px solid #3498db;
-        border-radius: 50%;
-        animation: spin 1s linear infinite;
-    }
-
-    @keyframes spin {
-        0% { transform: rotate(0deg); }
-        100% { transform: rotate(360deg); }
+        .valuation-summary { grid-template-columns: 1fr; }
     }
 </style>
 {% endblock %}
 
 {% block content %}
 <div class="container-fluid px-4">
-    <!-- Report Header -->
+    <!-- Header -->
     <div class="valuation-header">
         <div class="row align-items-center">
             <div class="col-md-8">
-                <h2>
-                    <i class="fas fa-chart-line me-3"></i>
-                    Inventory Valuation Report
-                </h2>
-                <p>Comprehensive financial overview as of {{ report_date|date:"F j, Y" }}</p>
+                <h2><i class="fas fa-chart-line me-2"></i>Inventory Valuation Report</h2>
+                <p>Financial overview as of {{ report_date|date:"F j, Y" }}</p>
             </div>
             <div class="col-md-4 text-end">
-                <div class="d-flex gap-2 justify-content-end">
-                    <div class="dropdown">
-                        <button class="btn btn-outline-light dropdown-toggle" data-bs-toggle="dropdown">
-                            <i class="fas fa-calendar-alt me-2"></i>
-                            {{ report_period }}
-                        </button>
-                        <ul class="dropdown-menu">
-                            <li><a class="dropdown-item" href="?period=today{{ request.GET.urlencode|add:'&' }}">Today</a></li>
-                            <li><a class="dropdown-item" href="?period=week{{ request.GET.urlencode|add:'&' }}">This Week</a></li>
-                            <li><a class="dropdown-item" href="?period=month{{ request.GET.urlencode|add:'&' }}">This Month</a></li>
-                            <li><a class="dropdown-item" href="?period=quarter{{ request.GET.urlencode|add:'&' }}">This Quarter</a></li>
-                            <li><a class="dropdown-item" href="?period=year{{ request.GET.urlencode|add:'&' }}">This Year</a></li>
-                            <li><hr class="dropdown-divider"></li>
-                            <li><a class="dropdown-item" href="?period=custom{{ request.GET.urlencode|add:'&' }}">Custom Range</a></li>
-                        </ul>
-                    </div>
-                    <button class="btn btn-light" onclick="printValuationReport()">
-                        <i class="fas fa-print me-2"></i>Print
-                    </button>
-                </div>
+                <button class="btn btn-light btn-sm" onclick="window.print()">
+                    <i class="fas fa-print me-1"></i>Print
+                </button>
             </div>
         </div>
     </div>
 
     <!-- Summary Cards -->
     <div class="valuation-summary">
-        <div class="summary-card primary">
-            <div class="summary-number">${{ total_value|floatformat:0|intcomma }}</div>
+        <div class="summary-card">
             <div class="summary-label">Total Inventory Value</div>
-            {% if value_change %}
-                <div class="summary-change {% if value_change >= 0 %}positive{% else %}negative{% endif %}">
-                    <i class="fas fa-arrow-{% if value_change >= 0 %}up{% else %}down{% endif %}"></i>
-                    {% if value_change_percent %}{{ value_change_percent|floatformat:1 }}%{% else %}${{ value_change|floatformat:0|intcomma }}{% endif %}
-                </div>
+            <div class="summary-number">UGX {{ total_value|floatformat:0|intcomma }}</div>
+            {% if value_change_percent %}
+            <div class="summary-change {% if value_change >= 0 %}positive{% else %}negative{% endif %}">
+                <i class="fas fa-arrow-{% if value_change >= 0 %}up{% else %}down{% endif %}"></i>
+                {{ value_change_percent|floatformat:1 }}% from last period
+            </div>
             {% endif %}
         </div>
 
         <div class="summary-card success">
-            <div class="summary-number">${{ total_selling_value|floatformat:0|intcomma }}</div>
             <div class="summary-label">Potential Selling Value</div>
+            <div class="summary-number">UGX {{ total_selling_value|floatformat:0|intcomma }}</div>
             <div class="summary-change positive">
                 <i class="fas fa-chart-line"></i>
-                Profit: ${{ potential_profit|floatformat:0|intcomma }}
+                Profit: UGX {{ potential_profit|floatformat:0|intcomma }}
             </div>
         </div>
 
         <div class="summary-card info">
+            <div class="summary-label">Total Items</div>
             <div class="summary-number">{{ total_items|intcomma }}</div>
-            <div class="summary-label">Items in Stock</div>
             <div class="summary-change">
-                <i class="fas fa-boxes"></i>
-                Avg: ${{ avg_item_value|floatformat:2 }}
+                Avg: UGX {{ avg_item_value|floatformat:0|intcomma }}
             </div>
         </div>
 
         <div class="summary-card warning">
-            <div class="summary-number">${{ max_item_value|floatformat:0|intcomma }}</div>
             <div class="summary-label">Highest Value Item</div>
-            <div class="summary-change">
-                <i class="fas fa-star"></i>
-                Most valuable
-            </div>
+            <div class="summary-number">UGX {{ max_item_value|floatformat:0|intcomma }}</div>
         </div>
     </div>
 
     <!-- Charts -->
     <div class="valuation-charts">
-        <div class="chart-container">
-            <h5>
-                <i class="fas fa-chart-pie me-2"></i>
-                Value by Category
-            </h5>
-            <canvas id="categoryValueChart" height="300"></canvas>
+        <div class="chart-card">
+            <h5><i class="fas fa-chart-pie me-2 text-primary"></i>Value by Category</h5>
+            <div class="chart-wrapper">
+                <canvas id="categoryValueChart"></canvas>
+            </div>
         </div>
 
-        <div class="chart-container">
-            <h5>
-                <i class="fas fa-chart-area me-2"></i>
-                Valuation Trend
-            </h5>
-            <canvas id="valueTrendChart" height="300"></canvas>
+        <div class="chart-card">
+            <h5><i class="fas fa-chart-area me-2 text-success"></i>Valuation Trend</h5>
+            <div class="chart-wrapper">
+                <canvas id="valueTrendChart"></canvas>
+            </div>
         </div>
     </div>
 
-    <!-- Top Products & Categories Insights -->
+    <!-- Insights -->
     <div class="insights-grid">
         <div class="insight-card">
-            <h6 class="mb-3">
-                <i class="fas fa-trophy me-2 text-warning"></i>
-                Top 5 Products by Value
-            </h6>
-            {% for product in top_products|slice:":5" %}
+            <h6><i class="fas fa-trophy me-2 text-warning"></i>Top 5 Products by Value</h6>
+            {% for item in top_products|slice:":5" %}
             <div class="insight-item">
                 <div>
-                    <div class="insight-name">{{ product.product.name|truncatechars:25 }}</div>
-                    <small class="text-muted">{{ product.product.sku }}</small>
+                    <div class="insight-name">{{ item.product.name|truncatechars:25 }}</div>
+                    <small class="text-muted">{{ item.product.sku }}</small>
                 </div>
-                <div class="insight-value">${{ product.total_cost|floatformat:0|intcomma }}</div>
+                <div class="insight-value">UGX {{ item.total_cost|floatformat:0|intcomma }}</div>
             </div>
             {% empty %}
-            <div class="text-muted text-center">No products found</div>
+            <p class="text-muted text-center">No products found</p>
             {% endfor %}
         </div>
 
         <div class="insight-card">
-            <h6 class="mb-3">
-                <i class="fas fa-layer-group me-2 text-info"></i>
-                Top 5 Categories by Value
-            </h6>
-            {% for category in top_categories %}
+            <h6><i class="fas fa-layer-group me-2 text-info"></i>Top 5 Categories</h6>
+            {% for cat in top_categories %}
             <div class="insight-item">
                 <div>
-                    <div class="insight-name">{{ category.name|default:"Uncategorized" }}</div>
-                    <small class="text-muted">{{ category.count }} items</small>
+                    <div class="insight-name">{{ cat.name|default:"Uncategorized" }}</div>
+                    <small class="text-muted">{{ cat.count }} items</small>
                 </div>
-                <div class="insight-value">${{ category.value|floatformat:0|intcomma }}</div>
+                <div class="insight-value">UGX {{ cat.value|floatformat:0|intcomma }}</div>
             </div>
             {% empty %}
-            <div class="text-muted text-center">No categories found</div>
+            <p class="text-muted text-center">No categories found</p>
             {% endfor %}
         </div>
     </div>
 
-    <!-- Filters & Main Table -->
+    <!-- Filters & Table -->
     <div class="valuation-table">
-        <!-- Filters -->
         <div class="valuation-filters">
             <form method="GET" class="row g-3">
                 <div class="col-md-4">
-                    <label class="form-label fw-semibold">Category</label>
+                    <label class="form-label">Category</label>
                     <select class="form-select" name="category">
                         <option value="">All Categories</option>
-                        {% for category in categories %}
-                            <option value="{{ category.id }}" {% if selected_category == category.id|stringformat:"s" %}selected{% endif %}>
-                                {{ category.name }}
-                            </option>
+                        {% for cat in categories %}
+                        <option value="{{ cat.id }}" {% if selected_category == cat.id|stringformat:"s" %}selected{% endif %}>
+                            {{ cat.name }}
+                        </option>
                         {% endfor %}
                     </select>
                 </div>
-
                 <div class="col-md-4">
-                    <label class="form-label fw-semibold">Store</label>
+                    <label class="form-label">Store</label>
                     <select class="form-select" name="store">
                         <option value="">All Stores</option>
                         {% for store in stores %}
-                            <option value="{{ store.id }}" {% if selected_store == store.id|stringformat:"s" %}selected{% endif %}>
-                                {{ store.name }}
-                            </option>
+                        <option value="{{ store.id }}" {% if selected_store == store.id|stringformat:"s" %}selected{% endif %}>
+                            {{ store.name }}
+                        </option>
                         {% endfor %}
                     </select>
                 </div>
-
                 <div class="col-md-4">
                     <label class="form-label">&nbsp;</label>
                     <div class="d-flex gap-2">
                         <button type="submit" class="btn btn-primary">
-                            <i class="fas fa-filter me-2"></i>Filter
+                            <i class="fas fa-filter me-1"></i>Filter
                         </button>
-                        {% if perms.inventory.view_view_product %}
-                        <a href="{% url 'inventory:valuation_report' %}" class="btn btn-outline-secondary">
-                            <i class="fas fa-undo me-2"></i>Reset
-                        </a>
-                        {% endif %}
+                        <a href="{% url 'inventory:valuation_report' %}" class="btn btn-outline-secondary">Reset</a>
                     </div>
                 </div>
             </form>
         </div>
 
-        <!-- Export Panel -->
-        <div class="export-section">
-            <div>
-                <span class="text-muted">
-                    <i class="fas fa-info-circle me-1"></i>
-                    {{ page_obj.paginator.count|default:valuation_items|length }} items found
-                </span>
-            </div>
-            <div class="d-flex gap-2">
-                <div class="dropdown">
-                    <button class="btn btn-outline-success dropdown-toggle btn-sm" data-bs-toggle="dropdown">
-                        <i class="fas fa-download me-2"></i>Export Report
-                    </button>
-                    <ul class="dropdown-menu">
-                        <li><a class="dropdown-item" href="?format=excel{{ request.GET.urlencode|add:'&' }}">
-                            <i class="fas fa-file-excel me-2 text-success"></i>Excel Workbook
-                        </a></li>
-                        <li><a class="dropdown-item" href="?format=pdf{{ request.GET.urlencode|add:'&' }}">
-                            <i class="fas fa-file-pdf me-2 text-danger"></i>PDF Report
-                        </a></li>
-                        <li><a class="dropdown-item" href="?format=csv{{ request.GET.urlencode|add:'&' }}">
-                            <i class="fas fa-file-csv me-2 text-info"></i>CSV Data
-                        </a></li>
-                    </ul>
-                </div>
-                <button class="btn btn-outline-info btn-sm" onclick="showSummaryModal()">
-                    <i class="fas fa-chart-bar me-2"></i>Summary
+        <div class="export-section d-flex justify-content-between align-items-center">
+            <span class="text-muted">{{ page_obj.paginator.count|default:valuation_items|length }} items</span>
+            <div class="dropdown">
+                <button class="btn btn-outline-success btn-sm dropdown-toggle" data-bs-toggle="dropdown">
+                    <i class="fas fa-download me-1"></i>Export
                 </button>
+                <ul class="dropdown-menu">
+                    <li><a class="dropdown-item" href="?format=excel{% if selected_category %}&category={{ selected_category }}{% endif %}{% if selected_store %}&store={{ selected_store }}{% endif %}">
+                        <i class="fas fa-file-excel me-2 text-success"></i>Excel
+                    </a></li>
+                    <li><a class="dropdown-item" href="?format=pdf{% if selected_category %}&category={{ selected_category }}{% endif %}{% if selected_store %}&store={{ selected_store }}{% endif %}">
+                        <i class="fas fa-file-pdf me-2 text-danger"></i>PDF
+                    </a></li>
+                    <li><a class="dropdown-item" href="?format=csv{% if selected_category %}&category={{ selected_category }}{% endif %}{% if selected_store %}&store={{ selected_store }}{% endif %}">
+                        <i class="fas fa-file-csv me-2 text-info"></i>CSV
+                    </a></li>
+                </ul>
             </div>
         </div>
 
-        <!-- Valuation Table -->
         <div class="table-responsive">
-            <table class="table table-hover mb-0">
+            <table class="table mb-0">
                 <thead>
                     <tr>
                         <th>Product</th>
                         <th>Category</th>
                         <th>Store</th>
-                        <th>Stock Qty</th>
+                        <th>Qty</th>
                         <th>Cost Price</th>
                         <th>Total Cost</th>
-                        <th>Selling Price</th>
-                        <th>Potential Value</th>
-                        <th>Actions</th>
+                        <th>Sell Price</th>
+                        <th>Total Value</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -636,143 +353,78 @@
                     <tr>
                         <td>
                             <div class="product-info">
-                                {% if item.product.image %}
-                                    <img src="{{ item.product.image.url }}"
-                                         alt="{{ item.product.name }}"
-                                         class="product-image">
-                                {% else %}
-                                    <div class="product-image-placeholder">
-                                        <i class="fas fa-box"></i>
-                                    </div>
-                                {% endif %}
-                                <div class="product-details">
-                                    <h6>
-                                        {% if perms.inventory.view_product %}
-                                        <a href="{% url 'inventory:product_detail' item.product.id %}"
-                                           class="text-decoration-none">
-                                            {{ item.product.name }}
-                                        </a>
-                                        {% endif %}
-                                    </h6>
-                                    <div class="text-muted">{{ item.product.sku }}</div>
+                                <div class="product-thumb"><i class="fas fa-box"></i></div>
+                                <div>
+                                    <div class="product-name">{{ item.product.name|truncatechars:30 }}</div>
+                                    <div class="product-sku">{{ item.product.sku }}</div>
                                 </div>
                             </div>
                         </td>
                         <td>
                             {% if item.product.category %}
-                                <span class="category-badge badge-info">{{ item.product.category.name }}</span>
-                            {% else %}
-                                <span class="text-muted">—</span>
-                            {% endif %}
+                            <span class="category-badge">{{ item.product.category.name }}</span>
+                            {% else %}—{% endif %}
                         </td>
-                        <td>
-                            <strong>{{ item.store.name }}</strong>
-                        </td>
-                        <td>
-                            <div class="d-flex align-items-center gap-2">
-                                <span class="fw-bold">{{ item.quantity|floatformat:0 }}</span>
-                                <span class="text-muted small">{{ item.product.unit_of_measure }}</span>
-                            </div>
-                        </td>
-                        <td class="value-cell">
-                            ${{ item.product.cost_price|floatformat:2 }}
-                        </td>
-                        <td class="value-cell value-primary">
-                            <strong>${{ item.total_cost|floatformat:2|intcomma }}</strong>
-                        </td>
-                        <td class="value-cell">
-                            ${{ item.product.selling_price|floatformat:2 }}
-                        </td>
-                        <td class="value-cell value-success">
-                            <strong>${{ item.total_selling|floatformat:2|intcomma }}</strong>
-                        </td>
-                        <td>
-                            <div class="table-actions">
-                                {% if perms.inventory.view_product %}
-                                <a href="{% url 'inventory:product_detail' item.product.id %}"
-                                   class="btn btn-outline-primary btn-icon"
-                                   data-bs-toggle="tooltip"
-                                   title="View Details">
-                                    <i class="fas fa-eye"></i>
-                                </a>
-                                {% endif %}
-                                {% if perms.inventory.stockmovement %}
-                                <a href="{% url 'inventory:stock_adjustment' %}?product={{ item.product.id }}&store={{ item.store.id }}"
-                                   class="btn btn-outline-success btn-icon"
-                                   data-bs-toggle="tooltip"
-                                   title="Adjust Stock">
-                                    <i class="fas fa-plus-minus"></i>
-                                </a>
-                                {% endif %}
-                            </div>
-                        </td>
+                        <td>{{ item.store.name }}</td>
+                        <td>{{ item.quantity|floatformat:0 }} {{ item.product.unit_of_measure }}</td>
+                        <td class="value-cell">UGX {{ item.product.cost_price|floatformat:0|intcomma }}</td>
+                        <td class="value-cell value-primary">UGX {{ item.total_cost|floatformat:0|intcomma }}</td>
+                        <td class="value-cell">UGX {{ item.product.selling_price|floatformat:0|intcomma }}</td>
+                        <td class="value-cell value-success">UGX {{ item.total_selling|floatformat:0|intcomma }}</td>
                     </tr>
                     {% empty %}
                     <tr>
-                        <td colspan="9">
+                        <td colspan="8">
                             <div class="empty-state">
-                                <i class="fas fa-search"></i>
-                                <h5 class="mt-3 mb-2">No Items Found</h5>
-                                <p class="text-muted">Try adjusting your filters or check your inventory.</p>
-                                {% if perms.inventory.view_product %}
-                                <a href="{% url 'inventory:product_list' %}" class="btn btn-primary">
-                                    <i class="fas fa-plus me-2"></i>Add Products
-                                </a>
-                                {% endif %}
+                                <i class="fas fa-search mb-3"></i>
+                                <h5>No Items Found</h5>
+                                <p>Try adjusting your filters</p>
                             </div>
                         </td>
                     </tr>
                     {% endfor %}
                 </tbody>
                 {% if page_obj|default:valuation_items %}
-                <tfoot>
-                    <tr class="table-light">
+                <tfoot class="table-light">
+                    <tr>
                         <th colspan="5" class="text-end">Totals:</th>
-                        <th class="value-cell value-primary">
-                            <strong>${{ total_value|floatformat:2|intcomma }}</strong>
-                        </th>
+                        <th class="value-cell value-primary">UGX {{ total_value|floatformat:0|intcomma }}</th>
                         <th></th>
-                        <th class="value-cell value-success">
-                            <strong>${{ total_selling_value|floatformat:2|intcomma }}</strong>
-                        </th>
-                        <th></th>
+                        <th class="value-cell value-success">UGX {{ total_selling_value|floatformat:0|intcomma }}</th>
                     </tr>
                 </tfoot>
                 {% endif %}
             </table>
         </div>
 
-        <!-- Pagination -->
         {% if page_obj.has_other_pages %}
         <div class="p-3 border-top">
-            <nav aria-label="Page navigation">
+            <nav>
                 <ul class="pagination justify-content-center mb-0">
                     {% if page_obj.has_previous %}
-                        <li class="page-item">
-                            <a class="page-link" href="?page={{ page_obj.previous_page_number }}{{ request.GET.urlencode|add:'&' }}">
-                                <i class="fas fa-chevron-left"></i>
-                            </a>
-                        </li>
+                    <li class="page-item">
+                        <a class="page-link" href="?page={{ page_obj.previous_page_number }}{% if selected_category %}&category={{ selected_category }}{% endif %}{% if selected_store %}&store={{ selected_store }}{% endif %}">
+                            <i class="fas fa-chevron-left"></i>
+                        </a>
+                    </li>
                     {% endif %}
 
                     {% for num in page_obj.paginator.page_range %}
                         {% if page_obj.number == num %}
-                            <li class="page-item active">
-                                <span class="page-link">{{ num }}</span>
-                            </li>
+                        <li class="page-item active"><span class="page-link">{{ num }}</span></li>
                         {% elif num > page_obj.number|add:'-3' and num < page_obj.number|add:'3' %}
-                            <li class="page-item">
-                                <a class="page-link" href="?page={{ num }}{{ request.GET.urlencode|add:'&' }}">{{ num }}</a>
-                            </li>
+                        <li class="page-item">
+                            <a class="page-link" href="?page={{ num }}{% if selected_category %}&category={{ selected_category }}{% endif %}{% if selected_store %}&store={{ selected_store }}{% endif %}">{{ num }}</a>
+                        </li>
                         {% endif %}
                     {% endfor %}
 
                     {% if page_obj.has_next %}
-                        <li class="page-item">
-                            <a class="page-link" href="?page={{ page_obj.next_page_number }}{{ request.GET.urlencode|add:'&' }}">
-                                <i class="fas fa-chevron-right"></i>
-                            </a>
-                        </li>
+                    <li class="page-item">
+                        <a class="page-link" href="?page={{ page_obj.next_page_number }}{% if selected_category %}&category={{ selected_category }}{% endif %}{% if selected_store %}&store={{ selected_store }}{% endif %}">
+                            <i class="fas fa-chevron-right"></i>
+                        </a>
+                    </li>
                     {% endif %}
                 </ul>
             </nav>
@@ -780,422 +432,159 @@
         {% endif %}
     </div>
 </div>
-
-<!-- Summary Modal -->
-<div class="modal fade" id="summaryModal" tabindex="-1">
-    <div class="modal-dialog modal-xl">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title">
-                    <i class="fas fa-chart-bar me-2"></i>
-                    Detailed Valuation Summary
-                </h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-            </div>
-            <div class="modal-body">
-                <div class="row">
-                    <div class="col-md-6">
-                        <h6 class="mb-3">Financial Overview</h6>
-                        <div class="table-responsive">
-                            <table class="table table-sm">
-                                <tr>
-                                    <td><strong>Total Cost Value:</strong></td>
-                                    <td class="text-end">${{ total_value|floatformat:2|intcomma }}</td>
-                                </tr>
-                                <tr>
-                                    <td><strong>Total Selling Value:</strong></td>
-                                    <td class="text-end">${{ total_selling_value|floatformat:2|intcomma }}</td>
-                                </tr>
-                                <tr>
-                                    <td><strong>Potential Profit:</strong></td>
-                                    <td class="text-end text-success">${{ potential_profit|floatformat:2|intcomma }}</td>
-                                </tr>
-                                <tr>
-                                    <td><strong>Total Items:</strong></td>
-                                    <td class="text-end">{{ total_items|intcomma }}</td>
-                                </tr>
-                                <tr>
-                                    <td><strong>Average Item Value:</strong></td>
-                                    <td class="text-end">${{ avg_item_value|floatformat:2 }}</td>
-                                </tr>
-                                <tr>
-                                    <td><strong>Profit Margin:</strong></td>
-                                    <td class="text-end">
-                                        {% widthratio potential_profit total_value 100 %}%
-                                    </td>
-                                </tr>
-                            </table>
-                        </div>
-                    </div>
-
-                    <div class="col-md-6">
-                        <h6 class="mb-3">Category Breakdown</h6>
-                        <div style="max-height: 300px; overflow-y: auto;">
-                            {% for category in category_breakdown %}
-                            <div class="d-flex justify-content-between align-items-center py-2 border-bottom">
-                                <div>
-                                    <strong>{{ category.name|default:"Uncategorized" }}</strong>
-                                    <br>
-                                    <small class="text-muted">{{ category.count }} items</small>
-                                </div>
-                                <div class="text-end">
-                                    <div class="fw-bold">${{ category.value|floatformat:2|intcomma }}</div>
-                                    <div class="progress-bar-container">
-                                        <div class="progress-bar" style="width: {% widthratio category.value total_value 100 %}%"></div>
-                                    </div>
-                                </div>
-                            </div>
-                            {% endfor %}
-                        </div>
-                    </div>
-                </div>
-
-                <div class="row mt-4">
-                    <div class="col-12">
-                        <h6 class="mb-3">Store Distribution</h6>
-                        <div class="row">
-                            {% for store in store_breakdown %}
-                            <div class="col-md-3 mb-3">
-                                <div class="card">
-                                    <div class="card-body text-center">
-                                        <h6 class="card-title">{{ store.name }}</h6>
-                                        <div class="h4 text-primary">${{ store.value|floatformat:0|intcomma }}</div>
-                                        <small class="text-muted">{{ store.count }} items</small>
-                                    </div>
-                                </div>
-                            </div>
-                            {% endfor %}
-                        </div>
-                    </div>
-                </div>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-                <button type="button" class="btn btn-primary" onclick="printSummary()">
-                    <i class="fas fa-print me-2"></i>Print Summary
-                </button>
-                <button type="button" class="btn btn-success" onclick="exportSummary()">
-                    <i class="fas fa-download me-2"></i>Export Summary
-                </button>
-            </div>
-        </div>
-    </div>
-</div>
-
-<!-- Loading Overlay -->
-<div id="loadingOverlay" class="d-none">
-    <div class="position-fixed top-0 start-0 w-100 h-100 d-flex align-items-center justify-content-center"
-         style="background: rgba(0,0,0,0.5); z-index: 9999;">
-        <div class="bg-white p-4 rounded-3 text-center">
-            <div class="loading-spinner mb-3"></div>
-            <div>Generating report...</div>
-        </div>
-    </div>
-</div>
 {% endblock %}
 
 {% block extra_js %}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
 <script>
-$(document).ready(function() {
-    // Initialize tooltips
-    var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
-    var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
-        return new bootstrap.Tooltip(tooltipTriggerEl);
-    });
+// Wait for jQuery
+jQuery(document).ready(function($) {
+    console.log('Valuation Report - Initializing charts...');
 
-    // Initialize charts
-    initializeValuationCharts();
-});
+    // Chart data from Django
+    var categoryLabels = {{ category_labels|safe|default:'[]' }};
+    var categoryValues = {{ category_values|safe|default:'[]' }};
+    var trendLabels = {{ trend_labels|safe|default:'[]' }};
+    var trendValues = {{ trend_values|safe|default:'[]' }};
 
-function initializeValuationCharts() {
-    // Value by Category Chart
-    const categoryCtx = document.getElementById('categoryValueChart');
-    if (categoryCtx) {
-        new Chart(categoryCtx, {
-            type: 'doughnut',
-            data: {
-                labels: {{ category_labels|safe }},
-                datasets: [{
-                    label: 'Inventory Value',
-                    data: {{ category_values|safe }},
-                    backgroundColor: [
-                        '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6',
-                        '#ec4899', '#06b6d4', '#84cc16', '#f97316', '#6366f1'
-                    ],
-                    borderWidth: 0,
-                    hoverOffset: 4
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                    legend: {
-                        position: 'bottom',
-                        labels: {
-                            padding: 20,
-                            usePointStyle: true,
-                            font: {
-                                size: 12
-                            }
-                        }
-                    },
-                    tooltip: {
-                        callbacks: {
-                            label: function(context) {
-                                const total = context.dataset.data.reduce((a, b) => a + b, 0);
-                                const percentage = ((context.raw / total) * 100).toFixed(1);
-                                return `${context.label}: ${context.raw.toLocaleString()} (${percentage}%)`;
-                            }
-                        }
-                    }
+    console.log('Category Labels:', categoryLabels);
+    console.log('Category Values:', categoryValues);
+    console.log('Trend Labels:', trendLabels);
+    console.log('Trend Values:', trendValues);
+
+    // Colors
+    var chartColors = [
+        '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6',
+        '#ec4899', '#06b6d4', '#84cc16', '#f97316', '#6366f1'
+    ];
+
+    // Category Pie Chart
+    var categoryCtx = document.getElementById('categoryValueChart');
+    if (categoryCtx && categoryLabels.length > 0) {
+        console.log('Creating category chart...');
+        try {
+            new Chart(categoryCtx, {
+                type: 'doughnut',
+                data: {
+                    labels: categoryLabels,
+                    datasets: [{
+                        data: categoryValues,
+                        backgroundColor: chartColors.slice(0, categoryLabels.length),
+                        borderWidth: 2,
+                        borderColor: '#fff'
+                    }]
                 },
-                cutout: '50%'
-            }
-        });
-    }
-
-    // Value Trend Chart
-    const trendCtx = document.getElementById('valueTrendChart');
-    if (trendCtx) {
-        new Chart(trendCtx, {
-            type: 'line',
-            data: {
-                labels: {{ trend_labels|safe }},
-                datasets: [{
-                    label: 'Inventory Value',
-                    data: {{ trend_values|safe }},
-                    borderColor: '#3b82f6',
-                    backgroundColor: 'rgba(59, 130, 246, 0.1)',
-                    fill: true,
-                    tension: 0.4,
-                    pointBackgroundColor: '#3b82f6',
-                    pointBorderColor: '#ffffff',
-                    pointBorderWidth: 2,
-                    pointRadius: 6,
-                    pointHoverRadius: 8
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                    legend: {
-                        display: false
-                    },
-                    tooltip: {
-                        callbacks: {
-                            label: function(context) {
-                                return `Value: ${context.raw.toLocaleString()}`;
-                            }
-                        }
-                    }
-                },
-                scales: {
-                    y: {
-                        beginAtZero: false,
-                        ticks: {
-                            callback: function(value) {
-                                return '
-                 + value.toLocaleString();
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'bottom',
+                            labels: {
+                                padding: 15,
+                                usePointStyle: true,
+                                font: { size: 11 }
                             }
                         },
-                        grid: {
-                            color: 'rgba(0, 0, 0, 0.05)'
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    var total = context.dataset.data.reduce(function(a, b) { return a + b; }, 0);
+                                    var pct = total > 0 ? ((context.raw / total) * 100).toFixed(1) : 0;
+                                    return context.label + ': UGX ' + context.raw.toLocaleString() + ' (' + pct + '%)';
+                                }
+                            }
                         }
                     },
-                    x: {
-                        grid: {
-                            display: false
+                    cutout: '60%'
+                }
+            });
+            console.log('Category chart created successfully');
+        } catch (e) {
+            console.error('Error creating category chart:', e);
+        }
+    } else {
+        console.warn('Category chart canvas not found or no data');
+        if (categoryCtx) {
+            categoryCtx.parentElement.innerHTML = '<div class="text-center text-muted py-5"><i class="fas fa-chart-pie fa-3x mb-2"></i><p>No category data available</p></div>';
+        }
+    }
+
+    // Trend Line Chart
+    var trendCtx = document.getElementById('valueTrendChart');
+    if (trendCtx && trendLabels.length > 0) {
+        console.log('Creating trend chart...');
+        try {
+            new Chart(trendCtx, {
+                type: 'line',
+                data: {
+                    labels: trendLabels,
+                    datasets: [{
+                        label: 'Inventory Value',
+                        data: trendValues,
+                        borderColor: '#3b82f6',
+                        backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                        fill: true,
+                        tension: 0.4,
+                        pointBackgroundColor: '#3b82f6',
+                        pointBorderColor: '#fff',
+                        pointBorderWidth: 2,
+                        pointRadius: 5,
+                        pointHoverRadius: 7
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    return 'Value: UGX ' + context.raw.toLocaleString();
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: false,
+                            ticks: {
+                                callback: function(value) {
+                                    if (value >= 1000000) {
+                                        return 'UGX ' + (value / 1000000).toFixed(1) + 'M';
+                                    } else if (value >= 1000) {
+                                        return 'UGX ' + (value / 1000).toFixed(0) + 'K';
+                                    }
+                                    return 'UGX ' + value;
+                                }
+                            },
+                            grid: { color: 'rgba(0,0,0,0.05)' }
+                        },
+                        x: {
+                            grid: { display: false }
                         }
                     }
-                },
-                interaction: {
-                    intersect: false,
-                    mode: 'index'
                 }
-            }
-        });
+            });
+            console.log('Trend chart created successfully');
+        } catch (e) {
+            console.error('Error creating trend chart:', e);
+        }
+    } else {
+        console.warn('Trend chart canvas not found or no data');
+        if (trendCtx) {
+            trendCtx.parentElement.innerHTML = '<div class="text-center text-muted py-5"><i class="fas fa-chart-line fa-3x mb-2"></i><p>No trend data available</p></div>';
+        }
     }
-}
 
-function printValuationReport() {
-    showLoadingOverlay();
-
-    // Add print styles
-    const printStyles = `
-        <style>
-            @media print {
-                .btn, .dropdown, .pagination { display: none !important; }
-                .valuation-header { background: #667eea !important; -webkit-print-color-adjust: exact; }
-                .summary-card { page-break-inside: avoid; }
-                .chart-container { page-break-inside: avoid; }
-                body { font-size: 12px; }
-            }
-        </style>
-    `;
-
-    document.head.insertAdjacentHTML('beforeend', printStyles);
-
-    setTimeout(() => {
-        window.print();
-        hideLoadingOverlay();
-        // Remove print styles after printing
-        const addedStyles = document.head.lastElementChild;
-        if (addedStyles.tagName === 'STYLE') {
-            addedStyles.remove();
-        }
-    }, 500);
-}
-
-function showSummaryModal() {
-    const modal = new bootstrap.Modal(document.getElementById('summaryModal'));
-    modal.show();
-}
-
-function printSummary() {
-    const summaryContent = document.getElementById('summaryModal').querySelector('.modal-body').innerHTML;
-    const printWindow = window.open('', '_blank');
-
-    printWindow.document.write(`
-        <html>
-            <head>
-                <title>Valuation Summary - {{ report_date|date:"F j, Y" }}</title>
-                <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
-                <style>
-                    body { font-family: 'Segoe UI', system-ui, sans-serif; margin: 20px; }
-                    .progress-bar-container { width: 60px; height: 6px; background: #f3f4f6; border-radius: 3px; overflow: hidden; }
-                    .progress-bar { height: 100%; background: #3b82f6; border-radius: 3px; }
-                    h5 { color: #1f2937; font-weight: 600; margin-bottom: 1.5rem; }
-                    h6 { color: #374151; font-weight: 600; margin-bottom: 1rem; }
-                    @media print { body { margin: 0; } }
-                </style>
-            </head>
-            <body>
-                <div class="container">
-                    <h2 class="text-center mb-4">Inventory Valuation Summary</h2>
-                    <p class="text-center text-muted mb-4">Generated on {{ report_date|date:"F j, Y" }}</p>
-                    ${summaryContent}
-                </div>
-            </body>
-        </html>
-    `);
-
-    printWindow.document.close();
-    printWindow.print();
-    printWindow.close();
-}
-
-function exportSummary() {
-    showLoadingOverlay();
-
-    // Create summary data for export
-    const summaryData = {
-        report_date: '{{ report_date|date:"Y-m-d" }}',
-        total_value: {{ total_value|default:0 }},
-        total_selling_value: {{ total_selling_value|default:0 }},
-        potential_profit: {{ potential_profit|default:0 }},
-        total_items: {{ total_items|default:0 }},
-        avg_item_value: {{ avg_item_value|default:0 }},
-        category_breakdown: {{ category_breakdown|safe }},
-        store_breakdown: {{ store_breakdown|safe }}
-    };
-
-    // Export as JSON file
-    const dataStr = JSON.stringify(summaryData, null, 2);
-    const dataBlob = new Blob([dataStr], {type: 'application/json'});
-    const url = URL.createObjectURL(dataBlob);
-
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `valuation_summary_{{ report_date|date:"Y_m_d" }}.json`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-
-    hideLoadingOverlay();
-}
-
-function showLoadingOverlay() {
-    document.getElementById('loadingOverlay').classList.remove('d-none');
-}
-
-function hideLoadingOverlay() {
-    document.getElementById('loadingOverlay').classList.add('d-none');
-}
-
-// Export functions for different formats
-function exportValuation(format) {
-    showLoadingOverlay();
-
-    const params = new URLSearchParams(window.location.search);
-    params.set('format', format);
-
-    const exportUrl = `{{ request.path }}?${params.toString()}`;
-
-    // Create hidden iframe for download
-    const iframe = document.createElement('iframe');
-    iframe.style.display = 'none';
-    iframe.src = exportUrl;
-    document.body.appendChild(iframe);
-
-    // Remove iframe after download starts
-    setTimeout(() => {
-        document.body.removeChild(iframe);
-        hideLoadingOverlay();
-    }, 2000);
-}
-
-// Auto-refresh data every 5 minutes (optional)
-function autoRefreshData() {
-    setInterval(() => {
-        if (!document.hidden) {
-            // Only refresh if page is visible
-            const refreshBtn = document.querySelector('button[type="submit"]');
-            if (refreshBtn && !refreshBtn.disabled) {
-                console.log('Auto-refreshing valuation data...');
-                // You could implement AJAX refresh here
-            }
-        }
-    }, 300000); // 5 minutes
-}
-
-// Initialize auto-refresh (uncomment if needed)
-// autoRefreshData();
-
-// Handle responsive chart resizing
-window.addEventListener('resize', function() {
-    Chart.helpers.each(Chart.instances, function(instance) {
-        instance.resize();
+    // Initialize Bootstrap tooltips
+    var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+    tooltipTriggerList.map(function(el) {
+        return new bootstrap.Tooltip(el);
     });
-});
 
-// Keyboard shortcuts
-document.addEventListener('keydown', function(e) {
-    // Ctrl/Cmd + P for print
-    if ((e.ctrlKey || e.metaKey) && e.key === 'p') {
-        e.preventDefault();
-        printValuationReport();
-    }
-
-    // Ctrl/Cmd + S for summary
-    if ((e.ctrlKey || e.metaKey) && e.key === 's') {
-        e.preventDefault();
-        showSummaryModal();
-    }
-
-    // Escape to close modals
-    if (e.key === 'Escape') {
-        const modals = document.querySelectorAll('.modal.show');
-        modals.forEach(modal => {
-            const modalInstance = bootstrap.Modal.getInstance(modal);
-            if (modalInstance) {
-                modalInstance.hide();
-            }
-        });
-    }
+    console.log('Valuation Report - Initialization complete');
 });
 </script>
 {% endblock %}

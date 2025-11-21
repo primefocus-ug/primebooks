@@ -1,57 +1,224 @@
 {% extends 'base.html' %}
 {% load static %}
 {% load custom_filters %}
-{% block title %}Inventory Management | {{ company.trading_name|default:company.name }}{% endblock %}
+{% block title %}Inventory Analytics Dashboard | {{ company.trading_name|default:company.name }}{% endblock %}
 
 {% block extra_css %}
 <link href="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/css/toastr.min.css" rel="stylesheet">
 <link rel="stylesheet" href="{% static 'themes.css' %}">
-
 <style>
+    :root {
+        --primary-color: #4e73df;
+        --success-color: #1cc88a;
+        --info-color: #36b9cc;
+        --warning-color: #f6c23e;
+        --danger-color: #e74a3b;
+        --secondary-color: #858796;
+        --light-color: #f8f9fc;
+        --dark-color: #5a5c69;
+    }
+
+    body {
+        background-color: var(--light-color);
+    }
+
     .stats-card {
-        transition: transform 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+        transition: all 0.3s ease-in-out;
         border: none;
+        border-radius: 0.5rem;
+        overflow: hidden;
     }
+
     .stats-card:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+        transform: translateY(-5px);
+        box-shadow: 0 10px 25px rgba(0,0,0,0.15);
     }
+
+    .stats-card .card-body {
+        position: relative;
+        z-index: 2;
+    }
+
+    .stats-card::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 4px;
+        background: linear-gradient(90deg, var(--primary-color), var(--info-color));
+    }
+
+    .stats-card.border-left-primary::before {
+        background: linear-gradient(90deg, var(--primary-color), #5a8dee);
+    }
+
+    .stats-card.border-left-success::before {
+        background: linear-gradient(90deg, var(--success-color), #00d68f);
+    }
+
+    .stats-card.border-left-info::before {
+        background: linear-gradient(90deg, var(--info-color), #4fc3f7);
+    }
+
+    .stats-card.border-left-warning::before {
+        background: linear-gradient(90deg, var(--warning-color), #ffb64d);
+    }
+
+    .stats-icon {
+        width: 60px;
+        height: 60px;
+        border-radius: 12px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 24px;
+        opacity: 0.9;
+    }
+
+    .stats-icon.bg-primary-light {
+        background-color: rgba(78, 115, 223, 0.1);
+        color: var(--primary-color);
+    }
+
+    .stats-icon.bg-success-light {
+        background-color: rgba(28, 200, 138, 0.1);
+        color: var(--success-color);
+    }
+
+    .stats-icon.bg-info-light {
+        background-color: rgba(54, 185, 204, 0.1);
+        color: var(--info-color);
+    }
+
+    .stats-icon.bg-warning-light {
+        background-color: rgba(246, 194, 62, 0.1);
+        color: var(--warning-color);
+    }
+
+    .trend-indicator {
+        font-size: 0.75rem;
+        padding: 0.25rem 0.5rem;
+        border-radius: 20px;
+        font-weight: 600;
+    }
+
+    .trend-up {
+        background-color: rgba(28, 200, 138, 0.1);
+        color: var(--success-color);
+    }
+
+    .trend-down {
+        background-color: rgba(231, 74, 59, 0.1);
+        color: var(--danger-color);
+    }
+
     .pulse {
         animation: pulse 2s infinite;
     }
+
     @keyframes pulse {
-        0% { opacity: 1; }
+        0%, 100% { opacity: 1; }
         50% { opacity: 0.7; }
-        100% { opacity: 1; }
     }
+
+    .chart-container {
+        position: relative;
+        height: 350px;
+    }
+
+    .chart-card {
+        border-radius: 0.5rem;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+        transition: all 0.3s ease;
+    }
+
+    .chart-card:hover {
+        box-shadow: 0 5px 20px rgba(0,0,0,0.12);
+    }
+
+    .alert-item {
+        padding: 1rem;
+        border-bottom: 1px solid #e3e6f0;
+        transition: background-color 0.2s ease;
+    }
+
+    .alert-item:hover {
+        background-color: #f8f9fc;
+    }
+
+    .alert-item:last-child {
+        border-bottom: none;
+    }
+
+    .progress-thin {
+        height: 6px;
+        border-radius: 3px;
+    }
+
+    .stock-indicator {
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        display: inline-block;
+        margin-right: 8px;
+        animation: blink 2s infinite;
+    }
+
+    @keyframes blink {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.3; }
+    }
+
+    .stock-critical { background-color: var(--danger-color); }
+    .stock-low { background-color: var(--warning-color); }
+    .stock-good { background-color: var(--success-color); }
+
+    .quick-action-card {
+        border: 2px dashed #e3e6f0;
+        border-radius: 0.5rem;
+        transition: all 0.3s ease;
+        cursor: pointer;
+        height: 100%;
+        min-height: 120px;
+    }
+
+    .quick-action-card:hover {
+        border-color: var(--primary-color);
+        background-color: rgba(78, 115, 223, 0.05);
+        transform: translateY(-3px);
+    }
+
+    .movement-badge {
+        font-size: 0.7rem;
+        padding: 0.3rem 0.6rem;
+        border-radius: 12px;
+        font-weight: 600;
+    }
+
+    .table-hover tbody tr:hover {
+        background-color: rgba(78, 115, 223, 0.05);
+    }
+
     .connection-status {
         position: fixed;
-        top: 10px;
-        right: 10px;
+        top: 20px;
+        right: 20px;
         z-index: 1050;
+        animation: slideInRight 0.3s ease;
     }
-    .alert-container {
-        max-height: 400px;
-        overflow-y: auto;
+
+    @keyframes slideInRight {
+        from {
+            transform: translateX(100%);
+            opacity: 0;
+        }
+        to {
+            transform: translateX(0);
+            opacity: 1;
+        }
     }
-    .movements-container {
-        max-height: 500px;
-        overflow-y: auto;
-    }
-    .animate-fade-in {
-        animation: fadeIn 0.5s ease-in;
-    }
-    .animate-slide-in {
-        animation: slideIn 0.3s ease-out;
-    }
-    @keyframes fadeIn {
-        from { opacity: 0; }
-        to { opacity: 1; }
-    }
-    @keyframes slideIn {
-        from { transform: translateY(-20px); opacity: 0; }
-        to { transform: translateY(0); opacity: 1; }
-    }
+
     .status-indicator {
         display: inline-block;
         width: 10px;
@@ -59,121 +226,433 @@
         border-radius: 50%;
         margin-right: 8px;
     }
+
     .status-connected {
         background-color: #28a745;
+        box-shadow: 0 0 10px rgba(40, 167, 69, 0.5);
     }
+
     .status-disconnected {
         background-color: #dc3545;
+        box-shadow: 0 0 10px rgba(220, 53, 69, 0.5);
     }
-    .status-connecting {
-        background-color: #ffc107;
-        animation: pulse 1.5s infinite;
-    }
+
     .live-indicator {
         animation: pulse 2s infinite;
         color: #28a745;
+        font-weight: 600;
+    }
+
+    .metric-card {
+        background: white;
+        border-radius: 0.5rem;
+        padding: 1.5rem;
+        margin-bottom: 1rem;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+    }
+
+    .metric-label {
+        font-size: 0.85rem;
+        color: var(--secondary-color);
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+
+    .metric-value {
+        font-size: 2rem;
+        font-weight: 700;
+        color: var(--dark-color);
+        margin: 0.5rem 0;
+    }
+
+    .activity-feed {
+        max-height: 400px;
+        overflow-y: auto;
+    }
+
+    .activity-item {
+        padding: 1rem;
+        border-left: 3px solid transparent;
+        margin-bottom: 0.5rem;
+        background: white;
+        border-radius: 0.25rem;
+    }
+
+    .activity-item.activity-purchase {
+        border-left-color: var(--success-color);
+    }
+
+    .activity-item.activity-sale {
+        border-left-color: var(--primary-color);
+    }
+
+    .activity-item.activity-adjustment {
+        border-left-color: var(--warning-color);
+    }
+
+    .top-product-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 1rem;
+        border-bottom: 1px solid #e3e6f0;
+        transition: all 0.2s ease;
+    }
+
+    .top-product-item:hover {
+        background-color: #f8f9fc;
+        padding-left: 1.5rem;
+    }
+
+    .product-rank {
+        width: 40px;
+        height: 40px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 700;
+        font-size: 1.1rem;
+    }
+
+    .rank-1 { background: linear-gradient(135deg, #FFD700, #FFA500); color: white; }
+    .rank-2 { background: linear-gradient(135deg, #C0C0C0, #808080); color: white; }
+    .rank-3 { background: linear-gradient(135deg, #CD7F32, #8B4513); color: white; }
+    .rank-default { background-color: #f8f9fc; color: var(--secondary-color); }
+
+    .category-chip {
+        display: inline-block;
+        padding: 0.25rem 0.75rem;
+        border-radius: 20px;
+        font-size: 0.75rem;
+        font-weight: 600;
+        background-color: rgba(78, 115, 223, 0.1);
+        color: var(--primary-color);
+    }
+
+    /* Scrollbar styling */
+    .activity-feed::-webkit-scrollbar,
+    .alert-container::-webkit-scrollbar {
+        width: 6px;
+    }
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes slideIn {
+    from {
+        opacity: 0;
+        transform: translateX(-20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+.animate-fade-in {
+    animation: fadeIn 0.5s ease-in;
+}
+
+.animate-slide-in {
+    animation: slideIn 0.3s ease-out;
+}
+
+/* Custom Bootstrap badge styles */
+.bg-success-subtle {
+    background-color: rgba(28, 200, 138, 0.1) !important;
+}
+
+.bg-primary-subtle {
+    background-color: rgba(78, 115, 223, 0.1) !important;
+}
+
+.bg-info-subtle {
+    background-color: rgba(54, 185, 204, 0.1) !important;
+}
+
+.bg-warning-subtle {
+    background-color: rgba(246, 194, 62, 0.1) !important;
+}
+
+.bg-danger-subtle {
+    background-color: rgba(231, 74, 59, 0.1) !important;
+}
+
+.bg-secondary-subtle {
+    background-color: rgba(133, 135, 150, 0.1) !important;
+}
+    .activity-feed::-webkit-scrollbar-track,
+    .alert-container::-webkit-scrollbar-track {
+        background: #f1f1f1;
+        border-radius: 10px;
+    }
+
+    .activity-feed::-webkit-scrollbar-thumb,
+    .alert-container::-webkit-scrollbar-thumb {
+        background: #888;
+        border-radius: 10px;
+    }
+
+    .activity-feed::-webkit-scrollbar-thumb:hover,
+    .alert-container::-webkit-scrollbar-thumb:hover {
+        background: #555;
+    }
+
+    /* Print styles */
+    @media print {
+        .no-print {
+            display: none !important;
+        }
+
+        .stats-card {
+            break-inside: avoid;
+        }
+    }
+
+    /* Responsive adjustments */
+    @media (max-width: 768px) {
+        .metric-value {
+            font-size: 1.5rem;
+        }
+
+        .chart-container {
+            height: 250px;
+        }
+    }
+
+    /* Loading animation */
+    .loading-skeleton {
+        background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+        background-size: 200% 100%;
+        animation: loading 1.5s infinite;
+        border-radius: 4px;
+    }
+
+    @keyframes loading {
+        0% { background-position: 200% 0; }
+        100% { background-position: -200% 0; }
+    }
+
+    .filter-chip {
+        display: inline-block;
+        padding: 0.5rem 1rem;
+        margin: 0.25rem;
+        border-radius: 20px;
+        background-color: white;
+        border: 2px solid #e3e6f0;
+        cursor: pointer;
+        transition: all 0.2s ease;
+    }
+
+    .filter-chip:hover {
+        border-color: var(--primary-color);
+        background-color: rgba(78, 115, 223, 0.05);
+    }
+
+    .filter-chip.active {
+        background-color: var(--primary-color);
+        color: white;
+        border-color: var(--primary-color);
     }
 </style>
 {% endblock %}
 
 {% block breadcrumbs %}
-    <li class="breadcrumb-item active">Dashboard</li>
+    <li class="breadcrumb-item active" aria-current="page">
+        <i class="fas fa-tachometer-alt"></i> Dashboard
+    </li>
 {% endblock %}
 
 {% block content %}
 <!-- Connection Status Indicator -->
-<div id="connection-status" class="connection-status">
+<div id="connection-status" class="connection-status no-print">
     <span class="badge bg-success" id="ws-status">
         <span class="status-indicator status-connected"></span>
-        <i class="fas fa-wifi"></i> Connected
+        <i class="fas fa-wifi"></i> Live
     </span>
 </div>
 
-<!-- Notifications Container -->
-<div id="notifications-container" class="position-fixed top-0 start-50 translate-middle-x" style="z-index: 9998; margin-top: 20px;"></div>
-
+<!-- Page Header -->
 <div class="d-flex justify-content-between align-items-center mb-4">
-    <h1 class="h3 mb-0">
-        <i class="fas fa-tachometer-alt text-primary"></i> Dashboard
-        <span class="badge bg-info ms-2 live-indicator">
-            <i class="fas fa-broadcast-tower"></i> Live Data
-        </span>
-    </h1>
-    <div class="btn-group">
-        <button type="button" class="btn btn-outline-primary" id="refresh-dashboard">
+    <div>
+        <h1 class="h3 mb-1 text-gray-800">
+            <i class="fas fa-chart-line text-primary"></i> Inventory Analytics Dashboard
+        </h1>
+        <p class="text-muted mb-0">
+            <span class="live-indicator">
+                <i class="fas fa-circle"></i> Real-time monitoring
+            </span>
+            <span class="ms-3">
+                <i class="far fa-clock"></i> Last updated: <span id="last-updated">{{ "now"|date:"M d, Y H:i" }}</span>
+            </span>
+        </p>
+    </div>
+    <div class="btn-group no-print">
+        <button type="button" class="btn btn-outline-primary" id="refresh-dashboard" title="Refresh Dashboard">
             <i class="fas fa-sync-alt"></i> Refresh
         </button>
-        <button type="button" class="btn btn-outline-secondary print-btn">
-            <i class="fas fa-print"></i> Print
+        <div class="btn-group">
+            <button type="button" class="btn btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown">
+                <i class="fas fa-download"></i> Export
+            </button>
+            <ul class="dropdown-menu dropdown-menu-end">
+                <li><a class="dropdown-item" href="#" onclick="window.print()"><i class="fas fa-print"></i> Print Report</a></li>
+                <li><a class="dropdown-item" href="{% url 'inventory:stock_export' %}?format=excel"><i class="fas fa-file-excel"></i> Export to Excel</a></li>
+                <li><a class="dropdown-item" href="{% url 'inventory:stock_export' %}?format=pdf"><i class="fas fa-file-pdf"></i> Export to PDF</a></li>
+            </ul>
+        </div>
+        <button type="button" class="btn btn-outline-info" data-bs-toggle="modal" data-bs-target="#settingsModal">
+            <i class="fas fa-cog"></i>
         </button>
     </div>
 </div>
 
-<p class="text-muted mb-4">
-    Real-time inventory monitoring and analytics
-    <br><small>Last updated: <span id="last-updated">{{ "now"|date:"M d, Y H:i" }}</span></small>
-</p>
+<!-- Time Period Filter -->
+<div class="card mb-4 no-print">
+    <div class="card-body py-2">
+        <div class="d-flex align-items-center">
+            <span class="me-3 text-muted"><i class="fas fa-filter"></i> View:</span>
+            <div class="btn-group btn-group-sm" role="group">
+                <input type="radio" class="btn-check" name="period-filter" id="period-today" value="today" autocomplete="off">
+                <label class="btn btn-outline-primary" for="period-today">Today</label>
 
-<!-- Statistics Cards -->
+                <input type="radio" class="btn-check" name="period-filter" id="period-week" value="week" autocomplete="off" checked>
+                <label class="btn btn-outline-primary" for="period-week">This Week</label>
+
+                <input type="radio" class="btn-check" name="period-filter" id="period-month" value="month" autocomplete="off">
+                <label class="btn btn-outline-primary" for="period-month">This Month</label>
+
+                <input type="radio" class="btn-check" name="period-filter" id="period-quarter" value="quarter" autocomplete="off">
+                <label class="btn btn-outline-primary" for="period-quarter">This Quarter</label>
+
+                <input type="radio" class="btn-check" name="period-filter" id="period-year" value="year" autocomplete="off">
+                <label class="btn btn-outline-primary" for="period-year">This Year</label>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Key Performance Indicators -->
 <div class="row mb-4">
+    <!-- Total Products -->
     <div class="col-xl-3 col-md-6 mb-4">
-        <div class="card stats-card border-left-primary shadow h-100 py-2" style="border-left: 4px solid #4e73df;">
+        <div class="card stats-card border-left-primary shadow-sm h-100">
             <div class="card-body">
-                <div class="row no-gutters align-items-center">
-                    <div class="col mr-2">
-                        <div class="text-xs font-weight-bold text-primary text-uppercase mb-1">Total Products</div>
-                        <div class="h5 mb-0 font-weight-bold text-gray-800" id="total-products-count">{{ total_products }}</div>
+                <div class="row align-items-center">
+                    <div class="col">
+                        <div class="metric-label text-primary mb-1">
+                            Total Products
+                        </div>
+                        <div class="metric-value" id="total-products-count">
+                            {{ total_products|default:0 }}
+                        </div>
+                        <div class="d-flex align-items-center">
+                            <span class="trend-indicator trend-up">
+                                <i class="fas fa-arrow-up"></i> 12.5%
+                            </span>
+                            <small class="text-muted ms-2">vs last month</small>
+                        </div>
                     </div>
                     <div class="col-auto">
-                        <i class="fas fa-box fa-2x text-gray-300"></i>
+                        <div class="stats-icon bg-primary-light">
+                            <i class="fas fa-boxes"></i>
+                        </div>
                     </div>
                 </div>
             </div>
         </div>
     </div>
 
+    <!-- Categories -->
     <div class="col-xl-3 col-md-6 mb-4">
-        <div class="card stats-card border-left-success shadow h-100 py-2" style="border-left: 4px solid #1cc88a;">
+        <div class="card stats-card border-left-success shadow-sm h-100">
             <div class="card-body">
-                <div class="row no-gutters align-items-center">
-                    <div class="col mr-2">
-                        <div class="text-xs font-weight-bold text-success text-uppercase mb-1">Categories</div>
-                        <div class="h5 mb-0 font-weight-bold text-gray-800" id="total-categories-count">{{ total_categories }}</div>
+                <div class="row align-items-center">
+                    <div class="col">
+                        <div class="metric-label text-success mb-1">
+                            Active Categories
+                        </div>
+                        <div class="metric-value" id="total-categories-count">
+                            {{ total_categories|default:0 }}
+                        </div>
+                        <div class="d-flex align-items-center">
+                            <span class="trend-indicator trend-up">
+                                <i class="fas fa-arrow-up"></i> 8.2%
+                            </span>
+                            <small class="text-muted ms-2">vs last month</small>
+                        </div>
                     </div>
                     <div class="col-auto">
-                        <i class="fas fa-tags fa-2x text-gray-300"></i>
+                        <div class="stats-icon bg-success-light">
+                            <i class="fas fa-layer-group"></i>
+                        </div>
                     </div>
                 </div>
             </div>
         </div>
     </div>
 
+    <!-- Suppliers -->
     <div class="col-xl-3 col-md-6 mb-4">
-        <div class="card stats-card border-left-info shadow h-100 py-2" style="border-left: 4px solid #36b9cc;">
-            <div class="card-body totall">
-                <div class="row no-gutters align-items-center">
-                    <div class="col mr-2 totall">
-                        <div class="text-xs font-weight-bold text-info text-uppercase mb-1">Suppliers</div>
-                        <div class="h5 mb-0 font-weight-bold text-gray-800" id="total-suppliers-count">{{ total_suppliers }}</div>
+        <div class="card stats-card border-left-info shadow-sm h-100">
+            <div class="card-body">
+                <div class="row align-items-center">
+                    <div class="col">
+                        <div class="metric-label text-info mb-1">
+                            Active Suppliers
+                        </div>
+                        <div class="metric-value" id="total-suppliers-count">
+                            {{ total_suppliers|default:0 }}
+                        </div>
+                        <div class="d-flex align-items-center">
+                            <span class="trend-indicator trend-up">
+                                <i class="fas fa-arrow-up"></i> 3.1%
+                            </span>
+                            <small class="text-muted ms-2">vs last month</small>
+                        </div>
                     </div>
                     <div class="col-auto">
-                        <i class="fas fa-truck fa-2x text-gray-300"></i>
+                        <div class="stats-icon bg-info-light">
+                            <i class="fas fa-truck-loading"></i>
+                        </div>
                     </div>
                 </div>
             </div>
         </div>
     </div>
 
+    <!-- Total Stock Value -->
     <div class="col-xl-3 col-md-6 mb-4">
-        <div class="card stats-card border-left-warning shadow h-100 py-2" style="border-left: 4px solid #f6c23e;">
+        <div class="card stats-card border-left-warning shadow-sm h-100">
             <div class="card-body">
-                <div class="row no-gutters align-items-center">
-                    <div class="col mr-2">
-                        <div class="text-xs font-weight-bold text-warning text-uppercase mb-1">Stock Value</div>
-                        <div class="h5 mb-0 font-weight-bold text-gray-800" id="stock-value-amount">UGX {{ stock_value|floatformat:0 }}</div>
+                <div class="row align-items-center">
+                    <div class="col">
+                        <div class="metric-label text-warning mb-1">
+                            Total Stock Value
+                        </div>
+                        <div class="metric-value" id="stock-value-amount">
+                            UGX {{ stock_value|floatformat:0|default:"0" }}
+                        </div>
+                        <div class="d-flex align-items-center">
+                            <span class="trend-indicator trend-up">
+                                <i class="fas fa-arrow-up"></i> 15.3%
+                            </span>
+                            <small class="text-muted ms-2">vs last month</small>
+                        </div>
                     </div>
                     <div class="col-auto">
-                        <i class="fas fa-dollar-sign fa-2x text-gray-300"></i>
+                        <div class="stats-icon bg-warning-light">
+                            <i class="fas fa-coins"></i>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -181,129 +660,250 @@
     </div>
 </div>
 
-<!-- Alert Cards -->
+<!-- Secondary Metrics Row -->
 <div class="row mb-4">
-    <div class="col-md-6 mb-3">
-        <div class="card border-left-warning shadow low-stock-alert" style="display: {% if low_stock_items > 0 %}block{% else %}none{% endif %};">
-            <div class="card-body">
-                <div class="d-flex align-items-center">
-                    <div class="flex-grow-1">
-                        <h5 class="card-title text-warning mb-1">
-                            <i class="fas fa-exclamation-triangle"></i> Low Stock Alert
-                        </h5>
-                        <p class="card-text"><span class="alert-count">{{ low_stock_items }}</span> item{{ low_stock_items|pluralize }} below reorder level</p>
-                    </div>
-                    <div>
-                        {% if perms.inventory.view_stock %}
-                        <a href="{% url 'stores:low_stock_alert' %}" class="btn btn-warning btn-sm">
-                            <i class="fas fa-eye"></i> View Report
-                        </a>
-                        {% endif %}
-                    </div>
-                </div>
+    <!-- Stock Movements Today -->
+    <div class="col-xl-3 col-md-6 mb-4">
+        <div class="metric-card">
+            <div class="d-flex justify-content-between align-items-start mb-2">
+                <div class="metric-label">Movements Today</div>
+                <i class="fas fa-exchange-alt text-primary"></i>
             </div>
+            <div class="metric-value text-primary" id="movements-today">0</div>
+            <div class="progress progress-thin mt-2">
+                <div class="progress-bar bg-primary" role="progressbar" style="width: 65%" aria-valuenow="65" aria-valuemin="0" aria-valuemax="100"></div>
+            </div>
+            <small class="text-muted">65% of daily average</small>
         </div>
     </div>
 
-    <div class="col-md-6 mb-3">
-        <div class="card border-left-danger shadow out-of-stock-alert" style="display: {% if out_of_stock_items > 0 %}block{% else %}none{% endif %};">
-            <div class="card-body">
-                <div class="d-flex align-items-center">
-                    <div class="flex-grow-1">
-                        <h5 class="card-title text-danger mb-1">
-                            <i class="fas fa-times-circle"></i> Out of Stock
-                        </h5>
-                        <p class="card-text"><span class="alert-count">{{ out_of_stock_items }}</span> item{{ out_of_stock_items|pluralize }} out of stock</p>
-                    </div>
-                    <div>
-                        {% if perms.inventory.view_stock %}
-                        <a href="{% url 'inventory:stock_list' %}?status=out_of_stock" class="btn btn-danger btn-sm">
-                            <i class="fas fa-eye"></i> View Items
-                        </a>
-                        {% endif %}
-                    </div>
-                </div>
+    <!-- Low Stock Items -->
+    <div class="col-xl-3 col-md-6 mb-4">
+        <div class="metric-card">
+            <div class="d-flex justify-content-between align-items-start mb-2">
+                <div class="metric-label">Low Stock Items</div>
+                <i class="fas fa-exclamation-triangle text-warning"></i>
             </div>
+            <div class="metric-value text-warning" id="low-stock-count">{{ low_stock_items|default:0 }}</div>
+            <div class="progress progress-thin mt-2">
+                <div class="progress-bar bg-warning" role="progressbar" style="width: 25%" aria-valuenow="25" aria-valuemin="0" aria-valuemax="100"></div>
+            </div>
+            <small class="text-muted">Requires attention</small>
+        </div>
+    </div>
+
+    <!-- Out of Stock -->
+    <div class="col-xl-3 col-md-6 mb-4">
+        <div class="metric-card">
+            <div class="d-flex justify-content-between align-items-start mb-2">
+                <div class="metric-label">Out of Stock</div>
+                <i class="fas fa-times-circle text-danger"></i>
+            </div>
+            <div class="metric-value text-danger" id="out-of-stock-count">{{ out_of_stock_items|default:0 }}</div>
+            <div class="progress progress-thin mt-2">
+                <div class="progress-bar bg-danger" role="progressbar" style="width: 10%" aria-valuenow="10" aria-valuemin="0" aria-valuemax="100"></div>
+            </div>
+            <small class="text-muted">Critical items</small>
+        </div>
+    </div>
+
+    <!-- Inventory Turnover -->
+    <div class="col-xl-3 col-md-6 mb-4">
+        <div class="metric-card">
+            <div class="d-flex justify-content-between align-items-start mb-2">
+                <div class="metric-label">Turnover Ratio</div>
+                <i class="fas fa-sync-alt text-success"></i>
+            </div>
+            <div class="metric-value text-success">4.2x</div>
+            <div class="progress progress-thin mt-2">
+                <div class="progress-bar bg-success" role="progressbar" style="width: 85%" aria-valuenow="85" aria-valuemin="0" aria-valuemax="100"></div>
+            </div>
+            <small class="text-muted">Above industry average</small>
         </div>
     </div>
 </div>
 
-<!-- Main Content Row -->
-<div class="row">
-    <!-- Stock Status Chart -->
+<!-- Charts Row -->
+<div class="row mb-4">
+    <!-- Stock Distribution Chart -->
     <div class="col-xl-8 col-lg-7 mb-4">
-        <div class="card shadow mb-4">
-            <div class="card-header py-3 d-flex flex-row align-items-center justify-content-between">
-                <h6 class="m-0 font-weight-bold text-primary">Stock Status Overview</h6>
-                <div class="d-flex align-items-center">
-                    <span class="badge bg-info me-2" id="movements-today">0</span> Today
-                    <span class="badge bg-secondary" id="movements-week">0</span> This Week
+        <div class="card chart-card shadow-sm">
+            <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center">
+                <div>
+                    <h6 class="m-0 font-weight-bold text-primary">
+                        <i class="fas fa-chart-pie"></i> Stock Status Distribution
+                    </h6>
+                    <small class="text-muted">Real-time inventory overview</small>
+                </div>
+                <div class="btn-group btn-group-sm no-print">
+                    <button class="btn btn-outline-secondary" id="chart-view-doughnut">
+                        <i class="fas fa-chart-pie"></i>
+                    </button>
+                    <button class="btn btn-outline-secondary" id="chart-view-bar">
+                        <i class="fas fa-chart-bar"></i>
+                    </button>
                 </div>
             </div>
             <div class="card-body">
-                <div class="chart-container" style="position: relative; height: 300px;">
+                <div class="chart-container">
                     <canvas id="stockStatusChart"></canvas>
                 </div>
+                <div class="row text-center mt-3">
+                    <div class="col-4">
+                        <div class="d-flex align-items-center justify-content-center">
+                            <span class="stock-indicator stock-good"></span>
+                            <div>
+                                <strong class="d-block">In Stock</strong>
+                                <span class="text-muted" id="in-stock-percent">0%</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-4">
+                        <div class="d-flex align-items-center justify-content-center">
+                            <span class="stock-indicator stock-low"></span>
+                            <div>
+                                <strong class="d-block">Low Stock</strong>
+                                <span class="text-muted" id="low-stock-percent">0%</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-4">
+                        <div class="d-flex align-items-center justify-content-center">
+                            <span class="stock-indicator stock-critical"></span>
+                            <div>
+                                <strong class="d-block">Critical</strong>
+                                <span class="text-muted" id="critical-percent">0%</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
 
-    <!-- Stock Alerts -->
+    <!-- Stock Alerts Panel -->
     <div class="col-xl-4 col-lg-5 mb-4">
-        <div class="card shadow h-100">
-            <div class="card-header d-flex justify-content-between align-items-center">
-                <h6 class="m-0 font-weight-bold text-primary">
-                    <i class="fas fa-bell text-warning"></i> Stock Alerts
+        <div class="card shadow-sm h-100">
+            <div class="card-header bg-white d-flex justify-content-between align-items-center py-3">
+                <h6 class="m-0 font-weight-bold text-danger">
+                    <i class="fas fa-bell"></i> Critical Alerts
                 </h6>
-                <span class="badge bg-warning" id="alert-count">{{ low_stock_items|add:out_of_stock_items }}</span>
+                <span class="badge bg-danger" id="alert-count">{{ low_stock_items|add:out_of_stock_items|default:0 }}</span>
             </div>
             <div class="card-body p-0">
-                <div class="alert-container" id="stock-alerts">
+                <div class="alert-container" id="stock-alerts" style="max-height: 465px; overflow-y: auto;">
                     {% if low_stock_items > 0 or out_of_stock_items > 0 %}
-                        <div class="list-group list-group-flush">
-                            {% comment %}This will be populated by WebSocket{% endcomment %}
-                        </div>
+                        <!-- Alerts will be populated via JavaScript -->
+                        <div id="alerts-list"></div>
                     {% else %}
-                        <div class="d-flex justify-content-center align-items-center p-4">
-                            <div class="text-center text-muted">
-                                <i class="fas fa-check-circle fa-3x mb-3 text-success"></i>
-                                <p class="totall">All stock levels are healthy</p>
-                            </div>
+                        <div class="text-center py-5">
+                            <i class="fas fa-check-circle fa-4x text-success mb-3"></i>
+                            <h6 class="text-muted">All Clear!</h6>
+                            <p class="text-muted small">No critical stock alerts at this time</p>
                         </div>
                     {% endif %}
                 </div>
             </div>
+            {% if low_stock_items > 0 or out_of_stock_items > 0 %}
+            <div class="card-footer bg-white no-print">
+                <a href="{% url 'inventory:low_stock_report' %}" class="btn btn-sm btn-outline-danger w-100">
+                    <i class="fas fa-file-alt"></i> View Full Report
+                </a>
+            </div>
+            {% endif %}
         </div>
     </div>
 </div>
 
-<!-- Charts and Analytics Row -->
-<div class="row">
-    <!-- Top Products -->
-    <div class="col-xl-6 col-lg-6 mb-4">
-        <div class="card shadow">
-            <div class="card-header py-3 d-flex flex-row align-items-center justify-content-between">
-                <h6 class="m-0 font-weight-bold text-primary">Top Products by Activity</h6>
-                {% if perms.inventory.view_product %}
-                <a href="{% url 'inventory:product_list' %}" class="btn btn-sm btn-outline-primary">View All</a>
-                {% endif %}
+<!-- Analytics Row -->
+<div class="row mb-4">
+    <!-- Movement Trends -->
+    <div class="col-xl-6 mb-4">
+        <div class="card chart-card shadow-sm">
+            <div class="card-header bg-white py-3">
+                <h6 class="m-0 font-weight-bold text-primary">
+                    <i class="fas fa-chart-line"></i> Stock Movement Trends
+                </h6>
+                <small class="text-muted">Last 30 days activity</small>
             </div>
             <div class="card-body">
+                <div class="chart-container">
+                    <canvas id="movementTrendsChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Category Distribution -->
+    <div class="col-xl-6 mb-4">
+        <div class="card chart-card shadow-sm">
+            <div class="card-header bg-white py-3">
+                <h6 class="m-0 font-weight-bold text-primary">
+                    <i class="fas fa-layer-group"></i> Stock Value by Category
+                </h6>
+                <small class="text-muted">Total inventory value distribution</small>
+            </div>
+            <div class="card-body">
+                <div class="chart-container">
+                    <canvas id="categoryDistributionChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Top Products and Activity Row -->
+<div class="row mb-4">
+    <!-- Top Products -->
+    <div class="col-xl-6 mb-4">
+        <div class="card shadow-sm">
+            <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center">
+                <div>
+                    <h6 class="m-0 font-weight-bold text-primary">
+                        <i class="fas fa-trophy text-warning"></i> Top Performing Products
+                    </h6>
+                    <small class="text-muted">By movement activity</small>
+                </div>
+                {% if perms.inventory.view_product %}
+                <a href="{% url 'inventory:product_list' %}" class="btn btn-sm btn-outline-primary no-print">
+                    View All <i class="fas fa-arrow-right"></i>
+                </a>
+                {% endif %}
+            </div>
+            <div class="card-body p-0">
                 <div id="top-products-list">
                     {% if top_products %}
-                        {% for product in top_products %}
-                        <div class="list-group-item d-flex justify-content-between align-items-center border-0 px-0">
-                            <div>
-                                <h6 class="mb-1">{{ product.name }}</h6>
-                                <small class="text-muted">{{ product.sku }}</small>
+                        {% for product in top_products|slice:":10" %}
+                        <div class="top-product-item">
+                            <div class="d-flex align-items-center flex-grow-1">
+                                <div class="product-rank rank-{% if forloop.counter <= 3 %}{{ forloop.counter }}{% else %}default{% endif %} me-3">
+                                    {{ forloop.counter }}
+                                </div>
+                                <div class="flex-grow-1">
+                                    <h6 class="mb-1">{{ product.name }}</h6>
+                                    <div class="d-flex align-items-center">
+                                        <small class="text-muted me-2">{{ product.sku }}</small>
+                                        {% if product.category %}
+                                        <span class="category-chip">{{ product.category.name }}</span>
+                                        {% endif %}
+                                    </div>
+                                </div>
                             </div>
-                            <span class="badge bg-primary rounded-pill">{{ product.total_movements }} movements</span>
+                            <div class="text-end">
+                                <div class="badge bg-primary mb-1">{{ product.total_movements|default:0 }} movements</div>
+                                <div class="text-muted small">UGX {{ product.selling_price|floatformat:0 }}</div>
+                            </div>
                         </div>
                         {% endfor %}
                     {% else %}
-                        <div class="text-center text-muted">
-                            <i class="fas fa-inbox fa-3x mb-3"></i>
-                            <p>No product activity yet</p>
+                        <div class="text-center py-5">
+                            <i class="fas fa-box-open fa-4x text-muted mb-3"></i>
+                            <p class="text-muted">No product activity recorded yet</p>
+                            {% if perms.inventory.add_product %}
+                            <a href="{% url 'inventory:product_create' %}" class="btn btn-sm btn-primary">
+                                <i class="fas fa-plus"></i> Add Your First Product
+                            </a>
+                            {% endif %}
                         </div>
                     {% endif %}
                 </div>
@@ -311,710 +911,1166 @@
         </div>
     </div>
 
-    <!-- Movement Trends Chart -->
-    <div class="col-xl-6 col-lg-6 mb-4">
-        <div class="card shadow">
-            <div class="card-header">
-                <h6 class="m-0 font-weight-bold text-primary">
-                    <i class="fas fa-chart-line"></i> Movement Trends
-                </h6>
+    <!-- Recent Activity Feed -->
+    <div class="col-xl-6 mb-4">
+        <div class="card shadow-sm">
+            <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center">
+                <div>
+                    <h6 class="m-0 font-weight-bold text-primary">
+                        <i class="fas fa-stream"></i> Recent Activity
+                    </h6>
+                    <small class="text-muted">Live feed of stock movements</small>
+                </div>
+                <span class="badge bg-info" id="activity-count">{{ recent_movements|length|default:0 }}</span>
             </div>
-            <div class="card-body">
-                <div class="chart-container" style="position: relative; height: 300px;">
-                    <canvas id="movement-trends-chart"></canvas>
+            <div class="card-body p-0">
+                <div class="activity-feed" id="activity-feed">
+                    {% if recent_movements %}
+                        {% for movement in recent_movements|slice:":8" %}
+                        <div class="activity-item activity-{{ movement.movement_type|lower }}">
+                            <div class="d-flex align-items-start">
+                                <div class="flex-shrink-0 me-3">
+                                    {% if movement.movement_type == 'PURCHASE' %}
+                                        <div class="rounded-circle bg-success text-white d-flex align-items-center justify-content-center" style="width: 40px; height: 40px;">
+                                            <i class="fas fa-plus"></i>
+                                        </div>
+                                    {% elif movement.movement_type == 'SALE' %}
+                                        <div class="rounded-circle bg-primary text-white d-flex align-items-center justify-content-center" style="width: 40px; height: 40px;">
+                                            <i class="fas fa-shopping-cart"></i>
+                                        </div>
+                                    {% elif movement.movement_type == 'ADJUSTMENT' %}
+                                        <div class="rounded-circle bg-warning text-white d-flex align-items-center justify-content-center" style="width: 40px; height: 40px;">
+                                            <i class="fas fa-adjust"></i>
+                                        </div>
+                                    {% else %}
+                                        <div class="rounded-circle bg-secondary text-white d-flex align-items-center justify-content-center" style="width: 40px; height: 40px;">
+                                            <i class="fas fa-exchange-alt"></i>
+                                        </div>
+                                    {% endif %}
+                                </div>
+                                <div class="flex-grow-1">
+                                    <div class="d-flex justify-content-between align-items-start mb-1">
+                                        <h6 class="mb-0">{{ movement.product.name }}</h6>
+                                        <small class="text-muted">{{ movement.created_at|timesince }} ago</small>
+                                    </div>
+                                    <p class="mb-1 small">
+                                        <span class="movement-badge bg-{% if movement.movement_type == 'PURCHASE' %}success{% elif movement.movement_type == 'SALE' %}primary{% elif movement.movement_type == 'ADJUSTMENT' %}warning{% else %}secondary{% endif %}">
+                                            {{ movement.get_movement_type_display }}
+                                        </span>
+                                        <span class="{% if movement.movement_type in 'PURCHASE,RETURN,TRANSFER_IN' %}text-success{% else %}text-danger{% endif %} fw-bold ms-2">
+                                            {% if movement.movement_type in 'PURCHASE,RETURN,TRANSFER_IN' %}+{% else %}-{% endif %}{{ movement.quantity }} {{ movement.product.unit_of_measure }}
+                                        </span>
+                                    </p>
+                                    <div class="d-flex align-items-center text-muted small">
+                                        <i class="fas fa-store me-1"></i> {{ movement.store.name }}
+                                        <span class="mx-2">•</span>
+                                        <i class="fas fa-user me-1"></i> {{ movement.created_by.get_full_name|default:movement.created_by.username }}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    {% else %}
+                        <div class="text-center py-5">
+                            <i class="fas fa-clipboard-list fa-4x text-muted mb-3"></i>
+                            <p class="text-muted">No recent activity to display</p>
+                        </div>
+                    {% endif %}
                 </div>
             </div>
+            {% if recent_movements %}
+            <div class="card-footer bg-white no-print">
+                <a href="{% url 'inventory:movement_list' %}" class="btn btn-sm btn-outline-primary w-100">
+                    <i class="fas fa-history"></i> View Complete History
+                </a>
+            </div>
+            {% endif %}
         </div>
     </div>
 </div>
 
-<!-- Recent Stock Movements -->
-<div class="card shadow mb-4">
-    <div class="card-header py-3 d-flex flex-row align-items-center justify-content-between">
-        <h6 class="m-0 font-weight-bold text-primary">
-            <i class="fas fa-exchange-alt text-info"></i> Recent Stock Movements
-        </h6>
-        <div class="d-flex align-items-center">
-            <small class="text-muted me-3" id="last-updated-movements">Last updated: {{ "now"|date:"M d, Y H:i" }}</small>
+<!-- Stock Movements Table -->
+<div class="card shadow-sm mb-4">
+    <div class="card-header bg-white py-3 d-flex justify-content-between align-items-center">
+        <div>
+            <h6 class="m-0 font-weight-bold text-primary">
+                <i class="fas fa-table"></i> Recent Stock Movements
+            </h6>
+            <small class="text-muted">Detailed transaction log</small>
+        </div>
+        <div class="no-print">
             {% if perms.inventory.view_stockmovement %}
-            <a href="{% url 'inventory:movement_list' %}" class="btn btn-sm btn-outline-primary">View All</a>
+            <a href="{% url 'inventory:movement_list' %}" class="btn btn-sm btn-outline-primary">
+                View All <i class="fas fa-arrow-right"></i>
+            </a>
             {% endif %}
         </div>
     </div>
     <div class="card-body">
-        <div class="movements-container">
-            <div class="table-responsive">
-                <table class="table table-hover" id="recent-movements-table">
-                    <thead>
+        <div class="table-responsive">
+            <table class="table table-hover align-middle" id="recent-movements-table">
+                <thead class="table-light">
+                    <tr>
+                        <th><i class="far fa-calendar"></i> Date & Time</th>
+                        <th><i class="fas fa-box"></i> Product</th>
+                        <th><i class="fas fa-tag"></i> Type</th>
+                        <th class="text-end"><i class="fas fa-sort-numeric-up"></i> Quantity</th>
+                        <th><i class="fas fa-store"></i> Store</th>
+                        <th><i class="fas fa-user"></i> User</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% if recent_movements %}
+                        {% for movement in recent_movements|slice:":15" %}
                         <tr>
-                            <th>Date</th>
-                            <th>Product</th>
-                            <th>Type</th>
-                            <th>Quantity</th>
-                            <th>Store</th>
-                            <th>User</th>
+                            <td>
+                                <div class="fw-bold">{{ movement.created_at|date:"M d, Y" }}</div>
+                                <small class="text-muted">{{ movement.created_at|time:"H:i" }}</small>
+                            </td>
+                            <td>
+                                <div class="fw-bold">{{ movement.product.name }}</div>
+                                <small class="text-muted">{{ movement.product.sku }}</small>
+                            </td>
+                            <td>
+                                {% if movement.movement_type == 'PURCHASE' %}
+                                    <span class="badge bg-success-subtle text-success">
+                                        <i class="fas fa-plus-circle"></i> {{ movement.get_movement_type_display }}
+                                    </span>
+                                {% elif movement.movement_type == 'SALE' %}
+                                    <span class="badge bg-primary-subtle text-primary">
+                                        <i class="fas fa-shopping-cart"></i> {{ movement.get_movement_type_display }}
+                                    </span>
+                                {% elif movement.movement_type == 'RETURN' %}
+                                    <span class="badge bg-info-subtle text-info">
+                                        <i class="fas fa-undo"></i> {{ movement.get_movement_type_display }}
+                                    </span>
+                                {% elif movement.movement_type == 'ADJUSTMENT' %}
+                                    <span class="badge bg-warning-subtle text-warning">
+                                        <i class="fas fa-sliders-h"></i> {{ movement.get_movement_type_display }}
+                                    </span>
+                                {% elif movement.movement_type == 'TRANSFER_IN' %}
+                                    <span class="badge bg-success-subtle text-success">
+                                        <i class="fas fa-arrow-down"></i> {{ movement.get_movement_type_display }}
+                                    </span>
+                                {% else %}
+                                    <span class="badge bg-secondary-subtle text-secondary">
+                                        <i class="fas fa-arrow-up"></i> {{ movement.get_movement_type_display }}
+                                    </span>
+                                {% endif %}
+                            </td>
+                            <td class="text-end">
+                                {% if movement.movement_type in 'PURCHASE,RETURN,TRANSFER_IN' %}
+                                    <span class="text-success fw-bold">
+                                        <i class="fas fa-plus"></i> {{ movement.quantity }}
+                                    </span>
+                                {% else %}
+                                    <span class="text-danger fw-bold">
+                                        <i class="fas fa-minus"></i> {{ movement.quantity }}
+                                    </span>
+                                {% endif %}
+                                <small class="text-muted d-block">{{ movement.product.unit_of_measure }}</small>
+                            </td>
+                            <td>
+                                <i class="fas fa-map-marker-alt text-muted me-1"></i>
+                                {{ movement.store.name }}
+                            </td>
+                            <td>
+                                <div class="d-flex align-items-center">
+                                    <div class="bg-primary text-white rounded-circle d-flex align-items-center justify-content-center me-2" style="width: 30px; height: 30px; font-size: 12px;">
+                                        {{ movement.created_by.get_full_name.0|default:movement.created_by.username.0|upper }}
+                                    </div>
+                                    <span>{{ movement.created_by.get_full_name|default:movement.created_by.username }}</span>
+                                </div>
+                            </td>
+
                         </tr>
-                    </thead>
-                    <tbody>
-                        {% if recent_movements %}
-                            {% for movement in recent_movements %}
-                            <tr>
-                                <td>{{ movement.created_at|date:"M d, Y H:i" }}</td>
-                                <td>
-                                    <strong>{{ movement.product.name }}</strong><br>
-                                    <small class="text-muted">{{ movement.product.sku }}</small>
-                                </td>
-                                <td>
-                                    {% if movement.movement_type == 'PURCHASE' %}
-                                        <span class="badge bg-success">{{ movement.get_movement_type_display }}</span>
-                                    {% elif movement.movement_type == 'SALE' %}
-                                        <span class="badge bg-primary">{{ movement.get_movement_type_display }}</span>
-                                    {% elif movement.movement_type == 'RETURN' %}
-                                        <span class="badge bg-info">{{ movement.get_movement_type_display }}</span>
-                                    {% elif movement.movement_type == 'ADJUSTMENT' %}
-                                        <span class="badge bg-warning">{{ movement.get_movement_type_display }}</span>
-                                    {% else %}
-                                        <span class="badge bg-secondary">{{ movement.get_movement_type_display }}</span>
-                                    {% endif %}
-                                </td>
-                                <td>
-                                    {% if movement.movement_type in 'PURCHASE,RETURN,TRANSFER_IN' %}
-                                        <span class="text-success">+{{ movement.quantity }}</span>
-                                    {% else %}
-                                        <span class="text-danger">-{{ movement.quantity }}</span>
-                                    {% endif %}
-                                    {{ movement.product.unit_of_measure }}
-                                </td>
-                                <td>{{ movement.store.name }}</td>
-                                <td>{{ movement.created_by.get_full_name|default:movement.created_by.username }}</td>
-                            </tr>
-                            {% endfor %}
-                        {% else %}
-                            <tr>
-                                <td colspan="6" class="text-center text-muted">
-                                    <i class="fas fa-exchange-alt fa-3x mb-3"></i>
-                                    <p>No recent stock movements</p>
-                                    {% if perms.inventory.add_stockmovement %}
-                                    <a href="{% url 'inventory:movement_create' %}" class="btn btn-primary">
-                                        <i class="fas fa-plus"></i> Add Stock Movement
-                                    </a>
-                                    {% endif %}
-                                </td>
-                            </tr>
-                        {% endif %}
-                    </tbody>
-                </table>
-            </div>
+                        {% endfor %}
+                    {% else %}
+                        <tr>
+                            <td colspan="7" class="text-center py-5">
+                                <i class="fas fa-inbox fa-4x text-muted mb-3"></i>
+                                <h6 class="text-muted">No Stock Movements Yet</h6>
+                                <p class="text-muted">Start managing your inventory to see movements here</p>
+                                {% if perms.inventory.add_stockmovement %}
+                                <a href="{% url 'inventory:movement_create' %}" class="btn btn-primary">
+                                    <i class="fas fa-plus"></i> Record First Movement
+                                </a>
+                                {% endif %}
+                            </td>
+                        </tr>
+                    {% endif %}
+                </tbody>
+            </table>
         </div>
     </div>
 </div>
 
 <!-- Quick Actions -->
-<div class="row">
-    <div class="col-12">
-        <div class="card shadow">
-            <div class="card-header py-3">
-                <h6 class="m-0 font-weight-bold text-primary">
-                    <i class="fas fa-bolt"></i> Quick Actions
-                </h6>
+<div class="card shadow-sm mb-4 no-print">
+    <div class="card-header bg-white py-3">
+        <h6 class="m-0 font-weight-bold text-primary">
+            <i class="fas fa-bolt"></i> Quick Actions
+        </h6>
+    </div>
+    <div class="card-body">
+        <div class="row g-3">
+            {% if perms.inventory.add_product %}
+            <div class="col-lg-3 col-md-4 col-sm-6">
+                <a href="{% url 'inventory:product_create' %}" class="text-decoration-none">
+                    <div class="quick-action-card">
+                        <div class="text-center p-4">
+                            <div class="mb-3">
+                                <i class="fas fa-plus-circle fa-3x text-primary"></i>
+                            </div>
+                            <h6 class="mb-1">Add Product</h6>
+                            <small class="text-muted">Create new product</small>
+                        </div>
+                    </div>
+                </a>
             </div>
-            <div class="card-body">
-                <div class="row">
-                    <div class="col-md-3 mb-3">
-                        {% if perms.inventory.add_product %}
-                        <a href="{% url 'inventory:product_create' %}" class="btn btn-outline-primary btn-block h-100">
-                            <div class="text-center py-3">
-                                <i class="fas fa-plus-circle fa-2x mb-2"></i>
-                                <div>Add Product</div>
+            {% endif %}
+
+            {% if perms.inventory.add_stockmovement %}
+            <div class="col-lg-3 col-md-4 col-sm-6">
+                <a href="{% url 'inventory:movement_create' %}" class="text-decoration-none">
+                    <div class="quick-action-card">
+                        <div class="text-center p-4">
+                            <div class="mb-3">
+                                <i class="fas fa-exchange-alt fa-3x text-success"></i>
                             </div>
-                        </a>
-                        {% endif %}
+                            <h6 class="mb-1">Stock Movement</h6>
+                            <small class="text-muted">Record transaction</small>
+                        </div>
                     </div>
-                    <div class="col-md-3 mb-3">
-                        {% if perms.inventory.add_stockmovement %}
-                        <a href="{% url 'inventory:movement_create' %}" class="btn btn-outline-success btn-block h-100">
-                            <div class="text-center py-3">
-                                <i class="fas fa-exchange-alt fa-2x mb-2"></i>
-                                <div>Stock Movement</div>
+                </a>
+            </div>
+            {% endif %}
+
+            {% if perms.inventory.change_stock %}
+            <div class="col-lg-3 col-md-4 col-sm-6">
+                <a href="{% url 'inventory:stock_adjustment' %}" class="text-decoration-none">
+                    <div class="quick-action-card">
+                        <div class="text-center p-4">
+                            <div class="mb-3">
+                                <i class="fas fa-sliders-h fa-3x text-warning"></i>
                             </div>
-                        </a>
-                        {% endif %}
+                            <h6 class="mb-1">Adjust Stock</h6>
+                            <small class="text-muted">Make corrections</small>
+                        </div>
                     </div>
-                    <div class="col-md-3 mb-3">
-                        {% if perms.inventory.add_stockmovement %}
-                        <a href="{% url 'inventory:movement_create' %}" class="btn btn-outline-warning btn-block h-100">
-                            <div class="text-center py-3">
-                                <i class="fas fa-adjust fa-2x mb-2"></i>
-                                <div>Stock Adjustment</div>
+                </a>
+            </div>
+            {% endif %}
+
+            {% if perms.inventory.add_product %}
+            <div class="col-lg-3 col-md-4 col-sm-6">
+                <a href="{% url 'inventory:stock_import' %}" class="text-decoration-none">
+                    <div class="quick-action-card">
+                        <div class="text-center p-4">
+                            <div class="mb-3">
+                                <i class="fas fa-file-upload fa-3x text-info"></i>
                             </div>
-                        </a>
-                        {% endif %}
+                            <h6 class="mb-1">Import Products</h6>
+                            <small class="text-muted">Bulk upload</small>
+                        </div>
                     </div>
-                    <div class="col-md-3 mb-3">
-                        {% if perms.inventory.add_product %}
-                        <a href="{% url 'inventory:bulk_import' %}" class="btn btn-outline-info btn-block h-100">
-                            <div class="text-center py-3">
-                                <i class="fas fa-upload fa-2x mb-2"></i>
-                                <div>Import Products</div>
+                </a>
+            </div>
+            {% endif %}
+
+            {% if perms.inventory.view_stock %}
+            <div class="col-lg-3 col-md-4 col-sm-6">
+                <a href="{% url 'inventory:low_stock_report' %}" class="text-decoration-none">
+                    <div class="quick-action-card">
+                        <div class="text-center p-4">
+                            <div class="mb-3">
+                                <i class="fas fa-chart-line fa-3x text-danger"></i>
                             </div>
-                        </a>
-                        {% endif %}
+                            <h6 class="mb-1">Low Stock Report</h6>
+                            <small class="text-muted">View alerts</small>
+                        </div>
+                    </div>
+                </a>
+            </div>
+            {% endif %}
+
+            {% if perms.inventory.view_stock %}
+            <div class="col-lg-3 col-md-4 col-sm-6">
+                <a href="{% url 'inventory:valuation_report' %}" class="text-decoration-none">
+                    <div class="quick-action-card">
+                        <div class="text-center p-4">
+                            <div class="mb-3">
+                                <i class="fas fa-money-bill-wave fa-3x text-success"></i>
+                            </div>
+                            <h6 class="mb-1">Valuation Report</h6>
+                            <small class="text-muted">Stock value</small>
+                        </div>
+                    </div>
+                </a>
+            </div>
+            {% endif %}
+
+            {% if perms.inventory.add_category %}
+            <div class="col-lg-3 col-md-4 col-sm-6">
+                <a href="{% url 'inventory:category_create' %}" class="text-decoration-none">
+                    <div class="quick-action-card">
+                        <div class="text-center p-4">
+                            <div class="mb-3">
+                                <i class="fas fa-layer-group fa-3x text-primary"></i>
+                            </div>
+                            <h6 class="mb-1">Add Category</h6>
+                            <small class="text-muted">Create category</small>
+                        </div>
+                    </div>
+                </a>
+            </div>
+            {% endif %}
+
+            {% if perms.inventory.add_supplier %}
+            <div class="col-lg-3 col-md-4 col-sm-6">
+                <a href="{% url 'inventory:supplier_create' %}" class="text-decoration-none">
+                    <div class="quick-action-card">
+                        <div class="text-center p-4">
+                            <div class="mb-3">
+                                <i class="fas fa-truck fa-3x text-info"></i>
+                            </div>
+                            <h6 class="mb-1">Add Supplier</h6>
+                            <small class="text-muted">New supplier</small>
+                        </div>
+                    </div>
+                </a>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<!-- Settings Modal -->
+<div class="modal fade" id="settingsModal" tabindex="-1" aria-labelledby="settingsModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="settingsModalLabel">
+                    <i class="fas fa-cog"></i> Dashboard Settings
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label class="form-label fw-bold">Auto-Refresh Interval</label>
+                    <select class="form-select" id="refresh-interval">
+                        <option value="0">Disabled</option>
+                        <option value="30000">30 seconds</option>
+                        <option value="60000">1 minute</option>
+                        <option value="300000" selected>5 minutes</option>
+                        <option value="600000">10 minutes</option>
+                    </select>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label fw-bold">Chart Animation</label>
+                    <div class="form-check form-switch">
+                        <input class="form-check-input" type="checkbox" id="chart-animation" checked>
+                        <label class="form-check-label" for="chart-animation">
+                            Enable chart animations
+                        </label>
                     </div>
                 </div>
+                <div class="mb-3">
+                    <label class="form-label fw-bold">Sound Notifications</label>
+                    <div class="form-check form-switch">
+                        <input class="form-check-input" type="checkbox" id="sound-notifications">
+                        <label class="form-check-label" for="sound-notifications">
+                            Play sound for critical alerts
+                        </label>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                <button type="button" class="btn btn-primary" id="save-settings">Save Settings</button>
             </div>
         </div>
     </div>
 </div>
 
-<!-- Connection Status Indicator (duplicate for compatibility) -->
-<div id="ws-status" class="position-fixed top-0 end-0 p-2" style="z-index: 9999; display: none;">
-    <div class="badge bg-secondary">
-        <i class="fas fa-circle me-1"></i>
-        <span class="status-text">Connecting...</span>
-    </div>
-</div>
 {% endblock %}
 
 {% block extra_js %}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
-<script src="{% static 'js/inventory/websocket-manager.js' %}"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/js/toastr.min.js"></script>
 <script>
-// Configure toastr
-toastr.options = {
-    closeButton: true,
-    debug: false,
-    newestOnTop: true,
-    progressBar: true,
-    positionClass: "toast-top-right",
-    preventDuplicates: false,
-    onclick: null,
-    showDuration: "300",
-    hideDuration: "1000",
-    timeOut: "5000",
-    extendedTimeOut: "1000",
-    showEasing: "swing",
-    hideEasing: "linear",
-    showMethod: "fadeIn",
-    hideMethod: "fadeOut"
-};
+(function() {
+    'use strict';
 
-$(document).ready(function() {
-    // Initialize charts
-    let stockChart = null;
-    let movementChart = null;
+    // ============================================
+    // Dashboard Configuration
+    // ============================================
+    var CONFIG = {
+        refreshInterval: 300000,
+        chartAnimationDuration: 1000,
+        websocketReconnectDelay: 5000,
+        maxReconnectAttempts: 5,
+        apiEndpoints: {
+            stats: '{% url "inventory:dashboard_stats_api" %}',
+            alerts: '{% url "inventory:stock_alerts_api" %}',
+            movements: '{% url "inventory:recent_movements_api" %}',
+            topProducts: '{% url "inventory:top_products_api" %}',
+            categoryDistribution: '{% url "inventory:category_distribution_api" %}'
+        }
+    };
 
-    // Stock Status Chart
-    const ctx = document.getElementById('stockStatusChart').getContext('2d');
-    window.stockStatusChart = new Chart(ctx, {
-        type: 'doughnut',
-        data: {
-            labels: ['In Stock', 'Low Stock', 'Out of Stock'],
-            datasets: [{
-                data: [
-                    {{ total_products }} - {{ low_stock_items }} - {{ out_of_stock_items }},
-                    {{ low_stock_items }},
-                    {{ out_of_stock_items }}
-                ],
-                backgroundColor: [
-                    '#28a745',
-                    '#ffc107',
-                    '#dc3545'
-                ],
-                borderWidth: 2,
-                borderColor: '#fff'
-            }]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-                legend: {
-                    position: 'bottom',
-                    labels: {
-                        padding: 20,
-                        usePointStyle: true
+    // Page context data (fallback from Django template)
+    var PAGE_DATA = {
+        totalProducts: {{ total_products|default:0 }},
+        totalCategories: {{ total_categories|default:0 }},
+        totalSuppliers: {{ total_suppliers|default:0 }},
+        lowStockItems: {{ low_stock_items|default:0 }},
+        outOfStockItems: {{ out_of_stock_items|default:0 }},
+        stockValue: {{ stock_value|default:0 }},
+        movementsToday: {{ movements_today|default:0 }},
+        categoryDistribution: [
+            {% for cat in category_distribution %}
+            { name: "{{ cat.category_name|default:'Uncategorized'|escapejs }}", value: {{ cat.total_value|default:0 }} }{% if not forloop.last %},{% endif %}
+            {% endfor %}
+        ]
+    };
+
+    // Chart Colors
+    var CHART_COLORS = {
+        primary: 'rgba(78, 115, 223, 1)',
+        success: 'rgba(28, 200, 138, 1)',
+        danger: 'rgba(231, 74, 59, 1)',
+        warning: 'rgba(246, 194, 62, 1)',
+        info: 'rgba(54, 185, 204, 1)',
+        secondary: 'rgba(133, 135, 150, 1)'
+    };
+
+    var CHART_COLORS_ALPHA = {
+        primary: 'rgba(78, 115, 223, 0.2)',
+        success: 'rgba(28, 200, 138, 0.2)',
+        danger: 'rgba(231, 74, 59, 0.2)',
+        warning: 'rgba(246, 194, 62, 0.2)',
+        info: 'rgba(54, 185, 204, 0.2)',
+        secondary: 'rgba(133, 135, 150, 0.2)'
+    };
+
+    // Global Chart Instances
+    var stockStatusChart = null;
+    var movementTrendsChart = null;
+    var categoryDistributionChart = null;
+    var autoRefreshInterval = null;
+
+    // ============================================
+    // Wait for jQuery to be available
+    // ============================================
+    function waitForJQuery(callback) {
+        if (typeof jQuery !== 'undefined') {
+            callback(jQuery);
+        } else {
+            setTimeout(function() { waitForJQuery(callback); }, 50);
+        }
+    }
+
+    // ============================================
+    // Main Initialization
+    // ============================================
+    waitForJQuery(function($) {
+        $(document).ready(function() {
+            console.log('%c📊 Dashboard Initializing...', 'color: #4e73df; font-size: 16px; font-weight: bold;');
+
+            // Configure toastr
+            if (typeof toastr !== 'undefined') {
+                toastr.options = {
+                    closeButton: true,
+                    newestOnTop: true,
+                    progressBar: true,
+                    positionClass: "toast-top-right",
+                    preventDuplicates: true,
+                    timeOut: "5000"
+                };
+            }
+
+            initializeChartsWithPageData();
+            loadAllDashboardData();
+            setupEventHandlers();
+            loadDashboardSettings();
+            startAutoRefresh();
+            initializeWebSocket();
+
+            console.log('%c✅ Dashboard Ready', 'color: #1cc88a; font-size: 14px; font-weight: bold;');
+        });
+
+        // ============================================
+        // Initialize Charts with Page Data
+        // ============================================
+        function initializeChartsWithPageData() {
+            initStockStatusChart();
+            initMovementTrendsChart();
+            initCategoryDistributionChart();
+        }
+
+        function initStockStatusChart() {
+            var ctx = document.getElementById('stockStatusChart');
+            if (!ctx) return;
+
+            var total = PAGE_DATA.totalProducts;
+            var low = PAGE_DATA.lowStockItems;
+            var out = PAGE_DATA.outOfStockItems;
+            var inStock = Math.max(0, total - low - out);
+
+            // Update percentage displays
+            if (total > 0) {
+                $('#in-stock-percent').text(((inStock / total) * 100).toFixed(1) + '%');
+                $('#low-stock-percent').text(((low / total) * 100).toFixed(1) + '%');
+                $('#critical-percent').text(((out / total) * 100).toFixed(1) + '%');
+            }
+
+            stockStatusChart = new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    labels: ['In Stock', 'Low Stock', 'Out of Stock'],
+                    datasets: [{
+                        data: [inStock, low, out],
+                        backgroundColor: [CHART_COLORS.success, CHART_COLORS.warning, CHART_COLORS.danger],
+                        borderWidth: 3,
+                        borderColor: '#fff',
+                        hoverOffset: 10
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'bottom',
+                            labels: { padding: 20, usePointStyle: true, font: { size: 12, weight: '600' } }
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    var sum = context.dataset.data.reduce(function(a, b) { return a + b; }, 0);
+                                    var pct = sum > 0 ? ((context.parsed / sum) * 100).toFixed(1) : 0;
+                                    return context.label + ': ' + context.parsed + ' (' + pct + '%)';
+                                }
+                            }
+                        }
+                    },
+                    animation: { animateRotate: true, animateScale: true, duration: CONFIG.chartAnimationDuration }
+                }
+            });
+        }
+
+        function initMovementTrendsChart() {
+            var ctx = document.getElementById('movementTrendsChart');
+            if (!ctx) return;
+
+            var labels = getLast30DaysLabels();
+
+            movementTrendsChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [
+                        {
+                            label: 'Purchases',
+                            data: new Array(30).fill(0),
+                            borderColor: CHART_COLORS.success,
+                            backgroundColor: CHART_COLORS_ALPHA.success,
+                            tension: 0.4,
+                            fill: true,
+                            pointRadius: 3,
+                            pointHoverRadius: 6,
+                            borderWidth: 2
+                        },
+                        {
+                            label: 'Sales',
+                            data: new Array(30).fill(0),
+                            borderColor: CHART_COLORS.primary,
+                            backgroundColor: CHART_COLORS_ALPHA.primary,
+                            tension: 0.4,
+                            fill: true,
+                            pointRadius: 3,
+                            pointHoverRadius: 6,
+                            borderWidth: 2
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: { mode: 'index', intersect: false },
+                    plugins: {
+                        legend: {
+                            display: true,
+                            position: 'top',
+                            labels: { usePointStyle: true, padding: 15, font: { size: 12, weight: '600' } }
+                        },
+                        tooltip: { backgroundColor: 'rgba(0,0,0,0.8)', padding: 12 }
+                    },
+                    scales: {
+                        y: { beginAtZero: true, ticks: { precision: 0 }, grid: { color: 'rgba(0,0,0,0.05)' } },
+                        x: { ticks: { maxRotation: 45, minRotation: 45, font: { size: 10 } }, grid: { display: false } }
+                    }
+                }
+            });
+        }
+
+        function initCategoryDistributionChart() {
+            var ctx = document.getElementById('categoryDistributionChart');
+            if (!ctx) return;
+
+            var categories = PAGE_DATA.categoryDistribution || [];
+            var labels = categories.map(function(c) { return c.name || 'Uncategorized'; });
+            var values = categories.map(function(c) { return parseFloat(c.value) || 0; });
+            var colors = generateColors(categories.length);
+
+            categoryDistributionChart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Stock Value (UGX)',
+                        data: values,
+                        backgroundColor: colors.alpha,
+                        borderColor: colors.solid,
+                        borderWidth: 2,
+                        borderRadius: 5,
+                        maxBarThickness: 60
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    indexAxis: 'y',
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) { return 'Value: UGX ' + formatNumber(context.parsed.x); }
+                            }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            beginAtZero: true,
+                            ticks: { callback: function(v) { return 'UGX ' + (v / 1000).toFixed(0) + 'K'; } },
+                            grid: { color: 'rgba(0,0,0,0.05)' }
+                        },
+                        y: { grid: { display: false } }
+                    }
+                }
+            });
+        }
+
+        function getLast30DaysLabels() {
+            var labels = [];
+            var today = new Date();
+            for (var i = 29; i >= 0; i--) {
+                var d = new Date(today);
+                d.setDate(d.getDate() - i);
+                labels.push(d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }));
+            }
+            return labels;
+        }
+
+        // ============================================
+        // Load All Dashboard Data from API
+        // ============================================
+        function loadAllDashboardData() {
+            loadDashboardStats();
+            loadStockAlerts();
+            loadTopProducts();
+            loadCategoryDistribution();
+        }
+
+        function loadDashboardStats() {
+            $.ajax({
+                url: CONFIG.apiEndpoints.stats,
+                method: 'GET',
+                dataType: 'json',
+                success: function(response) {
+                    if (response && response.success !== false) {
+                        updateDashboardStats(response);
+                        updateLastUpdated();
+                    }
+                },
+                error: function(xhr, status, error) {
+                    console.warn('Stats API unavailable, using page data');
+                }
+            });
+        }
+
+        function updateDashboardStats(data) {
+            if (data.total_products !== undefined) animateValue('total-products-count', getElementInt('total-products-count'), data.total_products);
+            if (data.total_categories !== undefined) animateValue('total-categories-count', getElementInt('total-categories-count'), data.total_categories);
+            if (data.total_suppliers !== undefined) animateValue('total-suppliers-count', getElementInt('total-suppliers-count'), data.total_suppliers);
+            if (data.stock_value !== undefined) $('#stock-value-amount').text('UGX ' + formatNumber(data.stock_value));
+            if (data.movements_today !== undefined) $('#movements-today').text(data.movements_today);
+            if (data.low_stock_items !== undefined) $('#low-stock-count').text(data.low_stock_items);
+            if (data.out_of_stock_items !== undefined) $('#out-of-stock-count').text(data.out_of_stock_items);
+
+            var totalAlerts = (data.low_stock_items || 0) + (data.out_of_stock_items || 0);
+            $('#alert-count').text(totalAlerts);
+
+            updateStockStatusChart(data);
+        }
+
+        function updateStockStatusChart(data) {
+            if (!stockStatusChart) return;
+
+            var total = data.total_products || data.total_stock_items || PAGE_DATA.totalProducts;
+            var low = data.low_stock_items || PAGE_DATA.lowStockItems;
+            var out = data.out_of_stock_items || PAGE_DATA.outOfStockItems;
+            var inStock = Math.max(0, total - low - out);
+
+            stockStatusChart.data.datasets[0].data = [inStock, low, out];
+            stockStatusChart.update('none');
+
+            if (total > 0) {
+                $('#in-stock-percent').text(((inStock / total) * 100).toFixed(1) + '%');
+                $('#low-stock-percent').text(((low / total) * 100).toFixed(1) + '%');
+                $('#critical-percent').text(((out / total) * 100).toFixed(1) + '%');
+            }
+        }
+
+        function loadStockAlerts() {
+            $.ajax({
+                url: CONFIG.apiEndpoints.alerts,
+                method: 'GET',
+                dataType: 'json',
+                success: function(response) {
+                    if (response && response.success && response.alerts) {
+                        renderStockAlerts(response.alerts);
+                    }
+                },
+                error: function() { console.warn('Alerts API unavailable'); }
+            });
+        }
+
+        function renderStockAlerts(alerts) {
+            var container = $('#alerts-list');
+            if (!container.length) return;
+
+            container.empty();
+
+            if (!alerts || alerts.length === 0) {
+                container.parent().html(
+                    '<div class="text-center py-5">' +
+                        '<i class="fas fa-check-circle fa-4x text-success mb-3"></i>' +
+                        '<h6 class="text-muted">All Clear!</h6>' +
+                        '<p class="text-muted small">No critical stock alerts</p>' +
+                    '</div>'
+                );
+                return;
+            }
+
+            alerts.forEach(function(alert) {
+                var pct = alert.percentage || (alert.threshold > 0 ? (alert.current_stock / alert.threshold) * 100 : 0);
+                var statusClass = alert.status === 'critical' ? 'danger' : 'warning';
+                var statusIcon = alert.status === 'critical' ? 'times-circle' : 'exclamation-triangle';
+
+                container.append(
+                    '<div class="alert-item">' +
+                        '<div class="d-flex align-items-start">' +
+                            '<div class="flex-shrink-0 me-3">' +
+                                '<i class="fas fa-' + statusIcon + ' fa-2x text-' + statusClass + '"></i>' +
+                            '</div>' +
+                            '<div class="flex-grow-1">' +
+                                '<h6 class="mb-1">' + escapeHtml(alert.product_name) + '</h6>' +
+                                '<small class="text-muted d-block mb-2">' +
+                                    '<i class="fas fa-barcode me-1"></i>' + escapeHtml(alert.product_sku || '') +
+                                    '<span class="mx-2">•</span>' +
+                                    '<i class="fas fa-store me-1"></i>' + escapeHtml(alert.store_name) +
+                                '</small>' +
+                                '<div class="d-flex align-items-center justify-content-between mb-2">' +
+                                    '<span class="small">' +
+                                        '<strong class="text-' + statusClass + '">' + alert.current_stock + '</strong> / ' + alert.threshold + ' ' + (alert.unit_of_measure || '') +
+                                    '</span>' +
+                                    '<span class="badge bg-' + statusClass + '">' + pct.toFixed(0) + '%</span>' +
+                                '</div>' +
+                                '<div class="progress progress-thin">' +
+                                    '<div class="progress-bar bg-' + statusClass + '" style="width: ' + Math.min(pct, 100) + '%"></div>' +
+                                '</div>' +
+                            '</div>' +
+                        '</div>' +
+                    '</div>'
+                );
+            });
+        }
+
+        function loadTopProducts() {
+            $.ajax({
+                url: CONFIG.apiEndpoints.topProducts,
+                method: 'GET',
+                data: { limit: 10, period_days: 30 },
+                dataType: 'json',
+                success: function(response) {
+                    if (response && response.success && response.products && response.products.length > 0) {
+                        renderTopProducts(response.products);
+                    }
+                },
+                error: function() { console.warn('Top products API unavailable'); }
+            });
+        }
+
+        function renderTopProducts(products) {
+            var container = $('#top-products-list');
+            if (!container.length || !products || products.length === 0) return;
+
+            container.empty();
+
+            products.forEach(function(product, idx) {
+                var rank = idx + 1;
+                var rankClass = rank <= 3 ? 'rank-' + rank : 'rank-default';
+
+                container.append(
+                    '<div class="top-product-item">' +
+                        '<div class="d-flex align-items-center flex-grow-1">' +
+                            '<div class="product-rank ' + rankClass + ' me-3">' + rank + '</div>' +
+                            '<div class="flex-grow-1">' +
+                                '<h6 class="mb-1">' + escapeHtml(product.name) + '</h6>' +
+                                '<div class="d-flex align-items-center">' +
+                                    '<small class="text-muted me-2">' + escapeHtml(product.sku) + '</small>' +
+                                    (product.category ? '<span class="category-chip">' + escapeHtml(product.category) + '</span>' : '') +
+                                '</div>' +
+                            '</div>' +
+                        '</div>' +
+                        '<div class="text-end">' +
+                            '<div class="badge bg-primary mb-1">' + (product.total_movements || 0) + ' movements</div>' +
+                            '<div class="text-muted small">UGX ' + formatNumber(product.selling_price || 0) + '</div>' +
+                        '</div>' +
+                    '</div>'
+                );
+            });
+        }
+
+        function loadCategoryDistribution() {
+            $.ajax({
+                url: CONFIG.apiEndpoints.categoryDistribution,
+                method: 'GET',
+                dataType: 'json',
+                success: function(response) {
+                    if (response && response.success && response.categories) {
+                        updateCategoryChart(response.categories);
+                    }
+                },
+                error: function() { console.warn('Category distribution API unavailable'); }
+            });
+        }
+
+        function updateCategoryChart(categories) {
+            if (!categoryDistributionChart || !categories || categories.length === 0) return;
+
+            var labels = categories.map(function(c) { return c.name || 'Uncategorized'; });
+            var values = categories.map(function(c) { return parseFloat(c.value) || 0; });
+            var colors = generateColors(categories.length);
+
+            categoryDistributionChart.data.labels = labels;
+            categoryDistributionChart.data.datasets[0].data = values;
+            categoryDistributionChart.data.datasets[0].backgroundColor = colors.alpha;
+            categoryDistributionChart.data.datasets[0].borderColor = colors.solid;
+            categoryDistributionChart.update();
+        }
+
+        // ============================================
+        // WebSocket Connection
+        // ============================================
+        function initializeWebSocket() {
+            var protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            var wsUrl = protocol + '//' + window.location.host + '/ws/inventory/dashboard/';
+
+            try {
+                var socket = new WebSocket(wsUrl);
+
+                socket.onopen = function() {
+                    console.log('✅ WebSocket connected');
+                    updateConnectionStatus(true);
+                };
+
+                socket.onmessage = function(e) {
+                    try {
+                        var data = JSON.parse(e.data);
+                        handleWebSocketMessage(data);
+                    } catch (err) { console.error('WS parse error:', err); }
+                };
+
+                socket.onclose = function() {
+                    console.log('🔌 WebSocket disconnected');
+                    updateConnectionStatus(false);
+                    setTimeout(initializeWebSocket, CONFIG.websocketReconnectDelay);
+                };
+
+                socket.onerror = function() { updateConnectionStatus(false); };
+
+                window.dashboardWS = socket;
+            } catch (e) {
+                console.warn('WebSocket not available:', e);
+                updateConnectionStatus(false);
+            }
+        }
+
+        function handleWebSocketMessage(data) {
+            if (data.type === 'dashboard_stats') {
+                updateDashboardStats(data.data || data);
+            } else if (data.type === 'stock_movement_created') {
+                if (typeof toastr !== 'undefined') {
+                    toastr.success(data.data.movement_type_display + ': ' + data.data.product_name, 'New Movement');
+                }
+                loadAllDashboardData();
+            } else if (data.type === 'low_stock_alert' || data.type === 'out_of_stock_alert') {
+                if (typeof toastr !== 'undefined') {
+                    toastr.warning(data.data.product_name + ' at ' + data.data.store_name, 'Stock Alert');
+                }
+                loadStockAlerts();
+            }
+        }
+
+        function updateConnectionStatus(connected) {
+            var badge = $('#ws-status');
+            if (connected) {
+                badge.removeClass('bg-danger bg-warning').addClass('bg-success');
+                badge.html('<span class="status-indicator status-connected"></span><i class="fas fa-wifi"></i> Live');
+            } else {
+                badge.removeClass('bg-success').addClass('bg-warning');
+                badge.html('<span class="status-indicator status-disconnected"></span><i class="fas fa-wifi"></i> Polling');
+            }
+        }
+
+        // ============================================
+        // Event Handlers
+        // ============================================
+        function setupEventHandlers() {
+            // Refresh button
+            $('#refresh-dashboard').on('click', function() {
+                var $btn = $(this);
+                var $icon = $btn.find('i');
+                $btn.prop('disabled', true);
+                $icon.addClass('fa-spin');
+                loadAllDashboardData();
+                setTimeout(function() {
+                    $btn.prop('disabled', false);
+                    $icon.removeClass('fa-spin');
+                    if (typeof toastr !== 'undefined') {
+                        toastr.success('Dashboard refreshed', 'Refreshed');
+                    }
+                }, 1500);
+            });
+
+            // Period filter
+            $('input[name="period-filter"]').on('change', function() {
+                var period = $(this).val();
+                if (typeof toastr !== 'undefined') {
+                    toastr.info('Filtering: ' + $(this).next('label').text(), 'Filter Applied');
+                }
+                reloadWithPeriod(period);
+            });
+
+            // Chart view toggle
+            $('#chart-view-doughnut').on('click', function() {
+                if (stockStatusChart) {
+                    stockStatusChart.config.type = 'doughnut';
+                    stockStatusChart.update();
+                }
+                $(this).addClass('active').siblings().removeClass('active');
+            });
+
+            $('#chart-view-bar').on('click', function() {
+                if (stockStatusChart) {
+                    stockStatusChart.config.type = 'bar';
+                    stockStatusChart.update();
+                }
+                $(this).addClass('active').siblings().removeClass('active');
+            });
+
+            // Save settings
+            $('#save-settings').on('click', saveDashboardSettings);
+        }
+
+        function reloadWithPeriod(period) {
+            var url = new URL(window.location.href);
+            url.searchParams.set('period', period);
+            window.location.href = url.toString();
+        }
+
+        // ============================================
+        // Settings Management
+        // ============================================
+        function loadDashboardSettings() {
+            try {
+                var interval = localStorage.getItem('dashboard_refresh_interval');
+                if (interval) {
+                    $('#refresh-interval').val(interval);
+                    CONFIG.refreshInterval = parseInt(interval);
+                }
+
+                var anim = localStorage.getItem('dashboard_chart_animation');
+                if (anim !== null) $('#chart-animation').prop('checked', anim === 'true');
+
+                var sound = localStorage.getItem('dashboard_sound_notifications');
+                if (sound !== null) $('#sound-notifications').prop('checked', sound === 'true');
+            } catch(e) {
+                console.warn('localStorage not available');
+            }
+        }
+
+        function saveDashboardSettings() {
+            try {
+                var interval = $('#refresh-interval').val();
+                var anim = $('#chart-animation').is(':checked');
+                var sound = $('#sound-notifications').is(':checked');
+
+                localStorage.setItem('dashboard_refresh_interval', interval);
+                localStorage.setItem('dashboard_chart_animation', anim);
+                localStorage.setItem('dashboard_sound_notifications', sound);
+
+                CONFIG.refreshInterval = parseInt(interval);
+                startAutoRefresh();
+
+                if (typeof toastr !== 'undefined') {
+                    toastr.success('Settings saved', 'Success');
+                }
+                $('#settingsModal').modal('hide');
+            } catch(e) {
+                console.warn('Could not save settings');
+            }
+        }
+
+        // ============================================
+        // Auto Refresh
+        // ============================================
+        function startAutoRefresh() {
+            if (autoRefreshInterval) clearInterval(autoRefreshInterval);
+            if (CONFIG.refreshInterval > 0) {
+                autoRefreshInterval = setInterval(function() {
+                    loadAllDashboardData();
+                    updateLastUpdated();
+                }, CONFIG.refreshInterval);
+            }
+        }
+
+        function updateLastUpdated() {
+            $('#last-updated').text(new Date().toLocaleString('en-US', {
+                month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit'
+            }));
+        }
+
+        // ============================================
+        // Utility Functions
+        // ============================================
+        function animateValue(id, start, end, duration) {
+            duration = duration || 1000;
+            var el = document.getElementById(id);
+            if (!el) return;
+            var startTime = performance.now();
+            var diff = end - start;
+
+            function update(currentTime) {
+                var elapsed = currentTime - startTime;
+                var progress = Math.min(elapsed / duration, 1);
+                var eased = 1 - Math.pow(1 - progress, 4);
+                el.textContent = Math.floor(start + diff * eased);
+                if (progress < 1) requestAnimationFrame(update);
+            }
+            requestAnimationFrame(update);
+        }
+
+        function getElementInt(id) {
+            var el = document.getElementById(id);
+            return el ? parseInt(el.textContent) || 0 : 0;
+        }
+
+        function formatNumber(num) {
+            if (num === null || num === undefined) return '0';
+            return new Intl.NumberFormat('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(num);
+        }
+
+        function escapeHtml(text) {
+            if (!text) return '';
+            var map = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' };
+            return text.toString().replace(/[&<>"']/g, function(m) { return map[m]; });
+        }
+
+        function generateColors(count) {
+            var base = [CHART_COLORS.primary, CHART_COLORS.success, CHART_COLORS.info, CHART_COLORS.warning, CHART_COLORS.danger, CHART_COLORS.secondary];
+            var alpha = [CHART_COLORS_ALPHA.primary, CHART_COLORS_ALPHA.success, CHART_COLORS_ALPHA.info, CHART_COLORS_ALPHA.warning, CHART_COLORS_ALPHA.danger, CHART_COLORS_ALPHA.secondary];
+            var solid = [];
+            var alphaArr = [];
+            for (var i = 0; i < count; i++) {
+                solid.push(base[i % base.length]);
+                alphaArr.push(alpha[i % alpha.length]);
+            }
+            return { solid: solid, alpha: alphaArr };
+        }
+
+        // ============================================
+        // CSRF Setup
+        // ============================================
+        function getCookie(name) {
+            var v = null;
+            if (document.cookie) {
+                var cookies = document.cookie.split(';');
+                for (var i = 0; i < cookies.length; i++) {
+                    var c = cookies[i].trim();
+                    if (c.indexOf(name + '=') === 0) {
+                        v = decodeURIComponent(c.substring(name.length + 1));
+                        break;
                     }
                 }
             }
+            return v;
         }
-    });
 
-    // Movement Trends Chart
-    const movementCtx = document.getElementById('movement-trends-chart').getContext('2d');
-    movementChart = new Chart(movementCtx, {
-        type: 'line',
-        data: {
-            labels: [],
-            datasets: [{
-                label: 'Stock Movements',
-                data: [],
-                borderColor: '#007bff',
-                backgroundColor: 'rgba(0, 123, 255, 0.1)',
-                tension: 0.1
-            }]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            scales: {
-                y: {
-                    beginAtZero: true
+        $.ajaxSetup({
+            beforeSend: function(xhr, settings) {
+                if (!/^http/.test(settings.url)) {
+                    xhr.setRequestHeader("X-CSRFToken", getCookie('csrftoken'));
                 }
             }
-        }
-    });
+        });
 
-    // Initialize WebSocket connections
-    if (typeof window.dashboardWS === 'undefined') {
-        // Load WebSocket script dynamically if not already loaded
-        const script = document.createElement('script');
-        script.src = '{% static "inventory/dashboard_websocket.js" %}';
-        script.onload = function() {
-            window.dashboardWS = new DashboardWebSocket();
+        // ============================================
+        // Visibility Change Handler
+        // ============================================
+        document.addEventListener('visibilitychange', function() {
+            if (document.hidden) {
+                if (autoRefreshInterval) clearInterval(autoRefreshInterval);
+            } else {
+                loadAllDashboardData();
+                startAutoRefresh();
+            }
+        });
+
+        // ============================================
+        // Cleanup on Page Unload
+        // ============================================
+        $(window).on('beforeunload', function() {
+            if (window.dashboardWS) window.dashboardWS.close();
+            if (autoRefreshInterval) clearInterval(autoRefreshInterval);
+            if (stockStatusChart) stockStatusChart.destroy();
+            if (movementTrendsChart) movementTrendsChart.destroy();
+            if (categoryDistributionChart) categoryDistributionChart.destroy();
+        });
+
+        // ============================================
+        // Export API for external use
+        // ============================================
+        window.DashboardAPI = {
+            refresh: loadAllDashboardData,
+            reloadAlerts: loadStockAlerts,
+            reloadTopProducts: loadTopProducts,
+            reloadCategories: loadCategoryDistribution,
+            getCharts: function() {
+                return {
+                    stockStatus: stockStatusChart,
+                    movementTrends: movementTrendsChart,
+                    categoryDistribution: categoryDistributionChart
+                };
+            }
         };
-        document.head.appendChild(script);
-    }
 
-    // Manual refresh functionality
-    $('#refresh-dashboard').on('click', function() {
-        const $btn = $(this);
-        const $icon = $btn.find('i');
+    }); // End waitForJQuery callback
 
-        $btn.prop('disabled', true);
-        $icon.addClass('fa-spin');
-
-        if (window.dashboardWS && window.dashboardWS.isConnected) {
-            window.dashboardWS.requestRefresh();
-        } else {
-            // Fallback: page reload if WebSocket not connected
-            location.reload();
-        }
-
-        setTimeout(() => {
-            $btn.prop('disabled', false);
-            $icon.removeClass('fa-spin');
-        }, 2000);
-    });
-
-    // Print functionality
-    $('.print-btn').on('click', function() {
-        window.print();
-    });
-
-    // Auto-refresh dashboard every 5 minutes (fallback)
-    setInterval(function() {
-        if (!window.dashboardWS || !window.dashboardWS.isConnected) {
-            location.reload();
-        }
-    }, 300000);
-
-    // Connection status monitoring
-    function updateConnectionStatus(connected) {
-        const statusElement = document.getElementById('ws-status');
-        const connectionBadge = document.querySelector('#connection-status .badge');
-        const statusIndicator = document.querySelector('.status-indicator');
-
-        if (connected) {
-            if (connectionBadge) {
-                connectionBadge.innerHTML = '<span class="status-indicator status-connected"></span><i class="fas fa-wifi"></i> Connected';
-                connectionBadge.className = 'badge bg-success';
-            }
-            if (statusIndicator) {
-                statusIndicator.className = 'status-indicator status-connected';
-            }
-        } else {
-            if (connectionBadge) {
-                connectionBadge.innerHTML = '<span class="status-indicator status-disconnected"></span><i class="fas fa-wifi-slash"></i> Disconnected';
-                connectionBadge.className = 'badge bg-danger pulse';
-            }
-            if (statusIndicator) {
-                statusIndicator.className = 'status-indicator status-disconnected';
-            }
-        }
-    }
-
-    // Monitor WebSocket connection status
-    setInterval(function() {
-        const isConnected = window.dashboardWS && window.dashboardWS.isConnected;
-        updateConnectionStatus(isConnected);
-    }, 2000);
-});
-</script>
-
-<!-- Enhanced WebSocket Dashboard Script -->
-<script>
-// Enhanced Dashboard WebSocket Manager
-class DashboardWebSocket {
-    constructor() {
-        this.socket = null;
-        this.reconnectAttempts = 0;
-        this.maxReconnectAttempts = 5;
-        this.reconnectInterval = 5000;
-        this.isConnected = false;
-        this.messageHandlers = new Map();
-
-        this.init();
-    }
-
-    init() {
-        this.connect();
-        this.setupMessageHandlers();
-        this.setupConnectionIndicator();
-    }
-
-    connect() {
-        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const wsUrl = `${protocol}//${window.location.host}/ws/inventory/dashboard/`;
-
-        try {
-            this.socket = new WebSocket(wsUrl);
-
-            this.socket.onopen = (event) => {
-                console.log('Dashboard WebSocket connected');
-                this.isConnected = true;
-                this.reconnectAttempts = 0;
-                this.updateConnectionStatus(true);
-                this.requestInitialData();
-            };
-
-            this.socket.onmessage = (event) => {
-                try {
-                    const data = JSON.parse(event.data);
-                    this.handleMessage(data);
-                } catch (error) {
-                    console.error('Error parsing WebSocket message:', error);
-                }
-            };
-
-            this.socket.onclose = (event) => {
-                console.log('Dashboard WebSocket disconnected');
-                this.isConnected = false;
-                this.updateConnectionStatus(false);
-                this.handleReconnect();
-            };
-
-            this.socket.onerror = (error) => {
-                console.error('Dashboard WebSocket error:', error);
-                this.updateConnectionStatus(false);
-            };
-
-        } catch (error) {
-            console.error('Error creating WebSocket connection:', error);
-            this.handleReconnect();
-        }
-    }
-
-    handleReconnect() {
-        if (this.reconnectAttempts < this.maxReconnectAttempts) {
-            this.reconnectAttempts++;
-            console.log(`Attempting to reconnect... (${this.reconnectAttempts}/${this.maxReconnectAttempts})`);
-
-            setTimeout(() => {
-                this.connect();
-            }, this.reconnectInterval);
-        } else {
-            console.error('Max reconnection attempts reached');
-            this.showConnectionError();
-        }
-    }
-
-    handleMessage(data) {
-        const handler = this.messageHandlers.get(data.type);
-        if (handler) {
-            handler(data.data);
-        } else {
-            console.warn('No handler for message type:', data.type);
-        }
-    }
-
-    setupMessageHandlers() {
-        this.messageHandlers.set('dashboard_stats', (data) => {
-            this.updateDashboardStats(data);
-        });
-
-        this.messageHandlers.set('dashboard_update', (data) => {
-            this.refreshDashboard();
-            this.showNotification('Dashboard updated', 'info');
-        });
-
-        this.messageHandlers.set('stock_movement_created', (data) => {
-            this.addNewMovement(data);
-            this.showNotification(`New ${data.movement_type_display}: ${data.product_name}`, 'success');
-        });
-
-        this.messageHandlers.set('low_stock_alert', (data) => {
-            this.showStockAlert(data, 'warning');
-        });
-
-        this.messageHandlers.set('out_of_stock_alert', (data) => {
-            this.showStockAlert(data, 'danger');
-        });
-
-        this.messageHandlers.set('dashboard_data', (data) => {
-            this.updateCharts(data);
-        });
-    }
-
-    requestInitialData() {
-        if (this.isConnected) {
-            this.send({ type: 'refresh_dashboard' });
-        }
-    }
-
-    send(message) {
-        if (this.socket && this.socket.readyState === WebSocket.OPEN) {
-            this.socket.send(JSON.stringify(message));
-        }
-    }
-
-    updateDashboardStats(data) {
-        $('#total-products-count').text(data.total_products || 0);
-        $('#total-categories-count').text(data.total_categories || 0);
-        $('#total-suppliers-count').text(data.total_suppliers || 0);
-        $('#stock-value-amount').text(`UGX ${Number(data.stock_value || 0).toLocaleString()}`);
-
-        this.updateAlertCounts(data.low_stock_items || 0, data.out_of_stock_items || 0);
-
-        // Update movement counters
-        $('#movements-today').text(data.movements_today || 0);
-        $('#movements-week').text(data.movements_week || 0);
-        $('#alert-count').text((data.low_stock_items || 0) + (data.out_of_stock_items || 0));
-
-        if (window.stockStatusChart && data.total_products) {
-            const inStock = data.total_products - data.low_stock_items - data.out_of_stock_items;
-            window.stockStatusChart.data.datasets[0].data = [inStock, data.low_stock_items, data.out_of_stock_items];
-            window.stockStatusChart.update('none');
-        }
-
-        const timestamp = new Date(data.timestamp || Date.now()).toLocaleString();
-        $('#last-updated').text(`Last updated: ${timestamp}`);
-        $('#last-updated-movements').text(`Last updated: ${timestamp}`);
-    }
-
-    updateAlertCounts(lowStock, outOfStock) {
-        const $lowStockCard = $('.low-stock-alert');
-        const $outOfStockCard = $('.out-of-stock-alert');
-
-        if (lowStock > 0) {
-            $lowStockCard.find('.alert-count').text(lowStock);
-            $lowStockCard.show();
-        } else {
-            $lowStockCard.hide();
-        }
-
-        if (outOfStock > 0) {
-            $outOfStockCard.find('.alert-count').text(outOfStock);
-            $outOfStockCard.show();
-        } else {
-            $outOfStockCard.hide();
-        }
-
-        // Update alerts in sidebar
-        this.updateStockAlertsPanel(lowStock, outOfStock);
-    }
-
-    updateStockAlertsPanel(lowStock, outOfStock) {
-        const $alertsContainer = $('#stock-alerts');
-
-        if (lowStock === 0 && outOfStock === 0) {
-            $alertsContainer.html(`
-                <div class="d-flex justify-content-center align-items-center p-4">
-                    <div class="text-center text-muted">
-                        <i class="fas fa-check-circle fa-3x mb-3 text-success"></i>
-                        <p>All stock levels are healthy</p>
-                    </div>
-                </div>
-            `);
-        } else {
-            // This would typically be populated with actual alert data from the server
-            $alertsContainer.html('<div class="list-group list-group-flush" id="alert-list"></div>');
-        }
-    }
-
-    addNewMovement(movement) {
-        const $tbody = $('#recent-movements-table tbody');
-        const badgeClass = this.getMovementBadgeClass(movement.movement_type);
-        const quantityClass = this.getQuantityClass(movement.movement_type);
-        const quantityPrefix = this.getQuantityPrefix(movement.movement_type);
-
-        const row = `
-            <tr class="table-success animate-fade-in">
-                <td>${new Date(movement.created_at).toLocaleString()}</td>
-                <td>
-                    <strong>${movement.product_name}</strong><br>
-                    <small class="text-muted">${movement.product_sku}</small>
-                </td>
-                <td><span class="badge ${badgeClass}">${movement.movement_type_display}</span></td>
-                <td>
-                    <span class="${quantityClass}">${quantityPrefix}${movement.quantity}</span>
-                    ${movement.unit_of_measure}
-                </td>
-                <td>${movement.store_name}</td>
-                <td>${movement.created_by}</td>
-            </tr>
-        `;
-
-        $tbody.prepend(row);
-        setTimeout(() => {
-            $tbody.find('tr:first').removeClass('table-success');
-        }, 2000);
-
-        // Keep only the latest 10 rows
-        $tbody.find('tr:gt(9)').remove();
-    }
-
-    showStockAlert(data, type) {
-        const icon = type === 'danger' ? 'times-circle' : 'exclamation-triangle';
-        const title = type === 'danger' ? 'Out of Stock' : 'Low Stock';
-        const message = `${data.product_name} at ${data.store_name}`;
-
-        this.showNotification(`${title}: ${message}`, type, icon);
-    }
-
-    showNotification(message, type = 'info', icon = null) {
-        const iconClass = icon || this.getNotificationIcon(type);
-
-        // Use toastr for notifications
-        switch(type) {
-            case 'success':
-                toastr.success(message);
-                break;
-            case 'warning':
-                toastr.warning(message);
-                break;
-            case 'danger':
-            case 'error':
-                toastr.error(message);
-                break;
-            default:
-                toastr.info(message);
-        }
-    }
-
-    updateCharts(data) {
-        // Update stock distribution chart
-        if (window.stockStatusChart && data.products) {
-            const total = data.products.total || 0;
-            const lowStock = data.products.low_stock || 0;
-            const outOfStock = data.products.out_of_stock || 0;
-            const inStock = total - lowStock - outOfStock;
-
-            window.stockStatusChart.data.datasets[0].data = [inStock, lowStock, outOfStock];
-            window.stockStatusChart.update();
-        }
-
-        // Update movement trends chart if data is available
-        if (data.movement_trends && window.movementChart) {
-            window.movementChart.data.labels = data.movement_trends.labels || [];
-            window.movementChart.data.datasets[0].data = data.movement_trends.data || [];
-            window.movementChart.update();
-        }
-    }
-
-    refreshDashboard() {
-        if (this.isConnected) {
-            this.send({ type: 'refresh_dashboard' });
-        }
-    }
-
-    setupConnectionIndicator() {
-        if ($('#ws-status').length === 0) {
-            $('body').append(`
-                <div id="ws-status" class="position-fixed top-0 end-0 p-2" style="z-index: 9999; display: none;">
-                    <div class="badge bg-secondary">
-                        <i class="fas fa-circle me-1"></i>
-                        <span class="status-text">Connecting...</span>
-                    </div>
-                </div>
-            `);
-        }
-    }
-
-    updateConnectionStatus(connected) {
-        const $status = $('#ws-status');
-        const $badge = $status.find('.badge');
-        const $text = $status.find('.status-text');
-        const $icon = $status.find('i');
-
-        if (connected) {
-            $badge.removeClass('bg-danger bg-warning bg-secondary').addClass('bg-success');
-            $icon.removeClass('fa-times fa-exclamation-triangle').addClass('fa-circle');
-            $text.text('Connected');
-            setTimeout(() => $status.fadeOut(), 3000);
-        } else {
-            $badge.removeClass('bg-success bg-secondary').addClass('bg-danger');
-            $icon.removeClass('fa-circle').addClass('fa-times');
-            $text.text('Disconnected');
-            $status.show();
-        }
-    }
-
-    showConnectionError() {
-        toastr.error('Connection lost. Please refresh the page.');
-    }
-
-    getMovementBadgeClass(type) {
-        const classes = {
-            'PURCHASE': 'bg-success',
-            'SALE': 'bg-primary',
-            'RETURN': 'bg-info',
-            'ADJUSTMENT': 'bg-warning',
-            'TRANSFER_IN': 'bg-success',
-            'TRANSFER_OUT': 'bg-secondary'
-        };
-        return classes[type] || 'bg-secondary';
-    }
-
-    getQuantityClass(type) {
-        const inTypes = ['PURCHASE', 'RETURN', 'TRANSFER_IN'];
-        return inTypes.includes(type) ? 'text-success' : 'text-danger';
-    }
-
-    getQuantityPrefix(type) {
-        const inTypes = ['PURCHASE', 'RETURN', 'TRANSFER_IN'];
-        return inTypes.includes(type) ? '+' : '-';
-    }
-
-    getNotificationIcon(type) {
-        const icons = {
-            'success': 'check-circle',
-            'danger': 'exclamation-triangle',
-            'warning': 'exclamation-triangle',
-            'info': 'info-circle'
-        };
-        return icons[type] || 'info-circle';
-    }
-
-    requestRefresh() {
-        this.refreshDashboard();
-    }
-
-    disconnect() {
-        if (this.socket) {
-            this.socket.close();
-        }
-    }
-}
-
-// Initialize WebSocket
-$(document).ready(function() {
-    if (typeof window.dashboardWS === 'undefined') {
-        window.dashboardWS = new DashboardWebSocket();
-    }
-
-    // WebSocket event listeners for external compatibility
-    document.addEventListener('websocket:dashboard:dashboard_data', function(e) {
-        if (window.dashboardWS) {
-            window.dashboardWS.updateCharts(e.detail.data);
-        }
-    });
-
-    document.addEventListener('websocket:dashboard:dashboard_update', function(e) {
-        if (window.dashboardWS) {
-            window.dashboardWS.updateCharts(e.detail.data);
-        }
-    });
-});
+    console.log('%c📊 Inventory Dashboard v2.0', 'color: #4e73df; font-size: 14px;');
+})(); // End IIFE
 </script>
 {% endblock %}

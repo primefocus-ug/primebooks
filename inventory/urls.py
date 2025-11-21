@@ -84,6 +84,7 @@ urlpatterns = [
     # Stock Management
     path('stock/', views.StockListView.as_view(), name='stock_list'),
     path('stock-adjustment/', views.StockAdjustmentView.as_view(), name='stock_adjustment'),
+    path('quick-adjust/<int:stock_id>/', views.QuickStockAdjustmentRedirectView.as_view(), name='quick_adjust'),
     path('stock/current/', views.current_stock_api, name='current_stock_api'),
     path('stock/adjustments/recent/', views.recent_adjustments_api, name='recent_adjustments_api'),
     path('stock/export/', views.stock_export, name='stock_export'),
@@ -112,6 +113,11 @@ urlpatterns = [
     path('api/process-bulk-import/', views.process_bulk_import, name='process_bulk_import'),
     path('api/download-template/<str:template_type>/', views.download_template, name='download_template'),
     path('api/products/up/', views.bulk_update_products_api, name="bulk_update_products_api"),
+    path('api/dashboard/stats/', views.dashboard_stats_api, name='dashboard_stats_api'),
+    path('api/dashboard/alerts/', views.stock_alerts_api, name='stock_alerts_api'),
+    path('api/dashboard/movements/', views.recent_movements_api, name='recent_movements_api'),
+    path('api/dashboard/top-products/', views.top_products_api, name='top_products_api'),
+    path('api/dashboard/category-distribution/', views.category_distribution_api, name='category_distribution_api'),
 
     # Reports
     path('reports/low-stock/', views.low_stock_report, name='low_stock_report'),
@@ -143,7 +149,7 @@ urlpatterns = [
          name='download_sample_stock_only_csv'),
     path('stock/import/sample/stock-excel/', importt.download_sample_stock_only_excel,
          name='download_sample_stock_only_excel'),
-
+    path('ajax/stock-details/<int:stock_id>/', views.stock_details_ajax, name='stock_details_ajax'),
     # Import Validation and Preview
     path('stock/import/preview/', importt.preview_import, name='preview_import'),
     path('stock/import/validate/', importt.validate_import_data, name='validate_import_data'),

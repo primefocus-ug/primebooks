@@ -311,6 +311,12 @@ NAVIGATION_ITEMS = [
                 url_name="inventory:product_create",
                 icon="bi bi-plus-circle",
             ),
+            NavigationItem(
+                        name="Stock Adjustment",
+                        url_name="inventory:stock_adjustment",
+                        icon="bi bi-sliders",
+                        permission="inventory.change_stock"
+                    ),
         NavigationItem(
             name="Services",
             icon="bi bi-briefcase",
@@ -371,7 +377,7 @@ NAVIGATION_ITEMS = [
                     ),
                     NavigationItem(
                         name="Stock Adjustment",
-                        url_name="inventory:movement_create",
+                        url_name="inventory:stock_adjustment",
                         icon="bi bi-sliders",
                         permission="inventory.change_stock"
                     ),

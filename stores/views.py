@@ -1,3 +1,4 @@
+from decimal import Decimal
 from django.shortcuts import get_object_or_404, redirect, render
 from django.contrib.auth.mixins import LoginRequiredMixin, PermissionRequiredMixin
 from django.contrib import messages
@@ -10,11 +11,14 @@ from django.contrib.auth.decorators import login_required, permission_required
 from django.http import HttpResponse, JsonResponse
 from django.utils import timezone
 from datetime import datetime, timedelta
-
 from django.core.serializers.json import DjangoJSONEncoder
 from .models import Store, StoreDevice
 import json
 import csv
+from django.db.models import (
+    Case, When, Value, F, Q, Sum, ExpressionWrapper,
+    FloatField, CharField, DecimalField
+)
 from io import BytesIO
 import logging
 
@@ -1399,10 +1403,8 @@ def device_maintenance_update(request, device_id):
     return JsonResponse({'status': 'error', 'message': 'Invalid request method'}, status=400)
 
 
-# --- Inventory Views ---
-
 class StoreInventoryListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
-    """List store inventory items."""
+    """List store inventory items - optimized for template compatibility."""
     model = Stock
     template_name = 'stores/inventory_list.html'
     context_object_name = 'inventory_items'
@@ -1410,33 +1412,44 @@ class StoreInventoryListView(LoginRequiredMixin, PermissionRequiredMixin, ListVi
     permission_required = 'inventory.view_stock'
 
     def get_queryset(self):
-        queryset = Stock.objects.select_related('store', 'product').order_by('store__name', 'product__name')
+        queryset = Stock.objects.select_related(
+            'store',
+            'product'
+        ).order_by('store__name', 'product__name')
+
+        # Apply filters
         if store_id := self.request.GET.get('store'):
             queryset = queryset.filter(store_id=store_id)
         if search := self.request.GET.get('search'):
             queryset = queryset.filter(
-                Q(product__name__icontains=search) | Q(product__sku__icontains=search) | Q(
-                    store__name__icontains=search)
+                Q(product__name__icontains=search) |
+                Q(product__sku__icontains=search) |
+                Q(store__name__icontains=search)
             )
         if self.request.GET.get('low_stock') == 'true':
             queryset = queryset.filter(quantity__lte=F('low_stock_threshold'))
+
         return queryset
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         queryset = self.get_queryset()
+
+        # Get low stock items for the summary section
+        low_stock_queryset = queryset.filter(quantity__lte=F('low_stock_threshold'))
+
         context.update({
             'stores': Store.objects.filter(is_active=True).order_by('name'),
             'selected_store': self.request.GET.get('store'),
             'search_query': self.request.GET.get('search', ''),
             'low_stock_filter': self.request.GET.get('low_stock'),
-            'low_stock_items': queryset.filter(quantity__lte=F('low_stock_threshold')),
+            'low_stock_items': low_stock_queryset,
             'total_items': queryset.count(),
-            'low_stock_count': queryset.filter(quantity__lte=F('low_stock_threshold')).count(),
-            'total_quantity': queryset.aggregate(total=Sum('quantity'))['total'] or 0
+            'low_stock_count': low_stock_queryset.count(),
+            'total_quantity': queryset.aggregate(total=Sum('quantity'))['total'] or 0,
+            'total_value': queryset.aggregate(total=Sum(F('quantity') * F('product__cost_price')))['total'] or 0,
         })
         return context
-
 
 class StoreInventoryDetailView(LoginRequiredMixin, PermissionRequiredMixin, DetailView):
     """Detailed view of a store inventory item."""
@@ -1600,20 +1613,40 @@ def low_stock_alert(request):
     low_stock_items = Stock.objects.filter(
         quantity__lte=F('low_stock_threshold'),
         store__is_active=True
-    ).select_related('store', 'product').order_by('quantity')
+    ).select_related('store', 'product', 'product__category').order_by('quantity')
 
+    # Convert to the format expected by your template
+    items_with_computations = []
+    for stock_item in low_stock_items:
+        # Calculate computed fields
+        total_cost = stock_item.quantity * stock_item.product.cost_price
+        reorder_gap = stock_item.low_stock_threshold - stock_item.quantity
+        stock_percentage = (
+                    stock_item.quantity / stock_item.low_stock_threshold * 100) if stock_item.low_stock_threshold > 0 else 0
+        recommended_order_qty = max(0, (stock_item.low_stock_threshold * Decimal('1.5')) - stock_item.quantity)
+
+        items_with_computations.append({
+            'stock': stock_item,  # This is the key - the template expects item.stock
+            'total_cost': total_cost,
+            'reorder_gap': reorder_gap,
+            'half_reorder': stock_item.low_stock_threshold / 2,
+            'stock_percentage': min(100, max(0, round(stock_percentage, 1))),
+            'recommended_order_qty': recommended_order_qty.quantize(Decimal('0.01'))
+        })
+
+    # Group by store for display
     stores_with_alerts = {}
-    for item in low_stock_items:
-        store_name = item.store.name
-        stores_with_alerts.setdefault(store_name, {'store': item.store, 'items': []})
+    for item in items_with_computations:
+        store_name = item['stock'].store.name
+        stores_with_alerts.setdefault(store_name, {'store': item['stock'].store, 'items': []})
         stores_with_alerts[store_name]['items'].append(item)
 
     context = {
         'stores_with_alerts': stores_with_alerts,
-        'total_low_stock_items': low_stock_items.count(),
+        'total_low_stock_items': len(items_with_computations),
+        'low_stock_items': items_with_computations,  # Add this for compatibility
     }
     return render(request, 'stores/low_stock_alert.html', context)
-
 
 # --- Analytics and Reporting Views ---
 

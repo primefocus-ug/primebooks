@@ -32,6 +32,26 @@ logger = get_task_logger(__name__)
 User = get_user_model()
 
 
+def _is_efris_configured(company) -> bool:
+
+    try:
+        # Check if company has EFRIS config
+        if not hasattr(company, 'efris_config'):
+            return False
+
+        # Check if EFRIS is enabled and configured
+        efris_config = company.efris_config
+        return (
+                efris_config.is_active and
+                efris_config.is_configured and
+                bool(efris_config.client_id) and
+                bool(efris_config.client_secret) and
+                bool(efris_config.base_url)
+        )
+    except Exception as e:
+        logger.warning(f"Error checking EFRIS configuration for company {company.name}: {str(e)}")
+        return False
+
 @shared_task(bind=True, max_retries=3, default_retry_delay=60)
 def sync_service_to_efris_task(self, schema_name, service_id, user_id=None):
     try:
@@ -43,6 +63,15 @@ def sync_service_to_efris_task(self, schema_name, service_id, user_id=None):
 
         # Get company
         company = Company.objects.get(schema_name=schema_name)
+
+        # Check if EFRIS is configured
+        if not _is_efris_configured(company):
+            return {
+                'success': False,
+                'service_id': service_id,
+                'skipped': True,
+                'error': 'EFRIS not configured for this company'
+            }
 
         with schema_context(schema_name):
             # Get service
@@ -97,6 +126,17 @@ def sync_service_to_efris_task(self, schema_name, service_id, user_id=None):
                     f"with EFRIS: {error_msg}"
                 )
 
+                # Don't retry configuration errors
+                if "no efris_config" in error_msg.lower() or "not configured" in error_msg.lower():
+                    return {
+                        'success': False,
+                        'service_id': service.id,
+                        'service_name': service.name,
+                        'operation': operation,
+                        'error': error_msg,
+                        'skipped': True
+                    }
+
                 # Retry on certain errors
                 if 'timeout' in error_msg.lower() or 'connection' in error_msg.lower():
                     raise self.retry(exc=Exception(error_msg))
@@ -111,6 +151,15 @@ def sync_service_to_efris_task(self, schema_name, service_id, user_id=None):
 
     except Exception as e:
         logger.error(f"Service EFRIS sync task failed: {str(e)}", exc_info=True)
+
+        # Don't retry configuration errors
+        if "no efris_config" in str(e).lower() or "not configured" in str(e).lower():
+            return {
+                'success': False,
+                'service_id': service_id,
+                'error': str(e),
+                'skipped': True
+            }
 
         # Retry on network errors
         if 'timeout' in str(e).lower() or 'connection' in str(e).lower():
@@ -385,6 +434,7 @@ def validate_services_efris_compliance(schema_name):
             'error': str(e)
         }
 
+
 @shared_task(bind=True)
 def sync_stock_movement_to_efris(self, movement_id: int, schema_name: str):
     try:
@@ -396,6 +446,16 @@ def sync_stock_movement_to_efris(self, movement_id: int, schema_name: str):
             if not company:
                 logger.error(f"[{schema_name}] ❌ Company not found for schema")
                 return None
+
+            # Check if EFRIS is configured for this company
+            if not _is_efris_configured(company):
+                logger.info(f"[{schema_name}] ⏭️ EFRIS not configured, skipping sync for movement {movement_id}")
+                return {
+                    'movement_id': movement_id,
+                    'schema': schema_name,
+                    'skipped': True,
+                    'reason': 'EFRIS not configured'
+                }
 
             movement = StockMovement.objects.select_related('product', 'store').get(pk=movement_id)
 
@@ -414,8 +474,18 @@ def sync_stock_movement_to_efris(self, movement_id: int, schema_name: str):
         return None
     except Exception as e:
         logger.error(f"[{schema_name}] 🔥 Error syncing StockMovement {movement_id}: {str(e)}", exc_info=True)
-        raise self.retry(exc=e, countdown=30, max_retries=3)
 
+        # Only retry if it's not a configuration error
+        if "no efris_config" not in str(e).lower() and "not configured" not in str(e).lower():
+            raise self.retry(exc=e, countdown=30, max_retries=3)
+        else:
+            logger.info(f"[{schema_name}] ⏭️ Configuration error, not retrying: {str(e)}")
+            return {
+                'movement_id': movement_id,
+                'schema': schema_name,
+                'error': str(e),
+                'skipped': True
+            }
 
 class CallbackTask(Task):
     """Base task class with callback support"""
@@ -464,6 +534,16 @@ def register_product_with_efris_async(
                     'schema_name': schema_name
                 }
 
+            # Check if EFRIS is configured
+            if not _is_efris_configured(company):
+                return {
+                    'success': False,
+                    'product_id': product_id,
+                    'skipped': True,
+                    'error': 'EFRIS not configured for this company',
+                    'schema_name': schema_name
+                }
+
             logger.info(
                 f"[{schema_name}] Starting EFRIS registration for product {product.sku}"
             )
@@ -508,6 +588,18 @@ def register_product_with_efris_async(
 
                 _log_product_registration(company, product, False, result, schema_name)
 
+                # Don't retry configuration errors
+                if "no efris_config" in error_message.lower() or "not configured" in error_message.lower():
+                    return {
+                        'success': False,
+                        'product_id': product_id,
+                        'sku': product.sku,
+                        'error': error_message,
+                        'error_code': error_code,
+                        'skipped': True,
+                        'schema_name': schema_name
+                    }
+
                 retryable_codes = ['99', 'TIMEOUT', 'CONNECTION_ERROR', '45']
                 if error_code in retryable_codes and self.request.retries < self.max_retries:
                     raise self.retry(countdown=60 * (self.request.retries + 1))
@@ -526,6 +618,16 @@ def register_product_with_efris_async(
             f"[{schema_name}] Unexpected error: {str(e)}",
             exc_info=True
         )
+
+        # Don't retry configuration errors
+        if "no efris_config" in str(e).lower() or "not configured" in str(e).lower():
+            return {
+                'success': False,
+                'product_id': product_id,
+                'error': str(e),
+                'skipped': True,
+                'schema_name': schema_name
+            }
 
         if self.request.retries < self.max_retries:
             raise self.retry(exc=e, countdown=60 * (self.request.retries + 1))
@@ -634,11 +736,21 @@ def register_new_products_with_efris(company_id: int, schema_name: str) -> Dict[
 
             company = Company.objects.get(pk=company_id)
 
+            # Check if EFRIS is configured
+            if not _is_efris_configured(company):
+                return {
+                    'success': False,
+                    'message': 'EFRIS not configured for this company',
+                    'schema_name': schema_name,
+                    'skipped': True
+                }
+
             if not company.efris_enabled:
                 return {
                     'success': False,
                     'message': 'EFRIS not enabled',
-                    'schema_name': schema_name
+                    'schema_name': schema_name,
+                    'skipped': True
                 }
 
             products = Product.objects.filter(

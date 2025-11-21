@@ -71,6 +71,21 @@ body {
     flex: 1;
     max-width: 500px;
 }
+/* Make customer section position relative for dropdown positioning */
+.customer-section {
+    position: relative;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+}
+
+/* Enhance the search input */
+.customer-section .form-control:focus {
+    border-color: #667eea;
+    box-shadow: 0 0 0 0.2rem rgba(102, 126, 234, 0.25);
+}
 .item-type-toggle {
     display: flex;
     gap: 0.5rem;
@@ -600,7 +615,99 @@ body {
     justify-content: center;
     z-index: 9999;
 }
+.customer-dropdown {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    box-shadow: var(--shadow-md);
+    max-height: 400px;
+    overflow: hidden;
+    z-index: 1000;
+    margin-top: 0.5rem;
+}
 
+.customer-list-header {
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid var(--border-color);
+    background: var(--bg-secondary);
+}
+
+.customer-list {
+    max-height: 350px;
+    overflow-y: auto;
+}
+
+.customer-list-item {
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid var(--border-color);
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.customer-list-item:last-child {
+    border-bottom: none;
+}
+
+.customer-list-item:hover {
+    background: var(--card-hover);
+}
+
+.customer-list-item-avatar {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: var(--accent-gradient);
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: bold;
+    font-size: 1rem;
+    flex-shrink: 0;
+}
+
+.customer-list-item-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.customer-list-item-name {
+    font-weight: 600;
+    font-size: 0.875rem;
+    margin-bottom: 0.125rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.customer-list-item-details {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.customer-list-item-badge {
+    font-size: 0.65rem;
+    padding: 0.25rem 0.5rem;
+    border-radius: 12px;
+    background: var(--bg-secondary);
+    color: var(--text-secondary);
+    white-space: nowrap;
+}
+
+.customer-list-item.vat-registered .customer-list-item-badge {
+    background: var(--success-gradient);
+    color: white;
+}
 .loading-content {
     background: var(--bg-primary);
     padding: 2rem;
@@ -776,30 +883,65 @@ body {
         <div class="col-lg-4">
             <!-- Customer Selection -->
             <div class="customer-section">
-                <div class="d-flex justify-content-between align-items-center mb-3">
-                    <h6 class="mb-0">
-                        <i class="bi bi-person me-2"></i>{% trans "Customer" %}
-                    </h6>
-                    <button type="button" class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#newCustomerModal">
-                        <i class="bi bi-plus"></i>
-                    </button>
-                </div>
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h6 class="mb-0">
+            <i class="bi bi-person me-2"></i>{% trans "Customer" %}
+        </h6>
+        <button type="button" class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#newCustomerModal">
+            <i class="bi bi-plus"></i> {% trans "New" %}
+        </button>
+    </div>
 
-                <input type="text" class="form-control mb-2" id="customerSearch"
-                       placeholder="{% trans 'Search customer...' %}">
+    <!-- Search Input -->
+    <div class="position-relative mb-2">
+        <i class="bi bi-search position-absolute" style="left: 12px; top: 50%; transform: translateY(-50%); color: var(--text-secondary);"></i>
+        <input type="text" class="form-control ps-5" id="customerSearch"
+               placeholder="{% trans 'Search customer...' %}"
+               autocomplete="off">
+    </div>
 
-                <div class="customer-display" id="customerDisplay">
-                    <div class="customer-avatar" id="customerAvatar">C</div>
-                    <div class="flex-grow-1">
-                        <div class="fw-bold" id="customerName">Customer Name</div>
-                        <small id="customerDetails">Phone • Email</small>
-                    </div>
-                    <button type="button" class="btn btn-sm btn-danger" onclick="removeCustomer()">
-                        <i class="bi bi-x"></i>
-                    </button>
+    <!-- Selected Customer Display -->
+    <div class="customer-display" id="customerDisplay">
+        <div class="customer-avatar" id="customerAvatar">C</div>
+        <div class="flex-grow-1">
+            <div class="fw-bold" id="customerName">Customer Name</div>
+            <small id="customerDetails">Phone • Email</small>
+        </div>
+        <button type="button" class="btn btn-sm btn-danger" onclick="removeCustomer()">
+            <i class="bi bi-x"></i>
+        </button>
+    </div>
+
+    <!-- Customer List Dropdown -->
+    <div class="customer-dropdown" id="customerDropdown" style="display: none;">
+        <div class="customer-list-header">
+            <small class="text-muted">
+                <i class="bi bi-clock-history me-1"></i>
+                <span id="customerListTitle">Recent Customers</span>
+            </small>
+        </div>
+        <div class="customer-list" id="customerList">
+            <!-- Customer items will be loaded here -->
+        </div>
+        <div class="customer-list-loading" id="customerListLoading" style="display: none;">
+            <div class="text-center py-3">
+                <div class="spinner-border spinner-border-sm text-primary" role="status">
+                    <span class="visually-hidden">Loading...</span>
                 </div>
-                <input type="hidden" name="customer" id="customerId">
+                <p class="small text-muted mb-0 mt-2">Loading customers...</p>
             </div>
+        </div>
+        <div class="customer-list-empty" id="customerListEmpty" style="display: none;">
+            <div class="text-center py-3">
+                <i class="bi bi-person-x text-muted" style="font-size: 2rem;"></i>
+                <p class="small text-muted mb-0 mt-2">No customers found</p>
+            </div>
+        </div>
+    </div>
+
+    <input type="hidden" name="customer" id="customerId">
+</div>
+
 
             <!-- Cart Section -->
             <div class="cart-section">
@@ -952,88 +1094,106 @@ body {
 
 {% block extra_js %}
 <script>
-// Global variables
-let cart = [];
-let items = [];
-let currentPage = 1;
-let totalPages = 1;
-let selectedItem = null;
-let selectedCustomer = null;
-let searchTimeout = null;
-let currentItemType = 'all';  // 'all', 'product', or 'service'
+// Global State Management
+const State = {
+    cart: [],
+    items: [],
+    currentPage: 1,
+    totalPages: 1,
+    selectedItem: null,
+    selectedCustomer: null,
+    searchTimeout: null,
+    currentItemType: 'all',
+    customerSearchTimeout: null,
+    isCustomerDropdownOpen: false
+};
 
-// Initialize
+// Initialization
 document.addEventListener('DOMContentLoaded', function() {
-    loadItems();
-    setupEventListeners();
+    initializeApp();
 });
 
-function setupEventListeners() {
-    document.getElementById('storeSelect').addEventListener('change', function() {
-        currentPage = 1;
-        loadItems();
-    });
+function initializeApp() {
+    loadItems();
+    setupEventListeners();
+    setupCustomerSearch();
+    loadInitialCustomers();
+}
 
+// Event Listeners Setup
+function setupEventListeners() {
+    setupStoreListeners();
+    setupProductSearchListeners();
+    setupPaginationListeners();
+}
+
+function setupStoreListeners() {
+    document.getElementById('storeSelect').addEventListener('change', function() {
+        State.currentPage = 1;
+        loadItems();
+        if (this.value) {
+            loadStoreCustomers(this.value);
+        }
+    });
+}
+
+function setupProductSearchListeners() {
     document.getElementById('productSearchBar').addEventListener('input', function() {
-        clearTimeout(searchTimeout);
-        searchTimeout = setTimeout(() => {
-            currentPage = 1;
+        clearTimeout(State.searchTimeout);
+        State.searchTimeout = setTimeout(() => {
+            State.currentPage = 1;
             loadItems();
         }, 300);
     });
+}
 
+function setupPaginationListeners() {
     document.getElementById('prevPage').addEventListener('click', () => {
-        if (currentPage > 1) {
-            currentPage--;
+        if (State.currentPage > 1) {
+            State.currentPage--;
             loadItems();
         }
     });
 
     document.getElementById('nextPage').addEventListener('click', () => {
-        if (currentPage < totalPages) {
-            currentPage++;
+        if (State.currentPage < State.totalPages) {
+            State.currentPage++;
             loadItems();
         }
     });
-
-    document.getElementById('customerSearch').addEventListener('input', function() {
-        clearTimeout(searchTimeout);
-        searchTimeout = setTimeout(() => searchCustomers(), 300);
-    });
 }
 
-// Switch item type (products, services, or all)
+// Item Type Management
 function switchItemType(type) {
-    currentItemType = type;
-    currentPage = 1;
+    State.currentItemType = type;
+    State.currentPage = 1;
 
+    updateItemTypeUI(type);
+    loadItems();
+}
+
+function updateItemTypeUI(type) {
     // Update button states
     document.querySelectorAll('.item-type-btn').forEach(btn => {
-        btn.classList.remove('active');
-        if (btn.dataset.type === type) {
-            btn.classList.add('active');
-        }
+        btn.classList.toggle('active', btn.dataset.type === type);
     });
 
     // Update header text
     const headerText = document.getElementById('itemsHeaderText');
-    if (type === 'product') {
-        headerText.textContent = '{% trans "Products" %}';
-    } else if (type === 'service') {
-        headerText.textContent = '{% trans "Services" %}';
-    } else {
-        headerText.textContent = '{% trans "Products & Services" %}';
-    }
-
-    loadItems();
+    const headerMap = {
+        'product': '{% trans "Products" %}',
+        'service': '{% trans "Services" %}',
+        'all': '{% trans "Products & Services" %}'
+    };
+    headerText.textContent = headerMap[type];
 }
 
-// Load items (products and/or services)
+// Items Management
 async function loadItems() {
     const storeId = document.getElementById('storeSelect').value;
     const searchQuery = document.getElementById('productSearchBar').value;
 
-    if (!storeId && currentItemType !== 'service') {
+    if (!storeId && State.currentItemType !== 'service') {
         showProductsEmpty();
         return;
     }
@@ -1044,23 +1204,18 @@ async function loadItems() {
         const params = new URLSearchParams({
             q: searchQuery || 'a',
             store_id: storeId,
-            page: currentPage,
-            item_type: currentItemType
+            page: State.currentPage,
+            item_type: State.currentItemType
         });
 
         const response = await fetch(`/sales/search-items/?${params}`);
         const data = await response.json();
 
         if (data.items && data.items.length > 0) {
-            items = data.items;
-
-            const itemsPerPage = 20;
-            const startIndex = (currentPage - 1) * itemsPerPage;
-            const endIndex = startIndex + itemsPerPage;
-            const paginatedItems = data.items.slice(startIndex, endIndex);
-
+            State.items = data.items;
+            const paginatedItems = paginateItems(data.items);
             displayItems(paginatedItems);
-            updatePagination(data.items.length, itemsPerPage);
+            updatePagination(data.items.length, 20);
         } else {
             showProductsEmpty();
         }
@@ -1069,6 +1224,13 @@ async function loadItems() {
         showError('Failed to load items');
         showProductsEmpty();
     }
+}
+
+function paginateItems(items) {
+    const itemsPerPage = 20;
+    const startIndex = (State.currentPage - 1) * itemsPerPage;
+    const endIndex = startIndex + itemsPerPage;
+    return items.slice(startIndex, endIndex);
 }
 
 function displayItems(items) {
@@ -1080,169 +1242,480 @@ function displayItems(items) {
     empty.style.display = 'none';
     grid.style.display = 'grid';
 
-    grid.innerHTML = items.map(item => {
-        const isProduct = item.item_type === 'PRODUCT';
-        const isService = item.item_type === 'SERVICE';
+    grid.innerHTML = items.map(item => createItemCard(item)).join('');
+}
 
-        // Stock handling (products only)
-        let hasStock = true;
-        let stockClass = 'in-stock';
-        let stockText = 'Available';
+function createItemCard(item) {
+    const isProduct = item.item_type === 'PRODUCT';
+    const isService = item.item_type === 'SERVICE';
+    const { hasStock, stockClass, stockText } = getStockInfo(item);
+    const { hasDiscount, finalPrice } = getPriceInfo(item);
 
-        if (isProduct && item.stock) {
-            hasStock = item.stock.available > 0;
-            const isLowStock = hasStock && item.stock.available < 10;
-            stockClass = !hasStock ? 'out-of-stock' : isLowStock ? 'low-stock' : 'in-stock';
-            stockText = hasStock ? `${item.stock.available} in stock` : 'Out of stock';
-        } else if (isService) {
-            stockText = 'Service';
-            stockClass = 'in-stock';
+    return `
+        <div class="product-card ${(!hasStock && isProduct) ? 'out-of-stock' : ''}"
+             data-item-id="${item.id}" data-item-type="${item.item_type}">
+            ${createItemBadges(item, hasDiscount)}
+            ${createItemImage(item)}
+            ${createItemInfo(item, hasDiscount, finalPrice, stockClass, stockText)}
+            ${createItemActions(item, hasStock)}
+        </div>
+    `;
+}
+
+function getStockInfo(item) {
+    const isProduct = item.item_type === 'PRODUCT';
+
+    if (isProduct && item.stock) {
+        const hasStock = item.stock.available > 0;
+        const isLowStock = hasStock && item.stock.available < 10;
+        const stockClass = !hasStock ? 'out-of-stock' : isLowStock ? 'low-stock' : 'in-stock';
+        const stockText = hasStock ? `${item.stock.available} in stock` : 'Out of stock';
+
+        return { hasStock, stockClass, stockText };
+    }
+
+    return {
+        hasStock: true,
+        stockClass: 'in-stock',
+        stockText: 'Service'
+    };
+}
+
+function getPriceInfo(item) {
+    const hasDiscount = item.discount_percentage > 0;
+    const finalPrice = hasDiscount ?
+        (item.price * (1 - item.discount_percentage / 100)).toFixed(2) :
+        item.price;
+
+    return { hasDiscount, finalPrice };
+}
+
+function createItemBadges(item, hasDiscount) {
+    const isProduct = item.item_type === 'PRODUCT';
+    const badgeHtml = isProduct ?
+        '<span class="product-badge"><i class="bi bi-box-seam me-1"></i>Product</span>' :
+        '<span class="service-badge"><i class="bi bi-gear me-1"></i>Service</span>';
+
+    return `
+        ${hasDiscount ? `<div class="product-discount-badge">-${item.discount_percentage}%</div>` : ''}
+        ${badgeHtml}
+    `;
+}
+
+function createItemImage(item) {
+    const isProduct = item.item_type === 'PRODUCT';
+    return `
+        <div class="product-image-placeholder">
+            <i class="bi bi-${isProduct ? 'box-seam' : 'gear'}"></i>
+        </div>
+    `;
+}
+
+function createItemInfo(item, hasDiscount, finalPrice, stockClass, stockText) {
+    const isProduct = item.item_type === 'PRODUCT';
+
+    return `
+        <div class="product-info">
+            <div class="product-name" title="${item.name}">${item.name}</div>
+            <div class="product-sku">${isProduct ? 'SKU' : 'Code'}: ${item.code || 'N/A'}</div>
+
+            <div class="product-price">
+                <span class="price-current">${finalPrice} UGX</span>
+                ${hasDiscount ? `<span class="price-original">${item.price} UGX</span>` : ''}
+            </div>
+
+            <div class="product-stock">
+                <span class="stock-indicator ${stockClass}"></span>
+                <span>${stockText}</span>
+            </div>
+        </div>
+    `;
+}
+
+function createItemActions(item, hasStock) {
+    const isProduct = item.item_type === 'PRODUCT';
+
+    return `
+        <div class="product-actions">
+            <button type="button" class="btn-add-to-cart"
+                    onclick="quickAddToCart(${item.id}, '${item.item_type}')"
+                    ${(!hasStock && isProduct) ? 'disabled' : ''}>
+                <i class="bi bi-cart-plus"></i>
+                Add to Cart
+            </button>
+            <button type="button" class="btn-quick-view"
+                    onclick="showQuickView(${item.id}, '${item.item_type}')"
+                    title="Quick View">
+                <i class="bi bi-eye"></i>
+            </button>
+        </div>
+    `;
+}
+
+// Customer Management
+function setupCustomerSearch() {
+    const searchInput = document.getElementById('customerSearch');
+    const dropdown = document.getElementById('customerDropdown');
+
+    searchInput.addEventListener('focus', function() {
+        if (!State.selectedCustomer) {
+            showCustomerDropdown();
         }
+    });
 
-        const hasDiscount = item.discount_percentage > 0;
-        const finalPrice = hasDiscount ?
-            (item.price * (1 - item.discount_percentage / 100)).toFixed(2) :
-            item.price;
+    searchInput.addEventListener('input', function() {
+        clearTimeout(State.customerSearchTimeout);
+        const query = this.value.trim();
 
-        const badgeHtml = isProduct ?
-            '<span class="product-badge"><i class="bi bi-box-seam me-1"></i>Product</span>' :
-            '<span class="service-badge"><i class="bi bi-gear me-1"></i>Service</span>';
+        if (query.length >= 2) {
+            State.customerSearchTimeout = setTimeout(() => {
+                searchCustomersEnhanced(query);
+            }, 300);
+        } else if (query.length === 0) {
+            const storeId = document.getElementById('storeSelect').value;
+            if (storeId) {
+                loadStoreCustomers(storeId);
+            } else {
+                loadRecentCustomers();
+            }
+        }
+    });
 
-        return `
-            <div class="product-card ${(!hasStock && isProduct) ? 'out-of-stock' : ''}" data-item-id="${item.id}" data-item-type="${item.item_type}">
-                ${hasDiscount ? `<div class="product-discount-badge">-${item.discount_percentage}%</div>` : ''}
-                ${badgeHtml}
+    document.addEventListener('click', function(e) {
+        if (!e.target.closest('.customer-section')) {
+            hideCustomerDropdown();
+        }
+    });
+}
 
-                <div class="product-image-placeholder">
-                    <i class="bi bi-${isProduct ? 'box-seam' : 'gear'}"></i>
-                </div>
+function loadInitialCustomers() {
+    const storeSelect = document.getElementById('storeSelect');
+    if (storeSelect && storeSelect.value) {
+        loadStoreCustomers(storeSelect.value);
+    }
+}
 
-                <div class="product-info">
-                    <div class="product-name" title="${item.name}">${item.name}</div>
-                    <div class="product-sku">${isProduct ? 'SKU' : 'Code'}: ${item.code || 'N/A'}</div>
+async function searchCustomersEnhanced(query) {
+    const storeId = document.getElementById('storeSelect').value;
 
-                    <div class="product-price">
-                        <span class="price-current">${finalPrice} UGX</span>
-                        ${hasDiscount ? `<span class="price-original">${item.price} UGX</span>` : ''}
-                    </div>
+    showCustomerListLoading();
+    showCustomerDropdown();
 
-                    ${isProduct ? `
-                    <div class="product-stock">
-                        <span class="stock-indicator ${stockClass}"></span>
-                        <span>${stockText}</span>
-                    </div>
-                    ` : `
-                    <div class="product-stock">
-                        <span class="stock-indicator in-stock"></span>
-                        <span>Available</span>
-                    </div>
-                    `}
-                </div>
+    try {
+        const params = new URLSearchParams({
+            q: query,
+            store_id: storeId || '',
+            limit: 10
+        });
 
-                <div class="product-actions">
-                    <button type="button" class="btn-add-to-cart"
-                            onclick="quickAddToCart(${item.id}, '${item.item_type}')"
-                            ${(!hasStock && isProduct) ? 'disabled' : ''}>
-                        <i class="bi bi-cart-plus"></i>
-                        Add to Cart
-                    </button>
-                    <button type="button" class="btn-quick-view"
-                            onclick="showQuickView(${item.id}, '${item.item_type}')"
-                            title="Quick View">
-                        <i class="bi bi-eye"></i>
-                    </button>
+        const response = await fetch(`/customers/api/search-with-store/?${params}`);
+        const data = await response.json();
+
+        if (data.customers && data.customers.length > 0) {
+            displayCustomerList(data.customers, 'Search Results');
+        } else {
+            showCustomerListEmpty();
+        }
+    } catch (error) {
+        console.error('Error searching customers:', error);
+        showCustomerListEmpty();
+    }
+}
+
+async function loadStoreCustomers(storeId) {
+    if (!storeId) return;
+
+    showCustomerListLoading();
+    showCustomerDropdown();
+
+    try {
+        const response = await fetch(`/customers/api/store-customers/?store_id=${storeId}&limit=20`);
+        const data = await response.json();
+
+        if (data.customers && data.customers.length > 0) {
+            displayCustomerList(data.customers, 'Store Customers');
+        } else {
+            loadRecentCustomers();
+        }
+    } catch (error) {
+        console.error('Error loading store customers:', error);
+        loadRecentCustomers();
+    }
+}
+
+async function loadRecentCustomers() {
+    showCustomerListLoading();
+    showCustomerDropdown();
+
+    try {
+        const response = await fetch('/customers/api/search-with-store/?limit=20');
+        const data = await response.json();
+
+        if (data.customers && data.customers.length > 0) {
+            displayCustomerList(data.customers, 'Recent Customers');
+        } else {
+            showCustomerListEmpty();
+        }
+    } catch (error) {
+        console.error('Error loading recent customers:', error);
+        showCustomerListEmpty();
+    }
+}
+
+function displayCustomerList(customers, title) {
+    const listContainer = document.getElementById('customerList');
+    const listTitle = document.getElementById('customerListTitle');
+    const loading = document.getElementById('customerListLoading');
+    const empty = document.getElementById('customerListEmpty');
+
+    loading.style.display = 'none';
+    empty.style.display = 'none';
+    listContainer.style.display = 'block';
+
+    listTitle.innerHTML = `<i class="bi bi-people me-1"></i>${title}`;
+    listContainer.innerHTML = customers.map(customer => createCustomerListItem(customer)).join('');
+}
+
+function createCustomerListItem(customer) {
+    return `
+        <div class="customer-list-item ${customer.is_vat_registered ? 'vat-registered' : ''}"
+             onclick='selectCustomerFromList(${JSON.stringify(customer)})'>
+            <div class="customer-list-item-avatar">
+                ${customer.avatar}
+            </div>
+            <div class="customer-list-item-info">
+                <div class="customer-list-item-name">${customer.name}</div>
+                <div class="customer-list-item-details">
+                    ${customer.phone || 'No phone'}
+                    ${customer.email ? '• ' + customer.email : ''}
                 </div>
             </div>
-        `;
-    }).join('');
+            ${customer.is_vat_registered ?
+                '<span class="customer-list-item-badge"><i class="bi bi-check-circle me-1"></i>VAT</span>' :
+                '<span class="customer-list-item-badge">' + customer.customer_type + '</span>'
+            }
+        </div>
+    `;
 }
 
-function updatePagination(totalItems, itemsPerPage) {
-    const prevBtn = document.getElementById('prevPage');
-    const nextBtn = document.getElementById('nextPage');
-    const info = document.getElementById('paginationInfo');
-
-    totalPages = Math.ceil(totalItems / itemsPerPage);
-
-    prevBtn.disabled = currentPage <= 1;
-    nextBtn.disabled = currentPage >= totalPages;
-    info.textContent = `Page ${currentPage} of ${totalPages} (${totalItems} items)`;
+function showCustomerDropdown() {
+    const dropdown = document.getElementById('customerDropdown');
+    dropdown.style.display = 'block';
+    State.isCustomerDropdownOpen = true;
 }
 
-function showProductsLoading() {
-    document.getElementById('productsGrid').style.display = 'none';
-    document.getElementById('productsEmpty').style.display = 'none';
-    document.getElementById('productsLoading').style.display = 'block';
+function hideCustomerDropdown() {
+    const dropdown = document.getElementById('customerDropdown');
+    dropdown.style.display = 'none';
+    State.isCustomerDropdownOpen = false;
 }
 
-function showProductsEmpty() {
-    document.getElementById('productsGrid').style.display = 'none';
-    document.getElementById('productsLoading').style.display = 'none';
-    document.getElementById('productsEmpty').style.display = 'block';
+function selectCustomerFromList(customer) {
+    selectCustomer(customer);
+    hideCustomerDropdown();
+    document.getElementById('customerSearch').value = '';
 }
 
-// Quick add to cart
-// Add to cart function - FIXED VERSION
+function selectCustomer(customer) {
+    State.selectedCustomer = customer;
+    document.getElementById('customerId').value = customer.id;
+    document.getElementById('customerAvatar').textContent = customer.avatar || customer.name.charAt(0).toUpperCase();
+    document.getElementById('customerName').textContent = customer.name;
+
+    const details = [];
+    if (customer.phone) details.push(customer.phone);
+    if (customer.email) details.push(customer.email);
+    if (customer.customer_id) details.push('ID: ' + customer.customer_id);
+
+    document.getElementById('customerDetails').textContent = details.join(' • ');
+    document.getElementById('customerDisplay').classList.add('active');
+}
+
+function removeCustomer() {
+    State.selectedCustomer = null;
+    document.getElementById('customerId').value = '';
+    document.getElementById('customerDisplay').classList.remove('active');
+    document.getElementById('customerSearch').value = '';
+
+    const storeId = document.getElementById('storeSelect').value;
+    if (storeId) {
+        loadStoreCustomers(storeId);
+    }
+}
+
+// Cart Management
 function addToCart(item) {
-    // Ensure we have the correct ID fields based on item type
-    if (item.item_type === 'PRODUCT' && !item.product_id) {
-        console.error('Product item missing product_id:', item);
-        showError('Error adding product to cart');
-        return;
-    }
+    if (!validateCartItem(item)) return;
 
-    if (item.item_type === 'SERVICE' && !item.service_id) {
-        console.error('Service item missing service_id:', item);
-        showError('Error adding service to cart');
-        return;
-    }
-
-    // Check if item already exists (same type and id)
-    const existingIndex = cart.findIndex(i =>
-        i.item_type === item.item_type &&
-        ((item.item_type === 'PRODUCT' && i.product_id === item.product_id) ||
-         (item.item_type === 'SERVICE' && i.service_id === item.service_id))
-    );
+    const existingIndex = findCartItemIndex(item);
 
     if (existingIndex >= 0) {
-        cart[existingIndex].quantity += item.quantity;
+        State.cart[existingIndex].quantity += item.quantity;
     } else {
-        // Ensure the item has all required fields before adding
-        const cartItem = {
-            item_type: item.item_type,
-            name: item.name,
-            quantity: item.quantity,
-            unit_price: item.unit_price,
-            tax_rate: item.tax_rate || 'A',
-            discount: item.discount || 0,
-            unit: item.unit || 'pcs',
-            description: item.description || ''
-        };
-
-        // Add the appropriate ID field
-        if (item.item_type === 'PRODUCT') {
-            cartItem.product_id = item.product_id;
-            cartItem.service_id = null;
-        } else {
-            cartItem.product_id = null;
-            cartItem.service_id = item.service_id;
-        }
-
-        cart.push(cartItem);
+        State.cart.push(createCartItem(item));
     }
 
     updateCartDisplay();
 }
 
-// Show quick view modal
+function validateCartItem(item) {
+    if (item.item_type === 'PRODUCT' && !item.product_id) {
+        console.error('Product item missing product_id:', item);
+        showError('Error adding product to cart');
+        return false;
+    }
+
+    if (item.item_type === 'SERVICE' && !item.service_id) {
+        console.error('Service item missing service_id:', item);
+        showError('Error adding service to cart');
+        return false;
+    }
+
+    return true;
+}
+
+function findCartItemIndex(item) {
+    return State.cart.findIndex(i =>
+        i.item_type === item.item_type &&
+        ((item.item_type === 'PRODUCT' && i.product_id === item.product_id) ||
+         (item.item_type === 'SERVICE' && i.service_id === item.service_id))
+    );
+}
+
+function createCartItem(item) {
+    const cartItem = {
+        item_type: item.item_type,
+        name: item.name,
+        quantity: item.quantity,
+        unit_price: item.unit_price,
+        tax_rate: item.tax_rate || 'A',
+        discount: item.discount || 0,
+        unit: item.unit || 'pcs',
+        description: item.description || ''
+    };
+
+    if (item.item_type === 'PRODUCT') {
+        cartItem.product_id = item.product_id;
+        cartItem.service_id = null;
+    } else {
+        cartItem.product_id = null;
+        cartItem.service_id = item.service_id;
+    }
+
+    return cartItem;
+}
+
+function updateCartDisplay() {
+    const cartItems = document.getElementById('cartItems');
+    const cartCount = document.getElementById('cartCount');
+    const cartSummary = document.getElementById('cartSummary');
+
+    cartCount.textContent = State.cart.length;
+
+    if (State.cart.length === 0) {
+        showEmptyCart(cartItems, cartSummary);
+        return;
+    }
+
+    cartItems.innerHTML = State.cart.map((item, index) => createCartItemElement(item, index)).join('');
+    cartSummary.style.display = 'block';
+    updateSummary();
+    enableActionButtons();
+}
+
+function showEmptyCart(cartItems, cartSummary) {
+    cartItems.innerHTML = `
+        <div class="cart-empty">
+            <div class="empty-icon"><i class="bi bi-cart-x"></i></div>
+            <h6>Cart is Empty</h6>
+            <p class="mb-0">Add products or services to start</p>
+        </div>
+    `;
+    cartSummary.style.display = 'none';
+    disableActionButtons();
+}
+
+function createCartItemElement(item, index) {
+    const lineTotal = (item.quantity * item.unit_price - item.discount).toFixed(2);
+    const initial = item.name.charAt(0).toUpperCase();
+    const isProduct = item.item_type === 'PRODUCT';
+    const badgeClass = isProduct ? 'product-badge' : 'service-badge';
+    const badgeText = isProduct ? 'Product' : 'Service';
+
+    return `
+        <div class="cart-item">
+            <div class="cart-item-image">${initial}</div>
+            <div class="cart-item-details">
+                <div class="cart-item-name" title="${item.name}">
+                    ${item.name}
+                    <span class="${badgeClass}" style="font-size: 0.65rem; margin-left: 0.5rem;">${badgeText}</span>
+                </div>
+                <div class="cart-item-meta">${item.unit_price.toFixed(2)} UGX × ${item.quantity} ${item.unit}</div>
+                <div class="cart-item-controls">
+                    <div class="qty-control">
+                        <button type="button" class="qty-btn" onclick="updateQuantity(${index}, -0.5)">
+                            <i class="bi bi-dash"></i>
+                        </button>
+                        <input type="number" class="qty-input" value="${item.quantity}"
+                               onchange="setQuantity(${index}, this.value)" min="0.001" step="0.001">
+                        <button type="button" class="qty-btn" onclick="updateQuantity(${index}, 0.5)">
+                            <i class="bi bi-plus"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+            <div class="cart-item-actions">
+                <div class="cart-item-price">${lineTotal} UGX</div>
+                <button type="button" class="btn-remove-item" onclick="removeFromCart(${index})">
+                    <i class="bi bi-trash"></i> Remove
+                </button>
+            </div>
+        </div>
+    `;
+}
+
+function updateQuantity(index, delta) {
+    if (State.cart[index]) {
+        State.cart[index].quantity += delta;
+        if (State.cart[index].quantity <= 0) {
+            removeFromCart(index);
+        } else {
+            updateCartDisplay();
+        }
+    }
+}
+
+function setQuantity(index, value) {
+    const quantity = parseFloat(value);
+    if (quantity <= 0) {
+        removeFromCart(index);
+    } else {
+        State.cart[index].quantity = quantity;
+        updateCartDisplay();
+    }
+}
+
+function removeFromCart(index) {
+    State.cart.splice(index, 1);
+    updateCartDisplay();
+    showSuccess('Item removed from cart');
+}
+
+// Quick View Modal
 function showQuickView(itemId, itemType) {
-    const item = items.find(i => i.id === itemId && i.item_type === itemType);
+    const item = State.items.find(i => i.id === itemId && i.item_type === itemType);
     if (!item) return;
 
-    selectedItem = item;
+    State.selectedItem = item;
+    populateQuickViewModal(item);
 
+    const modal = new bootstrap.Modal(document.getElementById('quickAddModal'));
+    modal.show();
+}
+
+function populateQuickViewModal(item) {
     const modalDetails = document.getElementById('modalProductDetails');
-    const isProduct = itemType === 'PRODUCT';
+    const isProduct = item.item_type === 'PRODUCT';
 
     modalDetails.innerHTML = `
         <div class="mb-3">
@@ -1261,175 +1734,58 @@ function showQuickView(itemId, itemType) {
     document.getElementById('modalQuantity').value = 1;
     document.getElementById('modalPrice').value = item.final_price || item.price;
     document.getElementById('modalDiscount').value = 0;
-
-    const modal = new bootstrap.Modal(document.getElementById('quickAddModal'));
-    modal.show();
 }
 
-// Confirm add to cart from modal
 function confirmAddToCart() {
-    if (!selectedItem) return;
+    if (!State.selectedItem) return;
 
     const quantity = parseFloat(document.getElementById('modalQuantity').value);
     const price = parseFloat(document.getElementById('modalPrice').value);
     const discount = parseFloat(document.getElementById('modalDiscount').value);
 
-    if (quantity <= 0 || price < 0) {
-        showError('Invalid quantity or price');
-        return;
-    }
+    if (!validateModalInputs(quantity, price)) return;
 
-    // Check stock for products
-    if (selectedItem.item_type === 'PRODUCT' && selectedItem.stock && quantity > selectedItem.stock.available) {
-        showError(`Only ${selectedItem.stock.available} available in stock`);
+    if (State.selectedItem.item_type === 'PRODUCT' &&
+        State.selectedItem.stock &&
+        quantity > State.selectedItem.stock.available) {
+        showError(`Only ${State.selectedItem.stock.available} available in stock`);
         return;
     }
 
     addToCart({
-        item_type: selectedItem.item_type,
-        product_id: selectedItem.item_type === 'PRODUCT' ? selectedItem.id : null,
-        service_id: selectedItem.item_type === 'SERVICE' ? selectedItem.id : null,
-        name: selectedItem.name,
+        item_type: State.selectedItem.item_type,
+        product_id: State.selectedItem.item_type === 'PRODUCT' ? State.selectedItem.id : null,
+        service_id: State.selectedItem.item_type === 'SERVICE' ? State.selectedItem.id : null,
+        name: State.selectedItem.name,
         quantity: quantity,
         unit_price: price,
-        tax_rate: selectedItem.tax_rate || 'A',
+        tax_rate: State.selectedItem.tax_rate || 'A',
         discount: discount,
-        unit: selectedItem.unit_of_measure || 'pcs'
+        unit: State.selectedItem.unit_of_measure || 'pcs'
     });
 
     bootstrap.Modal.getInstance(document.getElementById('quickAddModal')).hide();
-    showSuccess(`${selectedItem.name} added to cart`);
+    showSuccess(`${State.selectedItem.name} added to cart`);
 }
 
-// Add to cart function
-function addToCart(item) {
-    // Check if item already exists (same type and id)
-    const existingIndex = cart.findIndex(i =>
-        i.item_type === item.item_type &&
-        ((item.item_type === 'PRODUCT' && i.product_id === item.product_id) ||
-         (item.item_type === 'SERVICE' && i.service_id === item.service_id))
-    );
-
-    if (existingIndex >= 0) {
-        cart[existingIndex].quantity += item.quantity;
-    } else {
-        cart.push(item);
+function validateModalInputs(quantity, price) {
+    if (quantity <= 0 || price < 0) {
+        showError('Invalid quantity or price');
+        return false;
     }
-
-    updateCartDisplay();
+    return true;
 }
 
-// Update cart display
-function updateCartDisplay() {
-    const cartItems = document.getElementById('cartItems');
-    const cartCount = document.getElementById('cartCount');
-    const cartSummary = document.getElementById('cartSummary');
-
-    cartCount.textContent = cart.length;
-
-    if (cart.length === 0) {
-        cartItems.innerHTML = `
-            <div class="cart-empty">
-                <div class="empty-icon"><i class="bi bi-cart-x"></i></div>
-                <h6>Cart is Empty</h6>
-                <p class="mb-0">Add products or services to start</p>
-            </div>
-        `;
-        cartSummary.style.display = 'none';
-        disableActionButtons();
-        return;
-    }
-
-    cartItems.innerHTML = cart.map((item, index) => {
-        const lineTotal = (item.quantity * item.unit_price - item.discount).toFixed(2);
-        const initial = item.name.charAt(0).toUpperCase();
-        const isProduct = item.item_type === 'PRODUCT';
-        const badgeClass = isProduct ? 'product-badge' : 'service-badge';
-        const badgeText = isProduct ? 'Product' : 'Service';
-
-        return `
-            <div class="cart-item">
-                <div class="cart-item-image">${initial}</div>
-                <div class="cart-item-details">
-                    <div class="cart-item-name" title="${item.name}">
-                        ${item.name}
-                        <span class="${badgeClass}" style="font-size: 0.65rem; margin-left: 0.5rem;">${badgeText}</span>
-                    </div>
-                    <div class="cart-item-meta">${item.unit_price.toFixed(2)} UGX × ${item.quantity} ${item.unit}</div>
-                    <div class="cart-item-controls">
-                        <div class="qty-control">
-                            <button type="button" class="qty-btn" onclick="updateQuantity(${index}, -0.5)">
-                                <i class="bi bi-dash"></i>
-                            </button>
-                            <input type="number" class="qty-input" value="${item.quantity}"
-                                   onchange="setQuantity(${index}, this.value)" min="0.001" step="0.001">
-                            <button type="button" class="qty-btn" onclick="updateQuantity(${index}, 0.5)">
-                                <i class="bi bi-plus"></i>
-                            </button>
-                        </div>
-                    </div>
-                </div>
-                <div class="cart-item-actions">
-                    <div class="cart-item-price">${lineTotal} UGX</div>
-                    <button type="button" class="btn-remove-item" onclick="removeFromCart(${index})">
-                        <i class="bi bi-trash"></i> Remove
-                    </button>
-                </div>
-            </div>
-        `;
-    }).join('');
-
-    cartSummary.style.display = 'block';
-    updateSummary();
-    enableActionButtons();
-}
-
-// Update quantity
-function updateQuantity(index, delta) {
-    if (cart[index]) {
-        cart[index].quantity += delta;
-        if (cart[index].quantity <= 0) {
-            removeFromCart(index);
-        } else {
-            updateCartDisplay();
-        }
-    }
-}
-
-// Set quantity
-function setQuantity(index, value) {
-    const quantity = parseFloat(value);
-    if (quantity <= 0) {
-        removeFromCart(index);
-    } else {
-        cart[index].quantity = quantity;
-        updateCartDisplay();
-    }
-}
-
-// Remove from cart
-function removeFromCart(index) {
-    cart.splice(index, 1);
-    updateCartDisplay();
-    showSuccess('Item removed from cart');
-}
-
-// Update summary
+// Summary Calculation
 function updateSummary() {
     let subtotal = 0;
     let totalTax = 0;
     let totalDiscount = 0;
 
-    cart.forEach(item => {
+    State.cart.forEach(item => {
         const lineAmount = item.quantity * item.unit_price;
         const lineAfterDiscount = lineAmount - item.discount;
-
-        let taxAmount = 0;
-        if (item.tax_rate === 'A' || item.tax_rate === 'D') {
-            taxAmount = lineAfterDiscount / 1.18 * 0.18;
-        } else if (item.tax_rate === 'B') {
-            taxAmount = lineAfterDiscount / 1.12 * 0.12;
-        }
+        const taxAmount = calculateTaxAmount(lineAfterDiscount, item.tax_rate);
 
         subtotal += lineAmount;
         totalTax += taxAmount;
@@ -1443,86 +1799,23 @@ function updateSummary() {
     document.getElementById('summaryDiscount').textContent = `${totalDiscount.toFixed(2)} UGX`;
     document.getElementById('summaryTotal').textContent = `${total.toFixed(2)} UGX`;
 
-    // Update hidden field
-    document.getElementById('itemsData').value = JSON.stringify(cart);
+    document.getElementById('itemsData').value = JSON.stringify(State.cart);
 }
 
-// Customer search
-async function searchCustomers() {
-    const query = document.getElementById('customerSearch').value;
-    if (query.length < 2) return;
+function calculateTaxAmount(amount, taxRate) {
+    const taxRates = {
+        'A': 0.18, // 18% VAT
+        'B': 0.12, // 12% VAT
+        'D': 0.18  // 18% VAT (same as A)
+    };
 
-    try {
-        const response = await fetch(`/sales/customer-search/?q=${encodeURIComponent(query)}`);
-        const data = await response.json();
-
-        if (data.customers && data.customers.length > 0) {
-            selectCustomer(data.customers[0]);
-        }
-    } catch (error) {
-        console.error('Error searching customers:', error);
-    }
+    const rate = taxRates[taxRate] || 0;
+    return amount / (1 + rate) * rate;
 }
 
-// Select customer
-function selectCustomer(customer) {
-    selectedCustomer = customer;
-    document.getElementById('customerId').value = customer.id;
-    document.getElementById('customerAvatar').textContent = customer.name.charAt(0).toUpperCase();
-    document.getElementById('customerName').textContent = customer.name;
-    document.getElementById('customerDetails').textContent = `${customer.phone || ''} ${customer.email ? '• ' + customer.email : ''}`;
-    document.getElementById('customerDisplay').classList.add('active');
-}
-
-// Remove customer
-function removeCustomer() {
-    selectedCustomer = null;
-    document.getElementById('customerId').value = '';
-    document.getElementById('customerDisplay').classList.remove('active');
-}
-
-// Save new customer
-async function saveNewCustomer() {
-    const form = document.getElementById('newCustomerForm');
-    const formData = new FormData(form);
-
-    try {
-        const response = await fetch('{% url "sales:create_customer_ajax" %}', {
-            method: 'POST',
-            body: formData,
-            headers: {
-                'X-CSRFToken': document.querySelector('[name=csrfmiddlewaretoken]').value,
-            }
-        });
-
-        const data = await response.json();
-
-        if (data.success) {
-            selectCustomer(data.customer);
-            bootstrap.Modal.getInstance(document.getElementById('newCustomerModal')).hide();
-            form.reset();
-            showSuccess('Customer created successfully');
-        } else {
-            showError(data.error || 'Failed to create customer');
-        }
-    } catch (error) {
-        console.error('Error creating customer:', error);
-        showError('Failed to create customer');
-    }
-}
-
-// Complete sale
+// Sale Actions
 function completeSale() {
-    if (cart.length === 0) {
-        showError('Please add items to cart');
-        return;
-    }
-
-    const storeId = document.getElementById('storeSelect').value;
-    if (!storeId) {
-        showError('Please select a store');
-        return;
-    }
+    if (!validateSale()) return;
 
     document.getElementById('loadingOverlay').style.display = 'flex';
     setTimeout(() => {
@@ -1530,9 +1823,8 @@ function completeSale() {
     }, 500);
 }
 
-// Save draft
 function saveDraft() {
-    if (cart.length === 0) {
+    if (State.cart.length === 0) {
         showError('Please add items to cart');
         return;
     }
@@ -1553,7 +1845,58 @@ function saveDraft() {
     }, 500);
 }
 
-// Enable/disable action buttons
+function validateSale() {
+    if (State.cart.length === 0) {
+        showError('Please add items to cart');
+        return false;
+    }
+
+    const storeId = document.getElementById('storeSelect').value;
+    if (!storeId) {
+        showError('Please select a store');
+        return false;
+    }
+
+    return true;
+}
+
+// UI State Management
+function updatePagination(totalItems, itemsPerPage) {
+    const prevBtn = document.getElementById('prevPage');
+    const nextBtn = document.getElementById('nextPage');
+    const info = document.getElementById('paginationInfo');
+
+    State.totalPages = Math.ceil(totalItems / itemsPerPage);
+
+    prevBtn.disabled = State.currentPage <= 1;
+    nextBtn.disabled = State.currentPage >= State.totalPages;
+    info.textContent = `Page ${State.currentPage} of ${State.totalPages} (${totalItems} items)`;
+}
+
+function showProductsLoading() {
+    document.getElementById('productsGrid').style.display = 'none';
+    document.getElementById('productsEmpty').style.display = 'none';
+    document.getElementById('productsLoading').style.display = 'block';
+}
+
+function showProductsEmpty() {
+    document.getElementById('productsGrid').style.display = 'none';
+    document.getElementById('productsLoading').style.display = 'none';
+    document.getElementById('productsEmpty').style.display = 'block';
+}
+
+function showCustomerListLoading() {
+    document.getElementById('customerList').style.display = 'none';
+    document.getElementById('customerListEmpty').style.display = 'none';
+    document.getElementById('customerListLoading').style.display = 'block';
+}
+
+function showCustomerListEmpty() {
+    document.getElementById('customerList').style.display = 'none';
+    document.getElementById('customerListLoading').style.display = 'none';
+    document.getElementById('customerListEmpty').style.display = 'block';
+}
+
 function enableActionButtons() {
     document.getElementById('completeSaleBtn').disabled = false;
     document.getElementById('saveDraftBtn').disabled = false;
@@ -1564,30 +1907,48 @@ function disableActionButtons() {
     document.getElementById('saveDraftBtn').disabled = true;
 }
 
-// Show success message
+// Notification System
 function showSuccess(message) {
-    const alert = document.createElement('div');
-    alert.className = 'alert alert-success alert-dismissible fade show';
-    alert.style.cssText = 'position: fixed; top: 20px; right: 20px; z-index: 9999; min-width: 300px;';
-    alert.innerHTML = `
-        <i class="bi bi-check-circle me-2"></i>${message}
-        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-    `;
-    document.body.appendChild(alert);
-    setTimeout(() => alert.remove(), 3000);
+    showNotification(message, 'success');
 }
 
-// Show error message
 function showError(message) {
+    showNotification(message, 'danger');
+}
+
+function showNotification(message, type) {
     const alert = document.createElement('div');
-    alert.className = 'alert alert-danger alert-dismissible fade show';
+    alert.className = `alert alert-${type} alert-dismissible fade show`;
     alert.style.cssText = 'position: fixed; top: 20px; right: 20px; z-index: 9999; min-width: 300px;';
+
+    const icon = type === 'success' ? 'check-circle' : 'exclamation-triangle';
     alert.innerHTML = `
-        <i class="bi bi-exclamation-triangle me-2"></i>${message}
+        <i class="bi bi-${icon} me-2"></i>${message}
         <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
     `;
+
     document.body.appendChild(alert);
-    setTimeout(() => alert.remove(), 5000);
+    setTimeout(() => alert.remove(), type === 'success' ? 3000 : 5000);
+}
+
+// Quick add to cart (for direct adding without modal)
+function quickAddToCart(itemId, itemType) {
+    const item = State.items.find(i => i.id === itemId && i.item_type === itemType);
+    if (!item) return;
+
+    addToCart({
+        item_type: item.item_type,
+        product_id: item.item_type === 'PRODUCT' ? item.id : null,
+        service_id: item.item_type === 'SERVICE' ? item.id : null,
+        name: item.name,
+        quantity: 1,
+        unit_price: item.final_price || item.price,
+        tax_rate: item.tax_rate || 'A',
+        discount: 0,
+        unit: item.unit_of_measure || 'pcs'
+    });
+
+    showSuccess(`${item.name} added to cart`);
 }
 </script>
 {% endblock %}

@@ -39,6 +39,122 @@ from .efris_service import EFRISCustomerService
 import pandas as pd
 
 
+@login_required
+def customer_search_with_store(request):
+    """
+    Enhanced customer search API that returns customers based on store
+    or returns common/recent customers
+    """
+    query = request.GET.get('q', '')
+    store_id = request.GET.get('store_id', '')
+    limit = int(request.GET.get('limit', 10))
+
+    # Base queryset - active customers only
+    queryset = Customer.objects.filter(is_active=True)
+
+    if query:
+        # Search by name, phone, email, or customer ID
+        queryset = queryset.filter(
+            Q(name__icontains=query) |
+            Q(phone__icontains=query) |
+            Q(email__icontains=query) |
+            Q(customer_id__icontains=query)
+        )
+    else:
+        # If no search query, return recent/common customers
+        # You can customize this logic based on your needs
+
+        # Option 1: Get customers who have made purchases at this store
+        if store_id:
+            from sales.models import Sale  # Import your Sale model
+            recent_customer_ids = Sale.objects.filter(
+                store_id=store_id
+            ).values_list('customer_id', flat=True).distinct()[:limit]
+
+            queryset = queryset.filter(id__in=recent_customer_ids)
+
+        # Option 2: Get most recent customers overall
+        if not queryset.exists():
+            queryset = Customer.objects.filter(
+                is_active=True
+            ).order_by('-created_at')
+
+    # Apply limit
+    customers = queryset[:limit]
+
+    # Serialize customer data
+    data = {
+        'customers': [
+            {
+                'id': customer.id,
+                'name': customer.name,
+                'phone': customer.phone or '',
+                'email': customer.email or '',
+                'customer_id': customer.customer_id,
+                'customer_type': customer.get_customer_type_display(),
+                'tin': customer.tin or '',
+                'is_vat_registered': customer.is_vat_registered,
+                'efris_status': customer.efris_status,
+                'avatar': customer.name[0].upper() if customer.name else 'C',
+            }
+            for customer in customers
+        ],
+        'total': queryset.count()
+    }
+
+    return JsonResponse(data)
+
+
+@login_required
+def get_store_customers(request):
+    """
+    Get customers associated with a specific store
+    Based on purchase history
+    """
+    store_id = request.GET.get('store_id')
+    limit = int(request.GET.get('limit', 20))
+
+    if not store_id:
+        return JsonResponse({'customers': [], 'total': 0})
+
+    try:
+        from sales.models import Sale
+
+        # Get customers who have purchased from this store
+        customer_ids = Sale.objects.filter(
+            store_id=store_id
+        ).values_list('customer_id', flat=True).distinct()
+
+        customers = Customer.objects.filter(
+            id__in=customer_ids,
+            is_active=True
+        ).annotate(
+            last_purchase=models.Max('sale__created_at')
+        ).order_by('-last_purchase')[:limit]
+
+        data = {
+            'customers': [
+                {
+                    'id': customer.id,
+                    'name': customer.name,
+                    'phone': customer.phone or '',
+                    'email': customer.email or '',
+                    'customer_id': customer.customer_id,
+                    'customer_type': customer.get_customer_type_display(),
+                    'avatar': customer.name[0].upper() if customer.name else 'C',
+                    'last_purchase': customer.last_purchase.strftime('%Y-%m-%d') if hasattr(customer,
+                                                                                            'last_purchase') and customer.last_purchase else None,
+                }
+                for customer in customers
+            ],
+            'total': customers.count()
+        }
+
+        return JsonResponse(data)
+
+    except Exception as e:
+        return JsonResponse({'error': str(e), 'customers': [], 'total': 0})
+
 class CustomerViewSet(viewsets.ModelViewSet):
     queryset = Customer.objects.all()
     serializer_class = CustomerSerializer

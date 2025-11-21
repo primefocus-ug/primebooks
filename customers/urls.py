@@ -38,6 +38,8 @@ urlpatterns = [
     path('api/autocomplete/', views.customer_autocomplete, name='autocomplete'),
     path('api/stats/', views.customer_stats_api, name='stats_api'),
     path('api/validate-field/', views.validate_customer_field, name='validate_field'),
+    path('api/search-with-store/', views.customer_search_with_store, name='search_with_store'),
+    path('api/store-customers/', views.get_store_customers, name='store_customers'),
 
     # Sample file downloads (must come BEFORE import/ to avoid conflicts)
     path('import/sample/csv/', view.download_sample_customers_csv, name='download_sample_csv'),

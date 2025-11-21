@@ -125,20 +125,38 @@
     }
 
     .chart-section {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 2rem;
-        margin-bottom: 2rem;
-    }
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 2rem;
+    margin-bottom: 2rem;
+}
 
-    .chart-container {
-        background: white;
-        border-radius: 15px;
-        padding: 1.5rem;
-        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);
-        border: 1px solid #e5e7eb;
-    }
+.chart-container {
+    background: white;
+    border-radius: 15px;
+    padding: 1.5rem;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.05);
+    border: 1px solid #e5e7eb;
+    height: 400px; /* Fixed height */
+    display: flex;
+    flex-direction: column;
+}
 
+.chart-container h6 {
+    margin-bottom: 1rem;
+    flex-shrink: 0; /* Prevent title from shrinking */
+}
+
+.chart-wrapper {
+    flex: 1; /* Take remaining space */
+    position: relative;
+    min-height: 0; /* Important for flex children */
+}
+
+.chart-wrapper canvas {
+    width: 100% !important;
+    height: 100% !important;
+}
     .main-table-container {
         background: white;
         border-radius: 15px;
@@ -929,78 +947,99 @@ function updateBulkActionButtons() {
         bulkReorderBtn.innerHTML = '<i class="fas fa-shopping-cart me-1"></i>Bulk Reorder';
     }
 }
-
 function showItemDetails(stockId) {
     const modal = new bootstrap.Modal(document.getElementById('itemDetailsModal'));
     const content = document.getElementById('itemDetailsContent');
 
-    content.innerHTML = '<div class="text-center"><div class="spinner-border" role="status"></div></div>';
+    content.innerHTML = '<div class="text-center p-4"><div class="spinner-border text-primary" role="status"></div><p class="mt-2">Loading details...</p></div>';
     modal.show();
 
-    // Load item details via AJAX (you'll need to implement this endpoint)
-    fetch(`/inventory/ajax/stock-details/${stockId}/`)
-        .then(response => response.json())
+    // Get the current language prefix and base path
+    const currentPath = window.location.pathname;
+    let basePath = '';
+
+    // Extract language prefix if present (e.g., /en/, /fr/, etc.)
+    const languageMatch = currentPath.match(/^\/([a-z]{2})\//);
+    const languagePrefix = languageMatch ? languageMatch[0] : '/en/';
+
+    // Build the correct URL with language and inventory prefixes
+    const url = `${languagePrefix}inventory/ajax/stock-details/${stockId}/`;
+
+    fetch(url)
+        .then(response => {
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            return response.json();
+        })
         .then(data => {
-            content.innerHTML = `
-                <div class="row">
-                    <div class="col-md-6">
-                        <h6>Product Information</h6>
-                        <p><strong>Name:</strong> ${data.product_name}</p>
-                        <p><strong>SKU:</strong> ${data.sku}</p>
-                        <p><strong>Category:</strong> ${data.category}</p>
-                        <p><strong>Unit:</strong> ${data.unit}</p>
+            if (data.success) {
+                content.innerHTML = `
+                    <div class="row">
+                        <div class="col-md-6">
+                            <h6>Product Information</h6>
+                            <p><strong>Name:</strong> ${data.product_name}</p>
+                            <p><strong>SKU:</strong> ${data.product_sku}</p>
+                            <p><strong>Category:</strong> ${data.category}</p>
+                            <p><strong>Unit:</strong> ${data.unit}</p>
+                            <p><strong>Status:</strong> <span class="badge ${data.status === 'Out of Stock' ? 'bg-danger' : data.status === 'Critical' ? 'bg-warning' : data.status === 'Low Stock' ? 'bg-info' : 'bg-success'}">${data.status}</span></p>
+                        </div>
+                        <div class="col-md-6">
+                            <h6>Stock Information</h6>
+                            <p><strong>Current Stock:</strong> ${data.current_stock} ${data.unit}</p>
+                            <p><strong>Reorder Level:</strong> ${data.reorder_level} ${data.unit}</p>
+                            <p><strong>Stock Percentage:</strong> ${data.stock_percentage}%</p>
+                            <p><strong>Last Updated:</strong> ${data.last_updated}</p>
+                            <p><strong>Store:</strong> ${data.store_name}</p>
+                        </div>
                     </div>
-                    <div class="col-md-6">
-                        <h6>Stock Information</h6>
-                        <p><strong>Current Stock:</strong> ${data.current_stock}</p>
-                        <p><strong>Reorder Level:</strong> ${data.reorder_level}</p>
-                        <p><strong>Last Updated:</strong> ${data.last_updated}</p>
-                        <p><strong>Store:</strong> ${data.store_name}</p>
+                    <div class="mt-4">
+                        <h6>Recent Movements</h6>
+                        ${data.recent_movements && data.recent_movements.length > 0 ? `
+                            <div class="table-responsive">
+                                <table class="table table-sm table-hover">
+                                    <thead>
+                                        <tr>
+                                            <th>Date</th>
+                                            <th>Type</th>
+                                            <th>Quantity</th>
+                                            <th>Reference</th>
+                                            <th>By</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        ${data.recent_movements.map(movement => `
+                                            <tr>
+                                                <td>${movement.date}</td>
+                                                <td><span class="badge ${movement.type === 'Purchase' ? 'bg-success' : movement.type === 'Sale' ? 'bg-danger' : 'bg-secondary'}">${movement.type}</span></td>
+                                                <td class="${movement.quantity > 0 ? 'text-success' : 'text-danger'}">${movement.quantity > 0 ? '+' : ''}${movement.quantity}</td>
+                                                <td><small class="text-muted">${movement.reference}</small></td>
+                                                <td><small>${movement.created_by}</small></td>
+                                            </tr>
+                                        `).join('')}
+                                    </tbody>
+                                </table>
+                            </div>
+                        ` : '<p class="text-muted">No recent movements found.</p>'}
                     </div>
-                </div>
-                <div class="mt-3">
-                    <h6>Recent Movements</h6>
-                    <div class="table-responsive">
-                        <table class="table table-sm">
-                            <thead>
-                                <tr>
-                                    <th>Date</th>
-                                    <th>Type</th>
-                                    <th>Quantity</th>
-                                    <th>By</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                ${data.recent_movements.map(movement => `
-                                    <tr>
-                                        <td>${movement.date}</td>
-                                        <td>${movement.type}</td>
-                                        <td>${movement.quantity}</td>
-                                        <td>${movement.created_by}</td>
-                                    </tr>
-                                `).join('')}
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            `;
+                `;
+            } else {
+                content.innerHTML = `<div class="alert alert-danger">${data.error || 'Failed to load item details'}</div>`;
+            }
         })
         .catch(error => {
-            content.innerHTML = '<div class="alert alert-danger">Failed to load item details</div>';
+            console.error('Error loading stock details:', error);
+            content.innerHTML = `
+                <div class="alert alert-danger">
+                    <h6>Error Loading Details</h6>
+                    <p class="mb-0">Failed to load item details. Please try again later.</p>
+                    <small class="text-muted">Error: ${error.message}</small>
+                    <br>
+                    <small class="text-muted">Tried to fetch: ${url}</small>
+                </div>
+            `;
         });
 }
-
-function quickReorder(productId, storeId, recommendedQty) {
-    document.getElementById('orderQuantity').value = recommendedQty;
-
-    const modal = new bootstrap.Modal(document.getElementById('quickReorderModal'));
-    modal.show();
-
-    // Store data for processing
-    document.getElementById('quickReorderForm').setAttribute('data-product-id', productId);
-    document.getElementById('quickReorderForm').setAttribute('data-store-id', storeId);
-}
-
 function processQuickReorder() {
     const form = document.getElementById('quickReorderForm');
     const productId = form.getAttribute('data-product-id');

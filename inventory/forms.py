@@ -8,8 +8,10 @@ from .models import Category, Supplier, Product, Stock, StockMovement,Service
 from stores.models import Store
 from company.models import EFRISCommodityCategory
 from django.utils.translation import gettext_lazy as _
+import logging
 
 User = get_user_model()
+logger = logging.getLogger(__name__)
 
 
 class ServiceForm(forms.ModelForm):
@@ -1516,7 +1518,7 @@ class StockAdjustmentForm(forms.Form):
     product = forms.ModelChoiceField(
         queryset=Product.objects.filter(is_active=True),
         widget=forms.Select(attrs={
-            'class': 'form-control',
+            'class': 'form-control-enhanced',
             'required': True
         }),
         empty_label="Select Product"
@@ -1524,59 +1526,110 @@ class StockAdjustmentForm(forms.Form):
     store = forms.ModelChoiceField(
         queryset=Store.objects.filter(is_active=True),
         widget=forms.Select(attrs={
-            'class': 'form-control',
+            'class': 'form-control-enhanced',
             'required': True
         }),
         empty_label="Select Store"
     )
-    adjustment_type = forms.ChoiceField(
-        choices=[
-            ('add', 'Add Stock'),
-            ('remove', 'Remove Stock'),
-            ('set', 'Set Stock Level')
-        ],
+    movement_type = forms.ChoiceField(
+        choices=StockMovement.MOVEMENT_TYPES,
         widget=forms.Select(attrs={
-            'class': 'form-control',
+            'class': 'form-control-enhanced',
             'required': True
-        })
+        }),
+        label="Movement Type"
     )
     quantity = forms.DecimalField(
+        max_digits=15,
+        decimal_places=3,
         widget=forms.NumberInput(attrs={
-            'class': 'form-control',
+            'class': 'form-control-enhanced',
             'step': '0.001',
             'min': '0.001',
             'required': True,
-            'placeholder': 'Quantity'
-        })
+            'placeholder': 'Enter quantity'
+        }),
+        label="Quantity *"
     )
-    reason = forms.CharField(
+    unit_price = forms.DecimalField(
+        max_digits=15,
+        decimal_places=2,
+        required=False,
+        widget=forms.NumberInput(attrs={
+            'class': 'form-control-enhanced',
+            'step': '0.01',
+            'min': '0',
+            'placeholder': 'Unit price (optional)'
+        }),
+        label="Unit Price"
+    )
+    reference = forms.CharField(
+        required=False,
         widget=forms.TextInput(attrs={
-            'class': 'form-control',
-            'placeholder': 'Reason for adjustment',
-            'required': True
-        })
+            'class': 'form-control-enhanced',
+            'placeholder': 'Reference number (optional)'
+        }),
+        label="Reference"
     )
     notes = forms.CharField(
         required=False,
         widget=forms.Textarea(attrs={
-            'class': 'form-control',
+            'class': 'form-control-enhanced',
             'rows': 3,
             'placeholder': 'Additional notes (optional)'
-        })
+        }),
+        label="Notes"
     )
 
     def __init__(self, *args, **kwargs):
         self.user = kwargs.pop('user', None)
         super().__init__(*args, **kwargs)
 
+        # Set initial reference if not provided
+        if not self.initial.get('reference'):
+            self.initial['reference'] = f'ADJ-{timezone.now().strftime("%Y%m%d%H%M")}'
+
+    def clean_quantity(self):
+        """Validate quantity based on movement type"""
+        quantity = self.cleaned_data['quantity']
+        movement_type = self.cleaned_data.get('movement_type')
+
+        if quantity <= 0:
+            raise forms.ValidationError("Quantity must be greater than zero.")
+
+        # For sales/removals, check if sufficient stock exists
+        if movement_type in ['SALE', 'ADJUSTMENT']:
+            product = self.cleaned_data.get('product')
+            store = self.cleaned_data.get('store')
+
+            if product and store:
+                try:
+                    stock = Stock.objects.get(product=product, store=store)
+                    if quantity > stock.quantity:
+                        raise forms.ValidationError(
+                            f"Insufficient stock. Available: {stock.quantity}"
+                        )
+                except Stock.DoesNotExist:
+                    raise forms.ValidationError("No stock record found for this product and store.")
+
+        return quantity
+
+    def clean_unit_price(self):
+        """Validate unit price"""
+        unit_price = self.cleaned_data.get('unit_price')
+        if unit_price and unit_price < 0:
+            raise forms.ValidationError("Unit price cannot be negative.")
+        return unit_price
+
     def save(self):
         """Create stock movement and update stock"""
         cleaned_data = self.cleaned_data
         product = cleaned_data['product']
         store = cleaned_data['store']
-        adjustment_type = cleaned_data['adjustment_type']
+        movement_type = cleaned_data['movement_type']
         quantity = cleaned_data['quantity']
-        reason = cleaned_data['reason']
+        unit_price = cleaned_data.get('unit_price')
+        reference = cleaned_data.get('reference', '')
         notes = cleaned_data.get('notes', '')
 
         # Get or create stock record
@@ -1585,41 +1638,54 @@ class StockAdjustmentForm(forms.Form):
             store=store,
             defaults={
                 'quantity': Decimal('0'),
-                'low_stock_threshold': Decimal('5'),  # Default threshold
-                'reorder_quantity': Decimal('10')     # Default reorder quantity
+                'low_stock_threshold': Decimal('5'),
+                'reorder_quantity': Decimal('10')
             }
         )
 
         old_quantity = stock.quantity
 
-        # Calculate new quantity based on adjustment type
-        if adjustment_type == 'add':
-            new_quantity = old_quantity + quantity
+        # Calculate movement quantity and new stock level
+        if movement_type in ['PURCHASE', 'RETURN', 'TRANSFER_IN']:
+            # Positive movements (add to stock)
             movement_quantity = quantity
-        elif adjustment_type == 'remove':
+            new_quantity = old_quantity + quantity
+        else:
+            # Negative movements (remove from stock)
+            movement_quantity = -quantity
             new_quantity = max(Decimal('0'), old_quantity - quantity)
-            movement_quantity = -(min(quantity, old_quantity))
-        else:  # set
-            new_quantity = quantity
-            movement_quantity = new_quantity - old_quantity
+
+        # Calculate total value if unit price is provided
+        total_value = None
+        if unit_price:
+            total_value = unit_price * abs(movement_quantity)
 
         # Create stock movement
         movement = StockMovement.objects.create(
             product=product,
             store=store,
-            movement_type='ADJUSTMENT',
+            movement_type=movement_type,
             quantity=movement_quantity,
-            reference=f'ADJ-{timezone.now().strftime("%Y%m%d%H%M%S")}',
-            notes=f'{reason}. {notes}'.strip(),
+            unit_price=unit_price,
+            total_value=total_value,
+            reference=reference or f'ADJ-{timezone.now().strftime("%Y%m%d%H%M%S")}',
+            notes=notes,
             created_by=self.user
         )
 
         # Update stock quantity
         stock.quantity = new_quantity
+        stock.last_updated = timezone.now()
         stock.save()
 
-        return movement
+        # Log the adjustment
+        logger.info(
+            f"Stock adjustment by {self.user.username}: "
+            f"{product.name} at {store.name} - "
+            f"{movement_type}: {movement_quantity} (Old: {old_quantity}, New: {new_quantity})"
+        )
 
+        return movement
 
 class BulkActionForm(forms.Form):
     action = forms.ChoiceField(
