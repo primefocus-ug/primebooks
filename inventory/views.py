@@ -69,6 +69,24 @@ from .models import Category, Supplier, Product, Stock, StockMovement, ImportSes
 logger = logging.getLogger(__name__)
 CharField = models.CharField
 
+def get_current_schema():
+    """Get current tenant schema name"""
+    try:
+        from django.db import connection
+        return getattr(connection, 'schema_name', 'public')
+    except Exception:
+        return 'public'
+
+def _get_company_from_context():
+    """Get company/tenant from current context"""
+    try:
+        from django.db import connection
+        if hasattr(connection, 'tenant') and connection.tenant:
+            return connection.tenant
+        return None
+    except Exception:
+        return None
+
 class StandardResultsSetPagination(PageNumberPagination):
     page_size = 25
     page_size_query_param = 'page_size'
@@ -4667,7 +4685,7 @@ class StockAdjustmentView(LoginRequiredMixin, PermissionRequiredMixin, View):
             return self._handle_single_adjustment(request)
 
     def _handle_single_adjustment(self, request):
-        """Process single product adjustment"""
+        """Process single product adjustment with notifications"""
         form = StockAdjustmentForm(request.POST, user=request.user)
 
         if form.is_valid():
@@ -4676,13 +4694,62 @@ class StockAdjustmentView(LoginRequiredMixin, PermissionRequiredMixin, View):
                     adjustment = form.save()
                     self._log_adjustment(request.user, adjustment)
 
+                # NOTIFICATION: Stock adjustment completed - only to high-priority users
+                from django.contrib.auth import get_user_model
+                from notifications.services import NotificationService
+
+                User = get_user_model()
+                schema_name = get_current_schema()
+
+                # Get high-priority recipients
+                recipients = User.objects.filter(
+                    Q(is_superuser=True) |
+                    Q(primary_role__priority__gte=90)
+                ).filter(is_active=True)
+
+                for recipient in recipients:
+                    NotificationService.create_notification(
+                        recipient=recipient,
+                        title='Stock Adjustment Completed',
+                        message=f'Adjusted {adjustment.quantity} units of {adjustment.product.name} at {adjustment.store.name}',
+                        notification_type='SUCCESS',
+                        priority='MEDIUM',
+                        related_object=adjustment,
+                        action_text='View Movement',
+                        action_url=f'/inventory/movements/',
+                        tenant_schema=schema_name
+                    )
+
+                # Check for low stock after adjustment and notify high-priority users
+                stock = Stock.objects.get(
+                    product=adjustment.product,
+                    store=adjustment.store
+                )
+
+                if stock.quantity <= stock.low_stock_threshold:
+                    # Notify high-priority users about low stock
+                    for recipient in recipients:
+                        if recipient != request.user:  # Don't notify the user who just made the adjustment
+                            NotificationService.create_from_template(
+                                event_type='low_stock',
+                                recipient=recipient,
+                                context={
+                                    'product_name': stock.product.name,
+                                    'current_quantity': stock.quantity,
+                                    'threshold': stock.low_stock_threshold,
+                                    'store_name': stock.store.name,
+                                },
+                                related_object=stock,
+                                priority='WARNING',
+                                tenant_schema=schema_name
+                            )
+
                 messages.success(
                     request,
                     f'Stock adjusted successfully for {adjustment.product.name} '
                     f'at {adjustment.store.name}'
                 )
 
-                # Redirect to avoid re-submission
                 return redirect('inventory:stock_adjustment')
 
             except Exception as e:

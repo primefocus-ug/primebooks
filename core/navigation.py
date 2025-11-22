@@ -317,22 +317,6 @@ NAVIGATION_ITEMS = [
                         icon="bi bi-sliders",
                         permission="inventory.change_stock"
                     ),
-        NavigationItem(
-            name="Services",
-            icon="bi bi-briefcase",
-            children=[
-                NavigationItem(
-                    name="All Services",
-                    url_name="inventory:service_list",
-                    icon="bi bi-list-task",
-                ),
-                NavigationItem(
-                    name="Add Service",
-                    url_name="inventory:service_create",
-                    icon="bi bi-plus-circle",
-                ),
-            ],
-        ),
             NavigationItem(
                 name="Bulk Import",
                 url_name="inventory:stock_import",
@@ -414,7 +398,22 @@ NAVIGATION_ITEMS = [
             ),
         ]
     ),
-
+    NavigationItem(
+            name="Services",
+            icon="bi bi-briefcase",
+            children=[
+                NavigationItem(
+                    name="All Services",
+                    url_name="inventory:service_list",
+                    icon="bi bi-list-task",
+                ),
+                NavigationItem(
+                    name="Add Service",
+                    url_name="inventory:service_create",
+                    icon="bi bi-plus-circle",
+                ),
+            ],
+        ),
     NavigationItem(
         name="Sales",
         icon="bi bi-cart-check",

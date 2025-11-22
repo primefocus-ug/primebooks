@@ -8,6 +8,8 @@
 
 {% block extra_css %}
 <link rel="stylesheet" href="{% static 'themes.css' %}">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/select2@4.1.0/dist/css/select2.min.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/select2-bootstrap-5-theme@1.3.0/dist/select2-bootstrap-5-theme.min.css">
 
 <style>
     .service-card {
@@ -43,10 +45,12 @@
     .green-500 { border-left-color: #198754 !important; }
     .amber-500 { border-left-color: #fd7e14 !important; }
     .red-500 { border-left-color: #dc3545 !important; }
+    .purple-500 { border-left-color: #6f42c1 !important; }
 
     .text-green { color: #198754 !important; }
     .text-amber { color: #fd7e14 !important; }
     .text-red { color: #dc3545 !important; }
+    .text-purple { color: #6f42c1 !important; }
 
     .table-checkbox {
         width: 20px;
@@ -73,6 +77,10 @@
         align-items: center;
         justify-content: center;
         z-index: 10;
+    }
+
+    [data-theme="dark"] .loading-overlay {
+        background: rgba(0, 0, 0, 0.8);
     }
 
     .pagination {
@@ -108,15 +116,130 @@
     th.sortable {
         cursor: pointer;
         user-select: none;
+        position: relative;
     }
 
     th.sortable:hover {
         background-color: rgba(0, 0, 0, 0.05);
     }
 
+    [data-theme="dark"] th.sortable:hover {
+        background-color: rgba(255, 255, 255, 0.05);
+    }
+
     th.sort-asc .sort-icon-asc,
     th.sort-desc .sort-icon-desc {
         opacity: 1;
+    }
+
+    .quick-actions {
+        opacity: 0;
+        transition: opacity 0.3s ease;
+    }
+
+    tr:hover .quick-actions {
+        opacity: 1;
+    }
+
+    .export-buttons .btn {
+        margin-left: 0.5rem;
+    }
+
+    .bulk-select-info {
+        background-color: #e7f1ff;
+        padding: 0.5rem 1rem;
+        border-radius: 0.375rem;
+        margin-bottom: 1rem;
+        display: none;
+    }
+
+    [data-theme="dark"] .bulk-select-info {
+        background-color: #1e3a5f;
+    }
+
+    .status-indicator {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        display: inline-block;
+        margin-right: 0.5rem;
+    }
+
+    .status-active { background-color: #198754; }
+    .status-inactive { background-color: #6c757d; }
+    .status-pending { background-color: #fd7e14; }
+
+    .price-cell {
+        font-family: 'Courier New', monospace;
+        font-weight: 600;
+    }
+
+    .search-highlight {
+        background-color: #fff3cd;
+        padding: 0.1rem 0.2rem;
+        border-radius: 0.2rem;
+    }
+
+    [data-theme="dark"] .search-highlight {
+        background-color: #856404;
+        color: #fff;
+    }
+
+    .table-actions {
+        display: flex;
+        gap: 0.5rem;
+        justify-content: flex-end;
+    }
+
+    .action-btn {
+        width: 32px;
+        height: 32px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 0.375rem;
+    }
+
+    .fade-in {
+        animation: fadeIn 0.5s ease-in;
+    }
+
+    @keyframes fadeIn {
+        from { opacity: 0; transform: translateY(10px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+
+    .sticky-header {
+        position: sticky;
+        top: 0;
+        background: white;
+        z-index: 10;
+    }
+
+    [data-theme="dark"] .sticky-header {
+        background: var(--bg-primary);
+    }
+
+    .column-visibility {
+        position: relative;
+    }
+
+    .column-toggle-menu {
+        position: absolute;
+        top: 100%;
+        right: 0;
+        background: white;
+        border: 1px solid #dee2e6;
+        border-radius: 0.375rem;
+        padding: 0.5rem;
+        min-width: 200px;
+        z-index: 1000;
+        box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
+    }
+
+    [data-theme="dark"] .column-toggle-menu {
+        background: var(--bg-primary);
+        border-color: var(--border-color);
     }
 </style>
 {% endblock %}
@@ -135,24 +258,51 @@
         </h2>
         <p class="text-muted mb-0">{% trans "Manage your service offerings and EFRIS compliance" %}</p>
     </div>
-    <div>
+    <div class="d-flex gap-2">
         {% if perms.inventory.add_service %}
         <button type="button" class="btn btn-primary" id="addServiceBtn">
             <i class="bi bi-plus-circle me-1"></i>
             {% trans "Add Service" %}
         </button>
         {% endif %}
+        <div class="dropdown">
+            <button class="btn btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown">
+                <i class="bi bi-download me-1"></i>
+                {% trans "Export" %}
+            </button>
+            <ul class="dropdown-menu">
+                <li><a class="dropdown-item export-option" href="#" data-format="csv">
+                    <i class="bi bi-file-earmark-spreadsheet me-2"></i>CSV
+                </a></li>
+                <li><a class="dropdown-item export-option" href="#" data-format="excel">
+                    <i class="bi bi-file-earmark-excel me-2"></i>Excel
+                </a></li>
+                <li><a class="dropdown-item export-option" href="#" data-format="pdf">
+                    <i class="bi bi-file-earmark-pdf me-2"></i>PDF
+                </a></li>
+            </ul>
+        </div>
+        <button class="btn btn-outline-secondary" type="button" id="columnToggleBtn">
+            <i class="bi bi-layout-three-columns me-1"></i>
+            {% trans "Columns" %}
+        </button>
     </div>
 </div>
 {% endblock %}
 
 {% block content %}
-<!-- Statistics Cards -->
+<!-- Configuration Data -->
 <div id="urls-config"
      data-datatable-url="{% url 'inventory:service_datatable_api' %}"
      data-create-url="{% url 'inventory:service_create' %}"
+     data-bulk-action-url="{% url 'inventory:service_bulk_actions' %}"
+     data-export-url=""
+     data-efris-sync-url=""
+     data-efris-enabled="{% if efris_enabled %}true{% else %}false{% endif %}"
      style="display: none;">
 </div>
+
+<!-- Statistics Cards -->
 <div class="row mb-4">
     <div class="col-md-3">
         <div class="card stat-card">
@@ -202,15 +352,15 @@
     </div>
     {% endif %}
     <div class="col-md-3">
-        <div class="card stat-card red-500">
+        <div class="card stat-card purple-500">
             <div class="card-body">
                 <div class="d-flex justify-content-between align-items-center">
                     <div>
-                        <h6 class="text-muted mb-1">{% trans "Pending Upload" %}</h6>
-                        <h3 class="mb-0" id="pendingUploadCount">{{ total_services|add:"-"|add:efris_uploaded }}</h3>
+                        <h6 class="text-muted mb-1">{% trans "This Page" %}</h6>
+                        <h3 class="mb-0" id="pageServicesCount">0</h3>
                     </div>
-                    <div class="text-red">
-                        <i class="bi bi-exclamation-triangle-fill fs-1"></i>
+                    <div class="text-purple">
+                        <i class="bi bi-list-ul fs-1"></i>
                     </div>
                 </div>
             </div>
@@ -218,24 +368,46 @@
     </div>
 </div>
 
+<!-- Bulk Selection Info -->
+<div class="bulk-select-info" id="bulkSelectInfo">
+    <div class="d-flex justify-content-between align-items-center">
+        <span id="selectedCountText">{% trans "0 services selected" %}</span>
+        <button type="button" class="btn-close" id="clearSelectionBtn"></button>
+    </div>
+</div>
+
 <!-- Filters Card -->
 <div class="card mb-4">
-    <div class="card-header">
+    <div class="card-header d-flex justify-content-between align-items-center">
         <h5 class="mb-0">
             <i class="bi bi-funnel me-2"></i>
-            {% trans "Filters" %}
+            {% trans "Filters & Search" %}
         </h5>
+        <div>
+            <button class="btn btn-sm btn-outline-secondary me-2" type="button" id="saveFilterBtn">
+                <i class="bi bi-bookmark me-1"></i>{% trans "Save Filter" %}
+            </button>
+            <button class="btn btn-sm btn-outline-secondary" type="button" id="toggleAdvancedFilters">
+                <i class="bi bi-funnel-fill me-1"></i>{% trans "Advanced" %}
+            </button>
+        </div>
     </div>
     <div class="card-body">
         <form method="get" id="filterForm" class="row g-3">
-            <div class="col-md-3">
+            <!-- Basic Filters -->
+            <div class="col-md-4">
                 <label for="id_search" class="form-label">{% trans "Search" %}</label>
-                <input type="text" name="search" id="id_search" class="form-control"
-                       placeholder="{% trans 'Search services...' %}" value="{{ request.GET.search }}">
+                <div class="input-group">
+                    <input type="text" name="search" id="id_search" class="form-control"
+                           placeholder="{% trans 'Search services...' %}" value="{{ request.GET.search }}">
+                    <button class="btn btn-outline-secondary" type="button" id="clearSearch">
+                        <i class="bi bi-x"></i>
+                    </button>
+                </div>
             </div>
             <div class="col-md-2">
                 <label for="id_category" class="form-label">{% trans "Category" %}</label>
-                <select name="category" id="id_category" class="form-select">
+                <select name="category" id="id_category" class="form-select select2">
                     <option value="">{% trans "All Categories" %}</option>
                     {% for value, label in filter_form.fields.category.choices %}
                         <option value="{{ value }}" {% if request.GET.category == value|stringformat:"s" %}selected{% endif %}>
@@ -255,37 +427,63 @@
                     {% endfor %}
                 </select>
             </div>
-            <div class="col-md-2">
-                <label for="id_efris_status" class="form-label">{% trans "EFRIS Status" %}</label>
-                <select name="efris_status" id="id_efris_status" class="form-select">
-                    <option value="">{% trans "All Status" %}</option>
-                    <option value="uploaded" {% if request.GET.efris_status == 'uploaded' %}selected{% endif %}>
-                        {% trans "Uploaded" %}
-                    </option>
-                    <option value="pending" {% if request.GET.efris_status == 'pending' %}selected{% endif %}>
-                        {% trans "Pending" %}
-                    </option>
-                    <option value="disabled" {% if request.GET.efris_status == 'disabled' %}selected{% endif %}>
-                        {% trans "Disabled" %}
-                    </option>
-                </select>
+
+            <!-- Advanced Filters (Collapsible) -->
+            <div class="col-12" id="advancedFilters" style="display: none;">
+                <hr>
+                <h6 class="mb-3">{% trans "Advanced Filters" %}</h6>
+                <div class="row g-3">
+                    <div class="col-md-3">
+                        <label for="id_efris_status" class="form-label">{% trans "EFRIS Status" %}</label>
+                        <select name="efris_status" id="id_efris_status" class="form-select">
+                            <option value="">{% trans "All Status" %}</option>
+                            <option value="uploaded" {% if request.GET.efris_status == 'uploaded' %}selected{% endif %}>
+                                {% trans "Uploaded" %}
+                            </option>
+                            <option value="pending" {% if request.GET.efris_status == 'pending' %}selected{% endif %}>
+                                {% trans "Pending" %}
+                            </option>
+                            <option value="disabled" {% if request.GET.efris_status == 'disabled' %}selected{% endif %}>
+                                {% trans "Disabled" %}
+                            </option>
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <label for="id_is_active" class="form-label">{% trans "Status" %}</label>
+                        <select name="is_active" id="id_is_active" class="form-select">
+                            <option value="">{% trans "All Status" %}</option>
+                            <option value="true" {% if request.GET.is_active == 'true' %}selected{% endif %}>
+                                {% trans "Active" %}
+                            </option>
+                            <option value="false" {% if request.GET.is_active == 'false' %}selected{% endif %}>
+                                {% trans "Inactive" %}
+                            </option>
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <label for="id_price_min" class="form-label">{% trans "Min Price" %}</label>
+                        <input type="number" name="price_min" id="id_price_min" class="form-control"
+                               placeholder="0" value="{{ request.GET.price_min }}" step="0.01">
+                    </div>
+                    <div class="col-md-3">
+                        <label for="id_price_max" class="form-label">{% trans "Max Price" %}</label>
+                        <input type="number" name="price_max" id="id_price_max" class="form-control"
+                               placeholder="1000000" value="{{ request.GET.price_max }}" step="0.01">
+                    </div>
+                </div>
             </div>
-            <div class="col-md-2">
-                <label for="id_is_active" class="form-label">{% trans "Status" %}</label>
-                <select name="is_active" id="id_is_active" class="form-select">
-                    <option value="">{% trans "All Status" %}</option>
-                    <option value="true" {% if request.GET.is_active == 'true' %}selected{% endif %}>
-                        {% trans "Active" %}
-                    </option>
-                    <option value="false" {% if request.GET.is_active == 'false' %}selected{% endif %}>
-                        {% trans "Inactive" %}
-                    </option>
-                </select>
-            </div>
-            <div class="col-md-1 d-flex align-items-end">
-                <button type="button" class="btn btn-secondary w-100" id="clearFilters" title="{% trans 'Clear Filters' %}">
-                    <i class="bi bi-x-circle"></i>
-                </button>
+
+            <div class="col-12">
+                <div class="d-flex gap-2">
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-search me-1"></i>
+                        {% trans "Apply Filters" %}
+                    </button>
+                    <button type="button" class="btn btn-outline-secondary" id="clearFilters">
+                        <i class="bi bi-x-circle me-1"></i>
+                        {% trans "Clear All" %}
+                    </button>
+                </div>
             </div>
         </form>
     </div>
@@ -299,7 +497,7 @@
                 <i class="bi bi-list-ul me-2"></i>
                 {% trans "All Services" %}
             </h5>
-            <div>
+            <div class="d-flex gap-2">
                 {% if perms.inventory.change_service %}
                 <div class="btn-group">
                     <button type="button" class="btn btn-sm btn-outline-primary dropdown-toggle"
@@ -307,7 +505,7 @@
                         <i class="bi bi-lightning me-1"></i>
                         {% trans "Bulk Actions" %}
                     </button>
-                    <ul class="dropdown-menu">
+                    <ul class="dropdown-menu dropdown-menu-end">
                         <li><a class="dropdown-item bulk-action" data-action="activate" href="#">
                             <i class="bi bi-check-circle me-2"></i>{% trans "Activate Selected" %}
                         </a></li>
@@ -352,14 +550,17 @@
         <div class="table-wrapper">
             <!-- Loading Overlay -->
             <div class="loading-overlay" id="loadingOverlay" style="display: none;">
-                <div class="spinner-border text-primary" role="status">
-                    <span class="visually-hidden">{% trans "Loading..." %}</span>
+                <div class="text-center">
+                    <div class="spinner-border text-primary mb-2" role="status">
+                        <span class="visually-hidden">{% trans "Loading..." %}</span>
+                    </div>
+                    <p class="text-muted">{% trans "Loading services..." %}</p>
                 </div>
             </div>
 
             <div class="table-responsive">
                 <table id="servicesTable" class="table table-hover table-striped">
-                    <thead>
+                    <thead class="sticky-header">
                         <tr>
                             <th width="30">
                                 <input type="checkbox" id="selectAllServices" class="form-check-input table-checkbox">
@@ -391,17 +592,11 @@
                                 {% trans "Status" %}
                                 <i class="bi bi-chevron-expand sort-icon"></i>
                             </th>
-                            <th width="150">{% trans "Actions" %}</th>
+                            <th width="180">{% trans "Actions" %}</th>
                         </tr>
                     </thead>
                     <tbody id="servicesTableBody">
-                        <tr>
-                            <td colspan="9" class="text-center">
-                                <div class="spinner-border text-primary" role="status">
-                                    <span class="visually-hidden">{% trans "Loading..." %}</span>
-                                </div>
-                            </td>
-                        </tr>
+                        <!-- Content will be loaded by JavaScript -->
                     </tbody>
                 </table>
             </div>
@@ -418,6 +613,41 @@
                 </ul>
             </nav>
         </div>
+    </div>
+</div>
+
+<!-- Column Visibility Menu -->
+<div class="column-toggle-menu" id="columnToggleMenu" style="display: none;">
+    <h6 class="mb-2">{% trans "Toggle Columns" %}</h6>
+    <div class="form-check">
+        <input class="form-check-input column-toggle" type="checkbox" data-column="name" checked>
+        <label class="form-check-label">{% trans "Name" %}</label>
+    </div>
+    <div class="form-check">
+        <input class="form-check-input column-toggle" type="checkbox" data-column="code" checked>
+        <label class="form-check-label">{% trans "Code" %}</label>
+    </div>
+    <div class="form-check">
+        <input class="form-check-input column-toggle" type="checkbox" data-column="category" checked>
+        <label class="form-check-label">{% trans "Category" %}</label>
+    </div>
+    <div class="form-check">
+        <input class="form-check-input column-toggle" type="checkbox" data-column="unit_price" checked>
+        <label class="form-check-label">{% trans "Unit Price" %}</label>
+    </div>
+    <div class="form-check">
+        <input class="form-check-input column-toggle" type="checkbox" data-column="final_price" checked>
+        <label class="form-check-label">{% trans "Final Price" %}</label>
+    </div>
+    {% if efris_enabled %}
+    <div class="form-check">
+        <input class="form-check-input column-toggle" type="checkbox" data-column="efris_status" checked>
+        <label class="form-check-label">{% trans "EFRIS Status" %}</label>
+    </div>
+    {% endif %}
+    <div class="form-check">
+        <input class="form-check-input column-toggle" type="checkbox" data-column="status" checked>
+        <label class="form-check-label">{% trans "Status" %}</label>
     </div>
 </div>
 
@@ -466,9 +696,812 @@
         </div>
     </div>
 </div>
+
+<!-- Bulk Action Confirmation Modal -->
+<div class="modal fade" id="bulkActionModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-warning text-dark">
+                <h5 class="modal-title" id="bulkActionModalTitle">
+                    <i class="bi bi-exclamation-triangle me-2"></i>
+                    {% trans "Confirm Bulk Action" %}
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="bulkActionModalBody">
+                <!-- Content will be filled dynamically -->
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                    {% trans "Cancel" %}
+                </button>
+                <button type="button" class="btn btn-warning" id="confirmBulkActionBtn">
+                    <i class="bi bi-check-circle me-1"></i>
+                    <span id="bulkActionConfirmText">{% trans "Confirm" %}</span>
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
 {% endblock %}
 
 {% block extra_js %}
-<!-- Your custom JavaScript -->
-<script src="{% static 'inventory/js/service_list.js' %}"></script>
+<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0/dist/js/select2.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<script>
+class ServiceManager {
+    constructor() {
+        this.currentPage = 1;
+        this.pageSize = 25;
+        this.totalRecords = 0;
+        this.totalPages = 0;
+        this.sortColumn = 'name';
+        this.sortDirection = 'asc';
+        this.selectedServices = new Set();
+        this.filters = {};
+        this.columnVisibility = {
+            name: true,
+            code: true,
+            category: true,
+            unit_price: true,
+            final_price: true,
+            efris_status: true,
+            status: true
+        };
+
+        this.init();
+    }
+
+    init() {
+        this.initEventListeners();
+        this.initSelect2();
+        this.loadServices();
+        this.loadColumnPreferences();
+    }
+
+    initEventListeners() {
+        // Pagination
+        document.getElementById('pageSize').addEventListener('change', (e) => {
+            this.pageSize = parseInt(e.target.value);
+            this.currentPage = 1;
+            this.loadServices();
+        });
+
+        // Sorting
+        document.querySelectorAll('th.sortable').forEach(th => {
+            th.addEventListener('click', () => {
+                const column = th.dataset.column;
+                this.handleSort(column);
+            });
+        });
+
+        // Bulk selection
+        document.getElementById('selectAllServices').addEventListener('change', (e) => {
+            this.handleSelectAll(e.target.checked);
+        });
+
+        // Bulk actions
+        document.querySelectorAll('.bulk-action').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.preventDefault();
+                const action = e.target.closest('.bulk-action').dataset.action;
+                this.handleBulkAction(action);
+            });
+        });
+
+        // Clear selection
+        document.getElementById('clearSelectionBtn').addEventListener('click', () => {
+            this.clearSelection();
+        });
+
+        // Filters
+        document.getElementById('filterForm').addEventListener('submit', (e) => {
+            e.preventDefault();
+            this.applyFilters();
+        });
+
+        document.getElementById('clearFilters').addEventListener('click', () => {
+            this.clearFilters();
+        });
+
+        document.getElementById('clearSearch').addEventListener('click', () => {
+            document.getElementById('id_search').value = '';
+            this.applyFilters();
+        });
+
+        // Advanced filters toggle
+        document.getElementById('toggleAdvancedFilters').addEventListener('click', () => {
+            this.toggleAdvancedFilters();
+        });
+
+        // Column visibility
+        document.getElementById('columnToggleBtn').addEventListener('click', (e) => {
+            this.toggleColumnMenu(e);
+        });
+
+        document.querySelectorAll('.column-toggle').forEach(toggle => {
+            toggle.addEventListener('change', (e) => {
+                this.toggleColumn(e.target.dataset.column, e.target.checked);
+            });
+        });
+
+        // Export
+        document.querySelectorAll('.export-option').forEach(option => {
+            option.addEventListener('click', (e) => {
+                e.preventDefault();
+                this.exportData(e.target.closest('.export-option').dataset.format);
+            });
+        });
+
+        // Add service button
+        document.getElementById('addServiceBtn').addEventListener('click', () => {
+            this.openServiceModal();
+        });
+
+        // Close column menu when clicking outside
+        document.addEventListener('click', (e) => {
+            if (!e.target.closest('#columnToggleBtn') && !e.target.closest('#columnToggleMenu')) {
+                document.getElementById('columnToggleMenu').style.display = 'none';
+            }
+        });
+    }
+
+    initSelect2() {
+        $('#id_category').select2({
+            theme: 'bootstrap-5',
+            placeholder: '{% trans "Select a category" %}',
+            allowClear: true
+        });
+    }
+
+    async loadServices() {
+        this.showLoading();
+
+        const params = new URLSearchParams({
+            page: this.currentPage,
+            page_size: this.pageSize,
+            sort: this.sortColumn,
+            order: this.sortDirection,
+            ...this.filters
+        });
+
+        try {
+            const response = await fetch(`{% url 'inventory:service_datatable_api' %}?${params}`);
+            const data = await response.json();
+
+            this.renderServices(data.services);
+            this.updatePagination(data.pagination);
+            this.updateStats(data.stats);
+            this.hideLoading();
+        } catch (error) {
+            console.error('Error loading services:', error);
+            this.showError('{% trans "Failed to load services" %}');
+            this.hideLoading();
+        }
+    }
+
+    renderServices(services) {
+        const tbody = document.getElementById('servicesTableBody');
+        const searchTerm = this.filters.search || '';
+
+        if (services.length === 0) {
+            tbody.innerHTML = `
+                <tr>
+                    <td colspan="9" class="text-center py-5">
+                        <i class="bi bi-inbox display-1 text-muted"></i>
+                        <h5 class="text-muted mt-3">{% trans "No services found" %}</h5>
+                        <p class="text-muted">{% trans "Try adjusting your filters or add a new service" %}</p>
+                    </td>
+                </tr>
+            `;
+            return;
+        }
+
+        tbody.innerHTML = services.map(service => `
+            <tr class="fade-in" data-service-id="${service.id}">
+                <td>
+                    <input type="checkbox" class="form-check-input table-checkbox service-checkbox"
+                           value="${service.id}" ${this.selectedServices.has(service.id) ? 'checked' : ''}>
+                </td>
+                <td class="${this.columnVisibility.name ? '' : 'd-none'}">
+                    <div class="d-flex align-items-center">
+                        ${service.image ?
+                            `<img src="${service.image}" alt="${service.name}" class="rounded me-2" width="32" height="32">` :
+                            `<div class="bg-secondary rounded d-flex align-items-center justify-content-center me-2" style="width: 32px; height: 32px;">
+                                <i class="bi bi-gear text-white"></i>
+                            </div>`
+                        }
+                        <div>
+                            <h6 class="mb-0">${this.highlightText(service.name, searchTerm)}</h6>
+                            ${service.description ?
+                                `<small class="text-muted">${this.highlightText(service.description.substring(0, 50), searchTerm)}</small>` : ''
+                            }
+                        </div>
+                    </div>
+                </td>
+                <td class="${this.columnVisibility.code ? '' : 'd-none'}">
+                    <span class="badge bg-light text-dark">${this.highlightText(service.code, searchTerm)}</span>
+                </td>
+                <td class="${this.columnVisibility.category ? '' : 'd-none'}">
+                    ${service.category ?
+                        `<span class="badge bg-info">${service.category.name}</span>` :
+                        `<span class="badge bg-secondary">{% trans "Uncategorized" %}</span>`
+                    }
+                </td>
+                <td class="${this.columnVisibility.unit_price ? '' : 'd-none'} price-cell">
+                    ${this.formatCurrency(service.unit_price)}
+                </td>
+                <td class="${this.columnVisibility.final_price ? '' : 'd-none'} price-cell">
+                    <strong>${this.formatCurrency(service.final_price)}</strong>
+                </td>
+                ${this.isEfrisEnabled() ? `
+                <td class="${this.columnVisibility.efris_status ? '' : 'd-none'}">
+                    ${this.renderEfrisStatus(service)}
+                </td>
+                ` : ''}
+                <td class="${this.columnVisibility.status ? '' : 'd-none'}">
+                    ${this.renderStatus(service)}
+                </td>
+                <td>
+                    <div class="table-actions">
+                        <a href="${service.detail_url}" class="btn btn-sm btn-outline-primary action-btn"
+                           title="{% trans 'View Details' %}">
+                            <i class="bi bi-eye"></i>
+                        </a>
+                        <a href="${service.edit_url}" class="btn btn-sm btn-outline-secondary action-btn"
+                           title="{% trans 'Edit' %}">
+                            <i class="bi bi-pencil"></i>
+                        </a>
+                        ${service.efris_auto_sync_enabled && !service.efris_is_uploaded ? `
+                        <button class="btn btn-sm btn-outline-warning action-btn sync-efris-btn"
+                                data-service-id="${service.id}"
+                                title="{% trans 'Sync to EFRIS' %}">
+                            <i class="bi bi-cloud-arrow-up"></i>
+                        </button>
+                        ` : ''}
+                        <button class="btn btn-sm btn-outline-danger action-btn delete-service-btn"
+                                data-service-id="${service.id}"
+                                data-service-name="${service.name}"
+                                title="{% trans 'Delete' %}">
+                            <i class="bi bi-trash"></i>
+                        </button>
+                    </div>
+                </td>
+            </tr>
+        `).join('');
+
+        // Add event listeners to new elements
+        this.attachRowEventListeners();
+    }
+
+    attachRowEventListeners() {
+        // Checkbox selection
+        document.querySelectorAll('.service-checkbox').forEach(checkbox => {
+            checkbox.addEventListener('change', (e) => {
+                this.handleServiceSelection(e.target.value, e.target.checked);
+            });
+        });
+
+        // Row click (for selection)
+        document.querySelectorAll('#servicesTableBody tr').forEach(row => {
+            row.addEventListener('click', (e) => {
+                if (!e.target.closest('input') && !e.target.closest('a') && !e.target.closest('button')) {
+                    const checkbox = row.querySelector('.service-checkbox');
+                    if (checkbox) {
+                        checkbox.checked = !checkbox.checked;
+                        this.handleServiceSelection(checkbox.value, checkbox.checked);
+                    }
+                }
+            });
+        });
+
+        // Delete buttons
+        document.querySelectorAll('.delete-service-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const serviceId = btn.dataset.serviceId;
+                const serviceName = btn.dataset.serviceName;
+                this.confirmDelete(serviceId, serviceName);
+            });
+        });
+
+        // EFRIS sync buttons
+        document.querySelectorAll('.sync-efris-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                this.syncToEfris(btn.dataset.serviceId);
+            });
+        });
+    }
+
+    handleSort(column) {
+        if (this.sortColumn === column) {
+            this.sortDirection = this.sortDirection === 'asc' ? 'desc' : 'asc';
+        } else {
+            this.sortColumn = column;
+            this.sortDirection = 'asc';
+        }
+
+        // Update UI
+        document.querySelectorAll('th.sortable').forEach(th => {
+            th.classList.remove('sort-asc', 'sort-desc');
+        });
+
+        const currentTh = document.querySelector(`th[data-column="${column}"]`);
+        currentTh.classList.add(`sort-${this.sortDirection}`);
+
+        this.loadServices();
+    }
+
+    handleSelectAll(checked) {
+        const checkboxes = document.querySelectorAll('.service-checkbox');
+        checkboxes.forEach(checkbox => {
+            checkbox.checked = checked;
+            this.handleServiceSelection(checkbox.value, checked);
+        });
+    }
+
+    handleServiceSelection(serviceId, selected) {
+        if (selected) {
+            this.selectedServices.add(serviceId);
+        } else {
+            this.selectedServices.delete(serviceId);
+        }
+
+        this.updateBulkActionUI();
+    }
+
+    updateBulkActionUI() {
+        const selectedCount = this.selectedServices.size;
+        const bulkActionsBtn = document.getElementById('bulkActionsBtn');
+        const bulkSelectInfo = document.getElementById('bulkSelectInfo');
+        const selectedCountText = document.getElementById('selectedCountText');
+
+        if (selectedCount > 0) {
+            bulkActionsBtn.disabled = false;
+            bulkSelectInfo.style.display = 'block';
+            selectedCountText.textContent =
+                `${selectedCount} ${selectedCount === 1 ? '{% trans "service" %}' : '{% trans "services" %}'} {% trans "selected" %}`;
+        } else {
+            bulkActionsBtn.disabled = true;
+            bulkSelectInfo.style.display = 'none';
+        }
+
+        // Update select all checkbox
+        const totalCheckboxes = document.querySelectorAll('.service-checkbox').length;
+        const selectAllCheckbox = document.getElementById('selectAllServices');
+        selectAllCheckbox.checked = selectedCount > 0 && selectedCount === totalCheckboxes;
+        selectAllCheckbox.indeterminate = selectedCount > 0 && selectedCount < totalCheckboxes;
+    }
+
+    clearSelection() {
+        this.selectedServices.clear();
+        document.querySelectorAll('.service-checkbox').forEach(checkbox => {
+            checkbox.checked = false;
+        });
+        this.updateBulkActionUI();
+    }
+
+    async handleBulkAction(action) {
+        if (this.selectedServices.size === 0) return;
+
+        const actionTexts = {
+            activate: '{% trans "activate" %}',
+            deactivate: '{% trans "deactivate" %}',
+            enable_efris: '{% trans "enable EFRIS sync for" %}',
+            disable_efris: '{% trans "disable EFRIS sync for" %}',
+            mark_for_upload: '{% trans "mark for upload" %}',
+            delete: '{% trans "delete" %}'
+        };
+
+        const modalTitle = document.getElementById('bulkActionModalTitle');
+        const modalBody = document.getElementById('bulkActionModalBody');
+        const confirmText = document.getElementById('bulkActionConfirmText');
+
+        modalTitle.innerHTML = `<i class="bi bi-exclamation-triangle me-2"></i>{% trans "Confirm Bulk Action" %}`;
+        modalBody.innerHTML = `
+            <p>{% trans "Are you sure you want to" %} ${actionTexts[action]} ${this.selectedServices.size}
+            ${this.selectedServices.size === 1 ? '{% trans "service" %}' : '{% trans "services" %}'}?</p>
+            ${action === 'delete' ? '<p class="text-danger"><strong>{% trans "This action cannot be undone." %}</strong></p>' : ''}
+        `;
+        confirmText.textContent = action === 'delete' ? '{% trans "Delete" %}' : '{% trans "Confirm" %}';
+
+        const modal = new bootstrap.Modal(document.getElementById('bulkActionModal'));
+        modal.show();
+
+        document.getElementById('confirmBulkActionBtn').onclick = async () => {
+            try {
+                const response = await fetch("{% url 'inventory:service_bulk_actions' %}", {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': this.getCSRFToken()
+                    },
+                    body: JSON.stringify({
+                        action: action,
+                        service_ids: Array.from(this.selectedServices)
+                    })
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    this.showSuccess(result.message || '{% trans "Bulk action completed successfully" %}');
+                    this.clearSelection();
+                    this.loadServices();
+                } else {
+                    this.showError(result.message || '{% trans "Failed to perform bulk action" %}');
+                }
+            } catch (error) {
+                console.error('Error performing bulk action:', error);
+                this.showError('{% trans "Failed to perform bulk action" %}');
+            }
+
+            modal.hide();
+        };
+    }
+
+    applyFilters() {
+        const formData = new FormData(document.getElementById('filterForm'));
+        this.filters = {};
+
+        for (let [key, value] of formData.entries()) {
+            if (value) this.filters[key] = value;
+        }
+
+        this.currentPage = 1;
+        this.loadServices();
+    }
+
+    clearFilters() {
+        document.getElementById('filterForm').reset();
+        $('#id_category').val(null).trigger('change');
+        this.filters = {};
+        this.currentPage = 1;
+        this.loadServices();
+    }
+
+    toggleAdvancedFilters() {
+        const advancedFilters = document.getElementById('advancedFilters');
+        const toggleBtn = document.getElementById('toggleAdvancedFilters');
+
+        if (advancedFilters.style.display === 'none') {
+            advancedFilters.style.display = 'block';
+            toggleBtn.classList.add('active');
+        } else {
+            advancedFilters.style.display = 'none';
+            toggleBtn.classList.remove('active');
+        }
+    }
+
+    toggleColumnMenu(event) {
+        const menu = document.getElementById('columnToggleMenu');
+        const rect = event.target.getBoundingClientRect();
+
+        menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
+        menu.style.top = `${rect.bottom + window.scrollY}px`;
+        menu.style.left = `${rect.left + window.scrollX}px`;
+    }
+
+    toggleColumn(column, visible) {
+        this.columnVisibility[column] = visible;
+
+        const cells = document.querySelectorAll(`td:nth-child(${this.getColumnIndex(column)})`);
+        const headers = document.querySelectorAll(`th:nth-child(${this.getColumnIndex(column)})`);
+
+        cells.forEach(cell => cell.classList.toggle('d-none', !visible));
+        headers.forEach(header => header.classList.toggle('d-none', !visible));
+
+        this.saveColumnPreferences();
+    }
+
+    getColumnIndex(column) {
+        const columns = ['name', 'code', 'category', 'unit_price', 'final_price', 'efris_status', 'status'];
+        return columns.indexOf(column) + 2; // +2 because of checkbox column
+    }
+
+    saveColumnPreferences() {
+        localStorage.setItem('service_columns', JSON.stringify(this.columnVisibility));
+    }
+
+    loadColumnPreferences() {
+        const saved = localStorage.getItem('service_columns');
+        if (saved) {
+            this.columnVisibility = JSON.parse(saved);
+
+            // Apply saved preferences
+            Object.entries(this.columnVisibility).forEach(([column, visible]) => {
+                const toggle = document.querySelector(`.column-toggle[data-column="${column}"]`);
+                if (toggle) toggle.checked = visible;
+                this.toggleColumn(column, visible);
+            });
+        }
+    }
+
+    async exportData(format) {
+        const params = new URLSearchParams({
+            format: format,
+            ...this.filters
+        });
+
+        if (this.selectedServices.size > 0) {
+            params.append('service_ids', Array.from(this.selectedServices).join(','));
+        }
+
+        window.open(`{ '_blank');
+    }
+
+    async syncToEfris(serviceId) {
+        try {
+            const response = await fetch(`' 0 %}`.replace('0', serviceId), {
+                method: 'POST',
+                headers: {
+                    'X-CSRFToken': this.getCSRFToken()
+                }
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+                this.showSuccess('{% trans "Service synced to EFRIS successfully" %}');
+                this.loadServices();
+            } else {
+                this.showError(result.message || '{% trans "Failed to sync to EFRIS" %}');
+            }
+        } catch (error) {
+            console.error('Error syncing to EFRIS:', error);
+            this.showError('{% trans "Failed to sync to EFRIS" %}');
+        }
+    }
+
+    confirmDelete(serviceId, serviceName) {
+        const modal = new bootstrap.Modal(document.getElementById('deleteModal'));
+        modal.show();
+
+        document.getElementById('confirmDeleteBtn').onclick = async () => {
+            try {
+                const response = await fetch(`{% url 'inventory:service_delete' 0 %}`.replace('0', serviceId), {
+                    method: 'POST',
+                    headers: {
+                        'X-CSRFToken': this.getCSRFToken()
+                    }
+                });
+
+                if (response.ok) {
+                    this.showSuccess('{% trans "Service deleted successfully" %}');
+                    this.loadServices();
+                } else {
+                    this.showError('{% trans "Failed to delete service" %}');
+                }
+            } catch (error) {
+                console.error('Error deleting service:', error);
+                this.showError('{% trans "Failed to delete service" %}');
+            }
+
+            modal.hide();
+        };
+    }
+
+    openServiceModal(serviceId = null) {
+        const url = serviceId ?
+            `{% url 'inventory:service_update' 0 %}`.replace('0', serviceId) :
+            "{% url 'inventory:service_create' %}";
+
+        const modal = new bootstrap.Modal(document.getElementById('serviceModal'));
+        const modalBody = document.getElementById('serviceModalBody');
+        const modalTitle = document.getElementById('modalTitle');
+
+        modalTitle.textContent = serviceId ? '{% trans "Edit Service" %}' : '{% trans "Add Service" %}';
+        modalBody.innerHTML = `
+            <div class="text-center py-4">
+                <div class="spinner-border text-primary" role="status">
+                    <span class="visually-hidden">{% trans "Loading..." %}</span>
+                </div>
+                <p class="mt-2">{% trans "Loading form..." %}</p>
+            </div>
+        `;
+
+        modal.show();
+
+        fetch(url)
+            .then(response => response.text())
+            .then(html => {
+                modalBody.innerHTML = html;
+                this.initServiceForm();
+            })
+            .catch(error => {
+                console.error('Error loading form:', error);
+                modalBody.innerHTML = '<div class="alert alert-danger">{% trans "Failed to load form" %}</div>';
+            });
+    }
+
+    initServiceForm() {
+        // Initialize any form-specific JavaScript here
+        const form = document.getElementById('serviceForm');
+        if (form) {
+            form.addEventListener('submit', async (e) => {
+                e.preventDefault();
+                await this.submitServiceForm(form);
+            });
+        }
+    }
+
+    async submitServiceForm(form) {
+        const formData = new FormData(form);
+
+        try {
+            const response = await fetch(form.action, {
+                method: 'POST',
+                body: formData,
+                headers: {
+                    'X-CSRFToken': this.getCSRFToken()
+                }
+            });
+
+            if (response.ok) {
+                this.showSuccess('{% trans "Service saved successfully" %}');
+                bootstrap.Modal.getInstance(document.getElementById('serviceModal')).hide();
+                this.loadServices();
+            } else {
+                const errorText = await response.text();
+                document.getElementById('serviceModalBody').innerHTML = errorText;
+                this.initServiceForm();
+            }
+        } catch (error) {
+            console.error('Error submitting form:', error);
+            this.showError('{% trans "Failed to save service" %}');
+        }
+    }
+
+    // Utility methods
+    highlightText(text, searchTerm) {
+        if (!searchTerm || !text) return text;
+
+        const regex = new RegExp(`(${this.escapeRegex(searchTerm)})`, 'gi');
+        return text.replace(regex, '<mark class="search-highlight">$1</mark>');
+    }
+
+    escapeRegex(string) {
+        return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    }
+
+    formatCurrency(amount) {
+        return new Intl.NumberFormat('en-UG', {
+            style: 'currency',
+            currency: 'UGX',
+            minimumFractionDigits: 2
+        }).format(amount);
+    }
+
+    renderEfrisStatus(service) {
+        if (service.efris_is_uploaded) {
+            return `<span class="badge bg-success">
+                <i class="bi bi-cloud-check me-1"></i> {% trans "Uploaded" %}
+            </span>`;
+        } else if (service.efris_auto_sync_enabled) {
+            return `<span class="badge bg-warning">
+                <i class="bi bi-cloud-arrow-up me-1"></i> {% trans "Pending" %}
+            </span>`;
+        } else {
+            return `<span class="badge bg-secondary">
+                <i class="bi bi-cloud-slash me-1"></i> {% trans "Disabled" %}
+            </span>`;
+        }
+    }
+
+    renderStatus(service) {
+        const statusClass = service.is_active ? 'status-active' : 'status-inactive';
+        const statusText = service.is_active ? '{% trans "Active" %}' : '{% trans "Inactive" %}';
+
+        return `
+            <span class="d-flex align-items-center">
+                <span class="status-indicator ${statusClass}"></span>
+                ${statusText}
+            </span>
+        `;
+    }
+
+    updatePagination(pagination) {
+        const paginationEl = document.getElementById('pagination');
+        const { current_page, total_pages, has_previous, has_next } = pagination;
+
+        let html = '';
+
+        // Previous button
+        html += `
+            <li class="page-item ${!has_previous ? 'disabled' : ''}">
+                <a class="page-link" href="#" ${has_previous ? `onclick="serviceManager.goToPage(${current_page - 1})"` : ''}>
+                    {% trans "Previous" %}
+                </a>
+            </li>
+        `;
+
+        // Page numbers
+        for (let i = 1; i <= total_pages; i++) {
+            if (i === 1 || i === total_pages || (i >= current_page - 2 && i <= current_page + 2)) {
+                html += `
+                    <li class="page-item ${i === current_page ? 'active' : ''}">
+                        <a class="page-link" href="#" onclick="serviceManager.goToPage(${i})">${i}</a>
+                    </li>
+                `;
+            } else if (i === current_page - 3 || i === current_page + 3) {
+                html += '<li class="page-item disabled"><span class="page-link">...</span></li>';
+            }
+        }
+
+        // Next button
+        html += `
+            <li class="page-item ${!has_next ? 'disabled' : ''}">
+                <a class="page-link" href="#" ${has_next ? `onclick="serviceManager.goToPage(${current_page + 1})"` : ''}>
+                    {% trans "Next" %}
+                </a>
+            </li>
+        `;
+
+        paginationEl.innerHTML = html;
+    }
+
+    updateStats(stats) {
+        document.getElementById('pageServicesCount').textContent = stats.page_count || 0;
+
+        // Update entries info
+        const start = (this.currentPage - 1) * this.pageSize + 1;
+        const end = Math.min(this.currentPage * this.pageSize, this.totalRecords);
+        document.getElementById('entriesInfo').textContent =
+            `{% trans "Showing" %} ${start} {% trans "to" %} ${end} {% trans "of" %} ${this.totalRecords} {% trans "entries" %}`;
+    }
+
+    goToPage(page) {
+        this.currentPage = page;
+        this.loadServices();
+    }
+
+    showLoading() {
+        document.getElementById('loadingOverlay').style.display = 'flex';
+    }
+
+    hideLoading() {
+        document.getElementById('loadingOverlay').style.display = 'none';
+    }
+
+    showSuccess(message) {
+        this.showAlert(message, 'success');
+    }
+
+    showError(message) {
+        this.showAlert(message, 'danger');
+    }
+
+    showAlert(message, type) {
+        const alert = document.createElement('div');
+        alert.className = `alert alert-${type} alert-dismissible fade show`;
+        alert.innerHTML = `
+            ${message}
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        `;
+
+        document.querySelector('.main-content').insertBefore(alert, document.querySelector('.main-content').firstChild);
+
+        setTimeout(() => {
+            if (alert.parentNode) {
+                alert.remove();
+            }
+        }, 5000);
+    }
+
+    getCSRFToken() {
+        return document.querySelector('[name=csrfmiddlewaretoken]').value;
+    }
+
+    isEfrisEnabled() {
+        return document.getElementById('urls-config').dataset.efrisEnabled === 'true';
+    }
+}
+
+// Initialize the service manager when the page loads
+document.addEventListener('DOMContentLoaded', function() {
+    window.serviceManager = new ServiceManager();
+});
+</script>
 {% endblock %}

@@ -666,6 +666,7 @@ def render_sale_form(request):
 
 @transaction.atomic
 def process_sale_creation(request):
+    sale = None
     try:
         logger.info(f"Processing sale creation for user {request.user.id}")
 
@@ -740,6 +741,9 @@ def process_sale_creation(request):
 
         messages.success(request, success_message)
 
+        # Store sale ID for notification (outside transaction)
+        sale_id = sale.id
+
         # Redirect based on action
         if 'save_draft' in request.POST:
             sale.is_completed = False
@@ -760,7 +764,22 @@ def process_sale_creation(request):
         logger.error(f"Unexpected error in sale creation: {e}", exc_info=True)
         messages.error(request, 'An unexpected error occurred while creating the sale. Please try again.')
         return render_sale_form_with_errors(request)
-
+    finally:
+        # Create notification outside the transaction block to avoid transaction issues
+        if sale and sale.id and sale.is_completed:
+            try:
+                from notifications.services import create_notification
+                create_notification(
+                    user=request.user,
+                    notification_type='INFO',
+                    title='Sale Completed',
+                    message=f'Sale #{sale.invoice_number} has been completed successfully.',
+                    event_type='sale_completed',
+                    context_data={'sale_id': sale.id}
+                )
+            except Exception as e:
+                logger.error(f"Failed to create notification for sale {sale.id}: {e}")
+                # Don't fail the sale creation because of notification error
 
 def validate_sale_data(post_data, user):
     """
@@ -2928,10 +2947,36 @@ def void_sale(request, sale_id):
 
 
 @login_required
-@permission_required('sales.view_sale',raise_exception=True)
+@permission_required('sales.view_sale', raise_exception=True)
 def print_receipt(request, sale_id):
-    """Generate and print receipt"""
+    """Generate and print receipt - supports both products and services"""
     sale = get_object_or_404(Sale, id=sale_id)
+
+    # Build items list that handles both products and services
+    items_list = []
+    for item in sale.items.all():
+        # Determine item name based on type
+        if item.item_type == 'SERVICE' and item.service:
+            item_name = item.service.name
+            item_code = item.service.code or ''
+        elif item.product:
+            item_name = item.product.name
+            item_code = item.product.sku or ''
+        else:
+            # Fallback to the item_name property if available
+            item_name = getattr(item, 'item_name', 'Unknown Item')
+            item_code = getattr(item, 'item_code', '')
+
+        items_list.append({
+            'name': item_name,
+            'code': item_code,
+            'item_type': item.item_type,
+            'quantity': str(item.quantity),
+            'unit_price': str(item.unit_price),
+            'discount': str(item.discount_amount or 0),
+            'tax': str(item.tax_amount or 0),
+            'total': str(item.line_total),
+        })
 
     # Get or create receipt
     receipt, created = Receipt.objects.get_or_create(
@@ -2944,23 +2989,28 @@ def print_receipt(request, sale_id):
                     'invoice_number': sale.invoice_number,
                     'transaction_id': str(sale.transaction_id),
                     'created_at': sale.created_at.isoformat(),
+                    'subtotal': str(sale.subtotal),
+                    'tax_amount': str(sale.tax_amount),
+                    'discount_amount': str(sale.discount_amount),
                     'total_amount': str(sale.total_amount),
                     'payment_method': sale.get_payment_method_display(),
+                    'currency': sale.currency,
+                    'is_fiscalized': sale.is_fiscalized,
+                    'efris_invoice_number': sale.efris_invoice_number or '',
+                    'verification_code': sale.verification_code or '',
                 },
-                'items': [{
-                    'name': item.product.name,
-                    'quantity': str(item.quantity),
-                    'unit_price': str(item.unit_price),
-                    'total': str(item.line_total),
-                } for item in sale.items.all()],
+                'items': items_list,
                 'customer': {
                     'name': sale.customer.name if sale.customer else 'Walk-in Customer',
                     'phone': sale.customer.phone if sale.customer else '',
+                    'email': getattr(sale.customer, 'email', '') if sale.customer else '',
+                    'tin': getattr(sale.customer, 'tin', '') if sale.customer else '',
                 },
                 'store': {
                     'name': sale.store.name,
                     'address': getattr(sale.store, 'address', ''),
                     'phone': getattr(sale.store, 'phone', ''),
+                    'tin': getattr(sale.store, 'tin', ''),
                 }
             }
         }

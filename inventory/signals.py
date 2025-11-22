@@ -16,6 +16,13 @@ from .models import Service
 from .models import Stock, StockMovement, Product, ImportSession, ImportLog
 import structlog
 
+# Import notification services
+from notifications.services import (
+    NotificationService,
+    InventoryNotifications,
+    SalesNotifications,
+    CompanyNotifications
+)
 
 logger = structlog.get_logger(__name__)
 channel_layer = get_channel_layer()
@@ -25,11 +32,10 @@ bulk_stock_update = Signal()
 inventory_alert = Signal()
 efris_sync_required = Signal()
 
-
 # Custom signals for service EFRIS operations
-service_efris_sync_requested = Signal()  # providing_args=['service', 'user']
-service_efris_synced = Signal()  # providing_args=['service', 'result']
-service_efris_sync_failed = Signal()  # providing_args=['service', 'error']
+service_efris_sync_requested = Signal()
+service_efris_synced = Signal()
+service_efris_sync_failed = Signal()
 
 
 @receiver(pre_save, sender=Service)
@@ -189,10 +195,6 @@ def handle_service_efris_synced(sender, service, result, **kwargs):
                 'efris_service_id'
             ])
 
-        # Send notification (optional)
-        # from notifications.models import Notification
-        # Notification.objects.create(...)
-
     except Exception as e:
         logger.error(f"Error handling service_efris_synced: {str(e)}", exc_info=True)
 
@@ -210,10 +212,6 @@ def handle_service_efris_sync_failed(sender, service, error, **kwargs):
         # Mark service as needing retry
         service.efris_is_uploaded = False
         service.save(update_fields=['efris_is_uploaded'])
-
-        # Send notification (optional)
-        # from notifications.models import Notification
-        # Notification.objects.create(...)
 
     except Exception as e:
         logger.error(f"Error handling service_efris_sync_failed: {str(e)}", exc_info=True)
@@ -275,30 +273,8 @@ def category_post_save_handler(sender, instance, created, **kwargs):
 
 
 # ===========================================
-# SIGNAL CONNECTORS
+# NOTIFICATION-ENABLED SIGNALS
 # ===========================================
-
-def connect_service_signals():
-    """
-    Connect all service signals
-    Call this in apps.py ready() method
-    """
-    # Signals are connected via decorators above
-    logger.info("Service signals connected")
-
-
-def disconnect_service_signals():
-    """
-    Disconnect service signals (useful for testing)
-    """
-    from django.db.models.signals import post_save, pre_save, post_delete
-
-    post_save.disconnect(service_post_save_handler, sender=Service)
-    pre_save.disconnect(service_pre_save_handler, sender=Service)
-    post_delete.disconnect(service_post_delete_handler, sender=Service)
-    post_save.disconnect(category_post_save_handler, sender=Category)
-
-    logger.info("Service signals disconnected")
 
 def get_current_schema():
     """Get current tenant schema name"""
@@ -420,9 +396,11 @@ def detect_efris_sync_enabled_change(sender, instance, **kwargs):
         logger.error(f"Error detecting EFRIS sync change: {str(e)}")
 
 
+# inventory/signals.py - Fix the stock_level_updated signal
+
 @receiver(post_save, sender=Stock)
 def stock_level_updated(sender, instance: Stock, created: bool, **kwargs):
-    """Handle stock level updates with tenant context"""
+    """Handle stock level updates with tenant context and notifications"""
     if kwargs.get('raw', False):
         return
 
@@ -490,11 +468,53 @@ def stock_level_updated(sender, instance: Stock, created: bool, **kwargs):
                 alert_data=alert_data
             )
 
+            # FIXED: Send notification only to superusers and high-priority users
+            try:
+                from django.contrib.auth import get_user_model
+                User = get_user_model()
+
+                # Get users who should receive notifications (superusers and priority >= 90)
+                recipients = User.objects.filter(
+                    Q(is_superuser=True) |
+                    Q(primary_role__priority__gte=90)
+                ).filter(is_active=True)
+
+                for recipient in recipients:
+                    if severity == 'critical':
+                        # Use template-based notification for critical stock
+                        NotificationService.create_from_template(
+                            event_type='low_stock',
+                            recipient=recipient,
+                            context={
+                                'product_name': instance.product.name,
+                                'current_quantity': instance.quantity,
+                                'threshold': instance.low_stock_threshold,
+                                'store_name': instance.store.name,
+                            },
+                            related_object=instance,
+                            priority='HIGH',
+                            tenant_schema=schema_name
+                        )
+                    else:
+                        # Use direct notification for warnings
+                        NotificationService.create_notification(
+                            recipient=recipient,
+                            title=f'Stock Alert: {instance.product.name}',
+                            message=get_stock_alert_message(instance, severity),
+                            notification_type='WARNING',
+                            priority='MEDIUM',
+                            related_object=instance,
+                            action_text='View Stock',
+                            action_url=f'en/inventory/stock/{instance.id}/',
+                            tenant_schema=schema_name
+                        )
+            except Exception as e:
+                logger.error(f"Failed to send stock notification: {str(e)}")
+
         invalidate_stock_caches(instance, schema_name)
 
     except Exception as e:
         logger.error(f"Error in stock_level_updated: {str(e)}", exc_info=True)
-
 
 @receiver(pre_save, sender=Stock)
 def store_original_stock_values(sender, instance: Stock, **kwargs):
@@ -513,7 +533,7 @@ def store_original_stock_values(sender, instance: Stock, **kwargs):
 
 @receiver(post_save, sender=StockMovement)
 def stock_movement_created(sender, instance: StockMovement, created: bool, **kwargs):
-    """Handle stock movement creation"""
+    """Handle stock movement creation with notifications"""
     if not created or kwargs.get('raw', False):
         return
 
@@ -562,6 +582,7 @@ def stock_movement_created(sender, instance: StockMovement, created: bool, **kwa
                 user_id=instance.created_by.id
             )
 
+        # NOTIFICATION INTEGRATION: High value movement alerts
         if instance.total_value and instance.total_value > 1000:
             high_value_data = {
                 **movement_data,
@@ -569,6 +590,23 @@ def stock_movement_created(sender, instance: StockMovement, created: bool, **kwa
                 'message': f'High value {instance.get_movement_type_display().lower()}: {instance.product.name}'
             }
             send_to_websocket('inventory_dashboard', 'high_value_alert', high_value_data)
+
+            # Notify store manager for high-value movements
+            if instance.store.manager and instance.created_by != instance.store.manager:
+                try:
+                    NotificationService.create_notification(
+                        recipient=instance.store.manager,
+                        title=f'High Value {instance.get_movement_type_display()}',
+                        message=f'{instance.quantity} units of {instance.product.name} valued at UGX {instance.total_value:,.0f}',
+                        notification_type='INFO',
+                        priority='MEDIUM',
+                        related_object=instance,
+                        action_text='View Movement',
+                        action_url=f'/en/inventory/movements/',
+                        tenant_schema=schema_name
+                    )
+                except Exception as e:
+                    logger.error(f"Failed to send high-value movement notification: {str(e)}")
 
         update_movement_analytics(instance, schema_name)
         send_dashboard_update()
@@ -579,7 +617,7 @@ def stock_movement_created(sender, instance: StockMovement, created: bool, **kwa
 
 @receiver(post_save, sender=Product)
 def product_updated(sender, instance: Product, created: bool, **kwargs):
-    """Handle product updates"""
+    """Handle product updates with notifications"""
     if kwargs.get('raw', False):
         return
 
@@ -602,6 +640,28 @@ def product_updated(sender, instance: Product, created: bool, **kwargs):
 
             send_to_websocket('inventory_dashboard', 'product_created', product_data)
 
+            # NOTIFICATION INTEGRATION: New product creation
+            try:
+                company = _get_company_from_context()
+                if company and hasattr(company, 'staff'):
+                    # Notify company admins about new product
+                    admins = company.staff.filter(is_staff=True, is_active=True)
+                    for admin in admins:
+                        NotificationService.create_from_template(
+                            event_type='product_added',
+                            recipient=admin,
+                            context={
+                                'product_name': instance.name,
+                                'product_sku': instance.sku,
+                                'category': instance.category.name if instance.category else 'Uncategorized',
+                                'supplier': instance.supplier.name if instance.supplier else 'No Supplier',
+                            },
+                            related_object=instance,
+                            tenant_schema=schema_name
+                        )
+            except Exception as e:
+                logger.error(f"Failed to send new product notification: {str(e)}")
+
         else:
             if hasattr(instance, '_original_values'):
                 changes = detect_product_changes(instance)
@@ -623,6 +683,27 @@ def product_updated(sender, instance: Product, created: bool, **kwargs):
 
                     if 'selling_price' in changes or 'cost_price' in changes:
                         handle_price_change(instance, changes)
+
+                        # NOTIFICATION INTEGRATION: Price changes
+                        try:
+                            if instance.store and instance.store.manager:
+                                old_price = changes.get('selling_price', {}).get('old', 0)
+                                new_price = changes.get('selling_price', {}).get('new', 0)
+
+                                if old_price != new_price:
+                                    NotificationService.create_notification(
+                                        recipient=instance.store.manager,
+                                        title=f'Price Updated: {instance.name}',
+                                        message=f'Price changed from UGX {old_price:,.0f} to UGX {new_price:,.0f}',
+                                        notification_type='INFO',
+                                        priority='LOW',
+                                        related_object=instance,
+                                        action_text='View Product',
+                                        action_url=f'/inventory/products/{instance.id}/',
+                                        tenant_schema=schema_name
+                                    )
+                        except Exception as e:
+                            logger.error(f"Failed to send price change notification: {str(e)}")
 
         invalidate_product_caches(instance, schema_name)
 
@@ -650,7 +731,7 @@ def store_original_product_values(sender, instance: Product, **kwargs):
 
 @receiver(post_save, sender=ImportSession)
 def import_session_updated(sender, instance: ImportSession, created: bool, **kwargs):
-    """Handle import session updates"""
+    """Handle import session updates with notifications"""
     if kwargs.get('raw', False):
         return
 
@@ -712,6 +793,26 @@ def import_session_updated(sender, instance: ImportSession, created: bool, **kwa
             message_type = 'import_completed' if instance.status == 'completed' else 'import_failed'
             send_to_websocket(f'import_{instance.id}', message_type, completion_data)
 
+            # NOTIFICATION INTEGRATION: Import completion
+            try:
+                if instance.user:
+                    notification_type = 'SUCCESS' if instance.status == 'completed' else 'ERROR'
+                    priority = 'MEDIUM' if instance.status == 'completed' else 'HIGH'
+
+                    NotificationService.create_notification(
+                        recipient=instance.user,
+                        title=f'Import {instance.status.title()}',
+                        message=get_import_completion_message(instance),
+                        notification_type=notification_type,
+                        priority=priority,
+                        related_object=instance,
+                        action_text='View Results',
+                        action_url=f'/inventory/imports/{instance.id}/',
+                        tenant_schema=schema_name
+                    )
+            except Exception as e:
+                logger.error(f"Failed to send import completion notification: {str(e)}")
+
             if instance.created_count + instance.updated_count > 10:
                 send_dashboard_update()
 
@@ -752,7 +853,7 @@ def import_log_created(sender, instance: ImportLog, created: bool, **kwargs):
 
 @receiver(post_delete, sender=Product)
 def product_deleted(sender, instance: Product, **kwargs):
-    """Handle product deletion"""
+    """Handle product deletion with notifications"""
     try:
         deletion_data = {
             'id': instance.id,
@@ -763,6 +864,28 @@ def product_deleted(sender, instance: Product, **kwargs):
         }
 
         send_to_websocket('inventory_dashboard', 'product_deleted', deletion_data)
+
+        # NOTIFICATION INTEGRATION: Product deletion
+        try:
+            schema_name = get_current_schema()
+            company = _get_company_from_context()
+            if company and hasattr(company, 'staff'):
+                # Notify company admins about product deletion
+                admins = company.staff.filter(is_staff=True, is_active=True)
+                for admin in admins:
+                    NotificationService.create_notification(
+                        recipient=admin,
+                        title='Product Deleted',
+                        message=f'Product "{instance.name}" (SKU: {instance.sku}) has been deleted',
+                        notification_type='WARNING',
+                        priority='MEDIUM',
+                        action_text='View Inventory',
+                        action_url='/inventory/products/',
+                        tenant_schema=schema_name
+                    )
+        except Exception as e:
+            logger.error(f"Failed to send product deletion notification: {str(e)}")
+
         invalidate_product_caches(instance, get_current_schema())
 
     except Exception as e:
@@ -771,7 +894,7 @@ def product_deleted(sender, instance: Product, **kwargs):
 
 @receiver(bulk_stock_update)
 def handle_bulk_stock_update(sender, **kwargs):
-    """Handle bulk stock updates"""
+    """Handle bulk stock updates with notifications"""
     try:
         operation_data = kwargs.get('data', {})
         affected_count = kwargs.get('affected_count', 0)
@@ -802,6 +925,23 @@ def handle_bulk_stock_update(sender, **kwargs):
                 user_id=user.id
             )
 
+        # NOTIFICATION INTEGRATION: Bulk operation completion
+        if user and affected_count > 0:
+            try:
+                schema_name = get_current_schema()
+                NotificationService.create_notification(
+                    recipient=user,
+                    title=f'Bulk {operation_type.title()} Completed',
+                    message=f'Successfully processed {affected_count} items',
+                    notification_type='SUCCESS',
+                    priority='LOW',
+                    action_text='View Results',
+                    action_url='/inventory/bulk-operations/',
+                    tenant_schema=schema_name
+                )
+            except Exception as e:
+                logger.error(f"Failed to send bulk operation notification: {str(e)}")
+
         if affected_count > 5:
             send_dashboard_update()
 
@@ -811,7 +951,7 @@ def handle_bulk_stock_update(sender, **kwargs):
 
 @receiver(inventory_alert)
 def handle_inventory_alert(sender, **kwargs):
-    """Handle inventory alerts"""
+    """Handle inventory alerts with notifications"""
     try:
         stock = kwargs.get('stock')
         severity = kwargs.get('severity', 'info')
@@ -835,6 +975,25 @@ def handle_inventory_alert(sender, **kwargs):
         alerts_history.insert(0, alert_record)
         alerts_history = alerts_history[:100]
         cache.set(cache_key, alerts_history, timeout=86400)
+
+        # NOTIFICATION INTEGRATION: Critical inventory alerts
+        if severity == 'critical' and stock:
+            try:
+                # Notify store manager and company admins
+                recipients = []
+                if stock.store.manager:
+                    recipients.append(stock.store.manager)
+
+                # Add company admins
+                company = _get_company_from_context()
+                if company and hasattr(company, 'staff'):
+                    admins = company.staff.filter(is_staff=True, is_active=True)
+                    recipients.extend(admins)
+
+                for recipient in set(recipients):
+                    InventoryNotifications.notify_out_of_stock(stock.product, stock)
+            except Exception as e:
+                logger.error(f"Failed to send critical inventory alert: {str(e)}")
 
     except Exception as e:
         logger.error(f"Error in handle_inventory_alert: {str(e)}", exc_info=True)
@@ -870,7 +1029,6 @@ def handle_efris_stock_sync(sender, instance: Stock, created: bool, **kwargs):
         logger.error(f"Error in EFRIS stock sync: {str(e)}", exc_info=True)
 
 
-
 @receiver(efris_sync_required)
 def queue_efris_sync_task(sender, **kwargs):
     """Queue EFRIS synchronization tasks"""
@@ -896,7 +1054,6 @@ def queue_efris_sync_task(sender, **kwargs):
 
     except Exception as e:
         logger.error(f"Error queuing EFRIS sync: {str(e)}", exc_info=True)
-
 
 
 @receiver(post_save, sender=StockMovement)
@@ -1116,6 +1273,7 @@ def determine_movement_impact(movement: StockMovement) -> str:
             return 'medium'
     return 'low'
 
+
 def detect_product_changes(instance: Product) -> Dict[str, Any]:
     """Detect significant changes in product"""
     changes = {}
@@ -1323,3 +1481,30 @@ def invalidate_product_caches(product: Product, schema_name: str):
 
     except Exception as e:
         logger.error(f"Error invalidating product caches: {str(e)}")
+
+
+# ===========================================
+# SIGNAL CONNECTORS
+# ===========================================
+
+def connect_service_signals():
+    """
+    Connect all service signals
+    Call this in apps.py ready() method
+    """
+    # Signals are connected via decorators above
+    logger.info("Service signals connected")
+
+
+def disconnect_service_signals():
+    """
+    Disconnect service signals (useful for testing)
+    """
+    from django.db.models.signals import post_save, pre_save, post_delete
+
+    post_save.disconnect(service_post_save_handler, sender=Service)
+    pre_save.disconnect(service_pre_save_handler, sender=Service)
+    post_delete.disconnect(service_post_delete_handler, sender=Service)
+    post_save.disconnect(category_post_save_handler, sender=Category)
+
+    logger.info("Service signals disconnected")

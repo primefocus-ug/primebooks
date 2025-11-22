@@ -4,6 +4,9 @@ from django.utils import timezone
 from django.db.models import Q
 from django.db import  models
 from django_tenants.utils import get_public_schema_name
+from .models import Notification, Announcement
+from django.utils import timezone
+
 
 logger = logging.getLogger(__name__)
 
@@ -78,3 +81,79 @@ def notifications_context(request):
         })
 
     return context
+
+def notifications_context(request):
+    """
+    Add notification data to all templates
+    """
+    if not request.user.is_authenticated:
+        return {
+            'unread_notifications_count': 0,
+            'recent_notifications': [],
+            'active_announcements': []
+        }
+
+    try:
+        # Unread count
+        unread_count = Notification.objects.filter(
+            recipient=request.user,
+            is_read=False,
+            is_dismissed=False
+        ).count()
+
+        # Recent notifications (limited to 5 for dropdown)
+        recent_notifications = Notification.objects.filter(
+            recipient=request.user,
+            is_dismissed=False
+        ).select_related('category').order_by('-created_at')[:5]
+
+        # Active announcements
+        now = timezone.now()
+        active_announcements = Announcement.objects.filter(
+            is_active=True,
+            start_date__lte=now,
+            show_on_dashboard=True
+        ).filter(
+            Q(end_date__isnull=True) | Q(end_date__gte=now)
+        ).exclude(
+            dismissed_by=request.user
+        ).order_by('-priority')[:3]
+
+        return {
+            'unread_notifications_count': unread_count,
+            'recent_notifications': recent_notifications,
+            'active_announcements': active_announcements,
+            'has_unread_notifications': unread_count > 0,
+        }
+
+    except Exception as e:
+        logger.error(f'Error in notifications context processor: {e}')
+        return {
+            'unread_notifications_count': 0,
+            'recent_notifications': [],
+            'active_announcements': []
+        }
+
+
+def notification_preferences_context(request):
+    """
+    Add notification preferences to context
+    """
+    if not request.user.is_authenticated:
+        return {}
+
+    try:
+        from .models import NotificationPreference
+
+        prefs, created = NotificationPreference.objects.get_or_create(
+            user=request.user
+        )
+
+        return {
+            'notification_preferences': prefs,
+            'notifications_enabled': prefs.in_app_enabled,
+        }
+
+    except Exception as e:
+        logger.error(f'Error in notification preferences context: {e}')
+        return {}

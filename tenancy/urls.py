@@ -12,7 +12,6 @@ urlpatterns = [
     path('api/token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
     path('api/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     path('api/company/',include('company.api_urls')),
-    path('notifications/', include('notifications.urls')),
     path('i18n/', include('django.conf.urls.i18n')),
     path('api/messaging/', include('messaging.api_urls')),
 ]
@@ -42,7 +41,7 @@ urlpatterns += i18n_patterns(
     path('inventory/', include('inventory.urls')),
     path('sales/', include('sales.urls')),
     path('stores/', include('stores.urls')),
-    path('alerts/',include('notifications.urls')),
+    path('notifications/',include('notifications.urls')),
     path('customers/', include('customers.urls')),
     path('reports/', include('reports.urls')),
     path('messaging/', include('messaging.urls')),
