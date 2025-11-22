@@ -127,7 +127,7 @@ NAVIGATION_ITEMS = [
             ),
             NavigationItem(
                 name="Add User",
-                url_name="user_create",
+                url_name="invite_user",
                 icon="bi bi-person-plus",
                 permission="accounts.add_customuser"
             ),
