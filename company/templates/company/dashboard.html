@@ -1,5 +1,7 @@
 {% extends 'base.html' %}
 {% load i18n %}
+{% load static %}
+{% load custom_filters %}
 
 {% block title %}{% trans "Dashboard" %} - {{ company.trading_name|default:company.name }}{% endblock %}
 
@@ -120,7 +122,7 @@
                         <div class="stat-icon mb-2">
                             <i class="bi bi-check-circle"></i>
                         </div>
-                        <h2 class="stat-number mb-1">{{ active_companies|default:0 }}</h2>
+                        <h2 class="stat-number mb-1 totall">{{ active_companies|default:0 }}</h2>
                         <p class="stat-label mb-0">{% trans 'Active Companies' %}</p>
                         <small class="text-light opacity-75">{{ trial_companies|default:0 }} {% trans 'on trial' %}</small>
                     </div>
@@ -137,9 +139,9 @@
                         <div class="stat-icon mb-2">
                             <i class="bi bi-diagram-3"></i>
                         </div>
-                        <h2 class="stat-number mb-1">{{ total_branches|default:0 }}</h2>
+                        <h2 class="stat-number mb-1 totall">{{ total_branches|default:0 }}</h2>
                         <p class="stat-label mb-0">{% trans 'Total Branches' %}</p>
-                        <small class="opacity-75">{% trans 'Active locations' %}</small>
+                        <small class="opacity-75 totall">{% trans 'Active locations' %}</small>
                     </div>
                 </div>
             </div>
@@ -155,7 +157,7 @@
                 <div class="text-primary mb-2">
                     <i class="bi bi-credit-card fs-2"></i>
                 </div>
-                <h4 class="mb-1">{{ active_subscriptions|default:0 }}</h4>
+                <h4 class="mb-1 totall">{{ active_subscriptions|default:0 }}</h4>
                 <p class="text-muted mb-0 small">{% trans 'Active Subscriptions' %}</p>
             </div>
         </div>
@@ -166,8 +168,8 @@
                 <div class="text-warning mb-2">
                     <i class="bi bi-clock-history fs-2"></i>
                 </div>
-                <h4 class="mb-1">{{ expiring_soon_count|default:0 }}</h4>
-                <p class="text-muted mb-0 small">{% trans 'Expiring Soon' %}</p>
+                <h4 class="mb-1 totall">{{ expiring_soon_count|default:0 }}</h4>
+                <p class="text-muted mb-0 small totall">{% trans 'Expiring Soon' %}</p>
             </div>
         </div>
     </div>
@@ -177,8 +179,8 @@
                 <div class="text-info mb-2">
                     <i class="bi bi-gift fs-2"></i>
                 </div>
-                <h4 class="mb-1">{{ trial_companies|default:0 }}</h4>
-                <p class="text-muted mb-0 small">{% trans 'Active Trials' %}</p>
+                <h4 class="mb-1 totall">{{ trial_companies|default:0 }}</h4>
+                <p class="text-muted mb-0 small totall">{% trans 'Active Trials' %}</p>
             </div>
         </div>
     </div>
@@ -188,7 +190,7 @@
                 <div class="text-danger mb-2">
                     <i class="bi bi-x-circle fs-2"></i>
                 </div>
-                <h4 class="mb-1">{{ expired_companies|default:0 }}</h4>
+                <h4 class="mb-1 totall">{{ expired_companies|default:0 }}</h4>
                 <p class="text-muted mb-0 small">{% trans 'Expired' %}</p>
             </div>
         </div>
@@ -199,7 +201,7 @@
                 <div class="text-success mb-2">
                     <i class="bi bi-cash-coin fs-2"></i>
                 </div>
-                <h4 class="mb-1">${{ monthly_revenue|default:0|floatformat:2 }}</h4>
+                <h4 class="mb-1 totall">UGX {{ monthly_revenue|default:0|money }}</h4>
                 <p class="text-muted mb-0 small">{% trans 'Monthly Revenue' %}</p>
             </div>
         </div>
@@ -210,7 +212,7 @@
                 <div class="text-secondary mb-2">
                     <i class="bi bi-arrow-repeat fs-2"></i>
                 </div>
-                <h4 class="mb-1">{{ renewal_rate|default:0 }}%</h4>
+                <h4 class="mb-1 totall">{{ renewal_rate|default:0 }}%</h4>
                 <p class="text-muted mb-0 small">{% trans 'Renewal Rate' %}</p>
             </div>
         </div>
@@ -236,7 +238,7 @@
                                 <i class="bi bi-award fs-1 text-primary"></i>
                             </div>
                             <div>
-                                <h4 class="mb-1">{{ company.plan.display_name|default:company.plan.name }}</h4>
+                                <h4 class="mb-1 totall">{{ company.plan.display_name|default:company.plan.name }}</h4>
                                 <p class="text-muted mb-0">
                                     ${{ company.plan.price }} {{ company.preferred_currency }}
                                     / {{ company.plan.billing_cycle|lower }}
@@ -248,7 +250,7 @@
                             <h6 class="mb-2">{% trans 'Plan Features:' %}</h6>
                             <div class="row">
                                 {% for feature in company.plan.get_feature_list %}
-                                <div class="col-sm-6 mb-1">
+                                <div class="col-sm-6 mb-1 totall">
                                     <i class="bi bi-check-circle-fill text-success me-2"></i>
                                     <small>{{ feature }}</small>
                                 </div>
@@ -584,9 +586,9 @@
 
                 <h6 class="text-muted mb-3">{% trans 'System Health' %}</h6>
                 <div class="mb-3">
-                    <div class="d-flex justify-content-between mb-1">
+                    <div class="d-flex justify-content-between mb-1 totall">
                         <small>{% trans 'Active Subscriptions' %}</small>
-                        <small class="text-muted">
+                        <small class="text-muted totall">
                             {% if total_companies > 0 %}
                                 {% widthratio active_subscriptions total_companies 100 %}%
                             {% else %}
@@ -600,7 +602,7 @@
                     </div>
                 </div>
 
-                <div class="mb-3">
+                <div class="mb-3 totall">
                     <div class="d-flex justify-content-between mb-1">
                         <small>{% trans 'Verification Rate' %}</small>
                         <small class="text-muted">
@@ -617,7 +619,7 @@
                     </div>
                 </div>
 
-                <div class="mb-3">
+                <div class="mb-3 totall">
                     <div class="d-flex justify-content-between mb-1">
                         <small>{% trans 'EFRIS Adoption' %}</small>
                         <small class="text-muted">
@@ -650,6 +652,7 @@
 {% endblock %}
 
 {% block extra_css %}
+<link rel="stylesheet" href="{% static 'themes.css' %}">
 <style>
     :root {
         --primary-color: #007bff;
@@ -809,11 +812,18 @@
         font-size: 1.5rem;
         opacity: 0.8;
     }
+    [data-theme="dark"] .stat-icon {
+        color: #ffffff;
+    }
 
     .stat-number {
         font-size: 2.5rem;
         font-weight: 700;
         line-height: 1;
+
+    }
+    [data-theme="dark"] .stat-number {
+        color: #ffffff;
     }
 
     .stat-label {
@@ -821,9 +831,15 @@
         font-weight: 500;
         opacity: 0.9;
     }
+    [data-theme="dark"] .stat-label {
+        color: #ced4da;
+    }
 
     .stat-trend {
         font-size: 1.25rem;
+    }
+    [data-theme="dark"] .stat-trend {
+        color: #ffffff;
     }
 
     .company-avatar {
@@ -838,10 +854,16 @@
         font-weight: 600;
         font-size: 1.1rem;
     }
+    [data-theme="dark"] .company-avatar {
+        background: linear-gradient(135deg, var(--info-color), var(--primary-color));
+    }
 
     .badge-status {
         font-size: 0.75rem;
         padding: 0.35em 0.65em;
+    }
+    [data-theme="dark"] .badge-status {
+        color: #212529 !important;
     }
 
     .status-active { background-color: var(--success-color) !important; color: white !important; }
@@ -873,6 +895,9 @@
         justify-content: center;
         z-index: 9999;
         backdrop-filter: blur(4px);
+    }
+    [data-theme="dark"] .loading-overlay {
+        background: var(--loading-overlay-bg);
     }
 
     .loading-spinner {
