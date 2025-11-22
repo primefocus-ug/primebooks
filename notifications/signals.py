@@ -170,7 +170,8 @@ def track_company_state(sender, instance, **kwargs):
     """Track company state before save"""
     if instance.pk:
         try:
-            old_instance = sender.objects.using('public').get(pk=instance.pk)
+            # Remove the .using('public') and use default connection
+            old_instance = sender.objects.get(pk=instance.pk)
             _pre_save_state[f'company_{instance.pk}'] = {
                 'status': old_instance.status,
                 'subscription_ends_at': old_instance.subscription_ends_at,
@@ -178,10 +179,9 @@ def track_company_state(sender, instance, **kwargs):
         except sender.DoesNotExist:
             pass
 
-
 @receiver(post_save, sender='company.Company')
 def notify_company_events(sender, instance, created, **kwargs):
-    """Notify on company/subscription events - runs in public schema"""
+    """Notify on company/subscription events"""
     try:
         if created:
             return
@@ -190,23 +190,24 @@ def notify_company_events(sender, instance, created, **kwargs):
         state_key = f'company_{instance.pk}'
         old_state = _pre_save_state.get(state_key, {})
 
-        # Check subscription expiry
-        if instance.subscription_ends_at:
-            days_remaining = (instance.subscription_ends_at - timezone.now().date()).days
+        # Use schema context for tenant-specific operations
+        with schema_context(schema_name):
+            # Check subscription expiry
+            if instance.subscription_ends_at:
+                days_remaining = (instance.subscription_ends_at - timezone.now().date()).days
 
-            if days_remaining in [30, 14, 7, 3, 1]:
-                CompanyNotifications.notify_subscription_expiring(instance, days_remaining)
+                if days_remaining in [30, 14, 7, 3, 1]:
+                    CompanyNotifications.notify_subscription_expiring(instance, days_remaining)
 
-        # Check trial expiry
-        if instance.is_trial and instance.trial_ends_at:
-            days_remaining = (instance.trial_ends_at - timezone.now().date()).days
+            # Check trial expiry
+            if instance.is_trial and instance.trial_ends_at:
+                days_remaining = (instance.trial_ends_at - timezone.now().date()).days
 
-            if days_remaining in [7, 3, 1]:
-                CompanyNotifications.notify_trial_ending(instance, days_remaining)
+                if days_remaining in [7, 3, 1]:
+                    CompanyNotifications.notify_trial_ending(instance, days_remaining)
 
-        # Check suspension (only if status just changed to SUSPENDED)
-        if instance.status == 'SUSPENDED' and old_state.get('status') != 'SUSPENDED':
-            with schema_context(schema_name):
+            # Check suspension (only if status just changed to SUSPENDED)
+            if instance.status == 'SUSPENDED' and old_state.get('status') != 'SUSPENDED':
                 admins = instance.staff.filter(is_staff=True).only(
                     'id', 'email', 'first_name', 'last_name'
                 )
@@ -229,7 +230,6 @@ def notify_company_events(sender, instance, created, **kwargs):
 
     except Exception as e:
         logger.error(f"Error in notify_company_events: {e}", exc_info=True)
-
 
 # ============= SECURITY NOTIFICATIONS =============
 
