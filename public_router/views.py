@@ -1,10 +1,5 @@
-from django.views.decorators.csrf import csrf_protect
-from django.views.decorators.cache import never_cache
-from django.views.decorators.http import require_http_methods
-from django.http import JsonResponse
 from django.views.generic import CreateView, TemplateView
 from django.urls import reverse_lazy
-from django.core.cache import cache
 from django_ratelimit.decorators import ratelimit
 from django.utils.decorators import method_decorator
 from django.shortcuts import render, redirect, get_object_or_404
@@ -23,7 +18,21 @@ from .tasks import create_tenant_async
 from .models import TenantSignupRequest
 from company.models import Company, Domain, SubscriptionPlan
 from accounts.models import CustomUser
-
+import json
+import logging
+import secrets
+from datetime import timedelta
+from functools import wraps
+from django.conf import settings
+from django.contrib import messages
+from django.core.cache import cache
+from django.http import JsonResponse
+from django.shortcuts import redirect, render
+from django.utils import timezone
+from django.views.decorators.cache import never_cache
+from django.views.decorators.csrf import csrf_protect, csrf_exempt
+from django.views.decorators.http import require_http_methods
+from django.db import transaction
 
 from .tenant_lookup import (
     find_user_tenant_by_email,
@@ -744,10 +753,254 @@ class HealthCheckView(TemplateView):
             'metrics': health['metrics'],
         }, status=status_code)
 
+
+
+# Constants
+LOGIN_TOKEN_EXPIRY = 300  # 5 minutes
+MAX_LOGIN_ATTEMPTS = 5
+LOGIN_ATTEMPT_WINDOW = 900  # 15 minutes
+BRIDGE_TOKEN_EXPIRY = 60  # 1 minute
+
+
+def rate_limit_check(identifier, max_attempts, window):
+    """
+    Check if rate limit is exceeded
+    Returns (is_allowed, attempts_left)
+    """
+    cache_key = f"rate_limit:{identifier}"
+    attempts = cache.get(cache_key, 0)
+
+    if attempts >= max_attempts:
+        return False, 0
+
+    return True, max_attempts - attempts
+
+
+def rate_limit_increment(identifier, window):
+    """Increment rate limit counter"""
+    cache_key = f"rate_limit:{identifier}"
+    attempts = cache.get(cache_key, 0)
+    cache.set(cache_key, attempts + 1, window)
+
+
+def rate_limit(max_attempts=5, window=900, block_duration=900):
+    """
+    Rate limiting decorator
+    """
+
+    def decorator(view_func):
+        @wraps(view_func)
+        def wrapper(request, *args, **kwargs):
+            # Use IP + user agent for better fingerprinting
+            identifier = f"{get_client_ip(request)}:{request.META.get('HTTP_USER_AGENT', '')[:50]}"
+
+            is_allowed, attempts_left = rate_limit_check(identifier, max_attempts, window)
+
+            if not is_allowed:
+                logger.warning(
+                    f"Rate limit exceeded for {get_client_ip(request)} on {request.path}"
+                )
+                if request.content_type == 'application/json':
+                    return JsonResponse(
+                        {'error': 'Too many attempts. Please try again later.'},
+                        status=429
+                    )
+                messages.error(
+                    request,
+                    'Too many login attempts. Please try again in 15 minutes.'
+                )
+                return render(request, 'public_router/rate_limited.html', status=429)
+
+            response = view_func(request, *args, **kwargs)
+
+            # Increment on failed attempts (check for error messages)
+            if hasattr(response, 'context_data') or (
+                    request.method == 'POST' and
+                    hasattr(messages, '_loaded_data')
+            ):
+                storage = messages.get_messages(request)
+                for message in storage:
+                    if message.level == messages.ERROR:
+                        rate_limit_increment(identifier, window)
+                        break
+                storage.used = False  # Don't consume messages
+
+            return response
+
+        return wrapper
+
+    return decorator
+
+
+def get_client_ip(request):
+    """Get client IP address from request"""
+    x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
+    if x_forwarded_for:
+        ip = x_forwarded_for.split(',')[0].strip()
+    else:
+        ip = request.META.get('REMOTE_ADDR')
+    return ip
+
+
+def create_login_token(email, tenant_schema, user_id):
+    """
+    Create a secure, time-limited login token
+    """
+    token = secrets.token_urlsafe(32)
+    cache_key = f"login_token:{token}"
+
+    token_data = {
+        'email': email,
+        'tenant_schema': tenant_schema,
+        'user_id': user_id,
+        'created_at': timezone.now().isoformat(),
+        'used': False
+    }
+
+    cache.set(cache_key, token_data, LOGIN_TOKEN_EXPIRY)
+    logger.info(f"Created login token for user {user_id} in tenant {tenant_schema}")
+
+    return token
+
+
+def validate_and_consume_token(token):
+    """
+    Validate token and mark as used (single-use)
+    Returns token_data or None if invalid
+    """
+    if not token or len(token) < 32:
+        return None
+
+    cache_key = f"login_token:{token}"
+    token_data = cache.get(cache_key)
+
+    if not token_data:
+        logger.warning(f"Invalid or expired login token attempted")
+        return None
+
+    if token_data.get('used'):
+        logger.warning(f"Attempted reuse of login token for {token_data.get('email')}")
+        cache.delete(cache_key)
+        return None
+
+    # Mark as used
+    token_data['used'] = True
+    cache.set(cache_key, token_data, 60)  # Keep for 1 minute for logging
+
+    return token_data
+
+
+def find_user_tenant_by_email(email):
+    """
+    Find user's tenant by email
+    Returns (tenant_schema, tenant_object) or (None, None)
+    """
+    from company.models import Company
+    from django.contrib.auth import get_user_model
+    from django_tenants.utils import schema_context
+
+    User = get_user_model()
+
+    try:
+        # Search across all tenants
+        tenants = Company.objects.exclude(schema_name='public')
+
+        for tenant in tenants:
+            try:
+                with schema_context(tenant.schema_name):
+                    if User.objects.filter(email__iexact=email).exists():
+                        return tenant.schema_name, tenant
+            except Exception as e:
+                logger.error(f"Error searching tenant {tenant.schema_name}: {e}")
+                continue
+
+        return None, None
+
+    except Exception as e:
+        logger.error(f"Error in find_user_tenant_by_email: {e}")
+        return None, None
+
+
+def verify_user_credentials(email, password, tenant_schema):
+    """
+    Verify user credentials in specific tenant
+    Returns User object or None
+    """
+    from django.contrib.auth import get_user_model, authenticate
+    from django_tenants.utils import schema_context
+
+    User = get_user_model()
+
+    try:
+        with schema_context(tenant_schema):
+            # Check if user exists and is active
+            try:
+                user = User.objects.get(email__iexact=email)
+                if not user.is_active:
+                    logger.warning(f"Login attempt for inactive user: {email}")
+                    return None
+            except User.DoesNotExist:
+                return None
+
+            # Authenticate
+            authenticated_user = authenticate(
+                username=email,
+                password=password
+            )
+
+            if authenticated_user:
+                return authenticated_user
+
+            return None
+
+    except Exception as e:
+        logger.error(f"Error verifying credentials in tenant {tenant_schema}: {e}")
+        return None
+
+
+def get_tenant_login_url(tenant_schema, token=None):
+    """
+    Generate tenant login URL
+    """
+    from company.models import Company
+
+    try:
+        tenant = Company.objects.get(schema_name=tenant_schema)
+
+        # Get domain
+        domain = tenant.get_primary_domain()
+        if not domain:
+            logger.error(f"No domain found for tenant {tenant_schema}")
+            return None
+
+        protocol = 'https' if not settings.DEBUG else 'http'
+        if settings.DEBUG:
+            base_url = f"{protocol}://{domain.domain}:8000"
+        else:
+            base_url = f"{protocol}://{domain.domain}"
+
+        if token:
+            return f"{base_url}/accounts/login/complete/?token={token}"
+
+        return base_url
+
+    except Company.DoesNotExist:
+        logger.error(f"Tenant not found: {tenant_schema}")
+        return None
+    except Exception as e:
+        logger.error(f"Error generating tenant URL: {e}")
+        return None
+
+
 @never_cache
 @csrf_protect
 @require_http_methods(["GET", "POST"])
+@rate_limit(max_attempts=MAX_LOGIN_ATTEMPTS, window=LOGIN_ATTEMPT_WINDOW)
 def public_login_router(request):
+    """
+    Public login router - handles authentication and redirects to tenant
+    """
+    # Redirect if already authenticated
     if request.user.is_authenticated:
         if hasattr(request, 'tenant') and request.tenant.schema_name != 'public':
             from accounts.views import get_dashboard_url
@@ -757,99 +1010,192 @@ def public_login_router(request):
         email = request.POST.get('email', '').strip().lower()
         password = request.POST.get('password', '')
 
+        # Input validation
         if not email or not password:
             messages.error(request, 'Please provide both email and password')
-            return render(request, 'public_router/login.html')
+            return render(request, 'public_router/login.html', get_login_context())
 
-        # Find user's tenant
-        tenant_schema, tenant = find_user_tenant_by_email(email)
+        # Basic email format validation
+        if '@' not in email or len(email) < 5:
+            messages.error(request, 'Invalid email format')
+            return render(request, 'public_router/login.html', get_login_context())
 
-        if not tenant_schema:
-            messages.error(
-                request,
-                'No account found with this email. Please contact your organization administrator.'
+        # Password length check (prevent very long passwords DoS)
+        if len(password) > 128:
+            messages.error(request, 'Invalid credentials')
+            return render(request, 'public_router/login.html', get_login_context())
+
+        try:
+            # Find user's tenant
+            tenant_schema, tenant = find_user_tenant_by_email(email)
+
+            if not tenant_schema:
+                # Generic error message to prevent email enumeration
+                messages.error(request, 'Invalid credentials')
+                logger.warning(
+                    f"Login attempt with non-existent email: {email} from IP: {get_client_ip(request)}"
+                )
+                return render(request, 'public_router/login.html', get_login_context())
+
+            # Verify credentials in tenant schema
+            user = verify_user_credentials(email, password, tenant_schema)
+
+            if not user:
+                # Generic error message
+                messages.error(request, 'Invalid credentials')
+                logger.warning(
+                    f"Failed login attempt for {email} in tenant {tenant_schema} from IP: {get_client_ip(request)}"
+                )
+                return render(request, 'public_router/login.html', get_login_context())
+
+            # Create secure login token
+            token = create_login_token(email, tenant_schema, user.id)
+
+            # Store minimal data in session
+            request.session['login_token'] = token
+            request.session['tenant_schema'] = tenant_schema
+            request.session['tenant_name'] = tenant.display_name
+            request.session['login_initiated_at'] = timezone.now().isoformat()
+
+            # Clear rate limiting on successful login
+            identifier = f"{get_client_ip(request)}:{request.META.get('HTTP_USER_AGENT', '')[:50]}"
+            cache.delete(f"rate_limit:{identifier}")
+
+            logger.info(
+                f"Successful login for {email} in tenant {tenant_schema} from IP: {get_client_ip(request)}"
             )
-            logger.warning(f"Login attempt with non-existent email: {email}")
-            return render(request, 'public_router/login.html')
 
-        # Verify credentials in tenant
-        user = verify_user_credentials(email, password, tenant_schema)
+            # Redirect to bridge page
+            return redirect('public_router:login_bridge')
 
-        if not user:
-            messages.error(request, 'Invalid email or password')
-            logger.warning(f"Failed login attempt for {email} in tenant {tenant_schema}")
-            return render(request, 'public_router/login.html')
-
-        # Create login token
-        token = create_login_token(email, tenant_schema)
-
-        # Store in session and redirect to bridge page
-        request.session['login_token'] = token
-        request.session['tenant_schema'] = tenant_schema
-        request.session['tenant_name'] = tenant.display_name
-
-        # Redirect to bridge page on PUBLIC schema
-        return redirect('public_router:login_bridge')
+        except Exception as e:
+            logger.error(f"Error during login process: {e}", exc_info=True)
+            messages.error(request, 'An error occurred. Please try again.')
+            return render(request, 'public_router/login.html', get_login_context())
 
     # GET request
-    context = {
-        'google_oauth_enabled': 'allauth.socialaccount.providers.google' in settings.INSTALLED_APPS,
-        'page_title': 'Login to Your Account'
-    }
+    return render(request, 'public_router/login.html', get_login_context())
 
-    return render(request, 'public_router/login.html', context)
+
+def get_login_context():
+    """Get context for login page"""
+    return {
+        'google_oauth_enabled': 'allauth.socialaccount.providers.google' in settings.INSTALLED_APPS,
+        'page_title': 'Login to Your Account',
+        'show_signup_link': getattr(settings, 'ALLOW_PUBLIC_SIGNUP', True),
+    }
 
 
 @never_cache
+@require_http_methods(["GET"])
 def login_bridge(request):
     """
     Bridge page that redirects to tenant subdomain
-    Runs on public schema
+    Runs on public schema - validates session and generates redirect
     """
-    token = request.session.pop('login_token', None)
-    tenant_schema = request.session.pop('tenant_schema', None)
-    tenant_name = request.session.pop('tenant_name', None)
+    token = request.session.get('login_token')
+    tenant_schema = request.session.get('tenant_schema')
+    tenant_name = request.session.get('tenant_name')
+    login_initiated_at = request.session.get('login_initiated_at')
 
+    # Validate session data exists
     if not token or not tenant_schema:
-        messages.error(request, 'Invalid login session')
+        messages.error(request, 'Invalid login session. Please try again.')
+        logger.warning(f"Invalid bridge access from IP: {get_client_ip(request)}")
         return redirect('public_router:login')
 
-    # Generate tenant URL
+    # Check if login session is too old (prevent stale sessions)
+    if login_initiated_at:
+        try:
+            initiated_time = timezone.datetime.fromisoformat(login_initiated_at)
+            if timezone.now() - initiated_time > timedelta(seconds=BRIDGE_TOKEN_EXPIRY):
+                request.session.flush()
+                messages.error(request, 'Login session expired. Please try again.')
+                logger.warning(f"Expired bridge session from IP: {get_client_ip(request)}")
+                return redirect('public_router:login')
+        except (ValueError, TypeError):
+            pass
+
+    # Validate token still exists in cache
+    cache_key = f"login_token:{token}"
+    token_data = cache.get(cache_key)
+
+    if not token_data:
+        request.session.flush()
+        messages.error(request, 'Login session expired. Please try again.')
+        logger.warning(f"Bridge accessed with invalid token from IP: {get_client_ip(request)}")
+        return redirect('public_router:login')
+
+    # Generate tenant URL with token
     tenant_url = get_tenant_login_url(tenant_schema, token)
 
     if not tenant_url:
-        messages.error(request, 'Error redirecting to your account')
+        request.session.flush()
+        messages.error(request, 'Error redirecting to your account. Please try again.')
+        logger.error(f"Failed to generate tenant URL for {tenant_schema}")
         return redirect('public_router:login')
 
     context = {
         'tenant_url': tenant_url,
         'tenant_name': tenant_name,
         'tenant_schema': tenant_schema,
+        'auto_redirect': True,
+        'redirect_delay': 1000,  # 1 second
     }
+
+    logger.info(f"Bridge redirect to {tenant_schema} from IP: {get_client_ip(request)}")
 
     return render(request, 'public_router/login_bridge.html', context)
 
 
-@require_http_methods(["GET", "POST"])
+@csrf_exempt  # API endpoint - use other security measures
+@require_http_methods(["POST"])
+@rate_limit(max_attempts=10, window=300)  # 10 requests per 5 minutes
 def api_find_tenant(request):
-    import json
-
-    if request.method == "GET":
-        return JsonResponse({
-            "detail": "This endpoint only supports POST requests. Please send a JSON payload with an email."
-        }, status=405)
-
+    """
+    API endpoint to find tenant by email
+    Used for progressive login flows
+    """
     try:
-        data = json.loads(request.body)
+        # Parse JSON body
+        try:
+            data = json.loads(request.body)
+        except json.JSONDecodeError:
+            return JsonResponse(
+                {'error': 'Invalid JSON payload'},
+                status=400
+            )
+
         email = data.get('email', '').strip().lower()
 
+        # Validate email
         if not email:
-            return JsonResponse({'error': 'Email required'}, status=400)
+            return JsonResponse(
+                {'error': 'Email is required'},
+                status=400
+            )
 
+        if '@' not in email or len(email) < 5 or len(email) > 254:
+            return JsonResponse(
+                {'error': 'Invalid email format'},
+                status=400
+            )
+
+        # Find tenant
         tenant_schema, tenant = find_user_tenant_by_email(email)
 
         if tenant:
             tenant_url = get_tenant_login_url(tenant_schema)
+
+            if not tenant_url:
+                logger.error(f"Could not generate URL for tenant {tenant_schema}")
+                return JsonResponse(
+                    {'error': 'Unable to generate tenant URL'},
+                    status=500
+                )
+
+            logger.info(f"API tenant lookup successful for {email}")
+
             return JsonResponse({
                 'exists': True,
                 'tenant_url': tenant_url,
@@ -857,15 +1203,89 @@ def api_find_tenant(request):
                 'tenant_schema': tenant_schema
             })
 
+        # Don't reveal whether email exists - return generic response
+        logger.info(f"API tenant lookup - email not found: {email}")
+
         return JsonResponse({
             'exists': False,
-            'message': 'No account found with this email'
+            'message': 'Please enter your password to continue'
         })
 
-    except json.JSONDecodeError:
-        return JsonResponse({'error': 'Invalid JSON'}, status=400)
     except Exception as e:
-        logger.error(f"Error in api_find_tenant: {e}")
-        return JsonResponse({'error': 'Server error'}, status=500)
+        logger.error(f"Error in api_find_tenant: {e}", exc_info=True)
+        return JsonResponse(
+            {'error': 'An error occurred processing your request'},
+            status=500
+        )
 
 
+# Additional utility view for completing login on tenant side
+@never_cache
+@csrf_protect
+@require_http_methods(["GET"])
+def complete_tenant_login(request):
+    """
+    Complete login on tenant subdomain
+    This view runs on the TENANT schema
+    """
+    from django.contrib.auth import login
+
+    token = request.GET.get('token')
+
+    if not token:
+        messages.error(request, 'Invalid login link')
+        return redirect('login')
+
+    # Validate and consume token
+    token_data = validate_and_consume_token(token)
+
+    if not token_data:
+        messages.error(request, 'Invalid or expired login link. Please log in again.')
+        logger.warning(f"Invalid token used from IP: {get_client_ip(request)}")
+        return redirect('login')
+
+    # Verify we're on the correct tenant
+    if hasattr(request, 'tenant'):
+        if request.tenant.schema_name != token_data.get('tenant_schema'):
+            logger.error(
+                f"Token tenant mismatch: expected {token_data.get('tenant_schema')}, "
+                f"got {request.tenant.schema_name}"
+            )
+            messages.error(request, 'Invalid login session')
+            return redirect('login')
+
+    # Get user and log them in
+    from django.contrib.auth import get_user_model
+    User = get_user_model()
+
+    try:
+        user = User.objects.get(
+            id=token_data.get('user_id'),
+            email__iexact=token_data.get('email'),
+            is_active=True
+        )
+
+        # Log the user in
+        login(request, user, backend='django.contrib.auth.backends.ModelBackend')
+
+        logger.info(
+            f"User {user.email} successfully logged in to tenant "
+            f"{request.tenant.schema_name} from IP: {get_client_ip(request)}"
+        )
+
+        # Redirect to dashboard
+        from accounts.views import get_dashboard_url
+        return redirect(get_dashboard_url(user))
+
+    except User.DoesNotExist:
+        logger.error(
+            f"User not found for token: user_id={token_data.get('user_id')}, "
+            f"email={token_data.get('email')}"
+        )
+        messages.error(request, 'User account not found or has been disabled')
+        return redirect('login')
+
+    except Exception as e:
+        logger.error(f"Error completing tenant login: {e}", exc_info=True)
+        messages.error(request, 'An error occurred. Please try again.')
+        return redirect('login')

@@ -57,8 +57,23 @@ class EncryptionService:
         return key_manager
 
     @staticmethod
+    def _get_user_encryption_password(user):
+        """
+        Get a stable encryption password for the user.
+        This should NOT change when the user changes their Django password.
+        """
+        # Option A: Use a secret from settings + user ID
+        from django.conf import settings
+        import hashlib
+
+        stable_secret = f"{settings.SECRET_KEY}:user:{user.id}:encryption"
+        return hashlib.sha256(stable_secret.encode()).hexdigest()
+
+    @staticmethod
     def _encrypt_private_key(private_pem, user):
-        password_bytes = user.password.encode('utf-8')
+        """Updated encryption using stable key"""
+        # Use stable password instead of user.password
+        password_bytes = EncryptionService._get_user_encryption_password(user).encode('utf-8')
 
         # Use user-specific salt for better security
         salt = f'messaging_salt_{user.id}'.encode('utf-8')
@@ -90,39 +105,48 @@ class EncryptionService:
         return base64.b64encode(combined).decode()
 
     @staticmethod
-    def _decrypt_private_key(encrypted_private, user):
-        """
-        Decrypt user's private key
-        Returns: private_pem string
-        """
-        password_bytes = user.password.encode('utf-8')
-        salt = f'messaging_salt_{user.id}'.encode('utf-8')
+    def _decrypt_private_key(encrypted_key: str, user) -> str:
+        """Updated decryption using stable key"""
+        try:
+            # Decode from base64
+            combined = base64.b64decode(encrypted_key)
 
-        kdf = PBKDF2HMAC(
-            algorithm=hashes.SHA256(),
-            length=32,
-            salt=salt,
-            iterations=100000,
-            backend=default_backend()
-        )
-        derived_key = kdf.derive(password_bytes)
+            # Extract IV (first 16 bytes) and encrypted data
+            iv = combined[:16]
+            encrypted_data = combined[16:]
 
-        combined = base64.b64decode(encrypted_private)
-        iv = combined[:16]
-        encrypted = combined[16:]
+            # Use stable password instead of user.password
+            password_bytes = EncryptionService._get_user_encryption_password(user).encode('utf-8')
+            salt = f'messaging_salt_{user.id}'.encode('utf-8')
 
-        cipher = Cipher(
-            algorithms.AES(derived_key),
-            modes.CBC(iv),
-            backend=default_backend()
-        )
-        decryptor = cipher.decryptor()
+            kdf = PBKDF2HMAC(
+                algorithm=hashes.SHA256(),
+                length=32,
+                salt=salt,
+                iterations=100000,
+                backend=default_backend()
+            )
+            derived_key = kdf.derive(password_bytes)
 
-        decrypted_padded = decryptor.update(encrypted) + decryptor.finalize()
-        padding_length = decrypted_padded[-1]
-        decrypted = decrypted_padded[:-padding_length]
+            # Decrypt using AES CBC
+            cipher = Cipher(
+                algorithms.AES(derived_key),
+                modes.CBC(iv),
+                backend=default_backend()
+            )
+            decryptor = cipher.decryptor()
 
-        return decrypted.decode('utf-8')
+            # Decrypt and remove padding
+            decrypted_padded = decryptor.update(encrypted_data) + decryptor.finalize()
+            padding_length = decrypted_padded[-1]
+            decrypted = decrypted_padded[:-padding_length]
+
+            # Decode to string
+            return decrypted.decode('utf-8')
+
+        except Exception as e:
+            logger.error(f"Error decrypting private key for user {user.id}: {e}")
+            raise
 
     @staticmethod
     def get_user_private_key(user, schema_name=None):

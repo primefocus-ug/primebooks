@@ -69,7 +69,7 @@ class MessageAuditMiddleware:
                 tenant_name = ''
 
                 if hasattr(request, 'tenant'):
-                    tenant_id = request.tenant.id
+                    tenant_id = request.tenant.pk
                     tenant_name = request.tenant.schema_name
 
                 MessageAuditLog.objects.create(

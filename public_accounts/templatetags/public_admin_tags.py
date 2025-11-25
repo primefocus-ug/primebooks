@@ -44,3 +44,10 @@ def query_transform(request, **kwargs):
     for k, v in kwargs.items():
         updated[k] = v
     return updated.urlencode()
+
+@register.filter
+def get_item(dictionary, key):
+    try:
+        return dictionary.get(key)
+    except Exception:
+        return None

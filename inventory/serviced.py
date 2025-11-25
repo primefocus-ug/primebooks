@@ -27,8 +27,7 @@ logger = logging.getLogger(__name__)
 
 class ServiceListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
     """
-    List view for services with DataTables integration.
-    Supports AJAX requests for server-side processing.
+    List view for services with pagination and filtering.
     """
     model = Service
     template_name = 'inventory/service_list.html'
@@ -85,31 +84,39 @@ class ServiceListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
         context['total_services'] = Service.objects.count()
         context['active_services'] = Service.objects.filter(is_active=True).count()
         context['efris_uploaded'] = Service.objects.filter(efris_is_uploaded=True).count()
+        context['categories'] = Category.objects.all()
+
+        # Get filter parameters for the template
+        context['current_search'] = self.request.GET.get('search', '')
+        context['current_category'] = self.request.GET.get('category', '')
+        context['current_tax_rate'] = self.request.GET.get('tax_rate', '')
+        context['current_efris_status'] = self.request.GET.get('efris_status', '')
+        context['current_is_active'] = self.request.GET.get('is_active', '')
+
         return context
 
 
 # ===========================================
-# SERVICE DATATABLE API
+# SERVICE LIST API (for AJAX loading)
 # ===========================================
 
 @login_required
 @require_http_methods(["GET"])
-def service_datatable_api(request):
+def service_list_api(request):
     """
-    API endpoint for DataTables server-side processing.
-    Returns JSON data for the service list table.
+    API endpoint for fetching services with pagination and filters.
+    Returns JSON data for client-side rendering.
     """
     try:
-        # DataTables parameters
-        draw = int(request.GET.get('draw', 1))
-        start = int(request.GET.get('start', 0))
-        length = int(request.GET.get('length', 25))
-        search_value = request.GET.get('search[value]', '')
+        # Get pagination parameters
+        page = int(request.GET.get('page', 1))
+        per_page = int(request.GET.get('per_page', 25))
 
         # Base queryset
         queryset = Service.objects.select_related('category', 'created_by')
 
         # Apply search
+        search_value = request.GET.get('search', '')
         if search_value:
             queryset = queryset.filter(
                 Q(name__icontains=search_value) |
@@ -118,81 +125,105 @@ def service_datatable_api(request):
                 Q(category__name__icontains=search_value)
             )
 
+        # Apply filters
+        category_id = request.GET.get('category')
+        if category_id:
+            queryset = queryset.filter(category_id=category_id)
+
+        tax_rate = request.GET.get('tax_rate')
+        if tax_rate:
+            queryset = queryset.filter(tax_rate=tax_rate)
+
+        efris_status = request.GET.get('efris_status')
+        if efris_status == 'uploaded':
+            queryset = queryset.filter(efris_is_uploaded=True)
+        elif efris_status == 'pending':
+            queryset = queryset.filter(
+                efris_is_uploaded=False,
+                efris_auto_sync_enabled=True
+            )
+        elif efris_status == 'disabled':
+            queryset = queryset.filter(efris_auto_sync_enabled=False)
+
+        is_active = request.GET.get('is_active')
+        if is_active == 'true':
+            queryset = queryset.filter(is_active=True)
+        elif is_active == 'false':
+            queryset = queryset.filter(is_active=False)
+
+        # Get ordering
+        order_by = request.GET.get('order_by', '-created_at')
+        valid_order_fields = ['name', '-name', 'code', '-code', 'unit_price',
+                              '-unit_price', 'created_at', '-created_at']
+        if order_by in valid_order_fields:
+            queryset = queryset.order_by(order_by)
+
         # Total records
-        total_records = Service.objects.count()
-        filtered_records = queryset.count()
+        total_records = queryset.count()
 
-        # Ordering
-        order_column_index = int(request.GET.get('order[0][column]', 0))
-        order_direction = request.GET.get('order[0][dir]', 'asc')
-
-        order_columns = ['name', 'code', 'category__name', 'unit_price', 'created_at']
-        if order_column_index < len(order_columns):
-            order_column = order_columns[order_column_index]
-            if order_direction == 'desc':
-                order_column = f'-{order_column}'
-            queryset = queryset.order_by(order_column)
-
-        # Pagination
-        queryset = queryset[start:start + length]
+        # Paginate
+        paginator = Paginator(queryset, per_page)
+        page_obj = paginator.get_page(page)
 
         # Build data
         data = []
-        for service in queryset:
-            # EFRIS status badge
+        for service in page_obj:
+            # EFRIS status
             if not service.efris_auto_sync_enabled:
-                efris_badge = '<span class="badge bg-secondary">Disabled</span>'
+                efris_status = 'disabled'
+                efris_status_text = 'Disabled'
             elif service.efris_is_uploaded:
-                efris_badge = '<span class="badge bg-success">✓ Uploaded</span>'
+                efris_status = 'uploaded'
+                efris_status_text = 'Uploaded'
             else:
-                efris_badge = '<span class="badge bg-warning">Pending</span>'
-
-            # Active status
-            status_badge = (
-                '<span class="badge bg-success">Active</span>' if service.is_active
-                else '<span class="badge bg-danger">Inactive</span>'
-            )
-
-            # Actions
-            actions = f'''
-                <div class="btn-group btn-group-sm" role="group">
-                    <button type="button" class="btn btn-info btn-sm edit-service" 
-                            data-id="{service.id}" title="Edit">
-                        <i class="bi bi-pencil"></i>
-                    </button>
-                    <a href="{reverse('inventory:service_detail', args=[service.id])}" 
-                       class="btn btn-primary btn-sm" title="View">
-                        <i class="bi bi-eye"></i>
-                    </a>
-                    <button type="button" class="btn btn-danger btn-sm delete-service" 
-                            data-id="{service.id}" title="Delete">
-                        <i class="bi bi-trash"></i>
-                    </button>
-                </div>
-            '''
+                efris_status = 'pending'
+                efris_status_text = 'Pending'
 
             data.append({
                 'id': service.id,
                 'name': service.name,
                 'code': service.code,
-                'category': service.category.name if service.category else '-',
-                'unit_price': f'UGX {service.unit_price:,.2f}',
-                'final_price': f'UGX {service.final_price:,.2f}',
-                'efris_status': efris_badge,
-                'status': status_badge,
-                'actions': actions,
+                'description': service.description or '',
+                'category': {
+                    'id': service.category.id if service.category else None,
+                    'name': service.category.name if service.category else '-'
+                },
+                'unit_price': float(service.unit_price),
+                'unit_price_formatted': f'{service.unit_price:,.2f}',
+                'discount_percentage': float(service.discount_percentage),
+                'final_price': float(service.final_price),
+                'final_price_formatted': f'{service.final_price:,.2f}',
+                'tax_rate': service.tax_rate,
+                'efris_status': efris_status,
+                'efris_status_text': efris_status_text,
+                'is_active': service.is_active,
+                'created_at': service.created_at.isoformat(),
+                'detail_url': reverse('inventory:service_detail', args=[service.id]),
+                'edit_url': reverse('inventory:service_update', args=[service.id]),
+                'delete_url': reverse('inventory:service_delete', args=[service.id]),
             })
 
         return JsonResponse({
-            'draw': draw,
-            'recordsTotal': total_records,
-            'recordsFiltered': filtered_records,
-            'data': data
+            'success': True,
+            'data': data,
+            'pagination': {
+                'page': page_obj.number,
+                'per_page': per_page,
+                'total_pages': paginator.num_pages,
+                'total_records': total_records,
+                'has_previous': page_obj.has_previous(),
+                'has_next': page_obj.has_next(),
+                'previous_page': page_obj.previous_page_number() if page_obj.has_previous() else None,
+                'next_page': page_obj.next_page_number() if page_obj.has_next() else None,
+            }
         })
 
     except Exception as e:
-        logger.error(f"Error in service_datatable_api: {str(e)}")
-        return JsonResponse({'error': str(e)}, status=500)
+        logger.error(f"Error in service_list_api: {str(e)}")
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        }, status=500)
 
 
 # ===========================================
@@ -229,6 +260,9 @@ class ServiceCreateView(LoginRequiredMixin, PermissionRequiredMixin, CreateView)
                         'id': self.object.id,
                         'name': self.object.name,
                         'code': self.object.code,
+                        'unit_price': float(self.object.unit_price),
+                        'final_price': float(self.object.final_price),
+                        'detail_url': reverse('inventory:service_detail', args=[self.object.id]),
                     }
                 })
 
@@ -294,6 +328,9 @@ class ServiceUpdateView(LoginRequiredMixin, PermissionRequiredMixin, UpdateView)
                         'id': self.object.id,
                         'name': self.object.name,
                         'code': self.object.code,
+                        'unit_price': float(self.object.unit_price),
+                        'final_price': float(self.object.final_price),
+                        'detail_url': reverse('inventory:service_detail', args=[self.object.id]),
                     }
                 })
 
@@ -426,13 +463,22 @@ def service_detail_api(request, pk):
             'created_at': service.created_at.isoformat(),
         }
 
-        return JsonResponse(data)
+        return JsonResponse({
+            'success': True,
+            'data': data
+        })
 
     except Service.DoesNotExist:
-        return JsonResponse({'error': 'Service not found'}, status=404)
+        return JsonResponse({
+            'success': False,
+            'error': 'Service not found'
+        }, status=404)
     except Exception as e:
         logger.error(f"Error in service_detail_api: {str(e)}")
-        return JsonResponse({'error': str(e)}, status=500)
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        }, status=500)
 
 
 @login_required
@@ -445,7 +491,7 @@ def service_search_api(request):
     services = Service.objects.filter(
         Q(name__icontains=query) | Q(code__icontains=query),
         is_active=True
-    )[:limit]
+    ).select_related('category')[:limit]
 
     results = [
         {
@@ -454,11 +500,15 @@ def service_search_api(request):
             'code': service.code,
             'unit_price': str(service.unit_price),
             'final_price': str(service.final_price),
+            'category': service.category.name if service.category else None,
         }
         for service in services
     ]
 
-    return JsonResponse({'results': results})
+    return JsonResponse({
+        'success': True,
+        'results': results
+    })
 
 
 # ===========================================
@@ -471,19 +521,29 @@ def service_search_api(request):
 def service_bulk_actions(request):
     """Handle bulk actions on services"""
     try:
-        form = ServiceBulkActionForm(request.POST)
+        action = request.POST.get('action')
+        service_ids = request.POST.getlist('service_ids[]')
 
-        if not form.is_valid():
+        if not action:
             return JsonResponse({
                 'success': False,
-                'errors': form.errors
+                'error': 'No action specified'
             }, status=400)
 
-        action = form.cleaned_data['action']
-        service_ids = form.cleaned_data['service_ids']
+        if not service_ids:
+            return JsonResponse({
+                'success': False,
+                'error': 'No services selected'
+            }, status=400)
 
         services = Service.objects.filter(id__in=service_ids)
         count = services.count()
+
+        if count == 0:
+            return JsonResponse({
+                'success': False,
+                'error': 'No services found'
+            }, status=404)
 
         if action == 'activate':
             services.update(is_active=True)
@@ -715,5 +775,39 @@ def check_efris_task_status(request, task_id):
     except Exception as e:
         return JsonResponse({
             'status': 'error',
+            'error': str(e)
+        }, status=500)
+
+
+# ===========================================
+# STATISTICS API
+# ===========================================
+
+@login_required
+@require_http_methods(["GET"])
+def service_statistics_api(request):
+    """Get service statistics"""
+    try:
+        stats = {
+            'total': Service.objects.count(),
+            'active': Service.objects.filter(is_active=True).count(),
+            'inactive': Service.objects.filter(is_active=False).count(),
+            'efris_uploaded': Service.objects.filter(efris_is_uploaded=True).count(),
+            'efris_pending': Service.objects.filter(
+                efris_is_uploaded=False,
+                efris_auto_sync_enabled=True
+            ).count(),
+            'efris_disabled': Service.objects.filter(efris_auto_sync_enabled=False).count(),
+        }
+
+        return JsonResponse({
+            'success': True,
+            'stats': stats
+        })
+
+    except Exception as e:
+        logger.error(f"Error fetching service statistics: {str(e)}")
+        return JsonResponse({
+            'success': False,
             'error': str(e)
         }, status=500)

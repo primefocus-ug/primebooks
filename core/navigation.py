@@ -319,7 +319,7 @@ NAVIGATION_ITEMS = [
                     ),
             NavigationItem(
                 name="Bulk Import",
-                url_name="inventory:stock_import",
+                url_name="inventory:product_import",
                 icon="bi bi-upload",
             ),
             NavigationItem(
@@ -656,6 +656,10 @@ NAVIGATION_ITEMS = [
                 icon="bi bi-shield-lock"
             ),
         ]
+    ),
+    NavigationItem(
+        name="Logout",
+        url_name="custom_logout",
     ),
 ]
 

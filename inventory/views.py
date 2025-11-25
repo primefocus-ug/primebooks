@@ -6298,3 +6298,82 @@ class StockMovementListView(LoginRequiredMixin, PermissionRequiredMixin, ListVie
         }
 
         return context
+
+
+@login_required
+@permission_required('inventory.add_product', raise_exception=True)
+def product_import(request):
+    """Product-only import view (no stock quantities)"""
+
+    if request.method == 'GET':
+        # Get recent import sessions
+        recent_imports = ImportSession.objects.filter(
+            user=request.user,
+            import_mode='product_only'
+        ).order_by('-created_at')[:10]
+
+        context = {
+            'recent_imports': recent_imports,
+        }
+
+        return render(request, 'inventory/product_import.html', context)
+
+    elif request.method == 'POST':
+        try:
+            # Get form data
+            uploaded_file = request.FILES.get('import_file')
+            conflict_resolution = request.POST.get('conflict_resolution', 'overwrite')
+
+            if not uploaded_file:
+                messages.error(request, 'Please select a file to import.')
+                return redirect('inventory:product_import')
+
+            # Validate file type
+            file_extension = uploaded_file.name.split('.')[-1].lower()
+            if file_extension not in ['csv', 'xlsx', 'xls']:
+                messages.error(request, 'Only CSV and Excel files are supported.')
+                return redirect('inventory:product_import')
+
+            # Process file
+            from .importt import process_product_import_file
+
+            results = process_product_import_file(
+                file_obj=uploaded_file,
+                conflict_resolution=conflict_resolution,
+                user=request.user
+            )
+
+            # Show results
+            if results['created_count'] > 0:
+                messages.success(
+                    request,
+                    f'✅ Successfully created {results["created_count"]} new products.'
+                )
+
+            if results['updated_count'] > 0:
+                messages.success(
+                    request,
+                    f'✅ Successfully updated {results["updated_count"]} products.'
+                )
+
+            if results['skipped_count'] > 0:
+                messages.info(
+                    request,
+                    f'ℹ️ {results["skipped_count"]} products were skipped (already exist).'
+                )
+
+            if results['error_count'] > 0:
+                messages.warning(
+                    request,
+                    f'⚠️ {results["error_count"]} products had errors and were not imported.'
+                )
+                # Store errors in session for display
+                request.session['import_errors'] = results['errors'][:50]  # Limit to 50
+
+            # Redirect to results page
+            return redirect('inventory:product_import')
+
+        except Exception as e:
+            logger.error(f"Product import error: {str(e)}", exc_info=True)
+            messages.error(request, f'❌ Import failed: {str(e)}')
+            return redirect('inventory:product_import')

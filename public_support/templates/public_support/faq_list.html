@@ -1,48 +1,74 @@
 {% extends 'public_router/base.html' %}
+{% load public_admin_tags %}
 
 {% block title %}Frequently Asked Questions - PRIMEBOOKS{% endblock %}
 
 {% block extra_css %}
 <style>
-    .faq-header {
+    .faq-hero {
         text-align: center;
-        padding: 3rem 0 2rem;
+        padding: 4rem 2rem 3rem;
+        background: linear-gradient(135deg, var(--bg-secondary) 0%, var(--bg-primary) 100%);
         border-bottom: 1px solid var(--border-color);
         margin-bottom: 3rem;
     }
 
-    .faq-header h1 {
-        font-size: 2.5rem;
-        font-weight: 300;
+    .faq-hero h1 {
+        font-size: 3rem;
+        font-weight: 600;
         margin-bottom: 1rem;
+        background: var(--accent-gradient);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
     }
 
-    .faq-header p {
+    .faq-hero-subtitle {
         color: var(--text-secondary);
-        font-size: 1.1rem;
-        max-width: 600px;
-        margin: 0 auto 2rem;
+        font-size: 1.2rem;
+        max-width: 700px;
+        margin: 0 auto 2.5rem;
+        line-height: 1.6;
     }
 
-    .faq-search {
-        max-width: 600px;
+    /* Enhanced Search */
+    .faq-search-container {
+        max-width: 700px;
         margin: 0 auto;
         position: relative;
     }
 
+    .faq-search-wrapper {
+        position: relative;
+        box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
+        border-radius: 12px;
+    }
+
     .faq-search input {
         width: 100%;
-        padding: 1rem 3rem 1rem 1.5rem;
-        background: var(--bg-secondary);
-        border: 1px solid var(--border-color-light);
-        border-radius: 50px;
+        padding: 1.2rem 3.5rem 1.2rem 3.5rem;
+        background: var(--bg-primary);
+        border: 2px solid var(--border-color-light);
+        border-radius: 12px;
         color: var(--text-primary);
-        font-size: 1rem;
+        font-size: 1.05rem;
+        transition: all 0.3s;
     }
 
     .faq-search input:focus {
         outline: none;
-        border-color: #d4845c;
+        border-color: #3b82f6;
+        box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.1);
+    }
+
+    .search-icon {
+        position: absolute;
+        left: 1.2rem;
+        top: 50%;
+        transform: translateY(-50%);
+        color: var(--text-tertiary);
+        font-size: 1.3rem;
+        pointer-events: none;
     }
 
     .faq-search button {
@@ -53,61 +79,248 @@
         background: var(--accent-gradient);
         color: white;
         border: none;
-        padding: 0.75rem 1.5rem;
-        border-radius: 50px;
+        padding: 0.8rem 1.8rem;
+        border-radius: 8px;
         cursor: pointer;
-        font-size: 0.9rem;
-        font-weight: 500;
-    }
-
-    .faq-categories {
-        display: flex;
-        gap: 1rem;
-        justify-content: center;
-        flex-wrap: wrap;
-        margin-bottom: 3rem;
-    }
-
-    .category-btn {
-        padding: 0.625rem 1.25rem;
-        background: var(--bg-secondary);
-        border: 1px solid var(--border-color-light);
-        border-radius: 50px;
-        color: var(--text-primary);
-        text-decoration: none;
-        font-size: 0.9rem;
+        font-size: 0.95rem;
+        font-weight: 600;
         transition: all 0.3s;
     }
 
-    .category-btn:hover,
-    .category-btn.active {
+    .faq-search button:hover {
+        opacity: 0.9;
+        transform: translateY(-50%) scale(1.02);
+    }
+
+    /* Quick Stats */
+    .faq-quick-stats {
+        display: flex;
+        gap: 2rem;
+        justify-content: center;
+        margin-top: 2rem;
+        flex-wrap: wrap;
+    }
+
+    .stat-item {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        color: var(--text-secondary);
+        font-size: 0.95rem;
+    }
+
+    .stat-icon {
+        font-size: 1.3rem;
+    }
+
+    /* Categories */
+    .faq-categories-section {
+        max-width: 1200px;
+        margin: 0 auto 3rem;
+        padding: 0 1rem;
+    }
+
+    .categories-header {
+        text-align: center;
+        margin-bottom: 2rem;
+    }
+
+    .categories-header h2 {
+        font-size: 1.8rem;
+        font-weight: 600;
+        color: var(--text-primary);
+        margin-bottom: 0.5rem;
+    }
+
+    .categories-header p {
+        color: var(--text-secondary);
+    }
+
+    .faq-categories-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+        gap: 1.5rem;
+        margin-bottom: 3rem;
+    }
+
+    .category-card {
+        background: var(--bg-secondary);
+        border: 1px solid var(--border-color);
+        border-radius: 12px;
+        padding: 1.8rem;
+        text-decoration: none;
+        transition: all 0.3s;
+        display: flex;
+        flex-direction: column;
+        gap: 1rem;
+        position: relative;
+        overflow: hidden;
+    }
+
+    .category-card::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 4px;
+        height: 100%;
+        background: var(--accent-gradient);
+        transform: scaleY(0);
+        transition: transform 0.3s;
+    }
+
+    .category-card:hover {
+        transform: translateY(-5px);
+        border-color: var(--border-color-lighter);
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15);
+    }
+
+    .category-card:hover::before {
+        transform: scaleY(1);
+    }
+
+    .category-card.active {
+        border-color: #3b82f6;
+        background: linear-gradient(135deg, var(--bg-secondary) 0%, var(--bg-tertiary) 100%);
+    }
+
+    .category-icon {
+        font-size: 2.5rem;
+        margin-bottom: 0.5rem;
+    }
+
+    .category-name {
+        font-size: 1.2rem;
+        font-weight: 600;
+        color: var(--text-primary);
+        margin-bottom: 0.3rem;
+    }
+
+    .category-description {
+        color: var(--text-secondary);
+        font-size: 0.9rem;
+        line-height: 1.5;
+        flex: 1;
+    }
+
+    .category-count {
+        display: inline-block;
+        padding: 0.3rem 0.8rem;
         background: var(--bg-tertiary);
-        border-color: #d4845c;
-        color: #d4845c;
+        border-radius: 20px;
+        font-size: 0.8rem;
+        color: var(--text-secondary);
     }
 
+    /* FAQ List Container */
     .faq-container {
-        max-width: 900px;
+        max-width: 1000px;
         margin: 0 auto;
+        padding: 0 1rem;
     }
 
+    /* Filter Pills */
+    .faq-filters {
+        display: flex;
+        gap: 0.75rem;
+        margin-bottom: 2rem;
+        flex-wrap: wrap;
+        align-items: center;
+    }
+
+    .filter-label {
+        color: var(--text-secondary);
+        font-size: 0.95rem;
+        font-weight: 500;
+    }
+
+    .filter-pill {
+        padding: 0.6rem 1.2rem;
+        background: var(--bg-secondary);
+        border: 1px solid var(--border-color);
+        border-radius: 25px;
+        color: var(--text-secondary);
+        text-decoration: none;
+        font-size: 0.9rem;
+        transition: all 0.3s;
+        white-space: nowrap;
+    }
+
+    .filter-pill:hover {
+        background: var(--bg-tertiary);
+        border-color: var(--border-color-lighter);
+        color: var(--text-primary);
+    }
+
+    .filter-pill.active {
+        background: var(--accent-gradient);
+        border-color: transparent;
+        color: white;
+    }
+
+    /* Results Header */
+    .results-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 2rem;
+        padding-bottom: 1rem;
+        border-bottom: 2px solid var(--border-color);
+    }
+
+    .results-count {
+        font-size: 1.1rem;
+        color: var(--text-secondary);
+    }
+
+    .results-count strong {
+        color: var(--text-primary);
+        font-weight: 600;
+    }
+
+    .sort-dropdown {
+        padding: 0.6rem 1rem;
+        background: var(--bg-secondary);
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        color: var(--text-primary);
+        font-size: 0.9rem;
+        cursor: pointer;
+    }
+
+    /* FAQ Category Section */
     .faq-category-section {
         margin-bottom: 3rem;
     }
 
-    .category-title {
-        font-size: 1.5rem;
-        font-weight: 400;
+    .category-title-bar {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
         margin-bottom: 1.5rem;
-        color: var(--text-primary);
-        padding-bottom: 0.75rem;
-        border-bottom: 1px solid var(--border-color);
+        padding: 1rem 1.5rem;
+        background: var(--bg-secondary);
+        border-radius: 12px;
+        border-left: 4px solid;
+        border-image: var(--accent-gradient) 1;
     }
 
+    .category-title-icon {
+        font-size: 1.8rem;
+    }
+
+    .category-title {
+        font-size: 1.5rem;
+        font-weight: 600;
+        color: var(--text-primary);
+        margin: 0;
+    }
+
+    /* Enhanced FAQ Items */
     .faq-item {
         background: var(--bg-secondary);
-        border: 1px solid var(--border-color-light);
-        border-radius: 8px;
+        border: 1px solid var(--border-color);
+        border-radius: 12px;
         margin-bottom: 1rem;
         overflow: hidden;
         transition: all 0.3s;
@@ -115,210 +328,637 @@
 
     .faq-item:hover {
         border-color: var(--border-color-lighter);
-        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    }
+
+    .faq-item.active {
+        border-color: #3b82f6;
+        box-shadow: 0 4px 20px rgba(59, 130, 246, 0.15);
     }
 
     .faq-question {
-        padding: 1.25rem 1.5rem;
+        padding: 1.5rem 1.8rem;
         cursor: pointer;
         display: flex;
         justify-content: space-between;
         align-items: center;
-        gap: 1rem;
+        gap: 1.5rem;
+        transition: background-color 0.3s;
     }
 
-    .faq-question h3 {
-        font-size: 1.05rem;
-        font-weight: 400;
-        color: var(--text-primary);
-        margin: 0;
+    .faq-question:hover {
+        background-color: var(--bg-tertiary);
+    }
+
+    .faq-question-content {
         flex: 1;
     }
 
+    .faq-question h3 {
+        font-size: 1.1rem;
+        font-weight: 500;
+        color: var(--text-primary);
+        margin: 0 0 0.5rem 0;
+        line-height: 1.5;
+    }
+
+    .faq-question-meta {
+        display: flex;
+        gap: 1.5rem;
+        align-items: center;
+        flex-wrap: wrap;
+    }
+
+    .faq-meta-badge {
+        display: flex;
+        align-items: center;
+        gap: 0.4rem;
+        font-size: 0.85rem;
+        color: var(--text-tertiary);
+    }
+
     .faq-toggle {
-        font-size: 1.2rem;
+        width: 36px;
+        height: 36px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 50%;
+        background: var(--bg-tertiary);
         color: var(--text-secondary);
-        transition: transform 0.3s;
+        font-size: 1.3rem;
+        transition: all 0.3s;
+        flex-shrink: 0;
+    }
+
+    .faq-item:hover .faq-toggle {
+        background: var(--bg-primary);
     }
 
     .faq-item.active .faq-toggle {
         transform: rotate(180deg);
+        background: var(--accent-gradient);
+        color: white;
     }
 
     .faq-answer {
         max-height: 0;
         overflow: hidden;
-        transition: max-height 0.3s ease;
+        transition: max-height 0.4s ease;
     }
 
     .faq-item.active .faq-answer {
-        max-height: 500px;
+        max-height: 1000px;
     }
 
     .faq-answer-content {
-        padding: 0 1.5rem 1.5rem;
+        padding: 0 1.8rem 1.8rem;
         color: var(--text-secondary);
-        line-height: 1.6;
+        line-height: 1.8;
+        font-size: 1rem;
     }
 
-    .faq-stats {
-        display: flex;
-        gap: 1rem;
-        margin-top: 1rem;
-        padding-top: 1rem;
+    .faq-answer-content p {
+        margin-bottom: 1rem;
+    }
+
+    .faq-answer-content ul,
+    .faq-answer-content ol {
+        margin: 1rem 0;
+        padding-left: 1.5rem;
+    }
+
+    .faq-answer-content li {
+        margin-bottom: 0.5rem;
+    }
+
+    .faq-answer-content strong {
+        color: var(--text-primary);
+    }
+
+    /* Answer Actions */
+    .faq-answer-actions {
+        margin-top: 1.5rem;
+        padding-top: 1.5rem;
         border-top: 1px solid var(--border-color);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 1rem;
     }
 
-    .faq-stat {
+    .helpful-section {
         display: flex;
         align-items: center;
-        gap: 0.5rem;
-        color: var(--text-tertiary);
-        font-size: 0.85rem;
+        gap: 1rem;
     }
 
-    .helpful-actions {
+    .helpful-label {
+        color: var(--text-secondary);
+        font-size: 0.9rem;
+    }
+
+    .helpful-buttons {
         display: flex;
         gap: 0.5rem;
-        align-items: center;
-        margin-top: 1rem;
     }
 
     .helpful-btn {
-        padding: 0.375rem 0.875rem;
+        padding: 0.5rem 1rem;
         background: var(--bg-primary);
         border: 1px solid var(--border-color);
-        border-radius: 4px;
+        border-radius: 6px;
         color: var(--text-primary);
         font-size: 0.85rem;
         cursor: pointer;
         transition: all 0.3s;
+        display: flex;
+        align-items: center;
+        gap: 0.4rem;
     }
 
     .helpful-btn:hover {
-        border-color: #d4845c;
+        border-color: #3b82f6;
         background: var(--bg-tertiary);
+        transform: translateY(-1px);
     }
 
+    .helpful-btn.voted {
+        background: var(--accent-gradient);
+        color: white;
+        border-color: transparent;
+    }
+
+    .view-details-link {
+        color: #3b82f6;
+        text-decoration: none;
+        font-size: 0.9rem;
+        display: flex;
+        align-items: center;
+        gap: 0.3rem;
+        transition: all 0.3s;
+    }
+
+    .view-details-link:hover {
+        gap: 0.6rem;
+        color: #2563eb;
+    }
+
+    /* No Results */
     .no-results {
         text-align: center;
-        padding: 3rem;
-        color: var(--text-secondary);
+        padding: 4rem 2rem;
+        background: var(--bg-secondary);
+        border-radius: 16px;
+        border: 1px solid var(--border-color);
+    }
+
+    .no-results-icon {
+        font-size: 4rem;
+        margin-bottom: 1rem;
     }
 
     .no-results h3 {
-        font-size: 1.3rem;
-        margin-bottom: 1rem;
+        font-size: 1.5rem;
+        margin-bottom: 0.75rem;
         color: var(--text-primary);
     }
 
-    .still-need-help {
-        background: var(--bg-secondary);
-        border: 1px solid var(--border-color-light);
-        border-radius: 12px;
-        padding: 2rem;
-        text-align: center;
-        margin-top: 3rem;
-    }
-
-    .still-need-help h2 {
-        font-size: 1.5rem;
-        font-weight: 400;
-        margin-bottom: 1rem;
-    }
-
-    .still-need-help p {
+    .no-results p {
         color: var(--text-secondary);
         margin-bottom: 1.5rem;
     }
 
+    .no-results-actions {
+        display: flex;
+        gap: 1rem;
+        justify-content: center;
+        flex-wrap: wrap;
+    }
+
+    /* Popular Questions */
+    .popular-questions {
+        background: var(--bg-secondary);
+        border: 1px solid var(--border-color);
+        border-radius: 16px;
+        padding: 2rem;
+        margin-bottom: 3rem;
+    }
+
+    .popular-questions h3 {
+        font-size: 1.5rem;
+        font-weight: 600;
+        color: var(--text-primary);
+        margin-bottom: 1.5rem;
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+    }
+
+    .popular-question-item {
+        display: flex;
+        align-items: flex-start;
+        gap: 1rem;
+        padding: 1rem;
+        background: var(--bg-primary);
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        margin-bottom: 0.75rem;
+        text-decoration: none;
+        transition: all 0.3s;
+    }
+
+    .popular-question-item:hover {
+        border-color: var(--border-color-lighter);
+        transform: translateX(5px);
+    }
+
+    .popular-number {
+        width: 32px;
+        height: 32px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: var(--accent-gradient);
+        color: white;
+        border-radius: 50%;
+        font-weight: 600;
+        font-size: 0.9rem;
+        flex-shrink: 0;
+    }
+
+    .popular-question-content {
+        flex: 1;
+    }
+
+    .popular-question-content h4 {
+        font-size: 1rem;
+        font-weight: 500;
+        color: var(--text-primary);
+        margin-bottom: 0.3rem;
+    }
+
+    .popular-question-stats {
+        display: flex;
+        gap: 1rem;
+        font-size: 0.8rem;
+        color: var(--text-tertiary);
+    }
+
+    /* Still Need Help */
+    .still-need-help {
+        background: linear-gradient(135deg, var(--bg-secondary) 0%, var(--bg-tertiary) 100%);
+        border: 1px solid var(--border-color);
+        border-radius: 16px;
+        padding: 3rem 2rem;
+        text-align: center;
+        margin-top: 4rem;
+    }
+
+    .still-need-help h2 {
+        font-size: 2rem;
+        font-weight: 600;
+        margin-bottom: 1rem;
+        color: var(--text-primary);
+    }
+
+    .still-need-help p {
+        color: var(--text-secondary);
+        margin-bottom: 2rem;
+        font-size: 1.05rem;
+    }
+
+    .help-options {
+        display: flex;
+        gap: 1.5rem;
+        justify-content: center;
+        flex-wrap: wrap;
+        margin-bottom: 2rem;
+    }
+
+    .help-option-card {
+        background: var(--bg-primary);
+        border: 1px solid var(--border-color);
+        border-radius: 12px;
+        padding: 1.5rem;
+        flex: 1;
+        min-width: 250px;
+        max-width: 300px;
+        text-align: center;
+        transition: all 0.3s;
+    }
+
+    .help-option-card:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15);
+        border-color: var(--border-color-lighter);
+    }
+
+    .help-option-icon {
+        font-size: 2.5rem;
+        margin-bottom: 1rem;
+    }
+
+    .help-option-card h3 {
+        font-size: 1.1rem;
+        font-weight: 600;
+        color: var(--text-primary);
+        margin-bottom: 0.5rem;
+    }
+
+    .help-option-card p {
+        font-size: 0.9rem;
+        color: var(--text-secondary);
+        margin-bottom: 1rem;
+    }
+
+    /* Responsive Design */
     @media (max-width: 768px) {
-        .faq-header {
-            padding: 2rem 0 1.5rem;
+        .faq-hero {
+            padding: 3rem 1.5rem 2rem;
         }
 
-        .faq-header h1 {
-            font-size: 1.8rem;
+        .faq-hero h1 {
+            font-size: 2.2rem;
         }
 
-        .faq-categories {
-            gap: 0.5rem;
+        .faq-hero-subtitle {
+            font-size: 1rem;
         }
 
-        .category-btn {
-            padding: 0.5rem 1rem;
-            font-size: 0.85rem;
+        .faq-search input {
+            padding: 1rem 3rem 1rem 3rem;
+            font-size: 0.95rem;
+        }
+
+        .faq-quick-stats {
+            gap: 1rem;
+        }
+
+        .faq-categories-grid {
+            grid-template-columns: 1fr;
+        }
+
+        .results-header {
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 1rem;
+        }
+
+        .faq-filters {
+            overflow-x: auto;
+            flex-wrap: nowrap;
+            padding-bottom: 0.5rem;
         }
 
         .faq-question {
-            padding: 1rem;
+            padding: 1.2rem;
         }
 
         .faq-answer-content {
-            padding: 0 1rem 1rem;
+            padding: 0 1.2rem 1.2rem;
+        }
+
+        .faq-answer-actions {
+            flex-direction: column;
+            align-items: flex-start;
+        }
+
+        .help-options {
+            flex-direction: column;
+        }
+
+        .help-option-card {
+            max-width: 100%;
+        }
+    }
+
+    @media (max-width: 480px) {
+        .faq-hero h1 {
+            font-size: 1.8rem;
+        }
+
+        .faq-search input {
+            padding-right: 1rem;
+        }
+
+        .faq-search button {
+            position: static;
+            transform: none;
+            width: 100%;
+            margin-top: 0.75rem;
+        }
+
+        .faq-search-wrapper {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .category-title-bar {
+            padding: 0.75rem 1rem;
+        }
+
+        .category-title {
+            font-size: 1.2rem;
         }
     }
 </style>
 {% endblock %}
 
 {% block content %}
-<div class="faq-header">
-    <h1>Frequently Asked Questions</h1>
-    <p>Find answers to common questions about PrimeBooks</p>
+<div class="faq-hero">
+    <h1>How can we help you?</h1>
+    <p class="faq-hero-subtitle">Search our knowledge base or browse by category to find answers to your questions</p>
 
-    <div class="faq-search">
-        <form method="get">
-            <input type="text" name="q" placeholder="Search FAQs..." value="{{ request.GET.q }}">
-            <button type="submit">Search</button>
+    <div class="faq-search-container">
+        <form method="get" class="faq-search">
+            <div class="faq-search-wrapper">
+                <span class="search-icon">🔍</span>
+                <input type="text" name="q" placeholder="Search for answers..." value="{{ request.GET.q }}" autofocus>
+                <button type="submit">Search</button>
+            </div>
         </form>
+    </div>
+
+    <div class="faq-quick-stats">
+        <div class="stat-item">
+            <span class="stat-icon">📚</span>
+            <span><strong>{{ total_faqs }}</strong> articles</span>
+        </div>
+        <div class="stat-item">
+            <span class="stat-icon">📂</span>
+            <span><strong>{{ categories|length }}</strong> categories</span>
+        </div>
+        <div class="stat-item">
+            <span class="stat-icon">⚡</span>
+            <span>Instant answers</span>
+        </div>
     </div>
 </div>
 
-<div class="faq-categories">
-    <a href="{% url 'public_support:faq_list' %}" class="category-btn {% if not selected_category %}active{% endif %}">
-        All
-    </a>
-    {% for code, name in categories %}
-    <a href="?category={{ code }}" class="category-btn {% if selected_category == code %}active{% endif %}">
-        {{ name }}
-    </a>
-    {% endfor %}
+{% if not request.GET.q %}
+<!-- Categories Grid -->
+<div class="faq-categories-section">
+    <div class="categories-header">
+        <h2>Browse by Category</h2>
+        <p>Select a category to find relevant answers</p>
+    </div>
+
+    <div class="faq-categories-grid">
+        <a href="{% url 'public_support:faq_list' %}" class="category-card {% if not selected_category %}active{% endif %}">
+            <div class="category-icon">📋</div>
+            <div>
+                <div class="category-name">All Questions</div>
+                <p class="category-description">Browse all available FAQs across all categories</p>
+            </div>
+            <span class="category-count">{{ total_faqs }} articles</span>
+        </a>
+
+        {% for code, name in categories %}
+        <a href="?category={{ code }}" class="category-card {% if selected_category == code %}active{% endif %}">
+            <div class="category-icon">
+                {% if code == 'general' %}🏠
+                {% elif code == 'billing' %}💳
+                {% elif code == 'technical' %}⚙️
+                {% elif code == 'features' %}✨
+                {% elif code == 'security' %}🔒
+                {% elif code == 'integration' %}🔗
+                {% else %}📁{% endif %}
+            </div>
+            <div>
+                <div class="category-name">{{ name }}</div>
+                <p class="category-description">
+                    {% if code == 'general' %}Get started with PrimeBooks basics
+                    {% elif code == 'billing' %}Payment and subscription information
+                    {% elif code == 'technical' %}Troubleshooting and technical support
+                    {% elif code == 'features' %}Learn about PrimeBooks features
+                    {% elif code == 'security' %}Data protection and security
+                    {% elif code == 'integration' %}Connect with other tools
+                    {% else %}Find answers in this category{% endif %}
+                </p>
+            </div>
+            <span class="category-count">{{ category_counts|get_item:code|default:0 }} articles</span>
+        </a>
+        {% endfor %}
+    </div>
 </div>
 
+<!-- Popular Questions -->
 <div class="faq-container">
+    <div class="popular-questions">
+        <h3>🔥 Most Popular Questions</h3>
+        {% for faq in popular_faqs|slice:":5" %}
+        <a href="{% url 'public_support:faq_detail' faq.slug %}" class="popular-question-item">
+            <div class="popular-number">{{ forloop.counter }}</div>
+            <div class="popular-question-content">
+                <h4>{{ faq.question }}</h4>
+                <div class="popular-question-stats">
+                    <span>👁️ {{ faq.view_count }} views</span>
+                    <span>👍 {{ faq.helpful_count }} helpful</span>
+                </div>
+            </div>
+            <span style="color: var(--text-tertiary); font-size: 1.2rem;">→</span>
+        </a>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+
+<!-- FAQ List -->
+<div class="faq-container">
+    {% if request.GET.q or selected_category %}
+    <div class="results-header">
+        <div class="results-count">
+            {% if request.GET.q %}
+                Showing <strong>{{ faqs|length }}</strong> result{{ faqs|length|pluralize }} for "<strong>{{ request.GET.q }}</strong>"
+            {% elif selected_category %}
+                <strong>{{ faqs|length }}</strong> article{{ faqs|length|pluralize }} in <strong>{{ selected_category_name }}</strong>
+            {% endif %}
+        </div>
+        <select class="sort-dropdown" onchange="sortFAQs(this.value)">
+            <option value="relevance">Sort by: Relevance</option>
+            <option value="views">Most Viewed</option>
+            <option value="helpful">Most Helpful</option>
+            <option value="recent">Recently Updated</option>
+        </select>
+    </div>
+
+    {% if selected_category %}
+    <div class="faq-filters">
+        <span class="filter-label">Quick filters:</span>
+        <a href="{% url 'public_support:faq_list' %}" class="filter-pill">
+            All Categories
+        </a>
+        {% for code, name in categories %}
+        <a href="?category={{ code }}" class="filter-pill {% if selected_category == code %}active{% endif %}">
+            {{ name }}
+        </a>
+        {% endfor %}
+    </div>
+    {% endif %}
+    {% endif %}
+
     {% if faqs %}
         {% regroup faqs by category as faq_groups %}
         {% for group in faq_groups %}
         <div class="faq-category-section">
-            <h2 class="category-title">{{ group.grouper|upper }}</h2>
+            <div class="category-title-bar">
+                <span class="category-title-icon">
+                    {% if group.grouper == 'general' %}🏠
+                    {% elif group.grouper == 'billing' %}💳
+                    {% elif group.grouper == 'technical' %}⚙️
+                    {% elif group.grouper == 'features' %}✨
+                    {% elif group.grouper == 'security' %}🔒
+                    {% elif group.grouper == 'integration' %}🔗
+                    {% else %}📁{% endif %}
+                </span>
+                <h2 class="category-title">{{ group.grouper|upper }}</h2>
+            </div>
 
             {% for faq in group.list %}
             <div class="faq-item" data-faq-id="{{ faq.id }}">
                 <div class="faq-question" onclick="toggleFAQ(this)">
-                    <h3>{{ faq.question }}</h3>
-                    <span class="faq-toggle">⌄</span>
+                    <div class="faq-question-content">
+                        <h3>{{ faq.question }}</h3>
+                        <div class="faq-question-meta">
+                            <span class="faq-meta-badge">
+                                <span>👁️</span>
+                                <span>{{ faq.view_count }}</span>
+                            </span>
+                            <span class="faq-meta-badge">
+                                <span>👍</span>
+                                <span>{{ faq.helpful_count }}</span>
+                            </span>
+                            <span class="faq-meta-badge">
+                                <span>📅</span>
+                                <span>{{ faq.updated_at|timesince }} ago</span>
+                            </span>
+                        </div>
+                    </div>
+                    <div class="faq-toggle">⌄</div>
                 </div>
                 <div class="faq-answer">
                     <div class="faq-answer-content">
-                        {{ faq.answer|safe }}
+                        {{ faq.answer|safe|truncatewords_html:50 }}
 
-                        <div class="faq-stats">
-                            <span class="faq-stat">
-                                👁️ {{ faq.view_count }} views
-                            </span>
-                            <span class="faq-stat">
-                                👍 {{ faq.helpful_count }} found helpful
-                            </span>
-                        </div>
-
-                        <div class="helpful-actions">
-                            <span style="font-size: 0.9rem; color: var(--text-secondary);">Was this helpful?</span>
-                            <button class="helpful-btn" onclick="markHelpful({{ faq.id }}, true)">
-                                Yes 👍
-                            </button>
-                            <button class="helpful-btn" onclick="markHelpful({{ faq.id }}, false)">
-                                No 👎
-                            </button>
+                        <div class="faq-answer-actions">
+                            <div class="helpful-section">
+                                <span class="helpful-label">Was this helpful?</span>
+                                <div class="helpful-buttons">
+                                    <button class="helpful-btn" onclick="event.stopPropagation(); markHelpful({{ faq.id }}, true, this)">
+                                        <span>👍</span>
+                                        <span>Yes</span>
+                                    </button>
+                                    <button class="helpful-btn" onclick="event.stopPropagation(); markHelpful({{ faq.id }}, false, this)">
+                                        <span>👎</span>
+                                        <span>No</span>
+                                        </button>
+                                </div>
+                            </div>
+                            <a href="{% url 'public_support:faq_detail' faq.slug %}" class="view-details-link" onclick="event.stopPropagation()">
+                                View full article <span>→</span>
+                            </a>
                         </div>
                     </div>
                 </div>
@@ -328,26 +968,44 @@
         {% endfor %}
     {% else %}
         <div class="no-results">
-            <h3>No FAQs found</h3>
-            <p>Try adjusting your search or browse all categories.</p>
+            <div class="no-results-icon">🔍</div>
+            <h3>No Results Found</h3>
+            <p>We couldn't find any articles matching your search. Try different keywords or browse our categories.</p>
+            <div class="no-results-actions">
+                <a href="{% url 'public_support:faq_list' %}" class="btn btn-primary">View All FAQs</a>
+                <a href="{% url 'public_support:create_ticket' %}" class="btn btn-secondary">Contact Support</a>
+            </div>
         </div>
     {% endif %}
 </div>
-
+<!-- Still Need Help -->
 <div class="still-need-help">
-    <h2>Still need help?</h2>
-    <p>Can't find what you're looking for? Our support team is here to help.</p>
-    <div style="display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap;">
-        <a href="{% url 'public_support:create_ticket' %}" class="btn btn-primary btn-large">
-            Create Support Ticket
-        </a>
-        <a href="{% url 'public_support:contact' %}" class="btn btn-outline btn-large">
-            Contact Sales
-        </a>
+    <h2>Can't find what you're looking for?</h2>
+    <p>Our support team is ready to assist you with any questions or issues</p>
+    <div class="help-options">
+    <div class="help-option-card">
+        <div class="help-option-icon">🎫</div>
+        <h3>Create a Ticket</h3>
+        <p>Get personalized help from our support team</p>
+        <a href="{% url 'public_support:create_ticket' %}" class="btn btn-primary" style="width: 100%;">Create Ticket</a>
+    </div>
+
+    <div class="help-option-card">
+        <div class="help-option-icon">💬</div>
+        <h3>Contact Sales</h3>
+        <p>Have questions about pricing or features?</p>
+        <a href="{% url 'public_support:contact' %}" class="btn btn-secondary" style="width: 100%;">Contact Sales</a>
+    </div>
+
+    <div class="help-option-card">
+        <div class="help-option-icon">📚</div>
+        <h3>Documentation</h3>
+        <p>Browse detailed guides and tutorials</p>
+        <a href="{% url 'public_blog:home' %}" class="btn btn-secondary" style="width: 100%;">View Docs</a>
     </div>
 </div>
+    </div>
 {% endblock %}
-
 {% block extra_js %}
 <script>
     function toggleFAQ(element) {
@@ -362,16 +1020,93 @@
         // Toggle current FAQ
         if (!wasActive) {
             faqItem.classList.add('active');
+
+            // Smooth scroll to the FAQ
+            setTimeout(() => {
+                faqItem.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }, 100);
         }
     }
 
-    function markHelpful(faqId, isHelpful) {
-        // In production, this would make an AJAX call to update the server
-        alert(isHelpful ? 'Thank you for your feedback!' : 'We\'ll work on improving this answer.');
+    function markHelpful(faqId, isHelpful, button) {
+        const buttons = button.parentElement.querySelectorAll('.helpful-btn');
 
-        // You can implement AJAX call here
-        // fetch(`/faq/${faqId}/mark-helpful/`, {...})
+        // Check if already voted
+        if (Array.from(buttons).some(btn => btn.classList.contains('voted'))) {
+            return;
+        }
+
+        // Mark button as voted
+        button.classList.add('voted');
+
+        // Show feedback
+        if (isHelpful) {
+            showNotification('Thanks for your feedback! 👍', 'success');
+        } else {
+            showNotification('Thanks for your feedback. We\'ll improve this answer.', 'info');
+        }
+
+        // In production, make AJAX call to update the server
+        // fetch(`/api/faq/${faqId}/mark-helpful/`, {...})
     }
+
+    function showNotification(message, type) {
+        // Create notification element
+        const notification = document.createElement('div');
+        notification.textContent = message;
+        notification.style.cssText = `
+            position: fixed;
+            bottom: 2rem;
+            right: 2rem;
+            background: ${type === 'success' ? '#10b981' : '#3b82f6'};
+            color: white;
+            padding: 1rem 1.5rem;
+            border-radius: 8px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+            z-index: 10000;
+            animation: slideIn 0.3s ease;
+        `;
+
+        document.body.appendChild(notification);
+
+        // Remove after 3 seconds
+        setTimeout(() => {
+            notification.style.animation = 'slideOut 0.3s ease';
+            setTimeout(() => notification.remove(), 300);
+        }, 3000);
+    }
+
+    function sortFAQs(sortBy) {
+        const currentUrl = new URL(window.location.href);
+        currentUrl.searchParams.set('sort', sortBy);
+        window.location.href = currentUrl.toString();
+    }
+
+    // Add CSS animations
+    const style = document.createElement('style');
+    style.textContent = `
+        @keyframes slideIn {
+            from {
+                transform: translateX(100%);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+        @keyframes slideOut {
+            from {
+                transform: translateX(0);
+                opacity: 1;
+            }
+            to {
+                transform: translateX(100%);
+                opacity: 0;
+            }
+        }
+    `;
+    document.head.appendChild(style);
 
     // Auto-expand first FAQ if coming from search
     {% if request.GET.q %}

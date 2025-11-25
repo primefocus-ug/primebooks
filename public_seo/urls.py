@@ -6,7 +6,7 @@ from .views import RobotsTxtView
 app_name = 'public_seo'
 
 sitemaps = {
-    'public': PublicSitemap,
+    'public_seo': PublicSitemap,
 }
 
 urlpatterns = [

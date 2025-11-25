@@ -4,7 +4,7 @@ from . import importt
 from .serviced import (
     ServiceListView, ServiceCreateView, ServiceUpdateView,
     ServiceDeleteView, ServiceDetailView,
-    service_datatable_api, service_detail_api, service_search_api,
+    service_list_api, service_detail_api,service_statistics_api, service_search_api,
     service_bulk_actions, service_efris_sync
 )
 from .efris_api import (  # All from efris_api.py
@@ -31,7 +31,8 @@ urlpatterns = [
     path('services/<int:pk>/delete/', ServiceDeleteView.as_view(), name='service_delete'),
 
     # Service API Endpoints
-    path('api/services/datatable/', service_datatable_api, name='service_datatable_api'),
+    path('api/services/', service_list_api, name='service_list_api'),
+    path('api/services/statistics/', service_statistics_api, name='service_statistics_api'),
     path('api/services/<int:pk>/', service_detail_api, name='service_detail_api'),
     path('api/services/search/', service_search_api, name='service_search_api'),
     path('api/services/bulk-actions/', service_bulk_actions, name='service_bulk_actions'),
@@ -155,4 +156,13 @@ urlpatterns = [
     path('stock/import/validate/', importt.validate_import_data, name='validate_import_data'),
     path('products/add/modal/', views.ProductCreateModalView.as_view(), name='product_create_modal'),
     path('products/add/ajax/', views.ProductCreateAjaxView.as_view(), name='product_create_ajax'),
+    path('products/import/', views.product_import, name='product_import'),
+
+    # Sample downloads for product import
+    path('products/import/sample-csv/',
+         importt.download_sample_products_only_csv,
+         name='download_sample_products_csv'),
+    path('products/import/sample-excel/',
+         importt.download_sample_products_only_excel,
+         name='download_sample_products_excel'),
 ]

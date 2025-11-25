@@ -88,15 +88,6 @@ def create_saas_admin_if_needed(sender, **kwargs):
 
 
 def get_default_roles_config():
-    """
-    Complete role configuration with all default roles.
-    Priority determines hierarchy: higher = more privileges
-
-    Key changes:
-    1. Added custom permissions (can_manage_users, can_view_reports, etc.)
-    2. Structured permissions more logically by role responsibility
-    3. Added permission dependencies and hierarchy
-    """
     return {
         'SaaS Admin': {
             'description': 'System-wide administrator with access to all companies and features. Highest level access.',

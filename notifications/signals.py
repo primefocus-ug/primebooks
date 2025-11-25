@@ -1,7 +1,8 @@
 from django.db.models.signals import post_save, pre_save
 from django.dispatch import receiver
 from django.utils import timezone
-from django_tenants.utils import schema_context
+from django_tenants.utils import schema_context, get_public_schema_name
+from django.db import connection
 import logging
 
 from .services import (
@@ -15,14 +16,44 @@ from .services import (
 
 logger = logging.getLogger(__name__)
 
-
 # Track previous state for comparison
 _pre_save_state = {}
+
+
+def should_process_signal():
+    """
+    Determine if we should process signals in the current schema context.
+    Only process in tenant schemas, not in public schema.
+    """
+    current_schema = connection.schema_name
+    public_schema = get_public_schema_name()
+
+    return current_schema and current_schema != public_schema
+
+
+def with_tenant_safety(signal_handler):
+    """
+    Decorator to make signal handlers tenant-safe.
+    Only executes the handler when in a tenant schema context.
+    """
+
+    def wrapper(sender, instance, **kwargs):
+        if not should_process_signal():
+            logger.debug(f"Skipping {signal_handler.__name__} in schema: {connection.schema_name}")
+            return
+
+        try:
+            return signal_handler(sender, instance, **kwargs)
+        except Exception as e:
+            logger.error(f"Error in {signal_handler.__name__}: {e}", exc_info=True)
+
+    return wrapper
 
 
 # ============= PRE-SAVE HANDLERS (for state tracking) =============
 
 @receiver(pre_save, sender='sales.Sale')
+@with_tenant_safety
 def track_sale_state(sender, instance, **kwargs):
     """Track sale state before save for comparison"""
     if instance.pk:
@@ -36,9 +67,54 @@ def track_sale_state(sender, instance, **kwargs):
             pass
 
 
+@receiver(pre_save, sender='inventory.Stock')
+@with_tenant_safety
+def track_stock_state(sender, instance, **kwargs):
+    """Track stock state before save"""
+    if instance.pk:
+        try:
+            old_instance = sender.objects.get(pk=instance.pk)
+            _pre_save_state[f'stock_{instance.pk}'] = {
+                'quantity': old_instance.quantity,
+                'was_low_stock': old_instance.is_low_stock if hasattr(old_instance, 'is_low_stock') else False,
+            }
+        except sender.DoesNotExist:
+            pass
+
+
+@receiver(pre_save, sender='company.Company')
+def track_company_state(sender, instance, **kwargs):
+    """Track company state before save - special handling for public schema"""
+    # Company model is in public schema, so we don't use the tenant safety decorator
+    if instance.pk:
+        try:
+            old_instance = sender.objects.get(pk=instance.pk)
+            _pre_save_state[f'company_{instance.pk}'] = {
+                'status': old_instance.status,
+                'subscription_ends_at': old_instance.subscription_ends_at,
+            }
+        except sender.DoesNotExist:
+            pass
+
+
+@receiver(pre_save, sender='reports.GeneratedReport')
+@with_tenant_safety
+def track_report_state(sender, instance, **kwargs):
+    """Track report state before save"""
+    if instance.pk:
+        try:
+            old_instance = sender.objects.get(pk=instance.pk)
+            _pre_save_state[f'report_{instance.pk}'] = {
+                'status': old_instance.status,
+            }
+        except sender.DoesNotExist:
+            pass
+
+
 # ============= SALES NOTIFICATIONS =============
 
 @receiver(post_save, sender='sales.Sale')
+@with_tenant_safety
 def notify_sale_events(sender, instance, created, **kwargs):
     """Notify on sale events"""
     try:
@@ -68,6 +144,7 @@ def notify_sale_events(sender, instance, created, **kwargs):
 
 
 @receiver(post_save, sender='invoices.Invoice')
+@with_tenant_safety
 def notify_invoice_events(sender, instance, created, **kwargs):
     """Notify on invoice events"""
     try:
@@ -106,21 +183,8 @@ def notify_invoice_events(sender, instance, created, **kwargs):
 
 # ============= INVENTORY NOTIFICATIONS =============
 
-@receiver(pre_save, sender='inventory.Stock')
-def track_stock_state(sender, instance, **kwargs):
-    """Track stock state before save"""
-    if instance.pk:
-        try:
-            old_instance = sender.objects.get(pk=instance.pk)
-            _pre_save_state[f'stock_{instance.pk}'] = {
-                'quantity': old_instance.quantity,
-                'was_low_stock': old_instance.is_low_stock if hasattr(old_instance, 'is_low_stock') else False,
-            }
-        except sender.DoesNotExist:
-            pass
-
-
 @receiver(post_save, sender='inventory.Stock')
+@with_tenant_safety
 def notify_stock_levels(sender, instance, created, **kwargs):
     """Notify on stock level changes"""
     try:
@@ -150,6 +214,7 @@ def notify_stock_levels(sender, instance, created, **kwargs):
 
 
 @receiver(post_save, sender='inventory.Product')
+@with_tenant_safety
 def notify_product_events(sender, instance, created, **kwargs):
     """Notify on product events"""
     try:
@@ -165,23 +230,9 @@ def notify_product_events(sender, instance, created, **kwargs):
 
 # ============= COMPANY/SUBSCRIPTION NOTIFICATIONS =============
 
-@receiver(pre_save, sender='company.Company')
-def track_company_state(sender, instance, **kwargs):
-    """Track company state before save"""
-    if instance.pk:
-        try:
-            # Remove the .using('public') and use default connection
-            old_instance = sender.objects.get(pk=instance.pk)
-            _pre_save_state[f'company_{instance.pk}'] = {
-                'status': old_instance.status,
-                'subscription_ends_at': old_instance.subscription_ends_at,
-            }
-        except sender.DoesNotExist:
-            pass
-
 @receiver(post_save, sender='company.Company')
 def notify_company_events(sender, instance, created, **kwargs):
-    """Notify on company/subscription events"""
+    """Notify on company/subscription events - special handling for public schema"""
     try:
         if created:
             return
@@ -231,9 +282,11 @@ def notify_company_events(sender, instance, created, **kwargs):
     except Exception as e:
         logger.error(f"Error in notify_company_events: {e}", exc_info=True)
 
+
 # ============= SECURITY NOTIFICATIONS =============
 
 @receiver(post_save, sender='stores.UserDeviceSession')
+@with_tenant_safety
 def notify_device_sessions(sender, instance, created, **kwargs):
     """Notify on new device sessions"""
     try:
@@ -250,6 +303,7 @@ def notify_device_sessions(sender, instance, created, **kwargs):
 
 
 @receiver(post_save, sender='stores.SecurityAlert')
+@with_tenant_safety
 def notify_security_alerts(sender, instance, created, **kwargs):
     """Notify on security alerts"""
     try:
@@ -297,6 +351,7 @@ def notify_security_alerts(sender, instance, created, **kwargs):
 # ============= MESSAGING NOTIFICATIONS =============
 
 @receiver(post_save, sender='messaging.Message')
+@with_tenant_safety
 def notify_new_messages(sender, instance, created, **kwargs):
     """Notify on new messages"""
     try:
@@ -353,6 +408,7 @@ def notify_new_messages(sender, instance, created, **kwargs):
 # ============= PAYMENT NOTIFICATIONS =============
 
 @receiver(post_save, sender='sales.Payment')
+@with_tenant_safety
 def notify_payment_events(sender, instance, created, **kwargs):
     """Notify on payment events"""
     try:
@@ -372,7 +428,8 @@ def notify_payment_events(sender, instance, created, **kwargs):
                     recipient=instance.sale.created_by,
                     context={
                         'amount': f'{instance.amount:,.0f}',
-                        'payment_method': instance.get_payment_method_display() if hasattr(instance, 'get_payment_method_display') else instance.payment_method,
+                        'payment_method': instance.get_payment_method_display() if hasattr(instance,
+                                                                                           'get_payment_method_display') else instance.payment_method,
                         'invoice_number': instance.sale.invoice_number,
                     },
                     related_object=instance,
@@ -385,20 +442,8 @@ def notify_payment_events(sender, instance, created, **kwargs):
 
 # ============= REPORT NOTIFICATIONS =============
 
-@receiver(pre_save, sender='reports.GeneratedReport')
-def track_report_state(sender, instance, **kwargs):
-    """Track report state before save"""
-    if instance.pk:
-        try:
-            old_instance = sender.objects.get(pk=instance.pk)
-            _pre_save_state[f'report_{instance.pk}'] = {
-                'status': old_instance.status,
-            }
-        except sender.DoesNotExist:
-            pass
-
-
 @receiver(post_save, sender='reports.GeneratedReport')
+@with_tenant_safety
 def notify_report_generated(sender, instance, created, **kwargs):
     """Notify when report is generated"""
     try:
@@ -416,7 +461,8 @@ def notify_report_generated(sender, instance, created, **kwargs):
 
             if schema_name and instance.generated_by:
                 with schema_context(schema_name):
-                    file_size_kb = instance.file_size / 1024 if hasattr(instance, 'file_size') and instance.file_size else 0
+                    file_size_kb = instance.file_size / 1024 if hasattr(instance,
+                                                                        'file_size') and instance.file_size else 0
 
                     NotificationService.create_from_template(
                         event_type='report_generated',
@@ -441,6 +487,7 @@ def notify_report_generated(sender, instance, created, **kwargs):
 # ============= EFRIS NOTIFICATIONS =============
 
 @receiver(post_save, sender='efris.FiscalizationAudit')
+@with_tenant_safety
 def notify_efris_events(sender, instance, created, **kwargs):
     """Notify on EFRIS events"""
     try:

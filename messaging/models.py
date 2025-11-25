@@ -201,7 +201,8 @@ class MessageAuditLog(models.Model):
     )
 
     # Tenant info (for multi-tenant tracking)
-    tenant_id = models.IntegerField(
+    tenant_id = models.CharField(
+        max_length=255,
         null=True,
         blank=True,
         help_text="Tenant ID from django-tenants"

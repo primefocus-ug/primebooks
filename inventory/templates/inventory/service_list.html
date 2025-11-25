@@ -1,1507 +1,1344 @@
 {% extends 'base.html' %}
 {% load static %}
-{% load i18n %}
-{% load custom_filters %}
-{% load efris_tags %}
+{% load humanize %}
 
-{% block title %}{% trans "Services" %} | {{ block.super }}{% endblock %}
+{% block title %}Services | {{ company.name }}{% endblock %}
 
 {% block extra_css %}
-<link rel="stylesheet" href="{% static 'themes.css' %}">
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/select2@4.1.0/dist/css/select2.min.css">
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/select2-bootstrap-5-theme@1.3.0/dist/select2-bootstrap-5-theme.min.css">
-
 <style>
     .service-card {
-        transition: all 0.3s ease;
+        transition: transform 0.2s, box-shadow 0.2s;
     }
-
     .service-card:hover {
         transform: translateY(-2px);
-        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        box-shadow: 0 4px 12px rgba(0,0,0,0.1);
     }
-
-    .efris-badge {
-        font-size: 0.75rem;
-        padding: 0.25rem 0.5rem;
-    }
-
-    .action-buttons .btn {
-        margin: 0 2px;
-    }
-
-    .table tbody tr {
-        cursor: pointer;
-    }
-
-    .table tbody tr:hover {
-        background-color: rgba(13, 110, 253, 0.04);
-    }
-
-    .stat-card {
-        border-left: 4px solid #0d6efd;
-    }
-
-    .green-500 { border-left-color: #198754 !important; }
-    .amber-500 { border-left-color: #fd7e14 !important; }
-    .red-500 { border-left-color: #dc3545 !important; }
-    .purple-500 { border-left-color: #6f42c1 !important; }
-
-    .text-green { color: #198754 !important; }
-    .text-amber { color: #fd7e14 !important; }
-    .text-red { color: #dc3545 !important; }
-    .text-purple { color: #6f42c1 !important; }
-
-    .table-checkbox {
-        width: 20px;
-        height: 20px;
-    }
-
-    #bulkActionsBtn:disabled {
-        cursor: not-allowed;
-    }
-
-    .table-wrapper {
-        position: relative;
-        min-height: 300px;
-    }
-
-    .loading-overlay {
-        position: absolute;
-        top: 0;
-        left: 0;
-        right: 0;
-        bottom: 0;
-        background: rgba(255, 255, 255, 0.8);
+    .stat-icon {
+        width: 48px;
+        height: 48px;
         display: flex;
         align-items: center;
         justify-content: center;
+        border-radius: 10px;
+    }
+    .filter-section {
+        background: #f8f9fa;
+        padding: 20px;
+        border-radius: 10px;
+        margin-bottom: 20px;
+    }
+    .badge-custom {
+        padding: 6px 12px;
+        font-size: 0.75rem;
+        font-weight: 600;
+    }
+    .table-actions .btn {
+        padding: 0.25rem 0.5rem;
+        font-size: 0.875rem;
+    }
+    .modal-header {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+    }
+    .efris-badge {
+        font-size: 0.7rem;
+        padding: 2px 6px;
+    }
+    .price-display {
+        font-weight: 600;
+        color: #667eea;
+    }
+    .category-creation-group {
+        position: relative;
+    }
+    .category-creation-btn {
+        position: absolute;
+        right: 0;
+        top: 0;
         z-index: 10;
     }
 
-    [data-theme="dark"] .loading-overlay {
-        background: rgba(0, 0, 0, 0.8);
+    /* Loading spinner */
+    .table-loading {
+        position: relative;
+        min-height: 200px;
+    }
+    .table-loading::after {
+        content: '';
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        width: 40px;
+        height: 40px;
+        border: 4px solid #f3f3f3;
+        border-top: 4px solid #667eea;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+    }
+
+    @keyframes spin {
+        0% { transform: translate(-50%, -50%) rotate(0deg); }
+        100% { transform: translate(-50%, -50%) rotate(360deg); }
     }
 
     .pagination {
-        margin-top: 1rem;
+        margin-top: 20px;
     }
 
     .table-info {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        margin-top: 1rem;
-        padding: 0.5rem 0;
-    }
-
-    .entries-info {
         color: #6c757d;
-        font-size: 0.9rem;
+        font-size: 0.875rem;
+        margin-top: 10px;
     }
 
-    .page-size-selector {
-        display: flex;
-        align-items: center;
-        gap: 0.5rem;
-        margin-bottom: 1rem;
-    }
-
-    .sort-icon {
-        opacity: 0.3;
-        font-size: 0.8rem;
-        margin-left: 0.25rem;
-    }
-
-    th.sortable {
+    /* Sort indicators */
+    .sortable {
         cursor: pointer;
         user-select: none;
         position: relative;
+        padding-right: 20px;
     }
 
-    th.sortable:hover {
-        background-color: rgba(0, 0, 0, 0.05);
-    }
-
-    [data-theme="dark"] th.sortable:hover {
-        background-color: rgba(255, 255, 255, 0.05);
-    }
-
-    th.sort-asc .sort-icon-asc,
-    th.sort-desc .sort-icon-desc {
-        opacity: 1;
-    }
-
-    .quick-actions {
-        opacity: 0;
-        transition: opacity 0.3s ease;
-    }
-
-    tr:hover .quick-actions {
-        opacity: 1;
-    }
-
-    .export-buttons .btn {
-        margin-left: 0.5rem;
-    }
-
-    .bulk-select-info {
-        background-color: #e7f1ff;
-        padding: 0.5rem 1rem;
-        border-radius: 0.375rem;
-        margin-bottom: 1rem;
-        display: none;
-    }
-
-    [data-theme="dark"] .bulk-select-info {
-        background-color: #1e3a5f;
-    }
-
-    .status-indicator {
-        width: 8px;
-        height: 8px;
-        border-radius: 50%;
-        display: inline-block;
-        margin-right: 0.5rem;
-    }
-
-    .status-active { background-color: #198754; }
-    .status-inactive { background-color: #6c757d; }
-    .status-pending { background-color: #fd7e14; }
-
-    .price-cell {
-        font-family: 'Courier New', monospace;
-        font-weight: 600;
-    }
-
-    .search-highlight {
-        background-color: #fff3cd;
-        padding: 0.1rem 0.2rem;
-        border-radius: 0.2rem;
-    }
-
-    [data-theme="dark"] .search-highlight {
-        background-color: #856404;
-        color: #fff;
-    }
-
-    .table-actions {
-        display: flex;
-        gap: 0.5rem;
-        justify-content: flex-end;
-    }
-
-    .action-btn {
-        width: 32px;
-        height: 32px;
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        border-radius: 0.375rem;
-    }
-
-    .fade-in {
-        animation: fadeIn 0.5s ease-in;
-    }
-
-    @keyframes fadeIn {
-        from { opacity: 0; transform: translateY(10px); }
-        to { opacity: 1; transform: translateY(0); }
-    }
-
-    .sticky-header {
-        position: sticky;
-        top: 0;
-        background: white;
-        z-index: 10;
-    }
-
-    [data-theme="dark"] .sticky-header {
-        background: var(--bg-primary);
-    }
-
-    .column-visibility {
-        position: relative;
-    }
-
-    .column-toggle-menu {
+    .sortable::after {
+        content: '⇅';
         position: absolute;
-        top: 100%;
-        right: 0;
-        background: white;
-        border: 1px solid #dee2e6;
-        border-radius: 0.375rem;
-        padding: 0.5rem;
-        min-width: 200px;
-        z-index: 1000;
-        box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
+        right: 5px;
+        opacity: 0.3;
     }
 
-    [data-theme="dark"] .column-toggle-menu {
-        background: var(--bg-primary);
-        border-color: var(--border-color);
+    .sortable.sort-asc::after {
+        content: '↑';
+        opacity: 1;
+    }
+
+    .sortable.sort-desc::after {
+        content: '↓';
+        opacity: 1;
+    }
+
+    /* Empty state */
+    .empty-state {
+        text-align: center;
+        padding: 60px 20px;
+        color: #6c757d;
+    }
+
+    .empty-state i {
+        font-size: 4rem;
+        opacity: 0.3;
+        margin-bottom: 20px;
     }
 </style>
 {% endblock %}
 
-{% block breadcrumb_items %}
-<li class="breadcrumb-item"><a href="{% url 'inventory:dashboard' %}">{% trans "Inventory" %}</a></li>
-<li class="breadcrumb-item active">{% trans "Services" %}</li>
-{% endblock %}
-
-{% block page_header %}
-<div class="d-flex justify-content-between align-items-center mb-4">
-    <div>
-        <h2 class="mb-0">
-            <i class="bi bi-gear-fill text-primary me-2"></i>
-            {% trans "Services" %}
-        </h2>
-        <p class="text-muted mb-0">{% trans "Manage your service offerings and EFRIS compliance" %}</p>
-    </div>
-    <div class="d-flex gap-2">
-        {% if perms.inventory.add_service %}
-        <button type="button" class="btn btn-primary" id="addServiceBtn">
-            <i class="bi bi-plus-circle me-1"></i>
-            {% trans "Add Service" %}
-        </button>
-        {% endif %}
-        <div class="dropdown">
-            <button class="btn btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown">
-                <i class="bi bi-download me-1"></i>
-                {% trans "Export" %}
-            </button>
-            <ul class="dropdown-menu">
-                <li><a class="dropdown-item export-option" href="#" data-format="csv">
-                    <i class="bi bi-file-earmark-spreadsheet me-2"></i>CSV
-                </a></li>
-                <li><a class="dropdown-item export-option" href="#" data-format="excel">
-                    <i class="bi bi-file-earmark-excel me-2"></i>Excel
-                </a></li>
-                <li><a class="dropdown-item export-option" href="#" data-format="pdf">
-                    <i class="bi bi-file-earmark-pdf me-2"></i>PDF
-                </a></li>
-            </ul>
-        </div>
-        <button class="btn btn-outline-secondary" type="button" id="columnToggleBtn">
-            <i class="bi bi-layout-three-columns me-1"></i>
-            {% trans "Columns" %}
-        </button>
-    </div>
-</div>
-{% endblock %}
-
 {% block content %}
-<!-- Configuration Data -->
-<div id="urls-config"
-     data-datatable-url="{% url 'inventory:service_datatable_api' %}"
-     data-create-url="{% url 'inventory:service_create' %}"
-     data-bulk-action-url="{% url 'inventory:service_bulk_actions' %}"
-     data-export-url=""
-     data-efris-sync-url=""
-     data-efris-enabled="{% if efris_enabled %}true{% else %}false{% endif %}"
-     style="display: none;">
-</div>
+<div class="container-fluid py-4">
 
-<!-- Statistics Cards -->
-<div class="row mb-4">
-    <div class="col-md-3">
-        <div class="card stat-card">
-            <div class="card-body">
-                <div class="d-flex justify-content-between align-items-center">
-                    <div>
-                        <h6 class="text-muted mb-1">{% trans "Total Services" %}</h6>
-                        <h3 class="mb-0" id="totalServicesCount">{{ total_services }}</h3>
-                    </div>
-                    <div class="text-primary">
-                        <i class="bi bi-gear-fill fs-1"></i>
-                    </div>
+    <!-- Header Section -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <h2 class="mb-1">
+                        <i class="bi bi-tools me-2"></i>Services Management
+                    </h2>
+                    <nav aria-label="breadcrumb">
+                        <ol class="breadcrumb mb-0">
+                            <li class="breadcrumb-item"><a href="{% url 'inventory:dashboard' %}">Inventory</a></li>
+                            <li class="breadcrumb-item active">Services</li>
+                        </ol>
+                    </nav>
                 </div>
-            </div>
-        </div>
-    </div>
-    <div class="col-md-3">
-        <div class="card stat-card green-500">
-            <div class="card-body">
-                <div class="d-flex justify-content-between align-items-center">
-                    <div>
-                        <h6 class="text-muted mb-1">{% trans "Active Services" %}</h6>
-                        <h3 class="mb-0" id="activeServicesCount">{{ active_services }}</h3>
-                    </div>
-                    <div class="text-green">
-                        <i class="bi bi-check-circle-fill fs-1"></i>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-    {% if efris_enabled %}
-    <div class="col-md-3">
-        <div class="card stat-card amber-500">
-            <div class="card-body">
-                <div class="d-flex justify-content-between align-items-center">
-                    <div>
-                        <h6 class="text-muted mb-1">{% trans "EFRIS Synced" %}</h6>
-                        <h3 class="mb-0" id="efrisSyncedCount">{{ efris_uploaded }}</h3>
-                    </div>
-                    <div class="text-amber">
-                        <i class="bi bi-cloud-check-fill fs-1"></i>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-    {% endif %}
-    <div class="col-md-3">
-        <div class="card stat-card purple-500">
-            <div class="card-body">
-                <div class="d-flex justify-content-between align-items-center">
-                    <div>
-                        <h6 class="text-muted mb-1">{% trans "This Page" %}</h6>
-                        <h3 class="mb-0" id="pageServicesCount">0</h3>
-                    </div>
-                    <div class="text-purple">
-                        <i class="bi bi-list-ul fs-1"></i>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-</div>
-
-<!-- Bulk Selection Info -->
-<div class="bulk-select-info" id="bulkSelectInfo">
-    <div class="d-flex justify-content-between align-items-center">
-        <span id="selectedCountText">{% trans "0 services selected" %}</span>
-        <button type="button" class="btn-close" id="clearSelectionBtn"></button>
-    </div>
-</div>
-
-<!-- Filters Card -->
-<div class="card mb-4">
-    <div class="card-header d-flex justify-content-between align-items-center">
-        <h5 class="mb-0">
-            <i class="bi bi-funnel me-2"></i>
-            {% trans "Filters & Search" %}
-        </h5>
-        <div>
-            <button class="btn btn-sm btn-outline-secondary me-2" type="button" id="saveFilterBtn">
-                <i class="bi bi-bookmark me-1"></i>{% trans "Save Filter" %}
-            </button>
-            <button class="btn btn-sm btn-outline-secondary" type="button" id="toggleAdvancedFilters">
-                <i class="bi bi-funnel-fill me-1"></i>{% trans "Advanced" %}
-            </button>
-        </div>
-    </div>
-    <div class="card-body">
-        <form method="get" id="filterForm" class="row g-3">
-            <!-- Basic Filters -->
-            <div class="col-md-4">
-                <label for="id_search" class="form-label">{% trans "Search" %}</label>
-                <div class="input-group">
-                    <input type="text" name="search" id="id_search" class="form-control"
-                           placeholder="{% trans 'Search services...' %}" value="{{ request.GET.search }}">
-                    <button class="btn btn-outline-secondary" type="button" id="clearSearch">
-                        <i class="bi bi-x"></i>
+                <div>
+                    {% if perms.inventory.add_service %}
+                    <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#serviceModal">
+                        <i class="bi bi-plus-lg me-2"></i>New Service
                     </button>
+                    {% endif %}
                 </div>
             </div>
-            <div class="col-md-2">
-                <label for="id_category" class="form-label">{% trans "Category" %}</label>
-                <select name="category" id="id_category" class="form-select select2">
-                    <option value="">{% trans "All Categories" %}</option>
-                    {% for value, label in filter_form.fields.category.choices %}
-                        <option value="{{ value }}" {% if request.GET.category == value|stringformat:"s" %}selected{% endif %}>
-                            {{ label }}
-                        </option>
-                    {% endfor %}
-                </select>
-            </div>
-            <div class="col-md-2">
-                <label for="id_tax_rate" class="form-label">{% trans "Tax Rate" %}</label>
-                <select name="tax_rate" id="id_tax_rate" class="form-select">
-                    <option value="">{% trans "All Tax Rates" %}</option>
-                    {% for value, label in filter_form.fields.tax_rate.choices %}
-                        <option value="{{ value }}" {% if request.GET.tax_rate == value|stringformat:"s" %}selected{% endif %}>
-                            {{ label }}
-                        </option>
-                    {% endfor %}
-                </select>
-            </div>
+        </div>
+    </div>
 
-            <!-- Advanced Filters (Collapsible) -->
-            <div class="col-12" id="advancedFilters" style="display: none;">
-                <hr>
-                <h6 class="mb-3">{% trans "Advanced Filters" %}</h6>
+    <!-- Statistics Cards -->
+    <div class="row mb-4" id="statisticsCards">
+        <div class="col-md-3">
+            <div class="card service-card border-0 shadow-sm">
+                <div class="card-body">
+                    <div class="d-flex align-items-center">
+                        <div class="stat-icon bg-primary bg-opacity-10 text-primary me-3">
+                            <i class="bi bi-tools fs-4"></i>
+                        </div>
+                        <div>
+                            <p class="text-muted mb-1 small">Total Services</p>
+                            <h4 class="mb-0" id="totalServices">{{ total_services|default:0 }}</h4>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card service-card border-0 shadow-sm">
+                <div class="card-body">
+                    <div class="d-flex align-items-center">
+                        <div class="stat-icon bg-success bg-opacity-10 text-success me-3">
+                            <i class="bi bi-check-circle fs-4"></i>
+                        </div>
+                        <div>
+                            <p class="text-muted mb-1 small">Active Services</p>
+                            <h4 class="mb-0" id="activeServices">{{ active_services|default:0 }}</h4>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card service-card border-0 shadow-sm">
+                <div class="card-body">
+                    <div class="d-flex align-items-center">
+                        <div class="stat-icon bg-info bg-opacity-10 text-info me-3">
+                            <i class="bi bi-cloud-upload fs-4"></i>
+                        </div>
+                        <div>
+                            <p class="text-muted mb-1 small">EFRIS Uploaded</p>
+                            <h4 class="mb-0" id="efrisUploaded">{{ efris_uploaded|default:0 }}</h4>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card service-card border-0 shadow-sm">
+                <div class="card-body">
+                    <div class="d-flex align-items-center">
+                        <div class="stat-icon bg-warning bg-opacity-10 text-warning me-3">
+                            <i class="bi bi-exclamation-triangle fs-4"></i>
+                        </div>
+                        <div>
+                            <p class="text-muted mb-1 small">Pending Upload</p>
+                            <h4 class="mb-0" id="pendingUpload">0</h4>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Filters Section -->
+    <div class="card border-0 shadow-sm mb-4">
+        <div class="card-body">
+            <form id="filterForm">
                 <div class="row g-3">
                     <div class="col-md-3">
-                        <label for="id_efris_status" class="form-label">{% trans "EFRIS Status" %}</label>
-                        <select name="efris_status" id="id_efris_status" class="form-select">
-                            <option value="">{% trans "All Status" %}</option>
-                            <option value="uploaded" {% if request.GET.efris_status == 'uploaded' %}selected{% endif %}>
-                                {% trans "Uploaded" %}
+                        <label class="form-label small fw-semibold">Search</label>
+                        <input type="text" class="form-control" id="searchInput"
+                               placeholder="Search by name, code..."
+                               value="{{ current_search }}">
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label small fw-semibold">Category</label>
+                        <select class="form-select" id="categoryFilter">
+                            <option value="">All Categories</option>
+                            {% for category in categories %}
+                            <option value="{{ category.id }}" {% if current_category == category.id|stringformat:"s" %}selected{% endif %}>
+                                {{ category.name }}
                             </option>
-                            <option value="pending" {% if request.GET.efris_status == 'pending' %}selected{% endif %}>
-                                {% trans "Pending" %}
-                            </option>
-                            <option value="disabled" {% if request.GET.efris_status == 'disabled' %}selected{% endif %}>
-                                {% trans "Disabled" %}
-                            </option>
+                            {% endfor %}
                         </select>
                     </div>
-                    <div class="col-md-3">
-                        <label for="id_is_active" class="form-label">{% trans "Status" %}</label>
-                        <select name="is_active" id="id_is_active" class="form-select">
-                            <option value="">{% trans "All Status" %}</option>
-                            <option value="true" {% if request.GET.is_active == 'true' %}selected{% endif %}>
-                                {% trans "Active" %}
-                            </option>
-                            <option value="false" {% if request.GET.is_active == 'false' %}selected{% endif %}>
-                                {% trans "Inactive" %}
-                            </option>
+                    <div class="col-md-2">
+                        <label class="form-label small fw-semibold">Tax Rate</label>
+                        <select class="form-select" id="taxRateFilter">
+                            <option value="">All Tax Rates</option>
+                            <option value="A" {% if current_tax_rate == "A" %}selected{% endif %}>A - Standard (18%)</option>
+                            <option value="B" {% if current_tax_rate == "B" %}selected{% endif %}>B - Zero Rated</option>
+                            <option value="C" {% if current_tax_rate == "C" %}selected{% endif %}>C - Exempt</option>
+                            <option value="D" {% if current_tax_rate == "D" %}selected{% endif %}>D - Deemed (5%)</option>
+                            <option value="E" {% if current_tax_rate == "E" %}selected{% endif %}>E - Excise Duty</option>
                         </select>
                     </div>
-                    <div class="col-md-3">
-                        <label for="id_price_min" class="form-label">{% trans "Min Price" %}</label>
-                        <input type="number" name="price_min" id="id_price_min" class="form-control"
-                               placeholder="0" value="{{ request.GET.price_min }}" step="0.01">
+                    <div class="col-md-2">
+                        <label class="form-label small fw-semibold">EFRIS Status</label>
+                        <select class="form-select" id="efrisStatusFilter">
+                            <option value="">All Status</option>
+                            <option value="uploaded" {% if current_efris_status == "uploaded" %}selected{% endif %}>Uploaded</option>
+                            <option value="pending" {% if current_efris_status == "pending" %}selected{% endif %}>Pending</option>
+                            <option value="disabled" {% if current_efris_status == "disabled" %}selected{% endif %}>Disabled</option>
+                        </select>
                     </div>
-                    <div class="col-md-3">
-                        <label for="id_price_max" class="form-label">{% trans "Max Price" %}</label>
-                        <input type="number" name="price_max" id="id_price_max" class="form-control"
-                               placeholder="1000000" value="{{ request.GET.price_max }}" step="0.01">
+                    <div class="col-md-2">
+                        <label class="form-label small fw-semibold">Status</label>
+                        <select class="form-select" id="activeFilter">
+                            <option value="">All</option>
+                            <option value="true" {% if current_is_active == "true" %}selected{% endif %}>Active</option>
+                            <option value="false" {% if current_is_active == "false" %}selected{% endif %}>Inactive</option>
+                        </select>
+                    </div>
+                    <div class="col-md-1 d-flex align-items-end">
+                        <button type="button" class="btn btn-outline-secondary w-100" id="clearFiltersBtn" title="Clear Filters">
+                            <i class="bi bi-x-lg"></i>
+                        </button>
                     </div>
                 </div>
-            </div>
-
-            <div class="col-12">
-                <div class="d-flex gap-2">
-                    <button type="submit" class="btn btn-primary">
-                        <i class="bi bi-search me-1"></i>
-                        {% trans "Apply Filters" %}
-                    </button>
-                    <button type="button" class="btn btn-outline-secondary" id="clearFilters">
-                        <i class="bi bi-x-circle me-1"></i>
-                        {% trans "Clear All" %}
-                    </button>
-                </div>
-            </div>
-        </form>
-    </div>
-</div>
-
-<!-- Services Table Card -->
-<div class="card">
-    <div class="card-header">
-        <div class="d-flex justify-content-between align-items-center">
-            <h5 class="mb-0">
-                <i class="bi bi-list-ul me-2"></i>
-                {% trans "All Services" %}
-            </h5>
-            <div class="d-flex gap-2">
-                {% if perms.inventory.change_service %}
-                <div class="btn-group">
-                    <button type="button" class="btn btn-sm btn-outline-primary dropdown-toggle"
-                            data-bs-toggle="dropdown" id="bulkActionsBtn" disabled>
-                        <i class="bi bi-lightning me-1"></i>
-                        {% trans "Bulk Actions" %}
-                    </button>
-                    <ul class="dropdown-menu dropdown-menu-end">
-                        <li><a class="dropdown-item bulk-action" data-action="activate" href="#">
-                            <i class="bi bi-check-circle me-2"></i>{% trans "Activate Selected" %}
-                        </a></li>
-                        <li><a class="dropdown-item bulk-action" data-action="deactivate" href="#">
-                            <i class="bi bi-x-circle me-2"></i>{% trans "Deactivate Selected" %}
-                        </a></li>
-                        <li><hr class="dropdown-divider"></li>
-                        <li><a class="dropdown-item bulk-action" data-action="enable_efris" href="#">
-                            <i class="bi bi-cloud-arrow-up me-2"></i>{% trans "Enable EFRIS Sync" %}
-                        </a></li>
-                        <li><a class="dropdown-item bulk-action" data-action="disable_efris" href="#">
-                            <i class="bi bi-cloud-slash me-2"></i>{% trans "Disable EFRIS Sync" %}
-                        </a></li>
-                        <li><a class="dropdown-item bulk-action" data-action="mark_for_upload" href="#">
-                            <i class="bi bi-arrow-repeat me-2"></i>{% trans "Mark for Upload" %}
-                        </a></li>
-                        {% if perms.inventory.delete_service %}
-                        <li><hr class="dropdown-divider"></li>
-                        <li><a class="dropdown-item bulk-action text-danger" data-action="delete" href="#">
-                            <i class="bi bi-trash me-2"></i>{% trans "Delete Selected" %}
-                        </a></li>
-                        {% endif %}
-                    </ul>
-                </div>
-                {% endif %}
-            </div>
+            </form>
         </div>
     </div>
-    <div class="card-body">
-        <!-- Page Size Selector -->
-        <div class="page-size-selector">
-            <label for="pageSize">{% trans "Show" %}</label>
-            <select id="pageSize" class="form-select form-select-sm" style="width: auto;">
-                <option value="10">10</option>
-                <option value="25" selected>25</option>
-                <option value="50">50</option>
-                <option value="100">100</option>
-            </select>
-            <span>{% trans "entries" %}</span>
-        </div>
 
-        <div class="table-wrapper">
-            <!-- Loading Overlay -->
-            <div class="loading-overlay" id="loadingOverlay" style="display: none;">
-                <div class="text-center">
-                    <div class="spinner-border text-primary mb-2" role="status">
-                        <span class="visually-hidden">{% trans "Loading..." %}</span>
-                    </div>
-                    <p class="text-muted">{% trans "Loading services..." %}</p>
+    <!-- Services Table -->
+    <div class="card border-0 shadow-sm">
+        <div class="card-header bg-white py-3">
+            <div class="d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">Service List</h5>
+                <div class="btn-group" role="group">
+                    {% if perms.inventory.change_service %}
+                    <button type="button" class="btn btn-sm btn-outline-secondary" id="bulkActionBtn" disabled>
+                        <i class="bi bi-check2-square me-1"></i>Bulk Actions
+                    </button>
+                    {% endif %}
+                    <button type="button" class="btn btn-sm btn-outline-secondary" id="refreshBtn">
+                        <i class="bi bi-arrow-clockwise me-1"></i>Refresh
+                    </button>
+                </div>
+            </div>
+        </div>
+        <div class="card-body">
+            <!-- Per Page Selection -->
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <div>
+                    <label class="form-label small mb-0 me-2">Show:</label>
+                    <select class="form-select form-select-sm d-inline-block" id="perPageSelect" style="width: auto;">
+                        <option value="10">10</option>
+                        <option value="25" selected>25</option>
+                        <option value="50">50</option>
+                        <option value="100">100</option>
+                    </select>
+                    <span class="small text-muted ms-2">entries</span>
+                </div>
+                <div class="table-info">
+                    <span id="tableInfo">Loading...</span>
                 </div>
             </div>
 
             <div class="table-responsive">
-                <table id="servicesTable" class="table table-hover table-striped">
-                    <thead class="sticky-header">
+                <table class="table table-hover align-middle" id="servicesTable">
+                    <thead class="table-light">
                         <tr>
                             <th width="30">
-                                <input type="checkbox" id="selectAllServices" class="form-check-input table-checkbox">
+                                <input type="checkbox" id="selectAll" class="form-check-input">
                             </th>
-                            <th class="sortable" data-column="name">
-                                {% trans "Name" %}
-                                <i class="bi bi-chevron-expand sort-icon"></i>
-                            </th>
-                            <th class="sortable" data-column="code">
-                                {% trans "Code" %}
-                                <i class="bi bi-chevron-expand sort-icon"></i>
-                            </th>
-                            <th class="sortable" data-column="category">
-                                {% trans "Category" %}
-                                <i class="bi bi-chevron-expand sort-icon"></i>
-                            </th>
-                            <th class="sortable" data-column="unit_price">
-                                {% trans "Unit Price" %}
-                                <i class="bi bi-chevron-expand sort-icon"></i>
-                            </th>
-                            <th class="sortable" data-column="final_price">
-                                {% trans "Final Price" %}
-                                <i class="bi bi-chevron-expand sort-icon"></i>
-                            </th>
-                            {% if efris_enabled %}
-                            <th>{% trans "EFRIS Status" %}</th>
-                            {% endif %}
-                            <th class="sortable" data-column="is_active">
-                                {% trans "Status" %}
-                                <i class="bi bi-chevron-expand sort-icon"></i>
-                            </th>
-                            <th width="180">{% trans "Actions" %}</th>
+                            <th class="sortable" data-sort="name">Name</th>
+                            <th class="sortable" data-sort="code">Code</th>
+                            <th>Category</th>
+                            <th class="sortable" data-sort="unit_price">Unit Price</th>
+                            <th>Final Price</th>
+                            <th>EFRIS Status</th>
+                            <th>Status</th>
+                            <th width="150">Actions</th>
                         </tr>
                     </thead>
                     <tbody id="servicesTableBody">
-                        <!-- Content will be loaded by JavaScript -->
+                        <!-- Data will be loaded here -->
                     </tbody>
                 </table>
             </div>
-        </div>
 
-        <!-- Table Info and Pagination -->
-        <div class="table-info">
-            <div class="entries-info" id="entriesInfo">
-                {% trans "Showing 0 to 0 of 0 entries" %}
-            </div>
-            <nav aria-label="Page navigation">
-                <ul class="pagination mb-0" id="pagination">
-                    <!-- Pagination will be generated by JavaScript -->
+            <!-- Pagination -->
+            <nav aria-label="Services pagination" id="paginationContainer">
+                <ul class="pagination justify-content-center mb-0" id="pagination">
+                    <!-- Pagination will be rendered here -->
                 </ul>
             </nav>
         </div>
     </div>
+
 </div>
 
-<!-- Column Visibility Menu -->
-<div class="column-toggle-menu" id="columnToggleMenu" style="display: none;">
-    <h6 class="mb-2">{% trans "Toggle Columns" %}</h6>
-    <div class="form-check">
-        <input class="form-check-input column-toggle" type="checkbox" data-column="name" checked>
-        <label class="form-check-label">{% trans "Name" %}</label>
-    </div>
-    <div class="form-check">
-        <input class="form-check-input column-toggle" type="checkbox" data-column="code" checked>
-        <label class="form-check-label">{% trans "Code" %}</label>
-    </div>
-    <div class="form-check">
-        <input class="form-check-input column-toggle" type="checkbox" data-column="category" checked>
-        <label class="form-check-label">{% trans "Category" %}</label>
-    </div>
-    <div class="form-check">
-        <input class="form-check-input column-toggle" type="checkbox" data-column="unit_price" checked>
-        <label class="form-check-label">{% trans "Unit Price" %}</label>
-    </div>
-    <div class="form-check">
-        <input class="form-check-input column-toggle" type="checkbox" data-column="final_price" checked>
-        <label class="form-check-label">{% trans "Final Price" %}</label>
-    </div>
-    {% if efris_enabled %}
-    <div class="form-check">
-        <input class="form-check-input column-toggle" type="checkbox" data-column="efris_status" checked>
-        <label class="form-check-label">{% trans "EFRIS Status" %}</label>
-    </div>
-    {% endif %}
-    <div class="form-check">
-        <input class="form-check-input column-toggle" type="checkbox" data-column="status" checked>
-        <label class="form-check-label">{% trans "Status" %}</label>
-    </div>
-</div>
-
-<!-- Service Form Modal -->
-<div class="modal fade" id="serviceModal" tabindex="-1">
-    <div class="modal-dialog modal-lg">
+<!-- Service Create/Edit Modal -->
+<div class="modal fade" id="serviceModal" tabindex="-1" aria-labelledby="serviceModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
         <div class="modal-content">
             <div class="modal-header">
                 <h5 class="modal-title" id="serviceModalLabel">
-                    <i class="bi bi-gear-fill me-2"></i>
-                    <span id="modalTitle">{% trans "Add Service" %}</span>
+                    <i class="bi bi-tools me-2"></i>
+                    <span id="modalTitle">Create New Service</span>
                 </h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
-            <div class="modal-body" id="serviceModalBody">
-                <!-- Form will be loaded here -->
-            </div>
+            <form id="serviceForm" method="post" enctype="multipart/form-data">
+                {% csrf_token %}
+                <input type="hidden" id="serviceId" name="service_id" value="">
+
+                <div class="modal-body">
+                    <div class="row g-3">
+
+                        <!-- Service Name -->
+                        <div class="col-md-8">
+                            <label for="id_name" class="form-label required">Service Name</label>
+                            <input type="text" class="form-control" id="id_name" name="name" required
+                                   placeholder="e.g., Software Development, Consulting">
+                            <div class="invalid-feedback"></div>
+                        </div>
+
+                        <!-- Service Code -->
+                        <div class="col-md-4">
+                            <label for="id_code" class="form-label required">Service Code</label>
+                            <input type="text" class="form-control" id="id_code" name="code" required
+                                   placeholder="e.g., SRV001">
+                            <div class="invalid-feedback"></div>
+                        </div>
+
+                        <!-- Category with Create Button -->
+                        <div class="col-12">
+                            <label for="id_category" class="form-label required">Service Category</label>
+                            <div class="input-group">
+                                <select class="form-select" id="id_category" name="category" required>
+                                    <option value="">-- Select Service Category --</option>
+                                    {% for category in categories %}
+                                    <option value="{{ category.id }}">{{ category.name }}</option>
+                                    {% endfor %}
+                                </select>
+                                <button class="btn btn-outline-primary" type="button"
+                                        data-bs-toggle="modal" data-bs-target="#categoryModal"
+                                        title="Create New Category">
+                                    <i class="bi bi-plus-lg"></i>
+                                </button>
+                            </div>
+                            <small class="form-text text-muted">
+                                Select a service category or create a new one
+                            </small>
+                            <div class="invalid-feedback"></div>
+                        </div>
+
+                        <!-- Description -->
+                        <div class="col-12">
+                            <label for="id_description" class="form-label">Description</label>
+                            <textarea class="form-control" id="id_description" name="description" rows="3"
+                                      placeholder="Detailed description of the service..."></textarea>
+                        </div>
+
+                        <!-- Unit Price -->
+                        <div class="col-md-6">
+                            <label for="id_unit_price" class="form-label required">Unit Price (UGX)</label>
+                            <input type="number" class="form-control" id="id_unit_price" name="unit_price"
+                                   step="0.01" min="0" required placeholder="0.00">
+                            <div class="invalid-feedback"></div>
+                        </div>
+
+                        <!-- Unit of Measure -->
+                        <div class="col-md-6">
+                            <label for="id_unit_of_measure" class="form-label required">Unit of Measure</label>
+                            <select class="form-select" id="id_unit_of_measure" name="unit_of_measure" required>
+                                <option value="207">Hours</option>
+                                <option value="208">Days</option>
+                                <option value="209">Months</option>
+                                <option value="210">Session</option>
+                                <option value="211">Project</option>
+                                <option value="212">Each</option>
+                            </select>
+                        </div>
+
+                        <!-- Tax Rate -->
+                        <div class="col-md-6">
+                            <label for="id_tax_rate" class="form-label required">Tax Rate</label>
+                            <select class="form-select" id="id_tax_rate" name="tax_rate" required>
+                                <option value="A">A - Standard Rate (18%)</option>
+                                <option value="B">B - Zero Rated (0%)</option>
+                                <option value="C">C - Exempt</option>
+                                <option value="D">D - Deemed (5%)</option>
+                                <option value="E">E - Excise Duty</option>
+                            </select>
+                        </div>
+
+                        <!-- Excise Duty Rate (conditional) -->
+                        <div class="col-md-6" id="exciseDutyGroup" style="display: none;">
+                            <label for="id_excise_duty_rate" class="form-label">Excise Duty Rate (%)</label>
+                            <input type="number" class="form-control" id="id_excise_duty_rate"
+                                   name="excise_duty_rate" step="0.01" min="0" value="0">
+                            <small class="form-text text-muted">Only for tax rate E</small>
+                        </div>
+
+                        <!-- Image Upload -->
+                        <div class="col-12">
+                            <label for="id_image" class="form-label">Service Image</label>
+                            <input type="file" class="form-control" id="id_image" name="image" accept="image/*">
+                            <small class="form-text text-muted">Optional image for the service</small>
+                        </div>
+
+                        <!-- Checkboxes -->
+                        <div class="col-12">
+                            <div class="form-check form-switch mb-2">
+                                <input class="form-check-input" type="checkbox" id="id_efris_auto_sync_enabled"
+                                       name="efris_auto_sync_enabled">
+                                <label class="form-check-label" for="id_efris_auto_sync_enabled">
+                                    Enable EFRIS Auto-Sync
+                                </label>
+                            </div>
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" id="id_is_active"
+                                       name="is_active" checked>
+                                <label class="form-check-label" for="id_is_active">
+                                    Active
+                                </label>
+                            </div>
+                        </div>
+
+                    </div>
+                </div>
+
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                        <i class="bi bi-x-lg me-1"></i>Cancel
+                    </button>
+                    <button type="submit" class="btn btn-primary" id="saveServiceBtn">
+                        <i class="bi bi-check-lg me-1"></i>Save Service
+                    </button>
+                </div>
+            </form>
         </div>
     </div>
 </div>
 
-<!-- Delete Confirmation Modal -->
-<div class="modal fade" id="deleteModal" tabindex="-1">
+<!-- Category Creation Modal -->
+<div class="modal fade" id="categoryModal" tabindex="-1" aria-labelledby="categoryModalLabel" aria-hidden="true">
     <div class="modal-dialog">
         <div class="modal-content">
-            <div class="modal-header bg-danger text-white">
-                <h5 class="modal-title">
-                    <i class="bi bi-exclamation-triangle me-2"></i>
-                    {% trans "Confirm Delete" %}
+            <div class="modal-header">
+                <h5 class="modal-title" id="categoryModalLabel">
+                    <i class="bi bi-folder-plus me-2"></i>Create Service Category
                 </h5>
-                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
-            <div class="modal-body">
-                <p>{% trans "Are you sure you want to delete this service?" %}</p>
-                <p class="text-danger"><strong>{% trans "This action cannot be undone." %}</strong></p>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
-                    {% trans "Cancel" %}
-                </button>
-                <button type="button" class="btn btn-danger" id="confirmDeleteBtn">
-                    <i class="bi bi-trash me-1"></i>
-                    {% trans "Delete" %}
-                </button>
-            </div>
+            <form id="categoryForm">
+                {% csrf_token %}
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label for="category_name" class="form-label required">Category Name</label>
+                        <input type="text" class="form-control" id="category_name" name="name"
+                               required placeholder="e.g., IT Services, Consulting">
+                        <div class="invalid-feedback"></div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="category_code" class="form-label">Category Code</label>
+                        <input type="text" class="form-control" id="category_code" name="code"
+                               placeholder="e.g., CAT-SRV-001">
+                        <small class="form-text text-muted">Optional unique identifier</small>
+                    </div>
+                    <div class="mb-3">
+                        <label for="category_description" class="form-label">Description</label>
+                        <textarea class="form-control" id="category_description" name="description"
+                                  rows="2" placeholder="Brief description..."></textarea>
+                    </div>
+                    <input type="hidden" name="category_type" value="service">
+                    <input type="hidden" name="is_active" value="true">
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                        <i class="bi bi-x-lg me-1"></i>Cancel
+                    </button>
+                    <button type="submit" class="btn btn-primary" id="saveCategoryBtn">
+                        <i class="bi bi-check-lg me-1"></i>Create Category
+                    </button>
+                </div>
+            </form>
         </div>
     </div>
 </div>
 
-<!-- Bulk Action Confirmation Modal -->
-<div class="modal fade" id="bulkActionModal" tabindex="-1">
+<!-- Bulk Actions Modal -->
+<div class="modal fade" id="bulkActionsModal" tabindex="-1">
     <div class="modal-dialog">
         <div class="modal-content">
-            <div class="modal-header bg-warning text-dark">
-                <h5 class="modal-title" id="bulkActionModalTitle">
-                    <i class="bi bi-exclamation-triangle me-2"></i>
-                    {% trans "Confirm Bulk Action" %}
-                </h5>
+            <div class="modal-header">
+                <h5 class="modal-title">Bulk Actions</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
-            <div class="modal-body" id="bulkActionModalBody">
-                <!-- Content will be filled dynamically -->
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
-                    {% trans "Cancel" %}
-                </button>
-                <button type="button" class="btn btn-warning" id="confirmBulkActionBtn">
-                    <i class="bi bi-check-circle me-1"></i>
-                    <span id="bulkActionConfirmText">{% trans "Confirm" %}</span>
-                </button>
-            </div>
+            <form id="bulkActionsForm">
+                {% csrf_token %}
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">Select Action</label>
+                        <select class="form-select" id="bulkAction" name="action" required>
+                            <option value="">-- Choose Action --</option>
+                            <option value="activate">Activate Selected</option>
+                            <option value="deactivate">Deactivate Selected</option>
+                            <option value="enable_efris">Enable EFRIS Sync</option>
+                            <option value="disable_efris">Disable EFRIS Sync</option>
+                            <option value="delete">Delete Selected</option>
+                        </select>
+                    </div>
+                    <div class="alert alert-warning">
+                        <i class="bi bi-exclamation-triangle me-2"></i>
+                        <span id="selectedCount">0</span> service(s) selected
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Apply</button>
+                </div>
+            </form>
         </div>
     </div>
 </div>
+
+<!-- Toast Container -->
+<div id="toastContainer" class="toast-container position-fixed top-0 end-0 p-3" style="z-index: 9999"></div>
+
 {% endblock %}
 
 {% block extra_js %}
-<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0/dist/js/select2.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-
 <script>
-class ServiceManager {
-    constructor() {
-        this.currentPage = 1;
-        this.pageSize = 25;
-        this.totalRecords = 0;
-        this.totalPages = 0;
-        this.sortColumn = 'name';
-        this.sortDirection = 'asc';
-        this.selectedServices = new Set();
-        this.filters = {};
-        this.columnVisibility = {
-            name: true,
-            code: true,
-            category: true,
-            unit_price: true,
-            final_price: true,
-            efris_status: true,
-            status: true
-        };
+// Services Management with Vanilla JS and Fetch API
+document.addEventListener('DOMContentLoaded', function() {
 
-        this.init();
-    }
+    // State management
+    let currentPage = 1;
+    let perPage = 25;
+    let currentSort = '-created_at';
+    let filters = {
+        search: '{{ current_search }}',
+        category: '{{ current_category }}',
+        tax_rate: '{{ current_tax_rate }}',
+        efris_status: '{{ current_efris_status }}',
+        is_active: '{{ current_is_active }}'
+    };
 
-    init() {
-        this.initEventListeners();
-        this.initSelect2();
-        this.loadServices();
-        this.loadColumnPreferences();
-    }
+    // DOM Elements
+    const servicesTableBody = document.getElementById('servicesTableBody');
+    const paginationContainer = document.getElementById('pagination');
+    const tableInfo = document.getElementById('tableInfo');
+    const selectAllCheckbox = document.getElementById('selectAll');
+    const bulkActionBtn = document.getElementById('bulkActionBtn');
+    const searchInput = document.getElementById('searchInput');
+    const categoryFilter = document.getElementById('categoryFilter');
+    const taxRateFilter = document.getElementById('taxRateFilter');
+    const efrisStatusFilter = document.getElementById('efrisStatusFilter');
+    const activeFilter = document.getElementById('activeFilter');
+    const perPageSelect = document.getElementById('perPageSelect');
+    const refreshBtn = document.getElementById('refreshBtn');
+    const clearFiltersBtn = document.getElementById('clearFiltersBtn');
 
-    initEventListeners() {
-        // Pagination
-        document.getElementById('pageSize').addEventListener('change', (e) => {
-            this.pageSize = parseInt(e.target.value);
-            this.currentPage = 1;
-            this.loadServices();
-        });
+    // Initialize
+    loadServices();
+    loadStatistics();
+    setupEventListeners();
 
-        // Sorting
-        document.querySelectorAll('th.sortable').forEach(th => {
-            th.addEventListener('click', () => {
-                const column = th.dataset.column;
-                this.handleSort(column);
-            });
-        });
+    // Setup all event listeners
+    function setupEventListeners() {
+        // Filter inputs
+        searchInput.addEventListener('input', debounce(applyFilters, 500));
+        categoryFilter.addEventListener('change', applyFilters);
+        taxRateFilter.addEventListener('change', applyFilters);
+        efrisStatusFilter.addEventListener('change', applyFilters);
+        activeFilter.addEventListener('change', applyFilters);
+        perPageSelect.addEventListener('change', changePerPage);
 
-        // Bulk selection
-        document.getElementById('selectAllServices').addEventListener('change', (e) => {
-            this.handleSelectAll(e.target.checked);
-        });
+        // Buttons
+        refreshBtn.addEventListener('click', () => loadServices());
+        clearFiltersBtn.addEventListener('click', clearFilters);
+
+        // Select all checkbox
+        selectAllCheckbox.addEventListener('change', toggleSelectAll);
 
         // Bulk actions
-        document.querySelectorAll('.bulk-action').forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                e.preventDefault();
-                const action = e.target.closest('.bulk-action').dataset.action;
-                this.handleBulkAction(action);
-            });
+        bulkActionBtn.addEventListener('click', showBulkActionsModal);
+
+        // Sort headers
+        document.querySelectorAll('.sortable').forEach(header => {
+            header.addEventListener('click', () => handleSort(header));
         });
 
-        // Clear selection
-        document.getElementById('clearSelectionBtn').addEventListener('click', () => {
-            this.clearSelection();
-        });
+        // Modal events
+        const serviceModal = document.getElementById('serviceModal');
+        serviceModal.addEventListener('hidden.bs.modal', resetServiceForm);
 
-        // Filters
-        document.getElementById('filterForm').addEventListener('submit', (e) => {
-            e.preventDefault();
-            this.applyFilters();
-        });
+        const categoryModal = document.getElementById('categoryModal');
+        categoryModal.addEventListener('hidden.bs.modal', resetCategoryForm);
 
-        document.getElementById('clearFilters').addEventListener('click', () => {
-            this.clearFilters();
-        });
+        // Tax rate change
+        document.getElementById('id_tax_rate').addEventListener('change', handleTaxRateChange);
 
-        document.getElementById('clearSearch').addEventListener('click', () => {
-            document.getElementById('id_search').value = '';
-            this.applyFilters();
-        });
+        // Price calculation
+        document.getElementById('id_unit_price').addEventListener('input', calculateFinalPrice);
+        document.getElementById('id_excise_duty_rate').addEventListener('input', calculateFinalPrice);
 
-        // Advanced filters toggle
-        document.getElementById('toggleAdvancedFilters').addEventListener('click', () => {
-            this.toggleAdvancedFilters();
-        });
+        // Auto-generate code
+        document.getElementById('id_name').addEventListener('blur', autoGenerateCode);
 
-        // Column visibility
-        document.getElementById('columnToggleBtn').addEventListener('click', (e) => {
-            this.toggleColumnMenu(e);
-        });
-
-        document.querySelectorAll('.column-toggle').forEach(toggle => {
-            toggle.addEventListener('change', (e) => {
-                this.toggleColumn(e.target.dataset.column, e.target.checked);
-            });
-        });
-
-        // Export
-        document.querySelectorAll('.export-option').forEach(option => {
-            option.addEventListener('click', (e) => {
-                e.preventDefault();
-                this.exportData(e.target.closest('.export-option').dataset.format);
-            });
-        });
-
-        // Add service button
-        document.getElementById('addServiceBtn').addEventListener('click', () => {
-            this.openServiceModal();
-        });
-
-        // Close column menu when clicking outside
-        document.addEventListener('click', (e) => {
-            if (!e.target.closest('#columnToggleBtn') && !e.target.closest('#columnToggleMenu')) {
-                document.getElementById('columnToggleMenu').style.display = 'none';
-            }
-        });
+        // Form submissions
+        document.getElementById('serviceForm').addEventListener('submit', handleServiceSubmit);
+        document.getElementById('categoryForm').addEventListener('submit', handleCategorySubmit);
+        document.getElementById('bulkActionsForm').addEventListener('submit', handleBulkActions);
     }
 
-    initSelect2() {
-        $('#id_category').select2({
-            theme: 'bootstrap-5',
-            placeholder: '{% trans "Select a category" %}',
-            allowClear: true
-        });
-    }
-
-    async loadServices() {
-        this.showLoading();
-
-        const params = new URLSearchParams({
-            page: this.currentPage,
-            page_size: this.pageSize,
-            sort: this.sortColumn,
-            order: this.sortDirection,
-            ...this.filters
-        });
-
+    // Load services from API
+    async function loadServices() {
         try {
-            const response = await fetch(`{% url 'inventory:service_datatable_api' %}?${params}`);
+            showLoading();
+
+            const params = new URLSearchParams({
+                page: currentPage,
+                per_page: perPage,
+                order_by: currentSort,
+                ...filters
+            });
+
+            const response = await fetch(`/inventory/api/services/?${params}`);
             const data = await response.json();
 
-            this.renderServices(data.services);
-            this.updatePagination(data.pagination);
-            this.updateStats(data.stats);
-            this.hideLoading();
+            if (data.success) {
+                renderServicesTable(data.data);
+                renderPagination(data.pagination);
+                updateTableInfo(data.pagination);
+            } else {
+                showNotification('Error loading services', 'error');
+            }
         } catch (error) {
-            console.error('Error loading services:', error);
-            this.showError('{% trans "Failed to load services" %}');
-            this.hideLoading();
+            console.error('Error:', error);
+            showNotification('Error loading services', 'error');
+            showEmptyState('Error loading data. Please try again.');
+        } finally {
+            hideLoading();
         }
     }
 
-    renderServices(services) {
-        const tbody = document.getElementById('servicesTableBody');
-        const searchTerm = this.filters.search || '';
-
+    // Render services table
+    function renderServicesTable(services) {
         if (services.length === 0) {
-            tbody.innerHTML = `
-                <tr>
-                    <td colspan="9" class="text-center py-5">
-                        <i class="bi bi-inbox display-1 text-muted"></i>
-                        <h5 class="text-muted mt-3">{% trans "No services found" %}</h5>
-                        <p class="text-muted">{% trans "Try adjusting your filters or add a new service" %}</p>
-                    </td>
-                </tr>
-            `;
+            showEmptyState();
             return;
         }
 
-        tbody.innerHTML = services.map(service => `
-            <tr class="fade-in" data-service-id="${service.id}">
+        const html = services.map(service => `
+            <tr>
                 <td>
-                    <input type="checkbox" class="form-check-input table-checkbox service-checkbox"
-                           value="${service.id}" ${this.selectedServices.has(service.id) ? 'checked' : ''}>
-                </td>
-                <td class="${this.columnVisibility.name ? '' : 'd-none'}">
-                    <div class="d-flex align-items-center">
-                        ${service.image ?
-                            `<img src="${service.image}" alt="${service.name}" class="rounded me-2" width="32" height="32">` :
-                            `<div class="bg-secondary rounded d-flex align-items-center justify-content-center me-2" style="width: 32px; height: 32px;">
-                                <i class="bi bi-gear text-white"></i>
-                            </div>`
-                        }
-                        <div>
-                            <h6 class="mb-0">${this.highlightText(service.name, searchTerm)}</h6>
-                            ${service.description ?
-                                `<small class="text-muted">${this.highlightText(service.description.substring(0, 50), searchTerm)}</small>` : ''
-                            }
-                        </div>
-                    </div>
-                </td>
-                <td class="${this.columnVisibility.code ? '' : 'd-none'}">
-                    <span class="badge bg-light text-dark">${this.highlightText(service.code, searchTerm)}</span>
-                </td>
-                <td class="${this.columnVisibility.category ? '' : 'd-none'}">
-                    ${service.category ?
-                        `<span class="badge bg-info">${service.category.name}</span>` :
-                        `<span class="badge bg-secondary">{% trans "Uncategorized" %}</span>`
-                    }
-                </td>
-                <td class="${this.columnVisibility.unit_price ? '' : 'd-none'} price-cell">
-                    ${this.formatCurrency(service.unit_price)}
-                </td>
-                <td class="${this.columnVisibility.final_price ? '' : 'd-none'} price-cell">
-                    <strong>${this.formatCurrency(service.final_price)}</strong>
-                </td>
-                ${this.isEfrisEnabled() ? `
-                <td class="${this.columnVisibility.efris_status ? '' : 'd-none'}">
-                    ${this.renderEfrisStatus(service)}
-                </td>
-                ` : ''}
-                <td class="${this.columnVisibility.status ? '' : 'd-none'}">
-                    ${this.renderStatus(service)}
+                    <input type="checkbox" class="form-check-input row-checkbox" value="${service.id}">
                 </td>
                 <td>
-                    <div class="table-actions">
-                        <a href="${service.detail_url}" class="btn btn-sm btn-outline-primary action-btn"
-                           title="{% trans 'View Details' %}">
-                            <i class="bi bi-eye"></i>
-                        </a>
-                        <a href="${service.edit_url}" class="btn btn-sm btn-outline-secondary action-btn"
-                           title="{% trans 'Edit' %}">
-                            <i class="bi bi-pencil"></i>
-                        </a>
-                        ${service.efris_auto_sync_enabled && !service.efris_is_uploaded ? `
-                        <button class="btn btn-sm btn-outline-warning action-btn sync-efris-btn"
-                                data-service-id="${service.id}"
-                                title="{% trans 'Sync to EFRIS' %}">
-                            <i class="bi bi-cloud-arrow-up"></i>
-                        </button>
-                        ` : ''}
-                        <button class="btn btn-sm btn-outline-danger action-btn delete-service-btn"
-                                data-service-id="${service.id}"
-                                data-service-name="${service.name}"
-                                title="{% trans 'Delete' %}">
-                            <i class="bi bi-trash"></i>
-                        </button>
-                    </div>
+                    <strong>${escapeHtml(service.name)}</strong>
                 </td>
-            </tr>
-        `).join('');
-
-        // Add event listeners to new elements
-        this.attachRowEventListeners();
-    }
-
-    attachRowEventListeners() {
-        // Checkbox selection
-        document.querySelectorAll('.service-checkbox').forEach(checkbox => {
-            checkbox.addEventListener('change', (e) => {
-                this.handleServiceSelection(e.target.value, e.target.checked);
-            });
-        });
-
-        // Row click (for selection)
-        document.querySelectorAll('#servicesTableBody tr').forEach(row => {
-            row.addEventListener('click', (e) => {
-                if (!e.target.closest('input') && !e.target.closest('a') && !e.target.closest('button')) {
-                    const checkbox = row.querySelector('.service-checkbox');
-                    if (checkbox) {
-                        checkbox.checked = !checkbox.checked;
-                        this.handleServiceSelection(checkbox.value, checkbox.checked);
-                    }
-                }
-            });
-        });
-
-        // Delete buttons
-        document.querySelectorAll('.delete-service-btn').forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                const serviceId = btn.dataset.serviceId;
-                const serviceName = btn.dataset.serviceName;
-                this.confirmDelete(serviceId, serviceName);
-            });
-        });
-
-        // EFRIS sync buttons
-        document.querySelectorAll('.sync-efris-btn').forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                e.stopPropagation();
-                this.syncToEfris(btn.dataset.serviceId);
-            });
-        });
-    }
-
-    handleSort(column) {
-        if (this.sortColumn === column) {
-            this.sortDirection = this.sortDirection === 'asc' ? 'desc' : 'asc';
-        } else {
-            this.sortColumn = column;
-            this.sortDirection = 'asc';
-        }
-
-        // Update UI
-        document.querySelectorAll('th.sortable').forEach(th => {
-            th.classList.remove('sort-asc', 'sort-desc');
-        });
-
-        const currentTh = document.querySelector(`th[data-column="${column}"]`);
-        currentTh.classList.add(`sort-${this.sortDirection}`);
-
-        this.loadServices();
-    }
-
-    handleSelectAll(checked) {
-        const checkboxes = document.querySelectorAll('.service-checkbox');
-        checkboxes.forEach(checkbox => {
-            checkbox.checked = checked;
-            this.handleServiceSelection(checkbox.value, checked);
-        });
-    }
-
-    handleServiceSelection(serviceId, selected) {
-        if (selected) {
-            this.selectedServices.add(serviceId);
-        } else {
-            this.selectedServices.delete(serviceId);
-        }
-
-        this.updateBulkActionUI();
-    }
-
-    updateBulkActionUI() {
-        const selectedCount = this.selectedServices.size;
-        const bulkActionsBtn = document.getElementById('bulkActionsBtn');
-        const bulkSelectInfo = document.getElementById('bulkSelectInfo');
-        const selectedCountText = document.getElementById('selectedCountText');
-
-        if (selectedCount > 0) {
-            bulkActionsBtn.disabled = false;
-            bulkSelectInfo.style.display = 'block';
-            selectedCountText.textContent =
-                `${selectedCount} ${selectedCount === 1 ? '{% trans "service" %}' : '{% trans "services" %}'} {% trans "selected" %}`;
-        } else {
-            bulkActionsBtn.disabled = true;
-            bulkSelectInfo.style.display = 'none';
-        }
-
-        // Update select all checkbox
-        const totalCheckboxes = document.querySelectorAll('.service-checkbox').length;
-        const selectAllCheckbox = document.getElementById('selectAllServices');
-        selectAllCheckbox.checked = selectedCount > 0 && selectedCount === totalCheckboxes;
-        selectAllCheckbox.indeterminate = selectedCount > 0 && selectedCount < totalCheckboxes;
-    }
-
-    clearSelection() {
-        this.selectedServices.clear();
-        document.querySelectorAll('.service-checkbox').forEach(checkbox => {
-            checkbox.checked = false;
-        });
-        this.updateBulkActionUI();
-    }
-
-    async handleBulkAction(action) {
-        if (this.selectedServices.size === 0) return;
-
-        const actionTexts = {
-            activate: '{% trans "activate" %}',
-            deactivate: '{% trans "deactivate" %}',
-            enable_efris: '{% trans "enable EFRIS sync for" %}',
-            disable_efris: '{% trans "disable EFRIS sync for" %}',
-            mark_for_upload: '{% trans "mark for upload" %}',
-            delete: '{% trans "delete" %}'
-        };
-
-        const modalTitle = document.getElementById('bulkActionModalTitle');
-        const modalBody = document.getElementById('bulkActionModalBody');
-        const confirmText = document.getElementById('bulkActionConfirmText');
-
-        modalTitle.innerHTML = `<i class="bi bi-exclamation-triangle me-2"></i>{% trans "Confirm Bulk Action" %}`;
-        modalBody.innerHTML = `
-            <p>{% trans "Are you sure you want to" %} ${actionTexts[action]} ${this.selectedServices.size}
-            ${this.selectedServices.size === 1 ? '{% trans "service" %}' : '{% trans "services" %}'}?</p>
-            ${action === 'delete' ? '<p class="text-danger"><strong>{% trans "This action cannot be undone." %}</strong></p>' : ''}
-        `;
-        confirmText.textContent = action === 'delete' ? '{% trans "Delete" %}' : '{% trans "Confirm" %}';
-
-        const modal = new bootstrap.Modal(document.getElementById('bulkActionModal'));
-        modal.show();
-
-        document.getElementById('confirmBulkActionBtn').onclick = async () => {
-            try {
-                const response = await fetch("{% url 'inventory:service_bulk_actions' %}", {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-CSRFToken': this.getCSRFToken()
-                    },
-                    body: JSON.stringify({
-                        action: action,
-                        service_ids: Array.from(this.selectedServices)
-                    })
-                });
-
-                const result = await response.json();
-
-                if (result.success) {
-                    this.showSuccess(result.message || '{% trans "Bulk action completed successfully" %}');
-                    this.clearSelection();
-                    this.loadServices();
-                } else {
-                    this.showError(result.message || '{% trans "Failed to perform bulk action" %}');
-                }
-            } catch (error) {
-                console.error('Error performing bulk action:', error);
-                this.showError('{% trans "Failed to perform bulk action" %}');
-            }
-
-            modal.hide();
-        };
-    }
-
-    applyFilters() {
-        const formData = new FormData(document.getElementById('filterForm'));
-        this.filters = {};
-
-        for (let [key, value] of formData.entries()) {
-            if (value) this.filters[key] = value;
-        }
-
-        this.currentPage = 1;
-        this.loadServices();
-    }
-
-    clearFilters() {
-        document.getElementById('filterForm').reset();
-        $('#id_category').val(null).trigger('change');
-        this.filters = {};
-        this.currentPage = 1;
-        this.loadServices();
-    }
-
-    toggleAdvancedFilters() {
-        const advancedFilters = document.getElementById('advancedFilters');
-        const toggleBtn = document.getElementById('toggleAdvancedFilters');
-
-        if (advancedFilters.style.display === 'none') {
-            advancedFilters.style.display = 'block';
-            toggleBtn.classList.add('active');
-        } else {
-            advancedFilters.style.display = 'none';
-            toggleBtn.classList.remove('active');
-        }
-    }
-
-    toggleColumnMenu(event) {
-        const menu = document.getElementById('columnToggleMenu');
-        const rect = event.target.getBoundingClientRect();
-
-        menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
-        menu.style.top = `${rect.bottom + window.scrollY}px`;
-        menu.style.left = `${rect.left + window.scrollX}px`;
-    }
-
-    toggleColumn(column, visible) {
-        this.columnVisibility[column] = visible;
-
-        const cells = document.querySelectorAll(`td:nth-child(${this.getColumnIndex(column)})`);
-        const headers = document.querySelectorAll(`th:nth-child(${this.getColumnIndex(column)})`);
-
-        cells.forEach(cell => cell.classList.toggle('d-none', !visible));
-        headers.forEach(header => header.classList.toggle('d-none', !visible));
-
-        this.saveColumnPreferences();
-    }
-
-    getColumnIndex(column) {
-        const columns = ['name', 'code', 'category', 'unit_price', 'final_price', 'efris_status', 'status'];
-        return columns.indexOf(column) + 2; // +2 because of checkbox column
-    }
-
-    saveColumnPreferences() {
-        localStorage.setItem('service_columns', JSON.stringify(this.columnVisibility));
-    }
-
-    loadColumnPreferences() {
-        const saved = localStorage.getItem('service_columns');
-        if (saved) {
-            this.columnVisibility = JSON.parse(saved);
-
-            // Apply saved preferences
-            Object.entries(this.columnVisibility).forEach(([column, visible]) => {
-                const toggle = document.querySelector(`.column-toggle[data-column="${column}"]`);
-                if (toggle) toggle.checked = visible;
-                this.toggleColumn(column, visible);
-            });
-        }
-    }
-
-    async exportData(format) {
-        const params = new URLSearchParams({
-            format: format,
-            ...this.filters
-        });
-
-        if (this.selectedServices.size > 0) {
-            params.append('service_ids', Array.from(this.selectedServices).join(','));
-        }
-
-        window.open(`{ '_blank');
-    }
-
-    async syncToEfris(serviceId) {
-        try {
-            const response = await fetch(`' 0 %}`.replace('0', serviceId), {
-                method: 'POST',
-                headers: {
-                    'X-CSRFToken': this.getCSRFToken()
-                }
-            });
-
-            const result = await response.json();
-
-            if (result.success) {
-                this.showSuccess('{% trans "Service synced to EFRIS successfully" %}');
-                this.loadServices();
-            } else {
-                this.showError(result.message || '{% trans "Failed to sync to EFRIS" %}');
-            }
-        } catch (error) {
-            console.error('Error syncing to EFRIS:', error);
-            this.showError('{% trans "Failed to sync to EFRIS" %}');
-        }
-    }
-
-    confirmDelete(serviceId, serviceName) {
-        const modal = new bootstrap.Modal(document.getElementById('deleteModal'));
-        modal.show();
-
-        document.getElementById('confirmDeleteBtn').onclick = async () => {
-            try {
-                const response = await fetch(`{% url 'inventory:service_delete' 0 %}`.replace('0', serviceId), {
-                    method: 'POST',
-                    headers: {
-                        'X-CSRFToken': this.getCSRFToken()
-                    }
-                });
-
-                if (response.ok) {
-                    this.showSuccess('{% trans "Service deleted successfully" %}');
-                    this.loadServices();
-                } else {
-                    this.showError('{% trans "Failed to delete service" %}');
-                }
-            } catch (error) {
-                console.error('Error deleting service:', error);
-                this.showError('{% trans "Failed to delete service" %}');
-            }
-
-            modal.hide();
-        };
-    }
-
-    openServiceModal(serviceId = null) {
-        const url = serviceId ?
-            `{% url 'inventory:service_update' 0 %}`.replace('0', serviceId) :
-            "{% url 'inventory:service_create' %}";
-
-        const modal = new bootstrap.Modal(document.getElementById('serviceModal'));
-        const modalBody = document.getElementById('serviceModalBody');
-        const modalTitle = document.getElementById('modalTitle');
-
-        modalTitle.textContent = serviceId ? '{% trans "Edit Service" %}' : '{% trans "Add Service" %}';
-        modalBody.innerHTML = `
-            <div class="text-center py-4">
-                <div class="spinner-border text-primary" role="status">
-                    <span class="visually-hidden">{% trans "Loading..." %}</span>
+                <td>
+                    <code>${escapeHtml(service.code)}</code>
+                </td>
+                <td>${service.category.name}</td>
+                <td>UGX ${service.unit_price_formatted}</td>
+                <td class="price-display">UGX ${service.final_price_formatted}</td>
+                <td>${renderEFRISBadge(service.efris_status, service.efris_status_text)}</td>
+                <td>${renderStatusBadge(service.is_active)}</td>
+                <td>
+                <div class="btn-group btn-group-sm" role="group">
+                <button type="button" class="btn btn-info btn-sm"
+                                             onclick="editService(${service.id})" title="Edit">
+                <i class="bi bi-pencil"></i>
+                </button>
+                <a href="${service.detail_url}"
+                                        class="btn btn-primary btn-sm" title="View">
+                <i class="bi bi-eye"></i>
+                </a>
+                <button type="button" class="btn btn-danger btn-sm"
+                                             onclick="deleteService(${service.id}, '${escapeHtml(service.name)}')" title="Delete">
+                <i class="bi bi-trash"></i>
+                </button>
                 </div>
-                <p class="mt-2">{% trans "Loading form..." %}</p>
-            </div>
+                </td>
+                </tr>
+                `).join('');
+    servicesTableBody.innerHTML = html;
+
+    // Add event listeners to checkboxes
+    document.querySelectorAll('.row-checkbox').forEach(checkbox => {
+        checkbox.addEventListener('change', updateBulkActionButton);
+    });
+}
+
+// Render EFRIS badge
+function renderEFRISBadge(status, text) {
+    const badges = {
+        'uploaded': '<span class="badge bg-success">✓ Uploaded</span>',
+        'pending': '<span class="badge bg-warning">Pending</span>',
+        'disabled': '<span class="badge bg-secondary">Disabled</span>'
+    };
+    return badges[status] || '<span class="badge bg-secondary">Unknown</span>';
+}
+
+// Render status badge
+function renderStatusBadge(isActive) {
+    return isActive
+        ? '<span class="badge bg-success">Active</span>'
+        : '<span class="badge bg-danger">Inactive</span>';
+}
+
+// Show empty state
+function showEmptyState(message = 'No services found') {
+    servicesTableBody.innerHTML = `
+        <tr>
+            <td colspan="9" class="text-center">
+                <div class="empty-state">
+                    <i class="bi bi-inbox"></i>
+                    <h5>${message}</h5>
+                    <p class="text-muted">Try adjusting your filters or create a new service</p>
+                </div>
+            </td>
+        </tr>
+    `;
+}
+
+// Render pagination
+function renderPagination(pagination) {
+    if (pagination.total_pages <= 1) {
+        paginationContainer.innerHTML = '';
+        return;
+    }
+
+    let html = '';
+
+    // Previous button
+    html += `
+        <li class="page-item ${!pagination.has_previous ? 'disabled' : ''}">
+            <a class="page-link" href="#" onclick="goToPage(${pagination.previous_page}); return false;">
+                Previous
+            </a>
+        </li>
+    `;
+
+    // Page numbers
+    const startPage = Math.max(1, pagination.page - 2);
+    const endPage = Math.min(pagination.total_pages, pagination.page + 2);
+
+    if (startPage > 1) {
+        html += `
+            <li class="page-item">
+                <a class="page-link" href="#" onclick="goToPage(1); return false;">1</a>
+            </li>
         `;
-
-        modal.show();
-
-        fetch(url)
-            .then(response => response.text())
-            .then(html => {
-                modalBody.innerHTML = html;
-                this.initServiceForm();
-            })
-            .catch(error => {
-                console.error('Error loading form:', error);
-                modalBody.innerHTML = '<div class="alert alert-danger">{% trans "Failed to load form" %}</div>';
-            });
-    }
-
-    initServiceForm() {
-        // Initialize any form-specific JavaScript here
-        const form = document.getElementById('serviceForm');
-        if (form) {
-            form.addEventListener('submit', async (e) => {
-                e.preventDefault();
-                await this.submitServiceForm(form);
-            });
+        if (startPage > 2) {
+            html += '<li class="page-item disabled"><span class="page-link">...</span></li>';
         }
     }
 
-    async submitServiceForm(form) {
-        const formData = new FormData(form);
+    for (let i = startPage; i <= endPage; i++) {
+        html += `
+            <li class="page-item ${i === pagination.page ? 'active' : ''}">
+                <a class="page-link" href="#" onclick="goToPage(${i}); return false;">${i}</a>
+            </li>
+        `;
+    }
 
-        try {
-            const response = await fetch(form.action, {
-                method: 'POST',
-                body: formData,
-                headers: {
-                    'X-CSRFToken': this.getCSRFToken()
-                }
-            });
-
-            if (response.ok) {
-                this.showSuccess('{% trans "Service saved successfully" %}');
-                bootstrap.Modal.getInstance(document.getElementById('serviceModal')).hide();
-                this.loadServices();
-            } else {
-                const errorText = await response.text();
-                document.getElementById('serviceModalBody').innerHTML = errorText;
-                this.initServiceForm();
-            }
-        } catch (error) {
-            console.error('Error submitting form:', error);
-            this.showError('{% trans "Failed to save service" %}');
+    if (endPage < pagination.total_pages) {
+        if (endPage < pagination.total_pages - 1) {
+            html += '<li class="page-item disabled"><span class="page-link">...</span></li>';
         }
+        html += `
+            <li class="page-item">
+                <a class="page-link" href="#" onclick="goToPage(${pagination.total_pages}); return false;">
+                    ${pagination.total_pages}
+                </a>
+            </li>
+        `;
     }
 
-    // Utility methods
-    highlightText(text, searchTerm) {
-        if (!searchTerm || !text) return text;
+    // Next button
+    html += `
+        <li class="page-item ${!pagination.has_next ? 'disabled' : ''}">
+            <a class="page-link" href="#" onclick="goToPage(${pagination.next_page}); return false;">
+                Next
+            </a>
+        </li>
+    `;
 
-        const regex = new RegExp(`(${this.escapeRegex(searchTerm)})`, 'gi');
-        return text.replace(regex, '<mark class="search-highlight">$1</mark>');
+    paginationContainer.innerHTML = html;
+}
+
+// Update table info
+function updateTableInfo(pagination) {
+    const start = (pagination.page - 1) * pagination.per_page + 1;
+    const end = Math.min(pagination.page * pagination.per_page, pagination.total_records);
+    tableInfo.textContent = `Showing ${start} to ${end} of ${pagination.total_records} entries`;
+}
+
+// Go to specific page
+window.goToPage = function(page) {
+    if (page && page !== currentPage) {
+        currentPage = page;
+        loadServices();
+    }
+};
+
+// Change per page
+function changePerPage() {
+    perPage = parseInt(perPageSelect.value);
+    currentPage = 1;
+    loadServices();
+}
+
+// Apply filters
+function applyFilters() {
+    filters = {
+        search: searchInput.value,
+        category: categoryFilter.value,
+        tax_rate: taxRateFilter.value,
+        efris_status: efrisStatusFilter.value,
+        is_active: activeFilter.value
+    };
+    currentPage = 1;
+    loadServices();
+    loadStatistics();
+}
+
+// Clear filters
+function clearFilters() {
+    searchInput.value = '';
+    categoryFilter.value = '';
+    taxRateFilter.value = '';
+    efrisStatusFilter.value = '';
+    activeFilter.value = '';
+    applyFilters();
+}
+
+// Handle sorting
+function handleSort(header) {
+    const sortField = header.dataset.sort;
+
+    // Toggle sort direction
+    if (currentSort === sortField) {
+        currentSort = `-${sortField}`;
+        header.classList.remove('sort-asc');
+        header.classList.add('sort-desc');
+    } else if (currentSort === `-${sortField}`) {
+        currentSort = sortField;
+        header.classList.remove('sort-desc');
+        header.classList.add('sort-asc');
+    } else {
+        // Remove sort classes from all headers
+        document.querySelectorAll('.sortable').forEach(h => {
+            h.classList.remove('sort-asc', 'sort-desc');
+        });
+        currentSort = sortField;
+        header.classList.add('sort-asc');
     }
 
-    escapeRegex(string) {
-        return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    currentPage = 1;
+    loadServices();
+}
+
+// Toggle select all
+function toggleSelectAll() {
+    const checkboxes = document.querySelectorAll('.row-checkbox');
+    checkboxes.forEach(checkbox => {
+        checkbox.checked = selectAllCheckbox.checked;
+    });
+    updateBulkActionButton();
+}
+
+// Update bulk action button
+function updateBulkActionButton() {
+    const checkedCount = document.querySelectorAll('.row-checkbox:checked').length;
+    document.getElementById('selectedCount').textContent = checkedCount;
+    bulkActionBtn.disabled = checkedCount === 0;
+
+    // Update select all checkbox
+    const totalCheckboxes = document.querySelectorAll('.row-checkbox').length;
+    selectAllCheckbox.checked = checkedCount === totalCheckboxes && checkedCount > 0;
+    selectAllCheckbox.indeterminate = checkedCount > 0 && checkedCount < totalCheckboxes;
+}
+
+// Show bulk actions modal
+function showBulkActionsModal() {
+    const modal = new bootstrap.Modal(document.getElementById('bulkActionsModal'));
+    modal.show();
+}
+
+// Handle bulk actions
+async function handleBulkActions(e) {
+    e.preventDefault();
+
+    const action = document.getElementById('bulkAction').value;
+    if (!action) {
+        showNotification('Please select an action', 'warning');
+        return;
     }
 
-    formatCurrency(amount) {
-        return new Intl.NumberFormat('en-UG', {
-            style: 'currency',
-            currency: 'UGX',
-            minimumFractionDigits: 2
-        }).format(amount);
+    const selectedIds = Array.from(document.querySelectorAll('.row-checkbox:checked'))
+        .map(cb => cb.value);
+
+    if (selectedIds.length === 0) {
+        showNotification('No services selected', 'warning');
+        return;
     }
 
-    renderEfrisStatus(service) {
-        if (service.efris_is_uploaded) {
-            return `<span class="badge bg-success">
-                <i class="bi bi-cloud-check me-1"></i> {% trans "Uploaded" %}
-            </span>`;
-        } else if (service.efris_auto_sync_enabled) {
-            return `<span class="badge bg-warning">
-                <i class="bi bi-cloud-arrow-up me-1"></i> {% trans "Pending" %}
-            </span>`;
+    if (action === 'delete' && !confirm(`Are you sure you want to delete ${selectedIds.length} service(s)?`)) {
+        return;
+    }
+
+    try {
+        const formData = new FormData();
+        formData.append('action', action);
+        selectedIds.forEach(id => formData.append('service_ids[]', id));
+        formData.append('csrfmiddlewaretoken', '{{ csrf_token }}');
+
+        const response = await fetch('/inventory/services/bulk-actions/', {
+            method: 'POST',
+            body: formData
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            showNotification(data.message, 'success');
+            bootstrap.Modal.getInstance(document.getElementById('bulkActionsModal')).hide();
+            selectAllCheckbox.checked = false;
+            loadServices();
+            loadStatistics();
         } else {
-            return `<span class="badge bg-secondary">
-                <i class="bi bi-cloud-slash me-1"></i> {% trans "Disabled" %}
-            </span>`;
+            showNotification(data.error || 'Error performing bulk action', 'error');
         }
-    }
-
-    renderStatus(service) {
-        const statusClass = service.is_active ? 'status-active' : 'status-inactive';
-        const statusText = service.is_active ? '{% trans "Active" %}' : '{% trans "Inactive" %}';
-
-        return `
-            <span class="d-flex align-items-center">
-                <span class="status-indicator ${statusClass}"></span>
-                ${statusText}
-            </span>
-        `;
-    }
-
-    updatePagination(pagination) {
-        const paginationEl = document.getElementById('pagination');
-        const { current_page, total_pages, has_previous, has_next } = pagination;
-
-        let html = '';
-
-        // Previous button
-        html += `
-            <li class="page-item ${!has_previous ? 'disabled' : ''}">
-                <a class="page-link" href="#" ${has_previous ? `onclick="serviceManager.goToPage(${current_page - 1})"` : ''}>
-                    {% trans "Previous" %}
-                </a>
-            </li>
-        `;
-
-        // Page numbers
-        for (let i = 1; i <= total_pages; i++) {
-            if (i === 1 || i === total_pages || (i >= current_page - 2 && i <= current_page + 2)) {
-                html += `
-                    <li class="page-item ${i === current_page ? 'active' : ''}">
-                        <a class="page-link" href="#" onclick="serviceManager.goToPage(${i})">${i}</a>
-                    </li>
-                `;
-            } else if (i === current_page - 3 || i === current_page + 3) {
-                html += '<li class="page-item disabled"><span class="page-link">...</span></li>';
-            }
-        }
-
-        // Next button
-        html += `
-            <li class="page-item ${!has_next ? 'disabled' : ''}">
-                <a class="page-link" href="#" ${has_next ? `onclick="serviceManager.goToPage(${current_page + 1})"` : ''}>
-                    {% trans "Next" %}
-                </a>
-            </li>
-        `;
-
-        paginationEl.innerHTML = html;
-    }
-
-    updateStats(stats) {
-        document.getElementById('pageServicesCount').textContent = stats.page_count || 0;
-
-        // Update entries info
-        const start = (this.currentPage - 1) * this.pageSize + 1;
-        const end = Math.min(this.currentPage * this.pageSize, this.totalRecords);
-        document.getElementById('entriesInfo').textContent =
-            `{% trans "Showing" %} ${start} {% trans "to" %} ${end} {% trans "of" %} ${this.totalRecords} {% trans "entries" %}`;
-    }
-
-    goToPage(page) {
-        this.currentPage = page;
-        this.loadServices();
-    }
-
-    showLoading() {
-        document.getElementById('loadingOverlay').style.display = 'flex';
-    }
-
-    hideLoading() {
-        document.getElementById('loadingOverlay').style.display = 'none';
-    }
-
-    showSuccess(message) {
-        this.showAlert(message, 'success');
-    }
-
-    showError(message) {
-        this.showAlert(message, 'danger');
-    }
-
-    showAlert(message, type) {
-        const alert = document.createElement('div');
-        alert.className = `alert alert-${type} alert-dismissible fade show`;
-        alert.innerHTML = `
-            ${message}
-            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-        `;
-
-        document.querySelector('.main-content').insertBefore(alert, document.querySelector('.main-content').firstChild);
-
-        setTimeout(() => {
-            if (alert.parentNode) {
-                alert.remove();
-            }
-        }, 5000);
-    }
-
-    getCSRFToken() {
-        return document.querySelector('[name=csrfmiddlewaretoken]').value;
-    }
-
-    isEfrisEnabled() {
-        return document.getElementById('urls-config').dataset.efrisEnabled === 'true';
+    } catch (error) {
+        console.error('Error:', error);
+        showNotification('Error performing bulk action', 'error');
     }
 }
 
-// Initialize the service manager when the page loads
-document.addEventListener('DOMContentLoaded', function() {
-    window.serviceManager = new ServiceManager();
-});
+// Edit service
+window.editService = async function(serviceId) {
+    try {
+        const response = await fetch(`/inventory/api/services/${serviceId}/`);
+        const result = await response.json();
+
+        if (result.success) {
+            const data = result.data;
+
+            document.getElementById('serviceId').value = data.id;
+            document.getElementById('id_name').value = data.name;
+            document.getElementById('id_code').value = data.code;
+            document.getElementById('id_category').value = data.category_id;
+            document.getElementById('id_description').value = data.description || '';
+            document.getElementById('id_unit_price').value = data.unit_price;
+            document.getElementById('id_tax_rate').value = data.tax_rate;
+            document.getElementById('id_tax_rate').dispatchEvent(new Event('change'));
+            document.getElementById('id_excise_duty_rate').value = data.excise_duty_rate;
+            document.getElementById('id_unit_of_measure').value = data.unit_of_measure;
+            document.getElementById('id_efris_auto_sync_enabled').checked = data.efris_auto_sync_enabled;
+            document.getElementById('id_is_active').checked = data.is_active;
+
+            document.getElementById('modalTitle').textContent = 'Edit Service';
+
+            const modal = new bootstrap.Modal(document.getElementById('serviceModal'));
+            modal.show();
+        } else {
+            showNotification('Error loading service details', 'error');
+        }
+    } catch (error) {
+        console.error('Error:', error);
+        showNotification('Error loading service details', 'error');
+    }
+};
+
+// Delete service
+window.deleteService = async function(serviceId, serviceName) {
+    if (!confirm(`Are you sure you want to delete "${serviceName}"?`)) {
+        return;
+    }
+
+    try {
+        const formData = new FormData();
+        formData.append('csrfmiddlewaretoken', '{{ csrf_token }}');
+
+        const response = await fetch(`/inventory/services/${serviceId}/delete/`, {
+            method: 'POST',
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest'
+            },
+            body: formData
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            showNotification(data.message, 'success');
+            loadServices();
+            loadStatistics();
+        } else {
+            showNotification(data.error || 'Error deleting service', 'error');
+        }
+    } catch (error) {
+        console.error('Error:', error);
+        showNotification('Error deleting service', 'error');
+    }
+};
+
+// Handle service form submission
+async function handleServiceSubmit(e) {
+    e.preventDefault();
+
+    const serviceId = document.getElementById('serviceId').value;
+    const url = serviceId
+        ? `/inventory/services/${serviceId}/edit/`
+        : '{% url "inventory:service_create" %}';
+
+    const formData = new FormData(e.target);
+
+    try {
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest'
+            },
+            body: formData
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            showNotification(data.message, 'success');
+            bootstrap.Modal.getInstance(document.getElementById('serviceModal')).hide();
+            loadServices();
+            loadStatistics();
+        } else {
+            displayFormErrors(data.errors);
+        }
+    } catch (error) {
+        console.error('Error:', error);
+        showNotification('Error saving service', 'error');
+    }
+}
+
+// Handle category form submission
+async function handleCategorySubmit(e) {
+    e.preventDefault();
+
+    const formData = new FormData(e.target);
+
+    try {
+        const response = await fetch('{% url "inventory:category_create_ajax" %}', {
+            method: 'POST',
+            body: formData
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            // Add new category to select
+            const option = document.createElement('option');
+            option.value = data.category.id;
+            option.textContent = data.category.name;
+            option.selected = true;
+
+            const categorySelect = document.getElementById('id_category');
+            categorySelect.appendChild(option);
+
+            // Also update filter
+            const filterOption = option.cloneNode(true);
+            categoryFilter.appendChild(filterOption);
+
+            bootstrap.Modal.getInstance(document.getElementById('categoryModal')).hide();
+            showNotification('Category created successfully', 'success');
+        } else {
+            showNotification(data.message || 'Error creating category', 'error');
+        }
+    } catch (error) {
+        console.error('Error:', error);
+        showNotification('Error creating category', 'error');
+    }
+}
+
+// Load statistics
+async function loadStatistics() {
+    try {
+        const response = await fetch('/inventory/api/services/statistics/');
+        const data = await response.json();
+
+        if (data.success) {
+            const stats = data.stats;
+            document.getElementById('totalServices').textContent = stats.total;
+            document.getElementById('activeServices').textContent = stats.active;
+            document.getElementById('efrisUploaded').textContent = stats.efris_uploaded;
+            document.getElementById('pendingUpload').textContent = stats.efris_pending;
+        }
+    } catch (error) {
+        console.error('Error loading statistics:', error);
+    }
+}
+
+// Handle tax rate change
+function handleTaxRateChange(e) {
+    const exciseDutyGroup = document.getElementById('exciseDutyGroup');
+    if (e.target.value === 'E') {
+        exciseDutyGroup.style.display = 'block';
+    } else {
+        exciseDutyGroup.style.display = 'none';
+        document.getElementById('id_excise_duty_rate').value = '0';
+    }
+    calculateFinalPrice();
+}
+
+// Calculate final price
+function calculateFinalPrice() {
+    const unitPrice = parseFloat(document.getElementById('id_unit_price').value) || 0;
+    const taxRate = document.getElementById('id_tax_rate').value;
+    const exciseDuty = parseFloat(document.getElementById('id_excise_duty_rate').value) || 0;
+
+    let taxAmount = 0;
+    let finalPrice = unitPrice;
+
+    switch(taxRate) {
+        case 'A': // Standard Rate 18%
+            taxAmount = unitPrice * 0.18;
+            break;
+        case 'D': // Deemed 5%
+            taxAmount = unitPrice * 0.05;
+            break;
+        case 'E': // Excise Duty
+            taxAmount = unitPrice * (exciseDuty / 100);
+            break;
+    }
+
+    finalPrice = unitPrice + taxAmount;
+
+    // Show price preview
+    let pricePreview = document.getElementById('pricePreview');
+    if (!pricePreview) {
+        pricePreview = document.createElement('div');
+        pricePreview.id = 'pricePreview';
+        pricePreview.className = 'form-text text-success';
+        document.getElementById('id_unit_price').parentNode.appendChild(pricePreview);
+    }
+    pricePreview.textContent = `Final Price: UGX ${finalPrice.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+}
+
+// Auto-generate service code
+function autoGenerateCode() {
+    const codeInput = document.getElementById('id_code');
+    if (!codeInput.value) {
+        const name = document.getElementById('id_name').value;
+        if (name) {
+            const code = 'SRV-' + name.substring(0, 3).toUpperCase() + '-' +
+                       Math.random().toString(36).substring(2, 5).toUpperCase();
+            codeInput.value = code;
+        }
+    }
+}
+
+// Reset service form
+function resetServiceForm() {
+    document.getElementById('serviceForm').reset();
+    document.getElementById('serviceId').value = '';
+    document.getElementById('modalTitle').textContent = 'Create New Service';
+    document.querySelectorAll('.is-invalid').forEach(el => el.classList.remove('is-invalid'));
+    document.querySelectorAll('.invalid-feedback').forEach(el => el.textContent = '');
+
+    const pricePreview = document.getElementById('pricePreview');
+    if (pricePreview) pricePreview.remove();
+}
+
+// Reset category form
+function resetCategoryForm() {
+    document.getElementById('categoryForm').reset();
+    document.querySelectorAll('.is-invalid').forEach(el => el.classList.remove('is-invalid'));
+}
+
+// Display form errors
+function displayFormErrors(errors) {
+    // Clear previous errors
+    document.querySelectorAll('.is-invalid').forEach(el => el.classList.remove('is-invalid'));
+    document.querySelectorAll('.invalid-feedback').forEach(el => el.textContent = '');
+
+    // Display new errors
+    for (const field in errors) {
+        const input = document.querySelector(`[name="${field}"]`);
+        if (input) {
+            const feedback = input.parentElement.querySelector('.invalid-feedback');
+            input.classList.add('is-invalid');
+            if (feedback) {
+                feedback.textContent = Array.isArray(errors[field]) ? errors[field][0] : errors[field];
+            }
+        }
+    }
+}
+
+// Show notification
+function showNotification(message, type = 'info') {
+    const toastContainer = document.getElementById('toastContainer');
+
+    const typeClasses = {
+        'success': 'text-bg-success',
+        'error': 'text-bg-danger',
+        'warning': 'text-bg-warning',
+        'info': 'text-bg-info'
+    };
+
+    const icons = {
+        'success': 'bi-check-circle',
+        'error': 'bi-exclamation-circle',
+        'warning': 'bi-exclamation-triangle',
+        'info': 'bi-info-circle'
+    };
+
+    const toast = document.createElement('div');
+    toast.className = `toast align-items-center ${typeClasses[type]} border-0`;
+    toast.setAttribute('role', 'alert');
+    toast.innerHTML = `
+        <div class="d-flex">
+            <div class="toast-body">
+                <i class="bi ${icons[type]} me-2"></i>
+                ${escapeHtml(message)}
+            </div>
+            <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+        </div>
+    `;
+
+    toastContainer.appendChild(toast);
+    const bsToast = new bootstrap.Toast(toast);
+    bsToast.show();
+
+    toast.addEventListener('hidden.bs.toast', () => toast.remove());
+}
+
+// Show loading state
+function showLoading() {
+    servicesTableBody.innerHTML = `
+        <tr>
+            <td colspan="9" class="text-center">
+                <div class="spinner-border text-primary" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+            </td>
+        </tr>
+    `;
+}
+
+// Hide loading state
+function hideLoading() {
+    // Loading is replaced by actual data
+}
+
+// Utility: Debounce function
+function debounce(func, wait) {
+    let timeout;
+    return function executedFunction(...args) {
+        const later = () => {
+            clearTimeout(timeout);
+            func(...args);
+        };
+        clearTimeout(timeout);
+        timeout = setTimeout(later, wait);
+    };
+}
+
+// Utility: Escape HTML
+function escapeHtml(text) {
+    const map = {
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#039;'
+    };
+    return String(text).replace(/[&<>"']/g, m => map[m]);
+}
+
+// Initialize tooltips
+const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+tooltipTriggerList.map(el => new bootstrap.Tooltip(el));
+    });
 </script>
 {% endblock %}

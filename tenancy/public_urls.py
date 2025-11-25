@@ -30,7 +30,7 @@ urlpatterns = [
     path('analytics/', include('public_analytics.urls')),
     # SEO
     path('sitemap.xml', sitemap, {'sitemaps': sitemaps}, name='sitemap'),
-    path('robots.txt', include('public_seo.urls')),
+    path('seo/', include('public_seo.urls')),
 
     # Health check
     path('health/', TemplateView.as_view(template_name='public_router/health.html'), name='health'),

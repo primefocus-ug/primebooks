@@ -1368,3 +1368,816 @@ def validate_import_data(request):
     except Exception as e:
         logger.error(f"Validation error: {str(e)}", exc_info=True)
         return JsonResponse({'error': str(e)}, status=400)
+
+
+@login_required
+def download_sample_products_only_csv(request):
+    """Generate CSV sample file for product-only import (no stock)"""
+    response = HttpResponse(content_type='text/csv')
+    response['Content-Disposition'] = 'attachment; filename="sample_products_only.csv"'
+
+    writer = csv.writer(response)
+
+    # Headers for product-only import with all fields
+    headers = [
+        'Product Name*', 'SKU*', 'Barcode', 'Category', 'Supplier',
+        'Selling Price*', 'Cost Price*', 'Discount %',
+        'Tax Rate*', 'Excise Duty Rate', 'Unit of Measure*',
+        'Min Stock Level', 'Description', 'Is Active',
+        'EFRIS Commodity Code', 'EFRIS Excise Duty Code', 'EFRIS Auto Sync',
+        'EFRIS Item Code', 'EFRIS Has Piece Unit', 'EFRIS Piece Measure Unit',
+        'EFRIS Piece Unit Price', 'EFRIS Goods Code'
+    ]
+    writer.writerow(headers)
+
+    # Sample data rows
+    sample_data = [
+        [
+            'Coca Cola 500ml', 'CC-500ML', '5000112345678', 'Beverages', 'Century Bottling',
+            '3000', '2000', '0', 'A', '0', '102',
+            '20', 'Refreshing cola drink 500ml bottle', 'Yes',
+            '101113010000000000', '', 'Yes', '', 'No', '', '', ''
+        ],
+        [
+            'Samsung Galaxy A54', 'SGH-A54-BLK', '8806094123456', 'Electronics', 'Samsung Uganda',
+            '1500000', '1200000', '5', 'A', '0', '101',
+            '5', 'Samsung Galaxy A54 128GB Black', 'Yes',
+            '101113020000000000', '', 'Yes', '', 'No', '', '', ''
+        ],
+        [
+            'Rice 1KG', 'RICE-1KG', '', 'Food & Groceries', 'Tilda Uganda',
+            '5000', '3500', '0', 'B', '0', '103',
+            '50', 'Premium basmati rice 1kg pack', 'Yes',
+            '101113030000000000', '', 'Yes', '', 'No', '', '', ''
+        ],
+    ]
+
+    for row in sample_data:
+        writer.writerow(row)
+
+    return response
+
+
+@login_required
+def download_sample_products_only_excel(request):
+    """Generate Excel sample file for product-only import with formatting"""
+    output = BytesIO()
+    workbook = xlsxwriter.Workbook(output)
+
+    # Create worksheets
+    data_sheet = workbook.add_worksheet('Products Data')
+    instructions_sheet = workbook.add_worksheet('Instructions')
+    reference_sheet = workbook.add_worksheet('Reference Data')
+
+    # Define formats
+    header_format = workbook.add_format({
+        'bold': True,
+        'bg_color': '#10B981',  # Green for products
+        'font_color': 'white',
+        'border': 1,
+        'align': 'center',
+        'valign': 'vcenter',
+        'text_wrap': True
+    })
+
+    required_format = workbook.add_format({
+        'bold': True,
+        'bg_color': '#DC2626',
+        'font_color': 'white',
+        'border': 1,
+        'align': 'center',
+        'valign': 'vcenter',
+        'text_wrap': True
+    })
+
+    sample_format = workbook.add_format({
+        'border': 1,
+        'align': 'left',
+        'valign': 'vcenter'
+    })
+
+    instruction_header = workbook.add_format({
+        'bold': True,
+        'font_size': 14,
+        'font_color': '#1F2937'
+    })
+
+    instruction_text = workbook.add_format({
+        'text_wrap': True,
+        'valign': 'top'
+    })
+
+    # ========================================================================
+    # DATA SHEET
+    # ========================================================================
+
+    headers = [
+        ('Product Name*', True),
+        ('SKU*', True),
+        ('Barcode', False),
+        ('Category', False),
+        ('Supplier', False),
+        ('Selling Price*', True),
+        ('Cost Price*', True),
+        ('Discount %', False),
+        ('Tax Rate*', True),
+        ('Excise Duty Rate', False),
+        ('Unit of Measure*', True),
+        ('Min Stock Level', False),
+        ('Description', False),
+        ('Is Active', False),
+        ('EFRIS Commodity Code', False),
+        ('EFRIS Excise Duty Code', False),
+        ('EFRIS Auto Sync', False),
+        ('EFRIS Item Code', False),
+        ('EFRIS Has Piece Unit', False),
+        ('EFRIS Piece Measure Unit', False),
+        ('EFRIS Piece Unit Price', False),
+        ('EFRIS Goods Code', False),
+    ]
+
+    # Write headers
+    for col, (header, is_required) in enumerate(headers):
+        if is_required:
+            data_sheet.write(0, col, header, required_format)
+        else:
+            data_sheet.write(0, col, header, header_format)
+
+    # Sample data
+    sample_data = [
+        [
+            'Coca Cola 500ml', 'CC-500ML', '5000112345678', 'Beverages', 'Century Bottling',
+            3000, 2000, 0, 'A', 0, '102',
+            20, 'Refreshing cola drink 500ml bottle', 'Yes',
+            '101113010000000000', '', 'Yes', '', 'No', '', '', ''
+        ],
+        [
+            'Samsung Galaxy A54', 'SGH-A54-BLK', '8806094123456', 'Electronics', 'Samsung Uganda',
+            1500000, 1200000, 5, 'A', 0, '101',
+            5, 'Samsung Galaxy A54 128GB Black', 'Yes',
+            '101113020000000000', '', 'Yes', '', 'No', '', '', ''
+        ],
+        [
+            'Rice 1KG', 'RICE-1KG', '', 'Food & Groceries', 'Tilda Uganda',
+            5000, 3500, 0, 'B', 0, '103',
+            50, 'Premium basmati rice 1kg pack', 'Yes',
+            '101113030000000000', '', 'Yes', '', 'No', '', '', ''
+        ],
+    ]
+
+    for row_idx, row_data in enumerate(sample_data, start=1):
+        for col_idx, value in enumerate(row_data):
+            data_sheet.write(row_idx, col_idx, value, sample_format)
+
+    # Set column widths
+    column_widths = [20, 15, 15, 15, 15, 12, 12, 10, 10, 12, 15, 12, 30, 10, 20, 20, 15, 15, 15, 15, 15, 15]
+    for col, width in enumerate(column_widths):
+        data_sheet.set_column(col, col, width)
+
+    # Freeze first row
+    data_sheet.freeze_panes(1, 0)
+
+    # ========================================================================
+    # INSTRUCTIONS SHEET
+    # ========================================================================
+
+    instructions_sheet.set_column(0, 0, 50)
+    instructions_sheet.set_column(1, 1, 60)
+
+    row = 0
+    instructions_sheet.write(row, 0, 'PRODUCT IMPORT INSTRUCTIONS', instruction_header)
+    row += 2
+
+    instructions = [
+        ('Purpose:', 'This template is for importing PRODUCTS ONLY (no stock quantities)'),
+        ('', 'Use this when you want to:'),
+        ('', '- Add new products to your catalog'),
+        ('', '- Update existing product information'),
+        ('', '- Bulk update product prices or details'),
+        ('', ''),
+        ('Required Fields:', 'Fields marked with * (red header) are mandatory'),
+        ('', '- Product Name: Full name of the product'),
+        ('', '- SKU: Unique product code (Stock Keeping Unit)'),
+        ('', '- Selling Price: Price you sell to customers'),
+        ('', '- Cost Price: Your purchase/cost price'),
+        ('', '- Tax Rate: VAT/Tax category (A, B, C, D, or E)'),
+        ('', '- Unit of Measure: How product is measured (see reference)'),
+        ('', ''),
+        ('Optional Fields:', 'All other fields can be left empty'),
+        ('', '- Barcode: Unique product barcode (must be unique if provided)'),
+        ('', '- Category: Product category (created if doesn\'t exist)'),
+        ('', '- Supplier: Product supplier (created if doesn\'t exist)'),
+        ('', '- Is Active: Yes/No - whether product is active for sales'),
+        ('', ''),
+        ('EFRIS Fields:', 'Optional fields for Uganda Revenue Authority compliance:'),
+        ('', '- EFRIS Commodity Code: 18-digit URA commodity code'),
+        ('', '- EFRIS Excise Duty Code: For excisable goods'),
+        ('', '- EFRIS Auto Sync: Yes/No - Auto-sync to EFRIS system'),
+        ('', '- EFRIS Item Code: Internal EFRIS item code'),
+        ('', '- EFRIS Has Piece Unit: Yes/No - Whether product has piece unit'),
+        ('', '- EFRIS Piece Measure Unit: Unit code for piece measurement'),
+        ('', '- EFRIS Piece Unit Price: Price per piece unit'),
+        ('', '- EFRIS Goods Code: EFRIS-assigned goods code'),
+        ('', ''),
+        ('SKU Handling:', 'The SKU is the unique identifier for products'),
+        ('', '- If SKU exists: Product will be UPDATED with new information'),
+        ('', '- If SKU is new: A new product will be CREATED'),
+        ('', '- SKU format: Use letters, numbers, hyphens (e.g., PROD-001)'),
+        ('', ''),
+        ('Tax Rates:', 'Use these codes:'),
+        ('', 'A = Standard rate (18%)'),
+        ('', 'B = Zero rate (0%)'),
+        ('', 'C = Exempt (Not taxable)'),
+        ('', 'D = Deemed rate (18%)'),
+        ('', 'E = Excise Duty rate'),
+        ('', ''),
+        ('Unit of Measure:', 'Common codes:'),
+        ('', '101 = Stick/Piece'),
+        ('', '102 = Litre'),
+        ('', '103 = Kilogram'),
+        ('', '(See Reference Data sheet for full list)'),
+        ('', ''),
+        ('Categories & Suppliers:', 'Handling non-existent entries:'),
+        ('', '- If category doesn\'t exist, it will be created'),
+        ('', '- If supplier doesn\'t exist, it will be created'),
+        ('', '- Leave blank to skip (product will have no category/supplier)'),
+        ('', ''),
+        ('Conflict Resolution:', 'When SKU already exists:'),
+        ('', '- OVERWRITE mode: Updates product with new data'),
+        ('', '- SKIP mode: Ignores row, keeps existing product'),
+        ('', ''),
+        ('Best Practices:', '- Keep SKUs consistent and unique'),
+        ('', '- Use descriptive product names'),
+        ('', '- Verify prices before importing'),
+        ('', '- Test with 5-10 products first'),
+        ('', '- Review validation messages after upload'),
+        ('', '- Back up existing data before large imports'),
+    ]
+
+    for instruction in instructions:
+        instructions_sheet.write(row, 0, instruction[0],
+                               instruction_header if instruction[0] and instruction[0].endswith(':') else instruction_text)
+        instructions_sheet.write(row, 1, instruction[1], instruction_text)
+        row += 1
+
+    # ========================================================================
+    # REFERENCE DATA SHEET
+    # ========================================================================
+
+    reference_sheet.set_column(0, 0, 15)
+    reference_sheet.set_column(1, 1, 40)
+
+    row = 0
+    reference_sheet.write(row, 0, 'UNIT CODES', instruction_header)
+    row += 1
+    reference_sheet.write(row, 0, 'Code', header_format)
+    reference_sheet.write(row, 1, 'Description', header_format)
+    row += 1
+
+    # Common unit codes
+    common_units = [
+        ('101', 'Stick/Piece'),
+        ('102', 'Litre'),
+        ('103', 'Kilogram'),
+        ('104', 'User per day of access'),
+        ('105', 'Minute'),
+        ('106', '1000 sticks'),
+        ('107', '50kgs'),
+        ('108', '-'),
+        ('109', 'Gram'),
+        ('110', 'Box'),
+        ('111', 'Pair'),
+        ('112', 'Yard'),
+        ('113', 'Dozen'),
+        ('200', 'Metre'),
+    ]
+
+    for code, desc in common_units:
+        reference_sheet.write(row, 0, code, sample_format)
+        reference_sheet.write(row, 1, desc, sample_format)
+        row += 1
+
+    # Add tax rates reference
+    row += 2
+    reference_sheet.write(row, 0, 'TAX RATES', instruction_header)
+    row += 1
+    reference_sheet.write(row, 0, 'Code', header_format)
+    reference_sheet.write(row, 1, 'Description', header_format)
+    row += 1
+
+    tax_rates = [
+        ('A', 'Standard rate (18%)'),
+        ('B', 'Zero rate (0%)'),
+        ('C', 'Exempt (Not taxable)'),
+        ('D', 'Deemed rate (18%)'),
+        ('E', 'Excise Duty rate'),
+    ]
+
+    for code, desc in tax_rates:
+        reference_sheet.write(row, 0, code, sample_format)
+        reference_sheet.write(row, 1, desc, sample_format)
+        row += 1
+
+    # Add EFRIS reference
+    row += 2
+    reference_sheet.write(row, 0, 'EFRIS FIELDS', instruction_header)
+    row += 1
+    reference_sheet.write(row, 0, 'Field', header_format)
+    reference_sheet.write(row, 1, 'Description', header_format)
+    row += 1
+
+    efris_fields = [
+        ('EFRIS Auto Sync', 'Yes/No - Enable automatic EFRIS synchronization'),
+        ('EFRIS Has Piece Unit', 'Yes/No - Whether product has piece unit pricing'),
+        ('EFRIS Piece Measure Unit', 'Unit code for piece measurement (e.g., 101, 102)'),
+        ('EFRIS Piece Unit Price', 'Price per piece unit (decimal)'),
+        ('Is Active', 'Yes/No - Whether product is active for sales'),
+    ]
+
+    for field, desc in efris_fields:
+        reference_sheet.write(row, 0, field, sample_format)
+        reference_sheet.write(row, 1, desc, sample_format)
+        row += 1
+
+    workbook.close()
+    output.seek(0)
+
+    response = HttpResponse(
+        output.read(),
+        content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    )
+    response['Content-Disposition'] = 'attachment; filename="sample_products_only.xlsx"'
+
+    return response
+
+
+def validate_product_row_data(row_data, mapped_columns, row_number):
+    """
+    Validate a single row of product data
+    Returns: (is_valid, errors_list, cleaned_data)
+    """
+    errors = []
+    cleaned = {}
+
+    # Required fields for product import
+    required_fields = ['product_name', 'sku', 'selling_price', 'cost_price', 'tax_rate', 'unit_of_measure']
+
+    # Check required fields
+    for field in required_fields:
+        value = None
+        for file_header, standard_name in mapped_columns.items():
+            if standard_name == field:
+                value = row_data.get(file_header)
+                break
+
+        if not value or (isinstance(value, str) and not value.strip()):
+            field_display = field.replace('_', ' ').title()
+            errors.append(f"{field_display} is required")
+        else:
+            cleaned[field] = value
+
+    # If required fields missing, return early
+    if errors:
+        return False, errors, cleaned
+
+    # Validate and clean optional fields
+    for file_header, standard_name in mapped_columns.items():
+        if standard_name in cleaned:
+            continue  # Already processed
+
+        value = row_data.get(file_header)
+        if value and isinstance(value, str):
+            value = value.strip()
+
+        if not value:
+            continue
+
+        # Type-specific validation
+        try:
+            if standard_name in ['selling_price', 'cost_price', 'discount_percentage', 'excise_duty_rate', 'min_stock_level', 'efris_piece_unit_price']:
+                cleaned[standard_name] = Decimal(str(value))
+                if cleaned[standard_name] < 0:
+                    errors.append(f"{standard_name.replace('_', ' ').title()} cannot be negative")
+
+            elif standard_name == 'tax_rate':
+                value = str(value).upper().strip()
+                if value not in ['A', 'B', 'C', 'D', 'E']:
+                    errors.append(f"Invalid tax rate '{value}'. Must be A, B, C, D, or E")
+                else:
+                    cleaned[standard_name] = value
+
+            elif standard_name in ['efris_auto_sync', 'efris_has_piece_unit', 'is_active']:
+                value_lower = str(value).lower().strip()
+                cleaned[standard_name] = value_lower in ['yes', 'true', '1', 'y']
+
+            elif standard_name == 'min_stock_level':
+                cleaned[standard_name] = int(float(value))  # Handle both int and decimal strings
+
+            else:
+                cleaned[standard_name] = value
+
+        except (ValueError, InvalidOperation) as e:
+            errors.append(f"Invalid {standard_name.replace('_', ' ')}: {value}")
+
+    is_valid = len(errors) == 0
+    return is_valid, errors, cleaned
+
+
+def process_product_only_import(cleaned_data, conflict_resolution, user, session, row_number, raw_data):
+    """Process product-only import (no stock updates)"""
+    from django.db import IntegrityError
+
+    sku = cleaned_data['sku']
+    product = None
+    created = False
+    updated_fields = []
+
+    # Check if product exists
+    try:
+        product = Product.objects.get(sku=sku)
+
+        if conflict_resolution == 'skip':
+            ImportResult.objects.create(
+                session=session,
+                result_type='skipped',
+                row_number=row_number,
+                product_name=cleaned_data.get('product_name', ''),
+                sku=sku,
+                raw_data=raw_data
+            )
+            return {'status': 'skipped', 'message': 'Product already exists'}
+
+        # Overwrite mode - update product
+        if product.name != cleaned_data['product_name']:
+            product.name = cleaned_data['product_name']
+            updated_fields.append('name')
+
+        if product.selling_price != cleaned_data['selling_price']:
+            product.selling_price = cleaned_data['selling_price']
+            updated_fields.append('selling_price')
+
+        if product.cost_price != cleaned_data['cost_price']:
+            product.cost_price = cleaned_data['cost_price']
+            updated_fields.append('cost_price')
+
+        if product.tax_rate != cleaned_data.get('tax_rate', 'A'):
+            product.tax_rate = cleaned_data.get('tax_rate', 'A')
+            updated_fields.append('tax_rate')
+
+        if product.unit_of_measure != cleaned_data.get('unit_of_measure', '103'):
+            product.unit_of_measure = cleaned_data.get('unit_of_measure', '103')
+            updated_fields.append('unit_of_measure')
+
+        # Optional fields
+        if 'barcode' in cleaned_data and product.barcode != cleaned_data['barcode']:
+            # Check for duplicate barcode
+            if cleaned_data['barcode']:
+                existing_barcode = Product.objects.filter(barcode=cleaned_data['barcode']).exclude(id=product.id).exists()
+                if existing_barcode:
+                    raise ValueError(f"Barcode '{cleaned_data['barcode']}' already exists for another product")
+            product.barcode = cleaned_data['barcode']
+            updated_fields.append('barcode')
+
+        if 'description' in cleaned_data and product.description != cleaned_data['description']:
+            product.description = cleaned_data['description']
+            updated_fields.append('description')
+
+        if 'discount_percentage' in cleaned_data and product.discount_percentage != cleaned_data['discount_percentage']:
+            product.discount_percentage = cleaned_data['discount_percentage']
+            updated_fields.append('discount_percentage')
+
+        if 'excise_duty_rate' in cleaned_data and product.excise_duty_rate != cleaned_data['excise_duty_rate']:
+            product.excise_duty_rate = cleaned_data['excise_duty_rate']
+            updated_fields.append('excise_duty_rate')
+
+        if 'min_stock_level' in cleaned_data and product.min_stock_level != int(cleaned_data['min_stock_level']):
+            product.min_stock_level = int(cleaned_data['min_stock_level'])
+            updated_fields.append('min_stock_level')
+
+        if 'is_active' in cleaned_data and product.is_active != cleaned_data['is_active']:
+            product.is_active = cleaned_data['is_active']
+            updated_fields.append('is_active')
+
+        # Handle category
+        if 'category' in cleaned_data:
+            category, _ = Category.objects.get_or_create(
+                name=cleaned_data['category'],
+                defaults={'is_active': True}
+            )
+            if product.category != category:
+                product.category = category
+                updated_fields.append('category')
+
+        # Handle supplier
+        if 'supplier' in cleaned_data:
+            supplier, _ = Supplier.objects.get_or_create(
+                name=cleaned_data['supplier'],
+                defaults={
+                    'phone': '0000000000',
+                    'is_active': True
+                }
+            )
+            if product.supplier != supplier:
+                product.supplier = supplier
+                updated_fields.append('supplier')
+
+        # EFRIS fields
+        if 'efris_commodity_code' in cleaned_data:
+            try:
+                category = Category.objects.get(efris_commodity_category_code=cleaned_data['efris_commodity_code'])
+                if product.category != category:
+                    product.category = category
+                    updated_fields.append('efris_category')
+            except Category.DoesNotExist:
+                pass
+
+        if 'efris_excise_duty_code' in cleaned_data and product.efris_excise_duty_code != cleaned_data['efris_excise_duty_code']:
+            product.efris_excise_duty_code = cleaned_data['efris_excise_duty_code']
+            updated_fields.append('efris_excise_duty_code')
+
+        if 'efris_auto_sync' in cleaned_data and product.efris_auto_sync_enabled != cleaned_data['efris_auto_sync']:
+            product.efris_auto_sync_enabled = cleaned_data['efris_auto_sync']
+            updated_fields.append('efris_auto_sync')
+
+        if 'efris_item_code' in cleaned_data and product.efris_item_code != cleaned_data['efris_item_code']:
+            product.efris_item_code = cleaned_data['efris_item_code']
+            updated_fields.append('efris_item_code')
+
+        if 'efris_has_piece_unit' in cleaned_data and product.efris_has_piece_unit != cleaned_data['efris_has_piece_unit']:
+            product.efris_has_piece_unit = cleaned_data['efris_has_piece_unit']
+            updated_fields.append('efris_has_piece_unit')
+
+        if 'efris_piece_measure_unit' in cleaned_data and product.efris_piece_measure_unit != cleaned_data['efris_piece_measure_unit']:
+            product.efris_piece_measure_unit = cleaned_data['efris_piece_measure_unit']
+            updated_fields.append('efris_piece_measure_unit')
+
+        if 'efris_piece_unit_price' in cleaned_data and product.efris_piece_unit_price != cleaned_data['efris_piece_unit_price']:
+            product.efris_piece_unit_price = cleaned_data['efris_piece_unit_price']
+            updated_fields.append('efris_piece_unit_price')
+
+        if 'efris_goods_code' in cleaned_data and product.efris_goods_code_field != cleaned_data['efris_goods_code']:
+            product.efris_goods_code_field = cleaned_data['efris_goods_code']
+            updated_fields.append('efris_goods_code_field')
+
+        product.import_session = session
+        product.save()
+
+        if updated_fields:
+            logger.info(f"✅ Product updated: {product.name} - Fields: {', '.join(updated_fields)}")
+
+    except Product.DoesNotExist:
+        # Create new product
+        created = True
+
+        # Check for duplicate barcode before creating
+        if cleaned_data.get('barcode'):
+            existing_barcode = Product.objects.filter(barcode=cleaned_data['barcode']).exists()
+            if existing_barcode:
+                raise ValueError(f"Barcode '{cleaned_data['barcode']}' already exists")
+
+        product = Product(
+            sku=sku,
+            name=cleaned_data['product_name'],
+            selling_price=cleaned_data['selling_price'],
+            cost_price=cleaned_data['cost_price'],
+            tax_rate=cleaned_data.get('tax_rate', 'A'),
+            unit_of_measure=cleaned_data.get('unit_of_measure', '103'),
+            discount_percentage=cleaned_data.get('discount_percentage', 0),
+            excise_duty_rate=cleaned_data.get('excise_duty_rate', 0),
+            min_stock_level=int(cleaned_data.get('min_stock_level', 5)),
+            description=cleaned_data.get('description', ''),
+            barcode=cleaned_data.get('barcode', ''),
+            is_active=cleaned_data.get('is_active', True),
+            import_session=session,
+            imported_at=timezone.now()
+        )
+
+        # Handle category
+        if 'category' in cleaned_data:
+            category, _ = Category.objects.get_or_create(
+                name=cleaned_data['category'],
+                defaults={'is_active': True}
+            )
+            product.category = category
+        elif 'efris_commodity_code' in cleaned_data:
+            try:
+                category = Category.objects.get(efris_commodity_category_code=cleaned_data['efris_commodity_code'])
+                product.category = category
+            except Category.DoesNotExist:
+                pass
+
+        # Handle supplier
+        if 'supplier' in cleaned_data:
+            supplier, _ = Supplier.objects.get_or_create(
+                name=cleaned_data['supplier'],
+                defaults={
+                    'phone': '0000000000',
+                    'is_active': True
+                }
+            )
+            product.supplier = supplier
+
+        # EFRIS fields
+        if 'efris_excise_duty_code' in cleaned_data:
+            product.efris_excise_duty_code = cleaned_data['efris_excise_duty_code']
+
+        if 'efris_auto_sync' in cleaned_data:
+            product.efris_auto_sync_enabled = cleaned_data['efris_auto_sync']
+
+        if 'efris_item_code' in cleaned_data:
+            product.efris_item_code = cleaned_data['efris_item_code']
+
+        if 'efris_has_piece_unit' in cleaned_data:
+            product.efris_has_piece_unit = cleaned_data['efris_has_piece_unit']
+
+        if 'efris_piece_measure_unit' in cleaned_data:
+            product.efris_piece_measure_unit = cleaned_data['efris_piece_measure_unit']
+
+        if 'efris_piece_unit_price' in cleaned_data:
+            product.efris_piece_unit_price = cleaned_data['efris_piece_unit_price']
+
+        if 'efris_goods_code' in cleaned_data:
+            product.efris_goods_code_field = cleaned_data['efris_goods_code']
+
+        product.save()
+        logger.info(f"✅ Product created: {product.name} (SKU: {sku})")
+
+    # Create import result
+    result_type = 'created' if created else 'updated'
+    ImportResult.objects.create(
+        session=session,
+        result_type=result_type,
+        row_number=row_number,
+        product_name=product.name,
+        sku=sku,
+        raw_data=raw_data
+    )
+
+    return {
+        'status': result_type,
+        'product': product,
+        'updated_fields': updated_fields if not created else []
+    }
+
+
+@transaction.atomic
+def process_product_import_file(file_obj, conflict_resolution, user, column_mapping=None, has_header=True):
+    """
+    Process product-only import file
+
+    Args:
+        file_obj: Uploaded file object
+        conflict_resolution: 'overwrite' or 'skip'
+        user: User performing the import
+        column_mapping: Optional manual column mapping dict
+        has_header: Whether file has header row
+
+    Returns:
+        dict with import results
+    """
+
+    # Create import session
+    session = ImportSession.objects.create(
+        user=user,
+        filename=file_obj.name,
+        file_size=file_obj.size,
+        import_mode='product_only',
+        conflict_resolution=conflict_resolution,
+        has_header=has_header,
+        status='processing',
+        started_at=timezone.now()
+    )
+
+    try:
+        # Parse file
+        headers, data = parse_uploaded_file(file_obj)
+        session.total_rows = len(data)
+        session.save()
+
+        # Map columns
+        if column_mapping:
+            mapped_columns = column_mapping
+        else:
+            mapped_columns = ColumnMapper.map_columns(headers)
+
+        session.column_mapping = mapped_columns
+        session.save()
+
+        # Log column mapping
+        ImportLog.objects.create(
+            session=session,
+            level='info',
+            message=f'Column mapping completed: {len(mapped_columns)} columns mapped'
+        )
+
+        # Process each row
+        results = {
+            'created_count': 0,
+            'updated_count': 0,
+            'skipped_count': 0,
+            'error_count': 0,
+            'errors': [],
+            'warnings': []
+        }
+
+        for idx, row_data in enumerate(data, start=2):  # Start at 2 for Excel row numbers
+            try:
+                # Validate row
+                is_valid, errors, cleaned_data = validate_product_row_data(row_data, mapped_columns, idx)
+
+                if not is_valid:
+                    ImportResult.objects.create(
+                        session=session,
+                        result_type='error',
+                        row_number=idx,
+                        error_message='; '.join(errors),
+                        raw_data=row_data
+                    )
+                    results['error_count'] += 1
+                    results['errors'].append({
+                        'row': idx,
+                        'errors': errors
+                    })
+                    continue
+
+                # Process the row
+                result = process_product_only_import(
+                    cleaned_data=cleaned_data,
+                    conflict_resolution=conflict_resolution,
+                    user=user,
+                    session=session,
+                    row_number=idx,
+                    raw_data=row_data
+                )
+
+                # Update counts
+                if result['status'] == 'created':
+                    results['created_count'] += 1
+                elif result['status'] == 'updated':
+                    results['updated_count'] += 1
+                elif result['status'] == 'skipped':
+                    results['skipped_count'] += 1
+
+                session.processed_rows += 1
+
+            except ValueError as e:
+                # Handle validation errors (like duplicate barcode)
+                error_msg = str(e)
+                logger.warning(f"Validation error on row {idx}: {error_msg}")
+
+                ImportResult.objects.create(
+                    session=session,
+                    result_type='error',
+                    row_number=idx,
+                    error_message=error_msg,
+                    raw_data=row_data
+                )
+                results['error_count'] += 1
+                results['errors'].append({
+                    'row': idx,
+                    'errors': [error_msg]
+                })
+
+            except Exception as e:
+                logger.error(f"Error processing row {idx}: {str(e)}", exc_info=True)
+                results['error_count'] += 1
+                results['errors'].append({
+                    'row': idx,
+                    'errors': [f"Unexpected error: {str(e)}"]
+                })
+
+                ImportLog.objects.create(
+                    session=session,
+                    level='error',
+                    message=f'Row {idx}: Unexpected error',
+                    row_number=idx,
+                    details={'error': str(e)}
+                )
+
+            # Update session periodically
+            if idx % 10 == 0:
+                session.created_count = results['created_count']
+                session.updated_count = results['updated_count']
+                session.skipped_count = results['skipped_count']
+                session.error_count = results['error_count']
+                session.save()
+
+        # Final session update
+        session.created_count = results['created_count']
+        session.updated_count = results['updated_count']
+        session.skipped_count = results['skipped_count']
+        session.error_count = results['error_count']
+        session.status = 'completed'
+        session.completed_at = timezone.now()
+        session.save()
+
+        return results
+
+    except Exception as e:
+        logger.error(f"Product import failed: {str(e)}", exc_info=True)
+        session.status = 'failed'
+        session.error_message = str(e)
+        session.completed_at = timezone.now()
+        session.save()
+
+        raise

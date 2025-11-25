@@ -2,6 +2,7 @@ from django.urls import path, include
 from . import views
 from . import view
 from . import saas
+from public_router.views import complete_tenant_login
 
 saas_admin_patterns = [
     path('admin/d/dashboard/', saas.saas_admin_dashboard, name='saas_admin_dashboard'),
@@ -26,6 +27,7 @@ saas_admin_patterns = [
 
 urlpatterns = [
     path('login/', views.custom_login, name='login'),
+    path('login/complete/', complete_tenant_login, name='complete_login'),
     path('social/', include([
             path('connections/', views.manage_social_connections, name='manage_social_connections'),
             path('set-password/', views.set_password_after_social_login, name='set_password_after_social'),

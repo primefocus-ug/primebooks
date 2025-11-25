@@ -363,6 +363,9 @@ class CustomUserCreationForm(UserCreationForm):
             'placeholder': 'Enter first name'
         })
     )
+    company= forms.Select(attrs={
+        'class':'form-select',
+    })
     last_name = forms.CharField(
         max_length=50,
         required=True,
@@ -395,13 +398,13 @@ class CustomUserCreationForm(UserCreationForm):
         widget=forms.CheckboxSelectMultiple(attrs={
             'class': 'form-check-input'
         }),
-        help_text="Select one or more roles for this user. Roles determine permissions."
+        help_text="Select one or more roles for this user. Roles determine what the user can do."
     )
 
     class Meta:
         model = CustomUser
         fields = (
-            'email', 'username', 'first_name', 'last_name', 'middle_name',
+            'email','company', 'username', 'first_name', 'last_name', 'middle_name',
             'phone_number', 'roles', 'password1', 'password2'
         )
         widgets = {
