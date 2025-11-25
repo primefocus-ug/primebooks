@@ -15,7 +15,17 @@
         position: relative;
         overflow: hidden;
     }
+.chart-container {
+    position: relative;
+    height: 350px;
+    padding: 1rem;
+    min-height: 200px; /* Ensure minimum height */
+}
 
+#userTypesChart {
+    width: 100% !important;
+    height: 100% !important;
+}
     .dashboard-header::before {
         content: '';
         position: absolute;
@@ -35,7 +45,7 @@
         border-radius: 15px;
         box-shadow: 0 4px 15px rgba(0,0,0,0.05);
     }
-    [dark-theme"dark"] .filter-buttons{
+    [dark-theme="dark"] .filter-buttons{
         background:black !important;
     }
     .filter-btn {
@@ -665,7 +675,7 @@
                 </div>
                 <div class="card-body">
                     <div class="chart-container totall">
-                        <canvas id="registrationChart totall"></canvas>
+                        <canvas id="registrationChart" class="totall"></canvas>
                     </div>
                 </div>
             </div>
@@ -673,20 +683,25 @@
 
         <!-- User Types Distribution -->
         <div class="col-lg-4 mb-4">
-            <div class="card analytics-card">
-                <div class="card-header border-0 pb-0">
-                    <h5 class="mb-0 fw-bold">
-                        <i class="fas fa-chart-pie text-success me-2"></i>
-                        User Types
-                    </h5>
-                </div>
-                <div class="card-body">
-                    <div class="chart-container">
-                        <canvas id="userTypesChart"></canvas>
-                    </div>
-                </div>
+    <div class="card analytics-card">
+        <div class="card-header border-0 pb-0">
+            <h5 class="mb-0 fw-bold">
+                <i class="fas fa-chart-pie text-success me-2"></i>
+                User Types
+            </h5>
+        </div>
+        <div class="card-body">
+            <!-- Add a fallback message -->
+            <div id="userTypesFallback" class="text-center py-4 text-muted d-none">
+                <i class="fas fa-chart-pie fa-2x mb-2"></i>
+                <p>Loading user types chart...</p>
+            </div>
+            <div class="chart-container">
+                <canvas id="userTypesChart"></canvas>
             </div>
         </div>
+    </div>
+</div>
     </div>
 
     <!-- Active vs Inactive and Recent Activity Row -->
@@ -749,154 +764,211 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
 <script>
     document.addEventListener('DOMContentLoaded', function() {
-        // Get data from Django template
-        const registrationData = JSON.parse('{{ registration_data|escapejs }}');
-        const userTypeData = JSON.parse('{{ user_type_data|escapejs }}');
-        const activeInactiveData = JSON.parse('{{ active_inactive_data|escapejs }}');
-        const currentDays = {{ days }};
+    // Initialize dashboard
+    initDashboard();
+});
 
-        // Initialize charts with actual data
+function initDashboard() {
+    try {
+        // Get data from Django template
+        const registrationData = getChartData('registration');
+        const userTypeData = getChartData('user_types');
+        const activeInactiveData = getChartData('status');
+        const currentDays = getCurrentDays();
+
+        // Initialize charts
         initRegistrationChart(registrationData);
         initUserTypesChart(userTypeData);
         initStatusChart(activeInactiveData);
         loadRecentActivity();
 
         // Set up filter buttons
-        document.querySelector(`.filter-btn[data-period="${currentDays}"]`)?.classList.add('active');
-    });
+        highlightActiveFilter(currentDays);
 
-    function updatePeriod(days) {
-        // Show loading overlay
-        showLoading('Loading Analytics Data...', 'Please wait while we fetch the latest insights');
+        // Initialize animations
+        initStatAnimations();
 
-        // Update URL with new period
-        window.location.search = `?days=${days}`;
+    } catch (error) {
+        console.error('Dashboard initialization failed:', error);
+        showToast('Failed to load dashboard data', 'error');
     }
+}
 
-    function exportData(format) {
-        // Show loading overlay with export-specific message
-        const formatName = format.toUpperCase();
-        showLoading(
-            `Generating ${formatName} Report...`,
-            `Please wait while we prepare your analytics data in ${formatName} format`,
-            true
-        );
-
-        // Get current filter period
-        const currentDays = {{ days }};
-
-        // Create export URL
-        const exportUrl = `{% url 'export_analytics_data' %}?format=${format}&days=${currentDays}`;
-
-        // Create hidden iframe for download
-        const iframe = document.createElement('iframe');
-        iframe.style.display = 'none';
-        iframe.src = exportUrl;
-        document.body.appendChild(iframe);
-
-        // Simulate progress
-        simulateProgress();
-
-        // Handle success/error
-        setTimeout(() => {
-            document.body.removeChild(iframe);
-            hideLoading();
-            showToast(`${formatName} report generated successfully!`, 'success');
-        }, 3000);
-
-        // Handle potential errors
-        iframe.onerror = function() {
-            hideLoading();
-            showToast('Failed to generate report. Please try again.', 'error');
-            document.body.removeChild(iframe);
-        };
-    }
-
-    function showLoading(title, subtitle, showProgress = false) {
-        const overlay = document.getElementById('loadingOverlay');
-        const titleEl = document.getElementById('loadingTitle');
-        const subtitleEl = document.getElementById('loadingSubtitle');
-        const progressEl = document.getElementById('exportProgress');
-
-        titleEl.textContent = title;
-        subtitleEl.textContent = subtitle;
-
-        if (showProgress) {
-            progressEl.classList.remove('d-none');
-        } else {
-            progressEl.classList.add('d-none');
+function getChartData(chartType) {
+    try {
+        switch(chartType) {
+            case 'registration':
+                return {{ registration_data|safe }};
+            case 'user_types':
+                return {{ user_type_data|safe }};
+            case 'status':
+                return {{ active_inactive_data|safe }};
+            default:
+                return [];
         }
+    } catch (error) {
+        console.error(`Error getting ${chartType} data:`, error);
+        return [];
+    }
+}
 
-        overlay.classList.remove('d-none');
+function getCurrentDays() {
+    return {{ days|default:30 }};
+}
+
+function updatePeriod(days) {
+    showLoading('Loading Analytics Data...', 'Please wait while we fetch the latest insights');
+    window.location.search = `?days=${days}`;
+}
+
+function exportData(format) {
+    const formatName = format.toUpperCase();
+    showLoading(
+        `Generating ${formatName} Report...`,
+        `Please wait while we prepare your analytics data in ${formatName} format`,
+        true
+    );
+
+    const currentDays = getCurrentDays();
+    const exportUrl = `{% url 'export_analytics_data' %}?format=${format}&days=${currentDays}`;
+
+    // Create hidden iframe for download
+    const iframe = document.createElement('iframe');
+    iframe.style.display = 'none';
+    iframe.src = exportUrl;
+    document.body.appendChild(iframe);
+
+    simulateProgress();
+
+    // Handle download completion
+    setTimeout(() => {
+        cleanupDownload(iframe);
+        hideLoading();
+        showToast(`${formatName} report generated successfully!`, 'success');
+    }, 3000);
+
+    // Error handling
+    iframe.onerror = function() {
+        cleanupDownload(iframe);
+        hideLoading();
+        showToast('Failed to generate report. Please try again.', 'error');
+    };
+}
+
+function cleanupDownload(iframe) {
+    if (iframe && iframe.parentElement) {
+        iframe.parentElement.removeChild(iframe);
+    }
+}
+
+function showLoading(title, subtitle, showProgress = false) {
+    const overlay = document.getElementById('loadingOverlay');
+    const titleEl = document.getElementById('loadingTitle');
+    const subtitleEl = document.getElementById('loadingSubtitle');
+    const progressEl = document.getElementById('exportProgress');
+
+    if (!overlay) return;
+
+    titleEl.textContent = title;
+    subtitleEl.textContent = subtitle;
+
+    if (showProgress) {
+        progressEl.classList.remove('d-none');
+    } else {
+        progressEl.classList.add('d-none');
     }
 
-    function hideLoading() {
-        document.getElementById('loadingOverlay').classList.add('d-none');
+    overlay.classList.remove('d-none');
+}
+
+function hideLoading() {
+    const overlay = document.getElementById('loadingOverlay');
+    if (overlay) {
+        overlay.classList.add('d-none');
     }
+}
 
-    function simulateProgress() {
-        const progressBar = document.getElementById('exportProgressBar');
-        let progress = 0;
+function simulateProgress() {
+    const progressBar = document.getElementById('exportProgressBar');
+    if (!progressBar) return;
 
-        const interval = setInterval(() => {
-            progress += Math.random() * 15;
-            if (progress > 90) progress = 90;
+    let progress = 0;
+    progressBar.style.width = '0%';
 
-            progressBar.style.width = progress + '%';
+    const interval = setInterval(() => {
+        progress += Math.random() * 15;
+        if (progress > 90) progress = 90;
 
-            if (progress >= 90) {
-                clearInterval(interval);
-                setTimeout(() => {
-                    progressBar.style.width = '100%';
-                }, 200);
-            }
-        }, 200);
-    }
+        progressBar.style.width = progress + '%';
 
-    function showToast(message, type = 'success') {
-        const container = document.getElementById('toastContainer');
+        if (progress >= 90) {
+            clearInterval(interval);
+            setTimeout(() => {
+                progressBar.style.width = '100%';
+            }, 200);
+        }
+    }, 200);
+}
 
-        const toast = document.createElement('div');
-        toast.className = `toast ${type}`;
-        toast.innerHTML = `
-            <div class="toast-body d-flex align-items-center justify-content-between p-3">
-                <div class="d-flex align-items-center">
-                    <i class="fas ${type === 'success' ? 'fa-check-circle' : 'fa-exclamation-circle'} me-2"></i>
-                    <span>${message}</span>
-                </div>
-                <button type="button" class="btn-close btn-close-white" onclick="this.parentElement.parentElement.remove()"></button>
+function showToast(message, type = 'success') {
+    const container = document.getElementById('toastContainer');
+    if (!container) return;
+
+    const toast = document.createElement('div');
+    toast.className = `toast ${type}`;
+    toast.setAttribute('role', 'alert');
+    toast.setAttribute('aria-live', 'assertive');
+    toast.setAttribute('aria-atomic', 'true');
+
+    toast.innerHTML = `
+        <div class="toast-body d-flex align-items-center justify-content-between p-3">
+            <div class="d-flex align-items-center">
+                <i class="fas ${type === 'success' ? 'fa-check-circle' : 'fa-exclamation-circle'} me-2"></i>
+                <span>${message}</span>
             </div>
-        `;
+            <button type="button" class="btn-close btn-close-white" aria-label="Close"></button>
+        </div>
+    `;
 
-        container.appendChild(toast);
+    container.appendChild(toast);
 
-        // Show toast
-        setTimeout(() => {
-            toast.classList.add('show');
-        }, 100);
+    // Add event listener to close button
+    const closeButton = toast.querySelector('.btn-close');
+    closeButton.addEventListener('click', () => removeToast(toast));
 
-        // Auto remove after 5 seconds
-        setTimeout(() => {
-            if (toast.parentElement) {
-                toast.classList.remove('show');
-                setTimeout(() => {
-                    if (toast.parentElement) {
-                        toast.remove();
-                    }
-                }, 300);
-            }
-        }, 5000);
+    // Show toast with animation
+    setTimeout(() => toast.classList.add('show'), 100);
+
+    // Auto remove after 5 seconds
+    setTimeout(() => removeToast(toast), 5000);
+}
+
+function removeToast(toast) {
+    if (!toast || !toast.parentElement) return;
+
+    toast.classList.remove('show');
+    setTimeout(() => {
+        if (toast.parentElement) {
+            toast.remove();
+        }
+    }, 300);
+}
+
+function initRegistrationChart(data) {
+    const ctx = document.getElementById('registrationChart');
+    if (!ctx) {
+        console.warn('Registration chart canvas not found');
+        return;
     }
 
-    function initRegistrationChart(data) {
-        const ctx = document.getElementById('registrationChart').getContext('2d');
+    try {
         const labels = data.map(item => {
             const date = new Date(item.date);
             return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
         });
         const counts = data.map(item => item.count);
 
-        new Chart(ctx, {
+        new Chart(ctx.getContext('2d'), {
             type: 'line',
             data: {
                 labels: labels,
@@ -915,49 +987,58 @@
                     pointHoverRadius: 7
                 }]
             },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                    legend: {
-                        display: false
-                    },
-                    tooltip: {
-                        backgroundColor: 'rgba(0, 0, 0, 0.8)',
-                        titleColor: '#fff',
-                        bodyColor: '#fff',
-                        borderColor: 'rgb(102, 126, 234)',
-                        borderWidth: 1
-                    }
-                },
-                scales: {
-                    y: {
-                        beginAtZero: true,
-                        grid: {
-                            color: 'rgba(0, 0, 0, 0.05)'
-                        }
-                    },
-                    x: {
-                        grid: {
-                            display: false
-                        }
-                    }
-                }
-            }
+            options: getLineChartOptions()
         });
+    } catch (error) {
+        console.error('Failed to initialize registration chart:', error);
+    }
+}
+
+function initUserTypesChart(data) {
+    const ctx = document.getElementById('userTypesChart');
+    if (!ctx) {
+        console.error('User types chart canvas not found');
+        return;
     }
 
-    function initUserTypesChart(data) {
-        const ctx = document.getElementById('userTypesChart').getContext('2d');
-        const labels = data.map(item => {
-            return item.user_type.replace('_', ' ').toLowerCase()
-                .split(' ')
-                .map(word => word.charAt(0).toUpperCase() + word.slice(1))
-                .join(' ');
-        });
-        const counts = data.map(item => item.count);
+    console.log('User Types Chart Data:', data);
 
-        new Chart(ctx, {
+    // Check if data is valid
+    if (!data || !Array.isArray(data) || data.length === 0) {
+        console.warn('No valid data for user types chart');
+        showChartError(ctx, 'No user type data available');
+        return;
+    }
+
+    try {
+        const labels = data.map(item => {
+            if (!item.user_type) {
+                console.warn('Missing user_type in item:', item);
+                return 'Unknown';
+            }
+            return formatUserTypeLabel(item.user_type);
+        });
+
+        const counts = data.map(item => {
+            const count = parseInt(item.count) || 0;
+            if (isNaN(count)) {
+                console.warn('Invalid count in item:', item);
+                return 0;
+            }
+            return count;
+        });
+
+        console.log('Processed Labels:', labels);
+        console.log('Processed Counts:', counts);
+
+        // Check if we have any non-zero data
+        const total = counts.reduce((sum, count) => sum + count, 0);
+        if (total === 0) {
+            showChartError(ctx, 'No user data available');
+            return;
+        }
+
+        new Chart(ctx.getContext('2d'), {
             type: 'doughnut',
             data: {
                 labels: labels,
@@ -967,7 +1048,8 @@
                         '#667eea', '#f093fb', '#4facfe', '#fa709a', '#ffd89b',
                         '#43e97b', '#38f9d7', '#5ee7df', '#66a6ff', '#89f7fe'
                     ],
-                    borderWidth: 0,
+                    borderWidth: 2,
+                    borderColor: '#fff',
                     hoverBorderWidth: 3,
                     hoverBorderColor: '#fff'
                 }]
@@ -980,26 +1062,75 @@
                         position: 'bottom',
                         labels: {
                             usePointStyle: true,
-                            padding: 20
+                            padding: 20,
+                            font: {
+                                size: 11
+                            }
                         }
                     },
                     tooltip: {
                         backgroundColor: 'rgba(0, 0, 0, 0.8)',
                         titleColor: '#fff',
-                        bodyColor: '#fff'
+                        bodyColor: '#fff',
+                        callbacks: {
+                            label: function(context) {
+                                const label = context.label || '';
+                                const value = context.parsed;
+                                const total = context.dataset.data.reduce((a, b) => a + b, 0);
+                                const percentage = total > 0 ? Math.round((value / total) * 100) : 0;
+                                return `${label}: ${value} (${percentage}%)`;
+                            }
+                        }
                     }
                 },
                 cutout: '60%'
             }
         });
+
+        console.log('User types chart initialized successfully');
+
+    } catch (error) {
+        console.error('Failed to initialize user types chart:', error);
+        showChartError(ctx, 'Error loading chart');
+    }
+}
+
+function formatUserTypeLabel(userType) {
+    if (!userType) return 'Unknown';
+
+    return userType
+        .toString()
+        .replace(/_/g, ' ')
+        .toLowerCase()
+        .split(' ')
+        .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+        .join(' ');
+}
+
+function showChartError(canvasElement, message) {
+    const parent = canvasElement.parentElement;
+    if (parent) {
+        parent.innerHTML = `
+            <div class="text-center py-5 text-muted">
+                <i class="fas fa-chart-pie fa-3x mb-3 opacity-50"></i>
+                <p class="mb-0">${message}</p>
+            </div>
+        `;
+    }
+}
+
+function initStatusChart(data) {
+    const ctx = document.getElementById('statusChart');
+    if (!ctx) {
+        console.warn('Status chart canvas not found');
+        return;
     }
 
-    function initStatusChart(data) {
-        const ctx = document.getElementById('statusChart').getContext('2d');
+    try {
         const labels = data.map(item => item.status);
         const counts = data.map(item => item.count);
 
-        new Chart(ctx, {
+        new Chart(ctx.getContext('2d'), {
             type: 'doughnut',
             data: {
                 labels: labels,
@@ -1011,92 +1142,133 @@
                     hoverBorderColor: '#fff'
                 }]
             },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                    legend: {
-                        position: 'bottom',
-                        labels: {
-                            usePointStyle: true,
-                            padding: 20
-                        }
-                    },
-                    tooltip: {
-                        backgroundColor: 'rgba(0, 0, 0, 0.8)',
-                        titleColor: '#fff',
-                        bodyColor: '#fff'
-                    }
-                },
-                cutout: '70%'
-            }
+            options: getDoughnutChartOptions()
         });
+    } catch (error) {
+        console.error('Failed to initialize status chart:', error);
     }
+}
 
-    function loadRecentActivity() {
-        const timeline = document.getElementById('activityTimeline');
+function getLineChartOptions() {
+    return {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+            legend: { display: false },
+            tooltip: {
+                backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                titleColor: '#fff',
+                bodyColor: '#fff',
+                borderColor: 'rgb(102, 126, 234)',
+                borderWidth: 1
+            }
+        },
+        scales: {
+            y: {
+                beginAtZero: true,
+                grid: { color: 'rgba(0, 0, 0, 0.05)' }
+            },
+            x: {
+                grid: { display: false }
+            }
+        }
+    };
+}
 
-        // Show loading state
-        timeline.innerHTML = `
-            <div class="text-center py-4">
-                <div class="loading-spinner mb-3" style="width: 40px; height: 40px; border-width: 3px;"></div>
-                <p class="text-muted">Loading recent activity...</p>
+function getDoughnutChartOptions() {
+    return {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+            legend: {
+                position: 'bottom',
+                labels: {
+                    usePointStyle: true,
+                    padding: 20
+                }
+            },
+            tooltip: {
+                backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                titleColor: '#fff',
+                bodyColor: '#fff'
+            }
+        },
+        cutout: '60%'
+    };
+}
+
+function loadRecentActivity() {
+    const timeline = document.getElementById('activityTimeline');
+    if (!timeline) return;
+
+    // Show loading state
+    timeline.innerHTML = `
+        <div class="text-center py-4">
+            <div class="loading-spinner mb-3" style="width: 40px; height: 40px; border-width: 3px;"></div>
+            <p class="text-muted">Loading recent activity...</p>
+        </div>
+    `;
+
+    // Simulate API call
+    setTimeout(() => {
+        const activities = [
+            {
+                icon: 'chart-line',
+                color: 'primary',
+                title: 'Analytics dashboard accessed',
+                time: 'Just now',
+                user: '{{ user.get_full_name|default:user.username }}',
+                type: 'user'
+            },
+            {
+                icon: 'users',
+                color: 'success',
+                title: 'User data synchronized',
+                time: '5 minutes ago',
+                user: 'System Process',
+                type: 'system'
+            },
+            {
+                icon: 'download',
+                color: 'info',
+                title: 'Analytics report generated',
+                time: '15 minutes ago',
+                user: 'PDF Export',
+                type: 'export'
+            }
+        ];
+
+        timeline.innerHTML = activities.map(activity => `
+            <div class="activity-item">
+                <div class="d-flex align-items-start w-100">
+                    <div class="me-3 mt-1">
+                        <i class="fas fa-${activity.icon} text-${activity.color}"></i>
+                    </div>
+                    <div class="flex-grow-1">
+                        <div class="fw-semibold mb-1">${activity.title}</div>
+                        <small class="text-muted">
+                            <i class="fas fa-clock me-1"></i>${activity.time}
+                            <span class="mx-2">•</span>
+                            <i class="fas fa-${activity.type === 'user' ? 'user' : 'database'} me-1"></i>${activity.user}
+                        </small>
+                    </div>
+                </div>
             </div>
-        `;
+        `).join('');
+    }, 1000);
+}
 
-        // Simulate loading delay and show sample data
-        setTimeout(() => {
-            timeline.innerHTML = `
-                <div class="activity-item">
-                    <div class="d-flex align-items-start w-100">
-                        <div class="me-3 mt-1">
-                            <i class="fas fa-chart-line text-primary"></i>
-                        </div>
-                        <div class="flex-grow-1">
-                            <div class="fw-semibold mb-1">Analytics dashboard accessed</div>
-                            <small class="text-muted">
-                                <i class="fas fa-clock me-1"></i>Just now
-                                <span class="mx-2">•</span>
-                                <i class="fas fa-user me-1"></i>{{ user.get_full_name|default:user.username }}
-                            </small>
-                        </div>
-                    </div>
-                </div>
-                <div class="activity-item">
-                    <div class="d-flex align-items-start w-100">
-                        <div class="me-3 mt-1">
-                            <i class="fas fa-users text-success"></i>
-                        </div>
-                        <div class="flex-grow-1">
-                            <div class="fw-semibold mb-1">User data synchronized</div>
-                            <small class="text-muted">
-                                <i class="fas fa-clock me-1"></i>5 minutes ago
-                                <span class="mx-2">•</span>
-                                <i class="fas fa-database me-1"></i>System Process
-                            </small>
-                        </div>
-                    </div>
-                </div>
-                <div class="activity-item">
-                    <div class="d-flex align-items-start w-100">
-                        <div class="me-3 mt-1">
-                            <i class="fas fa-download text-info"></i>
-                        </div>
-                        <div class="flex-grow-1">
-                            <div class="fw-semibold mb-1">Analytics report generated</div>
-                            <small class="text-muted">
-                                <i class="fas fa-clock me-1"></i>15 minutes ago
-                                <span class="mx-2">•</span>
-                                <i class="fas fa-file-pdf me-1"></i>PDF Export
-                            </small>
-                        </div>
-                    </div>
-                </div>
-            `;
-        }, 1000);
-    }
+function highlightActiveFilter(currentDays) {
+    const filterButtons = document.querySelectorAll('.filter-btn');
+    filterButtons.forEach(button => {
+        button.classList.remove('active');
+        if (parseInt(button.dataset.period) === currentDays) {
+            button.classList.add('active');
+        }
+    });
+}
 
-    // Add smooth animations to stat cards
+function initStatAnimations() {
     const observerOptions = {
         threshold: 0.1,
         rootMargin: '0px 0px -50px 0px'
@@ -1106,32 +1278,48 @@
         entries.forEach(entry => {
             if (entry.isIntersecting) {
                 const statNumber = entry.target.querySelector('.stat-number');
-                const finalValue = parseInt(statNumber.textContent) || 0;
-                animateCounter(statNumber, finalValue);
+                if (statNumber) {
+                    const finalValue = parseInt(statNumber.textContent) || 0;
+                    animateCounter(statNumber, finalValue);
+                }
             }
         });
     }, observerOptions);
 
-    // Observe all stat cards
     document.querySelectorAll('.stat-card').forEach(card => {
         observer.observe(card);
     });
+}
 
-    function animateCounter(element, target) {
-        const duration = 1500;
-        const start = 0;
-        const increment = target / (duration / 16);
-        let current = start;
+function animateCounter(element, target) {
+    const duration = 1500;
+    const start = 0;
+    const increment = target / (duration / 16);
+    let current = start;
 
-        const timer = setInterval(() => {
-            current += increment;
-            if (current >= target) {
-                element.textContent = target.toLocaleString();
-                clearInterval(timer);
-            } else {
-                element.textContent = Math.floor(current).toLocaleString();
-            }
-        }, 16);
-    }
+    const timer = setInterval(() => {
+        current += increment;
+        if (current >= target) {
+            element.textContent = target.toLocaleString();
+            clearInterval(timer);
+        } else {
+            element.textContent = Math.floor(current).toLocaleString();
+        }
+    }, 16);
+}
+
+// Error boundary for unhandled errors
+window.addEventListener('error', function(e) {
+    console.error('Global error caught:', e.error);
+    showToast('An unexpected error occurred', 'error');
+});
+
+// Export functions for global access (if needed)
+window.dashboard = {
+    updatePeriod,
+    exportData,
+    showToast,
+    hideLoading
+};
 </script>
 {% endblock %}

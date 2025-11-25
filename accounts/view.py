@@ -33,7 +33,6 @@ logger = logging.getLogger(__name__)
 from django.db import connection
 from django_tenants.utils import tenant_context
 from company.email import send_tenant_email, send_password_reset_email
-# accounts/views.py
 from django.http import JsonResponse
 from django.contrib.auth.decorators import login_required
 
