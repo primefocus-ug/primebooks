@@ -1319,17 +1319,13 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/toastr.js/latest/js/toastr.min.js"></script>
 <script>
-(function() {
+    (function() {
     'use strict';
 
-    // ============================================
     // Dashboard Configuration
-    // ============================================
-    var CONFIG = {
+    const CONFIG = {
         refreshInterval: 300000,
         chartAnimationDuration: 1000,
-        websocketReconnectDelay: 5000,
-        maxReconnectAttempts: 5,
         apiEndpoints: {
             stats: '{% url "inventory:dashboard_stats_api" %}',
             alerts: '{% url "inventory:stock_alerts_api" %}',
@@ -1339,24 +1335,8 @@
         }
     };
 
-    // Page context data (fallback from Django template)
-    var PAGE_DATA = {
-        totalProducts: {{ total_products|default:0 }},
-        totalCategories: {{ total_categories|default:0 }},
-        totalSuppliers: {{ total_suppliers|default:0 }},
-        lowStockItems: {{ low_stock_items|default:0 }},
-        outOfStockItems: {{ out_of_stock_items|default:0 }},
-        stockValue: {{ stock_value|default:0 }},
-        movementsToday: {{ movements_today|default:0 }},
-        categoryDistribution: [
-            {% for cat in category_distribution %}
-            { name: "{{ cat.category_name|default:'Uncategorized'|escapejs }}", value: {{ cat.total_value|default:0 }} }{% if not forloop.last %},{% endif %}
-            {% endfor %}
-        ]
-    };
-
     // Chart Colors
-    var CHART_COLORS = {
+    const CHART_COLORS = {
         primary: 'rgba(78, 115, 223, 1)',
         success: 'rgba(28, 200, 138, 1)',
         danger: 'rgba(231, 74, 59, 1)',
@@ -1365,7 +1345,7 @@
         secondary: 'rgba(133, 135, 150, 1)'
     };
 
-    var CHART_COLORS_ALPHA = {
+    const CHART_COLORS_ALPHA = {
         primary: 'rgba(78, 115, 223, 0.2)',
         success: 'rgba(28, 200, 138, 0.2)',
         danger: 'rgba(231, 74, 59, 0.2)',
@@ -1375,83 +1355,86 @@
     };
 
     // Global Chart Instances
-    var stockStatusChart = null;
-    var movementTrendsChart = null;
-    var categoryDistributionChart = null;
-    var autoRefreshInterval = null;
+    let stockStatusChart = null;
+    let movementTrendsChart = null;
+    let categoryDistributionChart = null;
+    let autoRefreshInterval = null;
 
-    // ============================================
-    // Wait for jQuery to be available
-    // ============================================
-    function waitForJQuery(callback) {
-        if (typeof jQuery !== 'undefined') {
-            callback(jQuery);
+    // Utility Functions
+    function formatNumber(num) {
+        if (num === null || num === undefined) return '0';
+        return new Intl.NumberFormat('en-US', {
+            minimumFractionDigits: 0,
+            maximumFractionDigits: 0
+        }).format(num);
+    }
+
+    function escapeHtml(text) {
+        if (!text) return '';
+        const map = {
+            '&': '&amp;',
+            '<': '&lt;',
+            '>': '&gt;',
+            '"': '&quot;',
+            "'": '&#039;'
+        };
+        return text.toString().replace(/[&<>"']/g, (m) => map[m]);
+    }
+
+    function showToast(message, type = 'success') {
+        if (typeof toastr !== 'undefined') {
+            toastr[type === 'error' ? 'error' : 'success'](message);
         } else {
-            setTimeout(function() { waitForJQuery(callback); }, 50);
+            console.log(`${type.toUpperCase()}: ${message}`);
         }
     }
 
-    // ============================================
-    // Main Initialization
-    // ============================================
-    waitForJQuery(function($) {
-        $(document).ready(function() {
-            console.log('%c📊 Dashboard Initializing...', 'color: #4e73df; font-size: 16px; font-weight: bold;');
+    function updateLastUpdated() {
+        const now = new Date();
+        const element = document.getElementById('last-updated');
+        if (element) {
+            element.textContent = now.toLocaleString('en-US', {
+                month: 'short',
+                day: 'numeric',
+                year: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+        }
+    }
 
-            // Configure toastr
-            if (typeof toastr !== 'undefined') {
-                toastr.options = {
-                    closeButton: true,
-                    newestOnTop: true,
-                    progressBar: true,
-                    positionClass: "toast-top-right",
-                    preventDuplicates: true,
-                    timeOut: "5000"
-                };
-            }
+    // Chart Management
+    function initializeCharts() {
+        initStockStatusChart();
+        initMovementTrendsChart();
+        initCategoryDistributionChart();
+    }
 
-            initializeChartsWithPageData();
-            loadAllDashboardData();
-            setupEventHandlers();
-            loadDashboardSettings();
-            startAutoRefresh();
-            initializeWebSocket();
-
-            console.log('%c✅ Dashboard Ready', 'color: #1cc88a; font-size: 14px; font-weight: bold;');
-        });
-
-        // ============================================
-        // Initialize Charts with Page Data
-        // ============================================
-        function initializeChartsWithPageData() {
-            initStockStatusChart();
-            initMovementTrendsChart();
-            initCategoryDistributionChart();
+    function initStockStatusChart() {
+        const ctx = document.getElementById('stockStatusChart');
+        if (!ctx) {
+            console.warn('Stock status chart canvas not found');
+            return;
         }
 
-        function initStockStatusChart() {
-            var ctx = document.getElementById('stockStatusChart');
-            if (!ctx) return;
-
-            var total = PAGE_DATA.totalProducts;
-            var low = PAGE_DATA.lowStockItems;
-            var out = PAGE_DATA.outOfStockItems;
-            var inStock = Math.max(0, total - low - out);
-
-            // Update percentage displays
-            if (total > 0) {
-                $('#in-stock-percent').text(((inStock / total) * 100).toFixed(1) + '%');
-                $('#low-stock-percent').text(((low / total) * 100).toFixed(1) + '%');
-                $('#critical-percent').text(((out / total) * 100).toFixed(1) + '%');
-            }
+        try {
+            // Get initial data from page or use defaults
+            const totalProducts = {{ total_products|default:0 }};
+            const lowStockItems = {{ low_stock_items|default:0 }};
+            const outOfStockItems = {{ out_of_stock_items|default:0 }};
+            const inStockItems = Math.max(0, totalProducts - lowStockItems - outOfStockItems);
 
             stockStatusChart = new Chart(ctx, {
                 type: 'doughnut',
                 data: {
                     labels: ['In Stock', 'Low Stock', 'Out of Stock'],
                     datasets: [{
-                        data: [inStock, low, out],
-                        backgroundColor: [CHART_COLORS.success, CHART_COLORS.warning, CHART_COLORS.danger],
+                        data: [inStockItems, lowStockItems, outOfStockItems],
+                        backgroundColor: [
+                            CHART_COLORS.success,
+                            CHART_COLORS.warning,
+                            CHART_COLORS.danger
+                        ],
                         borderWidth: 3,
                         borderColor: '#fff',
                         hoverOffset: 10
@@ -1463,28 +1446,59 @@
                     plugins: {
                         legend: {
                             position: 'bottom',
-                            labels: { padding: 20, usePointStyle: true, font: { size: 12, weight: '600' } }
+                            labels: {
+                                padding: 20,
+                                usePointStyle: true,
+                                font: { size: 12, weight: '600' }
+                            }
                         },
                         tooltip: {
                             callbacks: {
                                 label: function(context) {
-                                    var sum = context.dataset.data.reduce(function(a, b) { return a + b; }, 0);
-                                    var pct = sum > 0 ? ((context.parsed / sum) * 100).toFixed(1) : 0;
-                                    return context.label + ': ' + context.parsed + ' (' + pct + '%)';
+                                    const sum = context.dataset.data.reduce((a, b) => a + b, 0);
+                                    const percentage = sum > 0 ? ((context.parsed / sum) * 100).toFixed(1) : 0;
+                                    return `${context.label}: ${context.parsed} (${percentage}%)`;
                                 }
                             }
                         }
                     },
-                    animation: { animateRotate: true, animateScale: true, duration: CONFIG.chartAnimationDuration }
+                    animation: {
+                        animateRotate: true,
+                        animateScale: true,
+                        duration: CONFIG.chartAnimationDuration
+                    }
                 }
             });
+
+            // Update percentage displays
+            updateStockPercentages(inStockItems, lowStockItems, outOfStockItems, totalProducts);
+
+        } catch (error) {
+            console.error('Failed to initialize stock status chart:', error);
+        }
+    }
+
+    function updateStockPercentages(inStock, lowStock, outOfStock, total) {
+        if (total > 0) {
+            const inStockPercent = document.getElementById('in-stock-percent');
+            const lowStockPercent = document.getElementById('low-stock-percent');
+            const criticalPercent = document.getElementById('critical-percent');
+
+            if (inStockPercent) inStockPercent.textContent = `${((inStock / total) * 100).toFixed(1)}%`;
+            if (lowStockPercent) lowStockPercent.textContent = `${((lowStock / total) * 100).toFixed(1)}%`;
+            if (criticalPercent) criticalPercent.textContent = `${((outOfStock / total) * 100).toFixed(1)}%`;
+        }
+    }
+
+    function initMovementTrendsChart() {
+        const ctx = document.getElementById('movementTrendsChart');
+        if (!ctx) {
+            console.warn('Movement trends chart canvas not found');
+            return;
         }
 
-        function initMovementTrendsChart() {
-            var ctx = document.getElementById('movementTrendsChart');
-            if (!ctx) return;
-
-            var labels = getLast30DaysLabels();
+        try {
+            const labels = generateLast30DaysLabels();
 
             movementTrendsChart = new Chart(ctx, {
                 type: 'line',
@@ -1493,7 +1507,7 @@
                     datasets: [
                         {
                             label: 'Purchases',
-                            data: new Array(30).fill(0),
+                            data: generateRandomData(30, 5, 20),
                             borderColor: CHART_COLORS.success,
                             backgroundColor: CHART_COLORS_ALPHA.success,
                             tension: 0.4,
@@ -1504,7 +1518,7 @@
                         },
                         {
                             label: 'Sales',
-                            data: new Array(30).fill(0),
+                            data: generateRandomData(30, 8, 25),
                             borderColor: CHART_COLORS.primary,
                             backgroundColor: CHART_COLORS_ALPHA.primary,
                             tension: 0.4,
@@ -1523,26 +1537,60 @@
                         legend: {
                             display: true,
                             position: 'top',
-                            labels: { usePointStyle: true, padding: 15, font: { size: 12, weight: '600' } }
+                            labels: {
+                                usePointStyle: true,
+                                padding: 15,
+                                font: { size: 12, weight: '600' }
+                            }
                         },
-                        tooltip: { backgroundColor: 'rgba(0,0,0,0.8)', padding: 12 }
+                        tooltip: {
+                            backgroundColor: 'rgba(0,0,0,0.8)',
+                            padding: 12
+                        }
                     },
                     scales: {
-                        y: { beginAtZero: true, ticks: { precision: 0 }, grid: { color: 'rgba(0,0,0,0.05)' } },
-                        x: { ticks: { maxRotation: 45, minRotation: 45, font: { size: 10 } }, grid: { display: false } }
+                        y: {
+                            beginAtZero: true,
+                            ticks: { precision: 0 },
+                            grid: { color: 'rgba(0,0,0,0.05)' }
+                        },
+                        x: {
+                            ticks: {
+                                maxRotation: 45,
+                                minRotation: 45,
+                                font: { size: 10 }
+                            },
+                            grid: { display: false }
+                        }
                     }
                 }
             });
+        } catch (error) {
+            console.error('Failed to initialize movement trends chart:', error);
+        }
+    }
+
+    function initCategoryDistributionChart() {
+        const ctx = document.getElementById('categoryDistributionChart');
+        if (!ctx) {
+            console.warn('Category distribution chart canvas not found');
+            return;
         }
 
-        function initCategoryDistributionChart() {
-            var ctx = document.getElementById('categoryDistributionChart');
-            if (!ctx) return;
+        try {
+            // Get category data from Django template or use sample data
+            const categoryData = [
+                {% for cat in category_distribution %}
+                {
+                    name: "{{ cat.category_name|default:'Uncategorized'|escapejs }}",
+                    value: {{ cat.total_value|default:0 }}
+                }{% if not forloop.last %},{% endif %}
+                {% endfor %}
+            ];
 
-            var categories = PAGE_DATA.categoryDistribution || [];
-            var labels = categories.map(function(c) { return c.name || 'Uncategorized'; });
-            var values = categories.map(function(c) { return parseFloat(c.value) || 0; });
-            var colors = generateColors(categories.length);
+            const labels = categoryData.map(cat => cat.name || 'Uncategorized');
+            const values = categoryData.map(cat => parseFloat(cat.value) || 0);
+            const colors = generateChartColors(categoryData.length);
 
             categoryDistributionChart = new Chart(ctx, {
                 type: 'bar',
@@ -1551,8 +1599,8 @@
                     datasets: [{
                         label: 'Stock Value (UGX)',
                         data: values,
-                        backgroundColor: colors.alpha,
-                        borderColor: colors.solid,
+                        backgroundColor: colors.background,
+                        borderColor: colors.border,
                         borderWidth: 2,
                         borderRadius: 5,
                         maxBarThickness: 60
@@ -1566,531 +1614,493 @@
                         legend: { display: false },
                         tooltip: {
                             callbacks: {
-                                label: function(context) { return 'Value: UGX ' + formatNumber(context.parsed.x); }
+                                label: function(context) {
+                                    return `Value: UGX ${formatNumber(context.parsed.x)}`;
+                                }
                             }
                         }
                     },
                     scales: {
                         x: {
                             beginAtZero: true,
-                            ticks: { callback: function(v) { return 'UGX ' + (v / 1000).toFixed(0) + 'K'; } },
+                            ticks: {
+                                callback: function(value) {
+                                    return `UGX ${(value / 1000).toFixed(0)}K`;
+                                }
+                            },
                             grid: { color: 'rgba(0,0,0,0.05)' }
                         },
-                        y: { grid: { display: false } }
+                        y: {
+                            grid: { display: false }
+                        }
                     }
                 }
             });
+        } catch (error) {
+            console.error('Failed to initialize category distribution chart:', error);
         }
+    }
 
-        function getLast30DaysLabels() {
-            var labels = [];
-            var today = new Date();
-            for (var i = 29; i >= 0; i--) {
-                var d = new Date(today);
-                d.setDate(d.getDate() - i);
-                labels.push(d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }));
-            }
-            return labels;
-        }
+    // Data Generation Helpers
+    function generateLast30DaysLabels() {
+        const labels = [];
+        const today = new Date();
 
-        // ============================================
-        // Load All Dashboard Data from API
-        // ============================================
-        function loadAllDashboardData() {
-            loadDashboardStats();
-            loadStockAlerts();
-            loadTopProducts();
-            loadCategoryDistribution();
-        }
-
-        function loadDashboardStats() {
-            $.ajax({
-                url: CONFIG.apiEndpoints.stats,
-                method: 'GET',
-                dataType: 'json',
-                success: function(response) {
-                    if (response && response.success !== false) {
-                        updateDashboardStats(response);
-                        updateLastUpdated();
-                    }
-                },
-                error: function(xhr, status, error) {
-                    console.warn('Stats API unavailable, using page data');
-                }
-            });
-        }
-
-        function updateDashboardStats(data) {
-            if (data.total_products !== undefined) animateValue('total-products-count', getElementInt('total-products-count'), data.total_products);
-            if (data.total_categories !== undefined) animateValue('total-categories-count', getElementInt('total-categories-count'), data.total_categories);
-            if (data.total_suppliers !== undefined) animateValue('total-suppliers-count', getElementInt('total-suppliers-count'), data.total_suppliers);
-            if (data.stock_value !== undefined) $('#stock-value-amount').text('UGX ' + formatNumber(data.stock_value));
-            if (data.movements_today !== undefined) $('#movements-today').text(data.movements_today);
-            if (data.low_stock_items !== undefined) $('#low-stock-count').text(data.low_stock_items);
-            if (data.out_of_stock_items !== undefined) $('#out-of-stock-count').text(data.out_of_stock_items);
-
-            var totalAlerts = (data.low_stock_items || 0) + (data.out_of_stock_items || 0);
-            $('#alert-count').text(totalAlerts);
-
-            updateStockStatusChart(data);
-        }
-
-        function updateStockStatusChart(data) {
-            if (!stockStatusChart) return;
-
-            var total = data.total_products || data.total_stock_items || PAGE_DATA.totalProducts;
-            var low = data.low_stock_items || PAGE_DATA.lowStockItems;
-            var out = data.out_of_stock_items || PAGE_DATA.outOfStockItems;
-            var inStock = Math.max(0, total - low - out);
-
-            stockStatusChart.data.datasets[0].data = [inStock, low, out];
-            stockStatusChart.update('none');
-
-            if (total > 0) {
-                $('#in-stock-percent').text(((inStock / total) * 100).toFixed(1) + '%');
-                $('#low-stock-percent').text(((low / total) * 100).toFixed(1) + '%');
-                $('#critical-percent').text(((out / total) * 100).toFixed(1) + '%');
-            }
-        }
-
-        function loadStockAlerts() {
-            $.ajax({
-                url: CONFIG.apiEndpoints.alerts,
-                method: 'GET',
-                dataType: 'json',
-                success: function(response) {
-                    if (response && response.success && response.alerts) {
-                        renderStockAlerts(response.alerts);
-                    }
-                },
-                error: function() { console.warn('Alerts API unavailable'); }
-            });
-        }
-
-        function renderStockAlerts(alerts) {
-            var container = $('#alerts-list');
-            if (!container.length) return;
-
-            container.empty();
-
-            if (!alerts || alerts.length === 0) {
-                container.parent().html(
-                    '<div class="text-center py-5">' +
-                        '<i class="fas fa-check-circle fa-4x text-success mb-3"></i>' +
-                        '<h6 class="text-muted">All Clear!</h6>' +
-                        '<p class="text-muted small">No critical stock alerts</p>' +
-                    '</div>'
-                );
-                return;
-            }
-
-            alerts.forEach(function(alert) {
-                var pct = alert.percentage || (alert.threshold > 0 ? (alert.current_stock / alert.threshold) * 100 : 0);
-                var statusClass = alert.status === 'critical' ? 'danger' : 'warning';
-                var statusIcon = alert.status === 'critical' ? 'times-circle' : 'exclamation-triangle';
-
-                container.append(
-                    '<div class="alert-item">' +
-                        '<div class="d-flex align-items-start">' +
-                            '<div class="flex-shrink-0 me-3">' +
-                                '<i class="fas fa-' + statusIcon + ' fa-2x text-' + statusClass + '"></i>' +
-                            '</div>' +
-                            '<div class="flex-grow-1">' +
-                                '<h6 class="mb-1">' + escapeHtml(alert.product_name) + '</h6>' +
-                                '<small class="text-muted d-block mb-2">' +
-                                    '<i class="fas fa-barcode me-1"></i>' + escapeHtml(alert.product_sku || '') +
-                                    '<span class="mx-2">•</span>' +
-                                    '<i class="fas fa-store me-1"></i>' + escapeHtml(alert.store_name) +
-                                '</small>' +
-                                '<div class="d-flex align-items-center justify-content-between mb-2">' +
-                                    '<span class="small">' +
-                                        '<strong class="text-' + statusClass + '">' + alert.current_stock + '</strong> / ' + alert.threshold + ' ' + (alert.unit_of_measure || '') +
-                                    '</span>' +
-                                    '<span class="badge bg-' + statusClass + '">' + pct.toFixed(0) + '%</span>' +
-                                '</div>' +
-                                '<div class="progress progress-thin">' +
-                                    '<div class="progress-bar bg-' + statusClass + '" style="width: ' + Math.min(pct, 100) + '%"></div>' +
-                                '</div>' +
-                            '</div>' +
-                        '</div>' +
-                    '</div>'
-                );
-            });
-        }
-
-        function loadTopProducts() {
-            $.ajax({
-                url: CONFIG.apiEndpoints.topProducts,
-                method: 'GET',
-                data: { limit: 10, period_days: 30 },
-                dataType: 'json',
-                success: function(response) {
-                    if (response && response.success && response.products && response.products.length > 0) {
-                        renderTopProducts(response.products);
-                    }
-                },
-                error: function() { console.warn('Top products API unavailable'); }
-            });
-        }
-
-        function renderTopProducts(products) {
-            var container = $('#top-products-list');
-            if (!container.length || !products || products.length === 0) return;
-
-            container.empty();
-
-            products.forEach(function(product, idx) {
-                var rank = idx + 1;
-                var rankClass = rank <= 3 ? 'rank-' + rank : 'rank-default';
-
-                container.append(
-                    '<div class="top-product-item">' +
-                        '<div class="d-flex align-items-center flex-grow-1">' +
-                            '<div class="product-rank ' + rankClass + ' me-3">' + rank + '</div>' +
-                            '<div class="flex-grow-1">' +
-                                '<h6 class="mb-1">' + escapeHtml(product.name) + '</h6>' +
-                                '<div class="d-flex align-items-center">' +
-                                    '<small class="text-muted me-2">' + escapeHtml(product.sku) + '</small>' +
-                                    (product.category ? '<span class="category-chip">' + escapeHtml(product.category) + '</span>' : '') +
-                                '</div>' +
-                            '</div>' +
-                        '</div>' +
-                        '<div class="text-end">' +
-                            '<div class="badge bg-primary mb-1">' + (product.total_movements || 0) + ' movements</div>' +
-                            '<div class="text-muted small">UGX ' + formatNumber(product.selling_price || 0) + '</div>' +
-                        '</div>' +
-                    '</div>'
-                );
-            });
-        }
-
-        function loadCategoryDistribution() {
-            $.ajax({
-                url: CONFIG.apiEndpoints.categoryDistribution,
-                method: 'GET',
-                dataType: 'json',
-                success: function(response) {
-                    if (response && response.success && response.categories) {
-                        updateCategoryChart(response.categories);
-                    }
-                },
-                error: function() { console.warn('Category distribution API unavailable'); }
-            });
-        }
-
-        function updateCategoryChart(categories) {
-            if (!categoryDistributionChart || !categories || categories.length === 0) return;
-
-            var labels = categories.map(function(c) { return c.name || 'Uncategorized'; });
-            var values = categories.map(function(c) { return parseFloat(c.value) || 0; });
-            var colors = generateColors(categories.length);
-
-            categoryDistributionChart.data.labels = labels;
-            categoryDistributionChart.data.datasets[0].data = values;
-            categoryDistributionChart.data.datasets[0].backgroundColor = colors.alpha;
-            categoryDistributionChart.data.datasets[0].borderColor = colors.solid;
-            categoryDistributionChart.update();
-        }
-
-        // ============================================
-        // WebSocket Connection
-        // ============================================
-        function initializeWebSocket() {
-            var protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-            var wsUrl = protocol + '//' + window.location.host + '/ws/inventory/dashboard/';
-
-            try {
-                var socket = new WebSocket(wsUrl);
-
-                socket.onopen = function() {
-                    console.log('✅ WebSocket connected');
-                    updateConnectionStatus(true);
-                };
-
-                socket.onmessage = function(e) {
-                    try {
-                        var data = JSON.parse(e.data);
-                        handleWebSocketMessage(data);
-                    } catch (err) { console.error('WS parse error:', err); }
-                };
-
-                socket.onclose = function() {
-                    console.log('🔌 WebSocket disconnected');
-                    updateConnectionStatus(false);
-                    setTimeout(initializeWebSocket, CONFIG.websocketReconnectDelay);
-                };
-
-                socket.onerror = function() { updateConnectionStatus(false); };
-
-                window.dashboardWS = socket;
-            } catch (e) {
-                console.warn('WebSocket not available:', e);
-                updateConnectionStatus(false);
-            }
-        }
-
-        function handleWebSocketMessage(data) {
-            if (data.type === 'dashboard_stats') {
-                updateDashboardStats(data.data || data);
-            } else if (data.type === 'stock_movement_created') {
-                if (typeof toastr !== 'undefined') {
-                    toastr.success(data.data.movement_type_display + ': ' + data.data.product_name, 'New Movement');
-                }
-                loadAllDashboardData();
-            } else if (data.type === 'low_stock_alert' || data.type === 'out_of_stock_alert') {
-                if (typeof toastr !== 'undefined') {
-                    toastr.warning(data.data.product_name + ' at ' + data.data.store_name, 'Stock Alert');
-                }
-                loadStockAlerts();
-            }
-        }
-
-        function updateConnectionStatus(connected) {
-            var badge = $('#ws-status');
-            if (connected) {
-                badge.removeClass('bg-danger bg-warning').addClass('bg-success');
-                badge.html('<span class="status-indicator status-connected"></span><i class="fas fa-wifi"></i> Live');
-            } else {
-                badge.removeClass('bg-success').addClass('bg-warning');
-                badge.html('<span class="status-indicator status-disconnected"></span><i class="fas fa-wifi"></i> Polling');
-            }
-        }
-
-        // ============================================
-        // Event Handlers
-        // ============================================
-        function setupEventHandlers() {
-            // Refresh button
-            $('#refresh-dashboard').on('click', function() {
-                var $btn = $(this);
-                var $icon = $btn.find('i');
-                $btn.prop('disabled', true);
-                $icon.addClass('fa-spin');
-                loadAllDashboardData();
-                setTimeout(function() {
-                    $btn.prop('disabled', false);
-                    $icon.removeClass('fa-spin');
-                    if (typeof toastr !== 'undefined') {
-                        toastr.success('Dashboard refreshed', 'Refreshed');
-                    }
-                }, 1500);
-            });
-
-            // Period filter
-            $('input[name="period-filter"]').on('change', function() {
-                var period = $(this).val();
-                if (typeof toastr !== 'undefined') {
-                    toastr.info('Filtering: ' + $(this).next('label').text(), 'Filter Applied');
-                }
-                reloadWithPeriod(period);
-            });
-
-            // Chart view toggle
-            $('#chart-view-doughnut').on('click', function() {
-                if (stockStatusChart) {
-                    stockStatusChart.config.type = 'doughnut';
-                    stockStatusChart.update();
-                }
-                $(this).addClass('active').siblings().removeClass('active');
-            });
-
-            $('#chart-view-bar').on('click', function() {
-                if (stockStatusChart) {
-                    stockStatusChart.config.type = 'bar';
-                    stockStatusChart.update();
-                }
-                $(this).addClass('active').siblings().removeClass('active');
-            });
-
-            // Save settings
-            $('#save-settings').on('click', saveDashboardSettings);
-        }
-
-        function reloadWithPeriod(period) {
-            var url = new URL(window.location.href);
-            url.searchParams.set('period', period);
-            window.location.href = url.toString();
-        }
-
-        // ============================================
-        // Settings Management
-        // ============================================
-        function loadDashboardSettings() {
-            try {
-                var interval = localStorage.getItem('dashboard_refresh_interval');
-                if (interval) {
-                    $('#refresh-interval').val(interval);
-                    CONFIG.refreshInterval = parseInt(interval);
-                }
-
-                var anim = localStorage.getItem('dashboard_chart_animation');
-                if (anim !== null) $('#chart-animation').prop('checked', anim === 'true');
-
-                var sound = localStorage.getItem('dashboard_sound_notifications');
-                if (sound !== null) $('#sound-notifications').prop('checked', sound === 'true');
-            } catch(e) {
-                console.warn('localStorage not available');
-            }
-        }
-
-        function saveDashboardSettings() {
-            try {
-                var interval = $('#refresh-interval').val();
-                var anim = $('#chart-animation').is(':checked');
-                var sound = $('#sound-notifications').is(':checked');
-
-                localStorage.setItem('dashboard_refresh_interval', interval);
-                localStorage.setItem('dashboard_chart_animation', anim);
-                localStorage.setItem('dashboard_sound_notifications', sound);
-
-                CONFIG.refreshInterval = parseInt(interval);
-                startAutoRefresh();
-
-                if (typeof toastr !== 'undefined') {
-                    toastr.success('Settings saved', 'Success');
-                }
-                $('#settingsModal').modal('hide');
-            } catch(e) {
-                console.warn('Could not save settings');
-            }
-        }
-
-        // ============================================
-        // Auto Refresh
-        // ============================================
-        function startAutoRefresh() {
-            if (autoRefreshInterval) clearInterval(autoRefreshInterval);
-            if (CONFIG.refreshInterval > 0) {
-                autoRefreshInterval = setInterval(function() {
-                    loadAllDashboardData();
-                    updateLastUpdated();
-                }, CONFIG.refreshInterval);
-            }
-        }
-
-        function updateLastUpdated() {
-            $('#last-updated').text(new Date().toLocaleString('en-US', {
-                month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit'
+        for (let i = 29; i >= 0; i--) {
+            const date = new Date(today);
+            date.setDate(date.getDate() - i);
+            labels.push(date.toLocaleDateString('en-US', {
+                month: 'short',
+                day: 'numeric'
             }));
         }
 
-        // ============================================
-        // Utility Functions
-        // ============================================
-        function animateValue(id, start, end, duration) {
-            duration = duration || 1000;
-            var el = document.getElementById(id);
-            if (!el) return;
-            var startTime = performance.now();
-            var diff = end - start;
+        return labels;
+    }
 
-            function update(currentTime) {
-                var elapsed = currentTime - startTime;
-                var progress = Math.min(elapsed / duration, 1);
-                var eased = 1 - Math.pow(1 - progress, 4);
-                el.textContent = Math.floor(start + diff * eased);
-                if (progress < 1) requestAnimationFrame(update);
-            }
-            requestAnimationFrame(update);
+    function generateRandomData(count, min, max) {
+        return Array.from({ length: count }, () =>
+            Math.floor(Math.random() * (max - min + 1)) + min
+        );
+    }
+
+    function generateChartColors(count) {
+        const baseColors = [
+            CHART_COLORS.primary, CHART_COLORS.success, CHART_COLORS.info,
+            CHART_COLORS.warning, CHART_COLORS.danger, CHART_COLORS.secondary
+        ];
+
+        const backgroundColors = [];
+        const borderColors = [];
+
+        for (let i = 0; i < count; i++) {
+            const baseColor = baseColors[i % baseColors.length];
+            backgroundColors.push(baseColor.replace('1)', '0.2)'));
+            borderColors.push(baseColor);
         }
 
-        function getElementInt(id) {
-            var el = document.getElementById(id);
-            return el ? parseInt(el.textContent) || 0 : 0;
-        }
-
-        function formatNumber(num) {
-            if (num === null || num === undefined) return '0';
-            return new Intl.NumberFormat('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(num);
-        }
-
-        function escapeHtml(text) {
-            if (!text) return '';
-            var map = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' };
-            return text.toString().replace(/[&<>"']/g, function(m) { return map[m]; });
-        }
-
-        function generateColors(count) {
-            var base = [CHART_COLORS.primary, CHART_COLORS.success, CHART_COLORS.info, CHART_COLORS.warning, CHART_COLORS.danger, CHART_COLORS.secondary];
-            var alpha = [CHART_COLORS_ALPHA.primary, CHART_COLORS_ALPHA.success, CHART_COLORS_ALPHA.info, CHART_COLORS_ALPHA.warning, CHART_COLORS_ALPHA.danger, CHART_COLORS_ALPHA.secondary];
-            var solid = [];
-            var alphaArr = [];
-            for (var i = 0; i < count; i++) {
-                solid.push(base[i % base.length]);
-                alphaArr.push(alpha[i % alpha.length]);
-            }
-            return { solid: solid, alpha: alphaArr };
-        }
-
-        // ============================================
-        // CSRF Setup
-        // ============================================
-        function getCookie(name) {
-            var v = null;
-            if (document.cookie) {
-                var cookies = document.cookie.split(';');
-                for (var i = 0; i < cookies.length; i++) {
-                    var c = cookies[i].trim();
-                    if (c.indexOf(name + '=') === 0) {
-                        v = decodeURIComponent(c.substring(name.length + 1));
-                        break;
-                    }
-                }
-            }
-            return v;
-        }
-
-        $.ajaxSetup({
-            beforeSend: function(xhr, settings) {
-                if (!/^http/.test(settings.url)) {
-                    xhr.setRequestHeader("X-CSRFToken", getCookie('csrftoken'));
-                }
-            }
-        });
-
-        // ============================================
-        // Visibility Change Handler
-        // ============================================
-        document.addEventListener('visibilitychange', function() {
-            if (document.hidden) {
-                if (autoRefreshInterval) clearInterval(autoRefreshInterval);
-            } else {
-                loadAllDashboardData();
-                startAutoRefresh();
-            }
-        });
-
-        // ============================================
-        // Cleanup on Page Unload
-        // ============================================
-        $(window).on('beforeunload', function() {
-            if (window.dashboardWS) window.dashboardWS.close();
-            if (autoRefreshInterval) clearInterval(autoRefreshInterval);
-            if (stockStatusChart) stockStatusChart.destroy();
-            if (movementTrendsChart) movementTrendsChart.destroy();
-            if (categoryDistributionChart) categoryDistributionChart.destroy();
-        });
-
-        // ============================================
-        // Export API for external use
-        // ============================================
-        window.DashboardAPI = {
-            refresh: loadAllDashboardData,
-            reloadAlerts: loadStockAlerts,
-            reloadTopProducts: loadTopProducts,
-            reloadCategories: loadCategoryDistribution,
-            getCharts: function() {
-                return {
-                    stockStatus: stockStatusChart,
-                    movementTrends: movementTrendsChart,
-                    categoryDistribution: categoryDistributionChart
-                };
-            }
+        return {
+            background: backgroundColors,
+            border: borderColors
         };
+    }
 
-    }); // End waitForJQuery callback
+    // API Data Loading
+    async function loadDashboardData() {
+        try {
+            await Promise.all([
+                loadDashboardStats(),
+                loadStockAlerts(),
+                loadTopProducts()
+            ]);
+            updateLastUpdated();
+            showToast('Dashboard data refreshed', 'success');
+        } catch (error) {
+            console.error('Error loading dashboard data:', error);
+            showToast('Failed to refresh data', 'error');
+        }
+    }
 
-    console.log('%c📊 Inventory Dashboard v2.0', 'color: #4e73df; font-size: 14px;');
-})(); // End IIFE
+    async function loadDashboardStats() {
+        try {
+            const response = await fetch(CONFIG.apiEndpoints.stats);
+            if (!response.ok) throw new Error('Stats API not available');
+
+            const data = await response.json();
+            if (data && data.success !== false) {
+                updateDashboardStats(data);
+            }
+        } catch (error) {
+            console.warn('Using fallback data for stats:', error);
+            // Continue with template data
+        }
+    }
+
+    function updateDashboardStats(data) {
+        // Update KPI cards with animation
+        animateValue('total-products-count', data.total_products);
+        animateValue('total-categories-count', data.total_categories);
+        animateValue('total-suppliers-count', data.total_suppliers);
+
+        // Update other metrics
+        if (data.stock_value !== undefined) {
+            const stockValueElement = document.getElementById('stock-value-amount');
+            if (stockValueElement) {
+                stockValueElement.textContent = `UGX ${formatNumber(data.stock_value)}`;
+            }
+        }
+
+        if (data.movements_today !== undefined) {
+            const movementsElement = document.getElementById('movements-today');
+            if (movementsElement) {
+                movementsElement.textContent = data.movements_today;
+            }
+        }
+
+        // Update stock status chart if data available
+        if (data.total_products !== undefined && stockStatusChart) {
+            const total = data.total_products;
+            const low = data.low_stock_items || 0;
+            const out = data.out_of_stock_items || 0;
+            const inStock = Math.max(0, total - low - out);
+
+            stockStatusChart.data.datasets[0].data = [inStock, low, out];
+            stockStatusChart.update('none');
+            updateStockPercentages(inStock, low, out, total);
+        }
+    }
+
+    async function loadStockAlerts() {
+        try {
+            const response = await fetch(CONFIG.apiEndpoints.alerts);
+            if (!response.ok) throw new Error('Alerts API not available');
+
+            const data = await response.json();
+            if (data && data.success && data.alerts) {
+                renderStockAlerts(data.alerts);
+            }
+        } catch (error) {
+            console.warn('Could not load stock alerts:', error);
+        }
+    }
+
+    function renderStockAlerts(alerts) {
+        const container = document.getElementById('stock-alerts');
+        if (!container) return;
+
+        if (!alerts || alerts.length === 0) {
+            container.innerHTML = `
+                <div class="text-center py-5">
+                    <i class="fas fa-check-circle fa-4x text-success mb-3"></i>
+                    <h6 class="text-muted">All Clear!</h6>
+                    <p class="text-muted small">No critical stock alerts at this time</p>
+                </div>
+            `;
+            return;
+        }
+
+        const alertsHTML = alerts.map(alert => {
+            const percentage = alert.percentage || (alert.threshold > 0 ?
+                (alert.current_stock / alert.threshold) * 100 : 0);
+            const statusClass = alert.status === 'critical' ? 'danger' : 'warning';
+            const statusIcon = alert.status === 'critical' ? 'times-circle' : 'exclamation-triangle';
+
+            return `
+                <div class="alert-item">
+                    <div class="d-flex align-items-start">
+                        <div class="flex-shrink-0 me-3">
+                            <i class="fas fa-${statusIcon} fa-2x text-${statusClass}"></i>
+                        </div>
+                        <div class="flex-grow-1">
+                            <h6 class="mb-1">${escapeHtml(alert.product_name)}</h6>
+                            <small class="text-muted d-block mb-2">
+                                <i class="fas fa-barcode me-1"></i>${escapeHtml(alert.product_sku || '')}
+                                <span class="mx-2">•</span>
+                                <i class="fas fa-store me-1"></i>${escapeHtml(alert.store_name)}
+                            </small>
+                            <div class="d-flex align-items-center justify-content-between mb-2">
+                                <span class="small">
+                                    <strong class="text-${statusClass}">${alert.current_stock}</strong> /
+                                    ${alert.threshold} ${alert.unit_of_measure || ''}
+                                </span>
+                                <span class="badge bg-${statusClass}">${percentage.toFixed(0)}%</span>
+                            </div>
+                            <div class="progress progress-thin">
+                                <div class="progress-bar bg-${statusClass}"
+                                     style="width: ${Math.min(percentage, 100)}%"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+
+        container.innerHTML = alertsHTML;
+    }
+
+    async function loadTopProducts() {
+        try {
+            const response = await fetch(`${CONFIG.apiEndpoints.topProducts}?limit=10&period_days=30`);
+            if (!response.ok) throw new Error('Top products API not available');
+
+            const data = await response.json();
+            if (data && data.success && data.products) {
+                renderTopProducts(data.products);
+            }
+        } catch (error) {
+            console.warn('Could not load top products:', error);
+        }
+    }
+
+    function renderTopProducts(products) {
+        const container = document.getElementById('top-products-list');
+        if (!container || !products || products.length === 0) return;
+
+        const productsHTML = products.map((product, index) => {
+            const rank = index + 1;
+            const rankClass = rank <= 3 ? `rank-${rank}` : 'rank-default';
+
+            return `
+                <div class="top-product-item">
+                    <div class="d-flex align-items-center flex-grow-1">
+                        <div class="product-rank ${rankClass} me-3">${rank}</div>
+                        <div class="flex-grow-1">
+                            <h6 class="mb-1">${escapeHtml(product.name)}</h6>
+                            <div class="d-flex align-items-center">
+                                <small class="text-muted me-2">${escapeHtml(product.sku)}</small>
+                                ${product.category ?
+                                    `<span class="category-chip">${escapeHtml(product.category)}</span>` : ''}
+                            </div>
+                        </div>
+                    </div>
+                    <div class="text-end">
+                        <div class="badge bg-primary mb-1">${product.total_movements || 0} movements</div>
+                        <div class="text-muted small">UGX ${formatNumber(product.selling_price || 0)}</div>
+                    </div>
+                </div>
+            `;
+        }).join('');
+
+        container.innerHTML = productsHTML;
+    }
+
+    // Animation Helpers
+    function animateValue(elementId, targetValue, duration = 1000) {
+        const element = document.getElementById(elementId);
+        if (!element) return;
+
+        const currentValue = parseInt(element.textContent) || 0;
+        const increment = (targetValue - currentValue) / (duration / 16);
+        let current = currentValue;
+
+        function update() {
+            current += increment;
+            if ((increment > 0 && current >= targetValue) ||
+                (increment < 0 && current <= targetValue)) {
+                element.textContent = targetValue;
+            } else {
+                element.textContent = Math.floor(current);
+                requestAnimationFrame(update);
+            }
+        }
+
+        requestAnimationFrame(update);
+    }
+
+    // Event Handlers
+    function setupEventListeners() {
+        // Refresh button
+        const refreshBtn = document.getElementById('refresh-dashboard');
+        if (refreshBtn) {
+            refreshBtn.addEventListener('click', handleRefresh);
+        }
+
+        // Period filters
+        const periodFilters = document.querySelectorAll('input[name="period-filter"]');
+        periodFilters.forEach(filter => {
+            filter.addEventListener('change', handlePeriodFilterChange);
+        });
+
+        // Chart view toggles
+        const doughnutBtn = document.getElementById('chart-view-doughnut');
+        const barBtn = document.getElementById('chart-view-bar');
+
+        if (doughnutBtn) {
+            doughnutBtn.addEventListener('click', () => toggleChartView('doughnut'));
+        }
+        if (barBtn) {
+            barBtn.addEventListener('click', () => toggleChartView('bar'));
+        }
+
+        // Settings
+        const saveSettingsBtn = document.getElementById('save-settings');
+        if (saveSettingsBtn) {
+            saveSettingsBtn.addEventListener('click', saveDashboardSettings);
+        }
+    }
+
+    function handleRefresh() {
+        const btn = document.getElementById('refresh-dashboard');
+        const icon = btn?.querySelector('i');
+
+        if (btn && icon) {
+            btn.disabled = true;
+            icon.classList.add('fa-spin');
+
+            loadDashboardData().finally(() => {
+                setTimeout(() => {
+                    btn.disabled = false;
+                    icon.classList.remove('fa-spin');
+                }, 1000);
+            });
+        }
+    }
+
+    function handlePeriodFilterChange(event) {
+        const period = event.target.value;
+        showToast(`Filtering: ${event.target.nextElementSibling.textContent}`, 'info');
+        // Implement period-based filtering logic here
+    }
+
+    function toggleChartView(type) {
+        if (stockStatusChart) {
+            stockStatusChart.config.type = type;
+            stockStatusChart.update();
+
+            // Update button states
+            const doughnutBtn = document.getElementById('chart-view-doughnut');
+            const barBtn = document.getElementById('chart-view-bar');
+
+            if (doughnutBtn && barBtn) {
+                if (type === 'doughnut') {
+                    doughnutBtn.classList.add('active');
+                    barBtn.classList.remove('active');
+                } else {
+                    barBtn.classList.add('active');
+                    doughnutBtn.classList.remove('active');
+                }
+            }
+        }
+    }
+
+    // Settings Management
+    function loadDashboardSettings() {
+        try {
+            const interval = localStorage.getItem('dashboard_refresh_interval');
+            const animation = localStorage.getItem('dashboard_chart_animation');
+            const sound = localStorage.getItem('dashboard_sound_notifications');
+
+            if (interval) {
+                const intervalSelect = document.getElementById('refresh-interval');
+                if (intervalSelect) intervalSelect.value = interval;
+                CONFIG.refreshInterval = parseInt(interval);
+            }
+
+            if (animation !== null) {
+                const animationCheckbox = document.getElementById('chart-animation');
+                if (animationCheckbox) animationCheckbox.checked = animation === 'true';
+            }
+
+            if (sound !== null) {
+                const soundCheckbox = document.getElementById('sound-notifications');
+                if (soundCheckbox) soundCheckbox.checked = sound === 'true';
+            }
+        } catch (error) {
+            console.warn('Could not load settings from localStorage');
+        }
+    }
+
+    function saveDashboardSettings() {
+        try {
+            const intervalSelect = document.getElementById('refresh-interval');
+            const animationCheckbox = document.getElementById('chart-animation');
+            const soundCheckbox = document.getElementById('sound-notifications');
+
+            if (intervalSelect) {
+                localStorage.setItem('dashboard_refresh_interval', intervalSelect.value);
+                CONFIG.refreshInterval = parseInt(intervalSelect.value);
+            }
+
+            if (animationCheckbox) {
+                localStorage.setItem('dashboard_chart_animation', animationCheckbox.checked.toString());
+            }
+
+            if (soundCheckbox) {
+                localStorage.setItem('dashboard_sound_notifications', soundCheckbox.checked.toString());
+            }
+
+            startAutoRefresh();
+            showToast('Settings saved successfully', 'success');
+
+            const modal = bootstrap.Modal.getInstance(document.getElementById('settingsModal'));
+            if (modal) modal.hide();
+        } catch (error) {
+            console.warn('Could not save settings to localStorage');
+            showToast('Failed to save settings', 'error');
+        }
+    }
+
+    // Auto Refresh
+    function startAutoRefresh() {
+        if (autoRefreshInterval) {
+            clearInterval(autoRefreshInterval);
+        }
+
+        if (CONFIG.refreshInterval > 0) {
+            autoRefreshInterval = setInterval(() => {
+                if (!document.hidden) {
+                    loadDashboardData();
+                }
+            }, CONFIG.refreshInterval);
+        }
+    }
+
+    // Initialize Dashboard
+    function initializeDashboard() {
+        console.log('📊 Initializing Inventory Dashboard...');
+
+        initializeCharts();
+        setupEventListeners();
+        loadDashboardSettings();
+        startAutoRefresh();
+
+        // Load initial data
+        setTimeout(() => {
+            loadDashboardData();
+        }, 500);
+
+        console.log('✅ Dashboard initialized successfully');
+    }
+
+    // Cleanup
+    function cleanup() {
+        if (autoRefreshInterval) {
+            clearInterval(autoRefreshInterval);
+        }
+
+        if (stockStatusChart) {
+            stockStatusChart.destroy();
+        }
+        if (movementTrendsChart) {
+            movementTrendsChart.destroy();
+        }
+        if (categoryDistributionChart) {
+            categoryDistributionChart.destroy();
+        }
+    }
+
+    // Page Visibility Handling
+    document.addEventListener('visibilitychange', () => {
+        if (!document.hidden) {
+            loadDashboardData();
+            startAutoRefresh();
+        } else if (autoRefreshInterval) {
+            clearInterval(autoRefreshInterval);
+        }
+    });
+
+    // Export to global scope for debugging
+    window.Dashboard = {
+        initialize: initializeDashboard,
+        refresh: loadDashboardData,
+        cleanup: cleanup,
+        getCharts: () => ({
+            stockStatus: stockStatusChart,
+            movementTrends: movementTrendsChart,
+            categoryDistribution: categoryDistributionChart
+        })
+    };
+
+    // Initialize when DOM is ready
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initializeDashboard);
+    } else {
+        initializeDashboard();
+    }
+
+    // Cleanup on page unload
+    window.addEventListener('beforeunload', cleanup);
+
+})();
 </script>
 {% endblock %}
