@@ -829,79 +829,151 @@
 {% block extra_js %}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
 <script>
-$(document).ready(function() {
+    $(document).ready(function() {
     // Initialize tooltips
-    var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
-    var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
-        return new bootstrap.Tooltip(tooltipTriggerEl);
-    });
+    initializeTooltips();
 
     // Initialize charts
     initializeCharts();
 
     // Update bulk action button state
     updateBulkActionButtons();
+
+    // Add event listeners for checkboxes
+    setupEventListeners();
 });
 
+function initializeTooltips() {
+    const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+    tooltipTriggerList.map(function (tooltipTriggerEl) {
+        return new bootstrap.Tooltip(tooltipTriggerEl);
+    });
+}
+
 function initializeCharts() {
-    // Category Chart
+    initializeCategoryChart();
+    initializeStatusChart();
+}
+
+function initializeCategoryChart() {
     const categoryCtx = document.getElementById('categoryChart');
-    if (categoryCtx) {
+    if (!categoryCtx) {
+        console.warn('Category chart canvas not found');
+        return;
+    }
+
+    try {
+        // Get data from Django template
+        const categoryLabels = JSON.parse('{{ chart_data.categories.labels|escapejs }}');
+        const categoryValues = JSON.parse('{{ chart_data.categories.values|escapejs }}');
+        const criticalValues = JSON.parse('{{ chart_data.categories.critical|escapejs }}');
+
         new Chart(categoryCtx, {
             type: 'bar',
             data: {
-                labels: {{ chart_data.categories.labels|safe }},
-                datasets: [{
-                    label: 'Low Stock Items',
-                    data: {{ chart_data.categories.values|safe }},
-                    backgroundColor: '#dc2626',
-                    borderRadius: 6,
-                }, {
-                    label: 'Critical Items',
-                    data: {{ chart_data.categories.critical|safe }},
-                    backgroundColor: '#f59e0b',
-                    borderRadius: 6,
-                }]
+                labels: categoryLabels,
+                datasets: [
+                    {
+                        label: 'Low Stock Items',
+                        data: categoryValues,
+                        backgroundColor: '#dc2626',
+                        borderRadius: 6,
+                        barPercentage: 0.7,
+                    },
+                    {
+                        label: 'Critical Items',
+                        data: criticalValues,
+                        backgroundColor: '#f59e0b',
+                        borderRadius: 6,
+                        barPercentage: 0.7,
+                    }
+                ]
             },
             options: {
                 responsive: true,
                 maintainAspectRatio: false,
                 plugins: {
                     legend: {
-                        position: 'bottom'
+                        position: 'bottom',
+                        labels: {
+                            padding: 20,
+                            usePointStyle: true,
+                            font: {
+                                size: 12,
+                                weight: '600'
+                            }
+                        }
+                    },
+                    tooltip: {
+                        backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                        titleColor: '#fff',
+                        bodyColor: '#fff',
+                        padding: 12,
+                        cornerRadius: 8
                     }
                 },
                 scales: {
                     y: {
                         beginAtZero: true,
                         ticks: {
-                            stepSize: 1
+                            stepSize: 1,
+                            font: {
+                                size: 11
+                            }
+                        },
+                        grid: {
+                            color: 'rgba(0, 0, 0, 0.05)'
+                        }
+                    },
+                    x: {
+                        ticks: {
+                            font: {
+                                size: 11
+                            }
+                        },
+                        grid: {
+                            display: false
                         }
                     }
+                },
+                animation: {
+                    duration: 1000,
+                    easing: 'easeInOutQuart'
                 }
             }
         });
+    } catch (error) {
+        console.error('Failed to initialize category chart:', error);
+        showChartError(categoryCtx, 'Failed to load category data');
+    }
+}
+
+function initializeStatusChart() {
+    const statusCtx = document.getElementById('statusChart');
+    if (!statusCtx) {
+        console.warn('Status chart canvas not found');
+        return;
     }
 
-    // Status Distribution Chart
-    const statusCtx = document.getElementById('statusChart');
-    if (statusCtx) {
+    try {
+        const outOfStockCount = {{ summary_stats.out_of_stock_count|default:0 }};
+        const criticalCount = {{ summary_stats.critical_count|default:0 }};
+        const lowStockCount = {{ summary_stats.low_stock_count|default:0 }};
+
         new Chart(statusCtx, {
             type: 'doughnut',
             data: {
                 labels: ['Out of Stock', 'Critical', 'Low Stock'],
                 datasets: [{
-                    data: [
-                        {{ summary_stats.out_of_stock_count|default:0 }},
-                        {{ summary_stats.critical_count|default:0 }},
-                        {{ summary_stats.low_stock_count|default:0 }}
-                    ],
+                    data: [outOfStockCount, criticalCount, lowStockCount],
                     backgroundColor: [
-                        '#dc2626',
-                        '#f59e0b',
-                        '#3b82f6'
+                        '#dc2626',  // Red for out of stock
+                        '#f59e0b',  // Orange for critical
+                        '#3b82f6'   // Blue for low stock
                     ],
-                    borderWidth: 0
+                    borderWidth: 3,
+                    borderColor: '#fff',
+                    hoverOffset: 15
                 }]
             },
             options: {
@@ -909,11 +981,71 @@ function initializeCharts() {
                 maintainAspectRatio: false,
                 plugins: {
                     legend: {
-                        position: 'bottom'
+                        position: 'bottom',
+                        labels: {
+                            padding: 20,
+                            usePointStyle: true,
+                            font: {
+                                size: 12,
+                                weight: '600'
+                            }
+                        }
+                    },
+                    tooltip: {
+                        backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                        titleColor: '#fff',
+                        bodyColor: '#fff',
+                        padding: 12,
+                        cornerRadius: 8,
+                        callbacks: {
+                            label: function(context) {
+                                const label = context.label || '';
+                                const value = context.parsed;
+                                const total = context.dataset.data.reduce((a, b) => a + b, 0);
+                                const percentage = total > 0 ? ((value / total) * 100).toFixed(1) : 0;
+                                return `${label}: ${value} (${percentage}%)`;
+                            }
+                        }
                     }
+                },
+                cutout: '60%',
+                animation: {
+                    animateScale: true,
+                    animateRotate: true,
+                    duration: 1000
                 }
             }
         });
+    } catch (error) {
+        console.error('Failed to initialize status chart:', error);
+        showChartError(statusCtx, 'Failed to load status data');
+    }
+}
+
+function showChartError(canvasElement, message) {
+    const parent = canvasElement.parentElement;
+    if (parent) {
+        parent.innerHTML = `
+            <div class="text-center py-5 text-muted">
+                <i class="fas fa-chart-bar fa-3x mb-3 opacity-50"></i>
+                <p class="mb-0">${message}</p>
+            </div>
+        `;
+    }
+}
+
+function setupEventListeners() {
+    // Checkbox change events
+    document.addEventListener('change', function(e) {
+        if (e.target.classList.contains('item-checkbox')) {
+            updateBulkActionButtons();
+        }
+    });
+
+    // Select all checkbox
+    const selectAllCheckbox = document.getElementById('selectAllCheckbox');
+    if (selectAllCheckbox) {
+        selectAllCheckbox.addEventListener('change', toggleSelectAll);
     }
 }
 
@@ -921,139 +1053,255 @@ function toggleSelectAll() {
     const selectAllCheckbox = document.getElementById('selectAllCheckbox');
     const itemCheckboxes = document.querySelectorAll('.item-checkbox');
 
-    itemCheckboxes.forEach(checkbox => {
-        checkbox.checked = selectAllCheckbox.checked;
-    });
-
-    updateBulkActionButtons();
+    if (selectAllCheckbox) {
+        itemCheckboxes.forEach(checkbox => {
+            checkbox.checked = selectAllCheckbox.checked;
+        });
+        updateBulkActionButtons();
+    }
 }
 
 function selectAllItems() {
     const selectAllCheckbox = document.getElementById('selectAllCheckbox');
-    selectAllCheckbox.checked = true;
-    toggleSelectAll();
+    if (selectAllCheckbox) {
+        selectAllCheckbox.checked = true;
+        toggleSelectAll();
+    }
 }
 
 function updateBulkActionButtons() {
     const checkedBoxes = document.querySelectorAll('.item-checkbox:checked');
     const bulkReorderBtn = document.getElementById('bulkReorderBtn');
 
-    bulkReorderBtn.disabled = checkedBoxes.length === 0;
+    if (bulkReorderBtn) {
+        bulkReorderBtn.disabled = checkedBoxes.length === 0;
 
-    // Update button text with count
-    if (checkedBoxes.length > 0) {
-        bulkReorderBtn.innerHTML = `<i class="fas fa-shopping-cart me-1"></i>Bulk Reorder (${checkedBoxes.length})`;
-    } else {
-        bulkReorderBtn.innerHTML = '<i class="fas fa-shopping-cart me-1"></i>Bulk Reorder';
+        // Update button text with count
+        if (checkedBoxes.length > 0) {
+            bulkReorderBtn.innerHTML = `<i class="fas fa-shopping-cart me-1"></i>Bulk Reorder (${checkedBoxes.length})`;
+            bulkReorderBtn.classList.remove('btn-outline-success');
+            bulkReorderBtn.classList.add('btn-success');
+        } else {
+            bulkReorderBtn.innerHTML = '<i class="fas fa-shopping-cart me-1"></i>Bulk Reorder';
+            bulkReorderBtn.classList.remove('btn-success');
+            bulkReorderBtn.classList.add('btn-outline-success');
+        }
     }
 }
+
 function showItemDetails(stockId) {
-    const modal = new bootstrap.Modal(document.getElementById('itemDetailsModal'));
+    const modalElement = document.getElementById('itemDetailsModal');
+    if (!modalElement) {
+        console.error('Item details modal not found');
+        return;
+    }
+
+    const modal = new bootstrap.Modal(modalElement);
     const content = document.getElementById('itemDetailsContent');
 
-    content.innerHTML = '<div class="text-center p-4"><div class="spinner-border text-primary" role="status"></div><p class="mt-2">Loading details...</p></div>';
+    // Show loading state
+    content.innerHTML = `
+        <div class="text-center p-4">
+            <div class="spinner-border text-primary" role="status"></div>
+            <p class="mt-2">Loading item details...</p>
+        </div>
+    `;
+
     modal.show();
 
-    // Get the current language prefix and base path
+    // Build the correct URL
     const currentPath = window.location.pathname;
-    let basePath = '';
-
-    // Extract language prefix if present (e.g., /en/, /fr/, etc.)
     const languageMatch = currentPath.match(/^\/([a-z]{2})\//);
-    const languagePrefix = languageMatch ? languageMatch[0] : '/en/';
+    const languagePrefix = languageMatch ? languageMatch[0] : '/';
 
-    // Build the correct URL with language and inventory prefixes
+    // Construct URL - adjust this based on your actual URL structure
     const url = `${languagePrefix}inventory/ajax/stock-details/${stockId}/`;
 
-    fetch(url)
-        .then(response => {
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
-            return response.json();
-        })
-        .then(data => {
-            if (data.success) {
-                content.innerHTML = `
-                    <div class="row">
-                        <div class="col-md-6">
-                            <h6>Product Information</h6>
-                            <p><strong>Name:</strong> ${data.product_name}</p>
-                            <p><strong>SKU:</strong> ${data.product_sku}</p>
-                            <p><strong>Category:</strong> ${data.category}</p>
-                            <p><strong>Unit:</strong> ${data.unit}</p>
-                            <p><strong>Status:</strong> <span class="badge ${data.status === 'Out of Stock' ? 'bg-danger' : data.status === 'Critical' ? 'bg-warning' : data.status === 'Low Stock' ? 'bg-info' : 'bg-success'}">${data.status}</span></p>
-                        </div>
-                        <div class="col-md-6">
-                            <h6>Stock Information</h6>
-                            <p><strong>Current Stock:</strong> ${data.current_stock} ${data.unit}</p>
-                            <p><strong>Reorder Level:</strong> ${data.reorder_level} ${data.unit}</p>
-                            <p><strong>Stock Percentage:</strong> ${data.stock_percentage}%</p>
-                            <p><strong>Last Updated:</strong> ${data.last_updated}</p>
-                            <p><strong>Store:</strong> ${data.store_name}</p>
-                        </div>
-                    </div>
-                    <div class="mt-4">
-                        <h6>Recent Movements</h6>
-                        ${data.recent_movements && data.recent_movements.length > 0 ? `
-                            <div class="table-responsive">
-                                <table class="table table-sm table-hover">
-                                    <thead>
-                                        <tr>
-                                            <th>Date</th>
-                                            <th>Type</th>
-                                            <th>Quantity</th>
-                                            <th>Reference</th>
-                                            <th>By</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        ${data.recent_movements.map(movement => `
-                                            <tr>
-                                                <td>${movement.date}</td>
-                                                <td><span class="badge ${movement.type === 'Purchase' ? 'bg-success' : movement.type === 'Sale' ? 'bg-danger' : 'bg-secondary'}">${movement.type}</span></td>
-                                                <td class="${movement.quantity > 0 ? 'text-success' : 'text-danger'}">${movement.quantity > 0 ? '+' : ''}${movement.quantity}</td>
-                                                <td><small class="text-muted">${movement.reference}</small></td>
-                                                <td><small>${movement.created_by}</small></td>
-                                            </tr>
-                                        `).join('')}
-                                    </tbody>
-                                </table>
-                            </div>
-                        ` : '<p class="text-muted">No recent movements found.</p>'}
-                    </div>
-                `;
-            } else {
-                content.innerHTML = `<div class="alert alert-danger">${data.error || 'Failed to load item details'}</div>`;
-            }
-        })
-        .catch(error => {
-            console.error('Error loading stock details:', error);
-            content.innerHTML = `
-                <div class="alert alert-danger">
-                    <h6>Error Loading Details</h6>
-                    <p class="mb-0">Failed to load item details. Please try again later.</p>
-                    <small class="text-muted">Error: ${error.message}</small>
-                    <br>
-                    <small class="text-muted">Tried to fetch: ${url}</small>
-                </div>
-            `;
-        });
+    fetch(url, {
+        headers: {
+            'X-Requested-With': 'XMLHttpRequest',
+            'Accept': 'application/json'
+        }
+    })
+    .then(response => {
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        return response.json();
+    })
+    .then(data => {
+        if (data.success) {
+            renderItemDetails(content, data);
+        } else {
+            throw new Error(data.error || 'Failed to load item details');
+        }
+    })
+    .catch(error => {
+        console.error('Error loading stock details:', error);
+        renderItemDetailsError(content, error, url);
+    });
 }
+
+function renderItemDetails(container, data) {
+    const statusClass = getStatusClass(data.status);
+    const statusBadge = getStatusBadge(data.status);
+
+    container.innerHTML = `
+        <div class="row">
+            <div class="col-md-6">
+                <h6 class="border-bottom pb-2 mb-3">Product Information</h6>
+                <div class="mb-2">
+                    <strong>Name:</strong> ${escapeHtml(data.product_name || 'N/A')}
+                </div>
+                <div class="mb-2">
+                    <strong>SKU:</strong> ${escapeHtml(data.product_sku || 'N/A')}
+                </div>
+                <div class="mb-2">
+                    <strong>Category:</strong> ${escapeHtml(data.category || 'No Category')}
+                </div>
+                <div class="mb-2">
+                    <strong>Unit:</strong> ${escapeHtml(data.unit || 'N/A')}
+                </div>
+                <div class="mb-2">
+                    <strong>Status:</strong> ${statusBadge}
+                </div>
+            </div>
+            <div class="col-md-6">
+                <h6 class="border-bottom pb-2 mb-3">Stock Information</h6>
+                <div class="mb-2">
+                    <strong>Current Stock:</strong> ${data.current_stock || 0} ${data.unit || ''}
+                </div>
+                <div class="mb-2">
+                    <strong>Reorder Level:</strong> ${data.reorder_level || 0} ${data.unit || ''}
+                </div>
+                <div class="mb-2">
+                    <strong>Stock Percentage:</strong>
+                    <span class="${getStockPercentageClass(data.stock_percentage)}">
+                        ${data.stock_percentage || 0}%
+                    </span>
+                </div>
+                <div class="mb-2">
+                    <strong>Last Updated:</strong> ${data.last_updated || 'N/A'}
+                </div>
+                <div class="mb-2">
+                    <strong>Store:</strong> ${escapeHtml(data.store_name || 'N/A')}
+                </div>
+            </div>
+        </div>
+        <div class="mt-4">
+            <h6 class="border-bottom pb-2 mb-3">Recent Movements</h6>
+            ${renderRecentMovements(data.recent_movements)}
+        </div>
+    `;
+}
+
+function renderRecentMovements(movements) {
+    if (!movements || movements.length === 0) {
+        return '<p class="text-muted">No recent movements found.</p>';
+    }
+
+    const movementsHTML = movements.map(movement => `
+        <tr>
+            <td>${escapeHtml(movement.date || 'N/A')}</td>
+            <td>
+                <span class="badge ${getMovementTypeClass(movement.type)}">
+                    ${escapeHtml(movement.type || 'Unknown')}
+                </span>
+            </td>
+            <td class="${movement.quantity > 0 ? 'text-success' : 'text-danger'} fw-bold">
+                ${movement.quantity > 0 ? '+' : ''}${movement.quantity || 0}
+            </td>
+            <td><small class="text-muted">${escapeHtml(movement.reference || 'N/A')}</small></td>
+            <td><small>${escapeHtml(movement.created_by || 'System')}</small></td>
+        </tr>
+    `).join('');
+
+    return `
+        <div class="table-responsive">
+            <table class="table table-sm table-hover">
+                <thead>
+                    <tr>
+                        <th>Date</th>
+                        <th>Type</th>
+                        <th>Quantity</th>
+                        <th>Reference</th>
+                        <th>By</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${movementsHTML}
+                </tbody>
+            </table>
+        </div>
+    `;
+}
+
+function renderItemDetailsError(container, error, url) {
+    container.innerHTML = `
+        <div class="alert alert-danger">
+            <h6><i class="fas fa-exclamation-triangle me-2"></i>Error Loading Details</h6>
+            <p class="mb-2">Failed to load item details. Please try again later.</p>
+            <small class="text-muted">Error: ${escapeHtml(error.message)}</small>
+            <br>
+            <small class="text-muted">URL: ${escapeHtml(url)}</small>
+        </div>
+        <div class="text-center mt-3">
+            <button class="btn btn-primary" onclick="window.location.reload()">
+                <i class="fas fa-refresh me-2"></i>Reload Page
+            </button>
+        </div>
+    `;
+}
+
+function quickReorder(productId, storeId, recommendedQty) {
+    const modalElement = document.getElementById('quickReorderModal');
+    if (!modalElement) {
+        console.error('Quick reorder modal not found');
+        return;
+    }
+
+    const modal = new bootstrap.Modal(modalElement);
+    const form = document.getElementById('quickReorderForm');
+    const quantityInput = document.getElementById('orderQuantity');
+
+    // Set form data attributes
+    form.setAttribute('data-product-id', productId);
+    form.setAttribute('data-store-id', storeId);
+
+    // Set recommended quantity
+    if (quantityInput && recommendedQty) {
+        quantityInput.value = Math.ceil(recommendedQty);
+        quantityInput.setAttribute('min', 1);
+    }
+
+    modal.show();
+}
+
 function processQuickReorder() {
     const form = document.getElementById('quickReorderForm');
     const productId = form.getAttribute('data-product-id');
     const storeId = form.getAttribute('data-store-id');
-    const quantity = document.getElementById('orderQuantity').value;
+    const quantityInput = document.getElementById('orderQuantity');
+    const quantity = quantityInput ? quantityInput.value : null;
 
     if (!quantity || quantity <= 0) {
-        alert('Please enter a valid quantity');
+        showAlert('Please enter a valid quantity', 'warning');
         return;
     }
 
-    // This would typically make an AJAX call to create a purchase order
-    // For now, redirect to stock adjustment
-    window.location.href = `/inventory/stock-adjustment/?product=${productId}&store=${storeId}&quantity=${quantity}`;
+    // Close modal
+    const modal = bootstrap.Modal.getInstance(document.getElementById('quickReorderModal'));
+    if (modal) {
+        modal.hide();
+    }
+
+    // Redirect to stock adjustment with pre-filled values
+    const currentPath = window.location.pathname;
+    const languageMatch = currentPath.match(/^\/([a-z]{2})\//);
+    const languagePrefix = languageMatch ? languageMatch[0] : '/';
+
+    const redirectUrl = `${languagePrefix}inventory/stock-adjustment/?product=${productId}&store=${storeId}&quantity=${quantity}`;
+    window.location.href = redirectUrl;
 }
 
 function bulkReorder() {
@@ -1061,23 +1309,97 @@ function bulkReorder() {
     const stockIds = Array.from(checkedBoxes).map(box => box.value);
 
     if (stockIds.length === 0) {
-        alert('Please select at least one item');
+        showAlert('Please select at least one item to reorder', 'warning');
         return;
     }
 
-    // This would typically open a bulk reorder interface
-    // For now, show a simple alert
-    if (confirm(`Create reorder requests for ${stockIds.length} items?`)) {
-        // Process bulk reorder
-        window.location.href = `/inventory/bulk-reorder/?items=${stockIds.join(',')}`;
+    if (confirm(`Create reorder requests for ${stockIds.length} selected items?`)) {
+        // Redirect to bulk reorder page
+        const currentPath = window.location.pathname;
+        const languageMatch = currentPath.match(/^\/([a-z]{2})\//);
+        const languagePrefix = languageMatch ? languageMatch[0] : '/';
+
+        const redirectUrl = `${languagePrefix}inventory/bulk-reorder/?items=${stockIds.join(',')}`;
+        window.location.href = redirectUrl;
     }
 }
 
-// Add event listeners for checkboxes
-document.addEventListener('change', function(e) {
-    if (e.target.classList.contains('item-checkbox')) {
-        updateBulkActionButtons();
+// Utility Functions
+function escapeHtml(text) {
+    if (!text) return '';
+    const map = {
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#039;'
+    };
+    return text.toString().replace(/[&<>"']/g, (m) => map[m]);
+}
+
+function getStatusClass(status) {
+    const statusMap = {
+        'Out of Stock': 'danger',
+        'Critical': 'warning',
+        'Low Stock': 'info',
+        'In Stock': 'success'
+    };
+    return statusMap[status] || 'secondary';
+}
+
+function getStatusBadge(status) {
+    const statusClass = getStatusClass(status);
+    return `<span class="badge bg-${statusClass}">${escapeHtml(status)}</span>`;
+}
+
+function getStockPercentageClass(percentage) {
+    if (percentage === undefined || percentage === null) return 'text-muted';
+    if (percentage <= 10) return 'text-danger fw-bold';
+    if (percentage <= 30) return 'text-warning fw-bold';
+    if (percentage <= 50) return 'text-info fw-bold';
+    return 'text-success fw-bold';
+}
+
+function getMovementTypeClass(type) {
+    const typeMap = {
+        'Purchase': 'bg-success',
+        'Sale': 'bg-danger',
+        'Adjustment': 'bg-warning',
+        'Transfer': 'bg-info',
+        'Return': 'bg-secondary'
+    };
+    return typeMap[type] || 'bg-secondary';
+}
+
+function showAlert(message, type = 'info') {
+    // You can integrate with toastr or use browser alert for now
+    if (typeof toastr !== 'undefined') {
+        toastr[type](message);
+    } else {
+        alert(message);
     }
+}
+
+// Export functions for global access
+window.LowStockReport = {
+    showItemDetails,
+    quickReorder,
+    bulkReorder,
+    toggleSelectAll,
+    selectAllItems
+};
+
+// Handle page visibility changes for auto-refresh
+document.addEventListener('visibilitychange', function() {
+    if (!document.hidden) {
+        // Page became visible, you could refresh data here
+        console.log('Page visible - could refresh low stock data');
+    }
+});
+
+// Cleanup on page unload
+window.addEventListener('beforeunload', function() {
+    // Clean up any intervals or timeouts if needed
 });
 </script>
 {% endblock %}
