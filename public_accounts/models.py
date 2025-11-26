@@ -108,7 +108,7 @@ class PublicUser(AbstractBaseUser):
     role = models.CharField(
         max_length=20,
         choices=USER_ROLES,
-        default='VIEWER',
+        default='SUPER_ADMIN',
         verbose_name=_("Role")
     )
 
@@ -267,7 +267,7 @@ Your Login Credentials:
 Login Identifier: {self.identifier}
 Temporary Password: {password}
 
-Login URL: {settings.PUBLIC_ADMIN_URL}/login/
+Login URL: {settings.PUBLIC_ADMIN_URL}/public-admin/
 
 IMPORTANT SECURITY NOTICE:
 - Please change your password immediately after your first login

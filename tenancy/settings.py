@@ -535,7 +535,7 @@ SOCIALACCOUNT_PROVIDERS = {
             'secret': os.getenv('GOOGLE_OAUTH_CLIENT_SECRET', ''),
             'key': ''
         },
-        'REDIRECT_URI': 'http://localhost:8000/accounts/google/login/callback/',
+        'REDIRECT_URI': 'http://localhost:8000/accounts/google/login/callback/' if DEBUG else 'https://primebooks.sale/accounts/google/login/callback',
     }
 }
 

@@ -780,7 +780,7 @@ class PublicModelAdmin:
             app_name=app_label,
             model_name=self.model.__name__,
             object_id=str(pk)
-        ).select_related('user').order_by('-created_at')
+        ).select_related('user').order_by('-timestamp')
 
         # Pagination
         paginator = Paginator(activities, 25)

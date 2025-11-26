@@ -17,7 +17,7 @@ urlpatterns = [
     path('about/', TemplateView.as_view(template_name='public_router/about.html'), name='about'),
 
     # Tenant signup
-    path('signup/', include('public_router.urls')),
+    path('prime-books/', include('public_router.urls')),
 
     # Blog
     path('blog/', include('public_blog.urls')),
