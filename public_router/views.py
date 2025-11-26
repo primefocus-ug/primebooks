@@ -131,12 +131,16 @@ def admin_tenant_signups_list(request):
 @login_required(login_url='public_accounts:login')
 def admin_tenant_signup_detail(request, request_id):
     """View and manage individual signup request"""
+    from django.db.models import Prefetch
+
     signup = get_object_or_404(
         TenantSignupRequest.objects.select_related('approval_workflow'),
         request_id=request_id
     )
 
-    workflow = signup.approval_workflow
+    # Safely get workflow
+    workflow = getattr(signup, 'approval_workflow', None)
+
     notifications = signup.notification_logs.all()[:10]
 
     return render(request, 'public_admin/tenant_signups/detail.html', {
@@ -153,63 +157,107 @@ def admin_approve_signup(request, request_id):
     signup = get_object_or_404(TenantSignupRequest, request_id=request_id)
 
     if request.method == 'POST':
-        approval_notes = request.POST.get('approval_notes', '')
+        approval_notes = request.POST.get('approval_notes', '').strip()
+
+        # Get password or generate if empty
+        password = request.POST.get('password', '').strip()
+        if not password:
+            password = generate_secure_password()
+
+        logger.info(f"Processing approval for signup {request_id}")
 
         try:
             with transaction.atomic():
+                # Check if already processing or completed
+                if signup.status in ['PROCESSING', 'COMPLETED']:
+                    messages.warning(
+                        request,
+                        f'This signup is already {signup.status.lower()}.'
+                    )
+                    return redirect('public_admin:tenant_signup_detail', request_id=request_id)
+
                 # Update signup status
                 signup.status = 'PROCESSING'
-                signup.save()
+                signup.save(update_fields=['status', 'updated_at'])
 
-                # Create tenant company
-                company = create_tenant_company(signup)
-
-                # Generate login credentials
-                password = generate_secure_password()
-
-                # Create admin user in tenant schema
-                admin_user = create_tenant_admin_user(company, signup, password)
-
-                # Update signup request
-                signup.status = 'COMPLETED'
-                signup.tenant_created = True
-                signup.created_company_id = company.company_id
-                signup.created_schema_name = company.schema_name
-                signup.completed_at = timezone.now()
-                signup.save()
-
-                # Update workflow
-                workflow = signup.approval_workflow
-                workflow.reviewed_by = request.user
-                workflow.reviewed_at = timezone.now()
-                workflow.approval_notes = approval_notes
-                workflow.generated_password = password
-                workflow.login_url = company.get_absolute_url()
-                workflow.save()
-
-                # Send approval email to client
-                send_approval_email(signup, password, company)
-
-                messages.success(
-                    request,
-                    f'Tenant "{company.display_name}" created successfully! '
-                    f'Login credentials sent to {signup.admin_email}'
+                # Get or create approval workflow
+                workflow, created = TenantApprovalWorkflow.objects.get_or_create(
+                    signup_request=signup,
+                    defaults={
+                        'generated_password': password,
+                    }
                 )
 
-                return redirect('public_admin:tenant_signup_detail', request_id=request_id)
+                # Update workflow if it already existed
+                if not created:
+                    workflow.generated_password = password
+
+                # Set reviewer info
+                if hasattr(request.user, 'email'):
+                    workflow.reviewed_by = request.user
+                workflow.reviewed_at = timezone.now()
+                workflow.approval_notes = approval_notes
+                workflow.save()
+
+            # Queue the async task to create tenant (OUTSIDE transaction)
+            logger.info(f"Queueing tenant creation for {signup.request_id}")
+
+            task = create_tenant_async.apply_async(
+                args=[str(signup.request_id), password],
+                countdown=2,  # Wait 2 seconds before starting
+            )
+
+            # Store task info in cache
+            cache.set(
+                f'signup_task_{signup.request_id}',
+                {
+                    'task_id': task.id,
+                    'started_at': timezone.now().isoformat(),
+                    'approved_by': request.user.email if hasattr(request.user, 'email') else 'admin',
+                },
+                timeout=3600  # 1 hour
+            )
+
+            messages.success(
+                request,
+                f'Tenant creation for "{signup.company_name}" has been queued. '
+                f'This usually takes 30-60 seconds. Refresh this page to see the status.'
+            )
+
+            logger.info(
+                f"Admin {request.user.email if hasattr(request.user, 'email') else 'unknown'} "
+                f"approved signup {signup.request_id} (task: {task.id})"
+            )
+
+            return redirect('public_router:tenant_signup_detail', request_id=request_id)
 
         except Exception as e:
-            logger.error(f"Approval failed: {str(e)}")
-            signup.status = 'FAILED'
-            signup.error_message = str(e)
-            signup.retry_count += 1
-            signup.save()
+            logger.error(f"Approval failed: {str(e)}", exc_info=True)
 
-            messages.error(request, f'Failed to approve signup: {str(e)}')
-            return redirect('public_admin:tenant_signup_detail', request_id=request_id)
+            # Update signup status
+            try:
+                with transaction.atomic():
+                    signup.status = 'FAILED'
+                    signup.error_message = f"Approval error: {str(e)}"
+                    signup.retry_count += 1
+                    signup.save()
+            except Exception as save_error:
+                logger.error(f"Failed to update signup status: {str(save_error)}")
 
-    return redirect('public_admin:tenant_signup_detail', request_id=request_id)
+            messages.error(
+                request,
+                f'Failed to approve signup: {str(e)}'
+            )
+            return redirect('public_router:tenant_signup_detail', request_id=request_id)
 
+    # GET request - show confirmation page
+    context = {
+        'signup': signup,
+        'title': f'Approve Signup: {signup.company_name}',
+        'generated_password': generate_secure_password(),  # Pre-generate for display
+    }
+
+    return render(request, 'public_admin/tenant_signups/approve_confirm.html', context)
 
 def generate_secure_password(length=12):
     """Generate a secure random password"""

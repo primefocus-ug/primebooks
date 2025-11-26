@@ -1,0 +1,211 @@
+{% extends "public_router/base.html" %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="row justify-content-center">
+        <div class="col-md-8">
+            <div class="card">
+                <div class="card-header bg-primary text-white">
+                    <h3 class="mb-0">
+                        <i class="fas fa-check-circle"></i> Approve Tenant Signup
+                    </h3>
+                </div>
+                <div class="card-body">
+                    <div class="alert alert-info">
+                        <i class="fas fa-info-circle"></i>
+                        <strong>Review the details below before approving:</strong>
+                    </div>
+
+                    <h4 class="mb-3">{{ signup.company_name }}</h4>
+
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <p><strong>Subdomain:</strong>
+                                <code>{{ signup.subdomain }}</code>
+                            </p>
+                            <p><strong>Company Email:</strong> {{ signup.email }}</p>
+                            <p><strong>Phone:</strong> {{ signup.phone }}</p>
+                        </div>
+                        <div class="col-md-6">
+                            <p><strong>Admin Name:</strong> {{ signup.first_name }} {{ signup.last_name }}</p>
+                            <p><strong>Admin Email:</strong> {{ signup.admin_email }}</p>
+                            <p><strong>Admin Phone:</strong> {{ signup.admin_phone }}</p>
+                        </div>
+                    </div>
+
+                    <p><strong>Selected Plan:</strong>
+                        <span class="badge bg-primary">{{ signup.get_selected_plan_display }}</span>
+                    </p>
+
+                    <hr>
+
+                    <form method="post" id="approvalForm">
+                        {% csrf_token %}
+
+                        <div class="mb-3">
+                            <label for="password" class="form-label">
+                                <i class="fas fa-key"></i> Admin Password
+                            </label>
+                            <div class="input-group">
+                                <input
+                                    type="text"
+                                    class="form-control"
+                                    id="password"
+                                    name="password"
+                                    value="{{ generated_password }}"
+                                    placeholder="Leave empty to auto-generate"
+                                >
+                                <button
+                                    class="btn btn-outline-secondary"
+                                    type="button"
+                                    id="generatePassword"
+                                    title="Generate new password"
+                                >
+                                    <i class="fas fa-sync-alt"></i> Generate
+                                </button>
+                                <button
+                                    class="btn btn-outline-secondary"
+                                    type="button"
+                                    id="togglePassword"
+                                    title="Show/hide password"
+                                >
+                                    <i class="fas fa-eye" id="eyeIcon"></i>
+                                </button>
+                                <button
+                                    class="btn btn-outline-secondary"
+                                    type="button"
+                                    id="copyPassword"
+                                    title="Copy password"
+                                >
+                                    <i class="fas fa-copy"></i>
+                                </button>
+                            </div>
+                            <small class="form-text text-muted">
+                                This password will be sent to <strong>{{ signup.admin_email }}</strong> via email.
+                                Leave empty to auto-generate a secure password.
+                            </small>
+                        </div>
+
+                        <div class="mb-3">
+                            <label for="approval_notes" class="form-label">
+                                <i class="fas fa-comment"></i> Approval Notes (Optional)
+                            </label>
+                            <textarea
+                                class="form-control"
+                                id="approval_notes"
+                                name="approval_notes"
+                                rows="3"
+                                placeholder="Add any notes about this approval (visible to admins only)..."
+                            ></textarea>
+                        </div>
+
+                        <div class="alert alert-warning">
+                            <i class="fas fa-exclamation-triangle"></i>
+                            <strong>Important:</strong>
+                            <ul class="mb-0 mt-2">
+                                <li>The tenant creation process will run in the background (30-60 seconds)</li>
+                                <li>A new database schema will be created for this tenant</li>
+                                <li>The admin user will receive login credentials via email</li>
+                                <li>You can monitor progress from the signup detail page</li>
+                            </ul>
+                        </div>
+
+                        <div class="d-flex justify-content-between mt-4">
+                            <a
+                                href="{% url 'public_admin:tenant_signup_detail' signup.request_id %}"
+                                class="btn btn-secondary"
+                            >
+                                <i class="fas fa-arrow-left"></i> Cancel
+                            </a>
+                            <button
+                                type="submit"
+                                class="btn btn-success btn-lg"
+                                id="approveBtn"
+                            >
+                                <i class="fas fa-check"></i> Approve & Create Tenant
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const passwordInput = document.getElementById('password');
+    const generateBtn = document.getElementById('generatePassword');
+    const toggleBtn = document.getElementById('togglePassword');
+    const copyBtn = document.getElementById('copyPassword');
+    const eyeIcon = document.getElementById('eyeIcon');
+    const approveBtn = document.getElementById('approveBtn');
+    const form = document.getElementById('approvalForm');
+
+    // Generate password
+    function generatePassword(length = 12) {
+        const charset = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*';
+        let password = '';
+        for (let i = 0; i < length; i++) {
+            password += charset.charAt(Math.floor(Math.random() * charset.length));
+        }
+        return password;
+    }
+
+    // Generate button click
+    generateBtn.addEventListener('click', function() {
+        passwordInput.value = generatePassword();
+        passwordInput.type = 'text';
+        eyeIcon.classList.remove('fa-eye');
+        eyeIcon.classList.add('fa-eye-slash');
+    });
+
+    // Toggle password visibility
+    toggleBtn.addEventListener('click', function() {
+        if (passwordInput.type === 'password') {
+            passwordInput.type = 'text';
+            eyeIcon.classList.remove('fa-eye');
+            eyeIcon.classList.add('fa-eye-slash');
+        } else {
+            passwordInput.type = 'password';
+            eyeIcon.classList.remove('fa-eye-slash');
+            eyeIcon.classList.add('fa-eye');
+        }
+    });
+
+    // Copy password
+    copyBtn.addEventListener('click', function() {
+        passwordInput.select();
+        document.execCommand('copy');
+
+        // Show feedback
+        const originalHTML = copyBtn.innerHTML;
+        copyBtn.innerHTML = '<i class="fas fa-check"></i>';
+        copyBtn.classList.add('btn-success');
+
+        setTimeout(function() {
+            copyBtn.innerHTML = originalHTML;
+            copyBtn.classList.remove('btn-success');
+        }, 2000);
+    });
+
+    // Form submission
+    form.addEventListener('submit', function(e) {
+        // Disable button to prevent double-submission
+        approveBtn.disabled = true;
+        approveBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Processing...';
+
+        // If password is empty, generate one
+        if (!passwordInput.value.trim()) {
+            passwordInput.value = generatePassword();
+        }
+    });
+});
+</script>
+
+<style>
+.input-group button {
+    z-index: 0;
+}
+</style>
+{% endblock %}

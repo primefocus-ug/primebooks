@@ -15,5 +15,8 @@ urlpatterns = [
     path('health/', views.HealthCheckView.as_view(), name='health'),
     path('signup/', views.tenant_signup_view, name='signup'),
     path('signup/success/<uuid:request_id>/', views.signup_success_view, name='signup_success'),
+    path('tenant-signups/', views.admin_tenant_signups_list, name='tenant_signups_list'),
+    path('tenant-signups/<uuid:request_id>/', views.admin_tenant_signup_detail, name='tenant_signup_detail'),
+    path('tenant-signups/<uuid:request_id>/approve/', views.admin_approve_signup, name='approve_signup'),
 ]
 
