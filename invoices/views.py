@@ -5,13 +5,15 @@ from django.contrib import messages
 from django.http import HttpResponse, JsonResponse
 from django.views.generic import ListView, DetailView, CreateView, UpdateView
 from django.urls import reverse_lazy, reverse
-from django.db.models import Q, Sum, Count
+from django.db.models import Q, Sum, Count,F,Avg,ExpressionWrapper,DurationField
 from django.utils import timezone
 from django.db import transaction
 from django.views.decorators.csrf import csrf_exempt
 import json
 import csv
-from datetime import timedelta
+from django.http import JsonResponse
+import json
+from datetime import timedelta, datetime
 from io import BytesIO
 from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import letter
@@ -228,8 +230,8 @@ def efris_status_dashboard(request):
     recent_audits = FiscalizationAudit.objects.select_related(
         'invoice', 'user'
     ).filter(
-        timestamp__gte=timezone.now() - timedelta(days=7)
-    ).order_by('-timestamp')[:20]
+        created_at__gte=timezone.now() - timedelta(days=7)
+    ).order_by('-created_at')[:20]
 
     context = {
         'date_from': date_from,
@@ -610,10 +612,24 @@ class InvoiceTemplateCreateView(LoginRequiredMixin, PermissionRequiredMixin, Cre
 @login_required
 @permission_required('invoices.view_invoice')
 def invoice_analytics(request):
-    """Analytics dashboard for invoices"""
-    # Date range for analytics
-    end_date = timezone.now().date()
-    start_date = end_date - timedelta(days=30)
+    """Enhanced analytics dashboard for invoices"""
+    # Get date range from request or use defaults
+    try:
+        start_date = request.GET.get('start_date')
+        end_date = request.GET.get('end_date')
+
+        if start_date:
+            start_date = datetime.strptime(start_date, '%Y-%m-%d').date()
+        else:
+            start_date = timezone.now().date() - timedelta(days=30)
+
+        if end_date:
+            end_date = datetime.strptime(end_date, '%Y-%m-%d').date()
+        else:
+            end_date = timezone.now().date()
+    except (ValueError, TypeError):
+        start_date = timezone.now().date() - timedelta(days=30)
+        end_date = timezone.now().date()
 
     # Basic statistics
     total_invoices = Invoice.objects.count()
@@ -630,7 +646,56 @@ def invoice_analytics(request):
         status__in=['SENT', 'PARTIALLY_PAID']
     ).count()
 
-    # Monthly trends
+    # Enhanced metrics
+    invoices_this_month = Invoice.objects.filter(
+        issue_date__gte=timezone.now().date().replace(day=1)
+    ).count()
+
+    fiscalized_invoices = Invoice.objects.filter(is_fiscalized=True).count()
+    pending_invoices = Invoice.objects.exclude(status__in=['PAID', 'CANCELLED']).count()
+
+    # Calculate average invoice amount safely
+    avg_result = Invoice.objects.aggregate(avg_amount=Avg('total_amount'))
+    avg_invoice_amount = avg_result['avg_amount'] or 0
+
+    # Performance metrics with safe calculations
+    total_invoiced_amount = Invoice.objects.aggregate(Sum('total_amount'))['total_amount__sum'] or 0
+    collection_rate = (total_revenue / total_invoiced_amount * 100) if total_invoiced_amount > 0 else 0
+
+    # On-time payment rate (simplified)
+    on_time_payments = Invoice.objects.filter(
+        status='PAID',
+        payments__payment_date__lte=F('due_date')
+    ).distinct().count()
+    total_paid_invoices = Invoice.objects.filter(status='PAID').count()
+    on_time_rate = (on_time_payments / total_paid_invoices * 100) if total_paid_invoices > 0 else 0
+
+    fiscalization_rate = (fiscalized_invoices / total_invoices * 100) if total_invoices > 0 else 0
+
+    # Average days to pay - safely handle None values
+    try:
+        paid_invoices_with_payments = Invoice.objects.filter(
+            status='PAID',
+            payments__isnull=False
+        ).annotate(
+            days_to_pay=ExpressionWrapper(
+                F('payments__payment_date') - F('issue_date'),
+                output_field=DurationField()
+            )
+        )
+
+        avg_days_result = paid_invoices_with_payments.aggregate(
+            avg_days=Avg('days_to_pay')
+        )
+        avg_days_to_pay = avg_days_result['avg_days']
+        if avg_days_to_pay:
+            avg_days_to_pay = avg_days_to_pay.days
+        else:
+            avg_days_to_pay = 0
+    except (ValueError, TypeError):
+        avg_days_to_pay = 0
+
+    # Monthly trends data
     monthly_data = []
     for i in range(12):
         month_start = (end_date.replace(day=1) - timedelta(days=i * 30)).replace(day=1)
@@ -646,31 +711,71 @@ def invoice_analytics(request):
 
         monthly_data.append({
             'month': month_start.strftime('%Y-%m'),
+            'month_name': month_start.strftime('%b'),
+            'revenue': float(revenue),
             'count': month_invoices.count(),
-            'revenue': float(revenue),  # convert Decimal to float
         })
 
-    # Status distribution
-    status_data = Invoice.objects.values('status').annotate(
+    monthly_data.reverse()
+
+    # Status distribution with safe calculations
+    status_distribution = Invoice.objects.values('status').annotate(
         count=Count('id'),
         total_amount=Sum('total_amount')
     ).order_by('status')
 
-    status_data_list = []
-    for item in status_data:
-        status_data_list.append({
+    status_data = []
+    for item in status_distribution:
+        count = item['count'] or 0
+        total_amount = item['total_amount'] or 0
+        percentage = (count / total_invoices * 100) if total_invoices > 0 else 0
+        avg_amount = (total_amount / count) if count > 0 else 0
+
+        status_data.append({
             'status': item['status'],
-            'count': item['count'],
-            'total_amount': float(item['total_amount']) if item['total_amount'] is not None else 0.0
+            'label': dict(Invoice.STATUS_CHOICES).get(item['status'], item['status']),
+            'count': count,
+            'total_amount': float(total_amount),
+            'avg_amount': float(avg_amount),
+            'percentage': round(percentage, 1)
         })
+
+    # Payment methods distribution
+    payment_methods_data = InvoicePayment.objects.values('payment_method').annotate(
+        count=Count('id')
+    ).order_by('-count')
+
+    # Top customers
+    top_customers = Invoice.objects.filter(
+        sale__customer__isnull=False
+    ).values(
+        'sale__customer__name'
+    ).annotate(
+        invoice_count=Count('id'),
+        total_amount=Sum('total_amount')
+    ).order_by('-total_amount')[:5]
+
+    # EFRIS compliance
+    non_fiscalized_invoices = total_invoices - fiscalized_invoices
 
     context = {
         'total_invoices': total_invoices,
         'total_revenue': total_revenue,
         'pending_amount': pending_amount,
         'overdue_invoices': overdue_invoices,
-        'monthly_data': json.dumps(monthly_data),
-        'status_data': status_data_list,
+        'invoices_this_month': invoices_this_month,
+        'fiscalized_invoices': fiscalized_invoices,
+        'pending_invoices': pending_invoices,
+        'avg_invoice_amount': avg_invoice_amount,
+        'collection_rate': round(collection_rate, 1),
+        'on_time_rate': round(on_time_rate, 1),
+        'fiscalization_rate': round(fiscalization_rate, 1),
+        'avg_days_to_pay': avg_days_to_pay,
+        'monthly_data': monthly_data,
+        'status_data': status_data,
+        'payment_methods_data': list(payment_methods_data),
+        'top_customers': list(top_customers),
+        'non_fiscalized_invoices': non_fiscalized_invoices,
         'start_date': start_date,
         'end_date': end_date,
     }
@@ -678,12 +783,42 @@ def invoice_analytics(request):
     return render(request, 'invoices/analytics.html', context)
 
 
+# Add API endpoint for analytics data
+@login_required
+@permission_required('invoices.view_invoice')
+def analytics_api(request):
+    """API endpoint for analytics data"""
+    try:
+        period = int(request.GET.get('period', 12))
+        start_date = request.GET.get('start_date')
+        end_date = request.GET.get('end_date')
+
+        # Use the same logic as the main analytics view but return JSON
+        # This is a simplified version - you can expand it as needed
+        data = {
+            'success': True,
+            'metrics': {
+                'total_invoices': Invoice.objects.count(),
+                'total_revenue': float(
+                    Invoice.objects.filter(status='PAID').aggregate(Sum('total_amount'))['total_amount__sum'] or 0),
+                # Add other metrics as needed
+            },
+            'monthly_data': [],
+            'status_data': [],
+            'payment_methods_data': []
+        }
+
+        return JsonResponse(data)
+
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)})
+
 @login_required
 @permission_required('invoices.view_invoice')
 def invoice_print_view(request, pk):
     """Generate printable invoice view"""
     invoice = get_object_or_404(Invoice, pk=pk)
-
+    company = getattr(request, 'tenant', None)
     # Get the default template or first available
     template = InvoiceTemplate.objects.filter(is_default=True).first()
     if not template:
@@ -693,11 +828,11 @@ def invoice_print_view(request, pk):
         'invoice': invoice,
         'template': template,
         'company_info': {
-            'name': 'Your Company Name',
-            'address': 'Company Address',
-            'phone': '+256 XXX XXX XXX',
-            'email': 'info@company.com',
-            'website': 'www.company.com'
+            'name': company.name,
+            'address': company.physical_address,
+            'phone': company.phone,
+            'email': company.email,
+            'website': 'primebooks.sale'
         }
     }
 
@@ -863,30 +998,87 @@ class FiscalizationAuditView(LoginRequiredMixin, PermissionRequiredMixin, ListVi
 @login_required
 @permission_required('invoices.view_invoice')
 def invoice_dashboard(request):
-    """Main dashboard with key metrics and recent activity"""
-    # Key metrics
+    """Enhanced main dashboard with key metrics and recent activity"""
+    # Date calculations
     today = timezone.now().date()
     this_month = today.replace(day=1)
+    last_12_months = today - timedelta(days=365)
 
-    metrics = {
-        'total_invoices': Invoice.objects.count(),
-        'invoices_this_month': Invoice.objects.filter(
-            issue_date__gte=this_month
-        ).count(),
-        'total_revenue': Invoice.objects.filter(
-            status='PAID'
-        ).aggregate(Sum('total_amount'))['total_amount__sum'] or 0,
-        'pending_invoices': Invoice.objects.exclude(
-            status__in=['PAID', 'CANCELLED']
-        ).count(),
-        'overdue_invoices': Invoice.objects.filter(
-            due_date__lt=today,
-            status__in=['SENT', 'PARTIALLY_PAID']
-        ).count(),
-        'fiscalized_invoices': Invoice.objects.filter(
-            is_fiscalized=True
-        ).count(),
-    }
+    # Enhanced metrics
+    total_invoices = Invoice.objects.count()
+    invoices_this_month = Invoice.objects.filter(
+        issue_date__gte=this_month
+    ).count()
+
+    paid_invoices = Invoice.objects.filter(status='PAID')
+    total_revenue = paid_invoices.aggregate(Sum('total_amount'))['total_amount__sum'] or 0
+
+    pending_invoices = Invoice.objects.exclude(status__in=['PAID', 'CANCELLED'])
+    pending_amount = pending_invoices.aggregate(Sum('total_amount'))['total_amount__sum'] or 0
+
+    overdue_invoices = Invoice.objects.filter(
+        due_date__lt=today,
+        status__in=['SENT', 'PARTIALLY_PAID']
+    ).count()
+
+    fiscalized_invoices = Invoice.objects.filter(is_fiscalized=True).count()
+
+    # Calculate average invoice amount
+    avg_invoice_amount = Invoice.objects.aggregate(
+        avg_amount=Avg('total_amount')
+    )['avg_amount'] or 0
+
+    # Performance metrics
+    total_invoiced_amount = Invoice.objects.aggregate(Sum('total_amount'))['total_amount__sum'] or 0
+    collection_rate = (total_revenue / total_invoiced_amount * 100) if total_invoiced_amount > 0 else 0
+
+    # On-time payment rate (simplified - invoices paid before due date)
+    on_time_payments = Invoice.objects.filter(
+        status='PAID',
+        payments__payment_date__lte=F('due_date')
+    ).distinct().count()
+    total_paid_invoices = paid_invoices.count()
+    on_time_rate = (on_time_payments / total_paid_invoices * 100) if total_paid_invoices > 0 else 0
+
+    fiscalization_rate = (fiscalized_invoices / total_invoices * 100) if total_invoices > 0 else 0
+
+    # Monthly revenue data for charts
+    monthly_data = []
+    for i in range(12):
+        month_start = (today.replace(day=1) - timedelta(days=i * 30)).replace(day=1)
+        month_end = (month_start + timedelta(days=32)).replace(day=1) - timedelta(days=1)
+
+        month_invoices = Invoice.objects.filter(
+            issue_date__range=[month_start, month_end]
+        )
+
+        revenue = month_invoices.filter(status='PAID').aggregate(
+            Sum('total_amount')
+        )['total_amount__sum'] or 0
+
+        invoice_count = month_invoices.count()
+
+        monthly_data.append({
+            'month': month_start.strftime('%Y-%m'),
+            'month_name': month_start.strftime('%b'),
+            'revenue': float(revenue),
+            'invoice_count': invoice_count
+        })
+
+    monthly_data.reverse()  # Order from oldest to newest
+
+    # Status distribution for chart
+    status_distribution = Invoice.objects.values('status').annotate(
+        count=Count('id')
+    ).order_by('status')
+
+    status_data = []
+    for item in status_distribution:
+        status_data.append({
+            'status': item['status'],
+            'label': dict(Invoice.STATUS_CHOICES).get(item['status'], item['status']),
+            'count': item['count']
+        })
 
     # Recent invoices
     recent_invoices = Invoice.objects.select_related(
@@ -898,16 +1090,159 @@ def invoice_dashboard(request):
         'invoice', 'processed_by'
     ).order_by('-created_at')[:10]
 
-    # Status distribution for chart
-    status_chart_data = Invoice.objects.values('status').annotate(
-        count=Count('id')
-    ).order_by('status')
+    # Upcoming due dates (next 7 days)
+    upcoming_due_date = today + timedelta(days=7)
+    upcoming_invoices = Invoice.objects.filter(
+        due_date__range=[today, upcoming_due_date],
+        status__in=['SENT', 'PARTIALLY_PAID']
+    ).select_related('sale__customer').order_by('due_date')[:5]
+
+    # Add days until due for each upcoming invoice
+    for invoice in upcoming_invoices:
+        invoice.days_until_due = (invoice.due_date - today).days
+
+    metrics = {
+        'total_invoices': total_invoices,
+        'invoices_this_month': invoices_this_month,
+        'total_revenue': total_revenue,
+        'pending_amount': pending_amount,
+        'pending_invoices': pending_invoices.count(),
+        'overdue_invoices': overdue_invoices,
+        'fiscalized_invoices': fiscalized_invoices,
+        'avg_invoice_amount': avg_invoice_amount,
+        'collection_rate': round(collection_rate, 1),
+        'on_time_rate': round(on_time_rate, 1),
+        'fiscalization_rate': round(fiscalization_rate, 1),
+    }
 
     context = {
         'metrics': metrics,
         'recent_invoices': recent_invoices,
         'recent_payments': recent_payments,
-        'status_chart_data': json.dumps(list(status_chart_data)),
+        'upcoming_invoices': upcoming_invoices,
+        'monthly_data': monthly_data,
+        'status_data': status_data,
     }
 
     return render(request, 'invoices/dashboard.html', context)
+
+
+
+@login_required
+@permission_required('invoices.view_invoice')
+def dashboard_chart_data(request):
+    """API endpoint for dashboard chart data"""
+    # Get period from request (default to 12 months)
+    period = int(request.GET.get('period', 12))
+
+    today = timezone.now().date()
+    start_date = today - timedelta(days=period * 30)
+
+    # Monthly revenue data
+    monthly_data = []
+    current = start_date.replace(day=1)
+
+    while current <= today:
+        month_end = (current + timedelta(days=32)).replace(day=1) - timedelta(days=1)
+
+        month_invoices = Invoice.objects.filter(
+            issue_date__range=[current, month_end]
+        )
+
+        revenue = month_invoices.filter(status='PAID').aggregate(
+            Sum('total_amount')
+        )['total_amount__sum'] or 0
+
+        invoice_count = month_invoices.count()
+
+        monthly_data.append({
+            'month': current.strftime('%Y-%m'),
+            'month_name': current.strftime('%b'),
+            'revenue': float(revenue),
+            'invoice_count': invoice_count
+        })
+
+        # Move to next month
+        if current.month == 12:
+            current = current.replace(year=current.year + 1, month=1)
+        else:
+            current = current.replace(month=current.month + 1)
+
+    # Status distribution
+    status_distribution = Invoice.objects.values('status').annotate(
+        count=Count('id')
+    ).order_by('status')
+
+    status_data = []
+    for item in status_distribution:
+        status_data.append({
+            'status': item['status'],
+            'label': dict(Invoice.STATUS_CHOICES).get(item['status'], item['status']),
+            'count': item['count']
+        })
+
+    return JsonResponse({
+        'monthly_data': monthly_data,
+        'status_data': status_data,
+        'success': True
+    })
+
+
+@login_required
+@permission_required('invoices.view_invoice')
+def dashboard_metrics(request):
+    """API endpoint for real-time dashboard metrics"""
+    today = timezone.now().date()
+    this_month = today.replace(day=1)
+
+    # Calculate metrics (similar to main dashboard view but for API)
+    total_invoices = Invoice.objects.count()
+    invoices_this_month = Invoice.objects.filter(issue_date__gte=this_month).count()
+
+    paid_invoices = Invoice.objects.filter(status='PAID')
+    total_revenue = paid_invoices.aggregate(Sum('total_amount'))['total_amount__sum'] or 0
+
+    pending_invoices = Invoice.objects.exclude(status__in=['PAID', 'CANCELLED'])
+    pending_amount = pending_invoices.aggregate(Sum('total_amount'))['total_amount__sum'] or 0
+
+    overdue_invoices = Invoice.objects.filter(
+        due_date__lt=today,
+        status__in=['SENT', 'PARTIALLY_PAID']
+    ).count()
+
+    fiscalized_invoices = Invoice.objects.filter(is_fiscalized=True).count()
+
+    avg_invoice_amount = Invoice.objects.aggregate(
+        avg_amount=Avg('total_amount')
+    )['avg_amount'] or 0
+
+    total_invoiced_amount = Invoice.objects.aggregate(Sum('total_amount'))['total_amount__sum'] or 0
+    collection_rate = (total_revenue / total_invoiced_amount * 100) if total_invoiced_amount > 0 else 0
+
+    on_time_payments = Invoice.objects.filter(
+        status='PAID',
+        payments__payment_date__lte=F('due_date')
+    ).distinct().count()
+    total_paid_invoices = paid_invoices.count()
+    on_time_rate = (on_time_payments / total_paid_invoices * 100) if total_paid_invoices > 0 else 0
+
+    fiscalization_rate = (fiscalized_invoices / total_invoices * 100) if total_invoices > 0 else 0
+
+    metrics = {
+        'total_invoices': total_invoices,
+        'invoices_this_month': invoices_this_month,
+        'total_revenue': float(total_revenue),
+        'pending_amount': float(pending_amount),
+        'pending_invoices': pending_invoices.count(),
+        'overdue_invoices': overdue_invoices,
+        'fiscalized_invoices': fiscalized_invoices,
+        'avg_invoice_amount': float(avg_invoice_amount),
+        'collection_rate': round(collection_rate, 1),
+        'on_time_rate': round(on_time_rate, 1),
+        'fiscalization_rate': round(fiscalization_rate, 1),
+    }
+
+    return JsonResponse({
+        'metrics': metrics,
+        'success': True
+    })

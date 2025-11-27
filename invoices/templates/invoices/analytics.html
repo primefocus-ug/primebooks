@@ -1,260 +1,432 @@
-
-{% extends 'base.html' %}
+{% extends "base.html" %}
 {% load i18n %}
-{% load custom_filters %}
-{% load static %}
+{% load humanize %}
 
-{% block title %}Invoice Analytics | {{ company.trading_name|default:company.name }}{% endblock %}
-{% block extra_css %}
-<link rel="stylesheet" href="{% static 'themes.css' %}">
-<style>
-.invoice-header {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    color: white;
-    padding: 20px;
-    border-radius: 8px;
-    margin-bottom: 30px;
-}
-.metric-card {
-    background: rgba(255, 255, 255, 0.1);
-    border: none;
-    color: white;
-}
-</style>
+{% block title %}{% trans "Invoice Analytics" %} | {{ company.trading_name|default:company.name }}{% endblock %}
+
+{% block breadcrumb_items %}
+<li class="breadcrumb-item"><a href="{% url 'invoices:dashboard' %}">{% trans "Invoices" %}</a></li>
+<li class="breadcrumb-item active">{% trans "Analytics" %}</li>
 {% endblock %}
 
 {% block content %}
-<div class="invoice-header">
-    <div class="row align-items-center">
-        <div class="col">
-            <h1><i class="fas fa-chart-line me-3"></i>Invoice Analytics</h1>
-            <p class="mb-0">Comprehensive insights into your invoice performance and trends</p>
-        </div>
-        <div class="col-auto">
-            <div class="btn-group" role="group">
-                <button type="button" class="btn btn-outline-light" id="refreshData">
-                    <i class="fas fa-sync-alt me-2"></i>Refresh
-                </button>
-                <button type="button" class="btn btn-outline-light" onclick="window.print()">
-                    <i class="fas fa-print me-2"></i>Print Report
-                </button>
-            </div>
-        </div>
-    </div>
-</div>
-
-<!-- Key Performance Indicators -->
-<div class="row mb-4">
-    <div class="col-lg-3 col-md-6 mb-4">
-        <div class="card metric-card">
-            <div class="card-body">
-                <div class="d-flex justify-content-between align-items-center">
+<div class="container-fluid">
+    <!-- Header with Date Range Filter -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
                     <div>
-                        <h6 class="card-title text-uppercase mb-1">Total Invoices</h6>
-                        <h2 class="mb-0">{{ total_invoices|floatformat:0 }}</h2>
-                        <small class="text-white-75">All time</small>
+                        <h1 class="h3 mb-2">{% trans "Invoice Analytics" %}</h1>
+                        <p class="text-muted mb-0">{% trans "Comprehensive insights and performance metrics" %}</p>
                     </div>
-                    <div class="text-white-50">
-                        <i class="fas fa-file-invoice fa-2x"></i>
+                    <div class="btn-group">
+                        <button type="button" class="btn btn-outline-primary" id="refreshAnalytics">
+                            <i class="bi bi-arrow-clockwise me-1"></i>{% trans "Refresh" %}
+                        </button>
+                        <button type="button" class="btn btn-primary dropdown-toggle dropdown-toggle-split" data-bs-toggle="dropdown">
+                            <span class="visually-hidden">{% trans "Toggle dropdown" %}</span>
+                        </button>
+                        <ul class="dropdown-menu">
+                            <li><a class="dropdown-item" href="#" data-period="30">{% trans "Last 30 Days" %}</a></li>
+                            <li><a class="dropdown-item" href="#" data-period="90">{% trans "Last 90 Days" %}</a></li>
+                            <li><a class="dropdown-item" href="#" data-period="180">{% trans "Last 6 Months" %}</a></li>
+                            <li><a class="dropdown-item" href="#" data-period="365">{% trans "Last 12 Months" %}</a></li>
+                            <li><hr class="dropdown-divider"></li>
+                            <li><a class="dropdown-item" href="#" id="exportAnalytics">
+                                <i class="bi bi-download me-2"></i>{% trans "Export Report" %}
+                            </a></li>
+                        </ul>
                     </div>
+                </div>
+                <div class="card-body">
+                    <form method="get" id="dateRangeForm" class="row g-3">
+                        <div class="col-md-3">
+                            <label for="start_date" class="form-label">{% trans "Start Date" %}</label>
+                            <input type="date" class="form-control" id="start_date" name="start_date"
+                                   value="{{ start_date|date:'Y-m-d' }}">
+                        </div>
+                        <div class="col-md-3">
+                            <label for="end_date" class="form-label">{% trans "End Date" %}</label>
+                            <input type="date" class="form-control" id="end_date" name="end_date"
+                                   value="{{ end_date|date:'Y-m-d' }}">
+                        </div>
+                        <div class="col-md-6 d-flex align-items-end">
+                            <button type="submit" class="btn btn-primary me-2">
+                                <i class="bi bi-filter me-1"></i>{% trans "Apply Filter" %}
+                            </button>
+                            <a href="{% url 'invoices:analytics' %}" class="btn btn-outline-secondary">
+                                <i class="bi bi-arrow-clockwise me-1"></i>{% trans "Reset" %}
+                            </a>
+                        </div>
+                    </form>
                 </div>
             </div>
         </div>
     </div>
-    
-    <div class="col-lg-3 col-md-6 mb-4">
-        <div class="card metric-card">
-            <div class="card-body">
-                <div class="d-flex justify-content-between align-items-center">
-                    <div>
-                        <h6 class="card-title text-uppercase mb-1">Total Revenue</h6>
-                        <h2 class="mb-0">{{ total_revenue|floatformat:"0g" }}</h2>
-                        <small class="text-white-75">UGX</small>
-                    </div>
-                    <div class="text-white-50">
-                        <i class="fas fa-money-bill-wave fa-2x"></i>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-    
-    <div class="col-lg-3 col-md-6 mb-4">
-        <div class="card metric-card">
-            <div class="card-body">
-                <div class="d-flex justify-content-between align-items-center">
-                    <div>
-                        <h6 class="card-title text-uppercase mb-1">Pending Amount</h6>
-                        <h2 class="mb-0">{{ pending_amount|floatformat:"0g" }}</h2>
-                        <small class="text-white-75">UGX</small>
-                    </div>
-                    <div class="text-white-50">
-                        <i class="fas fa-hourglass-half fa-2x"></i>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-    
-    <div class="col-lg-3 col-md-6 mb-4">
-        <div class="card metric-card">
-            <div class="card-body">
-                <div class="d-flex justify-content-between align-items-center">
-                    <div>
-                        <h6 class="card-title text-uppercase mb-1">Overdue Invoices</h6>
-                        <h2 class="mb-0">{{ overdue_invoices|floatformat:0 }}</h2>
-                        <small class="text-white-75">Require attention</small>
-                    </div>
-                    <div class="text-white-50">
-                        <i class="fas fa-exclamation-triangle fa-2x"></i>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-</div>
 
-<!-- Charts Row -->
-<div class="row mb-4">
-    <!-- Monthly Revenue Trend -->
-    <div class="col-xl-8 mb-4">
-        <div class="card">
-            <div class="card-header">
-                <h5 class="card-title mb-0">Monthly Revenue Trend</h5>
-            </div>
-            <div class="card-body">
-                <canvas id="revenueChart" height="100"></canvas>
-            </div>
-        </div>
-    </div>
-    
-    <!-- Status Distribution -->
-    <div class="col-xl-4 mb-4">
-        <div class="card">
-            <div class="card-header">
-                <h5 class="card-title mb-0">Invoice Status Distribution</h5>
-            </div>
-            <div class="card-body">
-                <canvas id="statusChart" height="200"></canvas>
+    <!-- Enhanced Summary Cards -->
+    <div class="row mb-4">
+        <div class="col-xl-2 col-md-4 col-6 mb-4">
+            <div class="card metric-card border-0 shadow-sm">
+                <div class="card-body text-center">
+                    <div class="metric-icon bg-primary bg-opacity-10 rounded-circle mx-auto mb-3">
+                        <i class="bi bi-receipt text-primary fs-4"></i>
+                    </div>
+                    <div class="text-muted small fw-semibold">{% trans "Total Invoices" %}</div>
+                    <div class="h3 mb-1 fw-bold text-primary">{{ total_invoices|intcomma }}</div>
+                    <div class="small text-success">
+                        <i class="bi bi-arrow-up-short"></i>
+                        {{ invoices_this_month }} {% trans "this month" %}
+                    </div>
+                </div>
             </div>
         </div>
-    </div>
-</div>
 
-<!-- Detailed Statistics -->
-<div class="row">
-    <!-- Status Breakdown Table -->
-    <div class="col-xl-6 mb-4">
-        <div class="card">
-            <div class="card-header">
-                <h5 class="card-title mb-0">Status Breakdown</h5>
-            </div>
-            <div class="card-body p-0">
-                <div class="table-responsive">
-                    <table class="table table-striped mb-0">
-                        <thead class="table-light">
-                            <tr>
-                                <th>Status</th>
-                                <th>Count</th>
-                                <th>Total Amount</th>
-                                <th>Percentage</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for status in status_data %}
-                            <tr>
-                                <td>
-                                    <span class="badge bg-{% if status.status == 'PAID' %}success{% elif status.status == 'SENT' %}primary{% elif status.status == 'PARTIALLY_PAID' %}warning{% elif status.status == 'DRAFT' %}secondary{% elif status.status == 'CANCELLED' %}dark{% else %}danger{% endif %}">
-                                        {{ status.status }}
-                                    </span>
-                                </td>
-                                <td>{{ status.count }}</td>
-                                <td>UGX {{ status.total_amount|floatformat:"2g"|default:"0" }}</td>
-                                <td>
-                                    {% widthratio status.count total_invoices 100 %}%
-                                </td>
-                            </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
+        <div class="col-xl-2 col-md-4 col-6 mb-4">
+            <div class="card metric-card border-0 shadow-sm">
+                <div class="card-body text-center">
+                    <div class="metric-icon bg-success bg-opacity-10 rounded-circle mx-auto mb-3">
+                        <i class="bi bi-currency-dollar text-success fs-4"></i>
+                    </div>
+                    <div class="text-muted small fw-semibold">{% trans "Total Revenue" %}</div>
+                    <div class="h3 mb-1 fw-bold text-success">UGX {{ total_revenue|intcomma }}</div>
+                    <div class="small text-muted">{% trans "Paid invoices" %}</div>
                 </div>
             </div>
         </div>
-    </div>
-    
-    <!-- Performance Metrics -->
-    <div class="col-xl-6 mb-4">
-        <div class="card">
-            <div class="card-header">
-                <h5 class="card-title mb-0">Performance Metrics</h5>
-            </div>
-            <div class="card-body">
-                <div class="mb-3">
-                    <div class="d-flex justify-content-between mb-1 totall">
-                        <span>Collection Rate</span>
-                        <span>{% widthratio total_revenue total_revenue|add:pending_amount 100 %}%</span>
-                    </div>
-                    <div class="progress">
-                        <div class="progress-bar bg-success" style="width: {% widthratio total_revenue total_revenue|add:pending_amount 100 %}%"></div>
-                    </div>
-                </div>
-                
-                <div class="mb-3">
-                    <div class="d-flex justify-content-between mb-1 totall">
-                        <span>Fiscalization Rate</span>
-                        <span>85%</span>
-                    </div>
-                    <div class="progress">
-                        <div class="progress-bar bg-info" style="width: 85%"></div>
-                    </div>
-                </div>
-                
-                <div class="mb-3">
-                    <div class="d-flex justify-content-between mb-1 totall">
-                        <span>On-time Payment Rate</span>
-                        <span>78%</span>
-                    </div>
-                    <div class="progress">
-                        <div class="progress-bar bg-warning" style="width: 78%"></div>
-                    </div>
-                </div>
-                
-                <div class="row text-center mt-4">
-                    <div class="col-6">
-                        <h4 class="text-primary">12.5</h4>
-                        <small class="text-muted">Avg Days to Pay</small>
-                    </div>
-                    <div class="col-6">
-                        <h4 class="text-success">95.2%</h4>
-                        <small class="text-muted">Success Rate</small>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-</div>
 
-<!-- Export Options -->
-<div class="card">
-    <div class="card-header">
-        <h5 class="card-title mb-0">Export Analytics</h5>
-    </div>
-    <div class="card-body">
-        <div class="row">
-            <div class="col-md-6">
-                <p class="text-muted">Download detailed analytics reports for further analysis</p>
+        <div class="col-xl-2 col-md-4 col-6 mb-4">
+            <div class="card metric-card border-0 shadow-sm">
+                <div class="card-body text-center">
+                    <div class="metric-icon bg-warning bg-opacity-10 rounded-circle mx-auto mb-3">
+                        <i class="bi bi-clock text-warning fs-4"></i>
+                    </div>
+                    <div class="text-muted small fw-semibold">{% trans "Pending Amount" %}</div>
+                    <div class="h3 mb-1 fw-bold text-warning">UGX {{ pending_amount|intcomma }}</div>
+                    <div class="small text-muted">{{ pending_invoices }} {% trans "pending" %}</div>
+                </div>
             </div>
-            <div class="col-md-6 text-end">
-                <div class="btn-group" role="group">
-                    <button type="button" class="btn btn-outline-primary">
-                        <i class="fas fa-file-csv me-2"></i>Export CSV
+        </div>
+
+        <div class="col-xl-2 col-md-4 col-6 mb-4">
+            <div class="card metric-card border-0 shadow-sm">
+                <div class="card-body text-center">
+                    <div class="metric-icon bg-danger bg-opacity-10 rounded-circle mx-auto mb-3">
+                        <i class="bi bi-exclamation-triangle text-danger fs-4"></i>
+                    </div>
+                    <div class="text-muted small fw-semibold">{% trans "Overdue" %}</div>
+                    <div class="h3 mb-1 fw-bold text-danger">{{ overdue_invoices|intcomma }}</div>
+                    <div class="small text-muted">{% trans "Requires attention" %}</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-xl-2 col-md-4 col-6 mb-4">
+            <div class="card metric-card border-0 shadow-sm">
+                <div class="card-body text-center">
+                    <div class="metric-icon bg-info bg-opacity-10 rounded-circle mx-auto mb-3">
+                        <i class="bi bi-shield-check text-info fs-4"></i>
+                    </div>
+                    <div class="text-muted small fw-semibold">{% trans "Fiscalized" %}</div>
+                    <div class="h3 mb-1 fw-bold text-info">{{ fiscalized_invoices|intcomma }}</div>
+                    <div class="small text-muted">{% trans "EFRIS compliant" %}</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-xl-2 col-md-4 col-6 mb-4">
+            <div class="card metric-card border-0 shadow-sm">
+                <div class="card-body text-center">
+                    <div class="metric-icon bg-secondary bg-opacity-10 rounded-circle mx-auto mb-3">
+                        <i class="bi bi-cash-coin text-secondary fs-4"></i>
+                    </div>
+                    <div class="text-muted small fw-semibold">{% trans "Avg. Invoice" %}</div>
+                    <div class="h3 mb-1 fw-bold text-secondary">
+                        UGX {{ avg_invoice_amount|floatformat:0|intcomma }}
+                    </div>
+                    <div class="small text-muted">{% trans "Average value" %}</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Performance Metrics Row -->
+    <div class="row mb-4">
+        <div class="col-md-4 mb-4">
+            <div class="card h-100">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">
+                        <i class="bi bi-speedometer2 me-2"></i>{% trans "Collection Performance" %}
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div class="mb-4">
+                        <div class="d-flex justify-content-between mb-1">
+                            <span class="small text-muted">{% trans "Collection Rate" %}</span>
+                            <span class="small fw-bold">{{ collection_rate|floatformat:1 }}%</span>
+                        </div>
+                        <div class="progress" style="height: 8px;">
+                            <div class="progress-bar bg-success" style="width: {{ collection_rate }}%"></div>
+                        </div>
+                    </div>
+
+                    <div class="mb-4">
+                        <div class="d-flex justify-content-between mb-1">
+                            <span class="small text-muted">{% trans "On-Time Payment" %}</span>
+                            <span class="small fw-bold">{{ on_time_rate|floatformat:1 }}%</span>
+                        </div>
+                        <div class="progress" style="height: 8px;">
+                            <div class="progress-bar bg-info" style="width: {{ on_time_rate }}%"></div>
+                        </div>
+                    </div>
+
+                    <div class="mb-4">
+                        <div class="d-flex justify-content-between mb-1">
+                            <span class="small text-muted">{% trans "Fiscalization Rate" %}</span>
+                            <span class="small fw-bold">{{ fiscalization_rate|floatformat:1 }}%</span>
+                        </div>
+                        <div class="progress" style="height: 8px;">
+                            <div class="progress-bar bg-warning" style="width: {{ fiscalization_rate }}%"></div>
+                        </div>
+                    </div>
+
+                    <div>
+                        <div class="d-flex justify-content-between mb-1">
+                            <span class="small text-muted">{% trans "Average Days to Pay" %}</span>
+                            <span class="small fw-bold">{{ avg_days_to_pay|default:0|floatformat:1 }} {% trans "days" %}</span>
+                        </div>
+                        <div class="progress" style="height: 8px;">
+                            <!-- FIXED: Safe calculation for progress bar width -->
+                            <div class="progress-bar bg-primary" style="width: {% widthratio avg_days_to_pay|default:0 30 100 %}%"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-8 mb-4">
+            <div class="card h-100">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="card-title mb-0">
+                        <i class="bi bi-graph-up me-2"></i>{% trans "Revenue Trend" %}
+                    </h5>
+                    <div class="dropdown">
+                        <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown">
+                            <i class="bi bi-calendar me-1"></i>{% trans "12 Months" %}
+                        </button>
+                        <ul class="dropdown-menu">
+                            <li><a class="dropdown-item" href="#" data-period="12">{% trans "12 Months" %}</a></li>
+                            <li><a class="dropdown-item" href="#" data-period="6">{% trans "6 Months" %}</a></li>
+                            <li><a class="dropdown-item" href="#" data-period="3">{% trans "3 Months" %}</a></li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="card-body">
+                    <div class="chart-container" style="height: 250px;">
+                        <canvas id="revenueTrendChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+        <!-- Status Distribution -->
+        <div class="col-lg-4 mb-4">
+            <div class="card h-100">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="card-title mb-0">
+                        <i class="bi bi-pie-chart me-2"></i>{% trans "Status Distribution" %}
+                    </h5>
+                    <button class="btn btn-sm btn-outline-secondary" id="refreshStatusChart">
+                        <i class="bi bi-arrow-clockwise"></i>
                     </button>
-                    <button type="button" class="btn btn-outline-success">
-                        <i class="fas fa-file-excel me-2"></i>Export Excel
-                    </button>
-                    <button type="button" class="btn btn-outline-danger">
-                        <i class="fas fa-file-pdf me-2"></i>Export PDF
-                    </button>
+                </div>
+                <div class="card-body">
+                    <div class="chart-container" style="height: 300px;">
+                        <canvas id="statusDistributionChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Payment Methods Distribution -->
+        <div class="col-lg-4 mb-4">
+            <div class="card h-100">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">
+                        <i class="bi bi-credit-card me-2"></i>{% trans "Payment Methods" %}
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div class="chart-container" style="height: 300px;">
+                        <canvas id="paymentMethodsChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Customer Performance -->
+        <div class="col-lg-4 mb-4">
+            <div class="card h-100">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">
+                        <i class="bi bi-people me-2"></i>{% trans "Top Customers" %}
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div class="list-group list-group-flush">
+                        {% for customer in top_customers %}
+                        <div class="list-group-item d-flex justify-content-between align-items-center">
+                            <div>
+                                <h6 class="mb-1">{{ customer.sale__customer__name|default:"Unknown Customer" }}</h6>
+                                <small class="text-muted">{{ customer.invoice_count }} {% trans "invoices" %}</small>
+                            </div>
+                            <span class="badge bg-primary rounded-pill">UGX {{ customer.total_amount|default:0|intcomma }}</span>
+                        </div>
+                        {% empty %}
+                        <div class="list-group-item text-center text-muted py-4">
+                            <i class="bi bi-people fs-1 mb-2 d-block opacity-50"></i>
+                            {% trans "No customer data" %}
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Enhanced Detailed Status Breakdown -->
+    <div class="row">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="card-title mb-0">
+                        <i class="bi bi-table me-2"></i>{% trans "Detailed Analytics" %}
+                    </h5>
+                    <div class="btn-group">
+                        <button type="button" class="btn btn-sm btn-outline-primary" id="exportTable">
+                            <i class="bi bi-download me-1"></i>{% trans "Export" %}
+                        </button>
+                    </div>
+                </div>
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table table-hover mb-0" id="analyticsTable">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>{% trans "Status" %}</th>
+                                    <th>{% trans "Count" %}</th>
+                                    <th>{% trans "Percentage" %}</th>
+                                    <th>{% trans "Total Amount" %}</th>
+                                    <th>{% trans "Average Amount" %}</th>
+                                    <th>{% trans "Actions" %}</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for item in status_data %}
+                                <tr>
+                                    <td>
+                                        <span class="badge status-badge status-{{ item.status|lower }} me-2">
+                                            <i class="bi
+                                                {% if item.status == 'PAID' %}bi-check-circle
+                                                {% elif item.status == 'SENT' %}bi-send
+                                                {% elif item.status == 'DRAFT' %}bi-file-earmark
+                                                {% elif item.status == 'OVERDUE' %}bi-exclamation-triangle
+                                                {% else %}bi-clock{% endif %} me-1">
+                                            </i>
+                                            {{ item.label }}
+                                        </span>
+                                    </td>
+                                    <td class="fw-bold">{{ item.count|intcomma }}</td>
+                                    <td>
+                                        <div class="d-flex align-items-center">
+                                            <div class="progress flex-grow-1 me-2" style="height: 6px;">
+                                                <!-- FIXED: Safe percentage calculation -->
+                                                <div class="progress-bar bg-{{ item.status|lower }}"
+                                                     style="width: {{ item.percentage }}%">
+                                                </div>
+                                            </div>
+                                            <span class="small">{{ item.percentage }}%</span>
+                                        </div>
+                                    </td>
+                                    <td class="fw-semibold">UGX {{ item.total_amount|intcomma }}</td>
+                                    <td>
+                                        UGX {{ item.avg_amount|floatformat:0|intcomma }}
+                                    </td>
+                                    <td>
+                                        <a href="{% url 'invoices:list' %}?status={{ item.status }}"
+                                           class="btn btn-sm btn-outline-primary">
+                                            <i class="bi bi-eye me-1"></i>{% trans "View" %}
+                                        </a>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                            <tfoot class="table-light">
+                                <tr>
+                                    <th>{% trans "Total" %}</th>
+                                    <th>{{ total_invoices|intcomma }}</th>
+                                    <th>100%</th>
+                                    <th>UGX {{ total_revenue|intcomma }}</th>
+                                    <th>UGX {{ avg_invoice_amount|floatformat:0|intcomma }}</th>
+                                    <th></th>
+                                </tr>
+                            </tfoot>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Additional Analytics Sections -->
+    <div class="row mt-4">
+        <!-- Monthly Performance -->
+        <div class="col-lg-6 mb-4">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">
+                        <i class="bi bi-calendar-month me-2"></i>{% trans "Monthly Performance" %}
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div class="chart-container" style="height: 300px;">
+                        <canvas id="monthlyPerformanceChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- EFRIS Compliance -->
+        <div class="col-lg-6 mb-4">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">
+                        <i class="bi bi-shield-check me-2"></i>{% trans "EFRIS Compliance" %}
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div class="row text-center">
+                        <div class="col-6">
+                            <div class="h2 text-success">{{ fiscalized_invoices }}</div>
+                            <small class="text-muted">{% trans "Fiscalized" %}</small>
+                        </div>
+                        <div class="col-6">
+                            <div class="h2 text-warning">{{ non_fiscalized_invoices }}</div>
+                            <small class="text-muted">{% trans "Pending Fiscalization" %}</small>
+                        </div>
+                    </div>
+                    <div class="mt-4">
+                        <div class="d-flex justify-content-between mb-1">
+                            <span class="small text-muted">{% trans "Compliance Rate" %}</span>
+                            <span class="small fw-bold">{{ fiscalization_rate|floatformat:1 }}%</span>
+                        </div>
+                        <div class="progress" style="height: 10px;">
+                            <div class="progress-bar bg-success" style="width: {{ fiscalization_rate }}%"></div>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -263,108 +435,289 @@
 {% endblock %}
 
 {% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
-// Monthly Revenue Chart
-const revenueCtx = document.getElementById('revenueChart').getContext('2d');
-const monthlyData = {{ monthly_data|safe }};
+document.addEventListener('DOMContentLoaded', function() {
+    // Initialize tooltips
+    const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+    const tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
+        return new bootstrap.Tooltip(tooltipTriggerEl);
+    });
 
-new Chart(revenueCtx, {
-    type: 'line',
-    data: {
-        labels: monthlyData.map(item => item.month),
-        datasets: [{
-            label: 'Revenue (UGX)',
-            data: monthlyData.map(item => item.revenue),
-            borderColor: '#667eea',
-            backgroundColor: 'rgba(102, 126, 234, 0.1)',
-            tension: 0.4,
-            fill: true
-        }, {
-            label: 'Invoice Count',
-            data: monthlyData.map(item => item.count),
-            borderColor: '#764ba2',
-            backgroundColor: 'rgba(118, 75, 162, 0.1)',
-            tension: 0.4,
-            yAxisID: 'y1'
-        }]
-    },
-    options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        scales: {
-            y: {
-                type: 'linear',
-                display: true,
-                position: 'left',
-                title: {
-                    display: true,
-                    text: 'Revenue (UGX)'
-                }
-            },
-            y1: {
-                type: 'linear',
-                display: true,
-                position: 'right',
-                title: {
-                    display: true,
-                    text: 'Count'
-                },
-                grid: {
-                    drawOnChartArea: false,
-                }
-            }
+    // Sample data for charts (replace with actual data from your backend)
+    const monthlyData = {{ monthly_data|safe }};
+    const statusData = {{ status_data|safe }};
+    const paymentMethodsData = {{ payment_methods_data|safe }};
+
+    // Revenue Trend Chart
+    const revenueCtx = document.getElementById('revenueTrendChart').getContext('2d');
+    const revenueChart = new Chart(revenueCtx, {
+        type: 'line',
+        data: {
+            labels: monthlyData.map(item => item.month_name),
+            datasets: [{
+                label: '{% trans "Revenue" %}',
+                data: monthlyData.map(item => item.revenue),
+                borderColor: '#3B82F6',
+                backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                borderWidth: 3,
+                fill: true,
+                tension: 0.4
+            }, {
+                label: '{% trans "Invoices" %}',
+                data: monthlyData.map(item => item.count),
+                borderColor: '#10B981',
+                backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                borderWidth: 2,
+                fill: true,
+                tension: 0.4,
+                yAxisID: 'y1'
+            }]
         },
-        plugins: {
-            legend: {
-                position: 'top',
-            },
-            tooltip: {
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: {
                 mode: 'index',
                 intersect: false,
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    title: {
+                        display: true,
+                        text: '{% trans "Revenue (UGX)" %}'
+                    },
+                    ticks: {
+                        callback: function(value) {
+                            if (value >= 1000000) {
+                                return 'UGX ' + (value / 1000000).toFixed(1) + 'M';
+                            } else if (value >= 1000) {
+                                return 'UGX ' + (value / 1000).toFixed(0) + 'K';
+                            }
+                            return 'UGX ' + value;
+                        }
+                    }
+                },
+                y1: {
+                    beginAtZero: true,
+                    position: 'right',
+                    title: {
+                        display: true,
+                        text: '{% trans "Number of Invoices" %}'
+                    },
+                    grid: {
+                        drawOnChartArea: false
+                    }
+                }
+            },
+            plugins: {
+                legend: {
+                    position: 'top',
+                },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            let label = context.dataset.label || '';
+                            if (context.dataset.yAxisID === 'y1') {
+                                label += ': ' + context.parsed.y + ' {% trans "invoices" %}';
+                            } else {
+                                label += ': UGX ' + context.parsed.y.toLocaleString();
+                            }
+                            return label;
+                        }
+                    }
+                }
             }
         }
-    }
-});
+    });
 
-// Status Distribution Chart
-const statusCtx = document.getElementById('statusChart').getContext('2d');
-const statusData = {{ status_data|safe }};
-
-new Chart(statusCtx, {
-    type: 'doughnut',
-    data: {
-        labels: statusData.map(item => item.status),
-        datasets: [{
-            data: statusData.map(item => item.count),
-            backgroundColor: [
-                '#28a745', // PAID
-                '#ffc107', // SENT
-                '#17a2b8', // DRAFT
-                '#dc3545', // OVERDUE
-                '#6c757d', // CANCELLED
-                '#fd7e14'  // PARTIALLY_PAID
-            ],
-            borderWidth: 0
-        }]
-    },
-    options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: {
-            legend: {
-                position: 'bottom',
+    // Status Distribution Chart
+    const statusCtx = document.getElementById('statusDistributionChart').getContext('2d');
+    const statusChart = new Chart(statusCtx, {
+        type: 'doughnut',
+        data: {
+            labels: statusData.map(item => item.label),
+            datasets: [{
+                data: statusData.map(item => item.count),
+                backgroundColor: [
+                    '#10B981', '#3B82F6', '#6B7280', '#EF4444', '#F59E0B', '#8B5CF6'
+                ],
+                borderWidth: 2,
+                borderColor: '#fff'
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            cutout: '70%',
+            plugins: {
+                legend: {
+                    position: 'bottom',
+                    labels: {
+                        padding: 20,
+                        usePointStyle: true,
+                        font: {
+                            size: 11
+                        }
+                    }
+                },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            const label = context.label || '';
+                            const value = context.parsed || 0;
+                            const total = context.dataset.data.reduce((a, b) => a + b, 0);
+                            const percentage = Math.round((value / total) * 100);
+                            return `${label}: ${value} (${percentage}%)`;
+                        }
+                    }
+                }
             }
         }
-    }
-});
+    });
 
-// Refresh data functionality
-document.getElementById('refreshData').addEventListener('click', function() {
-    this.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Refreshing...';
-    // Simulate data refresh
-    setTimeout(() => {
-        location.reload();
-    }, 1000);
+    // Payment Methods Chart
+    const paymentCtx = document.getElementById('paymentMethodsChart').getContext('2d');
+    const paymentMethodsChart = new Chart(paymentCtx, {
+        type: 'pie',
+        data: {
+            labels: paymentMethodsData.map(item => item.payment_method),
+            datasets: [{
+                data: paymentMethodsData.map(item => item.count),
+                backgroundColor: [
+                    '#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#06B6D4'
+                ],
+                borderWidth: 2,
+                borderColor: '#fff'
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    position: 'bottom',
+                    labels: {
+                        padding: 20,
+                        usePointStyle: true
+                    }
+                }
+            }
+        }
+    });
+
+    // Monthly Performance Chart
+    const monthlyCtx = document.getElementById('monthlyPerformanceChart').getContext('2d');
+    const monthlyPerformanceChart = new Chart(monthlyCtx, {
+        type: 'bar',
+        data: {
+            labels: monthlyData.map(item => item.month_name),
+            datasets: [{
+                label: '{% trans "Revenue" %}',
+                data: monthlyData.map(item => item.revenue),
+                backgroundColor: 'rgba(59, 130, 246, 0.7)',
+                borderColor: 'rgba(59, 130, 246, 1)',
+                borderWidth: 1
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    title: {
+                        display: true,
+                        text: '{% trans "Revenue (UGX)" %}'
+                    }
+                }
+            }
+        }
+    });
+
+    // Event listeners
+    document.getElementById('refreshAnalytics').addEventListener('click', function() {
+        window.location.reload();
+    });
+
+    document.getElementById('refreshStatusChart').addEventListener('click', function() {
+        statusChart.update();
+    });
+
+    document.getElementById('exportAnalytics').addEventListener('click', function(e) {
+        e.preventDefault();
+        alert('{% trans "Export functionality would be implemented here" %}');
+    });
+
+    document.getElementById('exportTable').addEventListener('click', function() {
+        alert('{% trans "Table export functionality would be implemented here" %}');
+    });
 });
 </script>
+
+<style>
+.metric-card {
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.metric-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 8px 25px rgba(0,0,0,0.15) !important;
+}
+
+.metric-icon {
+    width: 60px;
+    height: 60px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.status-badge {
+    font-size: 0.75em;
+    padding: 0.35em 0.65em;
+}
+
+.status-paid { background-color: #10B981; color: white; }
+.status-sent { background-color: #3B82F6; color: white; }
+.status-draft { background-color: #6B7280; color: white; }
+.status-overdue { background-color: #EF4444; color: white; }
+.status-partially_paid { background-color: #F59E0B; color: white; }
+.status-cancelled { background-color: #374151; color: white; }
+
+.chart-container {
+    position: relative;
+}
+
+.table > :not(caption) > * > * {
+    padding: 0.75rem 0.5rem;
+    vertical-align: middle;
+}
+
+/* Dark theme adjustments */
+[data-theme="dark"] .table-light {
+    background-color: var(--bg-secondary) !important;
+    color: var(--text-primary);
+}
+
+[data-theme="dark"] .card {
+    background: var(--bg-primary);
+}
+
+[data-theme="dark"] .progress {
+    background-color: var(--bg-tertiary);
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+    .metric-card .h3 {
+        font-size: 1.5rem;
+    }
+
+    .chart-container {
+        height: 250px !important;
+    }
+}
+</style>
 {% endblock %}
