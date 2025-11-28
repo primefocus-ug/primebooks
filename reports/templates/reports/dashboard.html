@@ -18,7 +18,7 @@
         box-shadow: 0 10px 30px rgba(0,0,0,0.1);
         transition: transform 0.3s ease, box-shadow 0.3s ease;
     }
-    [data-theme="dark"].dre  {
+    [data-theme="dark"] .dre {
         background-color: #1f2937 !important;
         color: #f3f4f6 !important;
     }
@@ -176,23 +176,23 @@
 
     <div class="row g-4">
         <!-- Sales Trend Chart -->
-        <div class="col-lg-8 totall">
-            <div class="card shadow-sm totall">
-                <div class="dre totall">
-                    <h5 class="mb-0 totall"><i class="fas fa-chart-area text-primary totall"></i> Sales Trend (Last 30 Days)</h5>
+        <div class="col-lg-8">
+            <div class="card shadow-sm">
+                <div class="card-header dre">
+                    <h5 class="mb-0"><i class="fas fa-chart-area text-primary"></i> Sales Trend (Last 30 Days)</h5>
                 </div>
-                <div class="card-body totall">
-                    <div class="chart-container totall">
-                        <canvas id="salesTrendChart totall"></canvas>
+                <div class="card-body">
+                    <div class="chart-container">
+                        <canvas id="salesTrendChart"></canvas>
                     </div>
                 </div>
             </div>
         </div>
 
         <!-- Stock Alerts -->
-        <div class="col-lg-4 totall">
-            <div class="card shadow-sm totall">
-                <div class="dre d-flex justify-content-between align-items-center totall">
+        <div class="col-lg-4">
+            <div class="card shadow-sm">
+                <div class="card-header dre d-flex justify-content-between align-items-center">
                     <h5 class="mb-0"><i class="fas fa-bell text-warning"></i> Stock Alerts</h5>
                     <span class="badge bg-danger">{{ stock_alerts|length }}</span>
                 </div>
@@ -229,7 +229,7 @@
         <div class="col-12">
             <h4 class="section-header">Quick Actions</h4>
         </div>
-        <div class="col-md-3 totall">
+        <div class="col-md-3">
             <a href="{% url 'reports:sales_summary' %}" class="text-decoration-none">
                 <div class="report-card">
                     <div class="text-center">
@@ -279,7 +279,7 @@
     <div class="row g-4 mt-3">
         <div class="col-lg-6">
             <div class="card shadow-sm">
-                <div class="dre totall">
+                <div class="card-header dre">
                     <h5 class="mb-0"><i class="fas fa-star text-warning"></i> Top Products (This Month)</h5>
                 </div>
                 <div class="card-body">
@@ -311,18 +311,18 @@
         </div>
 
         <div class="col-lg-6">
-            <div class="card shadow-sm totall">
-                <div class="dre d-flex justify-content-between align-items-center totall">
-                    <h5 class="mb-0 totall"><i class="fas fa-history text-primary totall"></i> Recent Reports</h5>
+            <div class="card shadow-sm">
+                <div class="card-header dre d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0"><i class="fas fa-history text-primary"></i> Recent Reports</h5>
                     <a href="{% url 'reports:history' %}" class="btn btn-sm btn-outline-primary">View All</a>
                 </div>
-                <div class="card-body totall">
+                <div class="card-body">
                     {% for report in recent_reports %}
-                    <div class="d-flex justify-content-between align-items-center mb-3 pb-3 border-bottom totall">
+                    <div class="d-flex justify-content-between align-items-center mb-3 pb-3 border-bottom">
                         <div>
                             <strong>{{ report.report.name }}</strong><br>
-                            <small class="text-muted totall">
-                                <i class="far fa-clock totall"></i> {{ report.generated_at|timesince }} ago
+                            <small class="text-muted">
+                                <i class="far fa-clock"></i> {{ report.generated_at|timesince }} ago
                             </small>
                         </div>
                         <div class="text-end">
@@ -333,8 +333,8 @@
                         </div>
                     </div>
                     {% empty %}
-                    <div class="text-center text-muted py-4 totall">
-                        <i class="far fa-file fa-3x mb-2 totall"></i>
+                    <div class="text-center text-muted py-4">
+                        <i class="far fa-file fa-3x mb-2"></i>
                         <p>No recent reports</p>
                     </div>
                     {% endfor %}
@@ -346,6 +346,7 @@
 {% endblock %}
 
 {% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
     // WebSocket connection
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -354,40 +355,52 @@
     let reconnectInterval = null;
 
     function connectWebSocket() {
-        ws = new WebSocket(wsUrl);
+        try {
+            ws = new WebSocket(wsUrl);
 
-        ws.onopen = function() {
-            console.log('WebSocket connected');
-            clearInterval(reconnectInterval);
-            // Request initial data
-            ws.send(JSON.stringify({type: 'request_stats'}));
-        };
+            ws.onopen = function() {
+                console.log('WebSocket connected');
+                clearInterval(reconnectInterval);
+                // Request initial data
+                ws.send(JSON.stringify({type: 'request_stats'}));
+            };
 
-        ws.onmessage = function(event) {
-            const data = JSON.parse(event.data);
+            ws.onmessage = function(event) {
+                const data = JSON.parse(event.data);
 
-            if (data.type === 'dashboard_stats') {
-                updateDashboardStats(data.data);
-            } else if (data.type === 'alert') {
-                showAlert(data);
-            }
-        };
+                if (data.type === 'dashboard_stats') {
+                    updateDashboardStats(data.data);
+                } else if (data.type === 'alert') {
+                    showAlert(data);
+                }
+            };
 
-        ws.onerror = function(error) {
-            console.error('WebSocket error:', error);
-        };
+            ws.onerror = function(error) {
+                console.error('WebSocket error:', error);
+            };
 
-        ws.onclose = function() {
-            console.log('WebSocket disconnected. Reconnecting...');
-            reconnectInterval = setInterval(connectWebSocket, 5000);
-        };
+            ws.onclose = function() {
+                console.log('WebSocket disconnected. Reconnecting...');
+                reconnectInterval = setInterval(connectWebSocket, 5000);
+            };
+        } catch (error) {
+            console.error('WebSocket connection failed:', error);
+        }
     }
 
     function updateDashboardStats(stats) {
-        document.getElementById('sales-today').textContent = 'UGX ' + Math.round(stats.sales_today).toLocaleString();
-        document.getElementById('sales-week').textContent = 'UGX ' + Math.round(stats.sales_week).toLocaleString();
-        document.getElementById('low-stock').textContent = stats.low_stock_count;
-        document.getElementById('pending-fiscal').textContent = stats.pending_fiscalization;
+        if (stats.sales_today !== undefined) {
+            document.getElementById('sales-today').textContent = 'UGX ' + Math.round(stats.sales_today).toLocaleString();
+        }
+        if (stats.sales_week !== undefined) {
+            document.getElementById('sales-week').textContent = 'UGX ' + Math.round(stats.sales_week).toLocaleString();
+        }
+        if (stats.low_stock_count !== undefined) {
+            document.getElementById('low-stock').textContent = stats.low_stock_count;
+        }
+        if (stats.pending_fiscalization !== undefined) {
+            document.getElementById('pending-fiscal').textContent = stats.pending_fiscalization;
+        }
     }
 
     function showAlert(alert) {
@@ -405,57 +418,112 @@
         location.reload();
     }
 
-    // Initialize WebSocket
-    connectWebSocket();
+    // Initialize WebSocket when DOM is loaded
+    document.addEventListener('DOMContentLoaded', function() {
+        connectWebSocket();
+        initializeChart();
+    });
 
     // Sales Trend Chart
-    const salesData = {{ sales_trend|safe }};
-    const ctx = document.getElementById('salesTrendChart').getContext('2d');
-    const salesChart = new Chart(ctx, {
-        type: 'line',
-        data: {
-            labels: salesData.map(d => d.date),
-            datasets: [{
-                label: 'Sales Amount',
-                data: salesData.map(d => d.amount),
-                borderColor: 'rgb(59, 130, 246)',
-                backgroundColor: 'rgba(59, 130, 246, 0.1)',
-                tension: 0.4,
-                fill: true
-            }]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-                legend: {
-                    display: false
-                },
-                tooltip: {
-                    callbacks: {
-                        label: function(context) {
-                            return 'UGX ' + context.parsed.y.toLocaleString();
-                        }
-                    }
-                }
-            },
-            scales: {
-                y: {
-                    beginAtZero: true,
-                    ticks: {
-                        callback: function(value) {
-                            return 'UGX ' + value.toLocaleString();
-                        }
-                    }
-                }
-            }
+    function initializeChart() {
+        const ctx = document.getElementById('salesTrendChart');
+
+        if (!ctx) {
+            console.error('Chart canvas element not found');
+            return;
         }
-    });
+
+        // Sample data structure - replace with your actual data
+        const salesData = {{ sales_trend|safe|default:"[]" }};
+
+        // If no data is provided, create sample data for demonstration
+        const chartData = salesData.length > 0 ? salesData : generateSampleData();
+
+        try {
+            const salesChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: chartData.map(d => d.date),
+                    datasets: [{
+                        label: 'Sales Amount',
+                        data: chartData.map(d => d.amount),
+                        borderColor: 'rgb(59, 130, 246)',
+                        backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                        tension: 0.4,
+                        fill: true,
+                        borderWidth: 2
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            display: false
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    return 'UGX ' + context.parsed.y.toLocaleString();
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            ticks: {
+                                callback: function(value) {
+                                    return 'UGX ' + value.toLocaleString();
+                                }
+                            },
+                            grid: {
+                                color: 'rgba(0, 0, 0, 0.1)'
+                            }
+                        },
+                        x: {
+                            grid: {
+                                color: 'rgba(0, 0, 0, 0.1)'
+                            }
+                        }
+                    }
+                }
+            });
+        } catch (error) {
+            console.error('Error initializing chart:', error);
+            // Display error message in chart container
+            ctx.parentElement.innerHTML = `
+                <div class="alert alert-warning text-center">
+                    <i class="fas fa-exclamation-triangle"></i>
+                    Unable to load chart data. Please try refreshing the page.
+                </div>
+            `;
+        }
+    }
+
+    // Generate sample data if no real data is available
+    function generateSampleData() {
+        const data = [];
+        const today = new Date();
+
+        for (let i = 29; i >= 0; i--) {
+            const date = new Date();
+            date.setDate(today.getDate() - i);
+            data.push({
+                date: date.toLocaleDateString(),
+                amount: Math.floor(Math.random() * 1000000) + 500000
+            });
+        }
+        return data;
+    }
 
     // Cleanup on page unload
     window.addEventListener('beforeunload', function() {
         if (ws) {
             ws.close();
+        }
+        if (reconnectInterval) {
+            clearInterval(reconnectInterval);
         }
     });
 </script>

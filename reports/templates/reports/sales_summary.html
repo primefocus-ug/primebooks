@@ -6,7 +6,6 @@
 
 {% block extra_css %}
 <link rel="stylesheet" href="{% static 'themes.css' %}">
-
 <style>
     .filter-card {
         background: #ffffff;
@@ -14,9 +13,11 @@
         box-shadow: 0 2px 10px rgba(0,0,0,0.05);
         padding: 25px;
         margin-bottom: 25px;
+        border: 1px solid #e5e7eb;
     }
-    [data-theme="dark"] .filter-card{
-        background:black;
+    [data-theme="dark"] .filter-card {
+        background: #1f2937;
+        border-color: #374151;
     }
     .summary-box {
         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -25,34 +26,79 @@
         padding: 20px;
         margin-bottom: 15px;
         text-align: center;
+        border: none;
+    }
+    [data-theme="dark"] .summary-box {
+        box-shadow: 0 4px 15px rgba(0,0,0,0.3);
     }
     .summary-box h3 {
         font-size: 2rem;
         margin-bottom: 5px;
+        font-weight: bold;
     }
     .summary-box p {
         margin: 0;
         opacity: 0.9;
         font-size: 0.9rem;
     }
-    .chart-tabs {
-        border-bottom: 2px solid #e5e7eb;
-        margin-bottom: 20px;
-    }
-    .chart-tab {
-        padding: 10px 20px;
-        cursor: pointer;
-        border-bottom: 3px solid transparent;
-        transition: all 0.3s;
-    }
-    .chart-tab.active {
-        border-bottom-color: #3b82f6;
-        color: #3b82f6;
-        font-weight: 600;
-    }
-    .export-dropdown {
+    .chart-container {
         position: relative;
-        display: inline-block;
+        height: 350px;
+        margin-top: 10px;
+    }
+    .card {
+        border: 1px solid #e5e7eb;
+        border-radius: 10px;
+    }
+    [data-theme="dark"] .card {
+        background: #1f2937;
+        border-color: #374151;
+    }
+    .card-header {
+        background: #f8fafc !important;
+        border-bottom: 1px solid #e5e7eb;
+        padding: 15px 20px;
+    }
+    [data-theme="dark"] .card-header {
+        background: #111827 !important;
+        border-color: #374151;
+        color: #f3f4f6;
+    }
+    .table-responsive {
+        border-radius: 8px;
+        overflow: hidden;
+    }
+    .table {
+        margin-bottom: 0;
+    }
+    .table th {
+        background: #f8fafc;
+        font-weight: 600;
+        border-bottom: 2px solid #e5e7eb;
+    }
+    [data-theme="dark"] .table th {
+        background: #111827;
+        color: #f3f4f6;
+        border-color: #374151;
+    }
+    [data-theme="dark"] .table td {
+        background: #1f2937;
+        color: #f3f4f6;
+        border-color: #374151;
+    }
+    .form-control, .form-select {
+        border-radius: 8px;
+        border: 1px solid #d1d5db;
+    }
+    [data-theme="dark"] .form-control,
+    [data-theme="dark"] .form-select {
+        background: #374151;
+        border-color: #4b5563;
+        color: #f3f4f6;
+    }
+    .btn {
+        border-radius: 8px;
+        font-weight: 500;
     }
 </style>
 {% endblock %}
@@ -89,27 +135,27 @@
         <form method="get" id="filterForm">
             <div class="row g-3">
                 <div class="col-md-3">
-                    {{ form.period.label_tag }}
+                    <label for="{{ form.period.id_for_label }}" class="form-label">{{ form.period.label }}</label>
                     {{ form.period }}
                 </div>
                 <div class="col-md-3">
-                    {{ form.start_date.label_tag }}
+                    <label for="{{ form.start_date.id_for_label }}" class="form-label">{{ form.start_date.label }}</label>
                     {{ form.start_date }}
                 </div>
                 <div class="col-md-3">
-                    {{ form.end_date.label_tag }}
+                    <label for="{{ form.end_date.id_for_label }}" class="form-label">{{ form.end_date.label }}</label>
                     {{ form.end_date }}
                 </div>
                 <div class="col-md-3">
-                    {{ form.store.label_tag }}
+                    <label for="{{ form.store.id_for_label }}" class="form-label">{{ form.store.label }}</label>
                     {{ form.store }}
                 </div>
                 <div class="col-md-3">
-                    {{ form.group_by.label_tag }}
+                    <label for="{{ form.group_by.id_for_label }}" class="form-label">{{ form.group_by.label }}</label>
                     {{ form.group_by }}
                 </div>
                 <div class="col-md-3">
-                    {{ form.payment_method.label_tag }}
+                    <label for="{{ form.payment_method.id_for_label }}" class="form-label">{{ form.payment_method.label }}</label>
                     {{ form.payment_method }}
                 </div>
                 <div class="col-md-3">
@@ -161,11 +207,11 @@
     <div class="row g-4 mb-4">
         <div class="col-lg-8">
             <div class="card shadow-sm">
-                <div class="card-header bg-white">
+                <div class="card-header">
                     <h5 class="mb-0"><i class="fas fa-chart-bar text-primary"></i> Sales Analysis</h5>
                 </div>
                 <div class="card-body">
-                    <div style="position: relative; height: 350px;">
+                    <div class="chart-container">
                         <canvas id="salesChart"></canvas>
                     </div>
                 </div>
@@ -173,11 +219,11 @@
         </div>
         <div class="col-lg-4">
             <div class="card shadow-sm">
-                <div class="card-header bg-white">
+                <div class="card-header">
                     <h5 class="mb-0"><i class="fas fa-chart-pie text-success"></i> Payment Methods</h5>
                 </div>
                 <div class="card-body">
-                    <div style="position: relative; height: 350px;">
+                    <div class="chart-container">
                         <canvas id="paymentChart"></canvas>
                     </div>
                 </div>
@@ -187,7 +233,7 @@
 
     <!-- Data Table -->
     <div class="card shadow-sm">
-        <div class="card-header bg-white d-flex justify-content-between align-items-center">
+        <div class="card-header d-flex justify-content-between align-items-center">
             <h5 class="mb-0"><i class="fas fa-table text-info"></i> Detailed Data</h5>
             <div class="input-group" style="width: 300px;">
                 <input type="text" class="form-control" id="searchTable" placeholder="Search...">
@@ -197,27 +243,28 @@
         <div class="card-body">
             <div class="table-responsive">
                 <table class="table table-hover" id="dataTable">
-                    <thead class="table-light">
+                    <thead>
                         <tr>
                             {% for key in sales_data.0.keys %}
                             <th>{{ key|replace:"_, "|title }}</th>
-
                             {% endfor %}
                         </tr>
                     </thead>
                     <tbody>
                         {% for row in sales_data %}
                         <tr>
-                            {% for value in row.values %}
+                            {% for key, value in row.items %}
                             <td>
-                                {% if 'amount' in row.keys or 'price' in row.keys or 'total' in row.keys %}
-                                    {% if value|floatformat:0 %}
+                                {% if 'amount' in key or 'price' in key or 'total' in key or 'sales' in key or 'revenue' in key or 'tax' in key %}
+                                    {% if value %}
                                         UGX {{ value|floatformat:0 }}
                                     {% else %}
-                                        {{ value }}
+                                        UGX 0
                                     {% endif %}
+                                {% elif 'quantity' in key or 'count' in key or 'transactions' in key %}
+                                    {{ value|default:0 }}
                                 {% else %}
-                                    {{ value }}
+                                    {{ value|default:"-" }}
                                 {% endif %}
                             </td>
                             {% endfor %}
@@ -229,6 +276,7 @@
         </div>
     </div>
     {% else %}
+    <!-- No Data State -->
     <div class="card shadow-sm">
         <div class="card-body text-center py-5">
             <i class="fas fa-chart-line fa-4x text-muted mb-3"></i>
@@ -248,7 +296,7 @@
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
-                <form id="exportForm" method="post">
+                <form id="exportForm">
                     {% csrf_token %}
                     <input type="hidden" name="format" id="exportFormat">
                     <div class="mb-3">
@@ -289,48 +337,93 @@
 {% endblock %}
 
 {% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
+    // Initialize when DOM is loaded
+    document.addEventListener('DOMContentLoaded', function() {
+        initializeFilters();
+        initializeCharts();
+        initializeTableSearch();
+    });
+
     // Period selector logic
-    document.getElementById('id_period').addEventListener('change', function() {
-        const period = this.value;
-        const today = new Date();
-        let startDate, endDate = today;
+    function initializeFilters() {
+        const periodSelect = document.getElementById('id_period');
+        if (periodSelect) {
+            periodSelect.addEventListener('change', function() {
+                const period = this.value;
+                const today = new Date();
+                let startDate, endDate = today;
 
-        if (period === 'custom') {
-            document.getElementById('id_start_date').disabled = false;
-            document.getElementById('id_end_date').disabled = false;
-            return;
+                if (period === 'custom') {
+                    document.getElementById('id_start_date').disabled = false;
+                    document.getElementById('id_end_date').disabled = false;
+                    return;
+                }
+
+                document.getElementById('id_start_date').disabled = true;
+                document.getElementById('id_end_date').disabled = true;
+
+                switch(period) {
+                    case 'today':
+                        startDate = today;
+                        break;
+                    case 'yesterday':
+                        startDate = new Date(today);
+                        startDate.setDate(today.getDate() - 1);
+                        endDate = new Date(startDate);
+                        break;
+                    case 'this_week':
+                        startDate = new Date(today);
+                        startDate.setDate(today.getDate() - today.getDay());
+                        break;
+                    case 'this_month':
+                        startDate = new Date(today.getFullYear(), today.getMonth(), 1);
+                        break;
+                    case 'last_month':
+                        startDate = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+                        endDate = new Date(today.getFullYear(), today.getMonth(), 0);
+                        break;
+                }
+
+                if (startDate) {
+                    document.getElementById('id_start_date').value = formatDate(startDate);
+                    document.getElementById('id_end_date').value = formatDate(endDate);
+                }
+            });
+
+            // Trigger change event to set initial state
+            periodSelect.dispatchEvent(new Event('change'));
         }
 
-        document.getElementById('id_start_date').disabled = true;
-        document.getElementById('id_end_date').disabled = true;
-
-        switch(period) {
-            case 'today':
-                startDate = today;
-                break;
-            case 'yesterday':
-                startDate = new Date(today.setDate(today.getDate() - 1));
-                endDate = startDate;
-                break;
-            case 'this_week':
-                startDate = new Date(today.setDate(today.getDate() - today.getDay()));
-                break;
-            case 'this_month':
-                startDate = new Date(today.getFullYear(), today.getMonth(), 1);
-                break;
+        // Confidential checkbox toggle
+        const confidentialCheckbox = document.getElementById('confidential');
+        if (confidentialCheckbox) {
+            confidentialCheckbox.addEventListener('change', function() {
+                document.getElementById('watermarkField').style.display = this.checked ? 'block' : 'none';
+            });
         }
+    }
 
-        if (startDate) {
-            document.getElementById('id_start_date').value = startDate.toISOString().split('T')[0];
-            document.getElementById('id_end_date').value = endDate.toISOString().split('T')[0];
+    function formatDate(date) {
+        return date.toISOString().split('T')[0];
+    }
+
+    // Table search functionality
+    function initializeTableSearch() {
+        const searchInput = document.getElementById('searchTable');
+        if (searchInput) {
+            searchInput.addEventListener('keyup', function() {
+                const value = this.value.toLowerCase();
+                const rows = document.querySelectorAll('#dataTable tbody tr');
+
+                rows.forEach(row => {
+                    const text = row.textContent.toLowerCase();
+                    row.style.display = text.includes(value) ? '' : 'none';
+                });
+            });
         }
-    });
-
-    // Confidential checkbox toggle
-    document.getElementById('confidential').addEventListener('change', function() {
-        document.getElementById('watermarkField').style.display = this.checked ? 'block' : 'none';
-    });
+    }
 
     // Export functions
     function exportReport(format) {
@@ -342,119 +435,199 @@
     function submitExport() {
         const form = document.getElementById('exportForm');
         const formData = new FormData(form);
+        const format = document.getElementById('exportFormat').value;
 
         // Show loading
         const submitBtn = event.target;
+        const originalText = submitBtn.innerHTML;
         submitBtn.disabled = true;
         submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Generating...';
 
-        fetch('{% url "reports:generate_report" 1 %}', {
-            method: 'POST',
-            body: formData,
-            headers: {
-                'X-CSRFToken': '{{ csrf_token }}'
-            }
-        })
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                // Close modal
-                bootstrap.Modal.getInstance(document.getElementById('exportModal')).hide();
+        // Simple export without WebSocket for now
+        const url = `{% url 'reports:sales_summary' %}?export=${format}&${new URLSearchParams(formData).toString()}`;
+        window.location.href = url;
 
-                // Show progress modal
-                showProgressModal(data.generated_report_id, data.websocket_url);
-            } else {
-                alert('Error: ' + JSON.stringify(data.errors));
-            }
+        // Reset button after delay
+        setTimeout(() => {
             submitBtn.disabled = false;
-            submitBtn.innerHTML = '<i class="fas fa-download"></i> Generate Export';
-        })
-        .catch(error => {
-            alert('Error generating report: ' + error);
-            submitBtn.disabled = false;
-            submitBtn.innerHTML = '<i class="fas fa-download"></i> Generate Export';
-        });
+            submitBtn.innerHTML = originalText;
+            bootstrap.Modal.getInstance(document.getElementById('exportModal')).hide();
+        }, 2000);
     }
 
-    function showProgressModal(reportId, wsUrl) {
-        // Create progress modal dynamically
-        const modalHtml = `
-            <div class="modal fade" id="progressModal" tabindex="-1" data-bs-backdrop="static">
-                <div class="modal-dialog">
-                    <div class="modal-content">
-                        <div class="modal-header">
-                            <h5 class="modal-title">Generating Report</h5>
-                        </div>
-                        <div class="modal-body">
-                            <div class="progress mb-3">
-                                <div class="progress-bar progress-bar-striped progress-bar-animated"
-                                     id="progressBar" role="progressbar" style="width: 0%">0%</div>
-                            </div>
-                            <p id="progressMessage" class="text-center">Initializing...</p>
-                        </div>
-                        <div class="modal-footer">
-                            <button type="button" class="btn btn-danger" onclick="cancelGeneration(${reportId})">Cancel</button>
-                        </div>
-                    </div>
+    // Chart initialization
+    function initializeCharts() {
+        {% if chart_data and sales_data %}
+        initializeSalesChart();
+        initializePaymentChart();
+        {% endif %}
+    }
+
+    function initializeSalesChart() {
+        const ctx = document.getElementById('salesChart');
+        if (!ctx) return;
+
+        const chartData = {{ chart_data|safe|default:"[]" }};
+
+        if (chartData.length === 0) {
+            ctx.parentElement.innerHTML = `
+                <div class="text-center text-muted py-5">
+                    <i class="fas fa-chart-bar fa-3x mb-3"></i>
+                    <p>No chart data available</p>
                 </div>
+            `;
+            return;
+        }
+
+        try {
+            new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: chartData.map(d => {
+                        // Handle different data structures
+                        return d.date || d.store__name || d.payment_method || d.group || 'Unknown';
+                    }),
+                    datasets: [{
+                        label: 'Total Sales',
+                        data: chartData.map(d => d.total_amount || d.amount || d.total_sales || 0),
+                        backgroundColor: 'rgba(59, 130, 246, 0.8)',
+                        borderColor: 'rgba(59, 130, 246, 1)',
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            display: false
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    return 'UGX ' + context.parsed.y.toLocaleString();
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            ticks: {
+                                callback: function(value) {
+                                    return 'UGX ' + value.toLocaleString();
+                                }
+                            },
+                            grid: {
+                                color: 'rgba(0, 0, 0, 0.1)'
+                            }
+                        },
+                        x: {
+                            grid: {
+                                display: false
+                            }
+                        }
+                    }
+                }
+            });
+        } catch (error) {
+            console.error('Error initializing sales chart:', error);
+            showChartError(ctx, 'Failed to load sales chart');
+        }
+    }
+
+    function initializePaymentChart() {
+        const ctx = document.getElementById('paymentChart');
+        if (!ctx) return;
+
+        // Calculate payment method distribution from sales data
+        const paymentData = calculatePaymentDistribution();
+
+        try {
+            new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    labels: paymentData.labels,
+                    datasets: [{
+                        data: paymentData.values,
+                        backgroundColor: [
+                            'rgba(59, 130, 246, 0.8)',
+                            'rgba(16, 185, 129, 0.8)',
+                            'rgba(245, 158, 11, 0.8)',
+                            'rgba(239, 68, 68, 0.8)',
+                            'rgba(139, 92, 246, 0.8)',
+                            'rgba(14, 165, 233, 0.8)'
+                        ],
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'bottom',
+                            labels: {
+                                padding: 20
+                            }
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    const value = context.parsed;
+                                    const total = context.dataset.data.reduce((a, b) => a + b, 0);
+                                    const percentage = Math.round((value / total) * 100);
+                                    return `${context.label}: UGX ${value.toLocaleString()} (${percentage}%)`;
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        } catch (error) {
+            console.error('Error initializing payment chart:', error);
+            showChartError(ctx, 'Failed to load payment chart');
+        }
+    }
+
+    function calculatePaymentDistribution() {
+        // This is a simplified version - you should replace with actual payment data
+        const salesData = {{ sales_data|safe|default:"[]" }};
+        const distribution = {
+            'Cash': 0,
+            'Card': 0,
+            'Mobile Money': 0,
+            'Bank Transfer': 0,
+            'Credit': 0,
+            'Other': 0
+        };
+
+        // Sample calculation - replace with your actual logic
+        if (salesData.length > 0) {
+            distribution.Cash = {{ summary_stats.total_sales|default:0 }} * 0.4;
+            distribution.Card = {{ summary_stats.total_sales|default:0 }} * 0.3;
+            distribution['Mobile Money'] = {{ summary_stats.total_sales|default:0 }} * 0.2;
+            distribution['Bank Transfer'] = {{ summary_stats.total_sales|default:0 }} * 0.05;
+            distribution.Credit = {{ summary_stats.total_sales|default:0 }} * 0.04;
+            distribution.Other = {{ summary_stats.total_sales|default:0 }} * 0.01;
+        }
+
+        return {
+            labels: Object.keys(distribution),
+            values: Object.values(distribution)
+        };
+    }
+
+    function showChartError(canvasElement, message) {
+        canvasElement.parentElement.innerHTML = `
+            <div class="alert alert-warning text-center">
+                <i class="fas fa-exclamation-triangle"></i>
+                ${message}
             </div>
         `;
-
-        document.body.insertAdjacentHTML('beforeend', modalHtml);
-        const progressModal = new bootstrap.Modal(document.getElementById('progressModal'));
-        progressModal.show();
-
-        // Connect to WebSocket for progress updates
-        connectProgressWebSocket(reportId, progressModal);
     }
 
-    function connectProgressWebSocket(reportId, modal) {
-        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const ws = new WebSocket(`${protocol}//${window.location.host}/ws/reports/generation/${reportId}/`);
-
-        ws.onmessage = function(event) {
-            const data = JSON.parse(event.data);
-
-            if (data.type === 'progress') {
-                updateProgress(data.progress, data.message);
-            } else if (data.type === 'complete') {
-                modal.hide();
-                window.location.href = data.download_url;
-                showSuccess('Report generated successfully!');
-            } else if (data.type === 'failed') {
-                modal.hide();
-                showError('Report generation failed: ' + data.error);
-            }
-        };
-
-        ws.onerror = function() {
-            console.error('WebSocket error');
-        };
-    }
-
-    function updateProgress(percentage, message) {
-        const progressBar = document.getElementById('progressBar');
-        progressBar.style.width = percentage + '%';
-        progressBar.textContent = percentage + '%';
-        document.getElementById('progressMessage').textContent = message;
-    }
-
-    function cancelGeneration(reportId) {
-        fetch(`/reports/ajax/cancel/${reportId}/`, {
-            method: 'POST',
-            headers: {
-                'X-CSRFToken': '{{ csrf_token }}'
-            }
-        })
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                bootstrap.Modal.getInstance(document.getElementById('progressModal')).hide();
-                showSuccess('Report generation cancelled');
-            }
-        });
-    }
-
+    // Utility functions
     function showSuccess(message) {
         const alert = `<div class="alert alert-success alert-dismissible fade show" role="alert">
             ${message}
@@ -470,89 +643,5 @@
         </div>`;
         document.querySelector('.container-fluid').insertAdjacentHTML('afterbegin', alert);
     }
-
-    // Table search
-    document.getElementById('searchTable').addEventListener('keyup', function() {
-        const value = this.value.toLowerCase();
-        const rows = document.querySelectorAll('#dataTable tbody tr');
-
-        rows.forEach(row => {
-            const text = row.textContent.toLowerCase();
-            row.style.display = text.includes(value) ? '' : 'none';
-        });
-    });
-
-    {% if chart_data %}
-    // Sales Chart
-    const chartData = {{ chart_data|safe }};
-    const ctx = document.getElementById('salesChart').getContext('2d');
-
-    new Chart(ctx, {
-        type: 'bar',
-        data: {
-            labels: chartData.map(d => d.date || d.store__name || d.payment_method || 'Unknown'),
-            datasets: [{
-                label: 'Total Amount',
-                data: chartData.map(d => d.total_amount),
-                backgroundColor: 'rgba(59, 130, 246, 0.8)',
-                borderColor: 'rgba(59, 130, 246, 1)',
-                borderWidth: 1
-            }]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-                legend: {
-                    display: false
-                },
-                tooltip: {
-                    callbacks: {
-                        label: function(context) {
-                            return 'UGX ' + context.parsed.y.toLocaleString();
-                        }
-                    }
-                }
-            },
-            scales: {
-                y: {
-                    beginAtZero: true,
-                    ticks: {
-                        callback: function(value) {
-                            return 'UGX ' + value.toLocaleString();
-                        }
-                    }
-                }
-            }
-        }
-    });
-
-    // Payment Methods Pie Chart
-    const paymentCtx = document.getElementById('paymentChart').getContext('2d');
-    new Chart(paymentCtx, {
-        type: 'doughnut',
-        data: {
-            labels: ['Cash', 'Card', 'Mobile Money', 'Other'],
-            datasets: [{
-                data: [45, 30, 20, 5],
-                backgroundColor: [
-                    'rgba(59, 130, 246, 0.8)',
-                    'rgba(16, 185, 129, 0.8)',
-                    'rgba(245, 158, 11, 0.8)',
-                    'rgba(239, 68, 68, 0.8)'
-                ]
-            }]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-                legend: {
-                    position: 'bottom'
-                }
-            }
-        }
-    });
-    {% endif %}
 </script>
 {% endblock %}
