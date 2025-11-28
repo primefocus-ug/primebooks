@@ -547,12 +547,6 @@ NAVIGATION_ITEMS = [
                 permission="reports.view_reportschedule"
             ),
             NavigationItem(
-                name="EFRIS Templates",
-                url_name="reports:efris_templates_list",
-                icon="bi bi-file-earmark-code",
-                permission="reports.view_efristemplate"
-            ),
-            NavigationItem(
                 name="Analytics",
                 url_name="reports:analytics",
                 icon="bi bi-graph-up",
@@ -594,12 +588,6 @@ NAVIGATION_ITEMS = [
                 url_name="invoices:payments",
                 icon="bi bi-credit-card",
                 permission="invoices.view_payment"
-            ),
-            NavigationItem(
-                name="Templates",
-                url_name="invoices:templates",
-                icon="bi bi-file-earmark-text",
-                permission="invoices.view_invoicetemplate"
             ),
             NavigationItem(
                 name="Fiscalization Audit",
