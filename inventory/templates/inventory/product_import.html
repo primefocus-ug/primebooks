@@ -223,14 +223,22 @@
         margin-right: 0.5rem;
     }
 
-    .radio-option input[type="radio"]:checked + label {
+    .radio-option input[type="radio"]:checked + span {
         color: #10B981;
-        font-weight: 600;
     }
 
     .radio-option.selected {
         border-color: #10B981;
         background: #F0FDF4;
+    }
+
+    .radio-option span {
+        flex: 1;
+    }
+
+    .radio-option span strong {
+        display: block;
+        margin-bottom: 0.25rem;
     }
 
     .submit-btn {
@@ -348,6 +356,67 @@
         margin: 0;
         color: #78350F;
     }
+
+    .feature-highlights {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 1rem;
+        margin: 1.5rem 0;
+    }
+
+    .feature-card {
+        background: #F8FAFC;
+        border: 1px solid #E2E8F0;
+        border-radius: 8px;
+        padding: 1rem;
+        text-align: center;
+    }
+
+    .feature-card i {
+        font-size: 2rem;
+        color: #10B981;
+        margin-bottom: 0.5rem;
+    }
+
+    .feature-card h5 {
+        margin: 0 0 0.5rem 0;
+        color: #1E293B;
+    }
+
+    .feature-card p {
+        margin: 0;
+        font-size: 0.875rem;
+        color: #64748B;
+    }
+
+    .category-info {
+        background: #F0FDF4;
+        border: 1px solid #BBF7D0;
+        border-radius: 8px;
+        padding: 1rem;
+        margin: 1rem 0;
+    }
+
+    .category-info h5 {
+        color: #065F46;
+        margin: 0 0 0.5rem 0;
+        display: flex;
+        align-items: center;
+    }
+
+    .category-info h5 i {
+        margin-right: 0.5rem;
+    }
+
+    .category-info ul {
+        margin: 0;
+        padding-left: 1.5rem;
+        color: #065F46;
+    }
+
+    .category-info li {
+        margin-bottom: 0.25rem;
+    }
 </style>
 {% endblock %}
 
@@ -374,6 +443,41 @@
             </div>
         </div>
 
+        <!-- Feature Highlights -->
+        <div class="feature-highlights">
+            <div class="feature-card">
+                <i class="fas fa-tags"></i>
+                <h5>Category Support</h5>
+                <p>Full category integration with EFRIS</p>
+            </div>
+            <div class="feature-card">
+                <i class="fas fa-file-import"></i>
+                <h5>Bulk Import</h5>
+                <p>Import hundreds of products at once</p>
+            </div>
+            <div class="feature-card">
+                <i class="fas fa-sync"></i>
+                <h5>Smart Updates</h5>
+                <p>Update existing products or add new ones</p>
+            </div>
+            <div class="feature-card">
+                <i class="fas fa-shield-alt"></i>
+                <h5>EFRIS Ready</h5>
+                <p>Tax compliance built-in</p>
+            </div>
+        </div>
+
+        <!-- Category Information -->
+        <div class="category-info">
+            <h5><i class="fas fa-info-circle"></i> New: Enhanced Category Support</h5>
+            <ul>
+                <li><strong>Category Creation:</strong> New categories are automatically created if they don't exist</li>
+                <li><strong>EFRIS Integration:</strong> Full EFRIS commodity category mapping</li>
+                <li><strong>Type Validation:</strong> Product vs Service category validation</li>
+                <li><strong>Tax Compliance:</strong> Automatic tax rate inheritance from categories</li>
+            </ul>
+        </div>
+
         <!-- Info Box -->
         <div class="info-box">
             <h4><i class="fas fa-info-circle"></i> What is Product Import?</h4>
@@ -382,13 +486,14 @@
                 <li>Use this to add new products or update existing product information</li>
                 <li>For stock updates, use the <a href="{% url 'inventory:stock_import' %}">Stock Import</a> feature</li>
                 <li>SKU is used as the unique identifier - existing products will be updated</li>
+                <li><strong>New:</strong> Full category support with automatic creation and EFRIS mapping</li>
             </ul>
         </div>
 
         <!-- Step 1: Download Template -->
         <div class="import-section">
             <h3><i class="fas fa-download"></i> Step 1: Download Template</h3>
-            <p class="text-muted">Download a sample file to see the required format</p>
+            <p class="text-muted">Download a sample file to see the required format with new category fields</p>
 
             <div class="sample-downloads">
                 <a href="{% url 'inventory:download_sample_products_excel' %}" class="download-btn">
@@ -417,9 +522,19 @@
             <div class="warning-box">
                 <h4><i class="fas fa-exclamation-triangle"></i> Required Fields</h4>
                 <p>
-                    <strong>Product Name, SKU, Selling Price, Cost Price, Tax Rate, Unit of Measure</strong> are required.
+                    <strong>Product Name, SKU, Selling Price, Cost Price, Tax Rate, Unit of Measure, Category Name, Category Type</strong> are required.
                     All other fields are optional.
                 </p>
+            </div>
+
+            <div class="info-box">
+                <h4><i class="fas fa-lightbulb"></i> Category Field Tips</h4>
+                <ul>
+                    <li><strong>Category Name:</strong> Use existing category names or create new ones</li>
+                    <li><strong>Category Type:</strong> Must be "product" or "service"</li>
+                    <li><strong>EFRIS Commodity Code:</strong> 18-digit URA code for tax compliance</li>
+                    <li><strong>EFRIS Auto Sync:</strong> Set to "Yes" for automatic EFRIS synchronization</li>
+                </ul>
             </div>
         </div>
 
@@ -467,7 +582,7 @@
                                        checked>
                                 <span>
                                     <strong>Overwrite</strong>
-                                    <small class="d-block text-muted">Update existing products</small>
+                                    <small class="d-block text-muted">Update existing products with new data</small>
                                 </span>
                             </label>
 
@@ -648,7 +763,34 @@ document.addEventListener('DOMContentLoaded', function() {
     importForm.addEventListener('submit', function(e) {
         submitBtn.disabled = true;
         submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Processing...';
+
+        // Add a small delay to show the processing state
+        setTimeout(() => {
+            // Form will submit normally
+        }, 100);
     });
+
+    // Show messages if any
+    {% if messages %}
+    setTimeout(() => {
+        {% for message in messages %}
+        showToast('{{ message.tags }}', '{{ message|safe }}');
+        {% endfor %}
+    }, 500);
+    {% endif %}
 });
+
+// Toast notification function
+function showToast(type, message) {
+    // You can implement a toast notification system here
+    // For now, we'll use alert for simplicity
+    if (type === 'error') {
+        alert('Error: ' + message);
+    } else if (type === 'warning') {
+        alert('Warning: ' + message);
+    } else {
+        // Success and info messages are shown via Django messages
+    }
+}
 </script>
 {% endblock %}

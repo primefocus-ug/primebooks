@@ -43,10 +43,8 @@ def _is_efris_configured(company) -> bool:
         efris_config = company.efris_config
         return (
                 efris_config.is_active and
-                efris_config.is_configured and
-                bool(efris_config.client_id) and
-                bool(efris_config.client_secret) and
-                bool(efris_config.base_url)
+                efris_config.is_configured
+
         )
     except Exception as e:
         logger.warning(f"Error checking EFRIS configuration for company {company.name}: {str(e)}")

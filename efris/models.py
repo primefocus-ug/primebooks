@@ -161,6 +161,16 @@ class EFRISConfiguration(models.Model):
             return config
 
     @property
+    def is_configured(self):
+        """Basic configuration check"""
+        return (
+                self.public_certificate and
+                self.private_key and
+                self.is_certificate_valid and
+                self.is_active
+        )
+
+    @property
     def is_certificate_valid(self):
         """Check if certificate/key is valid"""
         if not self.public_certificate:

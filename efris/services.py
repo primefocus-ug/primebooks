@@ -1408,26 +1408,6 @@ class ZReportService:
                 "error": str(e)
             }
 
-def schedule_daily_dictionary_update(company):
-    """
-    Schedule daily system dictionary update
-    Can be called from a Celery task or cron job
-    """
-    try:
-        manager = SystemDictionaryManager(company)
-        result = manager.update_system_dictionary()
-
-        logger.info(
-            f"Scheduled dictionary update completed for {company.name}",
-            success=result.get('success'),
-            cached=result.get('cached', False)
-        )
-
-        return result
-
-    except Exception as e:
-        logger.error(f"Scheduled dictionary update failed: {e}", exc_info=True)
-        return {"success": False, "error": str(e)}
 
 def schedule_daily_zreport_upload(company, report_date: Optional[date] = None):
     """
@@ -2426,7 +2406,6 @@ class EFRISDataTransformer:
 
         # ✅ VERIFY: Log the order numbers for debugging
         order_numbers = [item.get('orderNumber') for item in goods_details]
-        logger.info(f"Built {len(goods_details)} items with orderNumbers: {order_numbers}")
 
         return goods_details
 
@@ -2682,8 +2661,6 @@ class EnhancedEFRISAPIClient:
                 sha1_interfaces = ["T119", "T103","T146","T110", "T115", "T130","T108","T132","T133","T134","T135","T136","T137","T38", "T116", "T117", "T127", "T144", "T109","T106", "T107", "T111", "T112", "T113", "T114", "T118", "T120", "T121", "T122", "T125", "T126", "T129", "T126","T128", "T131", "T139", "T145", "T147", "T148", "T149", "T160", "T184","T162","T163","T164","T166","T167","T168","T169","T170","T171","T172","T173","T175","T176","T177","T178","T179","T180","T181","T182","T183","T184","T185","T186","T187" ]
                 algorithm = "SHA1" if interface_code in sha1_interfaces else "SHA256"
 
-                logger.debug(f"Signing {interface_code} with {algorithm}")
-
                 data_section["signature"] = self.security_manager.sign_content(
                     content_b64,
                     algorithm=algorithm
@@ -2904,7 +2881,6 @@ class EnhancedEFRISAPIClient:
                     "error": f"Validation failed: {'; '.join(validation_errors)}"
                 }
 
-            logger.info(f"Registering service {service_code} with EFRIS (T130)")
 
             try:
                 request_data = self._build_request("T130", service_data_array, encrypt=True)
@@ -3262,7 +3238,11 @@ class EnhancedEFRISAPIClient:
 
                     if query_result.get('success') and query_result.get('goods'):
                         efris_goods = query_result['goods'][0]
-                        efris_goods_id = efris_goods.get('id')
+                        efris_goods_id = (
+                                efris_goods.get('commodityGoodsId')
+                                or efris_goods.get('goodsId')
+                                or efris_goods.get('id')
+                        )
                         efris_goods_code = efris_goods.get('goodsCode') or goods_code
 
                         # Update product
@@ -3301,7 +3281,7 @@ class EnhancedEFRISAPIClient:
 
                 # Handle normal response list
                 result_item = decrypted_content[0]
-                efris_goods_id = result_item.get('commodityGoodsId') or result_item.get('goodsId')
+                efris_goods_id = result_item.get('commodityGoodsId') or result_item.get('goodsId') or result_item.get('id')
                 efris_goods_code = result_item.get('goodsCode') or goods_code
 
                 # Update product
@@ -8297,7 +8277,7 @@ class EnhancedEFRISAPIClient:
                             'name': goods.get('goodsName', 'Imported from EFRIS'),
                             'selling_price': float(goods.get('unitPrice', 0)),
                             'unit_of_measure': goods.get('measureUnit', '101'),
-                            'efris_goods_id': goods.get('id'),
+                            'efris_goods_id': (goods.get('id') or goods.get('goodsId') or goods.get('commodityGoodsId')),
                             'efris_is_uploaded': True
                         }
                     )
@@ -8306,7 +8286,7 @@ class EnhancedEFRISAPIClient:
                         results['created'] += 1
                     else:
                         # Update existing product
-                        product.efris_goods_id = goods.get('id')
+                        product.efris_goods_id = (goods.get('id') or goods.get('goodsId') or goods.get('commodityGoodsId'))
                         product.efris_is_uploaded = True
                         product.save()
                         results['updated'] += 1
