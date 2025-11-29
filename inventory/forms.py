@@ -911,8 +911,7 @@ class ProductForm(forms.ModelForm):
         # ===== EFRIS CATEGORY INHERITANCE (only if EFRIS enabled) =====
         if self.efris_enabled:
             if product.category and hasattr(product.category, 'efris_commodity_category_code'):
-                product.efris_commodity_category_id = product.category.efris_commodity_category_code
-                product.efris_commodity_category_name = product.category.efris_commodity_category_name
+                pass
         else:
             # Clear EFRIS fields if disabled
             product.efris_auto_sync_enabled = False

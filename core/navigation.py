@@ -266,24 +266,6 @@ NAVIGATION_ITEMS = [
             ),
         ]
     ),
-
-    NavigationItem(
-        name="Sessions & Security",
-        icon="bi bi-shield-lock",
-        children=[
-            NavigationItem(
-                name="My Sessions",
-                url_name="stores:user_sessions",
-                icon="bi bi-person-lines-fill"
-            ),
-            NavigationItem(
-                name="Device Fingerprints",
-                url_name="stores:device_fingerprints",
-                icon="bi bi-fingerprint"
-            ),
-        ]
-    ),
-
     NavigationItem(
         name="Inventory",
         icon="bi bi-boxes",
@@ -312,11 +294,11 @@ NAVIGATION_ITEMS = [
                 icon="bi bi-plus-circle",
             ),
             NavigationItem(
-                        name="Stock Adjustment",
-                        url_name="inventory:stock_adjustment",
-                        icon="bi bi-sliders",
-                        permission="inventory.change_stock"
-                    ),
+                name="Stock Adjustment",
+                url_name="inventory:stock_adjustment",
+                icon="bi bi-sliders",
+                permission="inventory.change_stock"
+            ),
             NavigationItem(
                 name="Bulk Import",
                 url_name="inventory:product_import",
@@ -508,7 +490,70 @@ NAVIGATION_ITEMS = [
             ),
         ]
     ),
-
+    NavigationItem(
+        name="EFRIS",
+        icon="bi bi-file-earmark-bar-graph",
+        children=[
+            NavigationItem(
+                name="Dashboard",
+                url_name="efris:dashboard",
+                icon="bi bi-speedometer2",
+                permission="reports.view_report"
+            ),
+            NavigationItem(
+                name="Efris Products",
+                url_name="efris:product_list",
+                icon="bi bi-bookmark",
+            ),
+            NavigationItem(
+                name="Efris Invoices",
+                url_name="efris:invoice_list",
+                icon="bi bi-plus-circle",
+            ),
+            NavigationItem(
+                name="Goods Inquiry",
+                url_name="efris:goods_inquiry",
+                icon="bi bi-calendar-check",
+            ),
+        ]
+    ),
+    NavigationItem(
+        name="Reports",
+        icon="bi bi-file-earmark-bar-graph",
+        permission="reports.view_report",
+        children=[
+            NavigationItem(
+                name="Dashboard",
+                url_name="reports:dashboard",
+                icon="bi bi-speedometer2",
+                permission="reports.view_report"
+            ),
+            NavigationItem(
+                name="Saved Reports",
+                url_name="reports:saved_reports",
+                icon="bi bi-bookmark",
+                permission="reports.view_savedreport"
+            ),
+            NavigationItem(
+                name="Create Report",
+                url_name="reports:create_saved_report",
+                icon="bi bi-plus-circle",
+                permission="reports.add_savedreport"
+            ),
+            NavigationItem(
+                name="Report Schedules",
+                url_name="reports:schedules",
+                icon="bi bi-calendar-check",
+                permission="reports.view_reportschedule"
+            ),
+            NavigationItem(
+                name="Analytics",
+                url_name="reports:analytics",
+                icon="bi bi-graph-up",
+                permission="reports.view_report"
+            ),
+        ]
+    ),
     NavigationItem(
         name="Invoices",
         icon="bi bi-receipt",
@@ -545,12 +590,6 @@ NAVIGATION_ITEMS = [
                 permission="invoices.view_payment"
             ),
             NavigationItem(
-                name="Templates",
-                url_name="invoices:templates",
-                icon="bi bi-file-earmark-text",
-                permission="invoices.view_invoicetemplate"
-            ),
-            NavigationItem(
                 name="Fiscalization Audit",
                 url_name="invoices:fiscalization_audit",
                 icon="bi bi-shield-check",
@@ -558,47 +597,19 @@ NAVIGATION_ITEMS = [
             ),
         ]
     ),
-
     NavigationItem(
-        name="Reports",
-        icon="bi bi-file-earmark-bar-graph",
-        permission="reports.view_report",
+        name="Sessions & Security",
+        icon="bi bi-shield-lock",
         children=[
             NavigationItem(
-                name="Dashboard",
-                url_name="reports:dashboard",
-                icon="bi bi-speedometer2",
-                permission="reports.view_report"
+                name="My Sessions",
+                url_name="stores:user_sessions",
+                icon="bi bi-person-lines-fill"
             ),
             NavigationItem(
-                name="Saved Reports",
-                url_name="reports:saved_reports",
-                icon="bi bi-bookmark",
-                permission="reports.view_savedreport"
-            ),
-            NavigationItem(
-                name="Create Report",
-                url_name="reports:create_saved_report",
-                icon="bi bi-plus-circle",
-                permission="reports.add_savedreport"
-            ),
-            NavigationItem(
-                name="Report Schedules",
-                url_name="reports:schedules",
-                icon="bi bi-calendar-check",
-                permission="reports.view_reportschedule"
-            ),
-            NavigationItem(
-                name="EFRIS Templates",
-                url_name="reports:efris_templates_list",
-                icon="bi bi-file-earmark-code",
-                permission="reports.view_efristemplate"
-            ),
-            NavigationItem(
-                name="Analytics",
-                url_name="reports:analytics",
-                icon="bi bi-graph-up",
-                permission="reports.view_report"
+                name="Device Fingerprints",
+                url_name="stores:device_fingerprints",
+                icon="bi bi-fingerprint"
             ),
         ]
     ),

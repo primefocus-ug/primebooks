@@ -437,111 +437,236 @@
 {% block extra_js %}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
 <script>
-// Wait for jQuery
-jQuery(document).ready(function($) {
-    console.log('Valuation Report - Initializing charts...');
+    (function() {
+    'use strict';
 
-    // Chart data from Django
-    var categoryLabels = {{ category_labels|safe|default:'[]' }};
-    var categoryValues = {{ category_values|safe|default:'[]' }};
-    var trendLabels = {{ trend_labels|safe|default:'[]' }};
-    var trendValues = {{ trend_values|safe|default:'[]' }};
+    // Chart Configuration
+    const CHART_CONFIG = {
+        colors: [
+            '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6',
+            '#ec4899', '#06b6d4', '#84cc16', '#f97316', '#6366f1'
+        ],
+        animationDuration: 1000,
+        responsive: true,
+        maintainAspectRatio: false
+    };
 
-    console.log('Category Labels:', categoryLabels);
-    console.log('Category Values:', categoryValues);
-    console.log('Trend Labels:', trendLabels);
-    console.log('Trend Values:', trendValues);
+    // Global Chart Instances
+    let categoryChart = null;
+    let trendChart = null;
 
-    // Colors
-    var chartColors = [
-        '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6',
-        '#ec4899', '#06b6d4', '#84cc16', '#f97316', '#6366f1'
-    ];
+    // Utility Functions
+    function formatCurrency(amount) {
+        if (amount === null || amount === undefined) return 'UGX 0';
+        return 'UGX ' + new Intl.NumberFormat('en-US').format(Math.round(amount));
+    }
 
-    // Category Pie Chart
-    var categoryCtx = document.getElementById('categoryValueChart');
-    if (categoryCtx && categoryLabels.length > 0) {
-        console.log('Creating category chart...');
+    function formatLargeNumber(value) {
+        if (value >= 1000000) {
+            return (value / 1000000).toFixed(1) + 'M';
+        } else if (value >= 1000) {
+            return (value / 1000).toFixed(0) + 'K';
+        }
+        return value.toString();
+    }
+
+    function showChartError(canvasElement, message) {
+        const parent = canvasElement.parentElement;
+        if (parent) {
+            parent.innerHTML = `
+                <div class="text-center text-muted py-5">
+                    <i class="fas fa-chart-bar fa-3x mb-2 opacity-50"></i>
+                    <p class="mb-0">${message}</p>
+                </div>
+            `;
+        }
+    }
+
+    // Chart Initialization
+    function initializeCharts() {
+        initializeCategoryChart();
+        initializeTrendChart();
+    }
+
+    function initializeCategoryChart() {
+        const ctx = document.getElementById('categoryValueChart');
+        if (!ctx) {
+            console.warn('Category value chart canvas not found');
+            return;
+        }
+
         try {
-            new Chart(categoryCtx, {
+            // Get data from Django template
+            const categoryLabels = {{ category_labels|safe|default:'[]' }};
+            const categoryValues = {{ category_values|safe|default:'[]' }};
+
+            console.log('Category Chart Data:', {
+                labels: categoryLabels,
+                values: categoryValues
+            });
+
+            if (!categoryLabels.length || !categoryValues.length) {
+                showChartError(ctx, 'No category data available');
+                return;
+            }
+
+            // Calculate total for percentages
+            const totalValue = categoryValues.reduce((sum, value) => sum + value, 0);
+
+            categoryChart = new Chart(ctx, {
                 type: 'doughnut',
                 data: {
                     labels: categoryLabels,
                     datasets: [{
                         data: categoryValues,
-                        backgroundColor: chartColors.slice(0, categoryLabels.length),
-                        borderWidth: 2,
-                        borderColor: '#fff'
+                        backgroundColor: CHART_CONFIG.colors.slice(0, categoryLabels.length),
+                        borderWidth: 3,
+                        borderColor: '#ffffff',
+                        hoverBorderWidth: 4,
+                        hoverBorderColor: '#ffffff',
+                        hoverOffset: 15
                     }]
                 },
                 options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
+                    responsive: CHART_CONFIG.responsive,
+                    maintainAspectRatio: CHART_CONFIG.maintainAspectRatio,
                     plugins: {
                         legend: {
                             position: 'bottom',
                             labels: {
-                                padding: 15,
+                                padding: 20,
                                 usePointStyle: true,
-                                font: { size: 11 }
+                                font: {
+                                    size: 11,
+                                    weight: '600',
+                                    family: "'Inter', sans-serif"
+                                },
+                                color: '#374151'
                             }
                         },
                         tooltip: {
+                            backgroundColor: 'rgba(0, 0, 0, 0.85)',
+                            titleColor: '#ffffff',
+                            bodyColor: '#ffffff',
+                            titleFont: {
+                                size: 12,
+                                weight: '600'
+                            },
+                            bodyFont: {
+                                size: 11
+                            },
+                            padding: 12,
+                            cornerRadius: 8,
+                            displayColors: true,
                             callbacks: {
                                 label: function(context) {
-                                    var total = context.dataset.data.reduce(function(a, b) { return a + b; }, 0);
-                                    var pct = total > 0 ? ((context.raw / total) * 100).toFixed(1) : 0;
-                                    return context.label + ': UGX ' + context.raw.toLocaleString() + ' (' + pct + '%)';
+                                    const label = context.label || '';
+                                    const value = context.raw;
+                                    const percentage = totalValue > 0 ? ((value / totalValue) * 100).toFixed(1) : 0;
+                                    return `${label}: ${formatCurrency(value)} (${percentage}%)`;
                                 }
                             }
                         }
                     },
-                    cutout: '60%'
+                    cutout: '55%',
+                    animation: {
+                        animateScale: true,
+                        animateRotate: true,
+                        duration: CHART_CONFIG.animationDuration
+                    }
                 }
             });
-            console.log('Category chart created successfully');
-        } catch (e) {
-            console.error('Error creating category chart:', e);
-        }
-    } else {
-        console.warn('Category chart canvas not found or no data');
-        if (categoryCtx) {
-            categoryCtx.parentElement.innerHTML = '<div class="text-center text-muted py-5"><i class="fas fa-chart-pie fa-3x mb-2"></i><p>No category data available</p></div>';
+
+            console.log('Category chart initialized successfully');
+
+        } catch (error) {
+            console.error('Failed to initialize category chart:', error);
+            showChartError(ctx, 'Failed to load category data');
         }
     }
 
-    // Trend Line Chart
-    var trendCtx = document.getElementById('valueTrendChart');
-    if (trendCtx && trendLabels.length > 0) {
-        console.log('Creating trend chart...');
+    function initializeTrendChart() {
+        const ctx = document.getElementById('valueTrendChart');
+        if (!ctx) {
+            console.warn('Value trend chart canvas not found');
+            return;
+        }
+
         try {
-            new Chart(trendCtx, {
+            // Get data from Django template
+            const trendLabels = {{ trend_labels|safe|default:'[]' }};
+            const trendValues = {{ trend_values|safe|default:'[]' }};
+
+            console.log('Trend Chart Data:', {
+                labels: trendLabels,
+                values: trendValues
+            });
+
+            if (!trendLabels.length || !trendValues.length) {
+                showChartError(ctx, 'No trend data available');
+                return;
+            }
+
+            trendChart = new Chart(ctx, {
                 type: 'line',
                 data: {
                     labels: trendLabels,
                     datasets: [{
-                        label: 'Inventory Value',
+                        label: 'Inventory Value Trend',
                         data: trendValues,
                         borderColor: '#3b82f6',
-                        backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                        backgroundColor: 'rgba(59, 130, 246, 0.08)',
                         fill: true,
-                        tension: 0.4,
+                        tension: 0.3,
                         pointBackgroundColor: '#3b82f6',
-                        pointBorderColor: '#fff',
+                        pointBorderColor: '#ffffff',
                         pointBorderWidth: 2,
-                        pointRadius: 5,
-                        pointHoverRadius: 7
+                        pointRadius: 4,
+                        pointHoverRadius: 6,
+                        pointHoverBackgroundColor: '#2563eb',
+                        pointHoverBorderColor: '#ffffff',
+                        pointHoverBorderWidth: 3,
+                        borderWidth: 3
                     }]
                 },
                 options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
+                    responsive: CHART_CONFIG.responsive,
+                    maintainAspectRatio: CHART_CONFIG.maintainAspectRatio,
                     plugins: {
-                        legend: { display: false },
+                        legend: {
+                            display: true,
+                            position: 'top',
+                            labels: {
+                                usePointStyle: true,
+                                padding: 15,
+                                font: {
+                                    size: 12,
+                                    weight: '600',
+                                    family: "'Inter', sans-serif"
+                                },
+                                color: '#374151'
+                            }
+                        },
                         tooltip: {
+                            backgroundColor: 'rgba(0, 0, 0, 0.85)',
+                            titleColor: '#ffffff',
+                            bodyColor: '#ffffff',
+                            titleFont: {
+                                size: 12,
+                                weight: '600'
+                            },
+                            bodyFont: {
+                                size: 11
+                            },
+                            padding: 12,
+                            cornerRadius: 8,
+                            displayColors: false,
                             callbacks: {
+                                title: function(tooltipItems) {
+                                    return tooltipItems[0].label;
+                                },
                                 label: function(context) {
-                                    return 'Value: UGX ' + context.raw.toLocaleString();
+                                    return `Inventory Value: ${formatCurrency(context.raw)}`;
                                 }
                             }
                         }
@@ -549,42 +674,309 @@ jQuery(document).ready(function($) {
                     scales: {
                         y: {
                             beginAtZero: false,
+                            grid: {
+                                color: 'rgba(0, 0, 0, 0.04)',
+                                drawBorder: false
+                            },
                             ticks: {
                                 callback: function(value) {
-                                    if (value >= 1000000) {
-                                        return 'UGX ' + (value / 1000000).toFixed(1) + 'M';
-                                    } else if (value >= 1000) {
-                                        return 'UGX ' + (value / 1000).toFixed(0) + 'K';
-                                    }
-                                    return 'UGX ' + value;
-                                }
-                            },
-                            grid: { color: 'rgba(0,0,0,0.05)' }
+                                    return 'UGX ' + formatLargeNumber(value);
+                                },
+                                font: {
+                                    size: 11,
+                                    family: "'Inter', sans-serif"
+                                },
+                                color: '#6b7280',
+                                padding: 8
+                            }
                         },
                         x: {
-                            grid: { display: false }
+                            grid: {
+                                display: false,
+                                drawBorder: false
+                            },
+                            ticks: {
+                                font: {
+                                    size: 11,
+                                    family: "'Inter', sans-serif"
+                                },
+                                color: '#6b7280',
+                                padding: 8
+                            }
+                        }
+                    },
+                    interaction: {
+                        intersect: false,
+                        mode: 'index'
+                    },
+                    animation: {
+                        duration: CHART_CONFIG.animationDuration,
+                        easing: 'easeInOutQuart'
+                    },
+                    elements: {
+                        line: {
+                            tension: 0.3
                         }
                     }
                 }
             });
-            console.log('Trend chart created successfully');
-        } catch (e) {
-            console.error('Error creating trend chart:', e);
-        }
-    } else {
-        console.warn('Trend chart canvas not found or no data');
-        if (trendCtx) {
-            trendCtx.parentElement.innerHTML = '<div class="text-center text-muted py-5"><i class="fas fa-chart-line fa-3x mb-2"></i><p>No trend data available</p></div>';
+
+            console.log('Trend chart initialized successfully');
+
+        } catch (error) {
+            console.error('Failed to initialize trend chart:', error);
+            showChartError(ctx, 'Failed to load trend data');
         }
     }
 
-    // Initialize Bootstrap tooltips
-    var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
-    tooltipTriggerList.map(function(el) {
-        return new bootstrap.Tooltip(el);
-    });
+    // Enhanced Filter Functionality
+    function setupFilters() {
+        const filterForm = document.querySelector('form[method="GET"]');
+        const categorySelect = document.querySelector('select[name="category"]');
+        const storeSelect = document.querySelector('select[name="store"]');
+        const filterBtn = document.querySelector('button[type="submit"]');
 
-    console.log('Valuation Report - Initialization complete');
-});
+        if (filterForm && filterBtn) {
+            filterForm.addEventListener('submit', function(e) {
+                // Add loading state to filter button
+                const originalText = filterBtn.innerHTML;
+                filterBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Filtering...';
+                filterBtn.disabled = true;
+
+                // Re-enable after a short delay (in case form submission is slow)
+                setTimeout(() => {
+                    filterBtn.innerHTML = originalText;
+                    filterBtn.disabled = false;
+                }, 2000);
+            });
+        }
+
+        // Real-time filter updates (optional)
+        if (categorySelect) {
+            categorySelect.addEventListener('change', function() {
+                updateFilterCount();
+            });
+        }
+
+        if (storeSelect) {
+            storeSelect.addEventListener('change', function() {
+                updateFilterCount();
+            });
+        }
+    }
+
+    function updateFilterCount() {
+        // This function could update a counter showing how many items match current filters
+        console.log('Filters updated - would refresh data count here');
+    }
+
+    // Export Functionality
+    function setupExportButtons() {
+        const exportDropdown = document.querySelector('.export-section .dropdown-menu');
+        if (!exportDropdown) return;
+
+        const exportLinks = exportDropdown.querySelectorAll('.dropdown-item');
+        exportLinks.forEach(link => {
+            link.addEventListener('click', function(e) {
+                const format = this.getAttribute('href').split('format=')[1]?.split('&')[0];
+                console.log(`Exporting to ${format.toUpperCase()} format...`);
+
+                // Add export tracking
+                trackExport(format);
+            });
+        });
+    }
+
+    function trackExport(format) {
+        // You can integrate with analytics here
+        console.log(`Export tracked: ${format}`);
+    }
+
+    // Print Enhancement
+    function setupPrintButton() {
+        const printBtn = document.querySelector('button[onclick="window.print()"]');
+        if (printBtn) {
+            // Replace inline onclick with event listener
+            printBtn.removeAttribute('onclick');
+            printBtn.addEventListener('click', function(e) {
+                e.preventDefault();
+                console.log('Printing valuation report...');
+
+                // Add print-specific styles
+                addPrintStyles();
+                window.print();
+
+                // Remove print styles after printing
+                setTimeout(removePrintStyles, 1000);
+            });
+        }
+    }
+
+    function addPrintStyles() {
+        const style = document.createElement('style');
+        style.id = 'print-styles';
+        style.textContent = `
+            @media print {
+                .valuation-header {
+                    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
+                    -webkit-print-color-adjust: exact;
+                    print-color-adjust: exact;
+                }
+                .btn, .dropdown, .pagination, .valuation-filters {
+                    display: none !important;
+                }
+                .summary-card {
+                    box-shadow: none !important;
+                    border: 1px solid #e5e7eb !important;
+                }
+                .chart-card {
+                    break-inside: avoid;
+                }
+            }
+        `;
+        document.head.appendChild(style);
+    }
+
+    function removePrintStyles() {
+        const printStyles = document.getElementById('print-styles');
+        if (printStyles) {
+            printStyles.remove();
+        }
+    }
+
+    // Responsive Chart Handling
+    function handleResize() {
+        if (categoryChart) {
+            categoryChart.resize();
+        }
+        if (trendChart) {
+            trendChart.resize();
+        }
+    }
+
+    // Initialize Tooltips
+    function initializeTooltips() {
+        const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+        const tooltipList = tooltipTriggerList.map(function(tooltipTriggerEl) {
+            return new bootstrap.Tooltip(tooltipTriggerEl, {
+                trigger: 'hover'
+            });
+        });
+    }
+
+    // Data Refresh Functionality
+    function refreshData() {
+        console.log('Refreshing valuation data...');
+
+        // Show loading state
+        showLoadingState();
+
+        // Reload the page after a short delay
+        setTimeout(() => {
+            window.location.reload();
+        }, 1000);
+    }
+
+    function showLoadingState() {
+        // Add a subtle loading indicator
+        const loadingIndicator = document.createElement('div');
+        loadingIndicator.className = 'position-fixed top-0 start-0 w-100 h-100 d-flex align-items-center justify-content-center';
+        loadingIndicator.style.cssText = 'background: rgba(255,255,255,0.8); z-index: 9999;';
+        loadingIndicator.innerHTML = `
+            <div class="text-center">
+                <div class="spinner-border text-primary mb-2" role="status"></div>
+                <p class="text-muted">Refreshing data...</p>
+            </div>
+        `;
+        document.body.appendChild(loadingIndicator);
+
+        setTimeout(() => {
+            if (loadingIndicator.parentNode) {
+                loadingIndicator.remove();
+            }
+        }, 2000);
+    }
+
+    // Keyboard Shortcuts
+    function setupKeyboardShortcuts() {
+        document.addEventListener('keydown', function(e) {
+            // Ctrl + R to refresh data
+            if (e.ctrlKey && e.key === 'r') {
+                e.preventDefault();
+                refreshData();
+            }
+
+            // Ctrl + P to print
+            if (e.ctrlKey && e.key === 'p') {
+                e.preventDefault();
+                window.print();
+            }
+        });
+    }
+
+    // Main Initialization
+    function initializeValuationReport() {
+        console.log('%c📊 Valuation Report Initializing...', 'color: #3b82f6; font-weight: bold; font-size: 14px;');
+
+        // Initialize components
+        initializeCharts();
+        initializeTooltips();
+        setupFilters();
+        setupExportButtons();
+        setupPrintButton();
+        setupKeyboardShortcuts();
+
+        // Handle window resize with debouncing
+        let resizeTimeout;
+        window.addEventListener('resize', function() {
+            clearTimeout(resizeTimeout);
+            resizeTimeout = setTimeout(handleResize, 250);
+        });
+
+        // Auto-refresh every 10 minutes (optional)
+        // setInterval(refreshData, 600000);
+
+        console.log('%c✅ Valuation Report Ready', 'color: #10b981; font-weight: bold; font-size: 14px;');
+
+        // Dispatch custom event for other scripts
+        window.dispatchEvent(new CustomEvent('valuationReport:ready'));
+    }
+
+    // Cleanup function
+    function cleanup() {
+        if (categoryChart) {
+            categoryChart.destroy();
+        }
+        if (trendChart) {
+            trendChart.destroy();
+        }
+
+        // Remove event listeners
+        window.removeEventListener('resize', handleResize);
+    }
+
+    // Global access for debugging
+    window.ValuationReport = {
+        initialize: initializeValuationReport,
+        refresh: refreshData,
+        cleanup: cleanup,
+        getCharts: () => ({
+            category: categoryChart,
+            trend: trendChart
+        }),
+        version: '2.0.0'
+    };
+
+    // Initialize when DOM is ready
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initializeValuationReport);
+    } else {
+        initializeValuationReport();
+    }
+
+    // Cleanup on page unload
+    window.addEventListener('beforeunload', cleanup);
+
+})();
 </script>
 {% endblock %}
