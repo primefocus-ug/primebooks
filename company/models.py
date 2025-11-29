@@ -519,6 +519,7 @@ class Company(TenantMixin,EFRISCompanyMixin):
     brn = models.CharField(max_length=20, blank=True, null=True, verbose_name=_("BRN"))
     nin = models.CharField(max_length=20, blank=True, null=True, verbose_name=_("NIN"))
     vat_registration_number = models.CharField(max_length=50, blank=True, null=True)
+    is_vat_enabled=models.BooleanField(default=False,verbose_name='On VAT',help_text=_("Confirm wether company is on VAT"))
     vat_registration_date = models.DateField(blank=True, null=True)
     preferred_currency = models.CharField(max_length=3, choices=CURRENCY_CHOICES, default='UGX')
 

@@ -40,7 +40,7 @@ class CompanyForm(forms.ModelForm):
             'tin',
             'brn',
             'nin',
-            'vat_registration_number',
+            'is_vat_enabled',
             'vat_registration_date',
             'preferred_currency',
 
@@ -133,9 +133,8 @@ class CompanyForm(forms.ModelForm):
                 'placeholder': 'National Identification Number',
                 'style': 'text-transform: uppercase;'
             }),
-            'vat_registration_number': forms.TextInput(attrs={
-                'class': 'form-control',
-                'placeholder': 'VAT Registration Number'
+            'is_vat_enabled': forms.CheckboxInput(attrs={
+                'class': 'form-check-input',
             }),
             'vat_registration_date': forms.DateInput(attrs={
                 'class': 'form-control',
@@ -235,7 +234,7 @@ class CompanyForm(forms.ModelForm):
             'tin': _('TIN'),
             'brn': _('BRN'),
             'nin': _('NIN'),
-            'vat_registration_number': _('VAT Registration Number'),
+            'is_vat_enabled': _('Are you VAT'),
             'vat_registration_date': _('VAT Registration Date'),
             'preferred_currency': _('Preferred Currency'),
             'plan': _('Subscription Plan'),

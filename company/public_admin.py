@@ -89,7 +89,7 @@ class CompanyAdmin(PublicModelAdmin):
         }),
         (_('Tax Information'), {
             'fields': (
-                'tin', 'brn', 'nin', 'vat_registration_number',
+                'tin', 'brn', 'nin', 'is_vat_enabled',
                 'vat_registration_date', 'preferred_currency'
             )
         }),

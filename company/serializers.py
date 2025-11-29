@@ -23,7 +23,7 @@ class CompanySerializer(serializers.ModelSerializer):
         fields = [
             'company_id', 'name', 'trading_name', 'slug', 'description',
             'physical_address', 'postal_address', 'phone', 'email', 'website',
-            'tin', 'brn', 'nin', 'vat_registration_number', 'vat_registration_date',
+            'tin', 'brn', 'nin', 'is_vat_enabled', 'vat_registration_date',
             'preferred_currency', 'status', 'is_trial', 'trial_ends_at',
             'subscription_starts_at', 'subscription_ends_at', 'grace_period_ends_at',
             'last_payment_date', 'next_billing_date', 'payment_method', 'billing_email',
