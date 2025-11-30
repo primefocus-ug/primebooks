@@ -1,10 +1,12 @@
 {% extends "base.html" %}
 {% load static %}
+{% load custom_filters %}
 
 {% block title %}Subscription Plans - {{ company.display_name }}{% endblock %}
 
 {% block extra_css %}
 <link rel="stylesheet" href="{% static 'company/css/company.css' %}">
+<link rel="stylesheet" href="{% static 'themes.css' %}">
 <style>
     /* Professional Theme Variables */
     :root {
@@ -21,6 +23,156 @@
         --card-shadow-hover: 0 20px 40px rgba(0, 0, 0, 0.12);
         --featured-glow: 0 0 40px rgba(102, 126, 234, 0.3);
     }
+
+    /* Fluid base type for better scaling */
+    html {
+        font-size: clamp(14px, 1.2vw + 10px, 18px);
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+    }
+
+    /* Container & layout tweaks (mobile-first) */
+    .container-fluid {
+        padding-left: clamp(1rem, 2vw, 2rem);
+        padding-right: clamp(1rem, 2vw, 2rem);
+    }
+
+    /* Page Header responsive */
+    .page-header {
+        padding: clamp(1.5rem, 4vw, 3rem) 0;
+        margin-bottom: clamp(1.5rem, 3vw, 3rem);
+        border-radius: 0 0 clamp(1rem, 2vw, 2rem) clamp(1rem, 2vw, 2rem);
+    }
+    .page-header h2 {
+        font-size: clamp(1.25rem, 3.2vw, 2.5rem);
+    }
+    .page-header p {
+        font-size: clamp(0.9rem, 1.6vw, 1.1rem);
+    }
+
+    /* Theme toggle smaller on phones */
+    .theme-toggle-wrapper {
+        top: 12px;
+        right: 12px;
+    }
+    .theme-toggle {
+        width: clamp(40px, 6vw, 50px);
+        height: clamp(40px, 6vw, 50px);
+    }
+    .theme-toggle i { font-size: clamp(1rem, 2.4vw, 1.3rem); }
+
+    /* Billing toggle stacking on smaller screens */
+    .billing-toggle {
+        display: inline-flex;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+        justify-content: center;
+    }
+    .billing-toggle label {
+        padding: clamp(0.5rem, 1.2vw, 0.75rem) clamp(0.8rem, 2vw, 1.5rem);
+        font-size: clamp(0.85rem, 1.5vw, 1rem);
+    }
+
+    /* Plan Cards: ensure equal height and responsive spacing */
+    .plan-card {
+        display: flex;
+        flex-direction: column;
+        height: 100%;
+        gap: 0.5rem;
+        padding-bottom: 0.5rem;
+    }
+
+    /* Price sizing responsive */
+    .price-wrapper { gap: 0.25rem; }
+    .price-amount {
+        font-size: clamp(1.6rem, 6.5vw, 3rem);
+        line-height: 1;
+    }
+    .price-currency {
+        font-size: clamp(1rem, 2.5vw, 1.5rem);
+    }
+    .price-period { font-size: clamp(0.85rem, 1.6vw, 1rem); }
+
+    /* Plan header & description spacing */
+    .plan-header { padding: clamp(1rem, 2.5vw, 2rem) 1rem 0.75rem; }
+    .plan-name { font-size: clamp(1.05rem, 2.4vw, 1.5rem); }
+    .plan-description { font-size: clamp(0.8rem, 1.6vw, 0.95rem); min-height: auto; }
+
+    /* Limits & features */
+    .limit-item, .feature-item { padding: clamp(0.45rem, 1.2vw, 0.75rem) 0; }
+    .limit-label { font-size: clamp(0.8rem, 1.4vw, 0.95rem); }
+    .limit-value { font-size: clamp(0.95rem, 1.8vw, 1rem); }
+    .feature-text { font-size: clamp(0.8rem, 1.4vw, 0.95rem); }
+
+    /* Action buttons */
+    .select-plan-btn, .current-plan-btn {
+        padding: clamp(0.7rem, 1.5vw, 1rem);
+        font-size: clamp(0.9rem, 1.6vw, 1rem);
+    }
+
+    /* Popular badge responsive adjustments */
+    .popular-badge {
+        top: clamp(10px, 2.2vw, 20px);
+        right: clamp(-25px, -6vw, -35px);
+        padding: clamp(0.25rem, 0.6vw, 0.4rem) clamp(1.2rem, 3vw, 3rem);
+        font-size: clamp(0.6rem, 1.2vw, 0.75rem);
+    }
+
+    /* Comparison table responsiveness */
+    .comparison-section { padding: clamp(1rem, 2.2vw, 2rem); }
+    .comparison-table thead th, .comparison-table tbody td {
+        font-size: clamp(0.75rem, 1.2vw, 0.95rem);
+        padding: clamp(0.5rem, 1vw, 1rem);
+        white-space: nowrap;
+    }
+
+    /* Ensure table scroll on very small screens */
+    .table-responsive {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    /* Modal responsive */
+    .modal-dialog { max-width: 720px; margin: 1.75rem auto; }
+    @media (max-width: 575.98px) {
+        .modal-dialog { margin: 0.5rem; }
+        .modal-content { border-radius: 0.6rem; }
+    }
+
+    /* Grid adjustments for different breakpoints (works with Bootstrap but ensures nicer wrap) */
+    @media (max-width: 575.98px) {
+        /* Single column cards */
+        .col-lg-3, .col-md-6 { flex: 0 0 100%; max-width: 100%; }
+        .plan-pricing { margin: 0.5rem 1rem; }
+        .billing-toggle { gap: 0.35rem; }
+    }
+    @media (min-width: 576px) and (max-width: 767.98px) {
+        /* Two columns */
+        .col-lg-3 { flex: 0 0 50%; max-width: 50%; }
+    }
+    @media (min-width: 768px) and (max-width: 991.98px) {
+        /* Two columns improved spacing */
+        .col-lg-3 { flex: 0 0 50%; max-width: 50%; }
+    }
+    @media (min-width: 992px) and (max-width: 1199.98px) {
+        /* Three columns */
+        .col-lg-3 { flex: 0 0 33.3333%; max-width: 33.3333%; }
+    }
+    @media (min-width: 1200px) {
+        /* Four columns handled by default grid; keep spacing */
+        .col-lg-3 { flex: 0 0 25%; max-width: 25%; }
+    }
+
+    /* Small visual polish on hover for touch devices (disable heavy transform on small screens) */
+    @media (max-width: 575.98px) {
+        .plan-card:hover { transform: none; box-shadow: var(--card-shadow); }
+    }
+
+    /* Accessibility: larger focus outlines on small screens */
+    :focus { outline: 3px solid rgba(102,126,234,0.18); outline-offset: 2px; }
+
+    /* Keep modal cost breakdown readable */
+    #cost-breakdown { font-size: clamp(0.85rem, 1.6vw, 1rem); }
 
     /* Dark Theme */
     [data-theme="dark"] {
@@ -390,10 +542,12 @@
         font-weight: 700;
         margin-bottom: 1.5rem;
     }
+    
 
     .comparison-table {
         margin: 0;
     }
+   
 
     .comparison-table thead th {
         background: var(--bg-tertiary);
@@ -410,6 +564,7 @@
         color: var(--text-secondary);
         text-align: center;
     }
+     
 
     .comparison-table tbody tr:hover {
         background: var(--bg-tertiary);
@@ -420,6 +575,7 @@
         color: var(--text-primary);
         text-align: left;
     }
+    
 
     .check-icon {
         color: #38ef7d;
@@ -633,7 +789,7 @@
 
     <!-- Feature Comparison Table -->
     <div class="row mb-4">
-        <div class="col-12">
+        <div class="dre">
             <div class="comparison-section">
                 <h5>Detailed Feature Comparison</h5>
                 <div class="table-responsive">

@@ -1,3 +1,4 @@
+<<<<<<< Updated upstream
 {% extends "base.html" %}
 {% load static %}
 {% load i18n %}
@@ -269,11 +270,23 @@
     }
 </style>
 {% endblock %}
+=======
+{% extends 'base.html' %}
+{% load i18n %}
+{% load custom_filters %}
+{% load static %}
 
+{% block title %}Billing & Subscription{% endblock %}
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'themes.css' %}">
+>>>>>>> Stashed changes
+
+{% endblock %}
 {% block content %}
 <div class="billing-container">
     <div class="container">
         <!-- Header -->
+<<<<<<< Updated upstream
         <div class="billing-header">
             <div class="container">
                 <div class="row align-items-center">
@@ -295,6 +308,133 @@
                             <span class="plan-badge free">
                                 {% trans "No Active Plan" %}
                             </span>
+=======
+        <div class="mb-8">
+            <h1 class="text-3xl font-bold text-gray-900">{% trans "Billing & Subscription" %}</h1>
+            <p class="text-gray-600 mt-2">{% trans "Manage your subscription and billing information" %}</p>
+        </div>
+
+        <!-- Current Plan Card -->
+        <div class="bg-white rounded-lg shadow-lg p-6 mb-8">
+            <div class="flex items-center justify-between mb-4">
+                <h2 class="text-xl font-semibold">Current Plan</h2>
+                <span class="px-3 py-1 rounded-full text-sm font-medium
+                    {% if company.status == 'ACTIVE' %}bg-green-100 text-green-800
+                    {% elif company.status == 'TRIAL' %}bg-blue-100 text-blue-800
+                    {% elif company.status == 'SUSPENDED' %}bg-yellow-100 text-yellow-800
+                    {% else %}bg-red-100 text-red-800{% endif %}">
+                    {{ company.access_status_display }}
+                </span>
+            </div>
+
+            <div class="grid md:grid-cols-2 gap-6">
+                <div>
+                    <h3 class="font-medium text-gray-900 mb-2">{{ current_plan.display_name|default:current_plan.get_name_display }}</h3>
+                    <p class="text-gray-600 mb-4">{{ current_plan.description }}</p>
+
+                    <div class="space-y-2">
+                        <div class="flex justify-between">
+                            <span class="text-gray-600">Price:</span>
+                            <span class="font-medium">${{ current_plan.price }}/{{ current_plan.get_billing_cycle_display|lower }}</span>
+                        </div>
+
+                        {% if company.subscription_ends_at %}
+                        <div class="flex justify-between">
+                            <span class="text-gray-600">Expires:</span>
+                            <span class="font-medium">{{ company.subscription_ends_at }}</span>
+                        </div>
+                        {% elif company.trial_ends_at %}
+                        <div class="flex justify-between">
+                            <span class="text-gray-600">Trial Ends:</span>
+                            <span class="font-medium">{{ company.trial_ends_at }}</span>
+                        </div>
+                        {% endif %}
+
+                        {% if company.days_until_expiry > 0 %}
+                        <div class="flex justify-between">
+                            <span class="text-gray-600">{% trans "Days Remaining" %}:</span>
+                            <span class="font-medium {% if company.days_until_expiry <= 7 %}text-red-600{% endif %}">
+                                {{ company.days_until_expiry }}
+                            </span>
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <div>
+                    <h4 class="font-medium text-gray-900 mb-3">{% trans "Plan Limits" %}</h4>
+                    <div class="space-y-3">
+                        <!-- Users -->
+                        <div>
+                            <div class="flex justify-between text-sm mb-1">
+                                <span>{% trans "Users" %}</span>
+                                <span>{{ usage_stats.users_count }}/{{ current_plan.max_users }}</span>
+                            </div>
+                            <div class="w-full bg-gray-200 rounded-full h-2">
+                                <div class="bg-blue-600 h-2 rounded-full"
+                                     style="width: {{ usage_stats.users_count|mul:100|div:current_plan.max_users }}%"></div>
+                            </div>
+                        </div>
+
+                        <!-- Storage -->
+                        <div>
+                            <div class="flex justify-between text-sm mb-1">
+                                <span>{% trans "Storage" %}</span>
+                                <span>{{ usage_stats.storage_used }}MB/{{ current_plan.max_storage_gb }}GB</span>
+                            </div>
+                            <div class="w-full bg-gray-200 rounded-full h-2">
+                                <div class="bg-green-600 h-2 rounded-full"
+                                     style="width: {{ usage_stats.storage_percentage }}%"></div>
+                            </div>
+                        </div>
+
+                        <!-- Branches -->
+                        <div>
+                            <div class="flex justify-between text-sm mb-1">
+                                <span>{% trans "Branches" %}</span>
+                                <span>{{ usage_stats.branches_count }}/{{ current_plan.max_branches }}</span>
+                            </div>
+                            <div class="w-full bg-gray-200 rounded-full h-2">
+                                <div class="bg-purple-600 h-2 rounded-full"
+                                     style="width: {{ usage_stats.branches_count|mul:100|div:current_plan.max_branches }}%"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            {% if company.days_until_expiry <= 7 and company.days_until_expiry > 0 %}
+            <div class="mt-6 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+                <div class="flex">
+                    <div class="flex-shrink-0">
+                        <svg class="h-5 w-5 text-yellow-400" fill="currentColor" viewBox="0 0 20 20">
+                            <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"/>
+                        </svg>
+                    </div>
+                    <div class="ml-3">
+                        <h3 class="text-sm font-medium text-yellow-800"> {% trans "Subscription Expiring Soon" %}</h3>
+                        <p class="text-sm text-yellow-700 mt-1">
+                            Your subscription expires in {{ company.days_until_expiry }} day{{ company.days_until_expiry|pluralize }}.
+                            Renew now to avoid service interruption.
+                        </p>
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+
+        <!-- Available Plans -->
+        <div class="bg-white rounded-lg shadow-lg p-6">
+            <h2 class="text-xl font-semibold mb-6">{% trans "Available Plans" %}</h2>
+
+            <div class="grid md:grid-cols-3 gap-6">
+                {% for plan in available_plans %}
+                <div class="border rounded-lg p-6 {% if plan == current_plan %}border-blue-500 bg-blue-50{% else %}border-gray-200{% endif %}">
+                    <div class="flex items-center justify-between mb-4">
+                        <h3 class="text-lg font-semibold">{{ plan.display_name|default:plan.get_name_display }}</h3>
+                        {% if plan.is_popular %}
+                        <span class="bg-green-100 text-green-800 text-xs font-medium px-2.5 py-0.5 rounded">{% trans "Popular" %}</span>
+>>>>>>> Stashed changes
                         {% endif %}
                     </div>
                 </div>
@@ -414,6 +554,7 @@
                         {% endif %}
                     </ul>
 
+<<<<<<< Updated upstream
                     <div class="mt-4">
                         <a href="{% url 'companies:subscription_plans' %}" class="btn btn-primary btn-upgrade">
                             <i class="bi bi-arrow-up-circle me-2"></i>
@@ -429,6 +570,20 @@
                             {% trans "View Plans" %}
                         </a>
                     </div>
+=======
+                    {% if plan == current_plan %}
+                    <button class="w-full bg-gray-300 text-gray-600 py-2 px-4 rounded cursor-not-allowed" disabled>
+                        {% trans "Current Plan" %}
+                    </button>
+                    {% else %}
+                    <form method="post" action="{% url 'companies:upgrade_plan' %}">
+                        {% csrf_token %}
+                        <input type="hidden" name="plan_id" value="{{ plan.id }}">
+                        <button type="submit" class="w-full bg-blue-600 text-white py-2 px-4 rounded hover:bg-blue-700 transition duration-200">
+                            {% if plan.name == 'FREE' %}Downgrade{% else %}Upgrade{% endif %}
+                        </button>
+                    </form>
+>>>>>>> Stashed changes
                     {% endif %}
                 </div>
 
