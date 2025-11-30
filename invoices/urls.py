@@ -28,6 +28,9 @@ urlpatterns = [
 
     # Bulk operations
     path('bulk-actions/', views.bulk_actions, name='bulk_actions'),
+    path('api/dashboard/chart-data/', views.dashboard_chart_data, name='dashboard_chart_data'),
+    path('api/dashboard/metrics/', views.dashboard_metrics, name='dashboard_metrics'),
+    path('api/analytics/', views.analytics_api, name='analytics_api'),
 
     # Export functions
     path('export/csv/', views.export_invoices_csv, name='export_csv'),

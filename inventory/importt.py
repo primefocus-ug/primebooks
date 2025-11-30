@@ -30,45 +30,110 @@ logger = logging.getLogger(__name__)
 
 @login_required
 def download_sample_products_csv(request):
-    """Generate CSV sample file for products with stock"""
+    """Generate CSV sample file for products with stock including category fields"""
     response = HttpResponse(content_type='text/csv')
     response['Content-Disposition'] = 'attachment; filename="sample_products_stock.csv"'
 
     writer = csv.writer(response)
 
-    # Headers with all fields
+    # Headers with all fields including category-specific
     headers = [
-        'Product Name*', 'SKU*', 'Barcode', 'Category', 'Supplier',
+        # Product Basic Info
+        'Product Name*', 'SKU*', 'Barcode', 'Description',
+
+        # Category & Supplier
+        'Category Name*', 'Category Code', 'Category Description', 'Category Type*',
+        'EFRIS Commodity Category Code', 'EFRIS Auto Sync', 'Supplier',
+
+        # Pricing
         'Selling Price*', 'Cost Price*', 'Discount %',
-        'Tax Rate*', 'Excise Duty Rate', 'Unit of Measure*',
-        'Min Stock Level', 'Description',
+
+        # Tax Information
+        'Tax Rate*', 'Excise Duty Rate',
+        'EFRIS Excise Duty Code',
+
+        # Unit and Stock
+        'Unit of Measure*', 'Min Stock Level', 'Is Active',
+
+        # Store Stock Information
         'Store Name*', 'Quantity*', 'Low Stock Threshold', 'Reorder Quantity',
-        'EFRIS Commodity Code', 'EFRIS Excise Duty Code', 'EFRIS Auto Sync'
+
+        # Additional EFRIS Fields
+        'EFRIS Item Code', 'EFRIS Has Piece Unit', 'EFRIS Piece Measure Unit',
+        'EFRIS Piece Unit Price', 'EFRIS Goods Code'
     ]
     writer.writerow(headers)
 
     # Sample data rows
     sample_data = [
         [
-            'Coca Cola 500ml', 'CC-500ML', '5000112345678', 'Beverages', 'Century Bottling',
-            '3000', '2000', '0', 'A', '0', '102',
-            '20', 'Refreshing cola drink 500ml bottle',
+            # Product Basic Info
+            'Coca Cola 500ml', 'CC-500ML', '5000112345678', 'Refreshing cola drink 500ml bottle',
+
+            # Category & Supplier
+            'Beverages', 'BEV-001', 'Soft drinks and beverages', 'product',
+            '101113010000000000', 'Yes', 'Century Bottling',
+
+            # Pricing
+            '3000', '2000', '0',
+
+            # Tax Information
+            'A', '0', '',
+
+            # Unit and Stock
+            '102', '20', 'Yes',
+
+            # Store Stock Information
             'Main Store', '100', '20', '50',
-            '101113010000000000', '', 'Yes'
+
+            # Additional EFRIS Fields
+            '', 'No', '', '', ''
         ],
         [
-            'Samsung Galaxy A54', 'SGH-A54-BLK', '8806094123456', 'Electronics', 'Samsung Uganda',
-            '1500000', '1200000', '5', 'A', '0', '101',
-            '5', 'Samsung Galaxy A54 128GB Black',
+            # Product Basic Info
+            'Samsung Galaxy A54', 'SGH-A54-BLK', '8806094123456', 'Samsung Galaxy A54 128GB Black',
+
+            # Category & Supplier
+            'Electronics', 'ELEC-001', 'Mobile phones and accessories', 'product',
+            '101113020000000000', 'Yes', 'Samsung Uganda',
+
+            # Pricing
+            '1500000', '1200000', '5',
+
+            # Tax Information
+            'A', '0', '',
+
+            # Unit and Stock
+            '101', '5', 'Yes',
+
+            # Store Stock Information
             'Downtown Branch', '15', '5', '10',
-            '101113020000000000', '', 'Yes'
+
+            # Additional EFRIS Fields
+            '', 'No', '', '', ''
         ],
         [
-            'Rice 1KG', 'RICE-1KG', '', 'Food & Groceries', 'Tilda Uganda',
-            '5000', '3500', '0', 'B', '0', '103',
-            '50', 'Premium basmati rice 1kg pack',
+            # Product Basic Info
+            'Rice 1KG', 'RICE-1KG', '', 'Premium basmati rice 1kg pack',
+
+            # Category & Supplier
+            'Food & Groceries', 'FOOD-001', 'Food items and groceries', 'product',
+            '101113030000000000', 'Yes', 'Tilda Uganda',
+
+            # Pricing
+            '5000', '3500', '0',
+
+            # Tax Information
+            'B', '0', '',
+
+            # Unit and Stock
+            '103', '50', 'Yes',
+
+            # Store Stock Information
             'Main Store', '200', '50', '100',
-            '101113030000000000', '', 'Yes'
+
+            # Additional EFRIS Fields
+            '', 'No', '', '', ''
         ],
     ]
 
@@ -80,7 +145,7 @@ def download_sample_products_csv(request):
 
 @login_required
 def download_sample_products_excel(request):
-    """Generate Excel sample file with formatting and instructions"""
+    """Generate Excel sample file with formatting and instructions including category fields"""
     output = BytesIO()
     workbook = xlsxwriter.Workbook(output)
 
@@ -88,6 +153,7 @@ def download_sample_products_excel(request):
     data_sheet = workbook.add_worksheet('Products & Stock Data')
     instructions_sheet = workbook.add_worksheet('Instructions')
     reference_sheet = workbook.add_worksheet('Reference Data')
+    category_ref_sheet = workbook.add_worksheet('Category Reference')
 
     # Define formats
     header_format = workbook.add_format({
@@ -103,6 +169,16 @@ def download_sample_products_excel(request):
     required_format = workbook.add_format({
         'bold': True,
         'bg_color': '#DC2626',
+        'font_color': 'white',
+        'border': 1,
+        'align': 'center',
+        'valign': 'vcenter',
+        'text_wrap': True
+    })
+
+    category_format = workbook.add_format({
+        'bold': True,
+        'bg_color': '#10B981',  # Green for category fields
         'font_color': 'white',
         'border': 1,
         'align': 'center',
@@ -132,57 +208,129 @@ def download_sample_products_excel(request):
     # ========================================================================
 
     headers = [
+        # Product Basic Info
         ('Product Name*', True),
         ('SKU*', True),
         ('Barcode', False),
-        ('Category', False),
+        ('Description', False),
+
+        # Category Fields
+        ('Category Name*', True),
+        ('Category Code', False),
+        ('Category Description', False),
+        ('Category Type*', True),
+        ('EFRIS Commodity Category Code', False),
+        ('EFRIS Auto Sync', False),
         ('Supplier', False),
+
+        # Pricing
         ('Selling Price*', True),
         ('Cost Price*', True),
         ('Discount %', False),
+
+        # Tax Information
         ('Tax Rate*', True),
         ('Excise Duty Rate', False),
+        ('EFRIS Excise Duty Code', False),
+
+        # Unit and Stock
         ('Unit of Measure*', True),
         ('Min Stock Level', False),
-        ('Description', False),
+        ('Is Active', False),
+
+        # Store Stock Information
         ('Store Name*', True),
         ('Quantity*', True),
         ('Low Stock Threshold', False),
         ('Reorder Quantity', False),
-        ('EFRIS Commodity Code', False),
-        ('EFRIS Excise Duty Code', False),
-        ('EFRIS Auto Sync', False),
+
+        # Additional EFRIS Fields
+        ('EFRIS Item Code', False),
+        ('EFRIS Has Piece Unit', False),
+        ('EFRIS Piece Measure Unit', False),
+        ('EFRIS Piece Unit Price', False),
+        ('EFRIS Goods Code', False),
     ]
 
-    # Write headers
+    # Write headers with different colors for categories
     for col, (header, is_required) in enumerate(headers):
         if is_required:
             data_sheet.write(0, col, header, required_format)
+        elif header.startswith('Category') or header.startswith('EFRIS'):
+            data_sheet.write(0, col, header, category_format)
         else:
             data_sheet.write(0, col, header, header_format)
 
     # Sample data
     sample_data = [
         [
-            'Coca Cola 500ml', 'CC-500ML', '5000112345678', 'Beverages', 'Century Bottling',
-            3000, 2000, 0, 'A', 0, '102',
-            20, 'Refreshing cola drink 500ml bottle',
+            # Product Basic Info
+            'Coca Cola 500ml', 'CC-500ML', '5000112345678', 'Refreshing cola drink 500ml bottle',
+
+            # Category & Supplier
+            'Beverages', 'BEV-001', 'Soft drinks and beverages', 'product',
+            '101113010000000000', 'Yes', 'Century Bottling',
+
+            # Pricing
+            3000, 2000, 0,
+
+            # Tax Information
+            'A', 0, '',
+
+            # Unit and Stock
+            '102', 20, 'Yes',
+
+            # Store Stock Information
             'Main Store', 100, 20, 50,
-            '101113010000000000', '', 'Yes'
+
+            # Additional EFRIS Fields
+            '', 'No', '', '', ''
         ],
         [
-            'Samsung Galaxy A54', 'SGH-A54-BLK', '8806094123456', 'Electronics', 'Samsung Uganda',
-            1500000, 1200000, 5, 'A', 0, '101',
-            5, 'Samsung Galaxy A54 128GB Black',
+            # Product Basic Info
+            'Samsung Galaxy A54', 'SGH-A54-BLK', '8806094123456', 'Samsung Galaxy A54 128GB Black',
+
+            # Category & Supplier
+            'Electronics', 'ELEC-001', 'Mobile phones and accessories', 'product',
+            '101113020000000000', 'Yes', 'Samsung Uganda',
+
+            # Pricing
+            1500000, 1200000, 5,
+
+            # Tax Information
+            'A', 0, '',
+
+            # Unit and Stock
+            '101', 5, 'Yes',
+
+            # Store Stock Information
             'Downtown Branch', 15, 5, 10,
-            '101113020000000000', '', 'Yes'
+
+            # Additional EFRIS Fields
+            '', 'No', '', '', ''
         ],
         [
-            'Rice 1KG', 'RICE-1KG', '', 'Food & Groceries', 'Tilda Uganda',
-            5000, 3500, 0, 'B', 0, '103',
-            50, 'Premium basmati rice 1kg pack',
+            # Product Basic Info
+            'Rice 1KG', 'RICE-1KG', '', 'Premium basmati rice 1kg pack',
+
+            # Category & Supplier
+            'Food & Groceries', 'FOOD-001', 'Food items and groceries', 'product',
+            '101113030000000000', 'Yes', 'Tilda Uganda',
+
+            # Pricing
+            5000, 3500, 0,
+
+            # Tax Information
+            'B', 0, '',
+
+            # Unit and Stock
+            '103', 50, 'Yes',
+
+            # Store Stock Information
             'Main Store', 200, 50, 100,
-            '101113030000000000', '', 'Yes'
+
+            # Additional EFRIS Fields
+            '', 'No', '', '', ''
         ],
     ]
 
@@ -191,7 +339,8 @@ def download_sample_products_excel(request):
             data_sheet.write(row_idx, col_idx, value, sample_format)
 
     # Set column widths
-    column_widths = [20, 15, 15, 15, 15, 12, 12, 10, 10, 12, 15, 12, 30, 15, 10, 15, 15, 20, 20, 15]
+    column_widths = [20, 15, 15, 25, 15, 15, 20, 15, 25, 15, 15, 12, 12, 10, 10, 12, 15, 12, 10, 15, 10, 15, 15, 15, 15,
+                     15, 15]
     for col, width in enumerate(column_widths):
         data_sheet.set_column(col, col, width)
 
@@ -216,10 +365,23 @@ def download_sample_products_excel(request):
         ('', ''),
         ('Required Fields:', 'Fields marked with * (red header) are mandatory'),
         ('', '- Product Name, SKU, Selling Price, Cost Price, Tax Rate, Unit of Measure'),
-        ('', '- Store Name, Quantity'),
+        ('', '- Category Name, Category Type, Store Name, Quantity'),
         ('', ''),
-        ('Column Mapping:', 'The system will automatically detect columns even if names differ slightly'),
-        ('', 'Examples: "Product Name", "product_name", "name" will all work'),
+        ('Category Fields:', 'Green header fields relate to categories:'),
+        ('', '- Category Name: Name of existing category or new category to create'),
+        ('', '- Category Type: Must be "product" or "service"'),
+        ('', '- EFRIS Commodity Category Code: 18-digit URA commodity code'),
+        ('', '- EFRIS Auto Sync: Yes/No - Enable automatic EFRIS synchronization'),
+        ('', ''),
+        ('Category Creation:', 'If category does not exist:'),
+        ('', '- System will create new category with provided details'),
+        ('', '- EFRIS fields will be set if provided'),
+        ('', '- Category will be marked as active'),
+        ('', ''),
+        ('EFRIS Validation:', 'For EFRIS-enabled categories:'),
+        ('', '- EFRIS Commodity Category Code must be valid 18-digit code'),
+        ('', '- Category must be a leaf node in EFRIS hierarchy'),
+        ('', '- Category type must match EFRIS category type'),
         ('', ''),
         ('Tax Rates:', 'Use these codes:'),
         ('', 'A = Standard rate (18%)'),
@@ -234,25 +396,36 @@ def download_sample_products_excel(request):
         ('', '103 = Kilogram'),
         ('', '(See Reference Data sheet for full list)'),
         ('', ''),
-        ('Categories & Suppliers:', 'If the category or supplier doesn\'t exist:'),
-        ('', '- Leave blank (will use default/none)'),
-        ('', '- Or create them in the system first'),
+        ('Category Type:', 'Must be one of:'),
+        ('', 'product = Product Category'),
+        ('', 'service = Service Category'),
+        ('', ''),
+        ('Suppliers:', 'If supplier doesn\'t exist:'),
+        ('', '- System will create new supplier with basic details'),
+        ('', '- Phone number will be set to default if not provided'),
         ('', ''),
         ('Store Names:', 'Must match existing store names exactly'),
         ('', '(Case-insensitive, but spelling must match)'),
         ('', ''),
         ('EFRIS Fields:', 'Optional fields for tax compliance:'),
-        ('', '- EFRIS Commodity Code (18-digit code)'),
-        ('', '- EFRIS Auto Sync (Yes/No)'),
+        ('', '- EFRIS Excise Duty Code: For excisable goods'),
+        ('', '- EFRIS Item Code: Internal EFRIS item code'),
+        ('', '- EFRIS Has Piece Unit: Yes/No - Whether product has piece unit'),
+        ('', '- EFRIS Piece Measure Unit: Unit code for piece measurement'),
+        ('', '- EFRIS Piece Unit Price: Price per piece unit'),
+        ('', '- EFRIS Goods Code: EFRIS-assigned goods code'),
         ('', ''),
         ('Tips:', '- Keep SKU unique for each product'),
-        ('', '- Use consistent formatting'),
+        ('', '- Use consistent category names across imports'),
+        ('', '- Verify EFRIS commodity codes before importing'),
         ('', '- Test with a few rows first'),
         ('', '- Check validation messages after upload'),
     ]
 
     for instruction in instructions:
-        instructions_sheet.write(row, 0, instruction[0], instruction_header if instruction[0] and instruction[0].endswith(':') else instruction_text)
+        instructions_sheet.write(row, 0, instruction[0],
+                                 instruction_header if instruction[0] and instruction[0].endswith(
+                                     ':') else instruction_text)
         instructions_sheet.write(row, 1, instruction[1], instruction_text)
         row += 1
 
@@ -313,6 +486,76 @@ def download_sample_products_excel(request):
         reference_sheet.write(row, 1, desc, sample_format)
         row += 1
 
+    # ========================================================================
+    # CATEGORY REFERENCE SHEET
+    # ========================================================================
+
+    category_ref_sheet.set_column(0, 0, 25)
+    category_ref_sheet.set_column(1, 1, 50)
+
+    row = 0
+    category_ref_sheet.write(row, 0, 'CATEGORY FIELD REFERENCE', instruction_header)
+    row += 2
+
+    category_fields = [
+        ('Category Name*', 'Name of the category. Will be created if it doesn\'t exist.', 'Required'),
+        ('Category Code', 'Internal category code (optional).', 'Optional'),
+        ('Category Description', 'Description of the category.', 'Optional'),
+        ('Category Type*', 'Must be "product" or "service".', 'Required'),
+        ('EFRIS Commodity Category Code', '18-digit URA commodity category code.', 'Optional but required for EFRIS'),
+        ('EFRIS Auto Sync', 'Yes/No - Enable automatic EFRIS synchronization.', 'Optional'),
+    ]
+
+    category_ref_sheet.write(row, 0, 'Field Name', category_format)
+    category_ref_sheet.write(row, 1, 'Description', category_format)
+    category_ref_sheet.write(row, 2, 'Required', category_format)
+    row += 1
+
+    for field_name, description, required in category_fields:
+        category_ref_sheet.write(row, 0, field_name, sample_format)
+        category_ref_sheet.write(row, 1, description, sample_format)
+        category_ref_sheet.write(row, 2, required, sample_format)
+        row += 1
+
+    # Add category type reference
+    row += 2
+    category_ref_sheet.write(row, 0, 'CATEGORY TYPES', instruction_header)
+    row += 1
+    category_ref_sheet.write(row, 0, 'Type', category_format)
+    category_ref_sheet.write(row, 1, 'Description', category_format)
+    row += 1
+
+    category_types = [
+        ('product', 'Product Category - For physical goods and items'),
+        ('service', 'Service Category - For services and intangible offerings'),
+    ]
+
+    for type_code, desc in category_types:
+        category_ref_sheet.write(row, 0, type_code, sample_format)
+        category_ref_sheet.write(row, 1, desc, sample_format)
+        row += 1
+
+    # Add EFRIS commodity code examples
+    row += 2
+    category_ref_sheet.write(row, 0, 'EFRIS COMMODITY CODE EXAMPLES', instruction_header)
+    row += 1
+    category_ref_sheet.write(row, 0, 'Commodity Code', category_format)
+    category_ref_sheet.write(row, 1, 'Description', category_format)
+    row += 1
+
+    efris_examples = [
+        ('101113010000000000', 'Beverages - Soft Drinks'),
+        ('101113020000000000', 'Electronics - Mobile Phones'),
+        ('101113030000000000', 'Food & Groceries - Rice & Grains'),
+        ('101113040000000000', 'Clothing & Apparel'),
+        ('101113050000000000', 'Household Items'),
+    ]
+
+    for code, desc in efris_examples:
+        category_ref_sheet.write(row, 0, code, sample_format)
+        category_ref_sheet.write(row, 1, desc, sample_format)
+        row += 1
+
     workbook.close()
     output.seek(0)
 
@@ -323,7 +566,6 @@ def download_sample_products_excel(request):
     response['Content-Disposition'] = 'attachment; filename="sample_products_stock.xlsx"'
 
     return response
-
 
 @login_required
 def download_sample_stock_only_csv(request):
