@@ -13,8 +13,61 @@ import logging
 User = get_user_model()
 logger = logging.getLogger(__name__)
 
+class VATAwareFormMixin:
+    """
+    Form mixin to handle VAT-aware tax rate selection and validation
+    """
 
-class ServiceForm(forms.ModelForm):
+    def __init__(self, *args, **kwargs):
+        # Extract company context
+        self.company = kwargs.pop('company', None)
+        self.is_vat_enabled = getattr(self.company, 'is_vat_enabled', True) if self.company else True
+
+        super().__init__(*args, **kwargs)
+
+        # Apply VAT restrictions to tax_rate field if it exists
+        if 'tax_rate' in self.fields and not self.is_vat_enabled:
+            # Force tax rate to 'B' and make field read-only (not disabled)
+            self.fields['tax_rate'].choices = [('B', 'Zero rate (0%)')]
+            self.fields['tax_rate'].initial = 'B'
+            self.fields['tax_rate'].required = False  # Make it not required since we're setting it
+            self.fields['tax_rate'].widget.attrs.update({
+                'readonly': True,  # Use readonly instead of disabled
+                'class': 'form-control bg-light'
+            })
+            self.fields['tax_rate'].help_text = "VAT is disabled for your company. Only zero rate is available."
+
+        # Also handle excise_duty_rate field
+        if 'excise_duty_rate' in self.fields and not self.is_vat_enabled:
+            self.fields['excise_duty_rate'].initial = 0
+            self.fields['excise_duty_rate'].required = False  # Make it not required
+            self.fields['excise_duty_rate'].widget.attrs.update({
+                'readonly': True,  # Use readonly instead of disabled
+                'class': 'form-control bg-light'
+            })
+            self.fields['excise_duty_rate'].help_text = "Excise duty not applicable when VAT is disabled."
+
+    def clean_tax_rate(self):
+        """Ensure tax rate is 'B' when VAT is disabled"""
+        tax_rate = self.cleaned_data.get('tax_rate')
+
+        if not self.is_vat_enabled:
+            # Force tax rate to 'B' when VAT is disabled
+            return 'B'
+
+        return tax_rate
+
+    def clean_excise_duty_rate(self):
+        """Ensure excise duty is 0 when VAT is disabled"""
+        excise_rate = self.cleaned_data.get('excise_duty_rate')
+
+        if not self.is_vat_enabled:
+            # Force excise duty to 0 when VAT is disabled
+            return 0
+
+        return excise_rate or 0
+
+class ServiceForm(VATAwareFormMixin,forms.ModelForm):
     """
     Form for creating and updating services with EFRIS integration.
     Includes real-time validation and autocomplete for EFRIS categories.
@@ -117,6 +170,8 @@ class ServiceForm(forms.ModelForm):
     def __init__(self, *args, **kwargs):
         # Extract EFRIS status from kwargs
         self.efris_enabled = kwargs.pop('efris_enabled', False)
+
+        # Call VATAwareFormMixin first, then ServiceForm
         super().__init__(*args, **kwargs)
 
         # Set default values for new instances only
@@ -125,6 +180,10 @@ class ServiceForm(forms.ModelForm):
             self.fields['efris_auto_sync_enabled'].initial = False
             self.fields['excise_duty_rate'].initial = 0
             self.fields['unit_of_measure'].initial = '207'  # Hours
+
+            # Set default tax rate based on VAT status
+            if not self.is_vat_enabled:
+                self.fields['tax_rate'].initial = 'B'
 
         # ===== EFRIS CONDITIONAL LOGIC =====
         if not self.efris_enabled:
@@ -148,44 +207,54 @@ class ServiceForm(forms.ModelForm):
                 "Select a category with an assigned EFRIS commodity category (leaf nodes only)."
             )
 
-            # Update EFRIS field help texts
-            if 'efris_auto_sync_enabled' in self.fields:
-                self.fields['efris_auto_sync_enabled'].help_text = (
-                    'Enable automatic synchronization with EFRIS system for tax compliance'
-                )
-
-            # Filter to only show service categories with EFRIS commodity categories
-            # (optional - helps guide users to correct categories)
-            # Uncomment if you want to restrict to only categories with EFRIS codes
-            # self.fields['category'].queryset = Category.objects.filter(
-            #     category_type='service',
-            #     is_active=True,
-            #     efris_commodity_category_code__isnull=False
-            # )
-
         # Add CSS classes to all fields
         for field_name, field in self.fields.items():
             if field_name not in ['efris_auto_sync_enabled', 'is_active']:
                 if 'class' not in field.widget.attrs:
                     field.widget.attrs['class'] = 'form-control'
 
-    def clean_code(self):
-        """Validate service code is unique"""
-        code = self.cleaned_data.get('code')
-        if not code:
-            raise ValidationError(_("Service code is required"))
+    def clean(self):
+        """Additional cross-field validation with VAT awareness"""
+        cleaned_data = super().clean()
+        efris_auto_sync = cleaned_data.get('efris_auto_sync_enabled')
+        category = cleaned_data.get('category')
+        tax_rate = cleaned_data.get('tax_rate')
 
-        # Check uniqueness
-        qs = Service.objects.filter(code=code)
-        if self.instance.pk:
-            qs = qs.exclude(pk=self.instance.pk)
+        # VAT ENFORCEMENT: Ensure tax rate is B when VAT disabled
+        if not self.is_vat_enabled and tax_rate != 'B':
+            self.add_error('tax_rate', "Only zero rate (B) is allowed when VAT is disabled.")
 
-        if qs.exists():
-            raise ValidationError(
-                _("Service with this code already exists. Please use a unique code.")
-            )
+        # ===== EFRIS VALIDATION (only if EFRIS enabled) =====
+        if self.efris_enabled and efris_auto_sync:
+            if not category:
+                raise ValidationError({
+                    'efris_auto_sync_enabled': 'Please select a category before enabling EFRIS auto-sync.'
+                })
 
-        return code
+            if not hasattr(category, 'efris_commodity_category_code') or not category.efris_commodity_category_code:
+                raise ValidationError({
+                    'efris_auto_sync_enabled': (
+                        f"Category '{category.name}' must have an EFRIS commodity category assigned "
+                        f"before enabling EFRIS sync. Please update the category first or disable auto-sync."
+                    )
+                })
+
+        # If EFRIS is disabled, force efris_auto_sync to False
+        if not self.efris_enabled:
+            cleaned_data['efris_auto_sync_enabled'] = False
+
+        # Ensure required fields are present
+        required_fields = ['name', 'code', 'unit_price', 'tax_rate', 'unit_of_measure']
+
+        # Add category to required fields if EFRIS is enabled
+        if self.efris_enabled:
+            required_fields.append('category')
+
+        for field in required_fields:
+            if not cleaned_data.get(field):
+                self.add_error(field, _("This field is required"))
+
+        return cleaned_data
 
     def clean_category(self):
         """Validate category is a service category with valid EFRIS settings (if EFRIS enabled)"""
@@ -244,50 +313,18 @@ class ServiceForm(forms.ModelForm):
 
         return excise_rate
 
-    def clean(self):
-        """Additional cross-field validation"""
-        cleaned_data = super().clean()
-        efris_auto_sync = cleaned_data.get('efris_auto_sync_enabled')
-        category = cleaned_data.get('category')
-
-        # ===== EFRIS VALIDATION (only if EFRIS enabled) =====
-        if self.efris_enabled and efris_auto_sync:
-            if not category:
-                raise ValidationError({
-                    'efris_auto_sync_enabled': 'Please select a category before enabling EFRIS auto-sync.'
-                })
-
-            if not hasattr(category, 'efris_commodity_category_code') or not category.efris_commodity_category_code:
-                raise ValidationError({
-                    'efris_auto_sync_enabled': (
-                        f"Category '{category.name}' must have an EFRIS commodity category assigned "
-                        f"before enabling EFRIS sync. Please update the category first or disable auto-sync."
-                    )
-                })
-
-        # If EFRIS is disabled, force efris_auto_sync to False
-        if not self.efris_enabled:
-            cleaned_data['efris_auto_sync_enabled'] = False
-
-        # Ensure required fields are present
-        required_fields = ['name', 'code', 'unit_price', 'tax_rate', 'unit_of_measure']
-
-        # Add category to required fields if EFRIS is enabled
-        if self.efris_enabled:
-            required_fields.append('category')
-
-        for field in required_fields:
-            if not cleaned_data.get(field):
-                self.add_error(field, _("This field is required"))
-
-        return cleaned_data
 
     def save(self, commit=True):
-        """Override save to handle EFRIS logic"""
+        """Override save to handle EFRIS logic and VAT enforcement"""
         service = super().save(commit=False)
 
         # Set EFRIS enabled flag for validation
         service._efris_enabled = self.efris_enabled
+
+        # Force VAT compliance
+        if not self.is_vat_enabled:
+            service.tax_rate = 'B'
+            service.excise_duty_rate = 0
 
         # If EFRIS is disabled, ensure EFRIS fields are cleared
         if not self.efris_enabled:
@@ -299,10 +336,10 @@ class ServiceForm(forms.ModelForm):
 
         return service
 
-class ServiceQuickCreateForm(forms.ModelForm):
+
+class ServiceQuickCreateForm(VATAwareFormMixin, forms.ModelForm):
     """
-    Simplified form for quick service creation via AJAX.
-    Contains only essential fields.
+    Simplified form for quick service creation via AJAX with VAT enforcement.
     """
 
     class Meta:
@@ -346,6 +383,10 @@ class ServiceQuickCreateForm(forms.ModelForm):
             category_type='service',
             is_active=True
         )
+
+        # Set default tax rate based on VAT status for new instances
+        if not self.instance.pk and not self.is_vat_enabled:
+            self.fields['tax_rate'].initial = 'B'
 
     def clean_code(self):
         """Validate service code is unique"""
@@ -737,10 +778,7 @@ class SupplierForm(forms.ModelForm):
         return phone
 
 
-
-
-
-class ProductForm(forms.ModelForm):
+class ProductForm(VATAwareFormMixin, forms.ModelForm):  # ADD VATAwareFormMixin here
     class Meta:
         model = Product
         fields = [
@@ -753,27 +791,33 @@ class ProductForm(forms.ModelForm):
             'name': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Enter product name'}),
             'sku': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Enter or generate SKU'}),
             'barcode': forms.TextInput(attrs={'class': 'form-control', 'placeholder': 'Enter or generate barcode'}),
-            'description': forms.Textarea(attrs={'class': 'form-control', 'rows': 3, 'placeholder': 'Enter product description'}),
+            'description': forms.Textarea(
+                attrs={'class': 'form-control', 'rows': 3, 'placeholder': 'Enter product description'}),
             'category': forms.Select(attrs={'class': 'form-select'}),
             'supplier': forms.Select(attrs={'class': 'form-select'}),
             'selling_price': forms.NumberInput(attrs={'class': 'form-control', 'step': '0.01', 'min': '0'}),
             'cost_price': forms.NumberInput(attrs={'class': 'form-control', 'step': '0.01', 'min': '0'}),
-            'discount_percentage': forms.NumberInput(attrs={'class': 'form-control', 'step': '0.01', 'min': '0', 'max': '100', 'value': '0'}),
+            'discount_percentage': forms.NumberInput(
+                attrs={'class': 'form-control', 'step': '0.01', 'min': '0', 'max': '100', 'value': '0'}),
             'tax_rate': forms.Select(attrs={'class': 'form-select'}),
-            'excise_duty_rate': forms.NumberInput(attrs={'class': 'form-control', 'step': '0.01', 'min': '0', 'value': '0'}),
+            'excise_duty_rate': forms.NumberInput(
+                attrs={'class': 'form-control', 'step': '0.01', 'min': '0', 'value': '0'}),
             'unit_of_measure': forms.Select(attrs={'class': 'form-select'}),
             'min_stock_level': forms.NumberInput(attrs={'class': 'form-control', 'min': '0', 'value': '5'}),
             'is_active': forms.CheckboxInput(attrs={'class': 'form-check-input'}),
             'image': forms.FileInput(attrs={'class': 'form-control'}),
-            'efris_auto_sync_enabled': forms.CheckboxInput(attrs={'class': 'form-check-input efris-only'}),  # Added efris-only class
-            'efris_excise_duty_code': forms.TextInput(attrs={'class': 'form-control efris-only', 'placeholder': 'Enter EFRIS excise duty code'}),  # Added efris-only class
+            'efris_auto_sync_enabled': forms.CheckboxInput(attrs={'class': 'form-check-input efris-only'}),
+            'efris_excise_duty_code': forms.TextInput(
+                attrs={'class': 'form-control efris-only', 'placeholder': 'Enter EFRIS excise duty code'}),
         }
 
     def __init__(self, *args, **kwargs):
-        # Extract EFRIS status from kwargs
+        # Extract EFRIS status and company from kwargs
         self.efris_enabled = kwargs.pop('efris_enabled', False)
+
+        # Call VATAwareFormMixin first, then ProductForm
         super().__init__(*args, **kwargs)
-        
+
         # Set default values for new instances only
         if not self.instance.pk:  # New product
             self.fields['is_active'].initial = True
@@ -781,7 +825,7 @@ class ProductForm(forms.ModelForm):
             self.fields['discount_percentage'].initial = 0
             self.fields['excise_duty_rate'].initial = 0
             self.fields['min_stock_level'].initial = 5
-        
+
         # ===== EFRIS CONDITIONAL LOGIC =====
         if not self.efris_enabled:
             # Hide EFRIS-specific fields
@@ -789,7 +833,7 @@ class ProductForm(forms.ModelForm):
                 'efris_auto_sync_enabled',
                 'efris_excise_duty_code',
             ]
-            
+
             for field_name in efris_fields:
                 if field_name in self.fields:
                     # Make field hidden and not required
@@ -804,16 +848,10 @@ class ProductForm(forms.ModelForm):
                 self.fields['efris_auto_sync_enabled'].help_text = (
                     'Enable automatic synchronization with EFRIS system for tax compliance'
                 )
-            
+
             if 'efris_excise_duty_code' in self.fields:
                 self.fields['efris_excise_duty_code'].help_text = (
                     'Enter the EFRIS excise duty code if applicable (required for excise duty products)'
-                )
-            
-            # Filter categories to show only those with EFRIS commodity categories
-            if 'category' in self.fields:
-                self.fields['category'].help_text = (
-                    'Select a category with EFRIS commodity category for tax compliance'
                 )
 
     def clean(self):
@@ -825,46 +863,33 @@ class ProductForm(forms.ModelForm):
         tax_rate = cleaned_data.get('tax_rate')
         excise_duty_rate = cleaned_data.get('excise_duty_rate')
 
+
         # ===== EFRIS VALIDATION (only if EFRIS is enabled) =====
         if self.efris_enabled and efris_auto_sync:
             if not category:
-                raise ValidationError({
-                    'efris_auto_sync_enabled': 'Please select a category before enabling EFRIS auto-sync.'
-                })
-            
-            if not hasattr(category, 'efris_commodity_category_code') or not category.efris_commodity_category_code:
-                raise ValidationError({
-                    'efris_auto_sync_enabled': f"Category '{category.name}' must have an EFRIS commodity category assigned before enabling EFRIS sync. Please update the category first or disable auto-sync."
-                })
-        
+                self.add_error('efris_auto_sync_enabled', 'Please select a category before enabling EFRIS auto-sync.')
+
+            if category and (not hasattr(category,
+                                         'efris_commodity_category_code') or not category.efris_commodity_category_code):
+                self.add_error('efris_auto_sync_enabled',
+                               f"Category '{category.name}' must have an EFRIS commodity category assigned before enabling EFRIS sync. Please update the category first or disable auto-sync.")
+
         # If EFRIS is disabled, force efris_auto_sync to False
         if not self.efris_enabled:
             cleaned_data['efris_auto_sync_enabled'] = False
-            cleaned_data['efris_excise_duty_code'] = ''
+            if 'efris_excise_duty_code' in cleaned_data:
+                cleaned_data['efris_excise_duty_code'] = ''
 
         # Validate pricing
         if cost_price is not None and selling_price is not None:
             if cost_price > selling_price:
-                raise ValidationError({
-                    'selling_price': 'Selling price cannot be less than cost price.'
-                })
-            
-            if cost_price < 0:
-                raise ValidationError({
-                    'cost_price': 'Cost price must be a positive number.'
-                })
-            
-            if selling_price < 0:
-                raise ValidationError({
-                    'selling_price': 'Selling price must be a positive number.'
-                })
+                self.add_error('selling_price', 'Selling price cannot be less than cost price.')
 
-        # Validate excise duty rate is provided when tax rate is 'E' (Excise Duty)
-        if tax_rate == 'E':
-            if not excise_duty_rate or excise_duty_rate <= 0:
-                raise ValidationError({
-                    'excise_duty_rate': 'Excise duty rate is required when tax rate is set to "E - Excise Duty".'
-                })
+            if cost_price < 0:
+                self.add_error('cost_price', 'Cost price must be a positive number.')
+
+            if selling_price < 0:
+                self.add_error('selling_price', 'Selling price must be a positive number.')
 
         return cleaned_data
 
@@ -876,10 +901,10 @@ class ProductForm(forms.ModelForm):
             queryset = Product.objects.filter(sku=sku)
             if self.instance.pk:
                 queryset = queryset.exclude(pk=self.instance.pk)
-            
+
             if queryset.exists():
                 raise ValidationError(f'Product with SKU "{sku}" already exists.')
-        
+
         return sku
 
     def clean_barcode(self):
@@ -890,10 +915,10 @@ class ProductForm(forms.ModelForm):
             queryset = Product.objects.filter(barcode=barcode)
             if self.instance.pk:
                 queryset = queryset.exclude(pk=self.instance.pk)
-            
+
             if queryset.exists():
                 raise ValidationError(f'Product with barcode "{barcode}" already exists.')
-        
+
         return barcode
 
     def clean_discount_percentage(self):
@@ -905,9 +930,15 @@ class ProductForm(forms.ModelForm):
         return discount or 0
 
     def save(self, commit=True):
-        """Override save to handle EFRIS category inheritance"""
+        """Override save to handle EFRIS category inheritance and VAT enforcement"""
         product = super().save(commit=False)
-        
+
+        # Force VAT compliance - ensure tax rate is B when VAT disabled
+        # This is now handled by the form validation, but we keep it here for safety
+        if not self.is_vat_enabled:
+            product.tax_rate = 'B'
+            product.excise_duty_rate = 0
+
         # ===== EFRIS CATEGORY INHERITANCE (only if EFRIS enabled) =====
         if self.efris_enabled:
             if product.category and hasattr(product.category, 'efris_commodity_category_code'):
@@ -916,11 +947,11 @@ class ProductForm(forms.ModelForm):
             # Clear EFRIS fields if disabled
             product.efris_auto_sync_enabled = False
             product.efris_excise_duty_code = ''
-        
+
         if commit:
             product.save()
             self.save_m2m()
-        
+
         return product
     
 class StockForm(forms.ModelForm):
@@ -1586,7 +1617,7 @@ class StockAdjustmentForm(forms.Form):
 
         # Set initial reference if not provided
         if not self.initial.get('reference'):
-            self.initial['reference'] = f'ADJ-{timezone.now().strftime("%Y%m%d%H%M")}'
+            self.initial['reference'] = ''
 
     def clean_quantity(self):
         """Validate quantity based on movement type"""
@@ -1667,7 +1698,7 @@ class StockAdjustmentForm(forms.Form):
             quantity=movement_quantity,
             unit_price=unit_price,
             total_value=total_value,
-            reference=reference or f'ADJ-{timezone.now().strftime("%Y%m%d%H%M%S")}',
+            reference=reference or '',
             notes=notes,
             created_by=self.user
         )

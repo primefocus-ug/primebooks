@@ -64,9 +64,6 @@ urlpatterns = [
     path('api/efris-categories/search/',
          views.efris_category_search,
          name='efris_category_search'),
-    path('api/efris-categories/<int:category_id>/',
-         views.efris_category_detail,
-         name='efris_category_detail_legacy'),
 
     # Suppliers
     path('suppliers/', views.SupplierListView.as_view(), name='supplier_list'),
@@ -166,3 +163,9 @@ urlpatterns = [
          importt.download_sample_products_only_excel,
          name='download_sample_products_excel'),
 ]
+
+"""
+path('api/efris-categories/<int:category_id>/',
+         views.efris_category_detail,
+         name='efris_category_detail_legacy'),
+"""

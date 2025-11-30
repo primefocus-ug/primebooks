@@ -2305,7 +2305,7 @@ class EFRISDataTransformer:
     def _build_goods_details(self, invoice) -> List[Dict[str, Any]]:
         """
         Build goods details matching EFRIS T109 specification exactly
-        FIXED: orderNumber must start from 0 and increment
+        FIXED: Support both Product and Service models with proper field mapping
         """
         goods_details = []
         items = self._get_invoice_items(invoice)
@@ -2319,84 +2319,133 @@ class EFRISDataTransformer:
         if not items:
             raise Exception("Invoice must have at least one item")
 
-        # ✅ FIXED: Use enumerate starting from 0
-        for idx, item in enumerate(items, 0):  # Start from 0, not 1
+        # ✅ Use enumerate starting from 0
+        for idx, item in enumerate(items, 0):
             try:
+                # ✅ Try to get PRODUCT first
                 product = getattr(item, 'product', None)
 
+                # ✅ If no product, try to get SERVICE
+                service = getattr(item, 'service', None) if not product else None
+
                 if product:
+                    # ========== PRODUCT PROCESSING ==========
                     item_code = getattr(product, 'efris_goods_code', None)
                     if not item_code:
-                        item_code = f"{getattr(product, 'efris_goods_code')}"
+                        item_code = f"{getattr(product, 'sku', 'PROD')}{product.id}"
 
-                    # Get amounts
-                    quantity = float(getattr(item, 'quantity', 1))
-                    unit_price = float(getattr(item, 'unit_price', 0) or getattr(item, 'price', 0))
-                    line_total = quantity * unit_price
+                    item_name = product.name[:200]
+                    unit_of_measure = product.unit_of_measure
 
-                    # Tax calculation - EFRIS expects net amount + tax = gross
-                    tax_rate_raw = getattr(item, 'tax_rate', 'A')
-                    tax_rate = self.get_numeric_tax_rate(tax_rate_raw)
-
-                    # Calculate net and tax from gross (line_total)
-                    net_amount = line_total / (1 + tax_rate / 100)
-                    tax_amount = line_total - net_amount
-
-                    goods_detail = {
-                        "item": product.name[:200],
-                        "invoiceNo": str(invoice_no),
-                        "itemCode": product.efris_goods_code[:50],
-                        "qty": f"{quantity:.2f}",
-                        "unitOfMeasure": product.unit_of_measure,
-                        "unitPrice": f"{unit_price:.2f}",
-                        "total": f"{line_total:.2f}",
-                        "taxRate": f"{tax_rate / 100:.4f}",
-                        "tax": f"{tax_amount:.2f}",
-                        "orderNumber": idx,
-                        "discountFlag": "2",
-                        "deemedFlag": "2",
-                        "exciseFlag": "2",
-                        "goodsCategoryId": product.category.efris_category_id,
-                        "goodsCategoryName": product.category.efris_commodity_category_code,
-                    }
-
-                    # Only add optional fields if they have values
-                    discount_amount = float(getattr(item, 'discount_amount', 0) or 0)
-                    if discount_amount > 0:
-                        goods_detail["discountTotal"] = f"{discount_amount:.2f}"
-                        goods_detail["discountTaxRate"] = goods_detail["taxRate"]
+                    # Get category info
+                    if product.category:
+                        goods_category_id = product.category.efris_category_id or ''
+                        goods_category_name = product.category.efris_commodity_category_code or ''
                     else:
-                        goods_detail["discountTotal"] = ""
+                        goods_category_id = ''
+                        goods_category_name = ''
 
-                    # Excise fields - only include if product has excise
-                    if getattr(product, 'has_excise_tax', False):
-                        goods_detail["exciseFlag"] = "1"
-                        goods_detail["categoryId"] = str(getattr(product, 'excise_category_id', ''))[:18]
-                        goods_detail["categoryName"] = str(getattr(product, 'excise_category_name', ''))[:1024]
-                        goods_detail["exciseRate"] = str(getattr(product, 'excise_rate', '0'))[:21]
-                        goods_detail["exciseRule"] = str(getattr(product, 'excise_rule', '1'))
-                        goods_detail["exciseTax"] = f"{float(getattr(product, 'excise_tax', 0)):.2f}"
+                    # Check excise
+                    has_excise = getattr(product, 'has_excise_tax', False)
+                    excise_entity = product
+
+                elif service:
+                    # ========== SERVICE PROCESSING ==========
+                    # Use service code directly
+                    item_code = service.efris_service_code
+
+                    item_name = service.name[:200]
+                    unit_of_measure = service.unit_of_measure
+
+                    # Get category info from service's category
+                    if service.category:
+                        # Service category has efris_category_id
+                        goods_category_id = service.category.efris_category_id or ''
+                        goods_category_name = service.category.efris_commodity_category_code or ''
                     else:
-                        # Empty strings for non-excise items (per documentation)
-                        goods_detail["categoryId"] = ""
-                        goods_detail["categoryName"] = ""
-                        goods_detail["exciseCurrency"] = ""
-                        goods_detail["exciseTax"] = ""
-                        goods_detail["pack"] = ""
-                        goods_detail["stick"] = ""
-                        goods_detail["exciseUnit"] = ""
-                        goods_detail["exciseDutyCode"] = ""
+                        # Default fallback for services without category
+                        goods_category_id = '100000000000000000'  # Default service category
+                        goods_category_name = 'General Services'
 
-                    logger.debug(
-                        f"Item {idx}: {product.name}, "
-                        f"orderNumber={idx}, "  # ✅ Log the order number
-                        f"itemCode={item_code}, "
-                        f"goodsCategoryId={product.category.efris_category_id}"
-                    )
+                    # Services typically don't have excise tax
+                    has_excise = False
+                    if service.tax_rate == 'E':  # Excise Duty rate
+                        has_excise = True
+                        excise_entity = service
+                    else:
+                        excise_entity = None
 
                 else:
-                    # Fallback for items without product
-                    raise Exception(f"Item {idx} has no product - cannot fiscalize")
+                    # Neither product nor service found
+                    raise Exception(f"Item {idx} has no product or service - cannot fiscalize")
+
+                # ========== COMMON PROCESSING (applies to both) ==========
+                # Get amounts (same for both products and services)
+                quantity = float(getattr(item, 'quantity', 1))
+                unit_price = float(getattr(item, 'unit_price', 0) or getattr(item, 'price', 0))
+                line_total = quantity * unit_price
+
+                # Tax calculation
+                tax_rate_raw = getattr(item, 'tax_rate', 'A')
+                tax_rate = self.get_numeric_tax_rate(tax_rate_raw)
+
+                # Calculate net and tax from gross (line_total)
+                net_amount = line_total / (1 + tax_rate / 100)
+                tax_amount = line_total - net_amount
+
+                # Build goods detail
+                goods_detail = {
+                    "item": item_name,
+                    "invoiceNo": str(invoice_no),
+                    "itemCode": item_code[:50],
+                    "qty": f"{quantity:.2f}",
+                    "unitOfMeasure": unit_of_measure,
+                    "unitPrice": f"{unit_price:.2f}",
+                    "total": f"{line_total:.2f}",
+                    "taxRate": f"{tax_rate / 100:.4f}",
+                    "tax": f"{tax_amount:.2f}",
+                    "orderNumber": idx,
+                    "discountFlag": "2",
+                    "deemedFlag": "2",
+                    "exciseFlag": "2",
+                    "goodsCategoryId": goods_category_id,
+                    "goodsCategoryName": goods_category_name,
+                }
+
+                # Discount handling
+                discount_amount = float(getattr(item, 'discount_amount', 0) or 0)
+                if discount_amount > 0:
+                    goods_detail["discountTotal"] = f"{discount_amount:.2f}"
+                    goods_detail["discountTaxRate"] = goods_detail["taxRate"]
+                else:
+                    goods_detail["discountTotal"] = ""
+
+                # Excise tax fields
+                if has_excise and excise_entity:
+                    goods_detail["exciseFlag"] = "1"
+                    goods_detail["categoryId"] = str(getattr(excise_entity, 'excise_category_id', ''))[:18]
+                    goods_detail["categoryName"] = str(getattr(excise_entity, 'excise_category_name', ''))[:1024]
+                    goods_detail["exciseRate"] = str(getattr(excise_entity, 'excise_duty_rate', '0'))[:21]
+                    goods_detail["exciseRule"] = str(getattr(excise_entity, 'excise_rule', '1'))
+                    goods_detail["exciseTax"] = f"{float(getattr(excise_entity, 'excise_tax', 0)):.2f}"
+                else:
+                    # Empty strings for non-excise items
+                    goods_detail["categoryId"] = ""
+                    goods_detail["categoryName"] = ""
+                    goods_detail["exciseCurrency"] = ""
+                    goods_detail["exciseTax"] = ""
+                    goods_detail["pack"] = ""
+                    goods_detail["stick"] = ""
+                    goods_detail["exciseUnit"] = ""
+                    goods_detail["exciseDutyCode"] = ""
+
+                logger.debug(
+                    f"Item {idx}: {item_name}, "
+                    f"orderNumber={idx}, "
+                    f"itemCode={item_code}, "
+                    f"type={'PRODUCT' if product else 'SERVICE'}, "
+                    f"categoryId={goods_category_id}"
+                )
 
                 goods_details.append(goods_detail)
 
@@ -2404,8 +2453,9 @@ class EFRISDataTransformer:
                 logger.error(f"Failed to process item {idx}: {e}", exc_info=True)
                 raise Exception(f"Item {idx} processing failed: {e}")
 
-        # ✅ VERIFY: Log the order numbers for debugging
+        # ✅ Log order numbers for verification
         order_numbers = [item.get('orderNumber') for item in goods_details]
+        logger.debug(f"Built goods_details with order numbers: {order_numbers}")
 
         return goods_details
 
@@ -2849,7 +2899,7 @@ class EnhancedEFRISAPIClient:
                 "operationType": "101",  # 101=Add, 102=Modify
                 "goodsName": str(service.name[:200] if service.name else "Unnamed Service"),
                 "goodsCode": str(service_code),
-                "measureUnit": self._map_unit_to_efris(service.unit_of_measure),
+                "measureUnit": service.unit_of_measure,
                 "unitPrice": f"{unit_price:.2f}",
                 "currency": "101",  # UGX
                 "commodityCategoryId": service.category.efris_category_id if service.category else '100000000000000000',
@@ -2965,7 +3015,7 @@ class EnhancedEFRISAPIClient:
 
                 # Handle normal response list
                 result_item = decrypted_content[0]
-                efris_service_id = result_item.get('commodityGoodsId') or result_item.get('goodsId')
+                efris_service_id = result_item.get('commodityGoodsId') or result_item.get('goodsId') or result_item.get('id')
                 efris_service_code = result_item.get('goodsCode') or service_code
 
                 # Update service
@@ -3158,7 +3208,7 @@ class EnhancedEFRISAPIClient:
                 "operationType": "101",  # 101=Add, 102=Modify
                 "goodsName": str(product.name[:200] if product.name else "Unnamed Product"),
                 "goodsCode": str(goods_code),
-                "measureUnit": self._map_unit_to_efris(product.unit_of_measure),
+                "measureUnit": product.unit_of_measure,
                 "unitPrice": f"{selling_price:.2f}",
                 "currency": "101",  # UGX
                 "commodityCategoryId": product.category.efris_category_id if product.category else '101113010000000000',
@@ -3564,7 +3614,7 @@ class EnhancedEFRISAPIClient:
                                 product.efris_upload_date = timezone.now()
 
                             # Store any returned commodity goods ID
-                            goods_id = goods_info.get('commodityGoodsId')
+                            goods_id = goods_info.get('commodityGoodsId') or goods_info.get('goodsId') or goods_info.get('id')
                             if goods_id and hasattr(product, 'efris_goods_id'):
                                 product.efris_goods_id = goods_id
 
@@ -8276,7 +8326,7 @@ class EnhancedEFRISAPIClient:
                         defaults={
                             'name': goods.get('goodsName', 'Imported from EFRIS'),
                             'selling_price': float(goods.get('unitPrice', 0)),
-                            'unit_of_measure': goods.get('measureUnit', '101'),
+                            'unit_of_measure': goods.get('measureUnit'),
                             'efris_goods_id': (goods.get('id') or goods.get('goodsId') or goods.get('commodityGoodsId')),
                             'efris_is_uploaded': True
                         }
@@ -8409,7 +8459,7 @@ class EnhancedEFRISAPIClient:
                 stock_item = {
                     "commodityGoodsId": product.efris_goods_id,
                     "goodsCode": product.efris_goods_code,
-                    "measureUnit": self._map_unit_to_efris(product.unit_of_measure),
+                    "measureUnit": product.unit_of_measure,
                     "quantity": str(float(stock.quantity)),
                     "unitPrice": str(float(product.cost_price)),
                     "remarks": f"Stock sync for {stock.store.name}"
@@ -8496,7 +8546,7 @@ class EnhancedEFRISAPIClient:
         stock_item = {
             "commodityGoodsId": product.efris_goods_id,
             "goodsCode": product.efris_goods_code,
-            "measureUnit": self._map_unit_to_efris(product.unit_of_measure),
+            "measureUnit": product.unit_of_measure,
             "quantity": str(abs(float(movement.quantity))),
             "unitPrice": str(float(movement.unit_price or product.cost_price)),
             "remarks": movement.notes or movement.reference or ""
@@ -8721,7 +8771,7 @@ class EnhancedEFRISAPIClient:
         transfer_item = {
             "commodityGoodsId": product.efris_goods_id,
             "goodsCode": product.efris_goods_code,
-            "measureUnit": self._map_unit_to_efris(product.unit_of_measure),
+            "measureUnit": product.unit_of_measure,
             "quantity": str(abs(float(movement.quantity))),
             "remarks": movement.notes or movement.reference or ""
         }
@@ -8958,7 +9008,7 @@ class EnhancedEFRISAPIClient:
         stock_item = {
             "commodityGoodsId": product.efris_goods_id,
             "goodsCode": product.efris_goods_code,
-            "measureUnit": self._map_unit_to_efris(product.unit_of_measure),
+            "measureUnit": product.unit_of_measure,
             "quantity": str(float(quantity)),
             "unitPrice": str(float(product.cost_price))
         }
@@ -9011,7 +9061,7 @@ class EnhancedEFRISAPIClient:
         stock_item = {
             "commodityGoodsId": product.efris_goods_id,
             "goodsCode": product.efris_goods_code_field,
-            "measureUnit": self._map_unit_to_efris(product.unit_of_measure),
+            "measureUnit": product.unit_of_measure,
             "quantity": str(float(quantity)),
             "unitPrice": str(float(product.cost_price))
         }

@@ -2437,6 +2437,7 @@ class ProductListView(LoginRequiredMixin,PermissionRequiredMixin, ListView):
 
         return context
 
+
 class ProductCreateView(EFRISConditionalMixin, LoginRequiredMixin, PermissionRequiredMixin, CreateView):
     model = Product
     form_class = ProductForm
@@ -2460,16 +2461,26 @@ class ProductCreateView(EFRISConditionalMixin, LoginRequiredMixin, PermissionReq
         return initial
 
     def get_form_kwargs(self):
-        """Pass EFRIS status to form"""
+        """Pass EFRIS status and company to form"""
         kwargs = super().get_form_kwargs()
         # Get EFRIS status from request (set by middleware)
         kwargs['efris_enabled'] = getattr(self.request, 'efris', {}).get('enabled', False)
+
+        # NEW: Get company and pass to form for VAT handling
+        from django_tenants.utils import get_tenant_model
+        Company = get_tenant_model()
+        try:
+            kwargs['company'] = Company.objects.get(schema_name=self.request.tenant.schema_name)
+        except (Company.DoesNotExist, AttributeError):
+            # Fallback if tenant context not available
+            kwargs['company'] = None
+
         return kwargs
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context['form_type'] = 'product'
-        
+
         # Add supplier info to context for display
         supplier_id = self.request.GET.get('supplier')
         if supplier_id:
@@ -2478,9 +2489,19 @@ class ProductCreateView(EFRISConditionalMixin, LoginRequiredMixin, PermissionReq
                 context['preselected_supplier'] = supplier
             except (Supplier.DoesNotExist, ValueError):
                 pass
-        
+
         # Add EFRIS status (already added by EFRISConditionalMixin, but being explicit)
         context['show_efris_fields'] = context.get('efris_enabled', False)
+
+        # NEW: Add company VAT status to context
+        from django_tenants.utils import get_tenant_model
+        Company = get_tenant_model()
+        try:
+            company = Company.objects.get(schema_name=self.request.tenant.schema_name)
+            context['company_vat_enabled'] = company.is_vat_enabled
+        except (Company.DoesNotExist, AttributeError):
+            context['company_vat_enabled'] = True  # Default to enabled if not found
+
         return context
 
     def form_valid(self, form):
@@ -2488,10 +2509,10 @@ class ProductCreateView(EFRISConditionalMixin, LoginRequiredMixin, PermissionReq
             response = super().form_valid(form)
             logger.info(f"Product created successfully: {form.instance.name} (ID: {form.instance.id})")
             messages.success(self.request, 'Product created successfully!')
-            
+
             if 'save_and_add_another' in self.request.POST:
                 return redirect('inventory:product_create')
-            
+
             return response
         except Exception as e:
             logger.error(f"Error saving product: {str(e)}")
@@ -2504,6 +2525,8 @@ class ProductCreateView(EFRISConditionalMixin, LoginRequiredMixin, PermissionReq
             for error in errors:
                 messages.error(self.request, f"{field}: {error}")
         return super().form_invalid(form)
+
+
 class ProductCreateModalView(EFRISConditionalMixin, LoginRequiredMixin, PermissionRequiredMixin, TemplateView):
     """
     View to render the product creation form in a popup window
@@ -2513,15 +2536,27 @@ class ProductCreateModalView(EFRISConditionalMixin, LoginRequiredMixin, Permissi
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        
+
         # Get EFRIS status
         efris_enabled = getattr(self.request, 'efris', {}).get('enabled', False)
-        
-        # Create form with EFRIS status
-        context['form'] = ProductForm(efris_enabled=efris_enabled)
+
+        # NEW: Get company for VAT handling
+        from django_tenants.utils import get_tenant_model
+        Company = get_tenant_model()
+        try:
+            company = Company.objects.get(schema_name=self.request.tenant.schema_name)
+        except (Company.DoesNotExist, AttributeError):
+            company = None
+
+        # Create form with EFRIS status and company
+        context['form'] = ProductForm(efris_enabled=efris_enabled, company=company)
         context['is_modal'] = True
-        
+
+        # NEW: Add company VAT status to context
+        context['company_vat_enabled'] = company.is_vat_enabled if company else True
+
         return context
+
 
 class ProductCreateAjaxView(LoginRequiredMixin, PermissionRequiredMixin, View):
     """
@@ -2532,19 +2567,27 @@ class ProductCreateAjaxView(LoginRequiredMixin, PermissionRequiredMixin, View):
     def post(self, request, *args, **kwargs):
         # Get EFRIS status
         efris_enabled = getattr(request, 'efris', {}).get('enabled', False)
-        
-        # Create form with EFRIS status
-        form = ProductForm(request.POST, request.FILES, efris_enabled=efris_enabled)
-        
+
+        # NEW: Get company for VAT handling
+        from django_tenants.utils import get_tenant_model
+        Company = get_tenant_model()
+        try:
+            company = Company.objects.get(schema_name=request.tenant.schema_name)
+        except (Company.DoesNotExist, AttributeError):
+            company = None
+
+        # Create form with EFRIS status and company
+        form = ProductForm(request.POST, request.FILES, efris_enabled=efris_enabled, company=company)
+
         if form.is_valid():
             try:
                 with transaction.atomic():
                     product = form.save(commit=False)
                     product.save()
-                    
+
                     logger.info(f"Product created successfully via AJAX: {product.name} (ID: {product.id})")
-                    
-                    # Return product data
+
+                    # Return product data including VAT status
                     return JsonResponse({
                         'success': True,
                         'message': 'Product created successfully!',
@@ -2558,6 +2601,9 @@ class ProductCreateAjaxView(LoginRequiredMixin, PermissionRequiredMixin, View):
                             'category_id': product.category.id if product.category else None,
                             'category_name': product.category.name if product.category else None,
                             'efris_enabled': product.efris_auto_sync_enabled if efris_enabled else False,
+                            'tax_rate': product.tax_rate,
+                            'effective_tax_rate': product.effective_tax_rate,  # NEW
+                            'company_vat_enabled': company.is_vat_enabled if company else True,  # NEW
                         }
                     })
             except Exception as e:
@@ -2582,21 +2628,43 @@ class ProductUpdateView(EFRISConditionalMixin, LoginRequiredMixin, PermissionReq
     success_url = reverse_lazy('inventory:product_list')
 
     def get_form_kwargs(self):
-        """Pass EFRIS status to form"""
+        """Pass EFRIS status and company to form"""
         kwargs = super().get_form_kwargs()
         kwargs['efris_enabled'] = getattr(self.request, 'efris', {}).get('enabled', False)
+
+        # NEW: Get company and pass to form for VAT handling
+        from django_tenants.utils import get_tenant_model
+        Company = get_tenant_model()
+        try:
+            kwargs['company'] = Company.objects.get(schema_name=self.request.tenant.schema_name)
+        except (Company.DoesNotExist, AttributeError):
+            # Fallback if tenant context not available
+            kwargs['company'] = None
+
         return kwargs
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context['form_type'] = 'product'
         context['show_efris_fields'] = context.get('efris_enabled', False)
+
+        # NEW: Add company VAT status and effective tax rate to context
+        from django_tenants.utils import get_tenant_model
+        Company = get_tenant_model()
+        try:
+            company = Company.objects.get(schema_name=self.request.tenant.schema_name)
+            context['company_vat_enabled'] = company.is_vat_enabled
+        except (Company.DoesNotExist, AttributeError):
+            context['company_vat_enabled'] = True
+
+        context['effective_tax_rate'] = self.object.effective_tax_rate
+        context['is_vat_forced'] = not context['company_vat_enabled'] and self.object.tax_rate != 'B'
+
         return context
 
     def form_valid(self, form):
         messages.success(self.request, 'Product updated successfully!')
         return super().form_valid(form)
-
 
 class ProductDetailView(LoginRequiredMixin, PermissionRequiredMixin, DetailView):
     model = Product

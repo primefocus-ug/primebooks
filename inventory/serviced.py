@@ -7,6 +7,7 @@ from django.views.decorators.http import require_http_methods, require_POST
 from django.http import JsonResponse, HttpResponse
 from django.urls import reverse_lazy, reverse
 from django.db.models import Q, Count, Sum, Avg
+from django.db import transaction
 from django.core.paginator import Paginator
 from django.utils.translation import gettext_lazy as _
 from django.views.decorators.csrf import csrf_exempt
@@ -190,7 +191,6 @@ def service_list_api(request):
                 },
                 'unit_price': float(service.unit_price),
                 'unit_price_formatted': f'{service.unit_price:,.2f}',
-                'discount_percentage': float(service.discount_percentage),
                 'final_price': float(service.final_price),
                 'final_price_formatted': f'{service.final_price:,.2f}',
                 'tax_rate': service.tax_rate,
@@ -236,6 +236,14 @@ class ServiceCreateView(LoginRequiredMixin, PermissionRequiredMixin, CreateView)
     form_class = ServiceForm
     permission_required = 'inventory.add_service'
     template_name = 'inventory/service_form.html'
+
+    def get_form_kwargs(self):
+        kwargs = super().get_form_kwargs()
+        # Add company for VAT enforcement
+        kwargs['company'] = self.request.tenant  # Or however you access Company
+        # Add EFRIS status
+        kwargs['efris_enabled'] = self.request.tenant.efris_enabled
+        return kwargs
 
     def get_success_url(self):
         if self.request.headers.get('X-Requested-With') == 'XMLHttpRequest':
@@ -307,6 +315,14 @@ class ServiceUpdateView(LoginRequiredMixin, PermissionRequiredMixin, UpdateView)
     form_class = ServiceForm
     permission_required = 'inventory.change_service'
     template_name = 'inventory/service_form.html'
+
+    def get_form_kwargs(self):
+        kwargs = super().get_form_kwargs()
+        # Add company for VAT enforcement
+        kwargs['company'] = self.request.tenant  # Or however you access Company
+        # Add EFRIS status
+        kwargs['efris_enabled'] = self.request.tenant.efris_enabled
+        return kwargs
 
     def get_success_url(self):
         return reverse('inventory:service_detail', args=[self.object.pk])
@@ -450,7 +466,6 @@ def service_detail_api(request, pk):
             'category_id': service.category_id,
             'category_name': service.category.name if service.category else None,
             'unit_price': str(service.unit_price),
-            'discount_percentage': str(service.discount_percentage),
             'final_price': str(service.final_price),
             'tax_rate': service.tax_rate,
             'excise_duty_rate': str(service.excise_duty_rate),
@@ -518,6 +533,7 @@ def service_search_api(request):
 @login_required
 @permission_required('inventory.change_service')
 @require_POST
+@transaction.atomic
 def service_bulk_actions(request):
     """Handle bulk actions on services"""
     try:

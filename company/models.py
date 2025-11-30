@@ -792,6 +792,44 @@ class Company(TenantMixin,EFRISCompanyMixin):
             return (self.subscription_ends_at - today).days
         return 0
 
+    def enforce_vat_compliance(self):
+        """
+        Enforce VAT compliance - convert all products/services to zero rate if VAT disabled
+        """
+        if not self.is_vat_enabled:
+            from django_tenants.utils import schema_context
+            from inventory.models import Product, Service
+
+            with schema_context(self.schema_name):
+                # Update all active products to tax rate B
+                Product.objects.filter(is_active=True).update(tax_rate='B')
+                # Update all active services to tax rate B
+                Service.objects.filter(is_active=True).update(tax_rate='B')
+
+    def get_effective_tax_rate(self, product_tax_rate):
+        """
+        Get the effective tax rate considering company VAT status
+        Returns the actual tax rate that should be used
+        """
+        if not self.is_vat_enabled:
+            return 'B'  # Force zero rate
+        return product_tax_rate
+
+    @property
+    def allowed_tax_rates(self):
+        """
+        Get list of allowed tax rates based on VAT status
+        """
+        if not self.is_vat_enabled:
+            return [('B', 'Zero rate (0%)')]  # Only zero rate allowed
+        return self.TAX_RATE_CHOICES  # All rates allowed
+
+    def can_charge_vat(self):
+        """
+        Check if company can charge VAT
+        """
+        return self.is_vat_enabled and self.has_active_access
+
     # EFRIS Properties
     @property
     def efris_api_url(self):

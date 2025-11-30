@@ -16,13 +16,12 @@
         <p class="text-muted mb-0">{% trans "Browse and manage EFRIS commodity categories" %}</p>
     </div>
     <div>
-        <form action="{% url 'efris:sync_categories' %}" method="post" style="display:inline;">
+        <form action="{% url 'efris:sync_categories' %}" method="post" style="display:inline;" id="sync-form">
             {% csrf_token %}
-            <button type="submit" class="btn btn-primary">
+            <button type="submit" class="btn btn-primary" id="sync-btn">
                 <i class="bi bi-arrow-repeat me-2"></i>{% trans "Sync Categories" %}
             </button>
         </form>
-
     </div>
 </div>
 {% endblock %}
@@ -42,7 +41,7 @@
                         class="form-control"
                         name="search"
                         placeholder="{% trans 'Search by code or name...' %}"
-                        value="{{ search }}"
+                        value="{{ request.GET.search|default:'' }}"
                     >
                 </div>
             </div>
@@ -82,21 +81,19 @@
                         </td>
                         <td>
                             <strong>{{ category.commodity_category_name }}</strong>
-                            {% if category.commodity_category_name_cn %}
-                            <br>
-                            <small class="text-muted">{{ category.commodity_category_name_cn }}</small>
-                            {% endif %}
+                            <!-- Removed non-existent field -->
                         </td>
                         <td>
-                            {% if category.parent_code %}
+                            {% if category.parent_code and category.parent_code != '0' %}
                             <span class="badge bg-light text-dark">{{ category.parent_code }}</span>
                             {% else %}
                             <span class="text-muted">{% trans "Root Category" %}</span>
                             {% endif %}
                         </td>
                         <td class="text-center">
-                            <span class="badge bg-{% if category.is_active %}success{% else %}secondary{% endif %}">
-                                {% if category.is_active %}
+                            <!-- Fixed status display -->
+                            <span class="badge bg-{% if category.enable_status_code == '1' %}success{% else %}secondary{% endif %}">
+                                {% if category.enable_status_code == '1' %}
                                     <i class="bi bi-check-circle me-1"></i>{% trans "Active" %}
                                 {% else %}
                                     {% trans "Inactive" %}
@@ -108,7 +105,7 @@
                     <tr>
                         <td colspan="4" class="text-center text-muted py-5">
                             <i class="bi bi-inbox display-4 d-block mb-3"></i>
-                            {% if search %}
+                            {% if request.GET.search %}
                                 <p>{% trans "No categories found matching your search" %}</p>
                                 <a href="{% url 'efris:commodity_categories' %}" class="btn btn-sm btn-outline-primary">
                                     {% trans "Clear Search" %}
@@ -121,7 +118,6 @@
                                         <i class="bi bi-arrow-repeat me-2"></i>{% trans "Sync Categories" %}
                                     </button>
                                 </form>
-
                             {% endif %}
                         </td>
                     </tr>
@@ -137,12 +133,12 @@
             <ul class="pagination justify-content-center mb-0">
                 {% if categories.has_previous %}
                 <li class="page-item">
-                    <a class="page-link" href="?page=1{% if search %}&search={{ search }}{% endif %}">
+                    <a class="page-link" href="?page=1{% if request.GET.search %}&search={{ request.GET.search }}{% endif %}">
                         <i class="bi bi-chevron-double-left"></i>
                     </a>
                 </li>
                 <li class="page-item">
-                    <a class="page-link" href="?page={{ categories.previous_page_number }}{% if search %}&search={{ search }}{% endif %}">
+                    <a class="page-link" href="?page={{ categories.previous_page_number }}{% if request.GET.search %}&search={{ request.GET.search }}{% endif %}">
                         <i class="bi bi-chevron-left"></i>
                     </a>
                 </li>
@@ -162,19 +158,19 @@
                     </li>
                     {% elif num > categories.number|add:'-3' and num < categories.number|add:'3' %}
                     <li class="page-item">
-                        <a class="page-link" href="?page={{ num }}{% if search %}&search={{ search }}{% endif %}">{{ num }}</a>
+                        <a class="page-link" href="?page={{ num }}{% if request.GET.search %}&search={{ request.GET.search }}{% endif %}">{{ num }}</a>
                     </li>
                     {% endif %}
                 {% endfor %}
 
                 {% if categories.has_next %}
                 <li class="page-item">
-                    <a class="page-link" href="?page={{ categories.next_page_number }}{% if search %}&search={{ search }}{% endif %}">
+                    <a class="page-link" href="?page={{ categories.next_page_number }}{% if request.GET.search %}&search={{ request.GET.search }}{% endif %}">
                         <i class="bi bi-chevron-right"></i>
                     </a>
                 </li>
                 <li class="page-item">
-                    <a class="page-link" href="?page={{ categories.paginator.num_pages }}{% if search %}&search={{ search }}{% endif %}">
+                    <a class="page-link" href="?page={{ categories.paginator.num_pages }}{% if request.GET.search %}&search={{ request.GET.search }}{% endif %}">
                         <i class="bi bi-chevron-double-right"></i>
                     </a>
                 </li>
@@ -212,4 +208,32 @@
         </ul>
     </div>
 </div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// Add confirmation and loading state for sync
+document.getElementById('sync-form').addEventListener('submit', function(e) {
+    const btn = document.getElementById('sync-btn');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="bi bi-arrow-repeat me-2 spin"></i>{% trans "Syncing..." %}';
+
+    if (!confirm('{% trans "Are you sure you want to sync categories? This may take a few moments." %}')) {
+        e.preventDefault();
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-arrow-repeat me-2"></i>{% trans "Sync Categories" %}';
+    }
+});
+
+// Add spin animation
+const style = document.createElement('style');
+style.textContent = `
+    .spin { animation: spin 1s linear infinite; }
+    @keyframes spin {
+        from { transform: rotate(0deg); }
+        to { transform: rotate(360deg); }
+    }
+`;
+document.head.appendChild(style);
+</script>
 {% endblock %}

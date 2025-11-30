@@ -1,4 +1,3 @@
-# inventory/views/efris_api.py
 from django.http import JsonResponse
 from django.views import View
 from django.db.models import Q
@@ -9,16 +8,16 @@ from company.models import EFRISCommodityCategory
 
 @method_decorator(login_required, name='dispatch')
 class EFRISCategoryAutocompleteView(View):
-    """
-    AJAX endpoint for autocomplete search of EFRIS commodity categories.
-    Filters by type (product/service) and only returns leaf nodes.
-    """
-
     def get(self, request):
+        import logging
+        logger = logging.getLogger(__name__)
+
         query = request.GET.get('q', '').strip()
-        category_type = request.GET.get('type', 'product')  # 'product' or 'service'
+        category_type = request.GET.get('type', 'product')
         page = int(request.GET.get('page', 1))
         limit = min(int(request.GET.get('limit', 20)), 100)
+
+        logger.info(f"EFRIS Search - Query: '{query}', Type: {category_type}, Page: {page}")
 
         # Minimum 3 characters for search
         if len(query) < 3:
@@ -34,34 +33,29 @@ class EFRISCategoryAutocompleteView(View):
         # Determine service_mark based on type
         service_mark = '102' if category_type == 'service' else '101'
 
-        # Build query - only leaf nodes that are enabled
+        # Build query
         queryset = EFRISCommodityCategory.objects.filter(
-            is_leaf_node='101',  # Only leaf nodes (can be used in categories)
-            service_mark=service_mark,  # Match type (product or service)
-            enable_status_code='1',  # Only enabled categories
+            is_leaf_node='101',
+            service_mark=service_mark,
+            enable_status_code='1',
         )
 
-        # Search in code and name (case-insensitive)
+        # Search in code and name
         queryset = queryset.filter(
             Q(commodity_category_code__icontains=query) |
             Q(commodity_category_name__icontains=query)
         )
 
-        # Order by relevance (exact code matches first, then by name)
-        queryset = queryset.extra(
-            select={
-                'code_match': "CASE WHEN commodity_category_code LIKE %s THEN 0 ELSE 1 END"
-            },
-            select_params=[f"{query}%"]
-        ).order_by('code_match', 'commodity_category_name')
+        total_count = queryset.count()
+        logger.info(f"Found {total_count} matching categories")
 
-        # Pagination
+        # Order and paginate
+        queryset = queryset.order_by('commodity_category_name')
         start = (page - 1) * limit
         end = start + limit
-        total_count = queryset.count()
         results = queryset[start:end]
 
-        # Format results for Select2
+        # Format results
         formatted_results = []
         for cat in results:
             formatted_results.append({

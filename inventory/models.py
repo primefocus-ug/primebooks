@@ -1184,6 +1184,22 @@ class Product(models.Model, EFRISProductMixin):
                     'category': _("Selected category's EFRIS commodity category is not a leaf node.")
                 })
 
+
+    @property
+    def effective_tax_rate(self):
+        """
+        Get the effective tax rate considering company VAT status
+        """
+        from django_tenants.utils import get_tenant_model
+        from django.db import connection
+
+        try:
+            Company = get_tenant_model()
+            current_company = Company.objects.get(schema_name=connection.schema_name)
+            return current_company.get_effective_tax_rate(self.tax_rate)
+        except (Company.DoesNotExist, AttributeError):
+            return self.tax_rate  # Fallback to product's rate
+
     # DRY Properties - Everything inherits from Category
     @property
     def efris_commodity_category_id(self):
@@ -1237,7 +1253,7 @@ class Product(models.Model, EFRISProductMixin):
 
     @property
     def efris_tax_category_id(self):
-        """Auto-mapped EFRIS tax category from tax_rate"""
+        """Auto-mapped EFRIS tax category from effective tax rate"""
         tax_rate_mapping = {
             'A': '101',  # Standard (18%)
             'B': '102',  # Zero (0%)
@@ -1245,11 +1261,12 @@ class Product(models.Model, EFRISProductMixin):
             'D': '104',  # Deemed (18%)
             'E': '105',  # Excise Duty + VAT
         }
-        return tax_rate_mapping.get(self.tax_rate, '101')
+        effective_rate = self.effective_tax_rate
+        return tax_rate_mapping.get(effective_rate, '102')
 
     @property
     def efris_tax_rate(self):
-        """Auto-calculated EFRIS tax rate from tax_rate"""
+        """Auto-calculated EFRIS tax rate from effective tax rate"""
         tax_rate_values = {
             'A': 18.00,
             'B': 0.00,
@@ -1257,7 +1274,8 @@ class Product(models.Model, EFRISProductMixin):
             'D': 18.00,
             'E': 18.00,  # Plus excise duty
         }
-        return tax_rate_values.get(self.tax_rate, 18.00)
+        effective_rate = self.effective_tax_rate
+        return tax_rate_values.get(effective_rate, 0.00)
 
     @property
     def efris_excise_duty_rate(self):
@@ -1293,11 +1311,12 @@ class Product(models.Model, EFRISProductMixin):
 
     @property
     def tax_details(self):
-        """Returns product tax information for EFRIS compliance"""
+        """Returns product tax information for EFRIS compliance - using effective rate"""
         return {
             'product_name': self.efris_goods_name,
             'product_code': self.efris_goods_code,
             'tax_rate': self.get_tax_rate_display(),
+            'effective_tax_rate': self.effective_tax_rate,
             'efris_tax_category': self.efris_tax_category_id,
             'efris_tax_rate': str(self.efris_tax_rate),
             'unit_price': str(self.final_price),
@@ -1365,6 +1384,26 @@ class Product(models.Model, EFRISProductMixin):
         """Mark product for upload to EFRIS"""
         self.efris_is_uploaded = False
         self.save(update_fields=['efris_is_uploaded'])
+
+    def save(self, *args, **kwargs):
+        # Get the company (tenant) context
+        from django_tenants.utils import get_tenant_model
+        from django.db import connection
+
+        # Auto-enforce VAT compliance
+        try:
+            Company = get_tenant_model()
+            current_company = Company.objects.get(schema_name=connection.schema_name)
+
+            # If company VAT is disabled, force tax rate to B
+            if not current_company.is_vat_enabled:
+                self.tax_rate = 'B'
+
+        except (Company.DoesNotExist, AttributeError):
+            # Fallback if tenant context not available
+            pass
+
+        super().save(*args, **kwargs)
 
     def mark_efris_uploaded(self, efris_goods_id=None):
         """Mark product as successfully uploaded to EFRIS"""
@@ -1809,20 +1848,62 @@ class Service(models.Model):
         }
 
     def save(self, *args, **kwargs):
-        """Override save to handle EFRIS sync logic"""
+        """Override save to handle EFRIS sync logic and VAT enforcement"""
+
+        # Store original values for comparison
+        original_tax_rate = self.tax_rate
+        tax_rate_changed_by_vat = False
+
+        # VAT ENFORCEMENT LOGIC
+        from django_tenants.utils import get_tenant_model
+        from django.db import connection
+
+        try:
+            Company = get_tenant_model()
+            current_company = Company.objects.get(schema_name=connection.schema_name)
+
+            if not current_company.is_vat_enabled and self.tax_rate != 'B':
+                self.tax_rate = 'B'
+                tax_rate_changed_by_vat = True
+
+        except (Company.DoesNotExist, AttributeError):
+            # Fallback if tenant context not available
+            pass
+
+        # EXISTING EFRIS SYNC LOGIC
         if self.pk:
             old_instance = Service.objects.filter(pk=self.pk).first()
             if old_instance:
                 # Check if price or critical fields changed
-                if (old_instance.unit_price != self.unit_price or
-                        old_instance.tax_rate != self.tax_rate or
-                        old_instance.category_id != self.category_id):
+                price_changed = old_instance.unit_price != self.unit_price
+                tax_changed = old_instance.tax_rate != self.tax_rate
+                category_changed = old_instance.category_id != self.category_id
+
+                # Mark for EFRIS sync if any critical field changed OR if tax rate was changed by VAT enforcement
+                if price_changed or tax_changed or category_changed or tax_rate_changed_by_vat:
                     self.efris_is_uploaded = False
+        else:
+            # For new instances, if VAT enforcement changed tax rate, mark for EFRIS sync
+            if tax_rate_changed_by_vat:
+                self.efris_is_uploaded = False
 
         # Run validation
         self.full_clean()
 
         super().save(*args, **kwargs)
+
+    @property
+    def effective_tax_rate(self):
+        """Get effective tax rate considering company VAT status"""
+        from django_tenants.utils import get_tenant_model
+        from django.db import connection
+
+        try:
+            Company = get_tenant_model()
+            current_company = Company.objects.get(schema_name=connection.schema_name)
+            return current_company.get_effective_tax_rate(self.tax_rate)
+        except (Company.DoesNotExist, AttributeError):
+            return self.tax_rate
 
 class Stock(models.Model):
     product = models.ForeignKey(
