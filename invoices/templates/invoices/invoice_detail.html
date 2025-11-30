@@ -1,6 +1,8 @@
 {% extends 'base.html' %}
 {% load static %}
 {% load i18n %}
+{% load humanize %}
+{% load custom_filters %}
 
 {% block title %}{% trans "Invoice" %} {{ invoice.invoice_number }} | {{ block.super }}{% endblock %}
 
@@ -77,23 +79,23 @@
                     </div>
                 </div>
             </div>
-            <div class="card-body">
+            <div class="card-body dre">
                 <div class="row mb-4">
                     <div class="col-md-6">
-                        <h6 class="text-muted mb-3">{% trans "Bill To" %}</h6>
+                        <h6 class="text-muted mb-3 totall">{% trans "Bill To" %}</h6>
                         {% if invoice.sale and invoice.sale.customer %}
-                        <p class="mb-1 fw-medium">{{ invoice.sale.customer.name }}</p>
+                        <p class="mb-1 fw-medium totall">{{ invoice.sale.customer.name }}</p>
                         {% if invoice.sale.customer.email %}
-                        <p class="mb-1 small"><i class="bi bi-envelope me-2"></i>{{ invoice.sale.customer.email }}</p>
+                        <p class="mb-1 small totall"><i class="bi bi-envelope me-2"></i>{{ invoice.sale.customer.email }}</p>
                         {% endif %}
                         {% if invoice.sale.customer.phone %}
-                        <p class="mb-1 small"><i class="bi bi-telephone me-2"></i>{{ invoice.sale.customer.phone }}</p>
+                        <p class="mb-1 small totall"><i class="bi bi-telephone me-2"></i>{{ invoice.sale.customer.phone }}</p>
                         {% endif %}
                         {% if invoice.sale.customer.address %}
-                        <p class="mb-0 small"><i class="bi bi-geo-alt me-2"></i>{{ invoice.sale.customer.address }}</p>
+                        <p class="mb-0 small totall"><i class="bi bi-geo-alt me-2"></i>{{ invoice.sale.customer.address }}</p>
                         {% endif %}
                         {% else %}
-                        <p class="text-muted">{% trans "No customer information" %}</p>
+                        <p class="text-muted totall">{% trans "No customer information" %}</p>
                         {% endif %}
                     </div>
                     
@@ -154,15 +156,15 @@
                                         {% endif %}
                                     </td>
                                     <td class="text-center">{{ item.quantity }}</td>
-                                    <td class="text-end">UGX {{ item.unit_price|floatformat:2 }}</td>
+                                    <td class="text-end">UGX {{ item.unit_price|money }}</td>
                                     <td class="text-end">
                                         {% if item.tax_amount %}
-                                        UGX {{ item.tax_amount|floatformat:2 }}
+                                        UGX {{ item.tax_amount|money }}
                                         {% else %}
                                         -
                                         {% endif %}
                                     </td>
-                                    <td class="text-end fw-medium">UGX {{ item.total_price|floatformat:2 }}</td>
+                                    <td class="text-end fw-medium">UGX {{ item.total_price|money }}</td>
                                 </tr>
                                 {% endfor %}
                             {% else %}
@@ -175,32 +177,32 @@
                         </tbody>
                         <tfoot>
                             <tr class="table-light"><td colspan="4" class="text-end fw-medium">{% trans "Subtotal" %}:</td>
-                            <td class="text-end fw-medium">UGX {{ invoice.subtotal|floatformat:2 }}</td>
+                            <td class="text-end fw-medium">UGX {{ invoice.subtotal|money }}</td>
                         </tr>
                         {% if invoice.tax_amount %}
                         <tr>
                             <td colspan="4" class="text-end">{% trans "Tax" %}:</td>
-                            <td class="text-end">UGX {{ invoice.tax_amount|floatformat:2 }}</td>
+                            <td class="text-end">UGX {{ invoice.tax_amount|money }}</td>
                         </tr>
                         {% endif %}
                         {% if invoice.discount_amount %}
                         <tr>
                             <td colspan="4" class="text-end text-success">{% trans "Discount" %}:</td>
-                            <td class="text-end text-success">- UGX {{ invoice.discount_amount|floatformat:2 }}</td>
+                            <td class="text-end text-success">- UGX {{ invoice.discount_amount|money }}</td>
                         </tr>
                         {% endif %}
                         <tr class="table-primary">
                             <td colspan="4" class="text-end fw-bold fs-5">{% trans "Total Amount" %}:</td>
-                            <td class="text-end fw-bold fs-5">UGX {{ invoice.total_amount|floatformat:2 }}</td>
+                            <td class="text-end fw-bold fs-5">UGX {{ invoice.total_amount|money }}</td>
                         </tr>
                         {% if invoice.amount_paid %}
                         <tr class="table-success">
                             <td colspan="4" class="text-end">{% trans "Amount Paid" %}:</td>
-                            <td class="text-end">UGX {{ invoice.amount_paid|floatformat:2 }}</td>
+                            <td class="text-end">UGX {{ invoice.amount_paid|money }}</td>
                         </tr>
                         <tr class="table-warning">
                             <td colspan="4" class="text-end fw-medium">{% trans "Balance Due" %}:</td>
-                            <td class="text-end fw-medium">UGX {{ invoice.amount_outstanding|floatformat:2 }}</td>
+                            <td class="text-end fw-medium">UGX {{ invoice.amount_outstanding|money }}</td>
                         </tr>
                         {% endif %}
                     </tfoot>
@@ -240,7 +242,7 @@
                         {% for payment in invoice.payments.all %}
                         <tr>
                             <td>{{ payment.payment_date|date:"d M, Y H:i" }}</td>
-                            <td class="fw-medium">UGX {{ payment.amount|floatformat:2 }}</td>
+                            <td class="fw-medium">UGX {{ payment.amount|money }}</td>
                             <td>{{ payment.get_payment_method_display }}</td>
                             <td>{{ payment.reference_number|default:"-" }}</td>
                             <td>{{ payment.processed_by.get_full_name|default:payment.processed_by.username }}</td>
@@ -393,7 +395,7 @@
                 </div>
                 <div class="modal-body">
                     <div class="alert alert-info">
-                        <strong>{% trans "Amount Outstanding" %}:</strong> UGX {{ invoice.amount_outstanding|floatformat:2 }}
+                        <strong>{% trans "Amount Outstanding" %}:</strong> UGX {{ invoice.amount_outstanding|money}}
                     </div>
                     {{ payment_form.as_p }}
                 </div>
@@ -411,6 +413,7 @@
 </div>
 {% endblock %}
 {% block extra_css %}
+<link rel="stylesheet" href="{% static 'themes.css' %}">
 <style>
     .table tfoot tr:last-child {
         font-size: 1.1rem;
@@ -442,6 +445,13 @@
             box-shadow: none !important;
         }
     }
+    [data-theme="dark"] .card-body {
+        background-color: #1e1e1e;
+    }
+    [data-theme="dark"] .modal-content {
+        color: #ffffff;
+        background-color: #1e1e1e;
+    }
 </style>
 {% endblock %}
 {% block extra_js %}
@@ -462,7 +472,7 @@ document.addEventListener('DOMContentLoaded', function() {
     if (paymentForm) {
         paymentForm.addEventListener('submit', function(e) {
             const amountInput = this.querySelector('input[name="amount"]');
-            const maxAmount = {{ invoice.amount_outstanding|default:0 }};
+            const maxAmount = {{ invoice.amount_outstanding|money }};
 
             if (amountInput && parseFloat(amountInput.value) > maxAmount) {
                 e.preventDefault();
