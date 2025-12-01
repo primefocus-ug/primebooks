@@ -964,25 +964,14 @@ class UserProfileForm(forms.ModelForm):
         return avatar
 
     def clean_phone_number(self):
-        """
-        Validate and format phone number
-        """
-        phone = self.cleaned_data.get('phone_number', '').strip()
-        if phone:
-            # Remove any non-digit characters except +
-            import re
-            cleaned_phone = re.sub(r'[^\d+]', '', phone)
-
-            # Ensure it starts with + if it has country code
-            if not cleaned_phone.startswith('+') and len(cleaned_phone) > 10:
-                cleaned_phone = '+' + cleaned_phone
-
-            # Basic validation for international format
-            if not re.match(r'^\+?[1-9]\d{7,14}$', cleaned_phone):
-                raise ValidationError('Please enter a valid phone number with country code.')
-
-            return cleaned_phone
-        return phone
+        """Validate phone number format"""
+        phone_number = self.cleaned_data.get('phone_number')
+        if phone_number:
+            if not phone_number.startswith('+'):
+                raise ValidationError(_('Phone number must include country code (e.g., +256)'))
+            if not re.match(r'^\+\d{10,15}$', phone_number):
+                raise ValidationError(_('Invalid phone number format'))
+        return phone_number
 
     def clean_bio(self):
         """

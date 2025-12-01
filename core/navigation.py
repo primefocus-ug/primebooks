@@ -99,13 +99,8 @@ NAVIGATION_ITEMS = [
             ),
             NavigationItem(
                 name="Notifications",
-                url_name="user_notification_settings",
+                url_name="notifications:notification_list",
                 icon="bi bi-bell"
-            ),
-            NavigationItem(
-                name="Preferences",
-                url_name="user_preferences",
-                icon="bi bi-sliders"
             ),
             NavigationItem(
                 name="Analytics",
@@ -203,12 +198,6 @@ NAVIGATION_ITEMS = [
                         permission="companies.view_employee"
                     ),
                 ]
-            ),
-            NavigationItem(
-                name="Domains",
-                url_name="companies:domain_list",
-                icon="bi bi-globe",
-                permission="companies.view_domain"
             ),
         ]
     ),
