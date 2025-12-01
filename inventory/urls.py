@@ -1,6 +1,7 @@
 from django.urls import path
 from . import views
 from . import importt
+from . import efris_api
 from .serviced import (
     ServiceListView, ServiceCreateView, ServiceUpdateView,
     ServiceDeleteView, ServiceDetailView,
@@ -59,6 +60,13 @@ urlpatterns = [
     path('api/categories/<int:pk>/',
          CategoryDetailAPIView.as_view(),
          name='category_detail_api'),
+
+    path('efris/category-tree/', efris_api.EFRISCategoryTreeView.as_view(), name='efris_category_tree'),
+    path('efris/category-children/', efris_api.EFRISCategoryChildrenView.as_view(), name='efris_category_children'),
+    path('efris/category-results/', efris_api.EFRISCategoryResultsView.as_view(), name='efris_category_results'),
+    path('efris/popular-categories/', efris_api.EFRISPopularCategoriesView.as_view(), name='efris_popular_categories'),
+    path('efris/search-enhanced/', efris_api.EFRISCategorySearchEnhancedView.as_view(), name='efris_category_search_enhanced'),
+    path('api/efris/clear-cache/', efris_api.ClearEFRISCacheView.as_view(), name='clear_efris_cache'),
 
     # Legacy endpoints (keep for backward compatibility)
     path('api/efris-categories/search/',

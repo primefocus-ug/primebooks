@@ -1373,9 +1373,9 @@ class EFRISCommodityCategory(models.Model):
 
     service_mark = models.CharField(
         max_length=3,
-        choices=[('101', 'Product'), ('102', 'Service')],
-        default='101',
-        help_text="101 = Product, 102 = Service"
+        choices=[('101', 'Service'), ('102', 'Product')],
+        default='102',
+        help_text="101 = Service, 102 = Product"
     )
 
     is_leaf_node = models.CharField(
@@ -1412,6 +1412,8 @@ class EFRISCommodityCategory(models.Model):
         indexes = [
             models.Index(fields=['commodity_category_code']),
             models.Index(fields=['commodity_category_name']),
+            models.Index(fields=['service_mark', 'enable_status_code', 'is_leaf_node']),
+            models.Index(fields=['parent_code', 'enable_status_code']),
         ]
 
     def __str__(self):
@@ -1420,4 +1422,4 @@ class EFRISCommodityCategory(models.Model):
     @property
     def type(self):
         """Human-readable category type"""
-        return "Service" if self.service_mark == '102' else "Product"
+        return "Product" if self.service_mark == '102' else "Service"

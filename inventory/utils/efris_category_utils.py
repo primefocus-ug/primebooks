@@ -28,7 +28,7 @@ class EFRISCategoryHelper:
         """
         return EFRISCommodityCategory.objects.filter(
             is_leaf_node='101',
-            service_mark='101'  # Product categories
+            service_mark='102'  # Product categories
         )
 
     @staticmethod
@@ -39,7 +39,7 @@ class EFRISCategoryHelper:
         """
         return EFRISCommodityCategory.objects.filter(
             is_leaf_node='101',
-            service_mark='102'  # Service categories
+            service_mark='101'  # Service categories
         )
 
     @staticmethod
@@ -68,7 +68,7 @@ class EFRISCategoryHelper:
                 }
 
             # Check if type matches
-            actual_type = 'service' if category.service_mark == '102' else 'product'
+            actual_type = 'service' if category.service_mark == '101' else 'product'
             if actual_type != expected_type:
                 return {
                     'valid': False,
@@ -178,9 +178,9 @@ class EFRISCategoryHelper:
             queryset = queryset.filter(is_leaf_node='101')
 
         if category_type == 'product':
-            queryset = queryset.filter(service_mark='101')
-        elif category_type == 'service':
             queryset = queryset.filter(service_mark='102')
+        elif category_type == 'service':
+            queryset = queryset.filter(service_mark='101')
 
         return queryset.order_by('commodity_category_name')
 

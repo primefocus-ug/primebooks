@@ -34,7 +34,7 @@ class EFRISCategoryAutocompleteView(View):
             })
 
         # Determine service_mark based on type
-        service_mark = '102' if category_type == 'service' else '101'
+        service_mark = '101' if category_type == 'service' else '102'
 
         # Build query - only leaf nodes
         queryset = EFRISCommodityCategory.objects.filter(
@@ -106,7 +106,7 @@ class EFRISCategoryDetailView(View):
                     'level': category.commodity_category_level,
                     'rate': str(category.rate) if category.rate else '0.00',
                     'is_leaf_node': category.is_leaf_node == '101',
-                    'service_mark': 'service' if category.service_mark == '102' else 'product',
+                    'service_mark': 'service' if category.service_mark == '101' else 'product',
                     'is_zero_rate': category.is_zero_rate == '101',
                     'is_exempt': category.is_exempt == '101',
                     'excisable': getattr(category, 'excisable', '102') == '101',
@@ -136,12 +136,12 @@ class EFRISCategoryStatsView(View):
         ).count()
 
         products = EFRISCommodityCategory.objects.filter(
-            service_mark='101',
+            service_mark='102',
             is_leaf_node='101'
         ).count()
 
         services = EFRISCommodityCategory.objects.filter(
-            service_mark='102',
+            service_mark='101',
             is_leaf_node='101'
         ).count()
 

@@ -2867,14 +2867,8 @@ class EnhancedEFRISAPIClient:
 
     def register_service_with_efris(self, service) -> Dict[str, Any]:
         """
-        Register service with EFRIS using T130 (same as products)
-        Services use goodsTypeCode='101' but serviceMark='102'
-
-        Args:
-            service: Service model instance
-
-        Returns:
-            Dict with registration results
+        Register or update service with EFRIS (T130)
+        Handles both adding new services (operationType=101) and modifying existing (operationType=102)
         """
         try:
             # Ensure authentication
@@ -2885,8 +2879,12 @@ class EnhancedEFRISAPIClient:
                     "error": f"Authentication failed: {auth_result.get('error')}"
                 }
 
-            # Determine service code
-            service_code = getattr(service, 'code', None) or f"SRV{service.id}"
+            # Determine operation type: 101=Add, 102=Modify
+            is_already_uploaded = getattr(service, 'efris_is_uploaded', False)
+            operation_type = "102" if is_already_uploaded else "101"
+
+            # Use the service code directly (efris_service_code property returns self.code)
+            service_code = service.code  # This is what efris_service_code property returns
 
             # Service pricing
             unit_price = float(getattr(service, 'unit_price', 0) or 0)
@@ -2894,18 +2892,21 @@ class EnhancedEFRISAPIClient:
             # Check if service has excise tax
             has_excise = self._service_has_excise_tax(service)
 
-            # Build T130 service data (same structure as product)
+            # Get commodity category ID (18 digits) from service's category
+            commodity_category_id = self._get_service_commodity_category_id(service)
+
+            # Build T130 service data
             service_data = {
-                "operationType": "101",  # 101=Add, 102=Modify
+                "operationType": operation_type,
                 "goodsName": str(service.name[:200] if service.name else "Unnamed Service"),
                 "goodsCode": str(service_code),
                 "measureUnit": service.unit_of_measure,
                 "unitPrice": f"{unit_price:.2f}",
                 "currency": "101",  # UGX
-                "commodityCategoryId": service.category.efris_category_id if service.category else '100000000000000000',
+                "commodityCategoryId": commodity_category_id,
                 "haveExciseTax": "101" if has_excise else "102",
                 "description": str((getattr(service, 'description', None) or service.name or "")[:1024]),
-                "stockPrewarning": "0",  # ✅ Services don't have stock warnings
+                "stockPrewarning": "0",  # Services don't have stock warnings
                 "havePieceUnit": "102",
                 "pieceMeasureUnit": "",
                 "pieceUnitPrice": "",
@@ -2913,9 +2914,11 @@ class EnhancedEFRISAPIClient:
                 "pieceScaledValue": "",
                 "exciseDutyCode": "",
                 "haveOtherUnit": "102",
-                "goodsTypeCode": "101",  # Standard goods type (not fuel)
+                "goodsTypeCode": "101",  # 101=Standard goods type
+                "serviceMark": "101",  # ✅ ADDED: 101=Service (yes, it's a service)
             }
 
+            # Add excise tax info if applicable
             if has_excise:
                 excise_info = self._build_excise_tax_info(service)
                 service_data.update(excise_info)
@@ -2931,6 +2934,8 @@ class EnhancedEFRISAPIClient:
                     "error": f"Validation failed: {'; '.join(validation_errors)}"
                 }
 
+            operation_name = "Updating" if operation_type == "102" else "Registering"
+            logger.info(f"{operation_name} service {service_code} with EFRIS (T130)")
 
             try:
                 request_data = self._build_request("T130", service_data_array, encrypt=True)
@@ -2947,6 +2952,7 @@ class EnhancedEFRISAPIClient:
                 return_info = response_data.get('returnStateInfo', {})
                 return_code = return_info.get('returnCode', '99')
 
+                # Accept both success codes
                 if return_code not in ['00', '45']:
                     error_message = return_info.get('returnMessage', 'T130 API call failed')
                     logger.error(f"T130 failed: {return_code} - {error_message}")
@@ -2971,84 +2977,141 @@ class EnhancedEFRISAPIClient:
                 # Handle empty response (success with no immediate data)
                 if not isinstance(decrypted_content, list) or len(decrypted_content) == 0:
                     logger.info(f"T130 successful (empty response) for {service_code}")
-                    time.sleep(1)  # Wait a moment
+                    time.sleep(1)  # Wait before querying
 
                     # Query EFRIS for the service ID and code
                     query_result = self.t144_query_goods_by_code(service_code)
 
                     if query_result.get('success') and query_result.get('goods'):
                         efris_service = query_result['goods'][0]
-                        efris_service_id = efris_service.get('id')
+                        efris_service_id = (
+                                efris_service.get('id') or
+                                efris_service.get('commodityGoodsId') or
+                                efris_service.get('goodsId')
+                        )
                         efris_service_code = efris_service.get('goodsCode') or service_code
 
-                        # Update service
+                        # Update service - DON'T try to set efris_service_code (it's a read-only property)
                         service.efris_is_uploaded = True
                         service.efris_upload_date = timezone.now()
                         service.efris_service_id = efris_service_id
-                        service.save(update_fields=[
-                            'efris_is_uploaded',
-                            'efris_upload_date',
-                            'efris_service_id'
-                        ])
 
-                        logger.info(f"Service {service_code} uploaded: ID={efris_service_id}")
+                        # Only update fields that exist and are writable
+                        update_fields = ['efris_is_uploaded', 'efris_upload_date', 'efris_service_id']
+                        service.save(update_fields=update_fields)
+
+                        logger.info(
+                            f"Service {service_code} {operation_name.lower()}: ID={efris_service_id}, Code={efris_service_code}")
 
                         return {
                             "success": True,
-                            "message": "Service registered with EFRIS",
+                            "message": f"Service {operation_name.lower()} with EFRIS",
                             "service_code": service_code,
                             "efris_service_id": efris_service_id,
                             "efris_service_code": efris_service_code,
+                            "operation_type": operation_type,
                             "efris_data": efris_service
                         }
 
-                    # Query failed
+                    # Query failed - still mark as uploaded if operation was successful
                     logger.warning(f"Service uploaded but query failed for {service_code}")
                     service.efris_is_uploaded = True
                     service.efris_upload_date = timezone.now()
                     service.save(update_fields=['efris_is_uploaded', 'efris_upload_date'])
+
                     return {
                         "success": True,
-                        "message": "Service uploaded but could not retrieve EFRIS ID",
-                        "service_code": service_code
+                        "message": f"Service {operation_name.lower()} but could not retrieve EFRIS ID",
+                        "service_code": service_code,
+                        "operation_type": operation_type
                     }
 
                 # Handle normal response list
                 result_item = decrypted_content[0]
-                efris_service_id = result_item.get('commodityGoodsId') or result_item.get('goodsId') or result_item.get('id')
+                efris_service_id = (
+                        result_item.get('id') or
+                        result_item.get('commodityGoodsId') or
+                        result_item.get('goodsId')
+                )
                 efris_service_code = result_item.get('goodsCode') or service_code
 
-                # Update service
+                # Update service - DON'T try to set efris_service_code (it's a read-only property)
                 service.efris_is_uploaded = True
                 service.efris_upload_date = timezone.now()
                 service.efris_service_id = efris_service_id
-                service.save(update_fields=[
-                    'efris_is_uploaded',
-                    'efris_upload_date',
-                    'efris_service_id'
-                ])
 
-                logger.info(f"Service {service_code} uploaded: ID={efris_service_id}")
+                # Only update fields that exist and are writable
+                update_fields = ['efris_is_uploaded', 'efris_upload_date', 'efris_service_id']
+                service.save(update_fields=update_fields)
+
+                logger.info(
+                    f"Service {service_code} {operation_name.lower()}: ID={efris_service_id}, Code={efris_service_code}")
 
                 return {
                     "success": True,
-                    "message": "Service registered with EFRIS",
+                    "message": f"Service {operation_name.lower()} with EFRIS",
                     "service_code": service_code,
                     "efris_service_id": efris_service_id,
                     "efris_service_code": efris_service_code,
+                    "operation_type": operation_type,
                     "efris_data": result_item
                 }
 
             except json.JSONDecodeError as e:
                 logger.error(f"T130 JSON parsing error: {e}")
-                return {"success": False, "error": f"Invalid JSON response: {e}", "service_code": service_code}
+                return {
+                    "success": False,
+                    "error": f"Invalid JSON response: {e}",
+                    "service_code": service_code
+                }
             except Exception as api_error:
                 logger.error(f"T130 processing error: {api_error}", exc_info=True)
-                return {"success": False, "error": str(api_error), "service_code": service_code}
+                return {
+                    "success": False,
+                    "error": str(api_error),
+                    "service_code": service_code
+                }
 
         except Exception as e:
             logger.error(f"Service registration failed: {e}", exc_info=True)
-            return {"success": False, "error": str(e)}
+            return {
+                "success": False,
+                "error": str(e)
+            }
+
+    def _get_service_commodity_category_id(self, service) -> str:
+        """
+        Get the EFRIS commodity category ID (18 digits) for a service.
+        Services should use service-type categories (serviceMark=101).
+        Pads with zeros at the END until length is 18.
+        """
+        try:
+            # Get from service's category
+            if hasattr(service, 'category') and service.category:
+                category_id = getattr(service.category, 'efris_category_id', None)
+
+                # ✅ VALIDATE: Ensure it's actually a service category
+                if category_id:
+                    # Verify the category is for services (serviceMark should be '101')
+                    efris_cat = service.category.efris_commodity_category
+                    if efris_cat and efris_cat.service_mark != '101':
+                        logger.warning(
+                            f"Service {service.code} has category with serviceMark={efris_cat.service_mark}, "
+                            f"but should be '101' for services"
+                        )
+                        # Don't use invalid category, fall back to default
+                        return "100000000000000000"
+
+                    # Pad with zeros at the END to reach 18 digits
+                    category_id = str(category_id).ljust(18, '0')[:18]
+                    return category_id
+
+            # Default service category (18 digits)
+            return "100000000000000000"  # Default for services
+
+        except Exception as e:
+            logger.warning(f"Failed to get service commodity category: {e}")
+            return "100000000000000000"
 
     def refresh_service_from_efris(self, service) -> Dict[str, Any]:
         """
@@ -3156,11 +3219,11 @@ class EnhancedEFRISAPIClient:
                 service_data = result['goods'][0]
 
                 # Check if it's actually a service (serviceMark='102')
-                service_mark = service_data.get('serviceMark', '101')
+                service_mark = service_data.get('serviceMark', '102')
 
                 return {
                     "success": True,
-                    "is_service": service_mark == '102',
+                    "is_service": service_mark == '101',
                     "service_data": service_data,
                     "service_code": service_code
                 }
@@ -3177,10 +3240,10 @@ class EnhancedEFRISAPIClient:
                 "error": str(e)
             }
 
-
     def register_product_with_efris(self, product) -> Dict[str, Any]:
         """
-        Register product with EFRIS (T130) and retrieve the EFRIS goods ID and code.
+        Register or update product with EFRIS (T130)
+        Handles both adding new products (operationType=101) and modifying existing (operationType=102)
         """
         try:
             # Ensure authentication
@@ -3191,10 +3254,15 @@ class EnhancedEFRISAPIClient:
                     "error": f"Authentication failed: {auth_result.get('error')}"
                 }
 
-            # Determine goods code (from product or fallback)
-            goods_code = getattr(product, 'efris_item_code', None)
-            if not goods_code:
-                goods_code = f"{getattr(product, 'sku', 'PROD')}{product.id}"
+            # Determine operation type: 101=Add, 102=Modify
+            is_already_uploaded = getattr(product, 'efris_is_uploaded', False)
+            operation_type = "102" if is_already_uploaded else "101"
+
+            # Determine goods code
+            goods_code = getattr(product, 'efris_goods_code_field', None) or \
+                         getattr(product, 'efris_item_code', None) or \
+                         getattr(product, 'sku', None) or \
+                         f"PROD{product.id}"
 
             # Product pricing and stock
             selling_price = float(getattr(product, 'selling_price', 0) or 0)
@@ -3203,15 +3271,18 @@ class EnhancedEFRISAPIClient:
             # Excise tax check
             has_excise = self._product_has_excise_tax(product)
 
+            # Get commodity category ID (18 digits)
+            commodity_category_id = self._get_commodity_category_id(product)
+
             # Build T130 goods data
             goods_data = {
-                "operationType": "101",  # 101=Add, 102=Modify
+                "operationType": operation_type,
                 "goodsName": str(product.name[:200] if product.name else "Unnamed Product"),
                 "goodsCode": str(goods_code),
                 "measureUnit": product.unit_of_measure,
                 "unitPrice": f"{selling_price:.2f}",
                 "currency": "101",  # UGX
-                "commodityCategoryId": product.category.efris_category_id if product.category else '101113010000000000',
+                "commodityCategoryId": commodity_category_id,
                 "haveExciseTax": "101" if has_excise else "102",
                 "description": str((getattr(product, 'description', None) or product.name or "")[:1024]),
                 "stockPrewarning": str(min_stock),
@@ -3222,9 +3293,11 @@ class EnhancedEFRISAPIClient:
                 "pieceScaledValue": "",
                 "exciseDutyCode": "",
                 "haveOtherUnit": "102",
-                "goodsTypeCode": "101",
+                "goodsTypeCode": "101",  # 101=Non-fuel Goods, 102=Fuel
+                "serviceMark": "102",  # ✅ ADDED: 102=Product (not a service)
             }
 
+            # Add excise tax info if applicable
             if has_excise:
                 excise_info = self._build_excise_tax_info(product)
                 goods_data.update(excise_info)
@@ -3240,7 +3313,8 @@ class EnhancedEFRISAPIClient:
                     "error": f"Validation failed: {'; '.join(validation_errors)}"
                 }
 
-            logger.info(f"Registering product {goods_code} with EFRIS (T130)")
+            operation_name = "Updating" if operation_type == "102" else "Registering"
+            logger.info(f"{operation_name} product {goods_code} with EFRIS (T130)")
 
             try:
                 request_data = self._build_request("T130", product_data, encrypt=True)
@@ -3257,9 +3331,10 @@ class EnhancedEFRISAPIClient:
                 return_info = response_data.get('returnStateInfo', {})
                 return_code = return_info.get('returnCode', '99')
 
+                # Accept both success codes
                 if return_code not in ['00', '45']:
                     error_message = return_info.get('returnMessage', 'T130 API call failed')
-                    logger.error(f"T130 top-level error: {return_code} - {error_message}")
+                    logger.error(f"T130 failed: {return_code} - {error_message}")
                     return {
                         "success": False,
                         "error": error_message,
@@ -3271,7 +3346,7 @@ class EnhancedEFRISAPIClient:
                 data_section = response_data.get('data', {})
                 decrypted_content = self._decrypt_response_content(data_section)
 
-                # Normalize response
+                # Normalize response (handle different response structures)
                 if isinstance(decrypted_content, dict):
                     for key in ['goodsStockIn', 'records', 'data', 'results']:
                         if key in decrypted_content and isinstance(decrypted_content[key], list):
@@ -3281,17 +3356,17 @@ class EnhancedEFRISAPIClient:
                 # Handle empty response (success with no immediate data)
                 if not isinstance(decrypted_content, list) or len(decrypted_content) == 0:
                     logger.info(f"T130 successful (empty response) for {goods_code}")
-                    time.sleep(1)  # Wait a moment
+                    time.sleep(1)  # Wait before querying
 
-                    # Query EFRIS for the goods ID and code
+                    # Query EFRIS to get the goods ID and code
                     query_result = self.t144_query_goods_by_code(goods_code)
 
                     if query_result.get('success') and query_result.get('goods'):
                         efris_goods = query_result['goods'][0]
                         efris_goods_id = (
-                                efris_goods.get('commodityGoodsId')
-                                or efris_goods.get('goodsId')
-                                or efris_goods.get('id')
+                                efris_goods.get('id') or
+                                efris_goods.get('commodityGoodsId') or
+                                efris_goods.get('goodsId')
                         )
                         efris_goods_code = efris_goods.get('goodsCode') or goods_code
 
@@ -3307,31 +3382,39 @@ class EnhancedEFRISAPIClient:
                             'efris_goods_code_field'
                         ])
 
-                        logger.info(f"Product {goods_code} uploaded: ID={efris_goods_id}, Code={efris_goods_code}")
+                        logger.info(
+                            f"Product {goods_code} {operation_name.lower()}: ID={efris_goods_id}, Code={efris_goods_code}")
 
                         return {
                             "success": True,
-                            "message": "Product registered with EFRIS",
+                            "message": f"Product {operation_name.lower()} with EFRIS",
                             "item_code": goods_code,
                             "efris_goods_id": efris_goods_id,
                             "efris_goods_code": efris_goods_code,
+                            "operation_type": operation_type,
                             "efris_data": efris_goods
                         }
 
-                    # Query failed
+                    # Query failed - still mark as uploaded if operation was successful
                     logger.warning(f"Product uploaded but query failed for {goods_code}: {query_result.get('error')}")
                     product.efris_is_uploaded = True
                     product.efris_upload_date = timezone.now()
                     product.save(update_fields=['efris_is_uploaded', 'efris_upload_date'])
+
                     return {
                         "success": True,
-                        "message": "Product uploaded but could not retrieve EFRIS ID/code",
-                        "item_code": goods_code
+                        "message": f"Product {operation_name.lower()} but could not retrieve EFRIS ID/code",
+                        "item_code": goods_code,
+                        "operation_type": operation_type
                     }
 
                 # Handle normal response list
                 result_item = decrypted_content[0]
-                efris_goods_id = result_item.get('commodityGoodsId') or result_item.get('goodsId') or result_item.get('id')
+                efris_goods_id = (
+                        result_item.get('id') or
+                        result_item.get('commodityGoodsId') or
+                        result_item.get('goodsId')
+                )
                 efris_goods_code = result_item.get('goodsCode') or goods_code
 
                 # Update product
@@ -3346,27 +3429,41 @@ class EnhancedEFRISAPIClient:
                     'efris_goods_code_field'
                 ])
 
-                logger.info(f"Product {goods_code} uploaded: ID={efris_goods_id}, Code={efris_goods_code}")
+                logger.info(
+                    f"Product {goods_code} {operation_name.lower()}: ID={efris_goods_id}, Code={efris_goods_code}")
 
                 return {
                     "success": True,
-                    "message": "Product registered with EFRIS",
+                    "message": f"Product {operation_name.lower()} with EFRIS",
                     "item_code": goods_code,
                     "efris_goods_id": efris_goods_id,
                     "efris_goods_code": efris_goods_code,
+                    "operation_type": operation_type,
                     "efris_data": result_item
                 }
 
             except json.JSONDecodeError as e:
                 logger.error(f"T130 JSON parsing error: {e}")
-                return {"success": False, "error": f"Invalid JSON response: {e}", "item_code": goods_code}
+                return {
+                    "success": False,
+                    "error": f"Invalid JSON response: {e}",
+                    "item_code": goods_code
+                }
             except Exception as api_error:
                 logger.error(f"T130 processing error: {api_error}", exc_info=True)
-                return {"success": False, "error": str(api_error), "item_code": goods_code}
+                return {
+                    "success": False,
+                    "error": str(api_error),
+                    "item_code": goods_code
+                }
 
         except Exception as e:
             logger.error(f"Product registration failed: {e}", exc_info=True)
-            return {"success": False, "error": str(e)}
+            return {
+                "success": False,
+                "error": str(e)
+            }
+
 
     def refresh_product_from_efris(self, product) -> Dict[str, Any]:
         """

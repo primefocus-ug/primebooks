@@ -10,8 +10,8 @@ class CategoryTypeFilter(SimpleListFilter):
 
     def lookups(self, request, model_admin):
         return [
-            ('101', 'Product'),
-            ('102', 'Service'),
+            ('102', 'Product'),
+            ('101', 'Service'),
         ]
 
     def queryset(self, request, queryset):

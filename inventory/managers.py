@@ -19,7 +19,7 @@ class ProductCategoryManager(models.Manager):
         from company.models import EFRISCommodityCategory
         leaf_codes = EFRISCommodityCategory.objects.filter(
             is_leaf_node='101',
-            service_mark='101'
+            service_mark='102'
         ).values_list('commodity_category_code', flat=True)
 
         return self.filter(efris_commodity_category_code__in=leaf_codes)
@@ -39,7 +39,7 @@ class ServiceCategoryManager(models.Manager):
         from company.models import EFRISCommodityCategory
         leaf_codes = EFRISCommodityCategory.objects.filter(
             is_leaf_node='101',
-            service_mark='102'  # Services only
+            service_mark='101'  # Services only
         ).values_list('commodity_category_code', flat=True)
 
         return self.filter(efris_commodity_category_code__in=leaf_codes)

@@ -1,468 +1,402 @@
-{% extends 'base.html' %}
-{% load static %}
-{% load custom_filters %}
-{% load i18n %}
+class EFRISCategorySelector {
+    constructor() {
+        this.selectedCategory = null;
+        this.currentResults = [];
+        this.categoryTree = [];
+        this.recentCategories = JSON.parse(localStorage.getItem('efris_recent_categories') || '[]');
+        this.init();
+    }
 
-{% block title %}Suppliers {% endblock %}
+    init() {
+        this.initializeEventListeners();
+        this.loadCategoryTree();
+        this.populateQuickAccess();
+        this.populateAZScroller();
 
-{% block breadcrumbs %}
-<li class="breadcrumb-item">
-    {% if perms.inventory.view_product %}
-    <a href="{% url 'inventory:dashboard' %}">
-        <i class="fas fa-home"></i> Dashboard
-    </a>
-    {% endif %}
-</li>
-<li class="breadcrumb-item active">
-    <i class="fas fa-truck"></i> Suppliers
-</li>
-{% endblock %}
-
-{% block content %}
-<div class="supplier-list-container">
-    <!-- Header Section -->
-    <div class="supplier-header">
-        <div class="header-content">
-            <h1>
-                <i class="fas fa-truck"></i> Suppliers
-                <span class="badge bg-primary-soft">{{ suppliers|length }} suppliers</span>
-            </h1>
-            <p class="text-muted">Manage your product suppliers and vendors</p>
-        </div>
-        
-        <div class="header-actions">
-            {% if perms.inventory.add_supplier %}
-            <a href="{% url 'inventory:supplier_create' %}" class="btn btn-primary">
-                <i class="fas fa-plus-circle"></i> Add Supplier
-            </a>
-            {% endif %}
-        </div>
-    </div>
-
-    <!-- Search and Filter Section -->
-    <div class="filter-card">
-        <form method="get" id="filterForm">
-            <div class="filter-grid">
-                <div class="filter-group search-group">
-                    <i class="fas fa-search"></i>
-                    <input type="text" name="search" class="form-control" placeholder="Search suppliers..." 
-                           value="{{ search_query|default:'' }}">
-                </div>
-                
-                <div class="filter-actions">
-                    <button type="submit" class="btn btn-primary">
-                        <i class="fas fa-filter"></i> Search
-                    </button>
-                    {% if perms.inventory.view_supplier %}
-                    <a href="{% url 'inventory:supplier_list' %}" class="btn btn-outline-secondary">
-                        <i class="fas fa-times"></i> Clear
-                    </a>
-                    {% endif %}
-                </div>
-            </div>
-        </form>
-    </div>
-
-    <!-- Suppliers Table -->
-    <div class="supplier-table-container">
-        {% if suppliers %}
-        <div class="table-responsive">
-            <table class="table table-hover align-middle" id="suppliersTable">
-                <thead class="table-light">
-                    <tr>
-                        <th>Supplier</th>
-                        <th>Contact Info</th>
-                        <th>Products</th>
-                        <th>Status</th>
-                        <th width="150">Actions</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for supplier in suppliers %}
-                    <tr class="supplier-row" data-supplier-id="{{ supplier.id }}">
-                        <td>
-                            <div class="supplier-info">
-                                <h6 class="supplier-name">{{ supplier.name }}</h6>
-                                <div class="supplier-meta">
-                                    {% if supplier.tin %}
-                                    <span class="badge bg-secondary-soft">TIN: {{ supplier.tin }}</span>
-                                    {% endif %}
-                                </div>
-                            </div>
-                        </td>
-                        <td>
-                            <div class="contact-info">
-                                {% if supplier.contact_person %}
-                                <div class="contact-person">
-                                    <i class="fas fa-user"></i> {{ supplier.contact_person }}
-                                </div>
-                                {% endif %}
-                                {% if supplier.phone %}
-                                <div class="contact-phone">
-                                    <i class="fas fa-phone"></i> {{ supplier.phone }}
-                                </div>
-                                {% endif %}
-                                {% if supplier.email %}
-                                <div class="contact-email">
-                                    <i class="fas fa-envelope"></i> {{ supplier.email }}
-                                </div>
-                                {% endif %}
-                            </div>
-                        </td>
-                        <td>
-                            <span class="badge bg-info-soft">
-                                <i class="fas fa-boxes"></i> {{ supplier.products.count }} products
-                            </span>
-                        </td>
-                        <td>
-                            {% if supplier.is_active %}
-                            <span class="badge bg-success rounded-pill">
-                                <i class="fas fa-check-circle"></i> Active
-                            </span>
-                            {% else %}
-                            <span class="badge bg-danger rounded-pill">
-                                <i class="fas fa-ban"></i> Inactive
-                            </span>
-                            {% endif %}
-                        </td>
-                        <td>
-                            <div class="action-buttons">
-                                {% if perms.inventory.view_supplier %}
-                                <a href="{% url 'inventory:supplier_detail' supplier.pk %}" 
-                                   class="btn btn-sm btn-outline-info action-btn" 
-                                   data-bs-toggle="tooltip" title="View Details">
-                                    <i class="fas fa-eye"></i>
-                                </a>
-                                {% endif %}
-                                {% if perms.inventory.change_supplier %}
-                                <a href="{% url 'inventory:supplier_update' supplier.pk %}" 
-                                   class="btn btn-sm btn-outline-primary action-btn" 
-                                   data-bs-toggle="tooltip" title="Edit">
-                                    <i class="fas fa-edit"></i>
-                                </a>
-                                {% endif %}
-                            </div>
-                        </td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        </div>
-
-        <!-- Pagination -->
-        {% if is_paginated %}
-        <nav aria-label="Suppliers pagination">
-            <ul class="pagination justify-content-center">
-                {% if page_obj.has_previous %}
-                <li class="page-item">
-                    <a class="page-link" href="?page=1{% if search_query %}&search={{ search_query }}{% endif %}">
-                        <i class="fas fa-angle-double-left"></i>
-                    </a>
-                </li>
-                <li class="page-item">
-                    <a class="page-link" href="?page={{ page_obj.previous_page_number }}{% if search_query %}&search={{ search_query }}{% endif %}">
-                        <i class="fas fa-angle-left"></i>
-                    </a>
-                </li>
-                {% endif %}
-
-                {% for num in page_obj.paginator.page_range %}
-                    {% if page_obj.number == num %}
-                    <li class="page-item active">
-                        <span class="page-link">{{ num }}</span>
-                    </li>
-                    {% elif num > page_obj.number|add:'-3' and num < page_obj.number|add:'3' %}
-                    <li class="page-item">
-                        <a class="page-link" href="?page={{ num }}{% if search_query %}&search={{ search_query }}{% endif %}">{{ num }}</a>
-                    </li>
-                    {% endif %}
-                {% endfor %}
-
-                {% if page_obj.has_next %}
-                <li class="page-item">
-                    <a class="page-link" href="?page={{ page_obj.next_page_number }}{% if search_query %}&search={{ search_query }}{% endif %}">
-                        <i class="fas fa-angle-right"></i>
-                    </a>
-                </li>
-                <li class="page-item">
-                    <a class="page-link" href="?page={{ page_obj.paginator.num_pages }}{% if search_query %}&search={{ search_query }}{% endif %}">
-                        <i class="fas fa-angle-double-right"></i>
-                    </a>
-                </li>
-                {% endif %}
-            </ul>
-        </nav>
+        // If editing with existing category, pre-select it
+        {% if form.instance.efris_commodity_category_code %}
+        this.preSelectCategory({
+            code: '{{ form.instance.efris_commodity_category_code }}',
+            name: '{{ form.instance.efris_commodity_category_name }}',
+            rate: '{{ form.instance.efris_rate|default:"18" }}',
+            is_exempt: {{ form.instance.efris_is_exempt|yesno:"true,false" }},
+            is_zero_rate: {{ form.instance.efris_is_zero_rate|yesno:"true,false" }},
+            excisable: {{ form.instance.efris_is_excisable|yesno:"true,false" }}
+        });
         {% endif %}
-
-        {% else %}
-        <div class="empty-state">
-            <div class="empty-state-icon">
-                <i class="fas fa-truck"></i>
-            </div>
-            <h3>No Suppliers Found</h3>
-            <p class="text-muted">Your supplier list is currently empty. Add your first supplier to get started.</p>
-            {% if perms.inventory.add_supplier %}
-            <a href="{% url 'inventory:supplier_create' %}" class="btn btn-primary">
-                <i class="fas fa-plus-circle"></i> Add Supplier
-            </a>
-            {% endif %}
-        </div>
-        {% endif %}
-    </div>
-</div>
-{% endblock %}
-
-{% block extra_css %}
-<link href="https://cdnjs.cloudflare.com/ajax/libs/datatables/1.13.6/css/dataTables.bootstrap5.min.css" rel="stylesheet">
-<link rel="stylesheet" href="{% static 'themes.css' %}">
-<style>
-.supplier-list-container {
-    padding: 1.5rem;
-    max-width: 1400px;
-    margin: 0 auto;
-}
-
-/* Header Styles */
-.supplier-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-end;
-    margin-bottom: 1.5rem;
-    padding-bottom: 1rem;
-    border-bottom: 1px solid #e9ecef;
-}
-
-.header-content h1 {
-    font-size: 1.75rem;
-    font-weight: 600;
-    margin: 0;
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-}
-
-.header-content p {
-    margin: 0.25rem 0 0;
-    color: #6c757d;
-}
-
-/* Filter Card */
-.filter-card {
-    background: white;
-    border-radius: 0.75rem;
-    padding: 1.25rem;
-    margin-bottom: 1.5rem;
-    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
-}
-
-.filter-grid {
-    display: grid;
-    grid-template-columns: 1fr auto;
-    gap: 1rem;
-    align-items: end;
-}
-
-.search-group {
-    position: relative;
-}
-
-.search-group i {
-    position: absolute;
-    left: 1rem;
-    top: 50%;
-    transform: translateY(-50%);
-    color: #adb5bd;
-}
-
-.search-group input {
-    padding-left: 2.5rem;
-}
-[data-theme="dark"] .filter-card{
-    background:black;
-}
-
-.filter-actions {
-    display: flex;
-    gap: 0.75rem;
-    align-self: flex-end;
-}
-
-/* Table Styles */
-.supplier-table-container {
-    background: white;
-    border-radius: 0.75rem;
-    padding: 1.25rem;
-    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
-}
-
-[data-theme="dark"] .supplier-table-container{
-    background: black;
-}
-.table {
-    margin-bottom: 0;
-}
-
-.table th {
-    font-weight: 600;
-    font-size: 0.875rem;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    color: #495057;
-    border-bottom-width: 1px;
-}
-
-.supplier-row:hover {
-    background-color: #f8f9fa;
-}
-
-/* Supplier Info Cells */
-.supplier-info {
-    display: flex;
-    flex-direction: column;
-    gap: 0.25rem;
-}
-
-.supplier-name {
-    font-weight: 500;
-    margin-bottom: 0;
-}
-
-.supplier-meta {
-    display: flex;
-    gap: 0.5rem;
-    flex-wrap: wrap;
-}
-
-/* Contact Info */
-.contact-info {
-    display: flex;
-    flex-direction: column;
-    gap: 0.25rem;
-}
-
-.contact-info div {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    font-size: 0.875rem;
-}
-
-/* Action Buttons */
-.action-buttons {
-    display: flex;
-    gap: 0.5rem;
-}
-
-.action-btn {
-    width: 32px;
-    height: 32px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: 0.5rem;
-}
-
-/* Empty State */
-.empty-state {
-    text-align: center;
-    padding: 3rem 1rem;
-}
-
-.empty-state-icon {
-    font-size: 3rem;
-    color: #e9ecef;
-    margin-bottom: 1rem;
-}
-
-.empty-state h3 {
-    margin-bottom: 0.5rem;
-    color: #495057;
-}
-
-/* Pagination */
-.pagination {
-    margin-top: 1.5rem;
-}
-
-.page-item .page-link {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 40px;
-    height: 40px;
-    border-radius: 0.5rem !important;
-    margin: 0 0.25rem;
-    color: #495057;
-    border: 1px solid #dee2e6;
-}
-
-.page-item.active .page-link {
-    background-color: #2e59d9;
-    border-color: #2e59d9;
-}
-
-/* Responsive Adjustments */
-@media (max-width: 768px) {
-    .supplier-header {
-        flex-direction: column;
-        align-items: flex-start;
-        gap: 1rem;
     }
-    
-    .filter-grid {
-        grid-template-columns: 1fr;
-    }
-    
-    .filter-actions {
-        grid-column: span 1;
-    }
-    
-    .action-buttons {
-        flex-direction: column;
-    }
-    
-    .action-btn {
-        width: 100%;
-    }
-}
-</style>
-{% endblock %}
 
-{% block extra_js %}
-<script>
-$(document).ready(function() {
-    // Initialize DataTable
-    const suppliersTable = $('#suppliersTable').DataTable({
-        responsive: true,
-        dom: '<"top"f>rt<"bottom"lip><"clear">',
-        pageLength: 25,
-        language: {
-            search: "_INPUT_",
-            searchPlaceholder: "Search suppliers...",
-            lengthMenu: "Show _MENU_ suppliers",
-            info: "Showing _START_ to _END_ of _TOTAL_ suppliers",
-            infoEmpty: "No suppliers found",
-            infoFiltered: "(filtered from _MAX_ total suppliers)"
-        },
-        columnDefs: [
-            { orderable: false, targets: [4] }, // Disable sorting for actions column
-            { responsivePriority: 1, targets: 0 }, // Supplier name column
-            { responsivePriority: 2, targets: 1 }  // Contact info column
-        ],
-        initComplete: function() {
-            // Add custom search input
-            $('.dataTables_filter input').addClass('form-control form-control-sm');
-            $('.dataTables_filter label').contents().filter(function() {
-                return this.nodeType === 3;
-            }).remove();
+    initializeEventListeners() {
+        // Search functionality
+        $('#efrisSearchInput').on('input', this.debounce(() => {
+            this.handleSearch();
+        }, 300));
+
+        // Enter key in search
+        $('#efrisSearchInput').on('keypress', (e) => {
+            if (e.which === 13) {
+                this.handleSearch();
+            }
+        });
+    }
+
+    debounce(func, wait) {
+        let timeout;
+        return function executedFunction(...args) {
+            const later = () => {
+                clearTimeout(timeout);
+                func(...args);
+            };
+            clearTimeout(timeout);
+            timeout = setTimeout(later, wait);
+        };
+    }
+
+    async loadCategoryTree() {
+        $('#treeLoading').addClass('show');
+
+        try {
+            const response = await $.ajax({
+                url: '{% url "inventory:efris_category_tree" %}',
+                method: 'GET',
+                data: {
+                    type: $('#id_category_type').val() || 'product'
+                }
+            });
+
+            if (response.success) {
+                this.categoryTree = response.tree || [];
+                this.renderCategoryTree();
+            } else {
+                throw new Error(response.error);
+            }
+        } catch (error) {
+            console.error('Failed to load category tree:', error);
+            $('#categoryTree').html('<div class="efris-empty"><i class="fas fa-exclamation-triangle"></i><div>Failed to load categories</div></div>');
+        } finally {
+            $('#treeLoading').removeClass('show');
         }
-    });
+    }
 
-    // Initialize tooltips
-    $('[data-bs-toggle="tooltip"]').tooltip({
-        trigger: 'hover',
-        placement: 'top'
-    });
-});
-</script>
-{% endblock %}
+    renderCategoryTree() {
+        const treeContainer = $('#categoryTree');
+        treeContainer.empty();
+
+        if (this.categoryTree.length === 0) {
+            treeContainer.html('<div class="efris-empty"><i class="fas fa-folder-open"></i><div>No categories found</div></div>');
+            return;
+        }
+
+        const renderNode = (node, level = 0) => {
+            const hasChildren = node.children && node.children.length > 0;
+            const nodeElement = $(`
+                <div class="tree-node">
+                    <div class="tree-node-content" data-node-id="${node.id}" data-has-children="${hasChildren}">
+                        <div class="tree-node-icon">
+                            <i class="fas fa-${hasChildren ? 'folder' : 'file'}"></i>
+                        </div>
+                        <div class="tree-node-text">${node.name}</div>
+                    </div>
+                    ${hasChildren ? `<div class="tree-node-children" id="children-${node.id}"></div>` : ''}
+                </div>
+            `);
+
+            // Click handler
+            nodeElement.find('.tree-node-content').on('click', () => {
+                if (hasChildren) {
+                    this.toggleNode(node, nodeElement);
+                } else {
+                    this.loadCategoryResults(node.id, node.name);
+                }
+            });
+
+            return nodeElement;
+        };
+
+        const renderTreeLevel = (nodes, level = 0) => {
+            nodes.forEach(node => {
+                treeContainer.append(renderNode(node, level));
+            });
+        };
+
+        renderTreeLevel(this.categoryTree);
+    }
+
+    toggleNode(node, nodeElement) {
+        const childrenContainer = $(`#children-${node.id}`);
+        const icon = nodeElement.find('.tree-node-icon i');
+
+        if (childrenContainer.is(':empty')) {
+            // Load children
+            icon.removeClass('fa-folder').addClass('fa-folder-open');
+            this.loadNodeChildren(node.id, childrenContainer);
+        } else {
+            // Toggle visibility
+            childrenContainer.toggle();
+            icon.toggleClass('fa-folder-open fa-folder');
+        }
+    }
+
+    async loadNodeChildren(nodeId, container) {
+        try {
+            const response = await $.ajax({
+                url: '{% url "inventory:efris_category_children" %}',
+                method: 'GET',
+                data: { parent_id: nodeId }
+            });
+
+            response.children.forEach(child => {
+                container.append(this.renderNode(child, 1));
+            });
+        } catch (error) {
+            console.error('Failed to load node children:', error);
+        }
+    }
+
+    async handleSearch() {
+        const query = $('#efrisSearchInput').val().trim();
+
+        if (query.length < 2) {
+            this.showEmptyState('Type at least 2 characters to search');
+            return;
+        }
+
+        $('#resultsLoading').addClass('show');
+        $('#emptyResults').hide();
+
+        try {
+            const response = await $.ajax({
+                url: '{% url "inventory:efris_category_search_enhanced" %}',
+                method: 'GET',
+                data: {
+                    q: query,
+                    type: $('#id_category_type').val() || 'product',
+                    limit: 100
+                }
+            });
+
+            this.currentResults = response.results || [];
+            this.renderResults(`Search Results (${response.total_count || 0} found)`);
+        } catch (error) {
+            console.error('Search failed:', error);
+            this.showEmptyState('Search failed. Please try again.');
+        } finally {
+            $('#resultsLoading').removeClass('show');
+        }
+    }
+
+    async loadCategoryResults(categoryId, categoryName) {
+        $('#resultsLoading').addClass('show');
+        $('#emptyResults').hide();
+
+        try {
+            const response = await $.ajax({
+                url: '{% url "inventory:efris_category_results" %}',
+                method: 'GET',
+                data: {
+                    category_id: categoryId,
+                    type: $('#id_category_type').val() || 'product'
+                }
+            });
+
+            if (response.success) {
+                this.currentResults = response.results || [];
+                this.renderResults(categoryName);
+            } else {
+                throw new Error('Failed to load results');
+            }
+        } catch (error) {
+            console.error('Failed to load category results:', error);
+            this.showEmptyState('Failed to load categories');
+        } finally {
+            $('#resultsLoading').removeClass('show');
+        }
+    }
+
+    renderResults(title) {
+        $('#resultsTitle').text(title);
+        $('#resultsCount').text(`(${this.currentResults.length} items)`);
+
+        const resultsContainer = $('#categoryResults');
+        resultsContainer.empty();
+
+        if (this.currentResults.length === 0) {
+            this.showEmptyState('No categories found');
+            return;
+        }
+
+        this.currentResults.forEach(category => {
+            const resultItem = $(`
+                <div class="category-result-item" data-category-code="${category.code}">
+                    <div class="category-code">${category.code}</div>
+                    <div class="category-name">${category.name}</div>
+                    <div class="category-badges">
+                        ${this.renderBadges(category)}
+                    </div>
+                </div>
+            `);
+
+            resultItem.on('click', () => {
+                this.selectCategory(category);
+            });
+
+            resultsContainer.append(resultItem);
+        });
+    }
+
+    renderBadges(category) {
+        let badges = '';
+        if (category.is_exempt) {
+            badges += '<span class="badge bg-warning text-dark">Exempt</span>';
+        }
+        if (category.is_zero_rate) {
+            badges += '<span class="badge bg-info">Zero Rate</span>';
+        }
+        if (category.excisable) {
+            badges += '<span class="badge bg-danger">Excisable</span>';
+        }
+        if (!category.is_exempt && !category.is_zero_rate) {
+            badges += `<span class="badge bg-success">VAT ${category.rate || '18'}%</span>`;
+        }
+        return badges;
+    }
+
+    selectCategory(category) {
+        this.selectedCategory = category;
+
+        // Update selected display
+        $('#selectedCategoryCode').text(category.code);
+        $('#selectedCategoryName').text(category.name);
+        $('#selectedCategoryBadges').html(this.renderBadges(category));
+        $('#selectedCategoryDisplay').addClass('show');
+
+        // Update hidden field
+        $('#efris_commodity_category_code').val(category.code);
+
+        // Update UI
+        $('.category-result-item').removeClass('selected');
+        $(`.category-result-item[data-category-code="${category.code}"]`).addClass('selected');
+
+        // Add to recent categories
+        this.addToRecentCategories(category);
+
+        // Scroll to top to show selected category
+        $('html, body').animate({ scrollTop: 0 }, 500);
+    }
+
+    addToRecentCategories(category) {
+        // Remove if already exists
+        this.recentCategories = this.recentCategories.filter(c => c.code !== category.code);
+
+        // Add to beginning
+        this.recentCategories.unshift(category);
+
+        // Keep only last 5
+        this.recentCategories = this.recentCategories.slice(0, 5);
+
+        // Save to localStorage
+        localStorage.setItem('efris_recent_categories', JSON.stringify(this.recentCategories));
+
+        // Update UI
+        this.populateQuickAccess();
+    }
+
+    populateQuickAccess() {
+        const recentContainer = $('#recentCategories');
+        recentContainer.empty();
+
+        this.recentCategories.forEach(category => {
+            const item = $(`
+                <div class="quick-access-item recent" data-category-code="${category.code}">
+                    <i class="fas fa-history me-1"></i>
+                    ${category.code}
+                </div>
+            `);
+
+            item.on('click', () => {
+                this.selectCategory(category);
+                $('#efrisSearchInput').val('');
+            });
+
+            recentContainer.append(item);
+        });
+
+        // Load popular categories
+        this.loadPopularCategories();
+    }
+
+    async loadPopularCategories() {
+        try {
+            const response = await $.ajax({
+                url: '{% url "inventory:efris_popular_categories" %}',
+                method: 'GET',
+                data: {
+                    type: $('#id_category_type').val() || 'product',
+                    limit: 5
+                }
+            });
+
+            const popularContainer = $('#popularCategories');
+            popularContainer.empty();
+
+            response.results.forEach(category => {
+                const item = $(`
+                    <div class="quick-access-item popular" data-category-code="${category.code}">
+                        <i class="fas fa-star me-1"></i>
+                        ${category.code}
+                    </div>
+                `);
+
+                item.on('click', () => {
+                    this.selectCategory(category);
+                    $('#efrisSearchInput').val('');
+                });
+
+                popularContainer.append(item);
+            });
+        } catch (error) {
+            console.error('Failed to load popular categories:', error);
+        }
+    }
+
+    populateAZScroller() {
+        const scroller = $('.az-scroller');
+        scroller.empty();
+
+        'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('').forEach(letter => {
+            const letterElement = $(`
+                <div class="az-letter" data-letter="${letter}">${letter}</div>
+            `);
+
+            letterElement.on('click', () => {
+                this.jumpToLetter(letter);
+            });
+
+            scroller.append(letterElement);
+        });
+    }
+
+    jumpToLetter(letter) {
+        const resultsContainer = $('#categoryResults');
+        const targetItem = resultsContainer.find(`.category-code:contains("${letter}")`).first();
+
+        if (targetItem.length) {
+            resultsContainer.animate({
+                scrollTop: targetItem.offset().top - resultsContainer.offset().top + resultsContainer.scrollTop() - 50
+            }, 500);
+        }
+    }
+
+    showEmptyState(message) {
+        $('#categoryResults').html(`
+            <div class="efris-empty">
+                <i class="fas fa-inbox"></i>
+                <div>${message}</div>
+            </div>
+        `);
+    }
+
+    preSelectCategory(category) {
+        this.selectCategory(category);
+    }
+}

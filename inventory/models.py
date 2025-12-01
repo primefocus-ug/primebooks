@@ -175,7 +175,7 @@ class Category(models.Model):
                     })
 
                 # ✅ Validate type matches (product vs service)
-                efris_type = 'service' if efris_cat.service_mark == '102' else 'product'
+                efris_type = 'service' if efris_cat.service_mark == '101' else 'product'
                 if self.category_type != efris_type:
                     raise ValidationError({
                         'efris_commodity_category_code':
@@ -297,7 +297,7 @@ class Category(models.Model):
                 raise ValueError("Selected EFRIS category is not a leaf node.")
             
             # Validate type matches
-            efris_type = 'service' if efris_cat.service_mark == '102' else 'product'
+            efris_type = 'service' if efris_cat.service_mark == '101' else 'product'
             if self.category_type != efris_type:
                 raise ValueError(f"EFRIS category type ({efris_type}) doesn't match category type ({self.category_type})")
         
@@ -1793,7 +1793,7 @@ class Service(models.Model):
                 raise ValueError("Selected EFRIS category is not a leaf node.")
 
             # Validate type matches (should be service)
-            if efris_cat.service_mark != '102':
+            if efris_cat.service_mark != '101':
                 raise ValueError("Selected EFRIS category is not a service category.")
 
         self.efris_auto_sync_enabled = True
