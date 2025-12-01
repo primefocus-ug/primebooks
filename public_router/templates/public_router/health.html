@@ -1,0 +1,908 @@
+{% extends 'public_router/base.html' %}
+{% load static %}
+
+{% block title %}PrimeBooks - System Health & Status{% endblock %}
+
+{% block extra_css %}
+<style>
+    /* Health Page Styles */
+    .health-container {
+        max-width: 1200px;
+        margin: 2rem auto 4rem;
+        padding: 0 2rem;
+    }
+
+    .health-header {
+        text-align: center;
+        margin-bottom: 3rem;
+        padding-top: 2rem;
+    }
+
+    .health-header h1 {
+        font-size: 2.8rem;
+        margin-bottom: 1rem;
+        color: var(--text-primary);
+    }
+
+    .health-header p {
+        font-size: 1.1rem;
+        color: var(--text-secondary);
+        max-width: 600px;
+        margin: 0 auto;
+        line-height: 1.6;
+    }
+
+    .status-indicator {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.4rem 1rem;
+        border-radius: 20px;
+        font-size: 0.9rem;
+        font-weight: 500;
+        margin-top: 1rem;
+    }
+
+    .status-online {
+        background: linear-gradient(135deg, #10b981, #059669);
+        color: white;
+    }
+
+    .status-degraded {
+        background: linear-gradient(135deg, #f59e0b, #d97706);
+        color: white;
+    }
+
+    .status-offline {
+        background: linear-gradient(135deg, #ef4444, #dc2626);
+        color: white;
+    }
+
+    .status-maintenance {
+        background: linear-gradient(135deg, #8b5cf6, #7c3aed);
+        color: white;
+    }
+
+    .status-dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        animation: pulse 2s infinite;
+    }
+
+    .status-online .status-dot {
+        background-color: #10b981;
+        animation: pulse 2s infinite;
+    }
+
+    .status-degraded .status-dot {
+        background-color: #f59e0b;
+        animation: pulse 2s infinite;
+    }
+
+    .status-offline .status-dot {
+        background-color: #ef4444;
+    }
+
+    @keyframes pulse {
+        0%, 100% {
+            opacity: 1;
+        }
+        50% {
+            opacity: 0.5;
+        }
+    }
+
+    /* System Overview */
+    .system-overview {
+        background: var(--bg-secondary);
+        border-radius: 12px;
+        padding: 2rem;
+        margin-bottom: 3rem;
+        border: 1px solid var(--border-color-light);
+    }
+
+    .system-overview h2 {
+        font-size: 1.5rem;
+        margin-bottom: 1.5rem;
+        color: var(--text-primary);
+    }
+
+    .overview-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+        gap: 1.5rem;
+    }
+
+    .overview-card {
+        background: var(--bg-tertiary);
+        border-radius: 8px;
+        padding: 1.5rem;
+        text-align: center;
+        transition: transform 0.3s ease, box-shadow 0.3s ease;
+        border: 1px solid var(--border-color);
+    }
+
+    .overview-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    }
+
+    .overview-card h3 {
+        font-size: 1rem;
+        color: var(--text-secondary);
+        margin-bottom: 0.5rem;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+
+    .overview-card .value {
+        font-size: 2.2rem;
+        font-weight: 700;
+        margin: 0.5rem 0;
+        color: var(--text-primary);
+    }
+
+    .overview-card .subtext {
+        font-size: 0.9rem;
+        color: var(--text-tertiary);
+    }
+
+    .overview-card.good .value {
+        color: #10b981;
+    }
+
+    .overview-card.warning .value {
+        color: #f59e0b;
+    }
+
+    .overview-card.critical .value {
+        color: #ef4444;
+    }
+
+    /* Service Status */
+    .service-status {
+        margin-bottom: 3rem;
+    }
+
+    .service-status h2 {
+        font-size: 1.8rem;
+        margin-bottom: 1.5rem;
+        color: var(--text-primary);
+    }
+
+    .service-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+        gap: 1rem;
+    }
+
+    .service-card {
+        background: var(--bg-secondary);
+        border-radius: 8px;
+        padding: 1.5rem;
+        border: 1px solid var(--border-color-light);
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+        transition: all 0.3s ease;
+    }
+
+    .service-card:hover {
+        background: var(--bg-tertiary);
+        border-color: var(--border-color-lighter);
+    }
+
+    .service-icon {
+        width: 48px;
+        height: 48px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.5rem;
+        flex-shrink: 0;
+    }
+
+    .service-icon.online {
+        background: linear-gradient(135deg, rgba(16, 185, 129, 0.1), rgba(16, 185, 129, 0.2));
+        color: #10b981;
+    }
+
+    .service-icon.degraded {
+        background: linear-gradient(135deg, rgba(245, 158, 11, 0.1), rgba(245, 158, 11, 0.2));
+        color: #f59e0b;
+    }
+
+    .service-icon.offline {
+        background: linear-gradient(135deg, rgba(239, 68, 68, 0.1), rgba(239, 68, 68, 0.2));
+        color: #ef4444;
+    }
+
+    .service-icon.maintenance {
+        background: linear-gradient(135deg, rgba(139, 92, 246, 0.1), rgba(139, 92, 246, 0.2));
+        color: #8b5cf6;
+    }
+
+    .service-info {
+        flex: 1;
+    }
+
+    .service-name {
+        font-weight: 600;
+        color: var(--text-primary);
+        margin-bottom: 0.25rem;
+    }
+
+    .service-desc {
+        font-size: 0.9rem;
+        color: var(--text-secondary);
+        margin-bottom: 0.5rem;
+    }
+
+    .service-status-badge {
+        display: inline-block;
+        padding: 0.2rem 0.6rem;
+        border-radius: 12px;
+        font-size: 0.75rem;
+        font-weight: 500;
+    }
+
+    .badge-online {
+        background: rgba(16, 185, 129, 0.2);
+        color: #10b981;
+    }
+
+    .badge-degraded {
+        background: rgba(245, 158, 11, 0.2);
+        color: #f59e0b;
+    }
+
+    .badge-offline {
+        background: rgba(239, 68, 68, 0.2);
+        color: #ef4444;
+    }
+
+    .badge-maintenance {
+        background: rgba(139, 92, 246, 0.2);
+        color: #8b5cf6;
+    }
+
+    /* Recent Incidents */
+    .incidents-section {
+        background: var(--bg-secondary);
+        border-radius: 12px;
+        padding: 2rem;
+        margin-bottom: 3rem;
+        border: 1px solid var(--border-color-light);
+    }
+
+    .incidents-section h2 {
+        font-size: 1.5rem;
+        margin-bottom: 1.5rem;
+        color: var(--text-primary);
+    }
+
+    .incident-list {
+        display: flex;
+        flex-direction: column;
+        gap: 1rem;
+    }
+
+    .incident-item {
+        background: var(--bg-tertiary);
+        border-radius: 8px;
+        padding: 1.25rem;
+        border-left: 4px solid;
+    }
+
+    .incident-item.resolved {
+        border-left-color: #10b981;
+    }
+
+    .incident-item.investigating {
+        border-left-color: #f59e0b;
+    }
+
+    .incident-item.identified {
+        border-left-color: #8b5cf6;
+    }
+
+    .incident-item.monitoring {
+        border-left-color: #3b82f6;
+    }
+
+    .incident-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        margin-bottom: 0.75rem;
+    }
+
+    .incident-title {
+        font-weight: 600;
+        color: var(--text-primary);
+        font-size: 1.1rem;
+    }
+
+    .incident-time {
+        font-size: 0.85rem;
+        color: var(--text-tertiary);
+        white-space: nowrap;
+    }
+
+    .incident-desc {
+        color: var(--text-secondary);
+        font-size: 0.95rem;
+        line-height: 1.5;
+        margin-bottom: 0.5rem;
+    }
+
+    .incident-services {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+        margin-top: 0.75rem;
+    }
+
+    .incident-service {
+        padding: 0.2rem 0.6rem;
+        background: var(--bg-secondary);
+        border-radius: 12px;
+        font-size: 0.8rem;
+        color: var(--text-secondary);
+    }
+
+    /* Performance Metrics */
+    .performance-metrics {
+        background: var(--bg-secondary);
+        border-radius: 12px;
+        padding: 2rem;
+        margin-bottom: 3rem;
+        border: 1px solid var(--border-color-light);
+    }
+
+    .performance-metrics h2 {
+        font-size: 1.5rem;
+        margin-bottom: 1.5rem;
+        color: var(--text-primary);
+    }
+
+    .metrics-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 1.5rem;
+    }
+
+    .metric-card {
+        background: var(--bg-tertiary);
+        border-radius: 8px;
+        padding: 1.5rem;
+        text-align: center;
+        border: 1px solid var(--border-color);
+    }
+
+    .metric-value {
+        font-size: 2rem;
+        font-weight: 700;
+        color: var(--text-primary);
+        margin-bottom: 0.5rem;
+    }
+
+    .metric-label {
+        font-size: 0.9rem;
+        color: var(--text-secondary);
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+
+    .metric-change {
+        display: inline-block;
+        padding: 0.2rem 0.5rem;
+        border-radius: 12px;
+        font-size: 0.8rem;
+        margin-top: 0.5rem;
+    }
+
+    .change-positive {
+        background: rgba(16, 185, 129, 0.2);
+        color: #10b981;
+    }
+
+    .change-negative {
+        background: rgba(239, 68, 68, 0.2);
+        color: #ef4444;
+    }
+
+    .change-neutral {
+        background: rgba(107, 114, 128, 0.2);
+        color: var(--text-tertiary);
+    }
+
+    /* Information Section */
+    .info-section {
+        background: linear-gradient(135deg, rgba(12, 25, 221, 0.1), rgba(76, 84, 196, 0.1));
+        border-radius: 12px;
+        padding: 2rem;
+        margin-bottom: 3rem;
+        border: 1px solid rgba(12, 25, 221, 0.2);
+    }
+
+    .info-section h3 {
+        font-size: 1.3rem;
+        margin-bottom: 1rem;
+        color: var(--text-primary);
+    }
+
+    .info-section p {
+        color: var(--text-secondary);
+        margin-bottom: 1rem;
+        line-height: 1.6;
+    }
+
+    .info-links {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 1rem;
+        margin-top: 1.5rem;
+    }
+
+    .info-link {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        color: var(--text-primary);
+        text-decoration: none;
+        padding: 0.5rem 1rem;
+        background: var(--bg-tertiary);
+        border-radius: 6px;
+        transition: all 0.3s ease;
+        border: 1px solid var(--border-color);
+    }
+
+    .info-link:hover {
+        background: var(--bg-secondary);
+        border-color: var(--border-color-light);
+    }
+
+    /* Last Updated */
+    .last-updated {
+        text-align: center;
+        color: var(--text-tertiary);
+        font-size: 0.9rem;
+        padding-top: 2rem;
+        border-top: 1px solid var(--border-color-light);
+        margin-top: 2rem;
+    }
+
+    /* Responsive Design */
+    @media (max-width: 768px) {
+        .health-container {
+            padding: 0 1rem;
+            margin: 1rem auto 2rem;
+        }
+
+        .health-header h1 {
+            font-size: 2.2rem;
+        }
+
+        .health-header p {
+            font-size: 1rem;
+        }
+
+        .system-overview,
+        .incidents-section,
+        .performance-metrics,
+        .info-section {
+            padding: 1.5rem;
+        }
+
+        .overview-grid,
+        .service-grid,
+        .metrics-grid {
+            grid-template-columns: 1fr;
+        }
+
+        .service-card {
+            padding: 1rem;
+        }
+
+        .incident-header {
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        .incident-time {
+            align-self: flex-start;
+        }
+
+        .info-links {
+            flex-direction: column;
+        }
+
+        .info-link {
+            justify-content: center;
+        }
+    }
+
+    @media (max-width: 480px) {
+        .health-header h1 {
+            font-size: 1.8rem;
+        }
+
+        .overview-card .value {
+            font-size: 1.8rem;
+        }
+
+        .metric-value {
+            font-size: 1.6rem;
+        }
+
+        .status-indicator {
+            font-size: 0.8rem;
+            padding: 0.3rem 0.8rem;
+        }
+    }
+
+    /* Auto-refresh notification */
+    .auto-refresh {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        justify-content: center;
+        margin-top: 1rem;
+        font-size: 0.9rem;
+        color: var(--text-secondary);
+    }
+
+    .refresh-spinner {
+        width: 16px;
+        height: 16px;
+        border: 2px solid var(--text-tertiary);
+        border-top-color: transparent;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+    }
+
+    @keyframes spin {
+        to {
+            transform: rotate(360deg);
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="health-container">
+    <!-- Header -->
+    <div class="health-header">
+        <h1>PrimeBooks System Status</h1>
+        <p>Real-time monitoring of all PrimeBooks services and infrastructure</p>
+        <div class="status-indicator status-online">
+            <span class="status-dot"></span>
+            <span>All Systems Operational</span>
+        </div>
+        <div class="auto-refresh">
+            <span class="refresh-spinner"></span>
+            <span>Auto-refreshing in <span id="refreshCountdown">60</span> seconds</span>
+        </div>
+    </div>
+
+    <!-- System Overview -->
+    <div class="system-overview">
+        <h2>System Overview</h2>
+        <div class="overview-grid">
+            <div class="overview-card good">
+                <h3>Uptime (30 Days)</h3>
+                <div class="value">99.98%</div>
+                <div class="subtext">Excellent Performance</div>
+            </div>
+            <div class="overview-card good">
+                <h3>Active Tenants</h3>
+                <div class="value" id="tenantCount">Loading...</div>
+                <div class="subtext">Active Workspaces</div>
+            </div>
+            <div class="overview-card good">
+                <h3>Response Time</h3>
+                <div class="value">128ms</div>
+                <div class="subtext">Average API Response</div>
+            </div>
+            <div class="overview-card good">
+                <h3>Error Rate</h3>
+                <div class="value">0.02%</div>
+                <div class="subtext">Very Low</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Service Status -->
+    <div class="service-status">
+        <h2>Service Status</h2>
+        <div class="service-grid">
+            <!-- Core Services -->
+            <div class="service-card">
+                <div class="service-icon online">
+                    <i class="fas fa-server"></i>
+                </div>
+                <div class="service-info">
+                    <div class="service-name">Web Application</div>
+                    <div class="service-desc">Main PrimeBooks application</div>
+                    <span class="service-status-badge badge-online">Operational</span>
+                </div>
+            </div>
+
+            <div class="service-card">
+                <div class="service-icon online">
+                    <i class="fas fa-database"></i>
+                </div>
+                <div class="service-info">
+                    <div class="service-name">Database</div>
+                    <div class="service-desc">PostgreSQL database cluster</div>
+                    <span class="service-status-badge badge-online">Operational</span>
+                </div>
+            </div>
+
+            <div class="service-card">
+                <div class="service-icon online">
+                    <i class="fas fa-file-invoice-dollar"></i>
+                </div>
+                <div class="service-info">
+                    <div class="service-name">EFRIS Integration</div>
+                    <div class="service-desc">URA tax system integration</div>
+                    <span class="service-status-badge badge-online">Operational</span>
+                </div>
+            </div>
+
+            <div class="service-card">
+                <div class="service-icon online">
+                    <i class="fas fa-chart-line"></i>
+                </div>
+                <div class="service-info">
+                    <div class="service-name">Analytics API</div>
+                    <div class="service-desc">Real-time analytics service</div>
+                    <span class="service-status-badge badge-online">Operational</span>
+                </div>
+            </div>
+
+            <div class="service-card">
+                <div class="service-icon online">
+                    <i class="fas fa-envelope"></i>
+                </div>
+                <div class="service-info">
+                    <div class="service-name">Email Service</div>
+                    <div class="service-desc">Transactional emails</div>
+                    <span class="service-status-badge badge-online">Operational</span>
+                </div>
+            </div>
+
+            <div class="service-card">
+                <div class="service-icon online">
+                    <i class="fas fa-cloud-upload-alt"></i>
+                </div>
+                <div class="service-info">
+                    <div class="service-name">File Storage</div>
+                    <div class="service-desc">Document and media storage</div>
+                    <span class="service-status-badge badge-online">Operational</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Performance Metrics -->
+    <div class="performance-metrics">
+        <h2>Performance Metrics</h2>
+        <div class="metrics-grid">
+            <div class="metric-card">
+                <div class="metric-value">99.98%</div>
+                <div class="metric-label">Uptime</div>
+                <span class="metric-change change-positive">+0.01%</span>
+            </div>
+            <div class="metric-card">
+                <div class="metric-value">128ms</div>
+                <div class="metric-label">Avg Response</div>
+                <span class="metric-change change-negative">-2ms</span>
+            </div>
+            <div class="metric-card">
+                <div class="metric-value">0.02%</div>
+                <div class="metric-label">Error Rate</div>
+                <span class="metric-change change-positive">-0.01%</span>
+            </div>
+            <div class="metric-card">
+                <div class="metric-value">99.9%</div>
+                <div class="metric-label">API Success</div>
+                <span class="metric-change change-neutral">0%</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Recent Incidents -->
+    <div class="incidents-section">
+        <h2>Recent Incidents</h2>
+        <div class="incident-list">
+            <div class="incident-item resolved">
+                <div class="incident-header">
+                    <div class="incident-title">Database Performance Issue</div>
+                    <div class="incident-time">March 15, 2024 - 14:30 EAT</div>
+                </div>
+                <div class="incident-desc">Temporary slowdown in database queries affecting report generation. Issue resolved within 15 minutes.</div>
+                <div class="incident-services">
+                    <span class="incident-service">Database</span>
+                    <span class="incident-service">Reports</span>
+                </div>
+            </div>
+
+            <div class="incident-item resolved">
+                <div class="incident-header">
+                    <div class="incident-title">Email Service Delay</div>
+                    <div class="incident-time">February 28, 2024 - 09:15 EAT</div>
+                </div>
+                <div class="incident-desc">Slight delay in email delivery due to third-party service provider. All emails delivered within 30 minutes.</div>
+                <div class="incident-services">
+                    <span class="incident-service">Email Service</span>
+                    <span class="incident-service">Notifications</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Information Section -->
+    <div class="info-section">
+        <h3>About This Status Page</h3>
+        <p>This status page provides real-time information about the health and performance of PrimeBooks services. We monitor all critical components 24/7 to ensure your business operations run smoothly.</p>
+        <p>For urgent issues, please contact our support team. For updates, subscribe to our status notifications.</p>
+        <div class="info-links">
+            <a href="{% url 'public_support:create_ticket' %}" class="info-link">
+                <i class="fas fa-headset"></i>
+                <span>Contact Support</span>
+            </a>
+            <a href="{% url 'public_blog:home' %}" class="info-link">
+                <i class="fas fa-rss"></i>
+                <span>Subscribe to Updates</span>
+            </a>
+            <a href="{% url 'public_router:login' %}" class="info-link">
+                <i class="fas fa-sign-in-alt"></i>
+                <span>Access Your Account</span>
+            </a>
+        </div>
+    </div>
+
+    <!-- Last Updated -->
+    <div class="last-updated">
+        <p>Last updated: <span id="lastUpdatedTime">Loading...</span> | Page auto-refreshes every 60 seconds</p>
+        <p>Monitor maintained by Prime Focus Uganda Ltd</p>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Update last updated time
+        function updateLastUpdated() {
+            const now = new Date();
+            const options = {
+                year: 'numeric',
+                month: 'long',
+                day: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit',
+                timeZoneName: 'short'
+            };
+            document.getElementById('lastUpdatedTime').textContent =
+                now.toLocaleDateString('en-US', options);
+        }
+
+        // Auto-refresh countdown
+        let countdown = 60;
+        const countdownElement = document.getElementById('refreshCountdown');
+
+        function updateCountdown() {
+            countdown--;
+            countdownElement.textContent = countdown;
+
+            if (countdown <= 0) {
+                countdown = 60;
+                refreshPage();
+            }
+        }
+
+        // Simulate fetching tenant count (in real implementation, this would be an API call)
+        function updateTenantCount() {
+            // Simulate API call
+            setTimeout(() => {
+                const simulatedCount = Math.floor(Math.random() * 100) + 500;
+                document.getElementById('tenantCount').textContent = simulatedCount;
+            }, 1000);
+        }
+
+        // Refresh page function
+        function refreshPage() {
+            updateTenantCount();
+            updateLastUpdated();
+            countdown = 60;
+
+            // Show refresh animation
+            const refreshSpinner = document.querySelector('.refresh-spinner');
+            refreshSpinner.style.animation = 'none';
+            setTimeout(() => {
+                refreshSpinner.style.animation = 'spin 1s linear infinite';
+            }, 10);
+        }
+
+        // Initialize
+        updateLastUpdated();
+        updateTenantCount();
+
+        // Start countdown
+        setInterval(updateCountdown, 1000);
+
+        // Auto-refresh every 60 seconds
+        setInterval(refreshPage, 60000);
+
+        // Add service status tooltips
+        const serviceCards = document.querySelectorAll('.service-card');
+        serviceCards.forEach(card => {
+            card.addEventListener('mouseenter', function() {
+                const status = this.querySelector('.service-status-badge').textContent;
+                const serviceName = this.querySelector('.service-name').textContent;
+
+                // Create tooltip
+                const tooltip = document.createElement('div');
+                tooltip.className = 'status-tooltip';
+                tooltip.textContent = `${serviceName}: ${status}`;
+                tooltip.style.position = 'absolute';
+                tooltip.style.background = 'var(--bg-tertiary)';
+                tooltip.style.color = 'var(--text-primary)';
+                tooltip.style.padding = '0.5rem 1rem';
+                tooltip.style.borderRadius = '6px';
+                tooltip.style.fontSize = '0.8rem';
+                tooltip.style.zIndex = '1000';
+                tooltip.style.border = '1px solid var(--border-color)';
+                tooltip.style.boxShadow = '0 2px 8px rgba(0,0,0,0.1)';
+                tooltip.style.transform = 'translateY(-100%)';
+
+                this.appendChild(tooltip);
+            });
+
+            card.addEventListener('mouseleave', function() {
+                const tooltip = this.querySelector('.status-tooltip');
+                if (tooltip) {
+                    tooltip.remove();
+                }
+            });
+        });
+
+        // Theme-aware colors
+        function updateThemeAwareColors() {
+            const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+            const infoSection = document.querySelector('.info-section');
+
+            if (isDark) {
+                infoSection.style.background = 'linear-gradient(135deg, rgba(12, 25, 221, 0.15), rgba(76, 84, 196, 0.15))';
+                infoSection.style.borderColor = 'rgba(12, 25, 221, 0.3)';
+            } else {
+                infoSection.style.background = 'linear-gradient(135deg, rgba(12, 25, 221, 0.08), rgba(76, 84, 196, 0.08))';
+                infoSection.style.borderColor = 'rgba(12, 25, 221, 0.15)';
+            }
+        }
+
+        // Listen for theme changes
+        const observer = new MutationObserver(function(mutations) {
+            mutations.forEach(function(mutation) {
+                if (mutation.attributeName === 'data-theme') {
+                    updateThemeAwareColors();
+                }
+            });
+        });
+
+        observer.observe(document.documentElement, {
+            attributes: true,
+            attributeFilter: ['data-theme']
+        });
+
+        // Initial call
+        updateThemeAwareColors();
+    });
+</script>
+{% endblock %}

@@ -13,6 +13,7 @@ urlpatterns = [
     path('success/', SignupSuccessView.as_view(), name='signup_successt'),
     path('check-subdomain/', CheckSubdomainView.as_view(), name='check_subdomain'),
     path('health/', views.HealthCheckView.as_view(), name='health'),
+    path('tutorials/', views.TutorialsView.as_view(), name='tutorials'),
     path('signup/', views.tenant_signup_view, name='signup'),
     path('signup/success/<uuid:request_id>/', views.signup_success_view, name='signup_success'),
     path('tenant-signups/', views.admin_tenant_signups_list, name='tenant_signups_list'),

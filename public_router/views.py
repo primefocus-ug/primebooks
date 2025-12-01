@@ -45,6 +45,19 @@ from .tenant_lookup import (
 logger = logging.getLogger(__name__)
 
 
+class TutorialsView(TemplateView):
+    """Tutorials and help guides page"""
+    template_name = 'public_router/tutorials.html'
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context.update({
+            'page_title': 'PRIMEBOOKS - Tutorials & Help Guides',
+            'meta_description': 'Learn PrimeBooks with comprehensive video tutorials and step-by-step guides for every feature, from setup to advanced reporting.',
+            'active_tab': 'tutorials',
+        })
+        return context
+
 def tenant_signup_view(request):
     """Public-facing tenant signup form"""
     if request.method == 'POST':
