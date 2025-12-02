@@ -2718,9 +2718,9 @@ class EnhancedEFRISAPIClient:
             else:
                 # Unencrypted content
                 content_b64 = base64.b64encode(content_json.encode()).decode()
-
+                interfaces_requiring_signature = ["T115", "T124"]
                 # T115 is special: unencrypted but still needs signature
-                if interface_code == "T115":
+                if interface_code in interfaces_requiring_signature:
                     data_section["signature"] = self.security_manager.sign_content(
                         content_b64,
                         algorithm="SHA1"
@@ -10047,7 +10047,6 @@ def diagnose_efris_issue(company, invoice=None):
         print(f"Diagnostic failed: {e}")
 
 
-# In services.py - Update sync_commodity_categories function
 
 def sync_commodity_categories(company) -> Dict[str, Any]:
     """Sync commodity categories from EFRIS with batching"""
