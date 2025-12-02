@@ -531,6 +531,34 @@ from django.views.decorators.http import require_http_methods
 from .tasks import sync_categories_async
 
 
+
+@login_required
+def commodity_categories(request):
+    """View and manage commodity categories"""
+    company = request.tenant
+
+    search = request.GET.get('search', '')
+
+    categories = EFRISCommodityCategory.objects.all()
+
+    if search:
+        categories = categories.filter(
+            Q(commodity_category_code__icontains=search) |
+            Q(commodity_category_name__icontains=search)
+        )
+
+    # Pagination
+    paginator = Paginator(categories.order_by('commodity_category_code'), 50)
+    page = request.GET.get('page')
+    categories_page = paginator.get_page(page)
+
+    context = {
+        'categories': categories_page,
+        'search': search,
+    }
+
+    return render(request, 'efris/commodity_categories.html', context)
+
 @login_required
 @require_http_methods(["POST"])
 def sync_categories(request):
