@@ -19,6 +19,30 @@ from .models import EFRISSyncQueue, EFRISAPILog, FiscalizationAudit
 
 logger = logging.getLogger(__name__)
 
+from celery import shared_task
+from django_tenants.utils import schema_context
+from .services import sync_commodity_categories
+
+
+@shared_task(bind=True, max_retries=3)
+def sync_categories_async(self, company_id, schema_name):
+    """Async task to sync categories"""
+    from company.models import Company
+
+    try:
+        with schema_context(schema_name):
+            company = Company.objects.get(id=company_id)
+            result = sync_commodity_categories(company)
+
+            return {
+                'success': result['success'],
+                'total_fetched': result.get('total_fetched', 0),
+                'error': result.get('error')
+            }
+    except Exception as e:
+        logger.error(f"Category sync failed: {e}", exc_info=True)
+        # Retry with exponential backoff
+        raise self.retry(exc=e, countdown=60 * (2 ** self.request.retries))
 
 # Helper functions for broadcasting and notifications
 def broadcast_efris_event(company_id: int, event_type: str, data: dict):

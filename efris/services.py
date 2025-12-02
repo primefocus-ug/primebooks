@@ -10047,24 +10047,132 @@ def diagnose_efris_issue(company, invoice=None):
         print(f"Diagnostic failed: {e}")
 
 
+# In services.py - Update sync_commodity_categories function
+
 def sync_commodity_categories(company) -> Dict[str, Any]:
-    """Sync commodity categories from EFRIS"""
+    """Sync commodity categories from EFRIS with batching"""
     try:
         client = EnhancedEFRISAPIClient(company)
-        result = client.query_all_commodity_categories()
+
+        # Use pagination to fetch in batches
+        page_no = 1
+        page_size = 100  # Smaller batches
+        total_fetched = 0
+        all_categories = []
+
+        while True:
+            # Fetch page
+            result = client.query_commodity_categories_paginated(
+                page_no=page_no,
+                page_size=page_size
+            )
+
+            if not result.get('success'):
+                return {
+                    'success': False,
+                    'error': result.get('error'),
+                    'total_fetched': total_fetched
+                }
+
+            categories = result.get('data', {}).get('records', [])
+
+            if not categories:
+                break  # No more pages
+
+            # Process this batch immediately
+            saved_count = _save_category_batch(categories)
+            total_fetched += saved_count
+
+            logger.info(f"Processed page {page_no}: {saved_count} categories")
+
+            # Check if there are more pages
+            pagination = result.get('data', {}).get('page', {})
+            if page_no >= int(pagination.get('pageCount', 1)):
+                break
+
+            page_no += 1
+
+            # Small delay to avoid overwhelming the server
+            import time
+            time.sleep(0.5)
 
         return {
-            'success': result.get('success', False),
-            'total_fetched': result.get('total_count', 0),
-            'categories': result.get('categories', []),
-            'error': result.get('error')
+            'success': True,
+            'total_fetched': total_fetched
         }
+
     except Exception as e:
         logger.error(f"Category sync failed: {e}", exc_info=True)
         return {
             'success': False,
-            'error': str(e)
+            'error': str(e),
+            'total_fetched': total_fetched
         }
+
+
+def _save_category_batch(categories: list) -> int:
+    """Save a batch of categories efficiently"""
+    from company.models import EFRISCommodityCategory
+    from django.utils import timezone
+
+    saved_count = 0
+
+    # Use bulk operations for better performance
+    categories_to_create = []
+    categories_to_update = []
+
+    existing_codes = set(
+        EFRISCommodityCategory.objects.filter(
+            commodity_category_code__in=[c.get('commodityCategoryCode') for c in categories]
+        ).values_list('commodity_category_code', flat=True)
+    )
+
+    for cat_data in categories:
+        code = cat_data.get('commodityCategoryCode')
+        if not code:
+            continue
+
+        cat_obj = EFRISCommodityCategory(
+            commodity_category_code=code,
+            commodity_category_name=cat_data.get('commodityCategoryName', ''),
+            parent_code=cat_data.get('parentCode', ''),
+            commodity_category_level=cat_data.get('commodityCategoryLevel', ''),
+            rate=cat_data.get('rate', 0),
+            service_mark=cat_data.get('serviceMark', ''),
+            is_leaf_node=cat_data.get('isLeafNode', ''),
+            is_zero_rate=cat_data.get('isZeroRate', ''),
+            is_exempt=cat_data.get('isExempt', ''),
+            enable_status_code=cat_data.get('enableStatusCode', ''),
+            last_synced=timezone.now()
+        )
+
+        if code in existing_codes:
+            categories_to_update.append(cat_obj)
+        else:
+            categories_to_create.append(cat_obj)
+
+    # Bulk create new categories
+    if categories_to_create:
+        EFRISCommodityCategory.objects.bulk_create(
+            categories_to_create,
+            ignore_conflicts=True
+        )
+        saved_count += len(categories_to_create)
+
+    # Bulk update existing (if needed)
+    if categories_to_update:
+        for cat in categories_to_update:
+            EFRISCommodityCategory.objects.filter(
+                commodity_category_code=cat.commodity_category_code
+            ).update(
+                commodity_category_name=cat.commodity_category_name,
+                parent_code=cat.parent_code,
+                rate=cat.rate,
+                last_synced=cat.last_synced
+            )
+        saved_count += len(categories_to_update)
+
+    return saved_count
 
 
 def test_efris_connection(company) -> Dict[str, Any]:

@@ -524,57 +524,72 @@ def stock_sync(request, product_id):
 # COMMODITY CATEGORIES
 # ============================================================================
 
-@login_required
-def commodity_categories(request):
-    """View and manage commodity categories"""
-    company = request.tenant
-
-    search = request.GET.get('search', '')
-
-    categories = EFRISCommodityCategory.objects.all()
-
-    if search:
-        categories = categories.filter(
-            Q(commodity_category_code__icontains=search) |
-            Q(commodity_category_name__icontains=search)
-        )
-
-    # Pagination
-    paginator = Paginator(categories.order_by('commodity_category_code'), 50)
-    page = request.GET.get('page')
-    categories_page = paginator.get_page(page)
-
-    context = {
-        'categories': categories_page,
-        'search': search,
-    }
-
-    return render(request, 'efris/commodity_categories.html', context)
+from django.contrib import messages
+from django.shortcuts import redirect
+from django.contrib.auth.decorators import login_required
+from django.views.decorators.http import require_http_methods
+from .tasks import sync_categories_async
 
 
 @login_required
 @require_http_methods(["POST"])
 def sync_categories(request):
-    """Sync commodity categories from EFRIS"""
+    """Trigger async category sync"""
     company = request.tenant
 
     try:
-        result = sync_commodity_categories(company)
+        # Launch async task
+        task = sync_categories_async.delay(
+            company_id=company.id,
+            schema_name=company.schema_name
+        )
 
-        if result['success']:
-            messages.success(
-                request,
-                f"Synced {result['total_fetched']} categories from EFRIS"
-            )
-        else:
-            messages.error(
-                request,
-                f"Category sync failed: {result.get('error')}"
-            )
+        messages.info(
+            request,
+            f"Category sync started (Task ID: {task.id}). "
+            "This may take several minutes. Check back shortly."
+        )
+
+        # Store task ID in session to check status later
+        request.session['sync_task_id'] = str(task.id)
+
     except Exception as e:
-        messages.error(request, f"Sync error: {str(e)}")
+        messages.error(request, f"Failed to start sync: {str(e)}")
 
     return redirect('efris:commodity_categories')
+
+
+# Add status check endpoint
+@login_required
+def check_sync_status(request):
+    """Check status of category sync task"""
+    from celery.result import AsyncResult
+    import json
+    from django.http import JsonResponse
+
+    task_id = request.GET.get('task_id') or request.session.get('sync_task_id')
+
+    if not task_id:
+        return JsonResponse({'status': 'no_task'})
+
+    task = AsyncResult(task_id)
+
+    response = {
+        'status': task.state,
+        'ready': task.ready(),
+    }
+
+    if task.successful():
+        result = task.result
+        response.update({
+            'success': result.get('success'),
+            'total_fetched': result.get('total_fetched', 0),
+            'error': result.get('error')
+        })
+    elif task.failed():
+        response['error'] = str(task.info)
+
+    return JsonResponse(response)
 
 
 # ============================================================================
