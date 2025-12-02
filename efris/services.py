@@ -3113,6 +3113,45 @@ class EnhancedEFRISAPIClient:
             logger.warning(f"Failed to get service commodity category: {e}")
             return "100000000000000000"
 
+    def _get_commodity_category_id(self, product) -> str:
+        """
+        Get the EFRIS commodity category ID (18 digits) for a product,
+        fetched from the related Category model.
+        Pads with zeros at the END until the length is 18.
+        Falls back to default if missing.
+        """
+        try:
+            # Step 1: Try to fetch the EFRIS category ID from related category
+            if hasattr(product, 'category') and product.category:
+                category_id = getattr(product.category, 'efris_category_id', None)
+
+                if category_id:
+                    # ✅ VALIDATE: Ensure it's actually a product category (serviceMark should be '102')
+                    efris_cat = product.category.efris_commodity_category
+                    if efris_cat and efris_cat.service_mark == '101':
+                        logger.warning(
+                            f"Product {product.sku} has category with serviceMark='101', "
+                            f"but should be '102' for products"
+                        )
+                        # Don't use invalid category, fall back to default
+                        return "101113010000000000"  # Default product category
+
+                    # Step 3: Convert to string and pad zeros to the RIGHT (end)
+                    category_id = str(category_id)
+                    if len(category_id) < 18:
+                        category_id = category_id.ljust(18, '0')
+
+                    # Step 4: Truncate if longer than 18 just to be safe
+                    return category_id[:18]
+
+            # Step 2: Use default if missing or None
+            return "101113010000000000"  # Default product category
+
+        except AttributeError as e:
+            # In case product.category is missing or None
+            logger.warning(f"Failed to get commodity category for product: {e}")
+            return "101113010000000000"
+
     def refresh_service_from_efris(self, service) -> Dict[str, Any]:
         """
         Query EFRIS for service details and update local service
