@@ -992,7 +992,7 @@ class FiscalizationAuditView(LoginRequiredMixin, PermissionRequiredMixin, ListVi
     def get_queryset(self):
         return FiscalizationAudit.objects.select_related(
             'invoice', 'user'
-        ).order_by('-timestamp')
+        ).order_by('-created_at')
 
 
 @login_required

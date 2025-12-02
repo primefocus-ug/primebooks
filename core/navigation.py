@@ -518,6 +518,12 @@ NAVIGATION_ITEMS = [
                 permission="reports.view_report"
             ),
             NavigationItem(
+                name="Download Reports",
+                url_name="reports:history",
+                icon="bi bi-bookmark",
+                permission="reports.view_savedreport"
+            ),
+            NavigationItem(
                 name="Saved Reports",
                 url_name="reports:saved_reports",
                 icon="bi bi-bookmark",
