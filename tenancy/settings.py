@@ -40,7 +40,7 @@ if DEBUG:
             'ENGINE': 'django_tenants.postgresql_backend',
             'NAME': 'data',
             'USER': 'postgres',
-            'PASSWORD': '@Developer25',
+            'PASSWORD': 'Kampala@2020',
             'HOST': 'localhost',
             'PORT': '5432',
         }
