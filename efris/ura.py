@@ -568,7 +568,7 @@ def sync_categories(request):
     try:
         # Launch async task
         task = sync_categories_async.delay(
-            company_id=company.id,
+            company_id=company.company_id,
             schema_name=company.schema_name
         )
 

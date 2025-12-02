@@ -31,7 +31,7 @@ def sync_categories_async(self, company_id, schema_name):
 
     try:
         with schema_context(schema_name):
-            company = Company.objects.get(id=company_id)
+            company = Company.objects.get(company_id=company_id)
             result = sync_commodity_categories(company)
 
             return {
