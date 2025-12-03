@@ -122,8 +122,10 @@ def search_products_and_services(request):
         store_id = request.GET.get('store_id')
         item_type = request.GET.get('item_type', 'all')  # 'product', 'service', or 'all'
 
-        if len(query) < 2 and item_type == 'all':
-            return JsonResponse({'items': []})
+        # Allow empty query for browsing (not just searching)
+        # Remove this restriction to let users browse without typing
+        # if len(query) < 2 and item_type == 'all':
+        #     return JsonResponse({'items': []})
 
         # Validate store access
         store = None
@@ -131,37 +133,62 @@ def search_products_and_services(request):
             try:
                 store_id = int(store_id)
                 if request.user.is_superuser:
-                    store = Store.objects.get(id=store_id)
+                    store = Store.objects.get(id=store_id, is_active=True)
                 else:
+                    # FIXED: Check both user relationships
                     store = Store.objects.filter(
-                        Q(staff=request.user) | Q(company__staff=request.user),
+                        Q(is_active=True) & (
+                            # User is directly assigned as staff
+                                Q(staff=request.user) |
+                                # User is from the same company as the store
+                                Q(company=request.user.company)
+                        ),
                         id=store_id
                     ).first()
+
                     if not store:
-                        return JsonResponse({'error': 'Access denied to store'}, status=403)
+                        return JsonResponse({
+                            'error': 'Access denied to store',
+                            'message': 'You do not have permission to access this store'
+                        }, status=403)
+
             except (ValueError, Store.DoesNotExist):
-                return JsonResponse({'error': 'Invalid store'}, status=400)
+                return JsonResponse({
+                    'error': 'Invalid store',
+                    'message': 'Store not found or inactive'
+                }, status=400)
 
         items_data = []
 
         # Search products if requested
         if item_type in ['product', 'all']:
-            products = Product.objects.filter(
+            # FIX: Handle both cases - with store and without store
+            products_query = Product.objects.filter(
                 is_active=True
-            ).filter(
-                Q(name__icontains=query) |
-                Q(sku__icontains=query) |
-                Q(barcode__icontains=query)
-            ).select_related('category', 'supplier')
+            )
+
+            # Only filter by name if query is provided
+            if query:
+                products_query = products_query.filter(
+                    Q(name__icontains=query) |
+                    Q(sku__icontains=query) |
+                    Q(barcode__icontains=query)
+                )
 
             # Filter by store stock if store is selected
             if store:
-                products = products.filter(
+                products_query = products_query.filter(
                     store_inventory__store=store,
                     store_inventory__quantity__gt=0
                 )
+            else:
+                # If no store selected, only show products available in any store
+                # or show all products for browsing
+                products_query = products_query.filter(
+                    store_inventory__quantity__gt=0
+                ).distinct()
 
-            products = products.distinct()[:15]
+            products = products_query.select_related('category', 'supplier')[:20]
 
             for product in products:
                 stock_info = None
@@ -170,10 +197,21 @@ def search_products_and_services(request):
                         stock = product.store_inventory.get(store=store)
                         stock_info = {
                             'available': float(stock.quantity),
-                            'unit': product.unit_of_measure or 'pcs'
+                            'unit': product.unit_of_measure or 'pcs',
+                            'store_id': store.id
                         }
                     except product.store_inventory.model.DoesNotExist:
                         stock_info = {'available': 0, 'unit': product.unit_of_measure or 'pcs'}
+                else:
+                    # Show total available across all stores
+                    total_stock = product.store_inventory.aggregate(
+                        total=Sum('quantity')
+                    )['total'] or 0
+                    stock_info = {
+                        'available': float(total_stock),
+                        'unit': product.unit_of_measure or 'pcs',
+                        'store_id': None
+                    }
 
                 items_data.append({
                     'id': product.id,
@@ -187,21 +225,25 @@ def search_products_and_services(request):
                     'stock': stock_info,
                     'category': product.category.name if product.category else '',
                     'item_type': 'PRODUCT',
+                    'has_stock': stock_info['available'] > 0 if stock_info else True,
                 })
 
         # Search services if requested
         if item_type in ['service', 'all']:
             from inventory.models import Service
 
-            services = Service.objects.filter(
+            services_query = Service.objects.filter(
                 is_active=True
-            ).filter(
-                Q(name__icontains=query) |
-                Q(code__icontains=query) |
-                Q(description__icontains=query)
-            ).select_related('category')
+            )
 
-            services = services.distinct()[:15]
+            if query:
+                services_query = services_query.filter(
+                    Q(name__icontains=query) |
+                    Q(code__icontains=query) |
+                    Q(description__icontains=query)
+                )
+
+            services = services_query.select_related('category')[:10]
 
             for service in services:
                 items_data.append({
@@ -211,22 +253,27 @@ def search_products_and_services(request):
                     'price': float(service.unit_price or 0),
                     'final_price': float(service.unit_price or 0),
                     'tax_rate': getattr(service, 'tax_rate', 'A'),
-                    'unit_of_measure': service.unit_of_measure or '207',
+                    'unit_of_measure': service.unit_of_measure or 'unit',
                     'category': service.category.name if service.category else '',
                     'description': service.description or '',
                     'item_type': 'SERVICE',
                     'stock': None,  # Services don't have stock
+                    'has_stock': True,
                 })
 
         return JsonResponse({'items': items_data})
 
     except Exception as e:
-        logger.error(f"Error in combined search: {e}")
-        return JsonResponse({'error': 'Search failed'}, status=500)
+        logger.error(f"Error in combined search: {e}", exc_info=True)
+        return JsonResponse({
+            'error': 'Search failed',
+            'message': str(e)
+        }, status=500)
 
 
 @login_required
 def search_services(request):
+    user=request.user
     """
     AJAX endpoint for searching services (similar to product search)
     """
@@ -245,8 +292,9 @@ def search_services(request):
                 if request.user.is_superuser:
                     store = Store.objects.get(id=store_id)
                 else:
+                    user_company=getattr(user,'company',None)
                     store = Store.objects.filter(
-                        Q(staff=request.user) | Q(company__staff=request.user),
+                        Q(staff=request.user) | Q(company=user_company),
                         id=store_id
                     ).first()
                     if not store:
@@ -402,13 +450,20 @@ class SaleDetailView(LoginRequiredMixin, PermissionRequiredMixin, DetailView):
             pk=self.kwargs['pk']
         )
 
-        # Check user access to this sale
+        # Check user access to this sale - FIXED
         if not self.request.user.is_superuser:
-            user_stores = Store.objects.filter(
-                Q(staff=self.request.user) |
-                Q(company__staff=self.request.user)
-            ).distinct()
-            if sale.store not in user_stores:
+            user = self.request.user
+            user_company = getattr(user, 'company', None)
+
+            # User has access if:
+            # 1. They're staff at the sale's store, OR
+            # 2. They belong to the same company as the store
+            has_access = (
+                    sale.store.staff.filter(id=user.id).exists() or
+                    (user_company and sale.store.company == user_company)
+            )
+
+            if not has_access:
                 raise PermissionDenied("You don't have access to this sale.")
 
         return sale
@@ -435,19 +490,42 @@ class SaleDetailView(LoginRequiredMixin, PermissionRequiredMixin, DetailView):
         # Get fiscalization data - handle both Invoice and direct Sale fiscalization
         fiscal_data = self._get_fiscalization_data(sale, has_invoice)
 
+        # Calculate total paid
+        total_paid = sale.payments.filter(is_confirmed=True).aggregate(
+            Sum('amount')
+        )['amount__sum'] or 0
+
+        # Check refund and void permissions
+        can_refund = (
+                sale.transaction_type == 'SALE' and
+                not sale.is_refunded and
+                self.request.user.has_perm('sales.can_process_refund')
+        )
+
+        can_void = (
+                sale.transaction_type == 'SALE' and
+                not sale.is_voided and
+                self.request.user.has_perm('sales.can_void_sale')
+        )
+
+        # Check invoice creation permission
+        can_create_invoice = (
+                not has_invoice and
+                self.request.user.has_perm('invoices.add_invoice')
+        )
+
         context.update({
             'refund_form': RefundForm(),
             'receipt_form': ReceiptForm(),
-            'can_refund': sale.transaction_type == 'SALE' and not sale.is_refunded,
-            'can_void': sale.transaction_type == 'SALE' and not sale.is_voided,
-            'can_create_invoice': not has_invoice,
+            'can_refund': can_refund,
+            'can_void': can_void,
+            'can_create_invoice': can_create_invoice,
             'has_invoice': has_invoice,
             'can_fiscalize': can_fiscalize,
             'fiscalization_error': fiscalization_error,
             'efris_enabled': efris_enabled,
-            'total_paid': sale.payments.filter(is_confirmed=True).aggregate(
-                Sum('amount')
-            )['amount__sum'] or 0,
+            'total_paid': total_paid,
+            'balance_due': sale.total_amount - total_paid,
             **fiscal_data  # Add all fiscal data to context
         })
 
@@ -465,6 +543,7 @@ class SaleDetailView(LoginRequiredMixin, PermissionRequiredMixin, DetailView):
             'efris_invoice_id': None,
             'efris_antifake_code': None,
             'verification_code': None,
+            'is_fiscalized': sale.is_fiscalized,
         }
 
         if has_invoice:
@@ -487,9 +566,9 @@ class SaleDetailView(LoginRequiredMixin, PermissionRequiredMixin, DetailView):
                 invoice.verification_code
             ),
             'fiscalization_time': invoice.fiscalization_time,
-            'efris_invoice_no': invoice.fiscal_document_number,  # Same as fiscal_document_number
+            'efris_invoice_no': invoice.fiscal_document_number,
             'efris_invoice_id': getattr(invoice, 'efris_invoice_id', None),
-            'efris_antifake_code': invoice.verification_code,  # Same as verification_code
+            'efris_antifake_code': invoice.verification_code,
             'verification_code': invoice.verification_code,
         }
 
@@ -541,8 +620,7 @@ class SaleDetailView(LoginRequiredMixin, PermissionRequiredMixin, DetailView):
         company = sale.store.company
 
         # Check if we're in test or production mode
-        # You might want to add a field to Company model like 'efris_environment'
-        is_production = getattr(company, 'efris_environment', 'test') == 'production'
+        is_production = getattr(company, 'efris_environment', 'production') == 'production'
 
         if is_production:
             # Production EFRIS URL
@@ -561,7 +639,7 @@ class SaleDetailView(LoginRequiredMixin, PermissionRequiredMixin, DetailView):
 
         sale = self.object
         company = sale.store.company
-        is_production = getattr(company, 'efris_environment', 'test') == 'production'
+        is_production = getattr(company, 'efris_environment', 'production') == 'production'
 
         if is_production:
             base_url = "https://efris.ura.go.ug"
@@ -751,29 +829,95 @@ def create_sale(request):
         return process_sale_creation(request)
 
 
-
-
+@login_required
 def render_sale_form(request):
     """Render the sale creation form with necessary context data"""
-    # Filter stores based on user access
-    if request.user.is_superuser:
-        stores = Store.objects.filter(is_active=True)
-    else:
-        stores = Store.objects.filter(
-            staff=request.user,
-            is_active=True
-        ).distinct()
+    user = request.user
 
+    # DEBUG: Log user information
+    logger.info(f"Sale form requested by: {user.username} (ID: {user.id})")
+    logger.info(f"User is superuser: {user.is_superuser}")
+    logger.info(f"User company: {getattr(user, 'company', None)}")
+
+    # Get stores accessible to the user
+    if user.is_superuser:
+        # Superusers see all active stores
+        stores = Store.objects.filter(is_active=True)
+        logger.info(f"Superuser - Found {stores.count()} stores")
+    else:
+        # Check if user has a company
+        user_company = getattr(user, 'company', None)
+
+        if user_company:
+            # Company Admin/User: Show all stores from user's company
+            stores = Store.objects.filter(
+                company=user_company,
+                is_active=True
+            )
+            logger.info(f"Company user - Found {stores.count()} stores for company: {user_company.name}")
+
+            # Also check if user is staff in any stores (in case they have both)
+            user_staff_stores = Store.objects.filter(
+                staff=user,
+                is_active=True
+            ).exclude(company=user_company)
+
+            if user_staff_stores.exists():
+                stores = stores | user_staff_stores
+                logger.info(f"Added {user_staff_stores.count()} staff-assigned stores")
+        else:
+            # Users without company: Only show stores where they're staff
+            stores = Store.objects.filter(
+                staff=user,
+                is_active=True
+            )
+            logger.info(f"No company - Found {stores.count()} stores where user is staff")
+
+        # Check special permissions
+        if user.has_perm('sales.can_access_all_stores'):
+            stores = Store.objects.filter(is_active=True)
+            logger.info(f"User has can_access_all_stores permission - Showing all {stores.count()} stores")
+
+    # Order stores and distinct (in case of duplicates)
+    stores = stores.order_by('name').distinct()
+
+    # Debug log final stores
+    store_list = list(stores.values('id', 'name', 'company__name'))
+    logger.info(f"Final stores available: {store_list}")
+
+    # If no stores found, show message
+    if not stores.exists():
+        logger.warning(f"No stores found for user {user.username}")
+        context = {
+            'stores': stores,
+            'page_title': 'Create New Sale',
+            'form': SaleForm(user=user),
+            'no_stores_message': True,
+            'error_message': (
+                "No stores available. You need to either: "
+                "1) Be assigned to a company that has stores, or "
+                "2) Be added as staff to a store, or "
+                "3) Create a store first."
+            )
+        }
+        return render(request, 'sales/create_sale.html', context)
+
+    # Prepare context
     context = {
         'stores': stores,
         'page_title': 'Create New Sale',
-        'form': SaleForm(user=request.user),
+        'form': SaleForm(user=user),
     }
 
-    # Add default store if user has one
-    if hasattr(request.user, 'default_store') and request.user.default_store:
-        context['default_store'] = request.user.default_store
-
+    # Add default store if user has one and it's accessible
+    if hasattr(user, 'default_store') and user.default_store:
+        if stores.filter(id=user.default_store.id).exists():
+            context['default_store'] = user.default_store
+            logger.info(f"Setting default store: {user.default_store.name}")
+        else:
+            logger.warning(
+                f"User's default store {user.default_store.name} is not in accessible stores"
+            )
 
     return render(request, 'sales/create_sale.html', context)
 
@@ -895,6 +1039,7 @@ def process_sale_creation(request):
                 logger.error(f"Failed to create notification for sale {sale.id}: {e}")
                 # Don't fail the sale creation because of notification error
 
+
 def validate_sale_data(post_data, user):
     """
     Enhanced sale data validation with customer EFRIS validation.
@@ -909,15 +1054,31 @@ def validate_sale_data(post_data, user):
     # Validate store exists and user has access
     try:
         store = Store.objects.get(id=post_data['store'])
+
+        # Check store is active
         if not store.is_active:
             raise ValidationError('Selected store is not active.')
 
-        # Check user access
+        # Check store has a company
+        if not store.company:
+            raise ValidationError('Selected store is not assigned to any company.')
+
+        # Check user access - FIXED
         if not user.is_superuser:
-            user_stores = Store.objects.filter(
-                Q(staff=user) | Q(company__staff=user)
-            ).distinct()
-            if store not in user_stores:
+            user_company = getattr(user, 'company', None)
+            has_access = False
+
+            if user_company:
+                # User can access if: they're staff OR store belongs to their company
+                has_access = (
+                        store.staff.filter(id=user.id).exists() or
+                        store.company == user_company
+                )
+            else:
+                # Users without company can only access stores where they're staff
+                has_access = store.staff.filter(id=user.id).exists()
+
+            if not has_access:
                 raise ValidationError('You do not have access to the selected store.')
 
     except Store.DoesNotExist:
@@ -929,6 +1090,14 @@ def validate_sale_data(post_data, user):
         try:
             customer = Customer.objects.get(id=post_data['customer'])
 
+            # Check if customer belongs to same company as store (optional)
+            if customer.company and store.company and customer.company != store.company:
+                logger.warning(
+                    f"Customer {customer.name} ({customer.company}) "
+                    f"from different company than store {store.name} ({store.company})"
+                )
+            # Don't block the sale, just log warning
+
             # If company has EFRIS enabled, validate customer for EFRIS
             if getattr(store.company, 'efris_enabled', False):
                 if hasattr(customer, 'validate_for_efris'):
@@ -936,7 +1105,8 @@ def validate_sale_data(post_data, user):
                     if not is_valid:
                         error_msg = f"Customer EFRIS validation failed: {'; '.join(errors)}"
                         logger.warning(error_msg)
-                        # Don't fail the sale, but log the warning
+                        # For strict mode, uncomment:
+                        # raise ValidationError(f"Customer EFRIS validation failed: {errors[0]}")
 
         except Customer.DoesNotExist:
             raise ValidationError('Invalid customer selected.')
@@ -960,13 +1130,24 @@ def validate_sale_data(post_data, user):
         if document_type not in valid_document_types:
             document_type = 'ORIGINAL'  # Default fallback
 
-    # Validate discount amount
+    # Validate discount amount with business rules
     try:
         discount_amount = Decimal(post_data.get('discount_amount', '0'))
         if discount_amount < 0:
             raise ValidationError('Discount amount cannot be negative.')
+
+        # Check if user has permission to apply discounts
+        if discount_amount > 0 and not user.has_perm('sales.can_apply_discounts'):
+            raise ValidationError('You do not have permission to apply discounts.')
+
     except (InvalidOperation, ValueError, TypeError):
         raise ValidationError('Invalid discount amount.')
+
+    # Validate currency
+    currency = post_data.get('currency', 'UGX')
+    valid_currencies = ['UGX', 'USD', 'EUR', 'KES', 'TZS']  # Customize as needed
+    if currency not in valid_currencies:
+        raise ValidationError(f'Invalid currency. Valid options: {", ".join(valid_currencies)}')
 
     return {
         'store': store,
@@ -974,7 +1155,7 @@ def validate_sale_data(post_data, user):
         'payment_method': post_data['payment_method'],
         'transaction_type': post_data['transaction_type'],
         'document_type': document_type,
-        'currency': post_data.get('currency', 'UGX'),
+        'currency': currency,
         'discount_amount': discount_amount,
         'notes': post_data.get('notes', '').strip(),
     }
@@ -1238,19 +1419,36 @@ def create_stock_movements(sale):
 
 def render_sale_form_with_errors(request):
     """Render the sale form with preserved data after errors"""
-    if request.user.is_superuser:
+    user = request.user
+
+    if user.is_superuser:
         stores = Store.objects.filter(is_active=True)
     else:
-        stores = Store.objects.filter(
-            Q(staff=request.user) | Q(company__staff=request.user),
-            is_active=True
-        ).distinct()
+        # Get user's company
+        user_company = getattr(user, 'company', None)
+
+        # If user has a company, get stores from that company
+        if user_company:
+            stores = Store.objects.filter(
+                Q(is_active=True) & (
+                    # User is directly assigned as staff
+                        Q(staff=user) |
+                        # Store belongs to user's company
+                        Q(company=user_company)
+                )
+            ).distinct()
+        else:
+            # User without company - only show stores where they're staff
+            stores = Store.objects.filter(
+                staff=user,
+                is_active=True
+            ).distinct()
 
     context = {
         'stores': stores,
         'page_title': 'Create New Sale',
         'form_data': request.POST,  # Preserve form data
-        'form': SaleForm(user=request.user, data=request.POST),
+        'form': SaleForm(user=user, data=request.POST),
     }
 
     return render(request, 'sales/create_sale.html', context)
@@ -1258,6 +1456,7 @@ def render_sale_form_with_errors(request):
 
 @login_required
 def search_products(request):
+    user=request.user
     try:
         query = request.GET.get('q', '').strip()
         store_id = request.GET.get('store_id')
@@ -1273,8 +1472,9 @@ def search_products(request):
                 if request.user.is_superuser:
                     store = Store.objects.get(id=store_id)
                 else:
+                    user_company=getattr(user,'company',None)
                     store = Store.objects.filter(
-                        Q(staff=request.user) | Q(company__staff=request.user),
+                        Q(staff=request.user) | Q(company=user_company),
                         id=store_id
                     ).first()
                     if not store:
@@ -1349,6 +1549,7 @@ def search_products(request):
 
 @login_required
 def search_customers(request):
+    user = request.user
     try:
         query = request.GET.get('q', '').strip()
 
@@ -1359,8 +1560,9 @@ def search_customers(request):
         if request.user.is_superuser:
             customers = Customer.objects.filter(is_active=True)
         else:
+            user_company = getattr(user, 'company', None)
             customers = Customer.objects.filter(
-                Q(company__staff=request.user) | Q(created_by=request.user),
+                Q(company=user_company) | Q(created_by=request.user),
                 is_active=True
             )
 
@@ -1415,14 +1617,16 @@ def search_customers(request):
 @login_required
 @permission_required('sales.add_sale', raise_exception=True)
 def fiscalize_sale(request, sale_id):
+    user=request.user
     sale = get_object_or_404(
         Sale.objects.select_related('store__company', 'customer'),
         pk=sale_id
     )
 
     if not request.user.is_superuser:
+        user_company =getattr(user,'company',None)
         user_stores = Store.objects.filter(
-            Q(staff=request.user) | Q(company__staff=request.user)
+            Q(staff=request.user) | Q(company=user_company)
         ).distinct()
         if sale.store not in user_stores:
             messages.error(request, "You don't have access to this sale.")
@@ -1641,15 +1845,18 @@ def validate_stock_availability(store, items_data):
 @login_required
 @permission_required('sales.view_sale', raise_exception=True)
 def sales_efris_status(request):
+    user=request.user
     """
     Dashboard view showing EFRIS status for sales and invoices.
     """
     # Get user's accessible stores
     if request.user.is_superuser:
+
         stores = Store.objects.filter(is_active=True)
     else:
+        user_company = getattr(user, 'company', None)
         stores = Store.objects.filter(
-            Q(staff=request.user) | Q(company__staff=request.user),
+            Q(staff=request.user) | Q(company=user_company),
             is_active=True
         ).distinct()
 
@@ -1972,6 +2179,7 @@ def quick_sale(request):
 @permission_required("sales.add_sale", raise_exception=True)
 @require_http_methods(["GET", "POST"])
 def process_refund(request, sale_id):
+    user=request.user
     """Enhanced refund processing with dedicated template and comprehensive validation"""
     sale = get_object_or_404(
         Sale.objects.select_related('store', 'customer', 'created_by')
@@ -1981,8 +2189,9 @@ def process_refund(request, sale_id):
 
     # Check user access to this sale
     if not request.user.is_superuser:
+        user_company=getattr(user,'company',None)
         user_stores = Store.objects.filter(
-            Q(staff=request.user) | Q(company__staff=request.user)
+            Q(staff=request.user) | Q(company=user_company)
         ).distinct()
         if sale.store not in user_stores:
             messages.error(request, "You don't have access to this sale.")
@@ -2299,6 +2508,7 @@ def store_sales_api(request):
 @login_required
 @permission_required('sales.view_sale', raise_exception=True)
 def sales_analytics(request):
+    user=request.user
     """
     Enhanced sales analytics dashboard supporting both products and services
     """
@@ -2339,8 +2549,9 @@ def sales_analytics(request):
         if request.user.is_superuser:
             stores = Store.objects.filter(is_active=True).order_by('name')
         else:
+            user_company=getattr(user,'company',None)
             stores = Store.objects.filter(
-                Q(staff=request.user) | Q(company__staff=request.user),
+                Q(staff=request.user) | Q(company=user_company),
                 is_active=True
             ).distinct().order_by('name')
 
@@ -2624,8 +2835,9 @@ def sales_analytics(request):
         if request.user.is_superuser:
             stores = Store.objects.filter(is_active=True).order_by('name')
         else:
+
             stores = Store.objects.filter(
-                Q(staff=request.user) | Q(company__staff=request.user),
+                Q(staff=request.user) | Q(company=user_company),
                 is_active=True
             ).distinct().order_by('name')
 
@@ -2906,6 +3118,7 @@ def analytics_day_details(request):
 @permission_required('sales.change_sale', raise_exception=True)
 @require_http_methods(["GET", "POST"])
 def void_sale(request, sale_id):
+    user=request.user
     """Enhanced void sale functionality with dedicated template"""
     sale = get_object_or_404(
         Sale.objects.select_related('store', 'customer', 'created_by')
@@ -2915,8 +3128,9 @@ def void_sale(request, sale_id):
 
     # Check user access to this sale
     if not request.user.is_superuser:
+        user_company=getattr(user,'company',None)
         user_stores = Store.objects.filter(
-            Q(staff=request.user) | Q(company__staff=request.user)
+            Q(staff=request.user) | Q(company=user_company)
         ).distinct()
         if sale.store not in user_stores:
             messages.error(request, "You don't have access to this sale.")

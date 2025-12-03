@@ -1,17 +1,32 @@
+import logging
 from channels.generic.websocket import AsyncJsonWebsocketConsumer
 from channels.db import database_sync_to_async
 from django.core.cache import cache
 from django.utils import timezone
 from datetime import timedelta
-import logging
+from decimal import Decimal
+import json
 
 logger = logging.getLogger(__name__)
+
+
+class DecimalJSONEncoder(json.JSONEncoder):
+    """Custom JSON encoder that handles Decimal objects"""
+
+    def default(self, obj):
+        if isinstance(obj, Decimal):
+            return float(obj)
+        return super().default(obj)
 
 
 class ReportDashboardConsumer(AsyncJsonWebsocketConsumer):
     """
     WebSocket consumer for real-time dashboard updates
     """
+
+    async def encode_json(self, content):
+        """Override to use custom encoder"""
+        return json.dumps(content, cls=DecimalJSONEncoder)
 
     async def connect(self):
         self.user = self.scope['user']
@@ -169,12 +184,13 @@ class ReportDashboardConsumer(AsyncJsonWebsocketConsumer):
 
     @database_sync_to_async
     def get_dashboard_stats(self):
-        """Get current dashboard statistics"""
+        """Get current dashboard statistics with schema context"""
         from sales.models import Sale
         from inventory.models import Stock
         from invoices.models import Invoice
         from stores.models import Store
         from django.db.models import Sum, Count, F
+        from django.db import connection
 
         # Check cache first
         cache_key = f'dashboard_stats_{self.user.id}'
@@ -182,164 +198,216 @@ class ReportDashboardConsumer(AsyncJsonWebsocketConsumer):
         if cached_stats:
             return cached_stats
 
-        # Get user's accessible stores
-        if self.user.is_superuser or self.user.primary_role and user.primary_role.priority >= 90:
-            stores = Store.objects.filter(is_active=True)
-        else:
-            stores = self.user.stores.filter(is_active=True)
+        # Helper function to safely convert values
+        def convert_value(value):
+            if isinstance(value, Decimal):
+                return float(value)
+            elif value is None:
+                return 0
+            return value
 
-        today = timezone.now().date()
-        week_ago = today - timedelta(days=7)
-        month_ago = today - timedelta(days=30)
+        # Get user's schema context
+        schema_name = getattr(connection, 'schema_name', None)
+        if not schema_name:
+            # If no schema context, return empty stats
+            return self._get_empty_stats()
 
-        # Sales statistics
-        stats = {
-            'sales_today': float(Sale.objects.filter(
+        # Execute queries within schema context
+        with connection.cursor() as cursor:
+            # Set the schema context
+            cursor.execute(f"SET search_path TO {schema_name}")
+
+            # Get user's accessible stores
+            if self.user.is_superuser or (hasattr(self.user,
+                                                  'primary_role') and self.user.primary_role and self.user.primary_role.priority >= 90):
+                stores = Store.objects.filter(is_active=True)
+            else:
+                stores = self.user.stores.filter(is_active=True)
+
+            today = timezone.now().date()
+            week_ago = today - timedelta(days=7)
+            month_ago = today - timedelta(days=30)
+
+            # Sales statistics
+            sales_today_result = Sale.objects.filter(
                 store__in=stores,
                 created_at__date=today,
                 is_completed=True
-            ).aggregate(total=Sum('total_amount'))['total'] or 0),
+            ).aggregate(total=Sum('total_amount'))
 
-            'sales_week': float(Sale.objects.filter(
+            sales_week_result = Sale.objects.filter(
                 store__in=stores,
                 created_at__date__gte=week_ago,
                 is_completed=True
-            ).aggregate(total=Sum('total_amount'))['total'] or 0),
+            ).aggregate(total=Sum('total_amount'))
 
-            'sales_month': float(Sale.objects.filter(
+            sales_month_result = Sale.objects.filter(
                 store__in=stores,
                 created_at__date__gte=month_ago,
                 is_completed=True
-            ).aggregate(total=Sum('total_amount'))['total'] or 0),
+            ).aggregate(total=Sum('total_amount'))
 
-            'transactions_today': Sale.objects.filter(
-                store__in=stores,
-                created_at__date=today,
-                is_completed=True
-            ).count(),
+            # Convert Decimal values to float
+            stats = {
+                'sales_today': convert_value(sales_today_result['total']),
+                'sales_week': convert_value(sales_week_result['total']),
+                'sales_month': convert_value(sales_month_result['total']),
 
-            # Inventory alerts
-            'low_stock_count': Stock.objects.filter(
-                store__in=stores,
-                quantity__lte=F('low_stock_threshold'),
-                quantity__gt=0
-            ).count(),
+                'transactions_today': Sale.objects.filter(
+                    store__in=stores,
+                    created_at__date=today,
+                    is_completed=True
+                ).count(),
 
-            'out_of_stock_count': Stock.objects.filter(
-                store__in=stores,
-                quantity=0
-            ).count(),
+                # Inventory alerts
+                'low_stock_count': Stock.objects.filter(
+                    store__in=stores,
+                    quantity__lte=F('low_stock_threshold'),
+                    quantity__gt=0
+                ).count(),
 
-            # Invoice statistics
-            'pending_invoices': Invoice.objects.filter(
-                store__in=stores,
-                status__in=['SENT', 'PARTIALLY_PAID']
-            ).count(),
+                'out_of_stock_count': Stock.objects.filter(
+                    store__in=stores,
+                    quantity=0
+                ).count(),
 
-            'overdue_invoices': Invoice.objects.filter(
-                store__in=stores,
-                status__in=['SENT', 'PARTIALLY_PAID'],
-                due_date__lt=today
-            ).count(),
+                # Invoice statistics
+                'pending_invoices': Invoice.objects.filter(
+                    store__in=stores,
+                    status__in=['SENT', 'PARTIALLY_PAID']
+                ).count(),
 
-            # EFRIS compliance
-            'pending_fiscalization': Sale.objects.filter(
-                store__in=stores,
-                is_completed=True,
-                is_fiscalized=False,
-                created_at__date__gte=today - timedelta(days=7)
-            ).count(),
-        }
+                'overdue_invoices': Invoice.objects.filter(
+                    store__in=stores,
+                    status__in=['SENT', 'PARTIALLY_PAID'],
+                    due_date__lt=today
+                ).count(),
+
+                # EFRIS compliance
+                'pending_fiscalization': Sale.objects.filter(
+                    store__in=stores,
+                    is_completed=True,
+                    is_fiscalized=False,
+                    created_at__date__gte=today - timedelta(days=7)
+                ).count(),
+            }
 
         # Cache for 2 minutes
         cache.set(cache_key, stats, 120)
 
         return stats
 
+    def _get_empty_stats(self):
+        """Return empty stats when schema context is not available"""
+        return {
+            'sales_today': 0,
+            'sales_week': 0,
+            'sales_month': 0,
+            'transactions_today': 0,
+            'low_stock_count': 0,
+            'out_of_stock_count': 0,
+            'pending_invoices': 0,
+            'overdue_invoices': 0,
+            'pending_fiscalization': 0,
+        }
+
     @database_sync_to_async
     def get_alerts(self):
-        """Get current alerts"""
+        """Get current alerts with schema context"""
         from inventory.models import Stock
         from sales.models import Sale
         from stores.models import Store
         from django.db.models import F
+        from django.db import connection
 
         alerts = []
 
-        # Get user's accessible stores
-        if self.user.is_superuser or self.user.primary_role and user.primary_role.priority >= 90:
-            stores = Store.objects.filter(is_active=True)
-        else:
-            stores = self.user.stores.filter(is_active=True)
+        # Get user's schema context
+        schema_name = getattr(connection, 'schema_name', None)
+        if not schema_name:
+            # If no schema context, return empty alerts
+            return alerts
 
-        # Low stock alerts
-        low_stock = Stock.objects.filter(
-            store__in=stores,
-            quantity__lte=F('low_stock_threshold'),
-            quantity__gt=0
-        ).select_related('product', 'store')[:10]
+        # Execute queries within schema context
+        with connection.cursor() as cursor:
+            # Set the schema context
+            cursor.execute(f"SET search_path TO {schema_name}")
 
-        for stock in low_stock:
-            alerts.append({
-                'type': 'low_stock',
-                'severity': 'warning',
-                'message': f'{stock.product.name} is low in stock at {stock.store.name}',
-                'product_id': stock.product.id,
-                'store_id': stock.store.id,
-                'quantity': stock.quantity,
-                'threshold': stock.low_stock_threshold
-            })
+            # Get user's accessible stores
+            if self.user.is_superuser or (hasattr(self.user,
+                                                  'primary_role') and self.user.primary_role and self.user.primary_role.priority >= 90):
+                stores = Store.objects.filter(is_active=True)
+            else:
+                stores = self.user.stores.filter(is_active=True)
 
-        # Out of stock alerts
-        out_of_stock = Stock.objects.filter(
-            store__in=stores,
-            quantity=0
-        ).select_related('product', 'store')[:10]
+            # Low stock alerts
+            low_stock = Stock.objects.filter(
+                store__in=stores,
+                quantity__lte=F('low_stock_threshold'),
+                quantity__gt=0
+            ).select_related('product', 'store')[:10]
 
-        for stock in out_of_stock:
-            alerts.append({
-                'type': 'out_of_stock',
-                'severity': 'critical',
-                'message': f'{stock.product.name} is out of stock at {stock.store.name}',
-                'product_id': stock.product.id,
-                'store_id': stock.store.id
-            })
+            for stock in low_stock:
+                alerts.append({
+                    'type': 'low_stock',
+                    'severity': 'warning',
+                    'message': f'{stock.product.name} is low in stock at {stock.store.name}',
+                    'product_id': stock.product.id,
+                    'store_id': stock.store.id,
+                    'quantity': float(stock.quantity) if isinstance(stock.quantity, Decimal) else stock.quantity,
+                    'threshold': float(stock.low_stock_threshold) if isinstance(stock.low_stock_threshold,
+                                                                                Decimal) else stock.low_stock_threshold
+                })
 
-        # Pending fiscalization alerts
-        today = timezone.now().date()
-        pending_fiscal = Sale.objects.filter(
-            store__in=stores,
-            is_completed=True,
-            is_fiscalized=False,
-            created_at__date__gte=today - timedelta(days=7)
-        ).count()
+            # Out of stock alerts
+            out_of_stock = Stock.objects.filter(
+                store__in=stores,
+                quantity=0
+            ).select_related('product', 'store')[:10]
 
-        if pending_fiscal > 0:
-            alerts.append({
-                'type': 'efris_pending',
-                'severity': 'warning',
-                'message': f'{pending_fiscal} sales pending EFRIS fiscalization',
-                'count': pending_fiscal
-            })
+            for stock in out_of_stock:
+                alerts.append({
+                    'type': 'out_of_stock',
+                    'severity': 'critical',
+                    'message': f'{stock.product.name} is out of stock at {stock.store.name}',
+                    'product_id': stock.product.id,
+                    'store_id': stock.store.id
+                })
 
-        # Failed fiscalization alerts
-        failed_fiscal = Sale.objects.filter(
-            store__in=stores,
-            is_completed=True,
-            fiscalization_failed=True,
-            created_at__date__gte=today - timedelta(days=7)
-        ).count()
+            # Pending fiscalization alerts
+            today = timezone.now().date()
+            pending_fiscal = Sale.objects.filter(
+                store__in=stores,
+                is_completed=True,
+                is_fiscalized=False,
+                created_at__date__gte=today - timedelta(days=7)
+            ).count()
 
-        if failed_fiscal > 0:
-            alerts.append({
-                'type': 'efris_failed',
-                'severity': 'critical',
-                'message': f'{failed_fiscal} sales failed EFRIS fiscalization',
-                'count': failed_fiscal
-            })
+            if pending_fiscal > 0:
+                alerts.append({
+                    'type': 'efris_pending',
+                    'severity': 'warning',
+                    'message': f'{pending_fiscal} sales pending EFRIS fiscalization',
+                    'count': pending_fiscal
+                })
+
+            # Failed fiscalization alerts
+            failed_fiscal = Sale.objects.filter(
+                store__in=stores,
+                is_completed=True,
+                fiscalization_failed=True,
+                created_at__date__gte=today - timedelta(days=7)
+            ).count()
+
+            if failed_fiscal > 0:
+                alerts.append({
+                    'type': 'efris_failed',
+                    'severity': 'critical',
+                    'message': f'{failed_fiscal} sales failed EFRIS fiscalization',
+                    'count': failed_fiscal
+                })
 
         return alerts
-
 
 class ReportGenerationConsumer(AsyncJsonWebsocketConsumer):
     """
@@ -431,7 +499,7 @@ class ReportGenerationConsumer(AsyncJsonWebsocketConsumer):
     @database_sync_to_async
     def verify_report_access(self):
         """Verify user has access to this report"""
-        from ..models import GeneratedReport
+        from .models import GeneratedReport
         from django.db.models import Q
 
         try:
@@ -455,7 +523,7 @@ class ReportGenerationConsumer(AsyncJsonWebsocketConsumer):
     @database_sync_to_async
     def send_report_status(self):
         """Send current report status"""
-        from ..models import GeneratedReport
+        from .models import GeneratedReport
 
         try:
             report = GeneratedReport.objects.get(id=self.report_id)
@@ -484,7 +552,7 @@ class ReportGenerationConsumer(AsyncJsonWebsocketConsumer):
     @database_sync_to_async
     def cancel_report_generation(self):
         """Cancel ongoing report generation"""
-        from ..models import GeneratedReport
+        from .models import GeneratedReport
         from celery import current_app
 
         try:

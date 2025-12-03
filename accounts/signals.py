@@ -118,26 +118,29 @@ def get_default_roles_config():
             'permissions': {
                 # Company Management
                 'company.company': ['change', 'view'],
-                'company.companysubscription': ['add', 'change', 'view', 'delete'],
+                'company.subscriptionplan': [ 'view'],
 
                 # User Management
                 'accounts.customuser': ['add', 'change', 'view', 'delete'],
-                'accounts.role': ['add', 'change', 'view', 'delete'],
+                'accounts.role': ['add', 'change', 'view'],
                 'accounts.rolehistory': ['view'],
-                'accounts.usersignature': ['add', 'change', 'view', 'delete'],
+                'accounts.auditlog': ['add', 'change', 'view', 'delete'],
 
                 # Inventory Management
                 'inventory.product': ['add', 'change', 'view', 'delete'],
                 'inventory.category': ['add', 'change', 'view', 'delete'],
                 'inventory.stock': ['add', 'change', 'view', 'delete'],
+                'inventory.service': ['add', 'change', 'view', 'delete'],
                 'inventory.stockmovement': ['add', 'change', 'view', 'delete'],
                 'inventory.supplier': ['add', 'change', 'view', 'delete'],
                 'inventory.importresult': ['add', 'change', 'view', 'delete'],
+                'inventory.importsession': ['add', 'change', 'view', 'delete'],
+                'inventory.importlog': ['add', 'change', 'view', 'delete'],
 
                 # Invoice & Payments
                 'invoices.invoice': ['add', 'change', 'view', 'delete'],
                 'invoices.invoicepayment': ['add', 'change', 'view', 'delete'],
-                'invoices.receipt': ['add', 'change', 'view', 'delete'],
+                'invoices.fiscalizationaudit': ['add', 'change', 'view', 'delete'],
 
                 # Sales Management
                 'sales.sale': ['add', 'change', 'view', 'delete'],
@@ -165,6 +168,8 @@ def get_default_roles_config():
                 # Customer Management
                 'customers.customer': ['add', 'change', 'view', 'delete'],
                 'customers.customergroup': ['add', 'change', 'view', 'delete'],
+                'customers.customernote':['add','change','view','delete'],
+                'customers.efriscustomersync': ['add', 'change', 'view', 'delete'],
 
                 # Branch Management
                 'branches.companybranch': ['add', 'change', 'view', 'delete'],
@@ -172,10 +177,9 @@ def get_default_roles_config():
                 # Expense Management
                 'expenses.expense': ['add', 'change', 'view', 'delete'],
                 'expenses.expensecategory': ['add', 'change', 'view', 'delete'],
+                'expenses.expenseattachment': ['add', 'change', 'view', 'delete'],
+                'expenses.expensecomment': ['add', 'change', 'view', 'delete'],
 
-                # Finance
-                'finance.account': ['add', 'change', 'view', 'delete'],
-                'finance.transaction': ['add', 'change', 'view', 'delete'],
 
                 # EFRIS Integration
                 'efris.efrisconfig': ['add', 'change', 'view', 'delete'],
@@ -198,17 +202,23 @@ def get_default_roles_config():
             'permissions': {
                 # User Management (limited)
                 'accounts.customuser': ['add', 'change', 'view'],
-                'accounts.role': ['view'],
+                'accounts.role': ['view','change'],
                 'accounts.rolehistory': ['view'],
-                'accounts.usersignature': ['add', 'change', 'view'],
+                'accounts.auditlog': ['add', 'change', 'view'],
+
+                'company.company': ['change', 'view'],
+                'company.subscriptionplan': ['change', 'view'],
 
                 # Full Inventory Control
                 'inventory.product': ['add', 'change', 'view', 'delete'],
                 'inventory.category': ['add', 'change', 'view', 'delete'],
                 'inventory.stock': ['add', 'change', 'view', 'delete'],
+                'inventory.service': ['add', 'change', 'view', 'delete'],
                 'inventory.stockmovement': ['add', 'change', 'view', 'delete'],
                 'inventory.supplier': ['add', 'change', 'view', 'delete'],
-                'inventory.importresult': ['view'],
+                'inventory.importresult': ['add', 'change', 'view', 'delete'],
+                'inventory.importsession': ['add', 'change', 'view', 'delete'],
+                'inventory.importlog': ['add', 'change', 'view', 'delete'],
 
                 # Invoice Management
                 'invoices.invoice': ['add', 'change', 'view', 'delete'],
@@ -274,19 +284,26 @@ def get_default_roles_config():
                 # Limited User Management
                 'accounts.customuser': ['add', 'change', 'view'],
                 'accounts.role': ['view'],
+                'accounts.auditlog': ['view'],
+
+                'company.company': [ 'view'],
+                'company.subscriptionplan': [ 'view'],
 
                 # Inventory Management
                 'inventory.product': ['add', 'change', 'view'],
                 'inventory.category': ['add', 'change', 'view'],
                 'inventory.stock': ['add', 'change', 'view'],
+                'inventory.service': ['add', 'change', 'view'],
                 'inventory.stockmovement': ['add', 'change', 'view'],
                 'inventory.supplier': ['add', 'change', 'view'],
                 'inventory.importresult': ['view'],
+                'inventory.importsession': ['view'],
+                'inventory.importlog': ['view'],
 
                 # Invoice Management
                 'invoices.invoice': ['add', 'change', 'view'],
                 'invoices.invoicepayment': ['add', 'change', 'view'],
-                'invoices.receipt': ['view'],
+                'invoices.fiscalizationaudit': ['view'],
 
                 # Sales Operations
                 'sales.sale': ['add', 'change', 'view'],
@@ -302,7 +319,9 @@ def get_default_roles_config():
                 'stores.storedevice': ['change', 'view'],
                 'stores.userdevicesession': ['view', 'change'],
                 'stores.securityalert': ['view'],
-                'stores.devicefingerprint': ['view'],
+                'stores.devicefingerprint': ['view','change','view'],
+
+                'branches.companybranch': ['change','view'],
 
                 # Reports
                 'reports.savedreport': ['add', 'change', 'view'],
@@ -314,10 +333,14 @@ def get_default_roles_config():
                 # Customer Management
                 'customers.customer': ['add', 'change', 'view'],
                 'customers.customergroup': ['add', 'change', 'view'],
+                'customers.customernote': ['add', 'change', 'view'],
+                'customers.efriscustomersync': ['add', 'change', 'view'],
 
                 # Expense Management
                 'expenses.expense': ['add', 'change', 'view'],
-                'expenses.expensecategory': ['view'],
+                'expenses.expensecategory': ['view','add','change'],
+                'expenses.expenseattachment': ['view','add'],
+                'expenses.expensecomment': ['add', 'change', 'view'],
 
                 # Notifications
                 'notifications.notification': ['view'],
@@ -336,10 +359,12 @@ def get_default_roles_config():
                 # View Users Only
                 'accounts.customuser': ['view'],
 
+                'company.company': ['view'],
+
                 # Invoice & Payment Management
                 'invoices.invoice': ['add', 'change', 'view'],
                 'invoices.invoicepayment': ['add', 'change', 'view'],
-                'invoices.receipt': ['add', 'change', 'view'],
+                'invoices.fiscalizationaudit': ['add', 'change', 'view'],
 
                 # Sales View & Payment
                 'sales.sale': ['view'],
@@ -348,19 +373,16 @@ def get_default_roles_config():
                 'sales.payment': ['add', 'change', 'view'],
 
                 # Reports - Full Access
-                'reports.savedreport': ['add', 'change', 'view', 'delete'],
-                'reports.generatedreport': ['add', 'change', 'view', 'delete'],
-                'reports.reportschedule': ['add', 'change', 'view'],
-                'reports.reportaccesslog': ['view'],
-                'reports.reportcomparison': ['add', 'change', 'view'],
+                'reports.savedreport': ['add', 'change', 'view'],
+                'reports.generatedreport': ['view'],
+                'reports.reportschedule': [ 'add','view'],
+                'reports.reportcomparison': ['view'],
 
                 # Expense Management - Full
                 'expenses.expense': ['add', 'change', 'view', 'delete'],
                 'expenses.expensecategory': ['add', 'change', 'view', 'delete'],
-
-                # Finance - Full Access
-                'finance.account': ['add', 'change', 'view', 'delete'],
-                'finance.transaction': ['add', 'change', 'view', 'delete'],
+                'expenses.expenseattachment': ['add', 'change', 'view'],
+                'expenses.expensecomment': ['add', 'change', 'view'],
 
                 # Customer View
                 'customers.customer': ['view'],
@@ -373,6 +395,8 @@ def get_default_roles_config():
                 # Store View
                 'stores.store': ['view'],
 
+                'branches.companybranch': ['view'],
+
                 # EFRIS
                 'efris.efrisconfig': ['view'],
                 'efris.efrisinvoice': ['view'],
@@ -381,149 +405,401 @@ def get_default_roles_config():
                 'notifications.notification': ['view'],
             }
         },
-        'Cashier': {
-            'description': 'Point of sale operator. Can process sales, handle payments, and view basic inventory.',
-            'color_code': '#198754',
+        'Human Resource': {
+            'description': 'Manages employee records, roles, permissions, and user administration.',
+            'color_code': '#8B4513',  # Saddle Brown
             'priority': 60,
-            'is_system_role': True,
-            'custom_permissions': [],
+            'is_system_role': False,
+            'custom_permissions': [
+                'hr.can_manage_employees',
+                'hr.can_assign_roles',
+                'hr.can_view_attendance',
+                'hr.can_manage_user_permissions',
+            ],
             'permissions': {
-                # Sales Operations
-                'sales.sale': ['add', 'view'],
-                'sales.saleitem': ['add', 'view'],
-                'sales.payment': ['add', 'view'],
-                'sales.receipt': ['add', 'view'],
+                # Company Management (View only)
+                'company.company': ['view'],
+
+                # User Management (Full - HR focus)
+                'accounts.customuser': ['add', 'change', 'view'],
+                'accounts.role': ['add', 'change', 'view'],
+                'accounts.rolehistory': ['view'],
+                'accounts.auditlog': ['view'],
+
+                # Inventory Management (Minimal - view only)
+                'inventory.product': ['view'],
+                'inventory.stock': ['view'],
+                'inventory.service': ['view'],
+
+                # Invoice & Payments (View only)
+                'invoices.invoice': ['view'],
+
+                # Sales Management (View only for performance tracking)
+                'sales.sale': ['view'],
+                'sales.receipt': ['view'],
+
+                # Store Management (View employee-related)
+                'stores.store': ['view'],
+                'stores.storedevice': ['view'],
+                'stores.userdevicesession': ['view'],
+
+                # Reports (HR and performance reports)
+                'reports.savedreport': ['add', 'change', 'view'],
+                'reports.generatedreport': ['view'],
+
+                # Customer Management (Minimal)
+                'customers.customer': ['view'],
+
+                # Branch Management (View only)
+                'branches.companybranch': ['view'],
+
+                # Expense Management (View employee expenses)
+                'expenses.expense': ['view'],
+
+                # Notifications (HR related)
+                'notifications.notification': ['add', 'change', 'view'],
+            }
+        },
+        'Cashier': {
+            'description': 'Processes sales transactions, handles customer payments, and manages daily cash operations at the point of sale.',
+            'color_code': '#FF8C00',  # Dark Orange
+            'priority': 30,
+            'is_system_role': False,
+            'custom_permissions': [
+                'pos.can_process_sales',
+                'pos.can_handle_cash',
+                'pos.can_print_receipts',
+                'pos.can_view_own_sales',
+                'pos.can_process_refunds',
+            ],
+            'permissions': {
+                # Company Management (View only - minimal)
+                'company.company': ['view'],
+
+                # User Management (Own profile only)
+                'accounts.customuser': ['change', 'view'],  # Can edit own profile
+
+                # Inventory Management (View for sales)
+                'inventory.product': ['view'],
+                'inventory.category': ['view'],
+                'inventory.stock': ['view'],
+                'inventory.service': ['view'],
+
+                # Invoice & Payments (Limited - own transactions)
+                'invoices.invoice': ['view'],  # Can view invoices they created
+                'invoices.invoicepayment': ['view'],
+
+                # Sales Management (Full for processing sales)
+                'sales.sale': ['add', 'change', 'view'],  # Can create/edit own sales
+                'sales.saleitem': ['add', 'change', 'view'],
+                'sales.receipt': ['add', 'change', 'view'],
+                'sales.payment': ['add', 'change', 'view'],
                 'sales.cart': ['add', 'change', 'view', 'delete'],
                 'sales.cartitem': ['add', 'change', 'view', 'delete'],
 
-                # Invoice Creation
-                'invoices.invoice': ['add', 'view'],
-                'invoices.invoicepayment': ['add', 'view'],
-                'invoices.receipt': ['view'],
-
-                # Inventory View Only
-                'inventory.product': ['view'],
-                'inventory.category': ['view'],
-                'inventory.stock': ['view'],
-
-                # Store View
+                # Store Management (Limited to assigned store)
                 'stores.store': ['view'],
+                'stores.storeoperatinghours': ['view'],
+                'stores.storedevice': ['view'],  # For POS device management
+                'stores.userdevicesession': ['add', 'change', 'view'],  # For login/logout tracking
 
-                # Customer Management (Limited)
+                # Reports (Limited - own sales reports only)
+                'reports.savedreport': ['view'],
+                'reports.generatedreport': ['view'],  # Only for own sales
+
+                # Customer Management (Can add/view customers)
                 'customers.customer': ['add', 'view'],
+                'customers.customergroup': ['view'],
+                'customers.customernote': ['add', 'view'],
 
-                # EFRIS Invoice
-                'efris.efrisinvoice': ['add', 'view'],
+                # Branch Management (View assigned branch only)
+                'branches.companybranch': ['view'],
 
-                # Notifications
+                # Expense Management (No access)
+                # 'expenses.expense': [],  # No expense access
+
+                # EFRIS Integration (View only for receipts)
+                'efris.efrisinvoice': ['view'],
+
+                # Notifications (View own notifications)
                 'notifications.notification': ['view'],
             }
         },
-        'Stock Keeper': {
-            'description': 'Inventory management specialist. Can manage stock levels, receive deliveries, and perform stock adjustments.',
-            'color_code': '#fd7e14',
+        'Stock Manager': {
+            'description': 'Manages inventory, stock levels, suppliers, and inventory movements.',
+            'color_code': '#D2691E',  # Chocolate
             'priority': 50,
-            'is_system_role': True,
-            'custom_permissions': [],
+            'is_system_role': False,
+            'custom_permissions': [
+                'inventory.can_manage_stock',
+                'inventory.can_process_orders',
+                'inventory.can_manage_suppliers',
+                'inventory.can_import_products',
+            ],
             'permissions': {
-                # Full Inventory Management
+                # Company Management (View only)
+                'company.company': ['view'],
+
+                # User Management (Minimal)
+                'accounts.customuser': ['view'],
+
+                # Inventory Management (Full)
+                'inventory.product': ['add', 'change', 'view', 'delete'],
+                'inventory.category': ['add', 'change', 'view', 'delete'],
+                'inventory.stock': ['add', 'change', 'view', 'delete'],
+                'inventory.service': ['add', 'change', 'view'],
+                'inventory.stockmovement': ['add', 'change', 'view', 'delete'],
+                'inventory.supplier': ['add', 'change', 'view', 'delete'],
+                'inventory.importresult': ['add', 'change', 'view', 'delete'],
+                'inventory.importsession': ['add', 'change', 'view', 'delete'],
+                'inventory.importlog': ['add', 'change', 'view', 'delete'],
+
+                # Invoice & Payments (Limited - related to inventory)
+                'invoices.invoice': ['view'],
+
+                # Sales Management (View for inventory planning)
+                'sales.sale': ['view'],
+                'sales.saleitem': ['view'],
+
+                # Store Management (View inventory-related)
+                'stores.store': ['view'],
+
+                # Reports (Inventory reports only)
+                'reports.savedreport': ['add', 'change', 'view'],
+                'reports.generatedreport': ['view'],
+                'reports.reportcomparison': ['view'],
+
+                # Customer Management (Minimal)
+                'customers.customer': ['view'],
+
+                # Branch Management (View only)
+                'branches.companybranch': ['view'],
+
+                # Expense Management (Inventory-related expenses)
+                'expenses.expense': ['view'],
+
+                # Notifications (Inventory alerts)
+                'notifications.notification': ['view'],
+            }
+        },
+        'Sales Manager': {
+            'description': 'Manages sales operations, customer relationships, and sales team performance.',
+            'color_code': '#2E8B57',  # Sea Green
+            'priority': 40,
+            'is_system_role': False,
+            'custom_permissions': [
+                'sales.can_manage_sales_team',
+                'sales.can_view_sales_reports',
+                'sales.can_manage_customers',
+                'sales.can_process_refunds',
+            ],
+            'permissions': {
+                # Company Management (View only)
+                'company.company': ['view'],
+
+                # User Management (View sales team)
+                'accounts.customuser': ['view'],
+
+                # Inventory Management (View for sales)
+                'inventory.product': ['view'],
+                'inventory.category': ['view'],
+                'inventory.stock': ['view'],
+                'inventory.service': ['view'],
+
+                # Invoice & Payments (Sales-related)
+                'invoices.invoice': ['add', 'change', 'view'],
+                'invoices.invoicepayment': ['add', 'change', 'view'],
+
+                # Sales Management (Full)
+                'sales.sale': ['add', 'change', 'view', 'delete'],
+                'sales.saleitem': ['add', 'change', 'view', 'delete'],
+                'sales.receipt': ['add', 'change', 'view', 'delete'],
+                'sales.payment': ['add', 'change', 'view', 'delete'],
+                'sales.cart': ['add', 'change', 'view', 'delete'],
+                'sales.cartitem': ['add', 'change', 'view', 'delete'],
+
+                # Store Management (Sales-focused)
+                'stores.store': ['view'],
+                'stores.storeoperatinghours': ['view'],
+
+                # Reports (Sales reports full access)
+                'reports.savedreport': ['add', 'change', 'view', 'delete'],
+                'reports.reportschedule': ['add', 'change', 'view'],
+                'reports.generatedreport': ['add', 'change', 'view'],
+                'reports.reportcomparison': ['add', 'change', 'view'],
+
+                # Customer Management (Full)
+                'customers.customer': ['add', 'change', 'view', 'delete'],
+                'customers.customergroup': ['add', 'change', 'view', 'delete'],
+                'customers.customernote': ['add', 'change', 'view', 'delete'],
+                'customers.efriscustomersync': ['view'],
+
+                # Branch Management (View only)
+                'branches.companybranch': ['view'],
+
+                # Expense Management (Sales-related expenses)
+                'expenses.expense': ['view'],
+
+                # EFRIS Integration (Sales view)
+                'efris.efrisinvoice': ['view'],
+
+                # Notifications (Sales alerts)
+                'notifications.notification': ['add', 'change', 'view'],
+            }
+        },
+        'Data Entry Clerk': {
+            'description': 'Responsible for entering product data, customer information, inventory updates, and basic data management without delete capabilities.',
+            'color_code': '#696969',  # Dim Gray
+            'priority': 25,
+            'is_system_role': False,
+            'custom_permissions': [
+                'data.can_add_products',
+                'data.can_update_inventory',
+                'data.can_add_customers',
+                'data.can_import_basic_data',
+                'data.can_view_own_entries',
+            ],
+            'permissions': {
+                # Company Management (View only)
+                'company.company': ['view'],
+
+                # User Management (Own profile only)
+                'accounts.customuser': ['change', 'view'],
+
+                # Inventory Management (Add and change, no delete)
                 'inventory.product': ['add', 'change', 'view'],
                 'inventory.category': ['add', 'change', 'view'],
                 'inventory.stock': ['add', 'change', 'view'],
+                'inventory.service': ['add', 'change', 'view'],
                 'inventory.stockmovement': ['add', 'change', 'view'],
                 'inventory.supplier': ['add', 'change', 'view'],
                 'inventory.importresult': ['view'],
+                'inventory.importsession': ['view'],
+                'inventory.importlog': ['view'],
 
-                # Store View
-                'stores.store': ['view'],
-
-                # Reports - Inventory Only
-                'reports.generatedreport': ['view'],
-                'reports.savedreport': ['view'],
-
-                # Notifications
-                'notifications.notification': ['view'],
-            }
-        },
-        'Sales Rep': {
-            'description': 'Sales representative with customer management. Can create quotes, manage customers, and view sales reports.',
-            'color_code': '#20c997',
-            'priority': 40,
-            'is_system_role': True,
-            'custom_permissions': [],
-            'permissions': {
-                # Sales Management
-                'sales.sale': ['add', 'change', 'view'],
-                'sales.saleitem': ['add', 'change', 'view'],
-                'sales.payment': ['add', 'view'],
-                'sales.receipt': ['view'],
-
-                # Invoice Management
-                'invoices.invoice': ['add', 'change', 'view'],
-                'invoices.invoicepayment': ['add', 'view'],
-
-                # Customer Management - Full
-                'customers.customer': ['add', 'change', 'view'],
-                'customers.customergroup': ['add', 'change', 'view'],
-
-                # Inventory View
-                'inventory.product': ['view'],
-                'inventory.category': ['view'],
-                'inventory.stock': ['view'],
-
-                # Reports View
-                'reports.savedreport': ['view'],
-                'reports.generatedreport': ['view'],
-
-                # Store View
-                'stores.store': ['view'],
-
-                # Notifications
-                'notifications.notification': ['view'],
-            }
-        },
-        'Viewer': {
-            'description': 'Read-only access. Can view all data but cannot make any changes.',
-            'color_code': '#6c757d',
-            'priority': 10,
-            'is_system_role': True,
-            'custom_permissions': [
-                'accounts.can_view_reports',
-            ],
-            'permissions': {
-                # View Everything, Change Nothing
-                'inventory.product': ['view'],
-                'inventory.category': ['view'],
-                'inventory.stock': ['view'],
-                'inventory.stockmovement': ['view'],
-                'inventory.supplier': ['view'],
+                # Invoice & Payments (View only - for reference)
                 'invoices.invoice': ['view'],
                 'invoices.invoicepayment': ['view'],
-                'invoices.receipt': ['view'],
+
+                # Sales Management (View only - for understanding sales data)
+                'sales.sale': ['view'],
+                'sales.saleitem': ['view'],
+                'sales.receipt': ['view'],
+
+                # Store Management (Minimal)
+                'stores.store': ['view'],
+
+                # Reports (Limited - data quality reports)
+                'reports.savedreport': ['view'],
+                'reports.generatedreport': ['view'],
+
+                # Customer Management (Add and view only)
+                'customers.customer': ['add', 'change', 'view'],
+                'customers.customergroup': ['add', 'change', 'view'],
+                'customers.customernote': ['add', 'change', 'view'],
+                'customers.efriscustomersync': ['view'],
+
+                # Branch Management (View only)
+                'branches.companybranch': ['view'],
+
+                # Expense Management (View only)
+                'expenses.expense': ['view'],
+                'expenses.expensecategory': ['view'],
+
+                # EFRIS Integration (View only for data reference)
+                'efris.efrisconfig': ['view'],
+                'efris.efrisinvoice': ['view'],
+
+                # Notifications (View only)
+                'notifications.notification': ['view'],
+            }
+        },
+
+        'Auditor': {
+            'description': 'Can view all company data for auditing, compliance, and verification purposes but cannot make any changes.',
+            'color_code': '#800080',  # Purple
+            'priority': 85,
+            'is_system_role': False,
+            'custom_permissions': [
+                'audit.can_view_all_data',
+                'audit.can_export_reports',
+                'audit.can_compare_financials',
+                'audit.can_track_changes',
+                'audit.can_generate_audit_trails',
+            ],
+            'permissions': {
+                # Company Management (View only)
+                'company.company': ['view'],
+                'company.companysubscription': ['view'],
+
+                # User Management (View only - all user activities)
+                'accounts.customuser': ['view'],
+                'accounts.role': ['view'],
+                'accounts.rolehistory': ['view'],
+                'accounts.auditlog': ['view'],
+
+                # Inventory Management (View only - full visibility)
+                'inventory.product': ['view'],
+                'inventory.category': ['view'],
+                'inventory.stock': ['view'],
+                'inventory.service': ['view'],
+                'inventory.stockmovement': ['view'],
+                'inventory.supplier': ['view'],
+                'inventory.importresult': ['view'],
+                'inventory.importsession': ['view'],
+                'inventory.importlog': ['view'],
+
+                # Invoice & Payments (View only - complete financial visibility)
+                'invoices.invoice': ['view'],
+                'invoices.invoicepayment': ['view'],
+                'invoices.fiscalizationaudit': ['view'],
+
+                # Sales Management (View only - all sales data)
                 'sales.sale': ['view'],
                 'sales.saleitem': ['view'],
                 'sales.receipt': ['view'],
                 'sales.payment': ['view'],
+                'sales.cart': ['view'],
+                'sales.cartitem': ['view'],
+
+                # Store Management (View only - all store operations)
                 'stores.store': ['view'],
                 'stores.storeoperatinghours': ['view'],
                 'stores.storedevice': ['view'],
-                'accounts.customuser': ['view'],
-                'accounts.role': ['view'],
+                'stores.userdevicesession': ['view'],
+                'stores.securityalert': ['view'],
+                'stores.devicefingerprint': ['view'],
+
+                # Reports (Full view access - can analyze all reports)
                 'reports.savedreport': ['view'],
+                'reports.reportschedule': ['view'],
                 'reports.generatedreport': ['view'],
+                'reports.reportaccesslog': ['view'],
                 'reports.reportcomparison': ['view'],
+
+                # Customer Management (View only - all customer data)
                 'customers.customer': ['view'],
                 'customers.customergroup': ['view'],
+                'customers.customernote': ['view'],
+                'customers.efriscustomersync': ['view'],
+
+                # Branch Management (View only - all branches)
                 'branches.companybranch': ['view'],
+
+                # Expense Management (View only - all expenses)
                 'expenses.expense': ['view'],
                 'expenses.expensecategory': ['view'],
-                'finance.account': ['view'],
-                'finance.transaction': ['view'],
+                'expenses.expenseattachment': ['view'],
+                'expenses.expensecomment': ['view'],
+
+                # EFRIS Integration (View only - all EFRIS records)
                 'efris.efrisconfig': ['view'],
                 'efris.efrisinvoice': ['view'],
+
+                # Notifications (View only - all notifications)
                 'notifications.notification': ['view'],
             }
-        }
+        },
     }
 
 

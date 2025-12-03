@@ -130,19 +130,19 @@ NAVIGATION_ITEMS = [
                 name="Roles",
                 url_name="role_list",
                 icon="bi bi-person-badge",
-                permission="auth.view_group"
+                permission="accounts.view_role"
             ),
             NavigationItem(
                 name="Add Role",
                 url_name="role_create",
                 icon="bi bi-shield-plus",
-                permission="auth.add_group"
+                permission="accounts.add_role"
             ),
             NavigationItem(
                 name="Bulk Role Assignment",
                 url_name="role_bulk_assignment",
                 icon="bi bi-shield-lock",
-                permission="accounts.assign_role_users"
+                permission="accounts.add_role"
             ),
             NavigationItem(
                 name="User Analytics",
@@ -160,42 +160,42 @@ NAVIGATION_ITEMS = [
                 name="Dashboard",
                 url_name="companies:dashboard",
                 icon="bi bi-speedometer2",
-                permission="companies.view_company",
+                permission="company.view_company",
             ),
             NavigationItem(
                 name="Subscription Plans",
                 url_name="companies:subscription_plans",
                 icon="bi bi-diagram-3",
-                permission="companies.view_subscription"
+                permission="company.view_subscriptionplan"
             ),
             NavigationItem(
             name="Billing History",
             url_name="companies:billing_history",
             icon="bi bi-receipt",
-            permission="companies.view_billing"
+            permission="company.view_subscriptionplan"
             ),
             NavigationItem(
                 name="Branches",
                 url_name="companies:branch_list",
                 icon="bi bi-diagram-3",
-                permission="branches.view_branch"
+                permission="branches.view_companybranch"
             ),
             NavigationItem(
                 name="Employees",
                 icon="bi bi-people-fill",
-                permission="companies.view_employee",
+                permission="accounts.add_customuser",
                 children=[
                     NavigationItem(
                         name="All Employees",
                         url_name="user_list",
                         icon="bi bi-list-ul",
-                        permission="companies.view_employee"
+                        permission="accounts.add_customuser"
                     ),
                     NavigationItem(
                         name="Export Employees",
                         url_name="companies:employee_export",
                         icon="bi bi-download",
-                        permission="companies.view_employee"
+                        permission="accounts.add_customuser"
                     ),
                 ]
             ),
@@ -509,13 +509,13 @@ NAVIGATION_ITEMS = [
     NavigationItem(
         name="Reports",
         icon="bi bi-file-earmark-bar-graph",
-        permission="reports.view_report",
+        permission="reports.view_savedreport",
         children=[
             NavigationItem(
                 name="Dashboard",
                 url_name="reports:dashboard",
                 icon="bi bi-speedometer2",
-                permission="reports.view_report"
+                permission="reports.view_savedreport"
             ),
             NavigationItem(
                 name="Download Reports",

@@ -2195,6 +2195,7 @@ class CategoryDetailView(LoginRequiredMixin,PermissionRequiredMixin, DetailView)
     context_object_name = 'category'
     permission_required = 'inventory.view_category'
 
+
 class CategoryCreateView(EFRISConditionalMixin, LoginRequiredMixin, PermissionRequiredMixin, CreateView):
     model = Category
     form_class = CategoryForm
@@ -2203,7 +2204,6 @@ class CategoryCreateView(EFRISConditionalMixin, LoginRequiredMixin, PermissionRe
     permission_required = 'inventory.add_category'
 
     def get_form_kwargs(self):
-        """Pass EFRIS status and request to form"""
         kwargs = super().get_form_kwargs()
         kwargs['efris_enabled'] = getattr(self.request, 'efris', {}).get('enabled', False)
         kwargs['request'] = self.request
@@ -2216,8 +2216,26 @@ class CategoryCreateView(EFRISConditionalMixin, LoginRequiredMixin, PermissionRe
         return context
 
     def form_valid(self, form):
+        # Debug logging
+        print("=" * 50)
+        print("Form is valid!")
+        print(f"EFRIS Code from form: {form.cleaned_data.get('efris_commodity_category_code')}")
+        print(f"Category will be saved with code: {form.instance.efris_commodity_category_code}")
+        print("=" * 50)
+
         messages.success(self.request, 'Category created successfully!')
         return super().form_valid(form)
+
+    def form_invalid(self, form):
+        # Debug logging
+        print("=" * 50)
+        print("Form is INVALID!")
+        print(f"Form errors: {form.errors}")
+        print(f"POST data: {self.request.POST}")
+        print("=" * 50)
+
+        messages.error(self.request, 'Please correct the errors below.')
+        return super().form_invalid(form)
 
 class CategoryUpdateView(EFRISConditionalMixin, LoginRequiredMixin, PermissionRequiredMixin, UpdateView):
     model = Category

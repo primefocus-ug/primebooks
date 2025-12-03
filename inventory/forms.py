@@ -496,19 +496,23 @@ class CategoryForm(forms.ModelForm):
     efris_commodity_category = forms.ModelChoiceField(
         queryset=EFRISCommodityCategory.objects.all(),
         required=False,
-        widget=forms.Select(attrs={
-            'class': 'form-control efris-category-select efris-only',
-            'data-ajax-url': '/inventory/api/efris-categories/search/'
-        }),
+        widget=forms.HiddenInput(),  # Hidden since we're using custom JS selector
         label='EFRIS Commodity Category',
         help_text='Search and select the official EFRIS commodity category'
+    )
+    
+    # ADD THIS: Hidden field to receive the code from JavaScript
+    efris_commodity_category_code = forms.CharField(
+        required=False,
+        widget=forms.HiddenInput(),
+        label='EFRIS Commodity Category Code'
     )
 
     class Meta:
         model = Category
         fields = [
             'category_type', 'name', 'code', 'description',
-            'efris_commodity_category',  # This maps to the form field, not the model field
+            'efris_commodity_category_code',  # Add this
             'efris_auto_sync', 'is_active'
         ]
         widgets = {
@@ -536,22 +540,20 @@ class CategoryForm(forms.ModelForm):
                 'class': 'form-check-input'
             }),
         }
-        help_texts = {
-            'category_type': 'Is this a product or service category?',
-        }
 
     def __init__(self, *args, **kwargs):
-        # Extract EFRIS status and request
         self.efris_enabled = kwargs.pop('efris_enabled', False)
         request = kwargs.pop('request', None)
-        from company.models import EFRISCommodityCategory
         super().__init__(*args, **kwargs)
 
         # Set category type choices
         self.fields['category_type'].choices = Category.CATEGORY_TYPE_CHOICES
 
-        # Initialize the efris_commodity_category field with current value
-        if self.instance and self.instance.efris_commodity_category_code:
+        # Initialize with current EFRIS code if editing
+        if self.instance and self.instance.pk and self.instance.efris_commodity_category_code:
+            self.fields['efris_commodity_category_code'].initial = self.instance.efris_commodity_category_code
+            
+            # Also set the ModelChoiceField initial value
             try:
                 efris_cat = EFRISCommodityCategory.objects.get(
                     commodity_category_code=self.instance.efris_commodity_category_code
@@ -560,43 +562,14 @@ class CategoryForm(forms.ModelForm):
             except EFRISCommodityCategory.DoesNotExist:
                 pass
 
-        # ===== EFRIS CONDITIONAL LOGIC =====
+        # Handle EFRIS disabled state
         if not self.efris_enabled:
-            # Hide EFRIS-specific fields
-            efris_fields = [
-                'efris_commodity_category',
-                'efris_auto_sync',
-            ]
-
+            efris_fields = ['efris_commodity_category', 'efris_commodity_category_code', 'efris_auto_sync']
             for field_name in efris_fields:
                 if field_name in self.fields:
-                    self.fields[field_name].widget = forms.HiddenInput()
                     self.fields[field_name].required = False
-                    # Set default to False for boolean fields
                     if field_name == 'efris_auto_sync':
                         self.fields[field_name].initial = False
-        else:
-            # Filter by company if available (for EFRIS categories)
-            if request and hasattr(request, 'user') and hasattr(request.user, 'company'):
-                self.fields['efris_commodity_category'].queryset = (
-                    EFRISCommodityCategory.objects.all()
-                )
-
-            # Update help text when EFRIS is enabled
-            self.fields['efris_commodity_category'].help_text = (
-                'Select the official EFRIS commodity category for tax compliance. '
-                'Only leaf nodes (terminal categories) can be selected.'
-            )
-
-            self.fields['efris_auto_sync'].help_text = (
-                'Automatically sync this category with EFRIS system'
-            )
-
-            # Add dynamic filtering for EFRIS categories based on category_type
-            if 'category_type' in self.data:
-                self._filter_efris_categories_by_type(self.data.get('category_type'))
-            elif self.instance and self.instance.pk:
-                self._filter_efris_categories_by_type(self.instance.category_type)
 
     def _filter_efris_categories_by_type(self, category_type):
         """Filter EFRIS categories based on category type (product/service)"""
@@ -617,69 +590,71 @@ class CategoryForm(forms.ModelForm):
     def clean(self):
         cleaned_data = super().clean()
         efris_auto_sync = cleaned_data.get('efris_auto_sync')
-        efris_commodity_category = cleaned_data.get('efris_commodity_category')
+        efris_code = cleaned_data.get('efris_commodity_category_code')
         category_type = cleaned_data.get('category_type')
 
-        # ===== EFRIS VALIDATION (only if EFRIS enabled) =====
+        # Validate EFRIS fields if enabled
         if self.efris_enabled and efris_auto_sync:
-            if not efris_commodity_category:
+            if not efris_code:
                 raise ValidationError({
-                    'efris_commodity_category': 'Please select an EFRIS commodity category before enabling auto-sync.'
+                    'efris_commodity_category_code': 'Please select an EFRIS commodity category before enabling auto-sync.'
                 })
 
-            # Validate category type matches EFRIS category type
-            if efris_commodity_category and category_type:
-                efris_type = 'service' if efris_commodity_category.service_mark == '101' else 'product'
+            # Validate the EFRIS category exists and matches type
+            try:
+                efris_cat = EFRISCommodityCategory.objects.get(
+                    commodity_category_code=efris_code
+                )
+                
+                # Validate category type matches
+                efris_type = 'service' if efris_cat.service_mark == '101' else 'product'
                 if category_type != efris_type:
                     raise ValidationError({
-                        'efris_commodity_category':
+                        'efris_commodity_category_code':
                             f'Selected EFRIS category is for {efris_type}s, but you selected {category_type} category type. '
                             f'They must match.'
                     })
 
-            # Validate it's a leaf node
-            if efris_commodity_category and efris_commodity_category.is_leaf_node != '101':
+                # Validate it's a leaf node
+                if efris_cat.is_leaf_node != '101':
+                    raise ValidationError({
+                        'efris_commodity_category_code':
+                            'Selected EFRIS category is not a leaf node. Only terminal categories can be used.'
+                    })
+                    
+            except EFRISCommodityCategory.DoesNotExist:
                 raise ValidationError({
-                    'efris_commodity_category':
-                        'Selected EFRIS category is not a leaf node. Only terminal categories can be used for products and services.'
+                    'efris_commodity_category_code': 'Invalid EFRIS commodity category code.'
                 })
 
-        # If EFRIS disabled, force values to defaults
+        # If EFRIS disabled, clear values
         if not self.efris_enabled:
             cleaned_data['efris_auto_sync'] = False
-            cleaned_data['efris_commodity_category'] = None
+            cleaned_data['efris_commodity_category_code'] = None
 
         return cleaned_data
 
     def save(self, commit=True):
         instance = super().save(commit=False)
 
-        # Set the efris_commodity_category_code from the selected EFRIS category
-        efris_commodity_category = self.cleaned_data.get('efris_commodity_category')
-        if efris_commodity_category:
-            instance.efris_commodity_category_code = efris_commodity_category.commodity_category_code
+        # Set the efris_commodity_category_code from cleaned data
+        efris_code = self.cleaned_data.get('efris_commodity_category_code')
+        if efris_code:
+            instance.efris_commodity_category_code = efris_code
         else:
             instance.efris_commodity_category_code = None
 
-        # Disable EFRIS sync if EFRIS is not enabled
+        # Disable EFRIS sync if not enabled
         if not self.efris_enabled:
             instance.efris_auto_sync = False
 
         if commit:
-            # We need to bypass the model's clean method temporarily to avoid the field error
-            # The form validation already handled the same checks
-            try:
-                instance.save()
-            except ValidationError as e:
-                # Convert model field errors to form field errors
-                if 'efris_commodity_category_code' in e.error_dict:
-                    self.add_error('efris_commodity_category', e.error_dict['efris_commodity_category_code'])
-                    raise
-                else:
-                    raise
+            instance.save()
 
         return instance
-    
+
+
+
 class QuickCategoryForm(forms.ModelForm):
     """
     Simplified form for quick category creation (e.g., in modals)

@@ -1294,7 +1294,7 @@ class RoleDeleteView(LoginRequiredMixin, PermissionRequiredMixin, DeleteView):
 
 
 class RoleBulkAssignmentView(LoginRequiredMixin, PermissionRequiredMixin, FormView):
-    permission_required = 'accounts.can_bulk_assign_roles'
+    permission_required = 'accounts.add_role'
     form_class = BulkRoleAssignmentForm
     template_name = 'accounts/roles/bulk_assignment.html'
     success_url = reverse_lazy('role_list')

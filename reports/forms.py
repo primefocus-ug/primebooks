@@ -31,6 +31,7 @@ from datetime import date, timedelta
 from django.utils import timezone
 from stores.models import Store
 
+
 class ReportFilterForm(forms.Form):
     """Base form for common report filters."""
     PERIOD_CHOICES = [
@@ -95,18 +96,47 @@ class ReportFilterForm(forms.Form):
         super().__init__(*args, **kwargs)
 
         if user:
-            if user.is_superuser or (user.primary_role and user.primary_role.priority >= 90):
+            if user.is_superuser or (
+                    hasattr(user, 'primary_role') and user.primary_role and user.primary_role.priority >= 90):
+                # Superusers and high-priority roles see all stores
                 self.fields['store'].queryset = Store.objects.filter(is_active=True)
                 self.fields['branch'].queryset = Store.objects.filter(is_active=True)
             else:
-                self.fields['store'].queryset = user.stores.filter(is_active=True)
-                self.fields['branch'].queryset = Store.objects.filter(
-                    stores__in=user.stores.filter(is_active=True),
-                    is_active=True
-                ).distinct()
+                # Regular users see stores they can access
+                accessible_stores = self.get_user_accessible_stores(user)
+                self.fields['store'].queryset = accessible_stores
+                self.fields['branch'].queryset = accessible_stores
 
         if not self.data.get('start_date') or not self.data.get('end_date'):
             self._set_default_dates()
+
+    def get_user_accessible_stores(self, user):
+        """
+        Get stores accessible by a user.
+        Users can access stores where they're staff OR stores from their company.
+        """
+        if user.is_superuser:
+            return Store.objects.filter(is_active=True)
+
+        # Get user's company if exists
+        user_company = getattr(user, 'company', None)
+
+        if user_company:
+            # User can access stores where they're staff OR stores from their company
+            stores = Store.objects.filter(
+                Q(is_active=True) & (
+                        Q(staff=user) |
+                        Q(company=user_company)
+                )
+            ).distinct()
+        else:
+            # Users without company can only access stores where they're staff
+            stores = Store.objects.filter(
+                staff=user,
+                is_active=True
+            ).distinct()
+
+        return stores
 
     def _set_default_dates(self):
         """Set default start and end dates based on selected period."""
