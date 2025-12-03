@@ -30,6 +30,7 @@ from invoices.models import Invoice
 
 from .models import SavedReport, GeneratedReport
 from .forms import ReportFilterForm, SalesReportForm, InventoryReportForm
+from django.db import connection
 
 logger = logging.getLogger(__name__)
 
@@ -47,11 +48,38 @@ def get_client_ip(request):
 def user_can_access_all_stores(user):
     """Check if user can access all stores (SaaS admin or high-priority role)"""
     return (
-        getattr(user, 'is_saas_admin', False) or
         user.is_superuser or
-        (user.primary_role and user.primary_role.priority >= 90)
+        (hasattr(user, 'primary_role') and user.primary_role and user.primary_role.priority >= 90)
     )
 
+
+def get_user_accessible_stores(user):
+    """
+    Get stores accessible by a user.
+    Users can access stores where they're staff OR stores from their company.
+    """
+    if user.is_superuser:
+        return Store.objects.filter(is_active=True)
+
+    # Get user's company if exists
+    user_company = getattr(user, 'company', None)
+
+    if user_company:
+        # User can access stores where they're staff OR stores from their company
+        stores = Store.objects.filter(
+            Q(is_active=True) & (
+                    Q(staff=user) |
+                    Q(company=user_company)
+            )
+        ).distinct()
+    else:
+        # Users without company can only access stores where they're staff
+        stores = Store.objects.filter(
+            staff=user,
+            is_active=True
+        ).distinct()
+
+    return stores
 
 @login_required
 @permission_required('reports.view_savedreport')
@@ -62,13 +90,11 @@ def report_dashboard(request):
     month_ago = today - timedelta(days=30)
 
     # Get user's accessible stores
-    if user_can_access_all_stores(request.user):
-        stores = Store.objects.filter(is_active=True)
-    else:
-        stores = request.user.stores.filter(is_active=True)
+    stores = get_user_accessible_stores(request.user)
 
-    # Check cache first
-    cache_key = f'dashboard_stats_{request.user.id}'
+    # Check cache first - include schema in cache key
+    schema_name = connection.schema_name
+    cache_key = f'dashboard_stats_{schema_name}_{request.user.id}'
     stats = cache.get(cache_key)
 
     if not stats:
@@ -123,8 +149,8 @@ def report_dashboard(request):
         # Cache for 2 minutes
         cache.set(cache_key, stats, 120)
 
-    # Sales trend (last 30 days) - cached separately
-    trend_cache_key = f'sales_trend_{request.user.id}'
+    # Sales trend - include schema in cache key
+    trend_cache_key = f'sales_trend_{schema_name}_{request.user.id}'
     sales_trend = cache.get(trend_cache_key)
 
     if not sales_trend:
@@ -145,10 +171,10 @@ def report_dashboard(request):
                 'count': daily_sales['count'] or 0
             })
 
-        cache.set(trend_cache_key, sales_trend, 300)  # 5 minutes
+        cache.set(trend_cache_key, sales_trend, 300)
 
-    # Top selling products (this month) - cached
-    top_products_key = f'top_products_{request.user.id}'
+    # Top selling products - include schema in cache key
+    top_products_key = f'top_products_{schema_name}_{request.user.id}'
     top_products = cache.get(top_products_key)
 
     if not top_products:
@@ -163,13 +189,13 @@ def report_dashboard(request):
 
         cache.set(top_products_key, list(top_products), 300)
 
-    # Recent generated reports
+    # Recent generated reports - filter by schema
     recent_reports = GeneratedReport.objects.filter(
         generated_by=request.user,
         status='COMPLETED'
     ).select_related('report').order_by('-generated_at')[:5]
 
-    # Favorite saved reports
+    # Favorite saved reports - filter by schema
     favorite_reports = SavedReport.objects.filter(
         Q(created_by=request.user) | Q(is_shared=True),
         is_favorite=True
@@ -208,14 +234,12 @@ def sales_summary_report(request):
     form = SalesReportForm(request.GET or None, user=request.user)
 
     # Get user's accessible stores
-    if user_can_access_all_stores(request.user):
-        stores = Store.objects.filter(is_active=True)
-    else:
-        stores = request.user.stores.filter(is_active=True)
+    stores = get_user_accessible_stores(request.user)
 
     sales_data = []
     summary_stats = {}
     chart_data = []
+    saved_report = None  # Initialize saved_report variable here
 
     if form.is_valid():
         # Extract filter parameters
@@ -224,8 +248,14 @@ def sales_summary_report(request):
         store_filter = form.cleaned_data.get('store')
         group_by = form.cleaned_data.get('group_by', 'date')
 
-        # Check cache
-        cache_key = f'sales_report_{request.user.id}_{start_date}_{end_date}_{store_filter}_{group_by}'
+        # Check if user has access to selected store
+        if store_filter and store_filter not in stores:
+            messages.error(request, "You don't have access to the selected store.")
+            return redirect('reports:sales_summary')
+
+        # Check cache with schema
+        schema_name = connection.schema_name
+        cache_key = f'sales_report_{schema_name}_{request.user.id}_{start_date}_{end_date}_{store_filter}_{group_by}'
         cached_result = cache.get(cache_key)
 
         if cached_result and not request.GET.get('refresh'):
@@ -246,6 +276,7 @@ def sales_summary_report(request):
                     report_type='SALES_SUMMARY',
                     created_by=request.user
                 )
+                saved_report.save()  # Save it to get an ID
 
             from .services.report_generator import ReportGeneratorService
             generator = ReportGeneratorService(request.user, saved_report)
@@ -259,22 +290,23 @@ def sales_summary_report(request):
 
             sales_data = report_data.get('grouped_data', [])
             summary_stats = report_data.get('summary', {})
-            chart_data = sales_data[:50]  # Limit chart data
+            chart_data = sales_data[:50]
 
             # Cache results
             cache.set(cache_key, {
                 'sales_data': sales_data,
                 'summary_stats': summary_stats,
                 'chart_data': chart_data
-            }, 300)  # 5 minutes
+            }, 300)
 
-        # Log access with schema_name
+        # Log access with schema_name - safe reference
         from .tasks import log_report_access
-        schema_name = get_current_schema()
+        report_id = saved_report.id if saved_report else 0
+
         log_report_access.delay(
-            saved_report.id if saved_report.id else 0,
+            report_id,
             request.user.id,
-            schema_name,  # Pass schema name
+            schema_name,
             'VIEW',
             form.cleaned_data,
             get_client_ip(request),
@@ -298,10 +330,8 @@ def product_performance_report(request):
     """Enhanced product performance report"""
     form = ReportFilterForm(request.GET or None, user=request.user)
 
-    if user_can_access_all_stores(request.user):
-        stores = Store.objects.filter(is_active=True)
-    else:
-        stores = request.user.stores.filter(is_active=True)
+    # Get user's accessible stores
+    stores = get_user_accessible_stores(request.user)
 
     products_data = []
     summary_stats = {}
@@ -310,7 +340,15 @@ def product_performance_report(request):
         # Extract serialized form data
         form_data = form.get_serialized_data()
 
-        cache_key = f'product_performance_{request.user.id}_{hash(str(form_data))}'
+        # Check if user has access to selected store
+        store_filter = form.cleaned_data.get('store')
+        if store_filter and store_filter not in stores:
+            messages.error(request, "You don't have access to the selected store.")
+            return redirect('reports:product_performance')
+
+        # Include schema in cache key
+        schema_name = connection.schema_name
+        cache_key = f'product_performance_{schema_name}_{request.user.id}_{hash(str(form_data))}'
         cached_result = cache.get(cache_key)
 
         if cached_result and not request.GET.get('refresh'):
@@ -322,7 +360,6 @@ def product_performance_report(request):
                 report_type='PRODUCT_PERFORMANCE',
                 created_by=request.user
             )
-            # Save the temporary report to the database to ensure it has a primary key
             saved_report.save()
 
             generator = ReportGeneratorService(request.user, saved_report)
@@ -357,10 +394,8 @@ def inventory_status_report(request):
     """Enhanced inventory status report with real-time alerts"""
     form = InventoryReportForm(request.GET or None, user=request.user)
 
-    if user_can_access_all_stores(request.user):
-        stores = Store.objects.filter(is_active=True)
-    else:
-        stores = request.user.stores.filter(is_active=True)
+    # Get user's accessible stores
+    stores = get_user_accessible_stores(request.user)
 
     inventory_data = []
     summary_stats = {}
@@ -370,7 +405,15 @@ def inventory_status_report(request):
         # Extract serialized form data
         form_data = form.get_serialized_data()
 
-        cache_key = f'inventory_status_{request.user.id}_{hash(str(form_data))}'
+        # Check if user has access to selected store
+        store_filter = form.cleaned_data.get('store')
+        if store_filter and store_filter not in stores:
+            messages.error(request, "You don't have access to the selected store.")
+            return redirect('reports:inventory_status')
+
+        # Include schema in cache key
+        schema_name = connection.schema_name
+        cache_key = f'inventory_status_{schema_name}_{request.user.id}_{hash(str(form_data))}'
         cached_result = cache.get(cache_key)
 
         if cached_result and not request.GET.get('refresh'):
@@ -383,7 +426,7 @@ def inventory_status_report(request):
                 report_type='INVENTORY_STATUS',
                 created_by=request.user
             )
-            saved_report.save()  # Save the temporary report to ensure it has a primary key
+            saved_report.save()
 
             generator = ReportGeneratorService(request.user, saved_report)
             report_data = generator.generate(**form_data)
@@ -396,7 +439,7 @@ def inventory_status_report(request):
                 'inventory_data': inventory_data,
                 'summary_stats': summary_stats,
                 'alerts': alerts
-            }, 180)  # 3 minutes - shorter cache for inventory
+            }, 180)
 
     # Pagination
     paginator = Paginator(inventory_data, 50)
@@ -414,8 +457,6 @@ def inventory_status_report(request):
     return render(request, 'reports/inventory_status.html', context)
 
 
-logger = logging.getLogger(__name__)
-from django.db import connection
 
 
 @login_required

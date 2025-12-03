@@ -348,30 +348,78 @@
 {% block extra_js %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
-    // WebSocket connection
+    // WebSocket connection with proper reconnection logic
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const wsUrl = `${protocol}//${window.location.host}/ws/reports/dashboard/`;
     let ws = null;
-    let reconnectInterval = null;
+    let reconnectTimeout = null;
+    let reconnectAttempts = 0;
+    const maxReconnectAttempts = 10;
+    const baseReconnectDelay = 2000; // 2 seconds
+    const maxReconnectDelay = 30000; // 30 seconds
+    let isIntentionalClose = false;
+    let heartbeatInterval = null;
 
     function connectWebSocket() {
+        // Prevent multiple simultaneous connection attempts
+        if (ws && (ws.readyState === WebSocket.CONNECTING || ws.readyState === WebSocket.OPEN)) {
+            console.log('WebSocket already connecting or connected');
+            return;
+        }
+
+        // Clear any existing reconnect timeout
+        if (reconnectTimeout) {
+            clearTimeout(reconnectTimeout);
+            reconnectTimeout = null;
+        }
+
+        // Check if we've exceeded max reconnection attempts
+        if (reconnectAttempts >= maxReconnectAttempts) {
+            console.error('Max reconnection attempts reached');
+            showConnectionError();
+            return;
+        }
+
         try {
+            console.log(`Attempting to connect to WebSocket... (attempt ${reconnectAttempts + 1})`);
             ws = new WebSocket(wsUrl);
 
             ws.onopen = function() {
-                console.log('WebSocket connected');
-                clearInterval(reconnectInterval);
+                console.log('✓ WebSocket connected successfully');
+                reconnectAttempts = 0; // Reset counter on successful connection
+
+                // Clear any existing reconnect timeout
+                if (reconnectTimeout) {
+                    clearTimeout(reconnectTimeout);
+                    reconnectTimeout = null;
+                }
+
+                // Hide connection error if shown
+                hideConnectionError();
+
+                // Start heartbeat
+                startHeartbeat();
+
                 // Request initial data
-                ws.send(JSON.stringify({type: 'request_stats'}));
+                sendMessage({type: 'request_stats'});
             };
 
             ws.onmessage = function(event) {
-                const data = JSON.parse(event.data);
+                try {
+                    const data = JSON.parse(event.data);
 
-                if (data.type === 'dashboard_stats') {
-                    updateDashboardStats(data.data);
-                } else if (data.type === 'alert') {
-                    showAlert(data);
+                    if (data.type === 'dashboard_stats') {
+                        updateDashboardStats(data.data);
+                    } else if (data.type === 'alert') {
+                        showAlert(data);
+                    } else if (data.type === 'stats_update') {
+                        updateDashboardStats(data.data);
+                    } else if (data.type === 'pong') {
+                        // Heartbeat response received
+                        console.log('Heartbeat pong received');
+                    }
+                } catch (error) {
+                    console.error('Error parsing WebSocket message:', error);
                 }
             };
 
@@ -379,47 +427,207 @@
                 console.error('WebSocket error:', error);
             };
 
-            ws.onclose = function() {
-                console.log('WebSocket disconnected. Reconnecting...');
-                reconnectInterval = setInterval(connectWebSocket, 5000);
+            ws.onclose = function(event) {
+                console.log('WebSocket disconnected:', event.code, event.reason);
+
+                // Stop heartbeat
+                stopHeartbeat();
+
+                // Only reconnect if not intentionally closed
+                if (!isIntentionalClose) {
+                    reconnectAttempts++;
+                    scheduleReconnect();
+                }
             };
         } catch (error) {
             console.error('WebSocket connection failed:', error);
+            reconnectAttempts++;
+            scheduleReconnect();
+        }
+    }
+
+    function scheduleReconnect() {
+        // Clear any existing timeout first
+        if (reconnectTimeout) {
+            clearTimeout(reconnectTimeout);
+        }
+
+        if (reconnectAttempts >= maxReconnectAttempts) {
+            console.error('Max reconnection attempts reached');
+            showConnectionError();
+            return;
+        }
+
+        // Calculate delay with exponential backoff
+        const delay = Math.min(
+            baseReconnectDelay * Math.pow(1.5, reconnectAttempts - 1),
+            maxReconnectDelay
+        );
+
+        console.log(`Scheduling reconnect in ${delay}ms... (attempt ${reconnectAttempts}/${maxReconnectAttempts})`);
+
+        reconnectTimeout = setTimeout(() => {
+            connectWebSocket();
+        }, delay);
+    }
+
+    function startHeartbeat() {
+        // Stop any existing heartbeat
+        stopHeartbeat();
+
+        // Send ping every 30 seconds
+        heartbeatInterval = setInterval(() => {
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                sendMessage({ type: 'ping' });
+            }
+        }, 30000);
+    }
+
+    function stopHeartbeat() {
+        if (heartbeatInterval) {
+            clearInterval(heartbeatInterval);
+            heartbeatInterval = null;
+        }
+    }
+
+    function sendMessage(message) {
+        if (ws && ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify(message));
+        } else {
+            console.warn('WebSocket not connected, cannot send message');
         }
     }
 
     function updateDashboardStats(stats) {
+        if (!stats) {
+            console.warn('No stats data received');
+            return;
+        }
+
+        // Update sales today
         if (stats.sales_today !== undefined) {
-            document.getElementById('sales-today').textContent = 'UGX ' + Math.round(stats.sales_today).toLocaleString();
+            const element = document.getElementById('sales-today');
+            if (element) {
+                element.textContent = 'UGX ' + Math.round(stats.sales_today).toLocaleString();
+            }
         }
+
+        // Update sales week
         if (stats.sales_week !== undefined) {
-            document.getElementById('sales-week').textContent = 'UGX ' + Math.round(stats.sales_week).toLocaleString();
+            const element = document.getElementById('sales-week');
+            if (element) {
+                element.textContent = 'UGX ' + Math.round(stats.sales_week).toLocaleString();
+            }
         }
+
+        // Update sales month
+        if (stats.sales_month !== undefined) {
+            const element = document.getElementById('sales-month');
+            if (element) {
+                element.textContent = 'UGX ' + Math.round(stats.sales_month).toLocaleString();
+            }
+        }
+
+        // Update transactions today
+        if (stats.transactions_today !== undefined) {
+            const element = document.getElementById('transactions-today');
+            if (element) {
+                element.textContent = stats.transactions_today;
+            }
+        }
+
+        // Update low stock count
         if (stats.low_stock_count !== undefined) {
-            document.getElementById('low-stock').textContent = stats.low_stock_count;
+            const element = document.getElementById('low-stock');
+            if (element) {
+                element.textContent = stats.low_stock_count;
+            }
         }
+
+        // Update out of stock count
+        if (stats.out_of_stock_count !== undefined) {
+            const element = document.getElementById('out-of-stock');
+            if (element) {
+                element.textContent = stats.out_of_stock_count;
+            }
+        }
+
+        // Update pending fiscalization
         if (stats.pending_fiscalization !== undefined) {
-            document.getElementById('pending-fiscal').textContent = stats.pending_fiscalization;
+            const element = document.getElementById('pending-fiscal');
+            if (element) {
+                element.textContent = stats.pending_fiscalization;
+            }
         }
+
+        // Update pending invoices
+        if (stats.pending_invoices !== undefined) {
+            const element = document.getElementById('pending-invoices');
+            if (element) {
+                element.textContent = stats.pending_invoices;
+            }
+        }
+
+        // Update overdue invoices
+        if (stats.overdue_invoices !== undefined) {
+            const element = document.getElementById('overdue-invoices');
+            if (element) {
+                element.textContent = stats.overdue_invoices;
+            }
+        }
+
+        console.log('Dashboard stats updated', stats);
     }
 
     function showAlert(alert) {
         const alertHtml = `
-            <div class="alert alert-${alert.severity === 'critical' ? 'danger' : 'warning'} alert-dismissible fade show" role="alert">
-                <strong>${alert.alert_type.replace('_', ' ').toUpperCase()}</strong> ${alert.message}
+            <div class="alert alert-${alert.severity === 'critical' ? 'danger' : alert.severity === 'warning' ? 'warning' : 'info'} alert-dismissible fade show" role="alert">
+                <strong>${alert.alert_type.replace(/_/g, ' ').toUpperCase()}</strong> ${alert.message}
                 <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
             </div>
         `;
         const container = document.querySelector('.container-fluid');
-        container.insertAdjacentHTML('afterbegin', alertHtml);
+        if (container) {
+            container.insertAdjacentHTML('afterbegin', alertHtml);
+        }
+    }
+
+    function showConnectionError() {
+        const errorHtml = `
+            <div id="ws-connection-error" class="alert alert-danger alert-dismissible fade show position-fixed top-0 start-50 translate-middle-x mt-3" style="z-index: 9999;" role="alert">
+                <i class="fas fa-exclamation-triangle"></i>
+                <strong>Connection Lost</strong> Unable to connect to server.
+                <button type="button" class="btn btn-sm btn-light ms-2" onclick="location.reload()">
+                    <i class="fas fa-sync"></i> Refresh Page
+                </button>
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            </div>
+        `;
+
+        // Remove existing error if present
+        hideConnectionError();
+
+        document.body.insertAdjacentHTML('afterbegin', errorHtml);
+    }
+
+    function hideConnectionError() {
+        const errorElement = document.getElementById('ws-connection-error');
+        if (errorElement) {
+            errorElement.remove();
+        }
     }
 
     function refreshDashboard() {
-        location.reload();
+        if (ws && ws.readyState === WebSocket.OPEN) {
+            sendMessage({type: 'request_stats'});
+        } else {
+            location.reload();
+        }
     }
 
     // Initialize WebSocket when DOM is loaded
     document.addEventListener('DOMContentLoaded', function() {
+        console.log('DOM loaded, initializing dashboard...');
         connectWebSocket();
         initializeChart();
     });
@@ -429,7 +637,7 @@
         const ctx = document.getElementById('salesTrendChart');
 
         if (!ctx) {
-            console.error('Chart canvas element not found');
+            console.warn('Chart canvas element not found');
             return;
         }
 
@@ -489,15 +697,19 @@
                     }
                 }
             });
+
+            console.log('Chart initialized successfully');
         } catch (error) {
             console.error('Error initializing chart:', error);
             // Display error message in chart container
-            ctx.parentElement.innerHTML = `
-                <div class="alert alert-warning text-center">
-                    <i class="fas fa-exclamation-triangle"></i>
-                    Unable to load chart data. Please try refreshing the page.
-                </div>
-            `;
+            if (ctx.parentElement) {
+                ctx.parentElement.innerHTML = `
+                    <div class="alert alert-warning text-center">
+                        <i class="fas fa-exclamation-triangle"></i>
+                        Unable to load chart data. Please try refreshing the page.
+                    </div>
+                `;
+            }
         }
     }
 
@@ -519,12 +731,28 @@
 
     // Cleanup on page unload
     window.addEventListener('beforeunload', function() {
+        console.log('Page unloading, closing WebSocket...');
+        isIntentionalClose = true;
+
+        // Stop heartbeat
+        stopHeartbeat();
+
+        // Clear reconnect timeout
+        if (reconnectTimeout) {
+            clearTimeout(reconnectTimeout);
+            reconnectTimeout = null;
+        }
+
+        // Close WebSocket
         if (ws) {
             ws.close();
-        }
-        if (reconnectInterval) {
-            clearInterval(reconnectInterval);
+            ws = null;
         }
     });
+
+    // Optional: Add manual refresh button handler
+    window.requestDashboardRefresh = function() {
+        refreshDashboard();
+    };
 </script>
 {% endblock %}

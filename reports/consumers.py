@@ -6,6 +6,7 @@ from django.utils import timezone
 from datetime import timedelta
 from decimal import Decimal
 import json
+import asyncio
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +33,15 @@ class ReportDashboardConsumer(AsyncJsonWebsocketConsumer):
         self.user = self.scope['user']
 
         if not self.user.is_authenticated:
+            logger.warning("WebSocket connection rejected: User not authenticated")
+            await self.close()
+            return
+
+        # Get tenant schema name from connection scope
+        self.tenant = self.scope.get('tenant')
+
+        if not self.tenant:
+            logger.error(f"WebSocket connection rejected: No tenant in scope for user {self.user.id}")
             await self.close()
             return
 
@@ -42,7 +52,7 @@ class ReportDashboardConsumer(AsyncJsonWebsocketConsumer):
             self.channel_name
         )
 
-        # Join company-wide report group - FIX: Check company ID asynchronously
+        # Join company-wide report group
         company_id = await self.get_user_company_id()
         if company_id:
             self.company_group_name = f'company_{company_id}_reports'
@@ -53,86 +63,119 @@ class ReportDashboardConsumer(AsyncJsonWebsocketConsumer):
 
         await self.accept()
 
-        # Send initial dashboard stats
+        logger.info(f"WebSocket connected for user {self.user.id} (tenant: {self.tenant.schema_name})")
+
+        # Send initial dashboard stats after a short delay to ensure connection is stable
+        await asyncio.sleep(0.1)
         await self.send_dashboard_stats()
 
-        logger.info(f"WebSocket connected for user {self.user.id}")
-
-    # Add this new helper method
     @database_sync_to_async
     def get_user_company_id(self):
         """Get user's company ID safely"""
         try:
             if hasattr(self.user, 'company') and self.user.company:
                 return self.user.company.company_id
-        except Exception:
-            pass
+        except Exception as e:
+            logger.error(f"Error getting company ID: {e}")
         return None
 
     async def disconnect(self, close_code):
         # Leave groups
-        await self.channel_layer.group_discard(
-            self.user_group_name,
-            self.channel_name
-        )
-
-        if hasattr(self, 'company_group_name'):
+        try:
             await self.channel_layer.group_discard(
-                self.company_group_name,
+                self.user_group_name,
                 self.channel_name
             )
+
+            if hasattr(self, 'company_group_name'):
+                await self.channel_layer.group_discard(
+                    self.company_group_name,
+                    self.channel_name
+                )
+        except Exception as e:
+            logger.error(f"Error during disconnect: {e}")
 
         logger.info(f"WebSocket disconnected for user {self.user.id}")
 
     async def receive_json(self, content):
         """Handle incoming messages from client"""
-        message_type = content.get('type')
+        try:
+            message_type = content.get('type')
 
-        if message_type == 'request_stats':
-            await self.send_dashboard_stats()
+            if message_type == 'request_stats':
+                await self.send_dashboard_stats()
 
-        elif message_type == 'request_alerts':
-            await self.send_alerts()
+            elif message_type == 'request_alerts':
+                await self.send_alerts()
 
-        elif message_type == 'subscribe_report':
-            report_id = content.get('report_id')
-            await self.subscribe_to_report(report_id)
+            elif message_type == 'subscribe_report':
+                report_id = content.get('report_id')
+                await self.subscribe_to_report(report_id)
 
-        elif message_type == 'ping':
-            await self.send_json({'type': 'pong'})
+            elif message_type == 'ping':
+                await self.send_json({'type': 'pong', 'timestamp': timezone.now().isoformat()})
+
+        except Exception as e:
+            logger.error(f"Error handling WebSocket message: {e}")
+            await self.send_json({
+                'type': 'error',
+                'message': 'Error processing your request'
+            })
 
     async def send_dashboard_stats(self):
         """Send current dashboard statistics"""
-        stats = await self.get_dashboard_stats()
+        try:
+            stats = await self.get_dashboard_stats()
 
-        await self.send_json({
-            'type': 'dashboard_stats',
-            'data': stats,
-            'timestamp': timezone.now().isoformat()
-        })
+            await self.send_json({
+                'type': 'dashboard_stats',
+                'data': stats,
+                'timestamp': timezone.now().isoformat()
+            })
+        except Exception as e:
+            logger.error(f"Error sending dashboard stats: {e}")
+            # Send empty stats instead of failing
+            await self.send_json({
+                'type': 'dashboard_stats',
+                'data': self._get_empty_stats(),
+                'timestamp': timezone.now().isoformat(),
+                'error': 'Could not load dashboard statistics'
+            })
 
     async def send_alerts(self):
         """Send stock and compliance alerts"""
-        alerts = await self.get_alerts()
+        try:
+            alerts = await self.get_alerts()
 
-        await self.send_json({
-            'type': 'alerts',
-            'data': alerts,
-            'timestamp': timezone.now().isoformat()
-        })
+            await self.send_json({
+                'type': 'alerts',
+                'data': alerts,
+                'timestamp': timezone.now().isoformat()
+            })
+        except Exception as e:
+            logger.error(f"Error sending alerts: {e}")
+            await self.send_json({
+                'type': 'alerts',
+                'data': [],
+                'timestamp': timezone.now().isoformat(),
+                'error': 'Could not load alerts'
+            })
 
     async def subscribe_to_report(self, report_id):
         """Subscribe to updates for a specific report generation"""
-        group_name = f'report_{report_id}_progress'
-        await self.channel_layer.group_add(
-            group_name,
-            self.channel_name
-        )
+        try:
+            group_name = f'report_{report_id}_progress'
+            await self.channel_layer.group_add(
+                group_name,
+                self.channel_name
+            )
 
-        await self.send_json({
-            'type': 'subscribed',
-            'report_id': report_id
-        })
+            await self.send_json({
+                'type': 'subscribed',
+                'report_id': report_id
+            })
+        except Exception as e:
+            logger.error(f"Error subscribing to report {report_id}: {e}")
 
     # Handler methods for group messages
     async def report_progress(self, event):
@@ -184,19 +227,57 @@ class ReportDashboardConsumer(AsyncJsonWebsocketConsumer):
 
     @database_sync_to_async
     def get_dashboard_stats(self):
-        """Get current dashboard statistics with schema context"""
+        """Get current dashboard statistics with tenant context"""
+        from django.db import connection
+
+        # Get tenant from scope (set by TenantMainMiddleware)
+        tenant = self.tenant
+
+        if not tenant:
+            logger.error("No tenant found in consumer")
+            return self._get_empty_stats()
+
+        try:
+            # Set the schema for this connection
+            connection.set_schema(tenant.schema_name)
+            logger.debug(f"Set schema to: {tenant.schema_name}")
+            return self._calculate_dashboard_stats()
+        except Exception as e:
+            logger.error(f"Error getting dashboard stats: {e}", exc_info=True)
+            return self._get_empty_stats()
+        finally:
+            # Always reset to public schema
+            try:
+                connection.set_schema_to_public()
+            except Exception as e:
+                logger.error(f"Error resetting schema: {e}")
+
+    def _calculate_dashboard_stats(self):
+        """Calculate dashboard stats within the current schema context"""
         from sales.models import Sale
         from inventory.models import Stock
         from invoices.models import Invoice
         from stores.models import Store
         from django.db.models import Sum, Count, F
-        from django.db import connection
 
         # Check cache first
         cache_key = f'dashboard_stats_{self.user.id}'
         cached_stats = cache.get(cache_key)
         if cached_stats:
+            logger.debug(f"Returning cached stats for user {self.user.id}")
             return cached_stats
+
+        # Get user's accessible stores
+        if self.user.is_superuser or (hasattr(self.user, 'primary_role') and
+                                      self.user.primary_role and
+                                      self.user.primary_role.priority >= 90):
+            stores = Store.objects.filter(is_active=True)
+        else:
+            stores = self.user.stores.filter(is_active=True)
+
+        today = timezone.now().date()
+        week_ago = today - timedelta(days=7)
+        month_ago = today - timedelta(days=30)
 
         # Helper function to safely convert values
         def convert_value(value):
@@ -206,94 +287,73 @@ class ReportDashboardConsumer(AsyncJsonWebsocketConsumer):
                 return 0
             return value
 
-        # Get user's schema context
-        schema_name = getattr(connection, 'schema_name', None)
-        if not schema_name:
-            # If no schema context, return empty stats
-            return self._get_empty_stats()
+        # Sales statistics
+        sales_today_result = Sale.objects.filter(
+            store__in=stores,
+            created_at__date=today,
+            is_completed=True
+        ).aggregate(total=Sum('total_amount'))
 
-        # Execute queries within schema context
-        with connection.cursor() as cursor:
-            # Set the schema context
-            cursor.execute(f"SET search_path TO {schema_name}")
+        sales_week_result = Sale.objects.filter(
+            store__in=stores,
+            created_at__date__gte=week_ago,
+            is_completed=True
+        ).aggregate(total=Sum('total_amount'))
 
-            # Get user's accessible stores
-            if self.user.is_superuser or (hasattr(self.user,
-                                                  'primary_role') and self.user.primary_role and self.user.primary_role.priority >= 90):
-                stores = Store.objects.filter(is_active=True)
-            else:
-                stores = self.user.stores.filter(is_active=True)
+        sales_month_result = Sale.objects.filter(
+            store__in=stores,
+            created_at__date__gte=month_ago,
+            is_completed=True
+        ).aggregate(total=Sum('total_amount'))
 
-            today = timezone.now().date()
-            week_ago = today - timedelta(days=7)
-            month_ago = today - timedelta(days=30)
+        # Convert Decimal values to float
+        stats = {
+            'sales_today': convert_value(sales_today_result['total']),
+            'sales_week': convert_value(sales_week_result['total']),
+            'sales_month': convert_value(sales_month_result['total']),
 
-            # Sales statistics
-            sales_today_result = Sale.objects.filter(
+            'transactions_today': Sale.objects.filter(
                 store__in=stores,
                 created_at__date=today,
                 is_completed=True
-            ).aggregate(total=Sum('total_amount'))
+            ).count(),
 
-            sales_week_result = Sale.objects.filter(
+            # Inventory alerts
+            'low_stock_count': Stock.objects.filter(
                 store__in=stores,
-                created_at__date__gte=week_ago,
-                is_completed=True
-            ).aggregate(total=Sum('total_amount'))
+                quantity__lte=F('low_stock_threshold'),
+                quantity__gt=0
+            ).count(),
 
-            sales_month_result = Sale.objects.filter(
+            'out_of_stock_count': Stock.objects.filter(
                 store__in=stores,
-                created_at__date__gte=month_ago,
-                is_completed=True
-            ).aggregate(total=Sum('total_amount'))
+                quantity=0
+            ).count(),
 
-            # Convert Decimal values to float
-            stats = {
-                'sales_today': convert_value(sales_today_result['total']),
-                'sales_week': convert_value(sales_week_result['total']),
-                'sales_month': convert_value(sales_month_result['total']),
+            # Invoice statistics
+            'pending_invoices': Invoice.objects.filter(
+                store__in=stores,
+                status__in=['SENT', 'PARTIALLY_PAID']
+            ).count(),
 
-                'transactions_today': Sale.objects.filter(
-                    store__in=stores,
-                    created_at__date=today,
-                    is_completed=True
-                ).count(),
+            'overdue_invoices': Invoice.objects.filter(
+                store__in=stores,
+                status__in=['SENT', 'PARTIALLY_PAID'],
+                due_date__lt=today
+            ).count(),
 
-                # Inventory alerts
-                'low_stock_count': Stock.objects.filter(
-                    store__in=stores,
-                    quantity__lte=F('low_stock_threshold'),
-                    quantity__gt=0
-                ).count(),
-
-                'out_of_stock_count': Stock.objects.filter(
-                    store__in=stores,
-                    quantity=0
-                ).count(),
-
-                # Invoice statistics
-                'pending_invoices': Invoice.objects.filter(
-                    store__in=stores,
-                    status__in=['SENT', 'PARTIALLY_PAID']
-                ).count(),
-
-                'overdue_invoices': Invoice.objects.filter(
-                    store__in=stores,
-                    status__in=['SENT', 'PARTIALLY_PAID'],
-                    due_date__lt=today
-                ).count(),
-
-                # EFRIS compliance
-                'pending_fiscalization': Sale.objects.filter(
-                    store__in=stores,
-                    is_completed=True,
-                    is_fiscalized=False,
-                    created_at__date__gte=today - timedelta(days=7)
-                ).count(),
-            }
+            # EFRIS compliance
+            'pending_fiscalization': Sale.objects.filter(
+                store__in=stores,
+                is_completed=True,
+                is_fiscalized=False,
+                created_at__date__gte=today - timedelta(days=7)
+            ).count(),
+        }
 
         # Cache for 2 minutes
         cache.set(cache_key, stats, 120)
+        logger.debug(f"Calculated and cached stats for user {self.user.id}")
 
         return stats
 
@@ -313,101 +373,116 @@ class ReportDashboardConsumer(AsyncJsonWebsocketConsumer):
 
     @database_sync_to_async
     def get_alerts(self):
-        """Get current alerts with schema context"""
+        """Get current alerts with tenant context"""
+        from django.db import connection
+
+        # Get tenant from scope
+        tenant = self.tenant
+
+        if not tenant:
+            logger.error("No tenant found in consumer")
+            return []
+
+        try:
+            # Set the schema for this connection
+            connection.set_schema(tenant.schema_name)
+            return self._calculate_alerts()
+        except Exception as e:
+            logger.error(f"Error getting alerts: {e}", exc_info=True)
+            return []
+        finally:
+            # Always reset to public schema
+            try:
+                connection.set_schema_to_public()
+            except Exception as e:
+                logger.error(f"Error resetting schema: {e}")
+
+    def _calculate_alerts(self):
+        """Calculate alerts within the current schema context"""
         from inventory.models import Stock
         from sales.models import Sale
         from stores.models import Store
         from django.db.models import F
-        from django.db import connection
 
         alerts = []
 
-        # Get user's schema context
-        schema_name = getattr(connection, 'schema_name', None)
-        if not schema_name:
-            # If no schema context, return empty alerts
-            return alerts
+        # Get user's accessible stores
+        if self.user.is_superuser or (hasattr(self.user, 'primary_role') and
+                                      self.user.primary_role and
+                                      self.user.primary_role.priority >= 90):
+            stores = Store.objects.filter(is_active=True)
+        else:
+            stores = self.user.stores.filter(is_active=True)
 
-        # Execute queries within schema context
-        with connection.cursor() as cursor:
-            # Set the schema context
-            cursor.execute(f"SET search_path TO {schema_name}")
+        # Low stock alerts
+        low_stock = Stock.objects.filter(
+            store__in=stores,
+            quantity__lte=F('low_stock_threshold'),
+            quantity__gt=0
+        ).select_related('product', 'store')[:10]
 
-            # Get user's accessible stores
-            if self.user.is_superuser or (hasattr(self.user,
-                                                  'primary_role') and self.user.primary_role and self.user.primary_role.priority >= 90):
-                stores = Store.objects.filter(is_active=True)
-            else:
-                stores = self.user.stores.filter(is_active=True)
+        for stock in low_stock:
+            alerts.append({
+                'type': 'low_stock',
+                'severity': 'warning',
+                'message': f'{stock.product.name} is low in stock at {stock.store.name}',
+                'product_id': stock.product.id,
+                'store_id': stock.store.id,
+                'quantity': float(stock.quantity) if isinstance(stock.quantity, Decimal) else stock.quantity,
+                'threshold': float(stock.low_stock_threshold) if isinstance(stock.low_stock_threshold,
+                                                                            Decimal) else stock.low_stock_threshold
+            })
 
-            # Low stock alerts
-            low_stock = Stock.objects.filter(
-                store__in=stores,
-                quantity__lte=F('low_stock_threshold'),
-                quantity__gt=0
-            ).select_related('product', 'store')[:10]
+        # Out of stock alerts
+        out_of_stock = Stock.objects.filter(
+            store__in=stores,
+            quantity=0
+        ).select_related('product', 'store')[:10]
 
-            for stock in low_stock:
-                alerts.append({
-                    'type': 'low_stock',
-                    'severity': 'warning',
-                    'message': f'{stock.product.name} is low in stock at {stock.store.name}',
-                    'product_id': stock.product.id,
-                    'store_id': stock.store.id,
-                    'quantity': float(stock.quantity) if isinstance(stock.quantity, Decimal) else stock.quantity,
-                    'threshold': float(stock.low_stock_threshold) if isinstance(stock.low_stock_threshold,
-                                                                                Decimal) else stock.low_stock_threshold
-                })
+        for stock in out_of_stock:
+            alerts.append({
+                'type': 'out_of_stock',
+                'severity': 'critical',
+                'message': f'{stock.product.name} is out of stock at {stock.store.name}',
+                'product_id': stock.product.id,
+                'store_id': stock.store.id
+            })
 
-            # Out of stock alerts
-            out_of_stock = Stock.objects.filter(
-                store__in=stores,
-                quantity=0
-            ).select_related('product', 'store')[:10]
+        # Pending fiscalization alerts
+        today = timezone.now().date()
+        pending_fiscal = Sale.objects.filter(
+            store__in=stores,
+            is_completed=True,
+            is_fiscalized=False,
+            created_at__date__gte=today - timedelta(days=7)
+        ).count()
 
-            for stock in out_of_stock:
-                alerts.append({
-                    'type': 'out_of_stock',
-                    'severity': 'critical',
-                    'message': f'{stock.product.name} is out of stock at {stock.store.name}',
-                    'product_id': stock.product.id,
-                    'store_id': stock.store.id
-                })
+        if pending_fiscal > 0:
+            alerts.append({
+                'type': 'efris_pending',
+                'severity': 'warning',
+                'message': f'{pending_fiscal} sales pending EFRIS fiscalization',
+                'count': pending_fiscal
+            })
 
-            # Pending fiscalization alerts
-            today = timezone.now().date()
-            pending_fiscal = Sale.objects.filter(
-                store__in=stores,
-                is_completed=True,
-                is_fiscalized=False,
-                created_at__date__gte=today - timedelta(days=7)
-            ).count()
+        # Failed fiscalization alerts
+        failed_fiscal = Sale.objects.filter(
+            store__in=stores,
+            is_completed=True,
+            fiscalization_failed=True,
+            created_at__date__gte=today - timedelta(days=7)
+        ).count()
 
-            if pending_fiscal > 0:
-                alerts.append({
-                    'type': 'efris_pending',
-                    'severity': 'warning',
-                    'message': f'{pending_fiscal} sales pending EFRIS fiscalization',
-                    'count': pending_fiscal
-                })
-
-            # Failed fiscalization alerts
-            failed_fiscal = Sale.objects.filter(
-                store__in=stores,
-                is_completed=True,
-                fiscalization_failed=True,
-                created_at__date__gte=today - timedelta(days=7)
-            ).count()
-
-            if failed_fiscal > 0:
-                alerts.append({
-                    'type': 'efris_failed',
-                    'severity': 'critical',
-                    'message': f'{failed_fiscal} sales failed EFRIS fiscalization',
-                    'count': failed_fiscal
-                })
+        if failed_fiscal > 0:
+            alerts.append({
+                'type': 'efris_failed',
+                'severity': 'critical',
+                'message': f'{failed_fiscal} sales failed EFRIS fiscalization',
+                'count': failed_fiscal
+            })
 
         return alerts
+
 
 class ReportGenerationConsumer(AsyncJsonWebsocketConsumer):
     """
@@ -417,8 +492,14 @@ class ReportGenerationConsumer(AsyncJsonWebsocketConsumer):
     async def connect(self):
         self.user = self.scope['user']
         self.report_id = self.scope['url_route']['kwargs'].get('report_id')
+        self.tenant = self.scope.get('tenant')
 
         if not self.user.is_authenticated:
+            await self.close()
+            return
+
+        if not self.tenant:
+            logger.error(f"No tenant in scope for report generation WebSocket")
             await self.close()
             return
 
@@ -451,13 +532,18 @@ class ReportGenerationConsumer(AsyncJsonWebsocketConsumer):
 
     async def receive_json(self, content):
         """Handle incoming messages"""
-        message_type = content.get('type')
+        try:
+            message_type = content.get('type')
 
-        if message_type == 'request_status':
-            await self.send_report_status()
+            if message_type == 'request_status':
+                await self.send_report_status()
 
-        elif message_type == 'cancel_generation':
-            await self.cancel_report_generation()
+            elif message_type == 'cancel_generation':
+                result = await self.cancel_report_generation()
+                await self.send_json(result)
+
+        except Exception as e:
+            logger.error(f"Error handling report generation message: {e}")
 
     async def generation_started(self, event):
         """Notify that report generation has started"""
@@ -500,16 +586,24 @@ class ReportGenerationConsumer(AsyncJsonWebsocketConsumer):
     def verify_report_access(self):
         """Verify user has access to this report"""
         from .models import GeneratedReport
-        from django.db.models import Q
+        from django.db import connection
+
+        tenant = self.tenant
+        if not tenant:
+            return False
 
         try:
+            connection.set_schema(tenant.schema_name)
+
             report = GeneratedReport.objects.get(id=self.report_id)
 
             # Check if user is owner or has access
             if report.generated_by == self.user:
                 return True
 
-            if self.user.is_superuser or self.user.primary_role and user.primary_role.priority >= 90:
+            if self.user.is_superuser or (hasattr(self.user, 'primary_role') and
+                                          self.user.primary_role and
+                                          self.user.primary_role.priority >= 90):
                 return True
 
             # Check if report is shared
@@ -519,13 +613,40 @@ class ReportGenerationConsumer(AsyncJsonWebsocketConsumer):
             return False
         except GeneratedReport.DoesNotExist:
             return False
+        except Exception as e:
+            logger.error(f"Error verifying report access: {e}")
+            return False
+        finally:
+            connection.set_schema_to_public()
+
+    async def send_report_status(self):
+        """Send current report status"""
+        try:
+            status_data = await self._get_report_status()
+            await self.send_json(status_data)
+        except Exception as e:
+            logger.error(f"Error sending report status: {e}")
+            await self.send_json({
+                'type': 'error',
+                'error': 'Could not retrieve report status'
+            })
 
     @database_sync_to_async
-    def send_report_status(self):
-        """Send current report status"""
+    def _get_report_status(self):
+        """Get report status from database"""
         from .models import GeneratedReport
+        from django.db import connection
+
+        tenant = self.tenant
+        if not tenant:
+            return {
+                'type': 'error',
+                'error': 'No tenant context'
+            }
 
         try:
+            connection.set_schema(tenant.schema_name)
+
             report = GeneratedReport.objects.get(id=self.report_id)
 
             status_data = {
@@ -548,14 +669,23 @@ class ReportGenerationConsumer(AsyncJsonWebsocketConsumer):
                 'type': 'error',
                 'error': 'Report not found'
             }
+        finally:
+            connection.set_schema_to_public()
 
     @database_sync_to_async
     def cancel_report_generation(self):
         """Cancel ongoing report generation"""
         from .models import GeneratedReport
         from celery import current_app
+        from django.db import connection
+
+        tenant = self.tenant
+        if not tenant:
+            return {'success': False, 'message': 'No tenant context'}
 
         try:
+            connection.set_schema(tenant.schema_name)
+
             report = GeneratedReport.objects.get(id=self.report_id)
 
             if report.status in ['PENDING', 'PROCESSING']:
@@ -572,9 +702,11 @@ class ReportGenerationConsumer(AsyncJsonWebsocketConsumer):
             return {'success': False, 'message': 'Report cannot be cancelled'}
         except GeneratedReport.DoesNotExist:
             return {'success': False, 'message': 'Report not found'}
+        finally:
+            connection.set_schema_to_public()
 
 
-# Utility function to broadcast updates
+# Utility functions
 async def broadcast_dashboard_update(company_id, stats):
     """Broadcast dashboard stats update to all connected clients"""
     from channels.layers import get_channel_layer
