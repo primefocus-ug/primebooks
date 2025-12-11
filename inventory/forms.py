@@ -33,7 +33,7 @@ class VATAwareFormMixin:
             self.fields['tax_rate'].required = False  # Make it not required since we're setting it
             self.fields['tax_rate'].widget.attrs.update({
                 'readonly': True,  # Use readonly instead of disabled
-                'class': 'form-control bg-light'
+                'class': 'form-control dre'
             })
             self.fields['tax_rate'].help_text = "VAT is disabled for your company. Only zero rate is available."
 
@@ -43,7 +43,7 @@ class VATAwareFormMixin:
             self.fields['excise_duty_rate'].required = False  # Make it not required
             self.fields['excise_duty_rate'].widget.attrs.update({
                 'readonly': True,  # Use readonly instead of disabled
-                'class': 'form-control bg-light'
+                'class': 'form-control dre'
             })
             self.fields['excise_duty_rate'].help_text = "Excise duty not applicable when VAT is disabled."
 
