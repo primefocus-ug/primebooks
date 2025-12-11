@@ -94,7 +94,7 @@ urlpatterns = [
     path('roles/<int:pk>/', view.role_detail, name='role_detail'),
     path('roles/<int:pk>/edit/', views.RoleUpdateView.as_view(), name='role_edit'),
     path('roles/<int:pk>/delete/', views.RoleDeleteView.as_view(), name='role_delete'),
-    path('roles/assign-users/', views.UserRoleAssignView.as_view(), name='assign_role_users'),
+    path('roles/assigaun-users/', views.UserRoleAssignView.as_view(), name='assign_role_users'),
 
     # Advanced role management
     path('debug-permissions/',view.debug_permissions),
