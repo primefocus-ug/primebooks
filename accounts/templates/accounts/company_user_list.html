@@ -4,6 +4,7 @@
 {% load static %}
 
 {% block extra_css %}
+<link rel="stylesheet" href="{% static 'themes.css' %}">
 <style>
     .user-avatar {
         width: 40px;
@@ -51,7 +52,7 @@
 {% endblock %}
 
 {% block content %}
-<div class="bg-light">
+<div class="dre">
     <div class="company-header">
         <div class="container">
             <div class="row align-items-center">
@@ -65,6 +66,7 @@
                 <div class="col-md-4 text-end">
                     <div class="d-flex gap-2 justify-content-end">
                         {% if can_add_users %}
+                        {% if perms.accounts.add_customuser %}
                             <a href="{% url 'invite_user' %}" class="btn btn-light">
                                 <i class="fas fa-user-plus me-1"></i> {% trans "Invite User" %}
                             </a>
@@ -74,6 +76,7 @@
                         {% else %}
                             <span class="badge bg-warning">{% trans "User limit reached" %}</span>
                         {% endif %}
+                         {% endif %}
                     </div>
                 </div>
             </div>
@@ -144,10 +147,13 @@
                         <button type="submit" class="btn btn-primary">
                             <i class="fas fa-search me-1"></i> {% trans "Search" %}
                         </button>
+                        {% if perms.accounts.view_customuser %}
                         {% if search_query %}
+                        
                             <a href="{% url 'company_user_list'  %}" class="btn btn-outline-secondary ms-2">
                                 <i class="fas fa-times me-1"></i> {% trans "Clear" %}
                             </a>
+                        {% endif %}
                         {% endif %}
                     </div>
                 </form>
@@ -237,10 +243,12 @@
                                         </td>
                                         <td>
                                             <div class="btn-group" role="group">
+                                                {% if permis.accounts.view_customuser %}
                                                 <a href="{% url 'user_detail' user.pk %}"
                                                    class="btn btn-sm btn-outline-primary action-btn" title="{% trans "View Details" %}">
                                                     <i class="fas fa-eye"></i>
                                                 </a>
+                                                {% endif %}
 
                                                 {% if not user.is_saas_admin and user != request.user %}
                                                     <a href="{% url 'toggle_company_admin'  user_id=user.pk %}"
@@ -248,7 +256,8 @@
                                                        title="{% if user.company_admin %}{% trans "Remove Admin" %}{% else %}{% trans "Make Admin" %}{% endif %}">
                                                         <i class="fas {% if user.company_admin %}fa-user-minus{% else %}fa-user-shield{% endif %}"></i>
                                                     </a>
-
+                                                    {% endif %}
+                                                    {% if perms.accounts.delet_customuser and user != request.user %}
                                                     <a href="{% url 'remove_user_from_company' user_id=user.pk %}"
                                                        class="btn btn-sm btn-outline-danger action-btn"
                                                        onclick="return confirm('{% trans "Are you sure you want to remove this user from the company?" %}')"
@@ -274,10 +283,12 @@
                                 {% trans "No users have been added to this company yet." %}
                             {% endif %}
                         </p>
+                        {% if perms.accounts.add_customuser %}
                         {% if can_add_users %}
                             <a href="{% url 'invite_user' %}" class="btn btn-primary">
                                 <i class="fas fa-user-plus me-1"></i> {% trans "Invite First User" %}
                             </a>
+                        {% endif %}
                         {% endif %}
                     </div>
                 {% endif %}
