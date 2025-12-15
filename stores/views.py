@@ -3,7 +3,7 @@ from django.http import request
 from django.shortcuts import get_object_or_404, redirect, render
 from django.contrib.auth.mixins import LoginRequiredMixin, PermissionRequiredMixin
 from django.contrib import messages
-from django.views.generic import ListView, View
+from django.views.generic import ListView, View, TemplateView
 from django.core.exceptions import PermissionDenied
 from django.views.generic import ListView, DetailView, CreateView, UpdateView, DeleteView
 from django.urls import reverse_lazy, reverse
@@ -13,6 +13,7 @@ from django.views.decorators.http import require_http_methods
 from django.contrib.auth.decorators import login_required, permission_required
 from django.http import HttpResponse, JsonResponse, request
 from django.utils import timezone
+from django.utils.translation import gettext as _
 from datetime import datetime, timedelta
 import json
 import csv
@@ -737,14 +738,86 @@ class SwitchStoreView(LoginRequiredMixin, View):
             return redirect('stores:select_store')
 
 
-class NoStoreAccessView(LoginRequiredMixin, View):
+class NoStoreAccessView(LoginRequiredMixin, TemplateView):
     """
     View shown when user has no store access
     """
     template_name = 'stores/no_store_access.html'
 
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+
+        # Add company info if available
+        if hasattr(self.request, 'company'):
+            context['company'] = self.request.company
+
+        # Add user info
+        context['user'] = self.request.user
+
+        # Check if user might have access through company-wide settings
+        if hasattr(self.request, 'company'):
+            context['accessible_stores'] = Store.objects.filter(
+                company=self.request.company,
+                is_active=True,
+                accessible_by_all=True
+            ).exists()
+
+        return context
+
+
+class CheckStoreAccessView(LoginRequiredMixin, View):
+    """
+    API endpoint to check if user has gained store access
+    """
+
     def get(self, request):
-        return render(request, self.template_name)
+        from django.contrib.auth import get_user_model
+        User = get_user_model()
+
+        user = request.user
+        has_access = False
+        accessible_stores = []
+
+        try:
+            # Check through multiple access methods
+            if hasattr(user, 'stores'):
+                # Direct store assignment
+                accessible_stores = user.stores.filter(is_active=True)
+
+            if not accessible_stores and hasattr(user, 'managed_stores'):
+                # Store manager assignment
+                accessible_stores = user.managed_stores.filter(is_active=True)
+
+            if not accessible_stores and hasattr(request, 'company'):
+                # Company-wide access
+                accessible_stores = Store.objects.filter(
+                    company=request.company,
+                    is_active=True,
+                    accessible_by_all=True
+                )
+
+            # Check store access permissions
+            if not accessible_stores:
+                accessible_stores = Store.objects.filter(
+                    access_permissions__user=user,
+                    access_permissions__is_active=True,
+                    is_active=True
+                ).distinct()
+
+            has_access = accessible_stores.exists()
+
+            return JsonResponse({
+                'has_access': has_access,
+                'store_count': accessible_stores.count(),
+                'message': _('Access granted') if has_access else _('No store access')
+            })
+
+        except Exception as e:
+            return JsonResponse({
+                'has_access': False,
+                'error': str(e),
+                'message': _('Error checking access')
+            }, status=500)
 
 
 @login_required

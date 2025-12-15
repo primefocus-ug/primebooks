@@ -11,6 +11,8 @@ urlpatterns = [
 
     # Store CRUD
     path('stores/', views.StoreListView.as_view(), name='store_list'),
+    path('no-access/', views.NoStoreAccessView.as_view(), name='no_store_access'),
+    path('check-access/', views.CheckStoreAccessView.as_view(), name='check_access'),
     path('stores/create/', views.StoreCreateView.as_view(), name='store_creatte'),
     path('stores/<int:pk>/', views.StoreDetailView.as_view(), name='store_detail'),
     path('stores/<int:pk>/edit/', views.StoreUpdateView.as_view(), name='store_edit'),

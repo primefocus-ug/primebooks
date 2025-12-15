@@ -132,7 +132,7 @@ def get_dashboard_url(user):
         if user.has_perm(item['permission']):
             return reverse(item['url_name'])
 
-    return reverse('no_access')
+    return reverse('login')
 
 
 def custom_login(request):
@@ -5376,9 +5376,9 @@ def mark_log_reviewed(request, log_id):
         log.save()
 
         messages.success(request, _('Audit log marked as reviewed'))
-        return redirect('accounts:audit_log_detail', log_id=log_id)
+        return redirect('audit_log_detail', log_id=log_id)
 
-    return redirect('accounts:saas_admin_audit_log')
+    return redirect('saas_admin_audit_log')
 
 
 @login_required

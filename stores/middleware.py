@@ -65,7 +65,7 @@ class StoreAccessMiddleware(MiddlewareMixin):
                         request,
                         "You have not been assigned to any store. Please contact your administrator."
                     )
-                    return redirect("accounts:no_store_access")
+                    return redirect("stores:no_store_access")
 
         return None
 
