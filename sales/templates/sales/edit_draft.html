@@ -1,0 +1,205 @@
+{% extends "sales/create_sale_enhanced.html" %}
+{% load i18n %}
+{% load static %}
+
+{% block page_title %}{% trans "Edit Draft Sale" %}{% endblock %}
+
+{% block breadcrumb_items %}
+<li class="breadcrumb-item"><a href="{% url 'sales:sales_list' %}?status=DRAFT">{% trans "Draft Sales" %}</a></li>
+<li class="breadcrumb-item active" aria-current="page">{% trans "Edit Draft" %}</li>
+{% endblock %}
+
+{% block page_actions %}
+<button type="button" class="btn btn-outline-danger me-2" onclick="confirmDeleteDraft()">
+<i class="bi bi-trash me-1"></i>{% trans "Delete Draft" %}
+</button>
+<button type="button" class="btn btn-outline-primary" data-bs-toggle="modal" data-bs-target="#draftHistoryModal">
+<i class="bi bi-clock-history me-1"></i>{% trans "History" %}
+</button>
+{{ block.super }}
+{% endblock %}
+
+{% block sales_content %}
+{{ block.super }}
+{% endblock %}
+
+{% block extra_js %}
+{{ block.super }}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+                                                         // Load existing draft data
+loadDraftData();
+
+// Override save functions for draft editing
+window.saveAsDraft = function(fromPreview = false) {
+updateDraft();
+};
+
+window.completeSale = function() {
+if (!validateForm()) return;
+
+if (!confirm('{% trans "Are you sure you want to complete this draft sale?" %}')) {
+return;
+}
+
+const formData = new FormData(document.getElementById('saleForm'));
+formData.append('action', 'complete_draft');
+formData.append('draft_id', '{{ sale.id }}');
+
+fetch('{% url "sales:edit_draft" sale.pk %}', {
+    method: 'POST',
+    body: formData,
+    headers: {
+        'X-CSRFToken': window.csrfToken
+    }
+})
+.then(response => response.json())
+.then(data => {
+if (data.success) {
+    showAlert('{% trans "Draft completed successfully" %}', 'success');
+window.location.href = data.redirect_url;
+} else {
+    showAlert(data.error, 'danger');
+}
+})
+.catch(error => {
+    console.error('Error:', error);
+showAlert('{% trans "Error completing draft" %}', 'danger');
+});
+};
+});
+
+function loadDraftData() {
+                         // Set document type
+document.getElementById('documentType').value = '{{ sale.document_type }}';
+document.querySelectorAll('.document-badge').forEach(badge => {
+    badge.classList.toggle('active', badge.dataset.type === '{{ sale.document_type }}');
+});
+
+// Set store
+document.getElementById('store').value = '{{ sale.store.id }}';
+
+// Set customer
+{% if sale.customer %}
+document.getElementById('customer').value = '{{ sale.customer.id }}';
+document.getElementById('customerSearch').value = '{{ sale.customer.name }}';
+{% endif %}
+
+// Set other fields
+document.getElementById('notes').value = '{{ sale.notes|default:"" }}';
+document.getElementById('discount_amount').value = '{{ sale.discount_amount|default:"0" }}';
+document.getElementById('payment_method').value = '{{ sale.payment_method }}';
+
+// Load items
+{% for item in items %}
+items.push({
+id: '{{ item.product.id|default:item.service.id }}',
+type: '{{ item.item_type }}',
+name: '{{ item.item_name|escapejs }}',
+quantity: {{ item.quantity }},
+unit_price: {{ item.unit_price }},
+tax_rate: '{{ item.tax_rate }}',
+discount: {{ item.discount }},
+total_price: {{ item.total_price }}
+});
+{% endfor %}
+
+updateItemsTable();
+updateTotals();
+}
+
+function updateDraft() {
+    const formData = new FormData(document.getElementById('saleForm'));
+formData.append('action', 'update_draft');
+
+fetch('{% url "sales:edit_draft" sale.pk %}', {
+    method: 'POST',
+    body: formData,
+    headers: {
+'X-CSRFToken': window.csrfToken
+}
+})
+.then(response => response.json())
+.then(data => {
+if (data.success) {
+showAlert('{% trans "Draft updated successfully" %}', 'success');
+} else {
+showAlert(data.error, 'danger');
+}
+})
+.catch(error => {
+    console.error('Error:', error);
+showAlert('{% trans "Error updating draft" %}', 'danger');
+});
+}
+
+function confirmDeleteDraft() {
+if (!confirm('{% trans "Are you sure you want to delete this draft? This action cannot be undone." %}')) {
+return;
+}
+
+fetch('{% url "sales:delete_draft" sale.pk %}', {
+    method: 'DELETE',
+    headers: {
+        'X-CSRFToken': window.csrfToken
+    }
+})
+.then(response => response.json())
+.then(data => {
+if (data.success) {
+    showAlert('{% trans "Draft deleted successfully" %}', 'success');
+setTimeout(() => {
+    window.location.href = '{% url "sales:sales_list" %}?status=DRAFT';
+}, 1000);
+} else {
+    showAlert(data.error, 'danger');
+}
+})
+.catch(error => {
+    console.error('Error:', error);
+showAlert('{% trans "Error deleting draft" %}', 'danger');
+});
+}
+</script>
+  {% endblock %}
+
+<!-- Draft History Modal -->
+<div class="modal fade" id="draftHistoryModal" tabindex="-1" aria-hidden="true">
+<div class="modal-dialog">
+<div class="modal-content">
+<div class="modal-header">
+<h5 class="modal-title">{% trans "Draft History" %}</h5>
+<button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+</div>
+<div class="modal-body">
+<div class="list-group list-group-flush">
+<div class="list-group-item">
+<div class="d-flex w-100 justify-content-between">
+<small class="text-muted">{% trans "Created" %}</small>
+<small>{{ sale.created_at|date:"M d, Y H:i" }}</small>
+</div>
+</div>
+<div class="list-group-item">
+<div class="d-flex w-100 justify-content-between">
+<small class="text-muted">{% trans "Last Updated" %}</small>
+<small>{{ sale.updated_at|date:"M d, Y H:i" }}</small>
+</div>
+</div>
+<div class="list-group-item">
+<div class="d-flex w-100 justify-content-between">
+<small class="text-muted">{% trans "Status" %}</small>
+<span class="badge bg-warning">{% trans "DRAFT" %}</span>
+</div>
+</div>
+<div class="list-group-item">
+<div class="d-flex w-100 justify-content-between">
+<small class="text-muted">{% trans "Created By" %}</small>
+<small>{{ sale.created_by.get_full_name }}</small>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+

@@ -1,9 +1,8 @@
 {% extends "base.html" %}
 {% load i18n %}
 {% load static %}
-{% load custom_filters %}
 
-{% block title %}{% trans "Create New Sale" %} | {% trans "Sales" %} | Prime Book{% endblock %}
+{% block title %}{% trans "Create New Sale" %} | {{ company.name }}{% endblock %}
 
 {% block extra_css %}
 <link rel="stylesheet" href="{% static 'themes.css' %}">
@@ -21,6 +20,8 @@
     --success-gradient: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
     --warning-gradient: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
     --card-hover: rgba(0, 0, 0, 0.05);
+    --primary-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    --success-gradient: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
 }
 
 [data-bs-theme="dark"] {
@@ -118,7 +119,69 @@ body {
 .item-type-btn:hover:not(.active) {
     background: var(--card-hover);
 }
+.tenant-header {
+    background: var(--primary-gradient);
+    color: white;
+    padding: 1rem;
+    border-radius: 8px;
+    margin-bottom: 1rem;
+}
 
+.item-badge {
+    font-size: 0.7rem;
+    padding: 0.25rem 0.5rem;
+    border-radius: 12px;
+    font-weight: 600;
+}
+
+.product-badge {
+    background: var(--success-gradient);
+    color: white;
+}
+
+.service-badge {
+    background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+    color: white;
+}
+
+/* Customer dropdown improvements */
+.customer-dropdown {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    max-height: 400px;
+    overflow: hidden;
+    z-index: 1000;
+    margin-top: 0.5rem;
+    display: none;
+}
+
+.customer-dropdown.show {
+    display: block;
+}
+
+.customer-list-item {
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid var(--border-color);
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+.customer-list-item:hover {
+    background: var(--card-hover);
+}
+
+.efris-query-section {
+    background: var(--bg-secondary);
+    padding: 1.5rem;
+    border-radius: 8px;
+    margin-top: 1rem;
+}
 /* Service-specific badges */
 .service-badge {
     background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
@@ -779,31 +842,29 @@ body {
 </style>
 {% endblock %}
 
-{% block page_header %}
-<div class="sale-header">
+{% block content %}
+<!-- Tenant Context Display -->
+{% if company %}
+<div class="tenant-header">
     <div class="d-flex align-items-center justify-content-between">
         <div>
-            <h1 class="h2 mb-2">
-                <i class="bi bi-cart-plus me-2"></i>
-                {% trans "Create New Sale" %}
-            </h1>
-            <p class="mb-0 opacity-90">
-                {% trans "Browse products & services and build your sale" %}
-            </p>
+            <h5 class="mb-0">
+                <i class="bi bi-building me-2"></i>{{ company.name }}
+            </h5>
+            <small>TIN: {{ company.tin|default:"Not set" }}</small>
         </div>
-        <div class="text-end">
-            <div class="mb-2">
-                <span class="badge bg-light text-dark px-3 py-2">
-                    <i class="bi bi-calendar3 me-1"></i>
-                    {{ "now"|date:"M d, Y" }}
-                </span>
-            </div>
+        <div>
+            {% if company.efris_enabled %}
+            <span class="badge bg-success">
+                <i class="bi bi-check-circle me-1"></i>EFRIS Enabled
+            </span>
+            {% endif %}
         </div>
     </div>
 </div>
-{% endblock %}
+{% endif %}
 
-{% block content %}
+<!-- Sale Creation Form -->
 <form id="createSaleForm" method="post" action="{% url 'sales:create_sale' %}">
     {% csrf_token %}
 
@@ -811,72 +872,114 @@ body {
         <!-- Products/Services Section (Left/Main) -->
         <div class="col-lg-8">
             <!-- Store Selection -->
-            <div class="customer-section">
-                <h6 class="mb-3">
-                    <i class="bi bi-shop me-2"></i>{% trans "Store Selection" %}
-                </h6>
-                <select name="store" id="storeSelect" class="form-select" required>
-                    <option value="">{% trans "-- Select Store --" %}</option>
-                    {% for store in stores %}
-                    <option value="{{ store.id }}" {% if store.id == default_store.id %}selected{% endif %}>
-                        {{ store.name }} ({{ store.code }})
-                    </option>
-                    {% endfor %}
-                </select>
+            <div class="card mb-3">
+                <div class="card-body">
+                    <h6 class="card-title mb-3">
+                        <i class="bi bi-shop me-2"></i>{% trans "Store Selection" %}
+                    </h6>
+                    <select name="store" id="storeSelect" class="form-select" required>
+                        <option value="">{% trans "-- Select Store --" %}</option>
+                        {% for store in stores %}
+                        <option value="{{ store.id }}"
+                                {% if default_store and store.id == default_store.id %}selected{% endif %}>
+                            {{ store.name }} ({{ store.code }})
+                        </option>
+                        {% endfor %}
+                    </select>
+                    {% if no_stores_message %}
+                    <div class="alert alert-warning mt-3">
+                        <i class="bi bi-exclamation-triangle me-2"></i>
+                        {{ error_message }}
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+
+            <!-- Document Type Selection -->
+            <div class="card mb-3">
+                <div class="card-body">
+                    <h6 class="card-title mb-3">
+                        <i class="bi bi-file-text me-2"></i>{% trans "Document Type" %}
+                    </h6>
+                    <div class="btn-group w-100" role="group">
+                        <input type="radio" class="btn-check" name="document_type"
+                               id="docReceipt" value="RECEIPT" checked>
+                        <label class="btn btn-outline-primary" for="docReceipt">
+                            <i class="bi bi-receipt me-1"></i>{% trans "Receipt" %}
+                        </label>
+
+                        <input type="radio" class="btn-check" name="document_type"
+                               id="docInvoice" value="INVOICE">
+                        <label class="btn btn-outline-primary" for="docInvoice">
+                            <i class="bi bi-file-earmark-text me-1"></i>{% trans "Invoice" %}
+                        </label>
+
+                        <input type="radio" class="btn-check" name="document_type"
+                               id="docProforma" value="PROFORMA">
+                        <label class="btn btn-outline-primary" for="docProforma">
+                            <i class="bi bi-file-earmark me-1"></i>{% trans "Proforma" %}
+                        </label>
+                    </div>
+                    <!-- Due Date Section (Only for Invoices) -->
+                    <div class="card mb-3" id="dueDateSection" style="display: none;">
+    <div class="card-body">
+        <h6 class="card-title mb-3">
+            <i class="bi bi-calendar me-2"></i>{% trans "Due Date" %}
+        </h6>
+        <input type="date" name="due_date" id="dueDate" class="form-control"
+               min="{{ today|date:'Y-m-d' }}">
+        <small class="text-muted">
+            {% trans "Due date is required for invoices. Default is 30 days from today." %}
+        </small>
+    </div>
+</div>
+                </div>
             </div>
 
             <!-- Item Type Toggle -->
-            <div class="products-section">
-                <div class="item-type-toggle">
-                    <button type="button" class="item-type-btn active" data-type="all" onclick="switchItemType('all')">
-                        <i class="bi bi-grid me-2"></i>{% trans "All Items" %}
-                    </button>
-                    <button type="button" class="item-type-btn" data-type="product" onclick="switchItemType('product')">
-                        <i class="bi bi-box-seam me-2"></i>{% trans "Products Only" %}
-                    </button>
-                    <button type="button" class="item-type-btn" data-type="service" onclick="switchItemType('service')">
-                        <i class="bi bi-gear me-2"></i>{% trans "Services Only" %}
-                    </button>
-                </div>
+            <div class="card mb-3">
+                <div class="card-body">
+                    <div class="btn-group w-100 mb-3" role="group">
+                        <button type="button" class="btn btn-primary active"
+                                data-type="all" onclick="switchItemType('all')">
+                            <i class="bi bi-grid me-1"></i>{% trans "All Items" %}
+                        </button>
+                        <button type="button" class="btn btn-outline-primary"
+                                data-type="product" onclick="switchItemType('product')">
+                            <i class="bi bi-box-seam me-1"></i>{% trans "Products" %}
+                        </button>
+                        <button type="button" class="btn btn-outline-primary"
+                                data-type="service" onclick="switchItemType('service')">
+                            <i class="bi bi-gear me-1"></i>{% trans "Services" %}
+                        </button>
+                    </div>
 
-                <div class="products-header">
-                    <h5 class="mb-0">
-                        <i class="bi bi-grid me-2"></i><span id="itemsHeaderText">{% trans "Products & Services" %}</span>
-                    </h5>
-                    <div class="product-search-bar">
-                        <i class="bi bi-search search-icon-overlay"></i>
-                        <input type="text" class="product-search-input" id="productSearchBar"
+                    <!-- Search Bar -->
+                    <div class="input-group">
+                        <span class="input-group-text">
+                            <i class="bi bi-search"></i>
+                        </span>
+                        <input type="text" class="form-control" id="productSearchBar"
                                placeholder="{% trans 'Search products or services...' %}">
                     </div>
-                </div>
 
-                <!-- Items Grid -->
-                <div class="products-grid" id="productsGrid">
-                    <!-- Items will be loaded here -->
-                </div>
+                    <!-- Items Grid -->
+                    <div id="productsGrid" class="row g-3 mt-3">
+                        <!-- Items loaded via JS -->
+                    </div>
 
-                <!-- Pagination -->
-                <div class="pagination-container">
-                    <button type="button" class="pagination-btn" id="prevPage" disabled>
-                        <i class="bi bi-chevron-left"></i> {% trans "Previous" %}
-                    </button>
-                    <span class="pagination-info" id="paginationInfo">Page 1 of 1</span>
-                    <button type="button" class="pagination-btn" id="nextPage" disabled>
-                        {% trans "Next" %} <i class="bi bi-chevron-right"></i>
-                    </button>
-                </div>
+                    <!-- Loading/Empty States -->
+                    <div id="productsLoading" class="text-center py-4" style="display: none;">
+                        <div class="spinner-border text-primary" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                        <p class="mt-2">{% trans "Loading items..." %}</p>
+                    </div>
 
-                <!-- Loading State -->
-                <div class="text-center py-5" id="productsLoading" style="display: none;">
-                    <div class="spinner mx-auto mb-3"></div>
-                    <p>{% trans "Loading items..." %}</p>
-                </div>
-
-                <!-- Empty State -->
-                <div class="cart-empty" id="productsEmpty" style="display: none;">
-                    <div class="empty-icon"><i class="bi bi-box-seam"></i></div>
-                    <h5>{% trans "No Items Found" %}</h5>
-                    <p>{% trans "Try adjusting your search or select a store" %}</p>
+                    <div id="productsEmpty" class="text-center py-4" style="display: none;">
+                        <i class="bi bi-inbox" style="font-size: 3rem; opacity: 0.3;"></i>
+                        <p class="mt-2">{% trans "No items found" %}</p>
+                    </div>
                 </div>
             </div>
         </div>
@@ -884,243 +987,145 @@ body {
         <!-- Cart & Actions (Right/Sidebar) -->
         <div class="col-lg-4">
             <!-- Customer Selection -->
-            <div class="customer-section">
-    <div class="d-flex justify-content-between align-items-center mb-3">
-        <h6 class="mb-0">
-            <i class="bi bi-person me-2"></i>{% trans "Customer" %}
-        </h6>
-        <button type="button" class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#newCustomerModal">
-            <i class="bi bi-plus"></i> {% trans "New" %}
-        </button>
-    </div>
-
-    <!-- Customer Search Tabs -->
-    <ul class="nav nav-tabs mb-3" id="customerSearchTabs" role="tablist">
-        <li class="nav-item" role="presentation">
-            <button class="nav-link active" id="search-existing-tab" data-bs-toggle="tab"
-                    data-bs-target="#search-existing" type="button" role="tab">
-                <i class="bi bi-search me-1"></i>{% trans "Search Existing" %}
-            </button>
-        </li>
-        <li class="nav-item" role="presentation">
-            <button class="nav-link" id="query-efris-tab" data-bs-toggle="tab"
-                    data-bs-target="#query-efris" type="button" role="tab">
-                <i class="bi bi-shield-check me-1"></i>{% trans "Query EFRIS by TIN" %}
-            </button>
-        </li>
-    </ul>
-
-    <div class="tab-content" id="customerSearchTabContent">
-        <!-- Existing Customer Search Tab -->
-        <div class="tab-pane fade show active" id="search-existing" role="tabpanel">
-            <div class="customer-search-container">
-                <div class="input-group">
-                    <span class="input-group-text">
-                        <i class="bi bi-search"></i>
-                    </span>
-                    <input type="text" class="form-control" id="customerSearch"
-                           placeholder="{% trans 'Search customers by name or phone...' %}"
-                           autocomplete="off"
-                           onfocus="loadFrequentCustomers()">
-                </div>
-
-                <!-- Customer List Dropdown -->
-                <div class="customer-dropdown" id="customerDropdown" style="display: none;">
-                    <div class="customer-list-header">
-                        <small class="text-muted" id="customerListTitle">
-                            <i class="bi bi-clock-history me-1"></i>
-                            {% trans "Frequent Customers" %}
-                        </small>
-                    </div>
-                    <div class="customer-list" id="customerList">
-                        <!-- Customer items will be loaded here -->
-                    </div>
-                    <div class="customer-list-loading" id="customerListLoading" style="display: none;">
-                        <div class="text-center py-3">
-                            <div class="spinner-border spinner-border-sm text-primary" role="status">
-                                <span class="visually-hidden">{% trans "Loading..." %}</span>
-                            </div>
-                            <p class="small text-muted mb-0 mt-2">{% trans "Loading customers..." %}</p>
-                        </div>
-                    </div>
-                    <div class="customer-list-empty" id="customerListEmpty" style="display: none;">
-                        <div class="text-center py-3">
-                            <i class="bi bi-person-x text-muted" style="font-size: 2rem;"></i>
-                            <p class="small text-muted mb-0 mt-2">{% trans "No customers found" %}</p>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- EFRIS Query Tab -->
-        <div class="tab-pane fade" id="query-efris" role="tabpanel">
-            <div class="efris-query-container">
-                <div class="alert alert-info d-flex align-items-start mb-3">
-                    <i class="bi bi-info-circle me-2 mt-1"></i>
-                    <div>
-                        <strong>{% trans "Query EFRIS Database" %}</strong><br>
-                        <small>{% trans "Search for registered taxpayers using their TIN. The system will automatically create a customer record from EFRIS data." %}</small>
-                    </div>
-                </div>
-
-                <div class="row g-3">
-                    <div class="col-md-8">
-                        <label class="form-label">{% trans "Taxpayer TIN" %} <span class="text-danger">*</span></label>
-                        <input type="text" class="form-control" id="taxpayerTIN"
-                               placeholder="{% trans 'Enter TIN (e.g., 1026925503)' %}" maxlength="20">
-                    </div>
-                    <div class="col-md-4">
-                        <label class="form-label">{% trans "NIN/BRN (Optional)" %}</label>
-                        <input type="text" class="form-control" id="taxpayerNINBRN"
-                               placeholder="{% trans 'NIN or BRN' %}" maxlength="20">
-                    </div>
-                    <div class="col-12">
-                        <button type="button" class="btn btn-primary w-100" onclick="queryEFRISTaxpayer()" id="queryEFRISBtn">
-                            <i class="bi bi-shield-search me-2"></i>{% trans "Query EFRIS" %}
+            <div class="card mb-3">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <h6 class="mb-0">
+                            <i class="bi bi-person me-2"></i>{% trans "Customer" %}
+                        </h6>
+                        <button type="button" class="btn btn-sm btn-primary"
+                                data-bs-toggle="modal" data-bs-target="#newCustomerModal">
+                            <i class="bi bi-plus"></i> {% trans "New" %}
                         </button>
                     </div>
-                </div>
 
-                <!-- Query Results -->
-                <div id="efrisQueryResults" class="mt-3" style="display: none;">
-                    <div class="card border-success">
-                        <div class="card-header bg-success text-white">
-                            <h6 class="mb-0"><i class="bi bi-check-circle me-2"></i>{% trans "Taxpayer Found" %}</h6>
-                        </div>
-                        <div class="card-body">
-                            <table class="table table-sm table-borderless mb-0">
-                                <tr>
-                                    <td class="text-muted" style="width: 150px;">{% trans "Legal Name:" %}</td>
-                                    <td><strong id="efrisLegalName"></strong></td>
-                                </tr>
-                                <tr>
-                                    <td class="text-muted">{% trans "Business Name:" %}</td>
-                                    <td id="efrisBusinessName"></td>
-                                </tr>
-                                <tr>
-                                    <td class="text-muted">{% trans "TIN:" %}</td>
-                                    <td><code id="efrisTIN"></code></td>
-                                </tr>
-                                <tr>
-                                    <td class="text-muted">{% trans "NIN/BRN:" %}</td>
-                                    <td><code id="efrisNINBRN"></code></td>
-                                </tr>
-                                <tr>
-                                    <td class="text-muted">{% trans "Type:" %}</td>
-                                    <td><span class="badge bg-info" id="efrisTaxpayerType"></span></td>
-                                </tr>
-                                <tr>
-                                    <td class="text-muted">{% trans "Address:" %}</td>
-                                    <td><small id="efrisAddress"></small></td>
-                                </tr>
-                            </table>
-                            <div class="d-grid gap-2 mt-3">
-                                <button type="button" class="btn btn-success" onclick="createCustomerFromEFRIS()">
-                                    <i class="bi bi-person-plus-fill me-2"></i>{% trans "Create Customer & Select" %}
-                                </button>
-                                <button type="button" class="btn btn-outline-secondary btn-sm" onclick="clearEFRISQuery()">
-                                    {% trans "Clear & Search Again" %}
-                                </button>
+                    <!-- Customer Search Tabs -->
+                    <ul class="nav nav-tabs mb-3" role="tablist">
+                        <li class="nav-item">
+                            <button class="nav-link active" data-bs-toggle="tab"
+                                    data-bs-target="#searchTab">
+                                {% trans "Search" %}
+                            </button>
+                        </li>
+                        {% if company.efris_enabled %}
+                        <li class="nav-item">
+                            <button class="nav-link" data-bs-toggle="tab"
+                                    data-bs-target="#efrisTab">
+                                {% trans "EFRIS" %}
+                            </button>
+                        </li>
+                        {% endif %}
+                    </ul>
+
+                    <div class="tab-content">
+                        <!-- Search Tab -->
+                        <div class="tab-pane fade show active" id="searchTab">
+                            <input type="text" class="form-control" id="customerSearch"
+                                   placeholder="{% trans 'Search customers...' %}"
+                                   autocomplete="off">
+
+                            <div class="customer-dropdown" id="customerDropdown">
+                                <div id="customerList"></div>
                             </div>
                         </div>
-                    </div>
-                </div>
 
-                <!-- Error Display -->
-                <div id="efrisQueryError" class="alert alert-danger mt-3" style="display: none;">
-                    <i class="bi bi-exclamation-triangle me-2"></i>
-                    <span id="efrisErrorMessage"></span>
-                </div>
+                        <!-- EFRIS Query Tab -->
+                        {% if company.efris_enabled %}
+                        <div class="tab-pane fade" id="efrisTab">
+                            <div class="mb-3">
+                                <input type="text" class="form-control" id="taxpayerTIN"
+                                       placeholder="{% trans 'Enter TIN' %}">
+                            </div>
+                            <button type="button" class="btn btn-primary w-100"
+                                    onclick="queryEFRISTaxpayer()">
+                                <i class="bi bi-shield-search me-2"></i>
+                                {% trans "Query EFRIS" %}
+                            </button>
 
-                <!-- Loading State -->
-                <div id="efrisQueryLoading" class="text-center py-4 mt-3" style="display: none;">
-                    <div class="spinner-border text-primary mb-2" role="status">
-                        <span class="visually-hidden">{% trans "Loading..." %}</span>
+                            <div id="efrisQueryResults" style="display: none;"></div>
+                        </div>
+                        {% endif %}
                     </div>
-                    <p class="mb-0">{% trans "Querying EFRIS database..." %}</p>
+
+                    <!-- Selected Customer Display -->
+                    <div id="customerDisplay" style="display: none;" class="mt-3 p-3 bg-light rounded">
+                        <div class="d-flex justify-content-between align-items-start">
+                            <div>
+                                <strong id="customerName"></strong>
+                                <br>
+                                <small id="customerDetails"></small>
+                            </div>
+                            <button type="button" class="btn btn-sm btn-danger"
+                                    onclick="removeCustomer()">
+                                <i class="bi bi-x"></i>
+                            </button>
+                        </div>
+                    </div>
+
+                    <input type="hidden" name="customer" id="customerId">
                 </div>
             </div>
-        </div>
-    </div>
-
-    <!-- Selected Customer Display -->
-    <div class="customer-display" id="customerDisplay">
-        <div class="customer-avatar" id="customerAvatar">C</div>
-        <div class="flex-grow-1">
-            <div class="fw-bold" id="customerName">{% trans "Customer Name" %}</div>
-            <small id="customerDetails">{% trans "Phone • Email" %}</small>
-        </div>
-        <button type="button" class="btn btn-sm btn-danger" onclick="removeCustomer()">
-            <i class="bi bi-x"></i>
-        </button>
-    </div>
-
-    <input type="hidden" name="customer" id="customerId">
-</div>
-
 
             <!-- Cart Section -->
-            <div class="cart-section">
-                <div class="cart-header">
-                    <h5 class="mb-0">
-                        <i class="bi bi-cart3 me-2"></i>{% trans "Cart" %}
-                    </h5>
-                    <span class="badge bg-primary" id="cartCount">0</span>
-                </div>
+            <div class="card">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <h6 class="mb-0">
+                            <i class="bi bi-cart3 me-2"></i>{% trans "Cart" %}
+                        </h6>
+                        <span class="badge bg-primary" id="cartCount">0</span>
+                    </div>
 
-                <div class="cart-items" id="cartItems">
-                    <div class="cart-empty">
-                        <div class="empty-icon"><i class="bi bi-cart-x"></i></div>
-                        <h6>{% trans "Cart is Empty" %}</h6>
-                        <p class="mb-0">{% trans "Add products or services to start" %}</p>
+                    <div id="cartItems">
+                        <div class="text-center py-4 text-muted">
+                            <i class="bi bi-cart-x" style="font-size: 2rem;"></i>
+                            <p class="mt-2">{% trans "Cart is empty" %}</p>
+                        </div>
                     </div>
-                </div>
 
-                <!-- Cart Summary -->
-                <div class="cart-summary" id="cartSummary" style="display: none;">
-                    <div class="summary-row">
-                        <span>{% trans "Subtotal:" %}</span>
-                        <span id="summarySubtotal">0 UGX</span>
+                    <!-- Cart Summary -->
+                    <div id="cartSummary" style="display: none;" class="mt-3 p-3 bg-primary text-white rounded">
+                        <div class="d-flex justify-content-between mb-2">
+                            <span>{% trans "Subtotal:" %}</span>
+                            <span id="summarySubtotal">0</span>
+                        </div>
+                        <div class="d-flex justify-content-between mb-2">
+                            <span>{% trans "Tax:" %}</span>
+                            <span id="summaryTax">0</span>
+                        </div>
+                        <div class="d-flex justify-content-between mb-3 pb-3 border-bottom">
+                            <span>{% trans "Discount:" %}</span>
+                            <span id="summaryDiscount">0</span>
+                        </div>
+                        <div class="d-flex justify-content-between">
+                            <strong>{% trans "Total:" %}</strong>
+                            <strong id="summaryTotal">0</strong>
+                        </div>
                     </div>
-                    <div class="summary-row">
-                        <span>{% trans "Tax:" %}</span>
-                        <span id="summaryTax">0 UGX</span>
-                    </div>
-                    <div class="summary-row">
-                        <span>{% trans "Discount:" %}</span>
-                        <span id="summaryDiscount">0 UGX</span>
-                    </div>
-                    <div class="summary-row summary-total">
-                        <span>{% trans "Total:" %}</span>
-                        <span id="summaryTotal">0 UGX</span>
-                    </div>
-                </div>
 
-                <!-- Sale Information -->
-                <div class="mb-3">
-                    <label class="form-label">{% trans "Payment Method" %}</label>
-                    <select name="payment_method" class="form-select form-select-sm" required>
-                        <option value="CASH">{% trans "Cash" %}</option>
-                        <option value="CARD">{% trans "Card" %}</option>
-                        <option value="MOBILE_MONEY">{% trans "Mobile Money" %}</option>
-                        <option value="BANK_TRANSFER">{% trans "Bank Transfer" %}</option>
-                    </select>
-                </div>
+                    <!-- Payment Method -->
+                    <div class="mt-3">
+                        <label class="form-label">{% trans "Payment Method" %}</label>
+                        <select name="payment_method" class="form-select" required>
+                            <option value="CASH">{% trans "Cash" %}</option>
+                            <option value="CARD">{% trans "Card" %}</option>
+                            <option value="MOBILE_MONEY">{% trans "Mobile Money" %}</option>
+                            <option value="BANK_TRANSFER">{% trans "Bank Transfer" %}</option>
+                            <option value="CREDIT">{% trans "Credit" %}</option>
+                        </select>
+                    </div>
 
-                <!-- Action Buttons -->
-                <div class="action-buttons">
-                    <button type="button" class="btn-action btn-complete" id="completeSaleBtn" onclick="completeSale()" disabled>
-                        <i class="bi bi-check-circle-fill"></i>
-                        {% trans "Complete Sale" %}
-                    </button>
-                    <button type="button" class="btn-action btn-draft" id="saveDraftBtn" onclick="saveDraft()" disabled>
-                        <i class="bi bi-save"></i>
-                        {% trans "Save Draft" %}
-                    </button>
-                    <a href="{% url 'sales:sales_list' %}" class="btn btn-outline-secondary">
-                        <i class="bi bi-x-circle"></i> {% trans "Cancel" %}
-                    </a>
+                    <!-- Action Buttons -->
+                    <div class="d-grid gap-2 mt-3">
+                        <button type="button" class="btn btn-success"
+                                id="completeSaleBtn" onclick="completeSale()" disabled>
+                            <i class="bi bi-check-circle me-2"></i>
+                            {% trans "Complete Sale" %}
+                        </button>
+                        <a href="{% url 'sales:sales_list' %}" class="btn btn-outline-secondary">
+                            <i class="bi bi-x-circle me-2"></i>{% trans "Cancel" %}
+                        </a>
+                    </div>
                 </div>
             </div>
         </div>
@@ -1128,44 +1133,9 @@ body {
 
     <!-- Hidden Fields -->
     <input type="hidden" name="items_data" id="itemsData">
-    <input type="hidden" name="transaction_type" value="SALE">
-    <input type="hidden" name="document_type" value="RECEIPT">
-    <input type="hidden" name="currency" value="UGX" id="currencyField">
-    <input type="hidden" name="discount_amount" value="0" id="discountAmountField">
+    <input type="hidden" name="currency" value="UGX">
+    <input type="hidden" name="discount_amount" value="0">
 </form>
-
-
-<!-- Quick Add Modal -->
-<div class="modal fade" id="quickAddModal" tabindex="-1">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title">{% trans "Add to Cart" %}</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-            </div>
-            <div class="modal-body">
-                <div id="modalProductDetails"></div>
-                <div class="mb-3">
-                    <label class="form-label">{% trans "Quantity" %}</label>
-                    <input type="number" class="form-control" id="modalQuantity" value="1" min="1" step="1">
-                </div>
-                <div class="mb-3">
-                    <label class="form-label">{% trans "Unit Price" %}</label>
-                    <input type="number" class="form-control" id="modalPrice" step="0.01">
-                </div>
-                <div class="mb-3">
-                    <label class="form-label">{% trans "Discount (%)" %}</label>
-                    <input type="number" class="form-control" id="modalDiscount" value="0" step="0.01">
-                </div>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">{% trans "Cancel" %}</button>
-                <button type="button" class="btn btn-primary" onclick="confirmAddToCart()">{% trans "Add to Cart" %}</button>
-            </div>
-        </div>
-    </div>
-</div>
-
 
 <!-- New Customer Modal -->
 <div class="modal fade" id="newCustomerModal" tabindex="-1">
@@ -1192,510 +1162,49 @@ body {
                 </form>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">{% trans "Cancel" %}</button>
-                <button type="button" class="btn btn-primary" onclick="saveNewCustomer()">{% trans "Save" %}</button>
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                    {% trans "Cancel" %}
+                </button>
+                <button type="button" class="btn btn-primary" onclick="saveNewCustomer()">
+                    {% trans "Save" %}
+                </button>
             </div>
         </div>
     </div>
 </div>
-
-<!-- Loading Overlay -->
-<div class="loading-overlay" id="loadingOverlay">
-    <div class="loading-content">
-        <div class="spinner mx-auto mb-3"></div>
-        <h5>{% trans "Processing Sale..." %}</h5>
-    </div>
-</div>
-
 {% endblock %}
 
 {% block extra_js %}
 <script>
-    // Global State Management
+// Global state
 const State = {
     cart: [],
     items: [],
     currentPage: 1,
-    totalPages: 1,
-    selectedItem: null,
     selectedCustomer: null,
-    searchTimeout: null,
     currentItemType: 'all',
-    customerSearchTimeout: null,
-    isCustomerDropdownOpen: false
 };
 
-// Initialization
+// Initialize
 document.addEventListener('DOMContentLoaded', function() {
-    initializeApp();
-});
-
-function initializeApp() {
-    loadItems();
     setupEventListeners();
-    setupCustomerSearch();
-    loadInitialCustomers();
-}
-
-// Event Listeners Setup
-function setupEventListeners() {
-    setupStoreListeners();
-    setupProductSearchListeners();
-    setupPaginationListeners();
-}
-
-function setupStoreListeners() {
-    document.getElementById('storeSelect').addEventListener('change', function() {
-        State.currentPage = 1;
-        loadItems();
-        if (this.value) {
-            loadStoreCustomers(this.value);
-        }
-    });
-}
-/**
- * Save new customer from modal form
- */
-function saveNewCustomer() {
-    const form = document.getElementById('newCustomerForm');
-    if (!form) {
-        console.error('New customer form not found');
-        return;
-    }
-
-    const formData = new FormData(form);
-    const name = formData.get('name');
-    const phone = formData.get('phone');
-
-    // Validate required fields
-    if (!name || !name.trim()) {
-        alert('{% trans "Please enter customer name" %}');
-        return;
-    }
-
-    if (!phone || !phone.trim()) {
-        alert('{% trans "Please enter customer phone number" %}');
-        return;
-    }
-
-    // Show loading state
-    const saveBtn = document.querySelector('#newCustomerModal .btn-primary');
-    if (!saveBtn) {
-        console.error('Save button not found');
-        return;
-    }
-
-    const originalText = saveBtn.innerHTML;
-    saveBtn.innerHTML = '<i class="bi bi-spinner fa-spin me-2"></i>{% trans "Saving..." %}';
-    saveBtn.disabled = true;
-
-    // Get CSRF token
-    const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]');
-    if (!csrfToken) {
-        console.error('CSRF token not found');
-        saveBtn.innerHTML = originalText;
-        saveBtn.disabled = false;
-        return;
-    }
-
-    // Make AJAX request
-    fetch('{% url "sales:create_customer_ajax" %}', {
-        method: 'POST',
-        body: formData,
-        headers: {
-            'X-CSRFToken': csrfToken.value,
-        }
-    })
-    .then(response => {
-        if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
-        }
-        return response.json();
-    })
-    .then(data => {
-        console.log('Customer creation response:', data);
-
-        if (data.success && data.customer) {
-            // Select the newly created customer
-            selectCustomer(data.customer);
-
-            // Close modal
-            const modalElement = document.getElementById('newCustomerModal');
-            if (modalElement) {
-                const modal = bootstrap.Modal.getInstance(modalElement);
-                if (modal) {
-                    modal.hide();
-                }
-            }
-
-            // Reset form
-            form.reset();
-
-            // Show success message
-            showSuccess(`{% trans "Customer" %} "${data.customer.name}" {% trans "created successfully!" %}`);
-        } else {
-            // Show error
-            alert(data.error || '{% trans "Failed to create customer. Please try again." %}');
-        }
-    })
-    .catch(error => {
-        console.error('Error creating customer:', error);
-        alert('{% trans "Error creating customer. Please check your connection and try again." %}');
-    })
-    .finally(() => {
-        // Restore button state
-        saveBtn.innerHTML = originalText;
-        saveBtn.disabled = false;
-    });
-}
-function setupProductSearchListeners() {
-    document.getElementById('productSearchBar').addEventListener('input', function() {
-        clearTimeout(State.searchTimeout);
-        State.searchTimeout = setTimeout(() => {
-            State.currentPage = 1;
-            loadItems();
-        }, 300);
-    });
-}
-
-function setupPaginationListeners() {
-    document.getElementById('prevPage').addEventListener('click', () => {
-        if (State.currentPage > 1) {
-            State.currentPage--;
-            loadItems();
-        }
-    });
-
-    document.getElementById('nextPage').addEventListener('click', () => {
-        if (State.currentPage < State.totalPages) {
-            State.currentPage++;
-            loadItems();
-        }
-    });
-}
-
-// Customer Management Functions
-function setupCustomerSearch() {
-    const searchInput = document.getElementById('customerSearch');
-    const dropdown = document.getElementById('customerDropdown');
-
-    if (!searchInput || !dropdown) {
-        console.error('Customer search elements not found');
-        return;
-    }
-
-    // Load frequent customers when input is focused
-    searchInput.addEventListener('focus', function() {
-        if (!State.selectedCustomer) {
-            loadFrequentCustomers();
-        }
-    });
-
-    // Real-time search with debounce
-    searchInput.addEventListener('input', function() {
-        clearTimeout(State.customerSearchTimeout);
-        const query = this.value.trim();
-
-        if (query.length >= 2) {
-            State.customerSearchTimeout = setTimeout(() => {
-                searchCustomersEnhanced(query);
-            }, 300);
-        } else if (query.length === 0) {
-            // Show frequent customers when search is cleared
-            loadFrequentCustomers();
-        }
-    });
-
-    // Hide dropdown when clicking outside
-    document.addEventListener('click', function(e) {
-        if (!e.target.closest('.customer-section')) {
-            hideCustomerDropdown();
-        }
-    });
-
-    // EFRIS TIN input enter key support
-    const tinInput = document.getElementById('taxpayerTIN');
-    if (tinInput) {
-        tinInput.addEventListener('keypress', function(e) {
-            if (e.key === 'Enter') {
-                e.preventDefault();
-                queryEFRISTaxpayer();
-            }
-        });
-    }
-}
-
-function loadInitialCustomers() {
-    const storeSelect = document.getElementById('storeSelect');
-    if (storeSelect && storeSelect.value) {
-        loadStoreCustomers(storeSelect.value);
-    }
-}
-
-// Load frequent customers when input is focused
-function loadFrequentCustomers() {
     const storeId = document.getElementById('storeSelect').value;
     if (storeId) {
-        loadStoreCustomers(storeId);
-    } else {
-        loadRecentCustomers();
+        loadItems();
     }
+});
+
+// Event Listeners
+function setupEventListeners() {
+    document.getElementById('storeSelect').addEventListener('change', loadItems);
+    document.getElementById('productSearchBar').addEventListener('input', debounce(loadItems, 300));
+    document.getElementById('customerSearch').addEventListener('input', debounce(searchCustomers, 300));
 }
 
-// Enhanced customer search
-async function searchCustomersEnhanced(query) {
-    const storeId = document.getElementById('storeSelect').value;
-
-    showCustomerListLoading();
-    showCustomerDropdown();
-
-    try {
-        const params = new URLSearchParams({
-            q: query,
-            store_id: storeId || '',
-            limit: 10,
-            frequent: query ? 'false' : 'true'
-        });
-
-        const response = await fetch(`/customers/api/search-with-store/?${params}`);
-        const data = await response.json();
-
-        if (data.customers && data.customers.length > 0) {
-            const title = query ? 'Search Results' : 'Frequent Customers';
-            displayCustomerList(data.customers, title);
-        } else {
-            showCustomerListEmpty();
-        }
-    } catch (error) {
-        console.error('Error searching customers:', error);
-        showCustomerListEmpty();
-    }
-}
-
-// Load store-specific frequent customers
-async function loadStoreCustomers(storeId) {
-    if (!storeId) {
-        loadRecentCustomers();
-        return;
-    }
-
-    showCustomerListLoading();
-    showCustomerDropdown();
-
-    try {
-        const response = await fetch(`/customers/api/store-customers/?store_id=${storeId}&limit=20&frequent=true`);
-        const data = await response.json();
-
-        if (data.customers && data.customers.length > 0) {
-            displayCustomerList(data.customers, 'Store Customers');
-        } else {
-            loadRecentCustomers();
-        }
-    } catch (error) {
-        console.error('Error loading store customers:', error);
-        loadRecentCustomers();
-    }
-}
-
-// Load recent/frequent customers (fallback)
-async function loadRecentCustomers() {
-    showCustomerListLoading();
-    showCustomerDropdown();
-
-    try {
-        const response = await fetch('/customers/api/search-with-store/?limit=20&frequent=true');
-        const data = await response.json();
-
-        if (data.customers && data.customers.length > 0) {
-            displayCustomerList(data.customers, 'Frequent Customers');
-        } else {
-            showCustomerListEmpty();
-        }
-    } catch (error) {
-        console.error('Error loading recent customers:', error);
-        showCustomerListEmpty();
-    }
-}
-
-// Display customer list in dropdown
-function displayCustomerList(customers, title) {
-    const listContainer = document.getElementById('customerList');
-    const listTitle = document.getElementById('customerListTitle');
-    const loading = document.getElementById('customerListLoading');
-    const empty = document.getElementById('customerListEmpty');
-
-    if (!listContainer || !listTitle || !loading || !empty) {
-        console.error('Customer list elements not found');
-        return;
-    }
-
-    loading.style.display = 'none';
-    empty.style.display = 'none';
-    listContainer.style.display = 'block';
-
-    listTitle.innerHTML = `<i class="bi bi-people me-1"></i>${title}`;
-    listContainer.innerHTML = customers.map(customer => createCustomerListItem(customer)).join('');
-}
-
-// Create customer list item HTML
-function createCustomerListItem(customer) {
-    const avatarText = customer.name ? customer.name.charAt(0).toUpperCase() : 'C';
-    const phone = customer.phone || 'No phone';
-    const email = customer.email ? `• ${customer.email}` : '';
-
-    // Escape single quotes in customer data for onclick
-    const customerData = JSON.stringify(customer).replace(/'/g, "\\'");
-
-    return `
-        <div class="customer-list-item ${customer.is_vat_registered ? 'vat-registered' : ''}"
-             onclick='selectCustomerFromList(${customerData})'>
-            <div class="customer-list-item-avatar">
-                ${avatarText}
-            </div>
-            <div class="customer-list-item-info">
-                <div class="customer-list-item-name">${customer.name}</div>
-                <div class="customer-list-item-details">
-                    ${phone} ${email}
-                </div>
-            </div>
-            ${customer.is_vat_registered ?
-                '<span class="customer-list-item-badge"><i class="bi bi-check-circle me-1"></i>VAT</span>' :
-                `<span class="customer-list-item-badge">${customer.customer_type || 'Customer'}</span>`
-            }
-        </div>
-    `;
-}
-
-// Select customer from list
-function selectCustomerFromList(customer) {
-    selectCustomer(customer);
-    hideCustomerDropdown();
-    const searchInput = document.getElementById('customerSearch');
-    if (searchInput) searchInput.value = '';
-}
-
-// Select customer and update display
-function selectCustomer(customer) {
-    State.selectedCustomer = customer;
-
-    // Update hidden field
-    const customerIdField = document.getElementById('customerId');
-    if (customerIdField) customerIdField.value = customer.id;
-
-    // Update customer input by name
-    const customerInputByName = document.querySelector('input[name="customer"]');
-    if (customerInputByName) customerInputByName.value = customer.id;
-
-    // Update display
-    const avatar = document.getElementById('customerAvatar');
-    const name = document.getElementById('customerName');
-    const details = document.getElementById('customerDetails');
-    const display = document.getElementById('customerDisplay');
-
-    if (avatar) avatar.textContent = customer.name.charAt(0).toUpperCase();
-    if (name) name.textContent = customer.name;
-
-    const detailParts = [];
-    if (customer.phone) detailParts.push(customer.phone);
-    if (customer.email) detailParts.push(customer.email);
-    if (customer.customer_id) detailParts.push('ID: ' + customer.customer_id);
-
-    if (details) details.textContent = detailParts.join(' • ');
-    if (display) display.classList.add('active');
-
-    console.log('Customer selected:', customer);
-}
-
-// Remove customer selection
-function removeCustomer() {
-    State.selectedCustomer = null;
-
-    // Clear hidden fields
-    const customerIdField = document.getElementById('customerId');
-    if (customerIdField) customerIdField.value = '';
-
-    const customerInputByName = document.querySelector('input[name="customer"]');
-    if (customerInputByName) customerInputByName.value = '';
-
-    // Update display
-    const display = document.getElementById('customerDisplay');
-    if (display) display.classList.remove('active');
-
-    const searchInput = document.getElementById('customerSearch');
-    if (searchInput) searchInput.value = '';
-
-    // Reload frequent customers
-    loadFrequentCustomers();
-}
-
-// Show/hide customer dropdown
-function showCustomerDropdown() {
-    const dropdown = document.getElementById('customerDropdown');
-    if (dropdown) {
-        dropdown.style.display = 'block';
-        State.isCustomerDropdownOpen = true;
-    }
-}
-
-function hideCustomerDropdown() {
-    const dropdown = document.getElementById('customerDropdown');
-    if (dropdown) {
-        dropdown.style.display = 'none';
-        State.isCustomerDropdownOpen = false;
-    }
-}
-
-function showCustomerListLoading() {
-    const list = document.getElementById('customerList');
-    const loading = document.getElementById('customerListLoading');
-    const empty = document.getElementById('customerListEmpty');
-
-    if (list) list.style.display = 'none';
-    if (empty) empty.style.display = 'none';
-    if (loading) loading.style.display = 'block';
-}
-
-function showCustomerListEmpty() {
-    const list = document.getElementById('customerList');
-    const loading = document.getElementById('customerListLoading');
-    const empty = document.getElementById('customerListEmpty');
-
-    if (list) list.style.display = 'none';
-    if (loading) loading.style.display = 'none';
-    if (empty) empty.style.display = 'block';
-}
-
-// Item Type Management
-function switchItemType(type) {
-    State.currentItemType = type;
-    State.currentPage = 1;
-
-    updateItemTypeUI(type);
-    loadItems();
-}
-
-function updateItemTypeUI(type) {
-    // Update button states
-    document.querySelectorAll('.item-type-btn').forEach(btn => {
-        btn.classList.toggle('active', btn.dataset.type === type);
-    });
-
-    // Update header text
-    const headerText = document.getElementById('itemsHeaderText');
-    const headerMap = {
-        'product': '{% trans "Products" %}',
-        'service': '{% trans "Services" %}',
-        'all': '{% trans "Products & Services" %}'
-    };
-    if (headerText) {
-        headerText.textContent = headerMap[type];
-    }
-}
-
-// Items Management
+// Load items
 async function loadItems() {
     const storeId = document.getElementById('storeSelect').value;
-    const searchQuery = document.getElementById('productSearchBar').value;
+    const query = document.getElementById('productSearchBar').value;
 
     if (!storeId && State.currentItemType !== 'service') {
         showProductsEmpty();
@@ -1706,9 +1215,8 @@ async function loadItems() {
 
     try {
         const params = new URLSearchParams({
-            q: searchQuery || 'a',
             store_id: storeId,
-            page: State.currentPage,
+            q: query || '',
             item_type: State.currentItemType
         });
 
@@ -1717,207 +1225,101 @@ async function loadItems() {
 
         if (data.items && data.items.length > 0) {
             State.items = data.items;
-            const paginatedItems = paginateItems(data.items);
-            displayItems(paginatedItems);
-            updatePagination(data.items.length, 20);
+            displayItems(data.items);
         } else {
             showProductsEmpty();
         }
     } catch (error) {
         console.error('Error loading items:', error);
         showError('Failed to load items');
-        showProductsEmpty();
     }
 }
 
-function paginateItems(items) {
-    const itemsPerPage = 20;
-    const startIndex = (State.currentPage - 1) * itemsPerPage;
-    const endIndex = startIndex + itemsPerPage;
-    return items.slice(startIndex, endIndex);
-}
-
+// Display items
 function displayItems(items) {
     const grid = document.getElementById('productsGrid');
-    const loading = document.getElementById('productsLoading');
-    const empty = document.getElementById('productsEmpty');
+    hideProductsLoading();
 
-    if (!grid || !loading || !empty) return;
-
-    loading.style.display = 'none';
-    empty.style.display = 'none';
-    grid.style.display = 'grid';
-
-    grid.innerHTML = items.map(item => createItemCard(item)).join('');
-}
-
-function createItemCard(item) {
-    const isProduct = item.item_type === 'PRODUCT';
-    const isService = item.item_type === 'SERVICE';
-    const { hasStock, stockClass, stockText } = getStockInfo(item);
-    const { hasDiscount, finalPrice } = getPriceInfo(item);
-
-    return `
-        <div class="product-card ${(!hasStock && isProduct) ? 'out-of-stock' : ''}"
-             data-item-id="${item.id}" data-item-type="${item.item_type}">
-            ${createItemBadges(item, hasDiscount)}
-            ${createItemImage(item)}
-            ${createItemInfo(item, hasDiscount, finalPrice, stockClass, stockText)}
-            ${createItemActions(item, hasStock)}
-        </div>
-    `;
-}
-
-function getStockInfo(item) {
-    const isProduct = item.item_type === 'PRODUCT';
-
-    if (isProduct && item.stock) {
-        const hasStock = item.stock.available > 0;
-        const isLowStock = hasStock && item.stock.available < 10;
-        const stockClass = !hasStock ? 'out-of-stock' : isLowStock ? 'low-stock' : 'in-stock';
-        const stockText = hasStock ? `${item.stock.available} in stock` : 'Out of stock';
-
-        return { hasStock, stockClass, stockText };
-    }
-
-    return {
-        hasStock: true,
-        stockClass: 'in-stock',
-        stockText: 'Service'
-    };
-}
-
-function getPriceInfo(item) {
-    const hasDiscount = item.discount_percentage > 0;
-    const finalPrice = hasDiscount ?
-        (item.price * (1 - item.discount_percentage / 100)).toFixed(2) :
-        item.price;
-
-    return { hasDiscount, finalPrice };
-}
-
-function createItemBadges(item, hasDiscount) {
-    const isProduct = item.item_type === 'PRODUCT';
-    const badgeHtml = isProduct ?
-        '<span class="product-badge"><i class="bi bi-box-seam me-1"></i>Product</span>' :
-        '<span class="service-badge"><i class="bi bi-gear me-1"></i>Service</span>';
-
-    return `
-        ${hasDiscount ? `<div class="product-discount-badge">-${item.discount_percentage}%</div>` : ''}
-        ${badgeHtml}
-    `;
-}
-
-function createItemImage(item) {
-    const isProduct = item.item_type === 'PRODUCT';
-    return `
-        <div class="product-image-placeholder">
-            <i class="bi bi-${isProduct ? 'box-seam' : 'gear'}"></i>
-        </div>
-    `;
-}
-
-function createItemInfo(item, hasDiscount, finalPrice, stockClass, stockText) {
-    const isProduct = item.item_type === 'PRODUCT';
-
-    return `
-        <div class="product-info">
-            <div class="product-name" title="${item.name}">${item.name}</div>
-            <div class="product-sku">${isProduct ? 'SKU' : 'Code'}: ${item.code || 'N/A'}</div>
-
-            <div class="product-price">
-                <span class="price-current">${finalPrice} UGX</span>
-                ${hasDiscount ? `<span class="price-original">${item.price} UGX</span>` : ''}
-            </div>
-
-            <div class="product-stock">
-                <span class="stock-indicator ${stockClass}"></span>
-                <span>${stockText}</span>
+    grid.innerHTML = items.map(item => `
+        <div class="col-md-6">
+            <div class="card h-100">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-start mb-2">
+                        <h6 class="card-title mb-0">${item.name}</h6>
+                        <span class="item-badge ${item.item_type === 'PRODUCT' ? 'product-badge' : 'service-badge'}">
+                            ${item.item_type}
+                        </span>
+                    </div>
+                    <p class="card-text small text-muted">${item.code || 'No code'}</p>
+                    <p class="card-text">
+                        <strong>${item.final_price} UGX</strong>
+                    </p>
+                    ${item.stock ? `
+                        <p class="small mb-2">
+                            Stock: ${item.stock.available} ${item.stock.unit}
+                        </p>
+                    ` : ''}
+                    <button type="button" class="btn btn-sm btn-primary w-100"
+                            onclick='addToCart(${JSON.stringify(item)})'>
+                        <i class="bi bi-cart-plus me-1"></i>Add to Cart
+                    </button>
+                </div>
             </div>
         </div>
-    `;
+    `).join('');
 }
+// In your JavaScript section, add this function
+function toggleDueDateSection() {
+    const dueDateSection = document.getElementById('dueDateSection');
+    const docType = document.querySelector('input[name="document_type"]:checked').value;
+    const dueDateField = document.getElementById('dueDate');
 
-function createItemActions(item, hasStock) {
-    const isProduct = item.item_type === 'PRODUCT';
+    if (docType === 'INVOICE') {
+        dueDateSection.style.display = 'block';
 
-    return `
-        <div class="product-actions">
-            <button type="button" class="btn-add-to-cart"
-                    onclick="quickAddToCart(${item.id}, '${item.item_type}')"
-                    ${(!hasStock && isProduct) ? 'disabled' : ''}>
-                <i class="bi bi-cart-plus"></i>
-                Add to Cart
-            </button>
-            <button type="button" class="btn-quick-view"
-                    onclick="showQuickView(${item.id}, '${item.item_type}')"
-                    title="Quick View">
-                <i class="bi bi-eye"></i>
-            </button>
-        </div>
-    `;
-}
-
-// Cart Management
-function addToCart(item) {
-    if (!validateCartItem(item)) return;
-
-    const existingIndex = findCartItemIndex(item);
-
-    if (existingIndex >= 0) {
-        State.cart[existingIndex].quantity += item.quantity;
+        // Set default due date (30 days from today)
+        const today = new Date();
+        const dueDate = new Date(today);
+        dueDate.setDate(dueDate.getDate() + 30);
+        dueDateField.value = dueDate.toISOString().split('T')[0];
+        dueDateField.required = true;
     } else {
-        State.cart.push(createCartItem(item));
+        dueDateSection.style.display = 'none';
+        dueDateField.value = '';
+        dueDateField.required = false;
     }
-
-    updateCartDisplay();
 }
 
-function validateCartItem(item) {
-    if (item.item_type === 'PRODUCT' && !item.product_id) {
-        console.error('Product item missing product_id:', item);
-        showError('Error adding product to cart');
-        return false;
-    }
+// Update your setupEventListeners function
+function setupEventListeners() {
+    document.getElementById('storeSelect').addEventListener('change', loadItems);
+    document.getElementById('productSearchBar').addEventListener('input', debounce(loadItems, 300));
+    document.getElementById('customerSearch').addEventListener('input', debounce(searchCustomers, 300));
 
-    if (item.item_type === 'SERVICE' && !item.service_id) {
-        console.error('Service item missing service_id:', item);
-        showError('Error adding service to cart');
-        return false;
-    }
+    // Add document type change listeners
+    document.querySelectorAll('input[name="document_type"]').forEach(radio => {
+        radio.addEventListener('change', toggleDueDateSection);
+    });
 
-    return true;
+    // Initialize due date section
+    toggleDueDateSection();
 }
-
-function findCartItemIndex(item) {
-    return State.cart.findIndex(i =>
-        i.item_type === item.item_type &&
-        ((item.item_type === 'PRODUCT' && i.product_id === item.product_id) ||
-         (item.item_type === 'SERVICE' && i.service_id === item.service_id))
-    );
-}
-
-function createCartItem(item) {
+// Cart management
+function addToCart(item) {
     const cartItem = {
         item_type: item.item_type,
+        product_id: item.item_type === 'PRODUCT' ? item.id : null,
+        service_id: item.item_type === 'SERVICE' ? item.id : null,
         name: item.name,
-        quantity: item.quantity,
-        unit_price: item.unit_price,
+        quantity: 1,
+        unit_price: item.final_price,
         tax_rate: item.tax_rate || 'A',
-        discount: item.discount || 0,
-        unit: item.unit || 'pcs',
-        description: item.description || ''
+        discount: 0,
+        unit: item.unit_of_measure || 'pcs'
     };
 
-    if (item.item_type === 'PRODUCT') {
-        cartItem.product_id = item.product_id;
-        cartItem.service_id = null;
-    } else {
-        cartItem.product_id = null;
-        cartItem.service_id = item.service_id;
-    }
-
-    return cartItem;
+    State.cart.push(cartItem);
+    updateCartDisplay();
 }
 
 function updateCartDisplay() {
@@ -1925,631 +1327,311 @@ function updateCartDisplay() {
     const cartCount = document.getElementById('cartCount');
     const cartSummary = document.getElementById('cartSummary');
 
-    if (!cartItems || !cartCount || !cartSummary) return;
-
     cartCount.textContent = State.cart.length;
 
     if (State.cart.length === 0) {
-        showEmptyCart(cartItems, cartSummary);
+        cartItems.innerHTML = `
+            <div class="text-center py-4 text-muted">
+                <i class="bi bi-cart-x" style="font-size: 2rem;"></i>
+                <p class="mt-2">Cart is empty</p>
+            </div>
+        `;
+        cartSummary.style.display = 'none';
+        document.getElementById('completeSaleBtn').disabled = true;
         return;
     }
 
-    cartItems.innerHTML = State.cart.map((item, index) => createCartItemElement(item, index)).join('');
+    cartItems.innerHTML = State.cart.map((item, index) => `
+        <div class="d-flex justify-content-between align-items-center mb-2 p-2 border rounded">
+            <div>
+                <strong>${item.name}</strong>
+                <br>
+                <small>${item.unit_price} × ${item.quantity}</small>
+            </div>
+            <button type="button" class="btn btn-sm btn-danger" onclick="removeFromCart(${index})">
+                <i class="bi bi-trash"></i>
+            </button>
+        </div>
+    `).join('');
+
     cartSummary.style.display = 'block';
     updateSummary();
-    enableActionButtons();
+    document.getElementById('completeSaleBtn').disabled = false;
+    document.getElementById('itemsData').value = JSON.stringify(State.cart);
 }
 
-function showEmptyCart(cartItems, cartSummary) {
-    cartItems.innerHTML = `
-        <div class="cart-empty">
-            <div class="empty-icon"><i class="bi bi-cart-x"></i></div>
-            <h6>Cart is Empty</h6>
-            <p class="mb-0">Add products or services to start</p>
-        </div>
-    `;
-    cartSummary.style.display = 'none';
-    disableActionButtons();
-}
+function updateSummary() {
+    let subtotal = 0;
+    State.cart.forEach(item => {
+        subtotal += item.quantity * item.unit_price;
+    });
 
-function createCartItemElement(item, index) {
-    const lineTotal = (item.quantity * item.unit_price - item.discount).toFixed(2);
-    const initial = item.name.charAt(0).toUpperCase();
-    const isProduct = item.item_type === 'PRODUCT';
-    const badgeClass = isProduct ? 'product-badge' : 'service-badge';
-    const badgeText = isProduct ? 'Product' : 'Service';
-
-    return `
-        <div class="cart-item">
-            <div class="cart-item-image">${initial}</div>
-            <div class="cart-item-details">
-                <div class="cart-item-name" title="${item.name}">
-                    ${item.name}
-                    <span class="${badgeClass}" style="font-size: 0.65rem; margin-left: 0.5rem;">${badgeText}</span>
-                </div>
-                <div class="cart-item-meta">${item.unit_price.toFixed(2)} UGX × ${item.quantity} ${item.unit}</div>
-                <div class="cart-item-controls">
-                    <div class="qty-control">
-                        <button type="button" class="qty-btn" onclick="updateQuantity(${index}, -0.5)">
-                            <i class="bi bi-dash"></i>
-                        </button>
-                        <input type="number" class="qty-input" value="${item.quantity}"
-                               onchange="setQuantity(${index}, this.value)" min="0.001" step="0.001">
-                        <button type="button" class="qty-btn" onclick="updateQuantity(${index}, 0.5)">
-                            <i class="bi bi-plus"></i>
-                        </button>
-                    </div>
-                </div>
-            </div>
-            <div class="cart-item-actions">
-                <div class="cart-item-price">${lineTotal} UGX</div>
-                <button type="button" class="btn-remove-item" onclick="removeFromCart(${index})">
-                    <i class="bi bi-trash"></i> Remove
-                </button>
-            </div>
-        </div>
-    `;
-}
-
-function updateQuantity(index, delta) {
-    if (State.cart[index]) {
-        State.cart[index].quantity += delta;
-        if (State.cart[index].quantity <= 0) {
-            removeFromCart(index);
-        } else {
-            updateCartDisplay();
-        }
-    }
-}
-
-function setQuantity(index, value) {
-    const quantity = parseFloat(value);
-    if (quantity <= 0) {
-        removeFromCart(index);
-    } else {
-        State.cart[index].quantity = quantity;
-        updateCartDisplay();
-    }
+    document.getElementById('summarySubtotal').textContent = `${subtotal.toFixed(2)} UGX`;
+    document.getElementById('summaryTax').textContent = '0.00 UGX';
+    document.getElementById('summaryDiscount').textContent = '0.00 UGX';
+    document.getElementById('summaryTotal').textContent = `${subtotal.toFixed(2)} UGX`;
 }
 
 function removeFromCart(index) {
     State.cart.splice(index, 1);
     updateCartDisplay();
-    showSuccess('Item removed from cart');
 }
 
-// Summary Calculation
-function updateSummary() {
-    let subtotal = 0;
-    let totalTax = 0;
-    let totalDiscount = 0;
+// Customer management
+async function searchCustomers() {
+    const query = document.getElementById('customerSearch').value;
+    if (query.length < 2) return;
 
-    State.cart.forEach(item => {
-        const lineAmount = item.quantity * item.unit_price;
-        const lineAfterDiscount = lineAmount - item.discount;
-        const taxAmount = calculateTaxAmount(lineAfterDiscount, item.tax_rate);
-
-        subtotal += lineAmount;
-        totalTax += taxAmount;
-        totalDiscount += item.discount;
-    });
-
-    const total = subtotal - totalDiscount;
-
-    document.getElementById('summarySubtotal').textContent = `${subtotal.toFixed(2)} UGX`;
-    document.getElementById('summaryTax').textContent = `${totalTax.toFixed(2)} UGX`;
-    document.getElementById('summaryDiscount').textContent = `${totalDiscount.toFixed(2)} UGX`;
-    document.getElementById('summaryTotal').textContent = `${total.toFixed(2)} UGX`;
-
-    document.getElementById('itemsData').value = JSON.stringify(State.cart);
+    try {
+        const response = await fetch(`/sales/search-customers/?q=${query}`);
+        const data = await response.json();
+        displayCustomerList(data.customers || []);
+    } catch (error) {
+        console.error('Error searching customers:', error);
+    }
 }
 
-function calculateTaxAmount(amount, taxRate) {
-    const taxRates = {
-        'A': 0.18, // 18% VAT
-        'B': 0.12, // 12% VAT
-        'D': 0.18  // 18% VAT (same as A)
-    };
+function displayCustomerList(customers) {
+    const list = document.getElementById('customerList');
+    const dropdown = document.getElementById('customerDropdown');
 
-    const rate = taxRates[taxRate] || 0;
-    return amount / (1 + rate) * rate;
-}
+    if (customers.length === 0) {
+        dropdown.classList.remove('show');
+        return;
+    }
 
-// Quick View Modal
-function showQuickView(itemId, itemType) {
-    const item = State.items.find(i => i.id === itemId && i.item_type === itemType);
-    if (!item) return;
-
-    State.selectedItem = item;
-    populateQuickViewModal(item);
-
-    const modal = new bootstrap.Modal(document.getElementById('quickAddModal'));
-    modal.show();
-}
-
-function populateQuickViewModal(item) {
-    const modalDetails = document.getElementById('modalProductDetails');
-    const isProduct = item.item_type === 'PRODUCT';
-
-    modalDetails.innerHTML = `
-        <div class="mb-3">
-            <h5>${item.name}</h5>
-            <p class="text-muted mb-1">${isProduct ? 'SKU' : 'Code'}: ${item.code || 'N/A'}</p>
-            <p class="text-muted mb-1">Category: ${item.category || 'N/A'}</p>
-            ${isProduct && item.stock ? `
-            <p class="mb-0">
-                <strong>Available Stock:</strong>
-                ${item.stock.available + ' ' + (item.unit_of_measure || 'pcs')}
-            </p>
-            ` : `<p class="mb-0"><strong>Type:</strong> Service</p>`}
+    list.innerHTML = customers.map(customer => `
+        <div class="customer-list-item" onclick='selectCustomer(${JSON.stringify(customer)})'>
+            <strong>${customer.name}</strong>
+            <br>
+            <small>${customer.phone}</small>
         </div>
-    `;
+    `).join('');
 
-    document.getElementById('modalQuantity').value = 1;
-    document.getElementById('modalPrice').value = item.final_price || item.price;
-    document.getElementById('modalDiscount').value = 0;
+    dropdown.classList.add('show');
 }
 
-function confirmAddToCart() {
-    if (!State.selectedItem) return;
-
-    const quantity = parseFloat(document.getElementById('modalQuantity').value);
-    const price = parseFloat(document.getElementById('modalPrice').value);
-    const discount = parseFloat(document.getElementById('modalDiscount').value);
-
-    if (!validateModalInputs(quantity, price)) return;
-
-    if (State.selectedItem.item_type === 'PRODUCT' &&
-        State.selectedItem.stock &&
-        quantity > State.selectedItem.stock.available) {
-        showError(`Only ${State.selectedItem.stock.available} available in stock`);
-        return;
-    }
-
-    addToCart({
-        item_type: State.selectedItem.item_type,
-        product_id: State.selectedItem.item_type === 'PRODUCT' ? State.selectedItem.id : null,
-        service_id: State.selectedItem.item_type === 'SERVICE' ? State.selectedItem.id : null,
-        name: State.selectedItem.name,
-        quantity: quantity,
-        unit_price: price,
-        tax_rate: State.selectedItem.tax_rate || 'A',
-        discount: discount,
-        unit: State.selectedItem.unit_of_measure || 'pcs'
-    });
-
-    bootstrap.Modal.getInstance(document.getElementById('quickAddModal')).hide();
-    showSuccess(`${State.selectedItem.name} added to cart`);
+function selectCustomer(customer) {
+    State.selectedCustomer = customer;
+    document.getElementById('customerId').value = customer.id;
+    document.getElementById('customerName').textContent = customer.name;
+    document.getElementById('customerDetails').textContent = customer.phone;
+    document.getElementById('customerDisplay').style.display = 'block';
+    document.getElementById('customerDropdown').classList.remove('show');
+    document.getElementById('customerSearch').value = '';
 }
 
-function validateModalInputs(quantity, price) {
-    if (quantity <= 0 || price < 0) {
-        showError('Invalid quantity or price');
-        return false;
-    }
-    return true;
+function removeCustomer() {
+    State.selectedCustomer = null;
+    document.getElementById('customerId').value = '';
+    document.getElementById('customerDisplay').style.display = 'none';
 }
 
-// Quick add to cart (for direct adding without modal)
-function quickAddToCart(itemId, itemType) {
-    const item = State.items.find(i => i.id === itemId && i.item_type === itemType);
-    if (!item) return;
-
-    addToCart({
-        item_type: item.item_type,
-        product_id: item.item_type === 'PRODUCT' ? item.id : null,
-        service_id: item.item_type === 'SERVICE' ? item.id : null,
-        name: item.name,
-        quantity: 1,
-        unit_price: item.final_price || item.price,
-        tax_rate: item.tax_rate || 'A',
-        discount: 0,
-        unit: item.unit_of_measure || 'pcs'
-    });
-
-    showSuccess(`${item.name} added to cart`);
-}
-
-// Sale Actions
+// Sale actions
 function completeSale() {
-    console.log('=== COMPLETE SALE DEBUG ===');
-    console.log('Selected customer object:', State.selectedCustomer);
-
-    // Check all customer-related fields
-    const customerIdField = document.getElementById('customerId');
-    const customerInputByName = document.querySelector('input[name="customer"]');
-
-    console.log('Customer ID field (#customerId):', customerIdField ? customerIdField.value : 'NOT FOUND');
-    console.log('Customer input (name="customer"):', customerInputByName ? customerInputByName.value : 'NOT FOUND');
-
-    if (!validateSale()) return;
-
-    // FORCE set customer value before submission
-    if (State.selectedCustomer && State.selectedCustomer.id) {
-        console.log('🔧 Forcing customer ID to:', State.selectedCustomer.id);
-
-        if (customerIdField) {
-            customerIdField.value = State.selectedCustomer.id;
-            console.log('Set #customerId to:', customerIdField.value);
-        }
-
-        if (customerInputByName) {
-            customerInputByName.value = State.selectedCustomer.id;
-            console.log('Set input[name="customer"] to:', customerInputByName.value);
-        }
-    } else {
-        console.log('⚠️ No customer selected - will be walk-in');
-    }
-
-    // DEBUG: Log all form data before submission
-    const form = document.getElementById('createSaleForm');
-    const formData = new FormData(form);
-    console.log('=== FORM DATA BEING SUBMITTED ===');
-    for (let [key, value] of formData.entries()) {
-        console.log(`  ${key}: "${value}"`);
-    }
-
-    // Show loading modal
-    document.getElementById('loadingOverlay').style.display = 'flex';
-
-    // Submit form
-    setTimeout(() => {
-        form.submit();
-    }, 500);
-}
-
-function saveDraft() {
     if (State.cart.length === 0) {
-        showError('Please add items to cart');
+        alert('Please add items to cart');
         return;
-    }
-
-    let draftInput = document.getElementById('isDraftInput');
-    if (!draftInput) {
-        draftInput = document.createElement('input');
-        draftInput.type = 'hidden';
-        draftInput.name = 'save_draft';
-        draftInput.id = 'isDraftInput';
-        draftInput.value = 'true';
-        document.getElementById('createSaleForm').appendChild(draftInput);
-    }
-
-    document.getElementById('loadingOverlay').style.display = 'flex';
-    setTimeout(() => {
-        document.getElementById('createSaleForm').submit();
-    }, 500);
-}
-
-function validateSale() {
-    if (State.cart.length === 0) {
-        showError('Please add items to cart');
-        return false;
     }
 
     const storeId = document.getElementById('storeSelect').value;
     if (!storeId) {
-        showError('Please select a store');
-        return false;
-    }
-
-    return true;
-}
-
-// EFRIS Functions
-let efrisQueryResult = null;
-
-function queryEFRISTaxpayer() {
-    const tin = document.getElementById('taxpayerTIN').value.trim();
-    const ninBrn = document.getElementById('taxpayerNINBRN').value.trim();
-
-    if (!tin) {
-        showEFRISError('{% trans "Please enter a TIN" %}');
+        alert('Please select a store');
         return;
     }
 
-    if (tin.length < 9) {
-        showEFRISError('{% trans "TIN must be at least 9 characters" %}');
-        return;
-    }
+    // Validate invoice requirements
+    const docType = document.querySelector('input[name="document_type"]:checked').value;
+    const dueDateField = document.getElementById('dueDate');
 
-    hideEFRISResults();
-    hideEFRISError();
-    showEFRISLoading();
-    disableQueryButton();
-
-    const formData = new FormData();
-    formData.append('tin', tin);
-    if (ninBrn) formData.append('nin_brn', ninBrn);
-
-    const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
-
-    fetch('{% url "efris:taxpayer_query" %}', {
-        method: 'POST',
-        body: formData,
-        headers: {
-            'X-CSRFToken': csrfToken,
-            'X-Requested-With': 'XMLHttpRequest',
+    if (docType === 'INVOICE') {
+        if (!dueDateField.value) {
+            alert('Due date is required for invoices');
+            dueDateField.focus();
+            return;
         }
-    })
-    .then(response => response.json())
-    .then(data => {
-        hideEFRISLoading();
-        enableQueryButton();
 
-        if (data.success && data.taxpayer) {
-            efrisQueryResult = data.taxpayer;
-            displayEFRISResults(data.taxpayer);
-        } else {
-            showEFRISError(data.error || '{% trans "Taxpayer not found in EFRIS database" %}');
-        }
-    })
-    .catch(error => {
-        console.error('EFRIS Query Error:', error);
-        hideEFRISLoading();
-        enableQueryButton();
-        showEFRISError('{% trans "Error connecting to EFRIS. Please try again." %}');
-    });
-}
-
-function displayEFRISResults(taxpayer) {
-    document.getElementById('efrisLegalName').textContent = taxpayer.legal_name || 'N/A';
-    document.getElementById('efrisBusinessName').textContent = taxpayer.business_name || taxpayer.legalName || 'N/A';
-    document.getElementById('efrisTIN').textContent = taxpayer.tin || 'N/A';
-    document.getElementById('efrisNINBRN').textContent = taxpayer.nin_brn || 'N/A';
-    document.getElementById('efrisTaxpayerType').textContent = getTaxpayerTypeDisplay(taxpayer.taxpayer_type);
-    document.getElementById('efrisAddress').textContent = taxpayer.address || 'N/A';
-
-    document.getElementById('efrisQueryResults').style.display = 'block';
-}
-
-function createCustomerFromEFRIS() {
-    if (!efrisQueryResult) {
-        showEFRISError('{% trans "No taxpayer data available" %}');
-        return;
-    }
-
-    const btn = event.target;
-    const originalText = btn.innerHTML;
-    btn.innerHTML = '<i class="bi bi-spinner fa-spin me-2"></i>{% trans "Creating customer..." %}';
-    btn.disabled = true;
-
-    // Debug: Log the EFRIS data to see what's available
-    console.log('EFRIS Query Result:', efrisQueryResult);
-
-    // Use the correct field names from your EFRIS response
-    const customerName = efrisQueryResult.legal_name ||
-                        efrisQueryResult.business_name ||
-                        efrisQueryResult.legalName ||
-                        efrisQueryResult.businessName ||
-                        'Unknown Customer';
-
-    const customerTIN = efrisQueryResult.tin || '';
-    const customerAddress = efrisQueryResult.address || '';
-    const customerNIN = efrisQueryResult.nin || '';
-    const customerBRN = efrisQueryResult.brn || '';
-    const taxpayerType = efrisQueryResult.taxpayer_type || '101';
-
-    console.log('Creating customer with name:', customerName);
-
-    const customerData = new FormData();
-    customerData.append('name', customerName);
-    customerData.append('tin', customerTIN);
-    customerData.append('physical_address', customerAddress);
-    customerData.append('customer_type', taxpayerType === '202' ? 'BUSINESS' : 'INDIVIDUAL');
-
-    // Handle NIN/BRN - check both possible field names
-    const ninBrn = efrisQueryResult.nin_brn || efrisQueryResult.ninBrn || '';
-    if (ninBrn) {
-        const parts = ninBrn.split('/');
-        if (parts[0]) customerData.append('nin', parts[0]);
-        if (parts[1]) customerData.append('brn', parts[1]);
-    } else {
-        // If no combined field, use individual fields
-        if (customerNIN) customerData.append('nin', customerNIN);
-        if (customerBRN) customerData.append('brn', customerBRN);
-    }
-
-    // Extract phone from address or use TIN as fallback
-    const phoneMatch = customerAddress.match(/(\d{10,})/);
-    if (phoneMatch) {
-        customerData.append('phone', phoneMatch[1]);
-    } else {
-        // Use last 9 digits of TIN as phone if no phone found
-        customerData.append('phone', customerTIN.slice(-9) || '000000000');
-    }
-
-    customerData.append('from_efris', 'true');
-
-    const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]');
-    if (!csrfToken) {
-        console.error('CSRF token not found');
-        btn.innerHTML = originalText;
-        btn.disabled = false;
-        return;
-    }
-
-    fetch('{% url "sales:create_customer_ajax" %}', {
-        method: 'POST',
-        body: customerData,
-        headers: {
-            'X-CSRFToken': csrfToken.value,
-        }
-    })
-    .then(response => {
-        if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
-        }
-        return response.json();
-    })
-    .then(data => {
-        btn.innerHTML = originalText;
-        btn.disabled = false;
-
-        if (data.success && data.customer) {
-            console.log('Customer created successfully:', data.customer);
-            selectCustomer(data.customer);
-            clearEFRISQuery();
-
-            // Switch to search tab
-            const searchTab = document.getElementById('search-existing-tab');
-            if (searchTab) {
-                const tab = new bootstrap.Tab(searchTab);
-                tab.show();
+        // Validate due date is not in the past
+        const today = new Date();
+        const dueDate = new Date(dueDateField.value);
+        if (dueDate < today) {
+            if (!confirm('Due date is in the past. Continue anyway?')) {
+                return;
             }
-
-            showSuccess(`{% trans "Customer" %} "${data.customer.name}" {% trans "created from EFRIS data and selected!" %}`);
-        } else {
-            const errorMsg = data.error || '{% trans "Failed to create customer. Please try again." %}';
-            console.error('Customer creation failed:', errorMsg);
-            showEFRISError(errorMsg);
         }
-    })
-    .catch(error => {
-        console.error('Customer Creation Error:', error);
-        btn.innerHTML = originalText;
-        btn.disabled = false;
-        showEFRISError('{% trans "Error creating customer. Please try again." %}');
+    }
+
+    // Also validate payment method for invoices
+    const paymentMethod = document.querySelector('select[name="payment_method"]').value;
+    if (docType === 'INVOICE' && paymentMethod === 'CREDIT') {
+        if (!State.selectedCustomer) {
+            alert('Customer is required for credit invoices');
+            document.getElementById('customerSearch').focus();
+            return;
+        }
+    }
+
+    document.getElementById('createSaleForm').submit();
+}
+// Utility functions
+function switchItemType(type) {
+    State.currentItemType = type;
+    document.querySelectorAll('[data-type]').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.type === type);
+        btn.classList.toggle('btn-primary', btn.dataset.type === type);
+        btn.classList.toggle('btn-outline-primary', btn.dataset.type !== type);
     });
-}
-
-// EFRIS Utility Functions
-function clearEFRISQuery() {
-    document.getElementById('taxpayerTIN').value = '';
-    document.getElementById('taxpayerNINBRN').value = '';
-    efrisQueryResult = null;
-    hideEFRISResults();
-    hideEFRISError();
-}
-
-function showEFRISError(message) {
-    const errorDiv = document.getElementById('efrisQueryError');
-    const errorMsg = document.getElementById('efrisErrorMessage');
-    if (errorDiv && errorMsg) {
-        errorMsg.textContent = message;
-        errorDiv.style.display = 'block';
-    }
-}
-
-function hideEFRISError() {
-    const errorDiv = document.getElementById('efrisQueryError');
-    if (errorDiv) errorDiv.style.display = 'none';
-}
-
-function hideEFRISResults() {
-    const results = document.getElementById('efrisQueryResults');
-    if (results) results.style.display = 'none';
-}
-
-function showEFRISLoading() {
-    const loading = document.getElementById('efrisQueryLoading');
-    if (loading) loading.style.display = 'block';
-}
-
-function hideEFRISLoading() {
-    const loading = document.getElementById('efrisQueryLoading');
-    if (loading) loading.style.display = 'none';
-}
-
-function disableQueryButton() {
-    const btn = document.getElementById('queryEFRISBtn');
-    if (btn) {
-        btn.disabled = true;
-        btn.innerHTML = '<i class="bi bi-spinner fa-spin me-2"></i>{% trans "Querying..." %}';
-    }
-}
-
-function enableQueryButton() {
-    const btn = document.getElementById('queryEFRISBtn');
-    if (btn) {
-        btn.disabled = false;
-        btn.innerHTML = '<i class="bi bi-shield-search me-2"></i>{% trans "Query EFRIS" %}';
-    }
-}
-
-function getTaxpayerTypeDisplay(type) {
-    const types = {
-        '101': '{% trans "Individual" %}',
-        '102': '{% trans "Sole Proprietor" %}',
-        '103': '{% trans "Partnership" %}',
-        '201': '{% trans "Private Company" %}',
-        '202': '{% trans "Limited Company" %}',
-        '301': '{% trans "Government" %}',
-        '401': '{% trans "NGO" %}',
-    };
-    return types[type] || `{% trans "Type" %} ${type}`;
-}
-
-// UI State Management
-function updatePagination(totalItems, itemsPerPage) {
-    const prevBtn = document.getElementById('prevPage');
-    const nextBtn = document.getElementById('nextPage');
-    const info = document.getElementById('paginationInfo');
-
-    State.totalPages = Math.ceil(totalItems / itemsPerPage);
-
-    if (prevBtn) prevBtn.disabled = State.currentPage <= 1;
-    if (nextBtn) nextBtn.disabled = State.currentPage >= State.totalPages;
-    if (info) info.textContent = `Page ${State.currentPage} of ${State.totalPages} (${totalItems} items)`;
+    loadItems();
 }
 
 function showProductsLoading() {
-    const grid = document.getElementById('productsGrid');
-    const empty = document.getElementById('productsEmpty');
-    const loading = document.getElementById('productsLoading');
+    document.getElementById('productsGrid').style.display = 'none';
+    document.getElementById('productsEmpty').style.display = 'none';
+    document.getElementById('productsLoading').style.display = 'block';
+}
 
-    if (grid) grid.style.display = 'none';
-    if (empty) empty.style.display = 'none';
-    if (loading) loading.style.display = 'block';
+function hideProductsLoading() {
+    document.getElementById('productsLoading').style.display = 'none';
+    document.getElementById('productsGrid').style.display = 'flex';
 }
 
 function showProductsEmpty() {
-    const grid = document.getElementById('productsGrid');
-    const loading = document.getElementById('productsLoading');
-    const empty = document.getElementById('productsEmpty');
-
-    if (grid) grid.style.display = 'none';
-    if (loading) loading.style.display = 'none';
-    if (empty) empty.style.display = 'block';
+    document.getElementById('productsLoading').style.display = 'none';
+    document.getElementById('productsGrid').style.display = 'none';
+    document.getElementById('productsEmpty').style.display = 'block';
 }
 
-function enableActionButtons() {
-    const completeBtn = document.getElementById('completeSaleBtn');
-    const draftBtn = document.getElementById('saveDraftBtn');
-
-    if (completeBtn) completeBtn.disabled = false;
-    if (draftBtn) draftBtn.disabled = false;
-}
-
-function disableActionButtons() {
-    const completeBtn = document.getElementById('completeSaleBtn');
-    const draftBtn = document.getElementById('saveDraftBtn');
-
-    if (completeBtn) completeBtn.disabled = true;
-    if (draftBtn) draftBtn.disabled = true;
-}
-
-// Notification System
-function showSuccess(message) {
-    showNotification(message, 'success');
+function debounce(func, wait) {
+    let timeout;
+    return function executedFunction(...args) {
+        const later = () => {
+            clearTimeout(timeout);
+            func(...args);
+        };
+        clearTimeout(timeout);
+        timeout = setTimeout(later, wait);
+    };
 }
 
 function showError(message) {
-    showNotification(message, 'danger');
+    alert(message);
 }
 
-function showNotification(message, type) {
-    const alert = document.createElement('div');
-    alert.className = `alert alert-${type} alert-dismissible fade show`;
-    alert.style.cssText = 'position: fixed; top: 20px; right: 20px; z-index: 9999; min-width: 300px;';
+// New customer modal
+async function saveNewCustomer() {
+    const form = document.getElementById('newCustomerForm');
+    const formData = new FormData(form);
 
-    const icon = type === 'success' ? 'check-circle' : 'exclamation-triangle';
-    alert.innerHTML = `
-        <i class="bi bi-${icon} me-2"></i>${message}
-        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    try {
+        const response = await fetch('{% url "sales:create_customer_ajax" %}', {
+            method: 'POST',
+            body: formData,
+            headers: {
+                'X-CSRFToken': '{{ csrf_token }}'
+            }
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            selectCustomer(data.customer);
+            bootstrap.Modal.getInstance(document.getElementById('newCustomerModal')).hide();
+            form.reset();
+        } else {
+            alert(data.error);
+        }
+    } catch (error) {
+        console.error('Error creating customer:', error);
+        alert('Failed to create customer');
+    }
+}
+
+// EFRIS functions (if enabled)
+async function queryEFRISTaxpayer() {
+    const tin = document.getElementById('taxpayerTIN').value;
+    if (!tin) {
+        alert('Please enter TIN');
+        return;
+    }
+
+    try {
+        const formData = new FormData();
+        formData.append('tin', tin);
+
+        const response = await fetch('{% url "efris:taxpayer_query" %}', {
+            method: 'POST',
+            body: formData,
+            headers: {
+                'X-CSRFToken': '{{ csrf_token }}'
+            }
+        });
+
+        const data = await response.json();
+
+        if (data.success && data.taxpayer) {
+            displayEFRISResults(data.taxpayer);
+        } else {
+            alert(data.error || 'Taxpayer not found');
+        }
+    } catch (error) {
+        console.error('EFRIS query error:', error);
+        alert('Failed to query EFRIS');
+    }
+}
+
+function displayEFRISResults(taxpayer) {
+    const results = document.getElementById('efrisQueryResults');
+    results.innerHTML = `
+        <div class="card mt-3">
+            <div class="card-body">
+                <h6>${taxpayer.legal_name}</h6>
+                <p class="mb-1"><strong>TIN:</strong> ${taxpayer.tin}</p>
+                <p class="mb-3"><strong>Type:</strong> ${taxpayer.taxpayer_type}</p>
+                <button type="button" class="btn btn-success btn-sm w-100"
+                        onclick='createCustomerFromEFRIS(${JSON.stringify(taxpayer)})'>
+                    Create Customer
+                </button>
+            </div>
+        </div>
     `;
+    results.style.display = 'block';
+}
 
-    document.body.appendChild(alert);
-    setTimeout(() => alert.remove(), type === 'success' ? 3000 : 5000);
+async function createCustomerFromEFRIS(taxpayer) {
+    const formData = new FormData();
+    formData.append('name', taxpayer.legal_name);
+    formData.append('tin', taxpayer.tin);
+    formData.append('phone', taxpayer.tin.slice(-9));
+    formData.append('from_efris', 'true');
+
+    try {
+        const response = await fetch('{% url "sales:create_customer_ajax" %}', {
+            method: 'POST',
+            body: formData,
+            headers: {
+                'X-CSRFToken': '{{ csrf_token }}'
+            }
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            selectCustomer(data.customer);
+            document.getElementById('efrisQueryResults').style.display = 'none';
+            document.getElementById('taxpayerTIN').value = '';
+
+            // Switch to search tab
+            const searchTab = document.querySelector('[data-bs-target="#searchTab"]');
+            if (searchTab) {
+                bootstrap.Tab.getInstance(searchTab).show();
+            }
+        } else {
+            alert(data.error);
+        }
+    } catch (error) {
+        console.error('Error creating customer from EFRIS:', error);
+        alert('Failed to create customer');
+    }
 }
 </script>
 {% endblock %}

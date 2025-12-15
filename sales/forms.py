@@ -11,7 +11,7 @@ from stores.models import Store
 
 
 class SaleForm(forms.ModelForm):
-    """Enhanced Sale form with branch-based store filtering and validation"""
+    """Enhanced Sale form with document type selection and validation"""
 
     customer_search = forms.CharField(
         required=False,
@@ -24,17 +24,52 @@ class SaleForm(forms.ModelForm):
         label='Customer'
     )
 
+    # ==================== NEW: Document Type Specific Fields ====================
+    due_date = forms.DateField(
+        required=False,
+        widget=forms.DateInput(attrs={
+            'class': 'form-control',
+            'type': 'date',
+            'id': 'due_date_field'
+        }),
+        label='Due Date'
+    )
+
+    terms = forms.CharField(
+        required=False,
+        widget=forms.Textarea(attrs={
+            'class': 'form-control',
+            'rows': 2,
+            'id': 'terms_field',
+            'placeholder': 'Payment terms...'
+        }),
+        label='Terms'
+    )
+
+    purchase_order = forms.CharField(
+        required=False,
+        widget=forms.TextInput(attrs={
+            'class': 'form-control',
+            'id': 'purchase_order_field',
+            'placeholder': 'Purchase Order Number...'
+        }),
+        label='Purchase Order'
+    )
+
     class Meta:
         model = Sale
         fields = [
-            'store', 'customer', 'transaction_type', 'document_type',
-            'payment_method', 'currency', 'discount_amount', 'notes'
+            'store', 'customer', 'document_type', 'payment_method',
+            'currency', 'discount_amount', 'notes', 'due_date'
         ]
         widgets = {
             'store': forms.Select(attrs={'class': 'form-select', 'required': True}),
             'customer': forms.HiddenInput(),
-            'transaction_type': forms.Select(attrs={'class': 'form-select'}),
-            'document_type': forms.Select(attrs={'class': 'form-select'}),
+            'document_type': forms.Select(attrs={
+                'class': 'form-select',
+                'id': 'document_type_select',
+                'onchange': 'updateFormFields()'
+            }),
             'payment_method': forms.Select(attrs={'class': 'form-select', 'required': True}),
             'currency': forms.Select(attrs={'class': 'form-select'}),
             'discount_amount': forms.NumberInput(attrs={
@@ -47,7 +82,8 @@ class SaleForm(forms.ModelForm):
                 'class': 'form-control',
                 'rows': 3,
                 'placeholder': 'Additional notes...'
-            })
+            }),
+            'due_date': forms.HiddenInput()  # Will be shown conditionally
         }
 
     def __init__(self, *args, **kwargs):
@@ -77,9 +113,23 @@ class SaleForm(forms.ModelForm):
         # Set defaults for new instances
         if not self.instance.pk:
             self.fields['currency'].initial = 'UGX'
-            self.fields['transaction_type'].initial = 'SALE'
-            self.fields['document_type'].initial = 'ORIGINAL'
-            self.fields['discount_amount'].initial = 0
+            self.fields['document_type'].initial = 'RECEIPT'
+
+            # Set payment method based on document type
+            doc_type = self.data.get('document_type', 'RECEIPT') if self.data else 'RECEIPT'
+            if doc_type == 'RECEIPT':
+                self.fields['payment_method'].initial = 'CASH'
+            elif doc_type == 'INVOICE':
+                self.fields['payment_method'].initial = 'CREDIT'
+            else:
+                self.fields['payment_method'].initial = 'CASH'
+
+        # Set initial values for invoice-specific fields
+        if self.instance.pk and self.instance.is_invoice:
+            invoice_detail = getattr(self.instance, 'invoice_detail', None)
+            if invoice_detail:
+                self.fields['terms'].initial = invoice_detail.terms
+                self.fields['purchase_order'].initial = invoice_detail.purchase_order
 
     def clean_store(self):
         store = self.cleaned_data.get('store')
@@ -113,16 +163,53 @@ class SaleForm(forms.ModelForm):
                 raise ValidationError("Invalid customer selected.")
         return customer
 
-    def clean(self):
-        cleaned_data = super().clean()
-        transaction_type = cleaned_data.get('transaction_type')
-        document_type = cleaned_data.get('document_type')
+    def clean_due_date(self):
+        """Validate due date for invoices"""
+        due_date = self.cleaned_data.get('due_date')
+        document_type = self.cleaned_data.get('document_type')
 
-        # Business logic: refunds cannot use Original document type
-        if transaction_type == 'REFUND' and document_type == 'ORIGINAL':
-            raise ValidationError("Refunds cannot use Original document type. Use Credit Note instead.")
+        if document_type == 'INVOICE' and not due_date:
+            raise ValidationError("Due date is required for invoices.")
 
-        return cleaned_data
+        return due_date
+
+    def clean_payment_method(self):
+        """Validate payment method based on document type"""
+        payment_method = self.cleaned_data.get('payment_method')
+        document_type = self.cleaned_data.get('document_type')
+
+        # Receipts cannot be credit sales
+        if document_type == 'RECEIPT' and payment_method == 'CREDIT':
+            raise ValidationError("Receipts must have immediate payment (not credit).")
+
+        # Proforma/Estimate can be any payment method
+        return payment_method
+
+    def save(self, commit=True):
+        """Save sale with document type specific handling"""
+        sale = super().save(commit=False)
+
+        if commit:
+            sale.save()
+
+            # Create invoice detail if it's an invoice
+            if sale.document_type == 'INVOICE':
+                from invoices.models import Invoice
+                invoice_data = {
+                    'sale': sale,
+                    'terms': self.cleaned_data.get('terms', ''),
+                    'purchase_order': self.cleaned_data.get('purchase_order', ''),
+                }
+
+                # Update existing or create new invoice detail
+                if hasattr(sale, 'invoice_detail'):
+                    for field, value in invoice_data.items():
+                        setattr(sale.invoice_detail, field, value)
+                    sale.invoice_detail.save()
+                else:
+                    Invoice.objects.create(**invoice_data)
+
+        return sale
 
 
 class SaleItemForm(forms.ModelForm):
@@ -177,6 +264,7 @@ class SaleItemForm(forms.ModelForm):
 
     def __init__(self, *args, **kwargs):
         self.store = kwargs.pop('store', None)
+        self.sale = kwargs.pop('sale', None)  # NEW: Get sale context
         super().__init__(*args, **kwargs)
 
         # Filter products based on store if provided
@@ -197,8 +285,9 @@ class SaleItemForm(forms.ModelForm):
         if quantity and quantity <= 0:
             raise ValidationError("Quantity must be greater than 0.")
 
-        # Check stock availability if store is provided
-        if product and self.store and quantity:
+        # Check stock availability if store is provided and not proforma/estimate
+        if (product and self.store and quantity and self.sale and
+                self.sale.document_type in ['RECEIPT', 'INVOICE']):
             try:
                 stock = Stock.objects.get(product=product, store=self.store)
                 if stock.quantity < quantity:
@@ -220,10 +309,20 @@ class SaleItemForm(forms.ModelForm):
 class PaymentForm(forms.ModelForm):
     """Enhanced Payment form with method-specific fields"""
 
+    # ==================== NEW: Payment Type Field ====================
+    payment_type = forms.ChoiceField(
+        choices=Payment.PAYMENT_TYPE_CHOICES,
+        initial='FULL',
+        widget=forms.Select(attrs={
+            'class': 'form-select payment-type-select'
+        })
+    )
+
     class Meta:
         model = Payment
         fields = [
-            'amount', 'payment_method', 'transaction_reference', 'notes'
+            'amount', 'payment_method', 'transaction_reference',
+            'payment_type', 'notes'
         ]
         widgets = {
             'amount': forms.NumberInput(attrs={
@@ -255,7 +354,7 @@ class PaymentForm(forms.ModelForm):
 
 
 class CartForm(forms.ModelForm):
-    """Enhanced Cart form"""
+    """Enhanced Cart form with document type selection"""
 
     customer_search = forms.CharField(
         required=False,
@@ -266,17 +365,60 @@ class CartForm(forms.ModelForm):
         })
     )
 
+    # ==================== NEW: Document Type for Cart ====================
+    due_date = forms.DateField(
+        required=False,
+        widget=forms.DateInput(attrs={
+            'class': 'form-control',
+            'type': 'date',
+            'id': 'cart_due_date'
+        }),
+        label='Due Date'
+    )
+
+    terms = forms.CharField(
+        required=False,
+        widget=forms.Textarea(attrs={
+            'class': 'form-control',
+            'rows': 2,
+            'id': 'cart_terms',
+            'placeholder': 'Payment terms...'
+        }),
+        label='Terms'
+    )
+
+    purchase_order = forms.CharField(
+        required=False,
+        widget=forms.TextInput(attrs={
+            'class': 'form-control',
+            'id': 'cart_purchase_order',
+            'placeholder': 'Purchase Order Number...'
+        }),
+        label='Purchase Order'
+    )
+
     class Meta:
         model = Cart
-        fields = ['customer', 'notes']
+        fields = ['customer', 'document_type', 'notes', 'due_date', 'terms', 'purchase_order']
         widgets = {
             'customer': forms.HiddenInput(),
+            'document_type': forms.Select(attrs={
+                'class': 'form-select',
+                'id': 'cart_document_type',
+                'onchange': 'updateCartFields()'
+            }),
             'notes': forms.Textarea(attrs={
                 'class': 'form-control',
                 'rows': 2,
                 'placeholder': 'Cart notes...'
-            })
+            }),
         }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Set default document type
+        if not self.instance.pk:
+            self.fields['document_type'].initial = 'RECEIPT'
 
 
 class CartItemForm(forms.ModelForm):
@@ -318,7 +460,7 @@ class CartItemForm(forms.ModelForm):
 
 
 class QuickSaleForm(forms.Form):
-    """Quick sale form for fast transactions"""
+    """Quick sale form for fast transactions - UPDATED"""
 
     products_data = forms.CharField(widget=forms.HiddenInput())
     customer = forms.ModelChoiceField(
@@ -326,10 +468,28 @@ class QuickSaleForm(forms.Form):
         required=False,
         widget=forms.Select(attrs={'class': 'form-select'})
     )
+
+    # ==================== NEW: Document Type ====================
+    document_type = forms.ChoiceField(
+        choices=Sale.DOCUMENT_TYPE_CHOICES,
+        initial='RECEIPT',
+        widget=forms.Select(attrs={'class': 'form-select'})
+    )
+
     payment_method = forms.ChoiceField(
         choices=Sale.PAYMENT_METHODS,
         widget=forms.Select(attrs={'class': 'form-select'})
     )
+
+    # ==================== NEW: Conditional Fields ====================
+    due_date = forms.DateField(
+        required=False,
+        widget=forms.DateInput(attrs={
+            'class': 'form-control',
+            'type': 'date'
+        })
+    )
+
     cash_received = forms.DecimalField(
         required=False,
         min_value=0,
@@ -339,6 +499,7 @@ class QuickSaleForm(forms.Form):
             'placeholder': 'Cash received...'
         })
     )
+
     notes = forms.CharField(
         required=False,
         widget=forms.Textarea(attrs={
@@ -357,15 +518,35 @@ class QuickSaleForm(forms.Form):
         except json.JSONDecodeError:
             raise ValidationError("Invalid products data.")
 
+    def clean_due_date(self):
+        """Validate due date for invoices"""
+        due_date = self.cleaned_data.get('due_date')
+        document_type = self.cleaned_data.get('document_type')
+
+        if document_type == 'INVOICE' and not due_date:
+            raise ValidationError("Due date is required for invoices.")
+
+        return due_date
+
+    def clean_payment_method(self):
+        """Validate payment method based on document type"""
+        payment_method = self.cleaned_data.get('payment_method')
+        document_type = self.cleaned_data.get('document_type')
+
+        if document_type == 'RECEIPT' and payment_method == 'CREDIT':
+            raise ValidationError("Receipts must have immediate payment (not credit).")
+
+        return payment_method
+
 
 class SaleSearchForm(forms.Form):
-    """Advanced search form for sales"""
+    """Advanced search form for sales - UPDATED"""
 
     search = forms.CharField(
         required=False,
         widget=forms.TextInput(attrs={
             'class': 'form-control',
-            'placeholder': 'Search by invoice, customer, or transaction ID...'
+            'placeholder': 'Search by document number, customer, or transaction ID...'
         })
     )
 
@@ -375,14 +556,22 @@ class SaleSearchForm(forms.Form):
         widget=forms.Select(attrs={'class': 'form-select'})
     )
 
-    transaction_type = forms.ChoiceField(
-        choices=[('', 'All Types')] + Sale.TRANSACTION_TYPES,
+    # ==================== UPDATED: Document Type Filter ====================
+    document_type = forms.ChoiceField(
+        choices=[('', 'All Types')] + Sale.DOCUMENT_TYPE_CHOICES,
         required=False,
         widget=forms.Select(attrs={'class': 'form-select'})
     )
 
     payment_method = forms.ChoiceField(
         choices=[('', 'All Methods')] + Sale.PAYMENT_METHODS,
+        required=False,
+        widget=forms.Select(attrs={'class': 'form-select'})
+    )
+
+    # ==================== NEW: Payment Status Filter ====================
+    payment_status = forms.ChoiceField(
+        choices=[('', 'All Statuses')] + Sale.PAYMENT_STATUS_CHOICES,
         required=False,
         widget=forms.Select(attrs={'class': 'form-select'})
     )
@@ -492,13 +681,15 @@ class ReceiptForm(forms.ModelForm):
 
 
 class BulkActionForm(forms.Form):
-    """Form for bulk actions on sales"""
+    """Form for bulk actions on sales - UPDATED"""
 
     ACTION_CHOICES = [
         ('fiscalize', 'Fiscalize Selected'),
         ('print_receipts', 'Print Receipts'),
         ('export_csv', 'Export to CSV'),
         ('export_excel', 'Export to Excel'),
+        ('convert_to_invoice', 'Convert to Invoice'),
+        ('send_invoices', 'Send Invoices'),
     ]
 
     action = forms.ChoiceField(
@@ -508,6 +699,26 @@ class BulkActionForm(forms.Form):
 
     selected_sales = forms.CharField(
         widget=forms.HiddenInput()
+    )
+
+    # ==================== NEW: For invoice conversion ====================
+    due_date = forms.DateField(
+        required=False,
+        widget=forms.DateInput(attrs={
+            'class': 'form-control',
+            'type': 'date',
+            'id': 'bulk_due_date'
+        })
+    )
+
+    terms = forms.CharField(
+        required=False,
+        widget=forms.Textarea(attrs={
+            'class': 'form-control',
+            'rows': 2,
+            'id': 'bulk_terms',
+            'placeholder': 'Payment terms...'
+        })
     )
 
     def clean_selected_sales(self):
@@ -521,16 +732,30 @@ class BulkActionForm(forms.Form):
             raise ValidationError("Invalid selection data.")
 
 
-# Dynamic FormSets for handling multiple items
-SaleItemFormSet = forms.inlineformset_factory(
-    Sale,
-    SaleItem,
-    form=SaleItemForm,
-    extra=1,
-    can_delete=True,
-    min_num=1,
-    validate_min=True
-)
+# ==================== UPDATED: FormSets with Sale context ====================
+class SaleItemFormSet(forms.BaseInlineFormSet):
+    def __init__(self, *args, **kwargs):
+        self.sale = kwargs.pop('sale', None)
+        super().__init__(*args, **kwargs)
+
+    def _construct_form(self, i, **kwargs):
+        kwargs['sale'] = self.sale
+        return super()._construct_form(i, **kwargs)
+
+
+def get_sale_item_formset(sale=None):
+    """Factory function to create SaleItemFormSet with sale context"""
+    return forms.inlineformset_factory(
+        Sale,
+        SaleItem,
+        form=SaleItemForm,
+        formset=SaleItemFormSet,
+        extra=1,
+        can_delete=True,
+        min_num=1,
+        validate_min=True
+    )
+
 
 PaymentFormSet = forms.inlineformset_factory(
     Sale,
@@ -550,3 +775,38 @@ CartItemFormSet = forms.inlineformset_factory(
     min_num=1,
     validate_min=True
 )
+
+
+# ==================== NEW: Document Type Selection Form ====================
+class DocumentTypeForm(forms.Form):
+    """Form for selecting document type at sale creation"""
+
+    DOCUMENT_TYPE_CHOICES = [
+        ('RECEIPT', '🧾 Receipt (Immediate Payment)'),
+        ('INVOICE', '📄 Invoice (Credit Sale)'),
+        ('PROFORMA', '📑 Proforma (Quotation)'),
+        ('ESTIMATE', '📋 Estimate'),
+    ]
+
+    document_type = forms.ChoiceField(
+        choices=DOCUMENT_TYPE_CHOICES,
+        widget=forms.RadioSelect(attrs={
+            'class': 'form-check-input',
+            'onchange': 'documentTypeChanged(this.value)'
+        }),
+        initial='RECEIPT',
+        label='Select Document Type'
+    )
+
+    customer = forms.ModelChoiceField(
+        queryset=Customer.objects.all(),
+        required=False,
+        widget=forms.Select(attrs={'class': 'form-select'}),
+        label='Customer (Optional)'
+    )
+
+    store = forms.ModelChoiceField(
+        queryset=Store.objects.filter(is_active=True),
+        widget=forms.Select(attrs={'class': 'form-select'}),
+        label='Store'
+    )

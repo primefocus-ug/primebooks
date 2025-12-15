@@ -45,6 +45,7 @@ from accounts.utils import log_action
 # ============================================================================
 
 @login_required
+@permission_required('expenses.view_expense',raise_exception=True)
 def expense_list(request):
     """List expenses with advanced filtering and pagination"""
     # Base queryset with optimized select_related
@@ -152,6 +153,7 @@ def expense_list(request):
 
 
 @login_required
+@permission_required('expenses.view_expense',raise_exception=True)
 def expense_dashboard(request):
     """Enhanced expense dashboard with comprehensive insights"""
     # Date ranges
@@ -300,6 +302,7 @@ def expense_dashboard(request):
 # ============================================================================
 
 @login_required
+@permission_required('expenses.add_expense',raise_exception=True)
 @transaction.atomic
 def expense_create(request):
     """Create new expense with comprehensive validation"""
@@ -388,6 +391,7 @@ def expense_create(request):
 
 
 @login_required
+@permission_required('expenses.change_expense',raise_exception=True)
 @transaction.atomic
 def expense_edit(request, pk):
     """Edit existing expense (only drafts)"""
@@ -441,6 +445,7 @@ def expense_edit(request, pk):
 
 
 @login_required
+@permission_required('expenses.view_expense',raise_exception=True)
 @expense_owner_or_approver_required
 def expense_detail(request, pk):
     """View expense details with comprehensive information"""
@@ -539,6 +544,7 @@ def expense_detail(request, pk):
 
 
 @login_required
+@permission_required('expenses.delete_expense',raise_exception=True)
 @require_http_methods(["POST"])
 def expense_delete(request, pk):
     """Delete expense (only drafts)"""
@@ -791,6 +797,7 @@ def expense_cancel(request, pk):
 # ============================================================================
 
 @login_required
+@permission_required('expenses.add_expense',raise_exception=True)
 @transaction.atomic
 def expense_bulk_action(request):
     """Handle bulk actions for expenses"""

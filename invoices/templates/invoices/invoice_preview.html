@@ -1,0 +1,268 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Preview Invoice {{ sale.document_number }}{% endblock %}
+
+{% block extra_css %}
+<style>
+    .invoice-preview {
+        max-width: 900px;
+        margin: 0 auto;
+        background: white;
+        padding: 40px;
+        box-shadow: 0 0 20px rgba(0,0,0,0.1);
+    }
+    
+    .invoice-header {
+        border-bottom: 3px solid #667eea;
+        padding-bottom: 20px;
+        margin-bottom: 30px;
+    }
+    
+    .company-info {
+        text-align: right;
+    }
+    
+    .invoice-title {
+        font-size: 2.5rem;
+        color: #667eea;
+        font-weight: bold;
+    }
+    
+    .invoice-meta {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 20px;
+        margin-bottom: 30px;
+    }
+    
+    .bill-to, .invoice-details {
+        padding: 20px;
+        background: #f8f9fa;
+        border-radius: 8px;
+    }
+    
+    .items-table {
+        width: 100%;
+        margin-bottom: 30px;
+    }
+    
+    .items-table th {
+        background: #667eea;
+        color: white;
+        padding: 12px;
+        text-align: left;
+    }
+    
+    .items-table td {
+        padding: 10px;
+        border-bottom: 1px solid #dee2e6;
+    }
+    
+    .totals-section {
+        margin-left: auto;
+        width: 350px;
+    }
+    
+    .totals-section table {
+        width: 100%;
+    }
+    
+    .totals-section td {
+        padding: 8px;
+    }
+    
+    .total-row {
+        font-size: 1.25rem;
+        font-weight: bold;
+        background: #667eea;
+        color: white;
+    }
+    
+    .action-buttons {
+        text-align: center;
+        margin-top: 30px;
+        padding-top: 30px;
+        border-top: 2px solid #dee2e6;
+    }
+    
+    .action-buttons .btn {
+        margin: 0 10px;
+    }
+    
+    @media print {
+        .action-buttons, nav, .sidebar {
+            display: none !important;
+        }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="invoice-preview">
+    <!-- Header -->
+    <div class="invoice-header">
+        <div class="row">
+            <div class="col-md-6">
+                <h1 class="invoice-title">INVOICE</h1>
+                {% if sale.status == 'DRAFT' %}
+                <span class="badge bg-warning">DRAFT</span>
+                {% endif %}
+            </div>
+            <div class="col-md-6 company-info">
+                <h4>{{ company.name }}</h4>
+                <p class="mb-0">{{ company.physical_address|default:"" }}</p>
+                <p class="mb-0">{{ company.phone|default:"" }}</p>
+                <p class="mb-0">{{ company.email|default:"" }}</p>
+                {% if company.tin %}
+                <p class="mb-0"><strong>TIN:</strong> {{ company.tin }}</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Invoice Meta -->
+    <div class="invoice-meta">
+        <div class="bill-to">
+            <h5>Bill To:</h5>
+            <p class="mb-1"><strong>{{ sale.customer.name|default:"Walk-in Customer" }}</strong></p>
+            {% if sale.customer %}
+            {% if sale.customer.email %}
+            <p class="mb-1">{{ sale.customer.email }}</p>
+            {% endif %}
+            {% if sale.customer.phone %}
+            <p class="mb-1">{{ sale.customer.phone }}</p>
+            {% endif %}
+            {% if sale.customer.physical_address %}
+            <p class="mb-1">{{ sale.customer.physical_address }}</p>
+            {% endif %}
+            {% if sale.customer.tin %}
+            <p class="mb-1"><strong>TIN:</strong> {{ sale.customer.tin }}</p>
+            {% endif %}
+            {% endif %}
+        </div>
+        
+        <div class="invoice-details">
+            <h5>Invoice Details:</h5>
+            <p class="mb-1"><strong>Invoice #:</strong> {{ sale.document_number }}</p>
+            <p class="mb-1"><strong>Date:</strong> {{ sale.created_at|date:"F d, Y" }}</p>
+            <p class="mb-1"><strong>Due Date:</strong> {{ sale.due_date|date:"F d, Y" }}</p>
+            {% if invoice.purchase_order %}
+            <p class="mb-1"><strong>PO #:</strong> {{ invoice.purchase_order }}</p>
+            {% endif %}
+            <p class="mb-1"><strong>Status:</strong> 
+                {% if sale.status == 'DRAFT' %}
+                <span class="badge bg-secondary">Draft</span>
+                {% elif sale.status == 'PENDING_PAYMENT' %}
+                <span class="badge bg-warning">Pending Payment</span>
+                {% elif sale.status == 'PAID' %}
+                <span class="badge bg-success">Paid</span>
+                {% endif %}
+            </p>
+        </div>
+    </div>
+
+    <!-- Items Table -->
+    <table class="items-table">
+        <thead>
+            <tr>
+                <th>#</th>
+                <th>Item Description</th>
+                <th>Type</th>
+                <th class="text-end">Qty</th>
+                <th class="text-end">Unit Price</th>
+                <th class="text-end">Discount</th>
+                <th class="text-end">Amount</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for item in items %}
+            <tr>
+                <td>{{ forloop.counter }}</td>
+                <td>
+                    {{ item.item_name }}
+                    {% if item.description and item.description != item.item_name %}
+                    <br><small class="text-muted">{{ item.description }}</small>
+                    {% endif %}
+                </td>
+                <td>
+                    {% if item.item_type == 'PRODUCT' %}
+                    <span class="badge bg-info">Product</span>
+                    {% else %}
+                    <span class="badge bg-success">Service</span>
+                    {% endif %}
+                </td>
+                <td class="text-end">{{ item.quantity }}</td>
+                <td class="text-end">{{ item.unit_price|floatformat:2 }}</td>
+                <td class="text-end">
+                    {% if item.discount_amount > 0 %}
+                    {{ item.discount|floatformat:2 }}%
+                    {% else %}
+                    -
+                    {% endif %}
+                </td>
+                <td class="text-end">{{ item.line_total|floatformat:2 }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    <!-- Totals -->
+    <div class="totals-section">
+        <table>
+            <tr>
+                <td>Subtotal:</td>
+                <td class="text-end">UGX {{ sale.subtotal|floatformat:2 }}</td>
+            </tr>
+            {% if sale.discount_amount > 0 %}
+            <tr>
+                <td>Discount:</td>
+                <td class="text-end text-danger">-UGX {{ sale.discount_amount|floatformat:2 }}</td>
+            </tr>
+            {% endif %}
+            <tr>
+                <td>Tax (included):</td>
+                <td class="text-end">UGX {{ sale.tax_amount|floatformat:2 }}</td>
+            </tr>
+            <tr class="total-row">
+                <td>TOTAL:</td>
+                <td class="text-end">UGX {{ sale.total_amount|floatformat:2 }}</td>
+            </tr>
+        </table>
+    </div>
+
+    <!-- Terms -->
+    {% if invoice.terms %}
+    <div class="mt-4">
+        <h6>Terms & Conditions:</h6>
+        <p class="text-muted">{{ invoice.terms|linebreaks }}</p>
+    </div>
+    {% endif %}
+
+    <!-- Notes -->
+    {% if sale.notes %}
+    <div class="mt-3">
+        <h6>Notes:</h6>
+        <p class="text-muted">{{ sale.notes|linebreaks }}</p>
+    </div>
+    {% endif %}
+
+    <!-- Action Buttons -->
+    <div class="action-buttons">
+        <a href="{% url 'invoices:invoice_detail' invoice.pk %}" class="btn btn-secondary">
+            <i class="fas fa-arrow-left"></i> Back to Invoice
+        </a>
+        <button onclick="window.print()" class="btn btn-primary">
+            <i class="fas fa-print"></i> Print
+        </button>
+        <a href="{% url 'invoices:invoice_download_pdf' invoice.pk %}" class="btn btn-success">
+            <i class="fas fa-download"></i> Download PDF
+        </a>
+        {% if sale.status == 'DRAFT' %}
+        <a href="{% url 'invoices:invoice_edit' invoice.pk %}" class="btn btn-warning">
+            <i class="fas fa-edit"></i> Edit Invoice
+        </a>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

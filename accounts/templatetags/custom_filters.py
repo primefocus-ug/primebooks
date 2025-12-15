@@ -10,12 +10,27 @@ def filter_attr(queryset, attr_name):
     return [item for item in queryset if getattr(item, attr_name, False)]
 
 @register.filter
+def in_list(value, arg):
+    """Check if value is in comma-separated list"""
+    if isinstance(arg, str):
+        return value in [x.strip() for x in arg.split(',')]
+    return False
+
+@register.filter
 def divide(value, arg):
     """Divides the value by the argument"""
     try:
         return float(value) / float(arg) if arg != 0 else 0
     except (ValueError, TypeError):
         return 0
+
+@register.filter
+def sub(value, arg):
+    try:
+        return float(value) - float(arg)
+    except:
+        return value
+
 
 @register.filter
 def multiply(value, arg):
@@ -176,3 +191,13 @@ def money(value, places=2):
         return f"{value:,.{places}f}"
     except (InvalidOperation, ValueError, TypeError):
         return value
+
+@register.filter
+def get_field(form, field_name):
+    """
+    Usage: {{ form|get_field:"name" }}
+    """
+    try:
+        return form[field_name]
+    except KeyError:
+        return ""

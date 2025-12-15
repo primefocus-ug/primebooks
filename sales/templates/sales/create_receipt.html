@@ -1,0 +1,829 @@
+{% extends "base.html" %}
+{% load i18n %}
+{% load static %}
+
+{% block title %}{% trans "Create Receipt" %} | {{ company.name }}{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'themes.css' %}">
+<style>
+:root {
+    --bg-primary: #ffffff;
+    --bg-secondary: #f8f9fa;
+    --bg-tertiary: #e9ecef;
+    --text-primary: #212529;
+    --text-secondary: #6c757d;
+    --border-color: #dee2e6;
+    --shadow-sm: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.075);
+    --shadow-md: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
+    --accent-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    --success-gradient: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+    --warning-gradient: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+    --card-hover: rgba(0, 0, 0, 0.05);
+}
+
+[data-bs-theme="dark"] {
+    --bg-primary: #1a1d29;
+    --bg-secondary: #242736;
+    --bg-tertiary: #2d3142;
+    --text-primary: #e9ecef;
+    --text-secondary: #adb5bd;
+    --border-color: #3d4152;
+    --shadow-sm: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.3);
+    --shadow-md: 0 0.5rem 1rem rgba(0, 0, 0, 0.5);
+    --card-hover: rgba(255, 255, 255, 0.05);
+}
+
+body {
+    background-color: var(--bg-secondary);
+    color: var(--text-primary);
+}
+
+.receipt-header {
+    background: var(--success-gradient);
+    color: white;
+    border-radius: 16px;
+    padding: 2rem;
+    margin-bottom: 2rem;
+    box-shadow: var(--shadow-md);
+}
+
+.customer-section {
+    position: relative;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+}
+
+.customer-dropdown {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    box-shadow: var(--shadow-md);
+    max-height: 400px;
+    overflow-y: auto;
+    z-index: 1000;
+    margin-top: 0.5rem;
+    display: none;
+}
+
+.customer-dropdown.show {
+    display: block;
+}
+
+.customer-list-item {
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid var(--border-color);
+    cursor: pointer;
+    transition: background 0.2s;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.customer-list-item:hover {
+    background: var(--card-hover);
+}
+
+.customer-list-item-avatar {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: var(--accent-gradient);
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: bold;
+    flex-shrink: 0;
+}
+
+.products-section {
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    padding: 1.5rem;
+    margin-bottom: 2rem;
+}
+
+.item-type-toggle {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 1.5rem;
+}
+
+.item-type-btn {
+    flex: 1;
+    padding: 0.75rem;
+    border: 2px solid transparent;
+    border-radius: 8px;
+    background: var(--bg-secondary);
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.item-type-btn.active {
+    background: var(--accent-gradient);
+    color: white;
+}
+
+.products-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 1.5rem;
+}
+
+.product-card {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    padding: 1.25rem;
+    transition: all 0.3s ease;
+    cursor: pointer;
+}
+
+.product-card:hover {
+    transform: translateY(-4px);
+    box-shadow: var(--shadow-md);
+    border-color: #667eea;
+}
+
+.cart-section {
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    padding: 1.5rem;
+    position: sticky;
+    top: 20px;
+}
+
+.cart-item {
+    display: flex;
+    gap: 1rem;
+    padding: 1rem;
+    background: var(--bg-secondary);
+    border-radius: 8px;
+    margin-bottom: 0.75rem;
+}
+
+.cart-summary {
+    background: var(--success-gradient);
+    color: white;
+    border-radius: 12px;
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+}
+
+.btn-action {
+    padding: 1rem;
+    border-radius: 10px;
+    font-weight: 600;
+    border: none;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.btn-complete {
+    background: var(--success-gradient);
+    color: white;
+}
+
+.btn-draft {
+    background: var(--warning-gradient);
+    color: white;
+}
+
+.item-badge {
+    font-size: 0.7rem;
+    padding: 0.25rem 0.5rem;
+    border-radius: 12px;
+    font-weight: 600;
+}
+
+.product-badge {
+    background: var(--success-gradient);
+    color: white;
+}
+
+.service-badge {
+    background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+    color: white;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- Tenant Context Display -->
+{% if company %}
+<div class="receipt-header">
+    <div class="d-flex align-items-center justify-content-between">
+        <div>
+            <h3 class="mb-1">
+                <i class="bi bi-receipt me-2"></i>{% trans "Create Receipt" %}
+            </h3>
+            <p class="mb-0 opacity-75">{{ company.name }} - Immediate Payment</p>
+        </div>
+        <div>
+            {% if company.efris_enabled %}
+            <span class="badge bg-light text-dark">
+                <i class="bi bi-check-circle me-1"></i>EFRIS Ready
+            </span>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endif %}
+
+{% if no_stores %}
+<div class="alert alert-warning">
+    <i class="bi bi-exclamation-triangle me-2"></i>
+    {{ error_message }}
+</div>
+{% else %}
+
+<form id="createReceiptForm" method="post" action="{% url 'sales:create_receipt' %}">
+    {% csrf_token %}
+
+    <div class="row">
+        <!-- Products/Services Section (Left/Main) -->
+        <div class="col-lg-8">
+            <!-- Store Selection -->
+            <div class="card mb-3">
+                <div class="card-body">
+                    <h6 class="card-title mb-3">
+                        <i class="bi bi-shop me-2"></i>{% trans "Store Selection" %}
+                    </h6>
+                    <select name="store" id="storeSelect" class="form-select" required>
+                        <option value="">{% trans "-- Select Store --" %}</option>
+                        {% for store in stores %}
+                        <option value="{{ store.id }}"
+                                {% if default_store and store.id == default_store.id %}selected{% endif %}>
+                            {{ store.name }} ({{ store.code }})
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+
+            <!-- Item Type Toggle -->
+            <div class="card mb-3">
+                <div class="card-body">
+                    <div class="item-type-toggle">
+                        <button type="button" class="item-type-btn active"
+                                data-type="all" onclick="switchItemType('all')">
+                            <i class="bi bi-grid me-1"></i>{% trans "All Items" %}
+                        </button>
+                        <button type="button" class="item-type-btn"
+                                data-type="product" onclick="switchItemType('product')">
+                            <i class="bi bi-box-seam me-1"></i>{% trans "Products" %}
+                        </button>
+                        <button type="button" class="item-type-btn"
+                                data-type="service" onclick="switchItemType('service')">
+                            <i class="bi bi-gear me-1"></i>{% trans "Services" %}
+                        </button>
+                    </div>
+
+                    <!-- Search Bar -->
+                    <div class="input-group mb-3">
+                        <span class="input-group-text">
+                            <i class="bi bi-search"></i>
+                        </span>
+                        <input type="text" class="form-control" id="productSearchBar"
+                               placeholder="{% trans 'Search products or services...' %}">
+                    </div>
+
+                    <!-- Items Grid -->
+                    <div id="productsGrid" class="products-grid">
+                        <!-- Items loaded via JS -->
+                    </div>
+
+                    <!-- Loading/Empty States -->
+                    <div id="productsLoading" class="text-center py-4" style="display: none;">
+                        <div class="spinner-border text-primary" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                        <p class="mt-2">{% trans "Loading items..." %}</p>
+                    </div>
+
+                    <div id="productsEmpty" class="text-center py-4" style="display: none;">
+                        <i class="bi bi-inbox" style="font-size: 3rem; opacity: 0.3;"></i>
+                        <p class="mt-2">{% trans "No items found" %}</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Cart & Actions (Right/Sidebar) -->
+        <div class="col-lg-4">
+            <!-- Customer Selection -->
+            <div class="customer-section">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h6 class="mb-0">
+                        <i class="bi bi-person me-2"></i>{% trans "Customer (Optional)" %}
+                    </h6>
+                    <button type="button" class="btn btn-sm btn-primary"
+                            data-bs-toggle="modal" data-bs-target="#newCustomerModal">
+                        <i class="bi bi-plus"></i> {% trans "New" %}
+                    </button>
+                </div>
+
+                <input type="text" class="form-control" id="customerSearch"
+                       placeholder="{% trans 'Search customers...' %}"
+                       autocomplete="off">
+
+                <div class="customer-dropdown" id="customerDropdown">
+                    <div id="customerList"></div>
+                </div>
+
+                <!-- Selected Customer Display -->
+                <div id="customerDisplay" style="display: none;" class="mt-3 p-3 bg-light rounded">
+                    <div class="d-flex justify-content-between align-items-start">
+                        <div>
+                            <strong id="customerName"></strong>
+                            <br>
+                            <small id="customerDetails"></small>
+                        </div>
+                        <button type="button" class="btn btn-sm btn-danger"
+                                onclick="removeCustomer()">
+                            <i class="bi bi-x"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <input type="hidden" name="customer" id="customerId">
+            </div>
+
+            <!-- Cart Section -->
+            <div class="cart-section">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h6 class="mb-0">
+                        <i class="bi bi-cart3 me-2"></i>{% trans "Cart" %}
+                    </h6>
+                    <span class="badge bg-primary" id="cartCount">0</span>
+                </div>
+
+                <div id="cartItems">
+                    <div class="text-center py-4 text-muted">
+                        <i class="bi bi-cart-x" style="font-size: 2rem;"></i>
+                        <p class="mt-2">{% trans "Cart is empty" %}</p>
+                    </div>
+                </div>
+
+                <!-- Cart Summary -->
+                <div id="cartSummary" style="display: none;" class="cart-summary">
+                    <div class="d-flex justify-content-between mb-2">
+                        <span>{% trans "Subtotal:" %}</span>
+                        <span id="summarySubtotal">0</span>
+                    </div>
+                    <div class="d-flex justify-content-between mb-2">
+                        <span>{% trans "Tax:" %}</span>
+                        <span id="summaryTax">0</span>
+                    </div>
+                    <div class="d-flex justify-content-between mb-3 pb-3 border-bottom border-light">
+                        <span>{% trans "Discount:" %}</span>
+                        <span id="summaryDiscount">0</span>
+                    </div>
+                    <div class="d-flex justify-content-between">
+                        <strong>{% trans "Total:" %}</strong>
+                        <strong id="summaryTotal">0</strong>
+                    </div>
+                </div>
+
+                <!-- Payment Method -->
+                <div class="mt-3">
+                    <label class="form-label">{% trans "Payment Method" %} *</label>
+                    <select name="payment_method" class="form-select" required>
+                        <option value="CASH">{% trans "Cash" %}</option>
+                        <option value="CARD">{% trans "Card" %}</option>
+                        <option value="MOBILE_MONEY">{% trans "Mobile Money" %}</option>
+                        <option value="BANK_TRANSFER">{% trans "Bank Transfer" %}</option>
+                    </select>
+                    <small class="text-muted">
+                        {% trans "Receipts are always paid immediately" %}
+                    </small>
+                </div>
+
+                <!-- Notes -->
+                <div class="mt-3">
+                    <label class="form-label">{% trans "Notes (Optional)" %}</label>
+                    <textarea name="notes" class="form-control" rows="2"
+                              placeholder="{% trans 'Add notes...' %}"></textarea>
+                </div>
+
+                <!-- Action Buttons -->
+                <div class="d-grid gap-2 mt-3">
+                    <button type="button" class="btn btn-action btn-complete"
+                            id="continueBtn" onclick="continueToPreview()" disabled>
+                        <i class="bi bi-arrow-right-circle me-2"></i>
+                        {% trans "Continue & Preview" %}
+                    </button>
+                    <a href="{% url 'sales:sales_list' %}" class="btn btn-outline-secondary">
+                        <i class="bi bi-x-circle me-2"></i>{% trans "Cancel" %}
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Hidden Fields -->
+    <input type="hidden" name="items_data" id="itemsData">
+    <input type="hidden" name="currency" value="UGX">
+    <input type="hidden" name="discount_amount" value="0">
+</form>
+
+<!-- New Customer Modal -->
+<div class="modal fade" id="newCustomerModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">{% trans "Add New Customer" %}</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="newCustomerForm">
+                    <div class="mb-3">
+                        <label class="form-label">{% trans "Name" %} *</label>
+                        <input type="text" class="form-control" name="name" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">{% trans "Phone" %} *</label>
+                        <input type="tel" class="form-control" name="phone" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">{% trans "Email" %}</label>
+                        <input type="email" class="form-control" name="email">
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                    {% trans "Cancel" %}
+                </button>
+                <button type="button" class="btn btn-primary" onclick="saveNewCustomer()">
+                    {% trans "Save" %}
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// Global state
+const State = {
+    cart: [],
+    items: [],
+    selectedCustomer: null,
+    currentItemType: 'all',
+};
+
+// Initialize
+document.addEventListener('DOMContentLoaded', function() {
+    setupEventListeners();
+    const storeId = document.getElementById('storeSelect').value;
+    if (storeId) {
+        loadItems();
+    }
+});
+
+// Event Listeners
+function setupEventListeners() {
+    document.getElementById('storeSelect').addEventListener('change', loadItems);
+    document.getElementById('productSearchBar').addEventListener('input', debounce(loadItems, 300));
+    document.getElementById('customerSearch').addEventListener('input', debounce(searchCustomers, 300));
+}
+
+// Load items
+async function loadItems() {
+    const storeId = document.getElementById('storeSelect').value;
+    const query = document.getElementById('productSearchBar').value;
+
+    if (!storeId && State.currentItemType !== 'service') {
+        showProductsEmpty();
+        return;
+    }
+
+    showProductsLoading();
+
+    try {
+        const params = new URLSearchParams({
+            store_id: storeId,
+            q: query || '',
+            item_type: State.currentItemType
+        });
+
+        const response = await fetch(`/sales/search-items/?${params}`);
+        const data = await response.json();
+
+        if (data.items && data.items.length > 0) {
+            State.items = data.items;
+            displayItems(data.items);
+        } else {
+            showProductsEmpty();
+        }
+    } catch (error) {
+        console.error('Error loading items:', error);
+        showError('Failed to load items');
+    }
+}
+
+// Display items
+function displayItems(items) {
+    const grid = document.getElementById('productsGrid');
+    hideProductsLoading();
+
+    grid.innerHTML = items.map(item => `
+        <div class="product-card" onclick='addToCart(${JSON.stringify(item)})'>
+            <div class="d-flex justify-content-between align-items-start mb-2">
+                <h6 class="mb-0">${item.name}</h6>
+                <span class="item-badge ${item.item_type === 'PRODUCT' ? 'product-badge' : 'service-badge'}">
+                    ${item.item_type}
+                </span>
+            </div>
+            <p class="small text-muted mb-2">${item.code || 'No code'}</p>
+            <p class="mb-2">
+                <strong>${item.final_price.toLocaleString()} UGX</strong>
+            </p>
+            ${item.stock ? `
+                <p class="small mb-2 text-${item.stock.available > 0 ? 'success' : 'danger'}">
+                    Stock: ${item.stock.available} ${item.stock.unit}
+                </p>
+            ` : ''}
+            <button type="button" class="btn btn-sm btn-primary w-100">
+                <i class="bi bi-cart-plus me-1"></i>Add to Cart
+            </button>
+        </div>
+    `).join('');
+}
+
+// Cart management
+function addToCart(item) {
+    // Check if item already exists in cart
+    const existingIndex = State.cart.findIndex(cartItem =>
+        (cartItem.item_type === 'PRODUCT' && cartItem.product_id === item.id) ||
+        (cartItem.item_type === 'SERVICE' && cartItem.service_id === item.id)
+    );
+
+    if (existingIndex >= 0) {
+        // Increment quantity
+        State.cart[existingIndex].quantity += 1;
+    } else {
+        // Add new item
+        const cartItem = {
+            item_type: item.item_type,
+            product_id: item.item_type === 'PRODUCT' ? item.id : null,
+            service_id: item.item_type === 'SERVICE' ? item.id : null,
+            name: item.name,
+            quantity: 1,
+            unit_price: item.final_price,
+            tax_rate: item.tax_rate || 'A',
+            discount: 0,
+            unit: item.unit_of_measure || 'pcs'
+        };
+        State.cart.push(cartItem);
+    }
+
+    updateCartDisplay();
+}
+
+function updateCartDisplay() {
+    const cartItems = document.getElementById('cartItems');
+    const cartCount = document.getElementById('cartCount');
+    const cartSummary = document.getElementById('cartSummary');
+    const continueBtn = document.getElementById('continueBtn');
+
+    cartCount.textContent = State.cart.length;
+
+    if (State.cart.length === 0) {
+        cartItems.innerHTML = `
+            <div class="text-center py-4 text-muted">
+                <i class="bi bi-cart-x" style="font-size: 2rem;"></i>
+                <p class="mt-2">Cart is empty</p>
+            </div>
+        `;
+        cartSummary.style.display = 'none';
+        continueBtn.disabled = true;
+        return;
+    }
+
+    cartItems.innerHTML = State.cart.map((item, index) => {
+        const itemTotal = item.quantity * item.unit_price;
+        return `
+            <div class="cart-item">
+                <div class="flex-grow-1">
+                    <div class="d-flex justify-content-between align-items-start mb-2">
+                        <strong>${item.name}</strong>
+                        <span class="item-badge ${item.item_type === 'PRODUCT' ? 'product-badge' : 'service-badge'}">
+                            ${item.item_type}
+                        </span>
+                    </div>
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div class="btn-group btn-group-sm" role="group">
+                            <button type="button" class="btn btn-outline-secondary"
+                                    onclick="updateQuantity(${index}, -1)">
+                                <i class="bi bi-dash"></i>
+                            </button>
+                            <button type="button" class="btn btn-outline-secondary" disabled>
+                                ${item.quantity}
+                            </button>
+                            <button type="button" class="btn btn-outline-secondary"
+                                    onclick="updateQuantity(${index}, 1)">
+                                <i class="bi bi-plus"></i>
+                            </button>
+                        </div>
+                        <strong>${itemTotal.toLocaleString()} UGX</strong>
+                    </div>
+                </div>
+                <button type="button" class="btn btn-sm btn-danger ms-2"
+                        onclick="removeFromCart(${index})">
+                    <i class="bi bi-trash"></i>
+                </button>
+            </div>
+        `;
+    }).join('');
+
+    cartSummary.style.display = 'block';
+    updateSummary();
+    continueBtn.disabled = false;
+    document.getElementById('itemsData').value = JSON.stringify(State.cart);
+}
+
+function updateQuantity(index, change) {
+    State.cart[index].quantity += change;
+    if (State.cart[index].quantity <= 0) {
+        State.cart.splice(index, 1);
+    }
+    updateCartDisplay();
+}
+
+function updateSummary() {
+    let subtotal = 0;
+    State.cart.forEach(item => {
+        subtotal += item.quantity * item.unit_price;
+    });
+
+    document.getElementById('summarySubtotal').textContent = `${subtotal.toLocaleString()} UGX`;
+    document.getElementById('summaryTax').textContent = '0.00 UGX';
+    document.getElementById('summaryDiscount').textContent = '0.00 UGX';
+    document.getElementById('summaryTotal').textContent = `${subtotal.toLocaleString()} UGX`;
+}
+
+function removeFromCart(index) {
+    State.cart.splice(index, 1);
+    updateCartDisplay();
+}
+
+// Customer management
+async function searchCustomers() {
+    const query = document.getElementById('customerSearch').value;
+    if (query.length < 2) {
+        document.getElementById('customerDropdown').classList.remove('show');
+        return;
+    }
+
+    try {
+        const response = await fetch(`/sales/customer-search/?q=${query}`);
+        const data = await response.json();
+        displayCustomerList(data.customers || []);
+    } catch (error) {
+        console.error('Error searching customers:', error);
+    }
+}
+
+function displayCustomerList(customers) {
+    const list = document.getElementById('customerList');
+    const dropdown = document.getElementById('customerDropdown');
+
+    if (customers.length === 0) {
+        dropdown.classList.remove('show');
+        return;
+    }
+
+    list.innerHTML = customers.map(customer => `
+        <div class="customer-list-item" onclick='selectCustomer(${JSON.stringify(customer)})'>
+            <div class="customer-list-item-avatar">
+                ${customer.name.charAt(0).toUpperCase()}
+            </div>
+            <div class="flex-grow-1">
+                <strong>${customer.name}</strong>
+                <br>
+                <small class="text-muted">${customer.phone}</small>
+            </div>
+        </div>
+    `).join('');
+
+    dropdown.classList.add('show');
+}
+
+function selectCustomer(customer) {
+    State.selectedCustomer = customer;
+    document.getElementById('customerId').value = customer.id;
+    document.getElementById('customerName').textContent = customer.name;
+    document.getElementById('customerDetails').textContent = customer.phone;
+    document.getElementById('customerDisplay').style.display = 'block';
+    document.getElementById('customerDropdown').classList.remove('show');
+    document.getElementById('customerSearch').value = '';
+}
+
+function removeCustomer() {
+    State.selectedCustomer = null;
+    document.getElementById('customerId').value = '';
+    document.getElementById('customerDisplay').style.display = 'none';
+}
+
+// Continue to preview
+function continueToPreview() {
+    if (State.cart.length === 0) {
+        alert('Please add items to cart');
+        return;
+    }
+
+    const storeId = document.getElementById('storeSelect').value;
+    if (!storeId) {
+        alert('Please select a store');
+        return;
+    }
+
+    document.getElementById('createReceiptForm').submit();
+}
+
+// Utility functions
+function switchItemType(type) {
+    State.currentItemType = type;
+    document.querySelectorAll('.item-type-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.type === type);
+    });
+    loadItems();
+}
+
+function showProductsLoading() {
+    document.getElementById('productsGrid').style.display = 'none';
+    document.getElementById('productsEmpty').style.display = 'none';
+    document.getElementById('productsLoading').style.display = 'block';
+}
+
+function hideProductsLoading() {
+    document.getElementById('productsLoading').style.display = 'none';
+    document.getElementById('productsGrid').style.display = 'grid';
+}
+
+function showProductsEmpty() {
+    document.getElementById('productsLoading').style.display = 'none';
+    document.getElementById('productsGrid').style.display = 'none';
+    document.getElementById('productsEmpty').style.display = 'block';
+}
+
+function debounce(func, wait) {
+    let timeout;
+    return function executedFunction(...args) {
+        const later = () => {
+            clearTimeout(timeout);
+            func(...args);
+        };
+        clearTimeout(timeout);
+        timeout = setTimeout(later, wait);
+    };
+}
+
+function showError(message) {
+    alert(message);
+}
+
+// New customer modal
+async function saveNewCustomer() {
+    const form = document.getElementById('newCustomerForm');
+    const formData = new FormData(form);
+
+    try {
+        const response = await fetch('{% url "sales:create_customer_ajax" %}', {
+            method: 'POST',
+            body: formData,
+            headers: {
+                'X-CSRFToken': '{{ csrf_token }}'
+            }
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            selectCustomer(data.customer);
+            bootstrap.Modal.getInstance(document.getElementById('newCustomerModal')).hide();
+            form.reset();
+        } else {
+            alert(data.error);
+        }
+    } catch (error) {
+        console.error('Error creating customer:', error);
+        alert('Failed to create customer');
+    }
+}
+</script>
+{% endblock %}

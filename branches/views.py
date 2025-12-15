@@ -1,5 +1,6 @@
 from django.contrib import messages
 from django.contrib.auth.mixins import LoginRequiredMixin, PermissionRequiredMixin
+from django.contrib.auth.decorators import permission_required
 from django.urls import reverse_lazy, reverse
 from django.utils.translation import gettext_lazy as _
 from django.views.generic import (ListView, DetailView, CreateView, UpdateView, DeleteView)
@@ -22,13 +23,13 @@ from company.forms import SearchForm
 
 
 @login_required
+@permission_required('stores.view_store',raise_exception=True)
 @require_http_methods(["GET"])
-def branch_analytics(request, branch_id):
+def branch_analytics(request, store_id):
     """
     Store analytics view (backward compatible with branch_id parameter).
     """
-    # Get store using branch_id for backward compatibility
-    store = get_object_or_404(Store, id=branch_id)
+    store = get_object_or_404(Store, id=store_id)
 
     # Updated permission check
     if not request.user.has_perm('stores.view_store'):
@@ -49,7 +50,7 @@ def branch_analytics(request, branch_id):
             store_id__in=store_ids,
             created_at__date__gte=thirty_days_ago,
             is_voided=False,
-            is_completed=True
+            status__in=['COMPLETED', 'PAID']
         ).aggregate(total=Sum('total_amount'))['total'] or Decimal('0')
 
         # Previous period (30-60 days ago) revenue
@@ -57,7 +58,7 @@ def branch_analytics(request, branch_id):
             store_id__in=store_ids,
             created_at__date__range=[sixty_days_ago, thirty_days_ago],
             is_voided=False,
-            is_completed=True
+            status__in=['COMPLETED', 'PAID']
         ).aggregate(total=Sum('total_amount'))['total'] or Decimal('0')
 
         # Calculate revenue growth
@@ -70,7 +71,7 @@ def branch_analytics(request, branch_id):
             store_id__in=store_ids,
             created_at__date__gte=thirty_days_ago,
             is_voided=False,
-            is_completed=True
+            status__in=['COMPLETED', 'PAID']
         ).count()
 
         # Previous period sales count
@@ -78,7 +79,7 @@ def branch_analytics(request, branch_id):
             store_id__in=store_ids,
             created_at__date__range=[sixty_days_ago, thirty_days_ago],
             is_voided=False,
-            is_completed=True
+            status__in=['COMPLETED', 'PAID']
         ).count()
 
         # Calculate sales growth
@@ -92,7 +93,7 @@ def branch_analytics(request, branch_id):
             created_at__date__gte=thirty_days_ago,
             customer__isnull=False,
             is_voided=False,
-            is_completed=True
+            status__in=['COMPLETED', 'PAID']
         ).values('customer').distinct().count()
 
         # Previous period unique customers
@@ -101,7 +102,7 @@ def branch_analytics(request, branch_id):
             created_at__date__range=[sixty_days_ago, thirty_days_ago],
             customer__isnull=False,
             is_voided=False,
-            is_completed=True
+            status__in=['COMPLETED', 'PAID']
         ).values('customer').distinct().count()
 
         # Calculate customer growth
@@ -158,6 +159,7 @@ def branch_analytics(request, branch_id):
 
 
 @login_required
+@permission_required('stores.view_store',raise_exception=True)
 @require_http_methods(["GET"])
 def branch_store_stats(request, store_id):
     """
@@ -183,7 +185,7 @@ def branch_store_stats(request, store_id):
                 store=current_store,
                 created_at__date__gte=thirty_days_ago,
                 is_voided=False,
-                is_completed=True
+                status__in=['COMPLETED', 'PAID']
             ).count()
 
         except Exception:
@@ -201,6 +203,7 @@ def branch_store_stats(request, store_id):
 
 
 @login_required
+@permission_required('stores.view_store',raise_exception=True)
 @require_http_methods(["GET"])
 def branch_performance(request, branch_id):
     """Return performance data including top performers and stores needing attention."""
@@ -225,7 +228,7 @@ def branch_performance(request, branch_id):
                 store=current_store,
                 created_at__date__gte=thirty_days_ago,
                 is_voided=False,
-                is_completed=True
+                status__in=['COMPLETED', 'PAID']
             ).aggregate(
                 total_revenue=Sum('total_amount'),
                 total_sales=Count('id'),
@@ -310,6 +313,7 @@ def branch_performance(request, branch_id):
 
 
 @login_required
+@permission_required('accounts.add_customuser',raise_exception=True)
 @require_http_methods(["GET"])
 def branch_staff_overview(request, branch_id):
     """Return staff overview data."""
@@ -396,6 +400,7 @@ def branch_staff_overview(request, branch_id):
 
 
 @login_required
+@permission_required('stores.view_store',raise_exception=True)
 @require_http_methods(["GET"])
 def branch_revenue_data(request, branch_id):
     """Return revenue data for different time ranges."""
@@ -436,7 +441,7 @@ def generate_revenue_data(store_ids, days=7):
                 store_id__in=store_ids,
                 created_at__date=date,
                 is_voided=False,
-                is_completed=True
+                status__in=['COMPLETED', 'PAID']
             ).aggregate(total=Sum('total_amount'))['total'] or 0
 
             values.append(float(daily_revenue))
@@ -463,7 +468,7 @@ def generate_store_performance_data(stores):
                 store=store,
                 created_at__date__gte=thirty_days_ago,
                 is_voided=False,
-                is_completed=True
+                status__in=['COMPLETED', 'PAID']
             ).aggregate(total=Sum('total_amount'))['total'] or 0
 
             values.append(float(performance_value))
@@ -489,7 +494,7 @@ def generate_store_details(stores):
                 store=store,
                 created_at__date__gte=thirty_days_ago,
                 is_voided=False,
-                is_completed=True
+                status__in=['COMPLETED', 'PAID']
             ).aggregate(
                 revenue=Sum('total_amount'),
                 sales_count=Count('id'),
@@ -501,7 +506,7 @@ def generate_store_details(stores):
                 store=store,
                 created_at__date__range=[sixty_days_ago, thirty_days_ago],
                 is_voided=False,
-                is_completed=True
+                status__in=['COMPLETED', 'PAID']
             ).aggregate(
                 revenue=Sum('total_amount'),
                 sales_count=Count('id')
@@ -570,7 +575,7 @@ def generate_performance_trend_data(stores):
                 store__in=stores,
                 created_at__date=date,
                 is_voided=False,
-                is_completed=True
+                status__in=['COMPLETED', 'PAID']
             ).count()
 
             daily_performance = min(100, daily_sales * 2)
@@ -585,6 +590,7 @@ def generate_performance_trend_data(stores):
 
 
 @login_required
+@permission_required('stores.view_store',raise_exception=True)
 @require_http_methods(["GET"])
 def export_branch_data(request, branch_id):
     """Export store data as CSV."""
@@ -611,7 +617,7 @@ def export_branch_data(request, branch_id):
                 store=current_store,
                 created_at__date__gte=thirty_days_ago,
                 is_voided=False,
-                is_completed=True
+                status__in=['COMPLETED', 'PAID']
             ).aggregate(
                 revenue=Sum('total_amount'),
                 sales_count=Count('id'),
@@ -641,6 +647,7 @@ def export_branch_data(request, branch_id):
 
 
 @login_required
+@permission_required('stores.add_store',raise_exception=True)
 @require_http_methods(["POST"])
 def generate_branch_report(request, branch_id):
     """Generate comprehensive store report."""
@@ -670,7 +677,7 @@ def generate_branch_report(request, branch_id):
                 store=current_store,
                 created_at__date__gte=thirty_days_ago,
                 is_voided=False,
-                is_completed=True
+                status__in=['COMPLETED', 'PAID']
             ).aggregate(
                 revenue=Sum('total_amount'),
                 sales_count=Count('id'),
@@ -786,7 +793,7 @@ class BranchDetailView(LoginRequiredMixin, PermissionRequiredMixin, DetailView):
             store__company=store.company,
             created_at__date__gte=thirty_days_ago,
             is_voided=False,
-            is_completed=True
+            status__in=['COMPLETED', 'PAID']
         ).aggregate(total=Sum('total_amount'))['total'] or Decimal('0')
 
         # Company-wide sales count
@@ -794,7 +801,7 @@ class BranchDetailView(LoginRequiredMixin, PermissionRequiredMixin, DetailView):
             store__company=store.company,
             created_at__date__gte=thirty_days_ago,
             is_voided=False,
-            is_completed=True
+            status__in=['COMPLETED', 'PAID']
         ).count()
 
         return context

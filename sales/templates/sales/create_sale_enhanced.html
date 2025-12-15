@@ -1,0 +1,1181 @@
+{% extends "base.html" %}
+{% load i18n %}
+{% load static %}
+{% load custom_filters %}
+
+{% block page_title %}
+    {% if is_editing %}{% trans "Edit Draft Sale" %}{% else %}{% trans "Create New Sale" %}{% endif %}
+{% endblock %}
+
+{% block extra_css %}
+{{ block.super }}
+<link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet">
+<style>
+:root {
+    --primary: #667eea;
+    --success: #10b981;
+    --warning: #f59e0b;
+    --danger: #ef4444;
+}
+
+.sale-container { max-width: 1400px; margin: 0 auto; }
+
+/* Document Type Badges */
+.doc-badges {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    margin-bottom: 1.5rem;
+}
+
+.doc-badge {
+    padding: 0.75rem 1.5rem;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.3s;
+    border: 2px solid #e5e7eb;
+    background: #f9fafb;
+}
+
+.doc-badge.active {
+    border-color: var(--primary);
+    background: linear-gradient(135deg, var(--primary), #764ba2);
+    color: white;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+}
+
+/* Items Table */
+.items-table {
+    background: white;
+    border-radius: 12px;
+    border: 1px solid #e5e7eb;
+    overflow: hidden;
+}
+
+.item-row {
+    transition: all 0.2s;
+    border-left: 4px solid transparent;
+}
+
+.item-row:hover {
+    background: rgba(102, 126, 234, 0.05);
+    border-left-color: var(--primary);
+}
+
+/* Totals Card */
+.totals-card {
+    position: sticky;
+    top: 1rem;
+    background: linear-gradient(135deg, #667eea, #764ba2);
+    color: white;
+    border-radius: 16px;
+    box-shadow: 0 8px 32px rgba(102, 126, 234, 0.3);
+}
+
+.total-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 0.75rem 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.total-row.grand {
+    border-top: 2px solid rgba(255, 255, 255, 0.5);
+    padding-top: 1.5rem;
+    margin-top: 1rem;
+    font-size: 1.5rem;
+    font-weight: bold;
+}
+
+/* Search Results */
+.search-results {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    background: white;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.1);
+    z-index: 1000;
+    max-height: 400px;
+    overflow-y: auto;
+    display: none;
+    margin-top: 0.5rem;
+}
+
+.search-results.show { display: block; }
+
+.search-item {
+    padding: 1rem;
+    cursor: pointer;
+    transition: all 0.2s;
+    border-bottom: 1px solid #f3f4f6;
+}
+
+.search-item:hover { background: rgba(102, 126, 234, 0.1); }
+
+/* Stock Indicators */
+.stock-badge {
+    font-size: 0.75rem;
+    padding: 0.25rem 0.75rem;
+    border-radius: 12px;
+    font-weight: 600;
+}
+
+.stock-ok { background: rgba(16, 185, 129, 0.1); color: var(--success); }
+.stock-low { background: rgba(245, 158, 11, 0.1); color: var(--warning); }
+.stock-out { background: rgba(239, 68, 68, 0.1); color: var(--danger); }
+
+/* Loading */
+.loading-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0,0,0,0.7);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 9999;
+}
+
+.loading-overlay.active { display: flex; }
+
+.spinner {
+    width: 3rem;
+    height: 3rem;
+    border: 4px solid #e5e7eb;
+    border-top-color: var(--primary);
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+/* Draft Badge */
+.draft-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 1rem;
+    background: linear-gradient(135deg, var(--warning), #d97706);
+    color: white;
+    border-radius: 20px;
+    font-weight: 600;
+    margin-bottom: 1rem;
+}
+
+/* Empty State */
+.empty-state {
+    text-align: center;
+    padding: 3rem;
+    color: #6b7280;
+}
+
+.empty-state i {
+    font-size: 4rem;
+    opacity: 0.3;
+    margin-bottom: 1rem;
+}
+
+@media (max-width: 768px) {
+    .totals-card {
+        position: relative;
+        top: 0;
+        margin-top: 2rem;
+    }
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="sale-container">
+    <!-- Draft Indicator -->
+    {% if is_editing and sale.status == 'DRAFT' %}
+    <div class="draft-badge">
+        <i class="bi bi-clock-history"></i>
+        <span>{% trans "Editing Draft" %} #{{ sale.document_number }}</span>
+        <small class="ms-2">{{ sale.created_at|date:"M d, Y H:i" }}</small>
+    </div>
+    {% endif %}
+
+    <div class="row">
+        <!-- Main Form -->
+        <div class="col-lg-8">
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">
+                        <i class="bi bi-receipt me-2"></i>
+                        {% if is_editing %}{% trans "Edit Sale" %}{% else %}{% trans "Sale Details" %}{% endif %}
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <form method="post" id="saleForm" novalidate>
+                        {% csrf_token %}
+                        <input type="hidden" name="items_data" id="itemsData">
+                        {% if is_editing %}
+                        <input type="hidden" name="sale_id" value="{{ sale.id }}">
+                        {% endif %}
+
+                        <!-- Document Type -->
+                        <div class="mb-4">
+                            <label class="form-label fw-semibold mb-3">
+                                <i class="bi bi-file-text me-1"></i>{% trans "Document Type" %}
+                            </label>
+                            <div class="doc-badges">
+                                {% for value, label in document_types %}
+                                <div class="doc-badge {% if is_editing and sale.document_type == value %}active{% elif not is_editing and value == 'RECEIPT' %}active{% endif %}"
+                                     data-type="{{ value }}">
+                                    <i class="bi bi-{% if value == 'RECEIPT' %}receipt{% elif value == 'INVOICE' %}file-text{% else %}file-earmark{% endif %} me-2"></i>
+                                    {{ label }}
+                                </div>
+                                {% endfor %}
+                            </div>
+                            <input type="hidden" name="document_type" id="documentType"
+                                   value="{% if is_editing %}{{ sale.document_type }}{% else %}RECEIPT{% endif %}">
+                        </div>
+
+                        <!-- Store & Customer -->
+                        <div class="row g-3 mb-4">
+                            <div class="col-md-6">
+                                <label for="store" class="form-label">
+                                    <i class="bi bi-shop me-1"></i>{% trans "Store" %} <span class="text-danger">*</span>
+                                </label>
+                                <select name="store" id="store" class="form-select" required
+                                        {% if is_editing %}disabled{% endif %}>
+                                    <option value="">{% trans "Select Store" %}</option>
+                                    {% for store in stores %}
+                                    <option value="{{ store.id }}"
+                                            {% if is_editing and sale.store.id == store.id %}selected{% endif %}
+                                            data-currency="{{ store.currency|default:'UGX' }}">
+                                        {{ store.name }}
+                                    </option>
+                                    {% endfor %}
+                                </select>
+                                {% if is_editing %}
+                                <input type="hidden" name="store" value="{{ sale.store.id }}">
+                                {% endif %}
+                            </div>
+                            <div class="col-md-6">
+                                <label for="customer" class="form-label">
+                                    <i class="bi bi-person me-1"></i>{% trans "Customer" %}
+                                </label>
+                                <div class="position-relative">
+                                    <input type="text"
+                                           id="customerSearch"
+                                           class="form-control"
+                                           placeholder="{% trans 'Search customer...' %}"
+                                           value="{% if is_editing and sale.customer %}{{ sale.customer.name }}{% endif %}"
+                                           autocomplete="off">
+                                    <div id="customerResults" class="search-results"></div>
+                                </div>
+                                <input type="hidden" name="customer" id="customer"
+                                       value="{% if is_editing and sale.customer %}{{ sale.customer.id }}{% endif %}">
+                                <small class="text-muted">{% trans "Required for invoices" %}</small>
+                            </div>
+                        </div>
+
+                        <!-- Invoice Fields -->
+                        <div id="invoiceFields" class="row g-3 mb-4 {% if not is_editing or sale.document_type != 'INVOICE' %}d-none{% endif %}">
+                            <div class="col-md-6">
+                                <label for="due_date" class="form-label">
+                                    <i class="bi bi-calendar me-1"></i>{% trans "Due Date" %}
+                                </label>
+                                <input type="date" name="due_date" id="due_date" class="form-control"
+                                       value="{% if is_editing and sale.due_date %}{{ sale.due_date|date:'Y-m-d' }}{% else %}{{ default_due_date }}{% endif %}">
+                            </div>
+                            <div class="col-md-6">
+                                <label for="payment_terms" class="form-label">
+                                    <i class="bi bi-cash-stack me-1"></i>{% trans "Payment Terms" %}
+                                </label>
+                                <input type="text" name="payment_terms" id="payment_terms" class="form-control"
+                                       value="{% if is_editing %}{{ sale.payment_terms }}{% endif %}"
+                                       placeholder="{% trans 'e.g., Net 30 days' %}">
+                            </div>
+                        </div>
+
+                        <!-- Items Section -->
+                        <div class="mb-4">
+                            <div class="d-flex justify-content-between align-items-center mb-3">
+                                <h6 class="mb-0">
+                                    <i class="bi bi-cart3 me-2"></i>{% trans "Items" %}
+                                    <span class="badge bg-primary ms-2" id="itemCount">0</span>
+                                </h6>
+                                <button type="button" class="btn btn-sm btn-primary"
+                                        data-bs-toggle="modal" data-bs-target="#addItemModal">
+                                    <i class="bi bi-plus-circle me-1"></i>{% trans "Add Item" %}
+                                </button>
+                            </div>
+
+                            <div class="items-table">
+                                <div class="table-responsive">
+                                    <table class="table table-hover mb-0" id="itemsTable">
+                                        <thead class="table-light">
+                                            <tr>
+                                                <th width="35%">{% trans "Item" %}</th>
+                                                <th width="12%">{% trans "Qty" %}</th>
+                                                <th width="15%">{% trans "Price" %}</th>
+                                                <th width="10%">{% trans "Tax" %}</th>
+                                                <th width="10%">{% trans "Disc%" %}</th>
+                                                <th width="13%">{% trans "Total" %}</th>
+                                                <th width="5%"></th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="itemsTableBody"></tbody>
+                                    </table>
+                                </div>
+                            </div>
+
+                            <div class="empty-state" id="emptyMessage">
+                                <i class="bi bi-inbox"></i>
+                                <p>{% trans "No items added. Click 'Add Item' to start." %}</p>
+                            </div>
+                        </div>
+
+                        <!-- Payment & Discount -->
+                        <div class="row g-3 mb-4">
+                            <div class="col-md-6">
+                                <label for="payment_method" class="form-label">
+                                    <i class="bi bi-credit-card me-1"></i>{% trans "Payment Method" %}
+                                </label>
+                                <select name="payment_method" id="payment_method" class="form-select">
+                                    {% for value, label in payment_methods %}
+                                    <option value="{{ value }}"
+                                            {% if is_editing and sale.payment_method == value %}selected{% endif %}>
+                                        {{ label }}
+                                    </option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="col-md-6">
+                                <label for="discount_amount" class="form-label">
+                                    <i class="bi bi-percent me-1"></i>{% trans "Discount" %}
+                                </label>
+                                <div class="input-group">
+                                    <span class="input-group-text" id="currencySymbol">UGX</span>
+                                    <input type="number" name="discount_amount" id="discount_amount" class="form-control"
+                                           value="{% if is_editing %}{{ sale.discount_amount }}{% else %}0{% endif %}"
+                                           min="0" step="0.01">
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Notes -->
+                        <div class="mb-4">
+                            <label for="notes" class="form-label">
+                                <i class="bi bi-sticky me-1"></i>{% trans "Notes" %}
+                            </label>
+                            <textarea name="notes" id="notes" class="form-control" rows="3"
+                                      placeholder="{% trans 'Optional notes' %}">{% if is_editing %}{{ sale.notes }}{% endif %}</textarea>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <!-- Sidebar -->
+        <div class="col-lg-4">
+            <!-- Totals -->
+            <div class="card totals-card mb-4">
+                <div class="card-body">
+                    <h5 class="mb-4">
+                        <i class="bi bi-calculator me-2"></i>{% trans "Summary" %}
+                    </h5>
+
+                    <div class="total-row">
+                        <span>{% trans "Subtotal" %}</span>
+                        <span id="subtotalDisplay">UGX 0.00</span>
+                    </div>
+                    <div class="total-row">
+                        <span>{% trans "Tax" %}</span>
+                        <span id="taxDisplay">UGX 0.00</span>
+                    </div>
+                    <div class="total-row">
+                        <span>{% trans "Discount" %}</span>
+                        <span id="discountDisplay">- UGX 0.00</span>
+                    </div>
+                    <div class="total-row grand">
+                        <span>{% trans "Total" %}</span>
+                        <span id="totalDisplay">UGX 0.00</span>
+                    </div>
+
+                    <!-- Actions -->
+                    <div class="d-grid gap-2 mt-4">
+                        <button type="button" class="btn btn-outline-light" onclick="showPreview()">
+                            <i class="bi bi-eye me-1"></i>{% trans "Preview" %}
+                        </button>
+
+                        <button type="button" class="btn btn-warning" onclick="saveAsDraft()">
+                            <i class="bi bi-save me-1"></i>
+                            {% if is_editing %}{% trans "Update Draft" %}{% else %}{% trans "Save Draft" %}{% endif %}
+                        </button>
+
+                        <button type="button" class="btn btn-success" onclick="completeSale()">
+                            <i class="bi bi-check-circle me-1"></i>{% trans "Complete Sale" %}
+                        </button>
+
+                        {% if is_editing %}
+                        <button type="button" class="btn btn-danger" onclick="deleteDraft()">
+                            <i class="bi bi-trash me-1"></i>{% trans "Delete Draft" %}
+                        </button>
+                        {% else %}
+                        <a href="{% url 'sales:sales_list' %}" class="btn btn-outline-light">
+                            <i class="bi bi-x-circle me-1"></i>{% trans "Cancel" %}
+                        </a>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+
+            <!-- Recent Drafts -->
+            {% if draft_sales and not is_editing %}
+            <div class="card">
+                <div class="card-header">
+                    <h6 class="mb-0">
+                        <i class="bi bi-clock-history me-2"></i>{% trans "Recent Drafts" %}
+                    </h6>
+                </div>
+                <div class="list-group list-group-flush">
+                    {% for draft in draft_sales %}
+                    <a href="{% url 'sales:edit_draft' draft.pk %}" class="list-group-item list-group-item-action">
+                        <div class="d-flex justify-content-between">
+                            <div>
+                                <div class="fw-semibold">{{ draft.document_number }}</div>
+                                <small class="text-muted">{{ draft.created_at|date:"M d, h:i A" }}</small>
+                            </div>
+                            <span class="badge bg-primary">{{ draft.total_amount|floatformat:2 }}</span>
+                        </div>
+                    </a>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<!-- Add Item Modal -->
+<div class="modal fade" id="addItemModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="bi bi-plus-circle me-2"></i>{% trans "Add Item" %}
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label class="form-label">{% trans "Search" %}</label>
+                    <div class="input-group">
+                        <span class="input-group-text"><i class="bi bi-search"></i></span>
+                        <input type="text" id="itemSearch" class="form-control"
+                               placeholder="{% trans 'Type to search...' %}" autocomplete="off">
+                    </div>
+                    <div id="itemResults" class="search-results mt-2"></div>
+                </div>
+
+                <form id="itemForm" class="d-none">
+                    <div class="alert alert-info">
+                        <strong id="selectedItemName"></strong>
+                    </div>
+
+                    <input type="hidden" id="selectedItemId">
+                    <input type="hidden" id="selectedItemType">
+
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label for="itemQuantity" class="form-label">{% trans "Quantity" %} *</label>
+                            <input type="number" id="itemQuantity" class="form-control"
+                                   value="1" min="1" step="1" required>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="itemUnitPrice" class="form-label">{% trans "Price" %} *</label>
+                            <div class="input-group">
+                                <span class="input-group-text" id="itemCurrency">UGX</span>
+                                <input type="number" id="itemUnitPrice" class="form-control"
+                                       step="0.01" required>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="itemTaxRate" class="form-label">{% trans "Tax" %}</label>
+                            <select id="itemTaxRate" class="form-select">
+                                <option value="A">A - Standard (18%)</option>
+                                <option value="B">B - Zero Rated</option>
+                                <option value="C">C - Exempt</option>
+                                <option value="D">D - Levy</option>
+                                <option value="E">E - Excise</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="itemDiscount" class="form-label">{% trans "Discount %" %}</label>
+                            <input type="number" id="itemDiscount" class="form-control"
+                                   value="0" min="0" max="100" step="0.01">
+                        </div>
+                        <div class="col-12">
+                            <label for="itemDescription" class="form-label">{% trans "Description" %}</label>
+                            <textarea id="itemDescription" class="form-control" rows="2"></textarea>
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                    {% trans "Cancel" %}
+                </button>
+                <button type="button" class="btn btn-primary" id="addSelectedItem" disabled>
+                    <i class="bi bi-check me-1"></i>{% trans "Add" %}
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Preview Modal -->
+<div class="modal fade" id="previewModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="bi bi-eye me-2"></i>{% trans "Preview" %}
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="previewContent"></div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                    {% trans "Edit" %}
+                </button>
+                <button type="button" class="btn btn-warning" onclick="saveAsDraft(true)">
+                    {% trans "Save Draft" %}
+                </button>
+                <button type="button" class="btn btn-success" onclick="completeSale(true)">
+                    {% trans "Complete" %}
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Loading -->
+<div class="loading-overlay" id="loadingOverlay">
+    <div class="text-center">
+        <div class="spinner mx-auto mb-3"></div>
+        <p class="text-white">{% trans "Processing..." %}</p>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+{{ block.super }}
+<script src="{% static 'js/sale_form.js' %}"></script>
+<script>
+    // sale_form.js - Complete Sales Form Management
+
+// Global State
+const SaleForm = {
+    items: [],
+    currentCurrency: 'UGX',
+    selectedCustomer: null,
+    isEditing: false,
+    saleId: null,
+
+    init() {
+        this.setupEventListeners();
+        this.loadExistingItems();
+        this.updateUI();
+    },
+
+    setupEventListeners() {
+        // Document type selection
+        document.querySelectorAll('.doc-badge').forEach(badge => {
+            badge.addEventListener('click', (e) => {
+                this.selectDocumentType(badge.dataset.type);
+            });
+        });
+
+        // Store selection
+        const storeSelect = document.getElementById('store');
+        if (storeSelect && !storeSelect.disabled) {
+            storeSelect.addEventListener('change', (e) => {
+                const option = e.target.options[e.target.selectedIndex];
+                this.currentCurrency = option.dataset.currency || 'UGX';
+                this.updateCurrencyDisplay();
+            });
+        }
+
+        // Customer search
+        const customerSearch = document.getElementById('customerSearch');
+        if (customerSearch) {
+            customerSearch.addEventListener('input', debounce(() => {
+                this.searchCustomers(customerSearch.value);
+            }, 300));
+        }
+
+        // Item search
+        const itemSearch = document.getElementById('itemSearch');
+        if (itemSearch) {
+            itemSearch.addEventListener('input', debounce(() => {
+                this.searchItems(itemSearch.value);
+            }, 300));
+        }
+
+        // Add item button
+        const addItemBtn = document.getElementById('addSelectedItem');
+        if (addItemBtn) {
+            addItemBtn.addEventListener('click', () => {
+                this.addItemToSale();
+            });
+        }
+
+        // Discount input
+        const discountInput = document.getElementById('discount_amount');
+        if (discountInput) {
+            discountInput.addEventListener('input', () => {
+                this.updateTotals();
+            });
+        }
+
+        // Close dropdowns on outside click
+        document.addEventListener('click', (e) => {
+            if (!e.target.closest('.search-input-wrapper')) {
+                document.querySelectorAll('.search-results').forEach(el => {
+                    el.classList.remove('show');
+                });
+            }
+        });
+    },
+
+    selectDocumentType(type) {
+        document.querySelectorAll('.doc-badge').forEach(badge => {
+            badge.classList.remove('active');
+        });
+        event.currentTarget.classList.add('active');
+        document.getElementById('documentType').value = type;
+
+        // Show/hide invoice fields
+        const invoiceFields = document.getElementById('invoiceFields');
+        if (type === 'INVOICE') {
+            invoiceFields.classList.remove('d-none');
+        } else {
+            invoiceFields.classList.add('d-none');
+        }
+    },
+
+    async searchCustomers(query) {
+        if (query.length < 2) {
+            document.getElementById('customerResults').classList.remove('show');
+            return;
+        }
+
+        try {
+            const response = await fetch(`/sales/customer-search/?q=${encodeURIComponent(query)}`);
+            const data = await response.json();
+            this.displayCustomers(data.customers || []);
+        } catch (error) {
+            console.error('Customer search error:', error);
+        }
+    },
+
+    displayCustomers(customers) {
+        const resultsDiv = document.getElementById('customerResults');
+
+        if (customers.length === 0) {
+            resultsDiv.innerHTML = '<div class="search-item text-muted">No customers found</div>';
+            resultsDiv.classList.add('show');
+            return;
+        }
+
+        resultsDiv.innerHTML = customers.map(customer => `
+            <div class="search-item" onclick="SaleForm.selectCustomer(${JSON.stringify(customer).replace(/"/g, '&quot;')})">
+                <strong>${customer.name}</strong><br>
+                <small class="text-muted">${customer.phone || ''} ${customer.email ? '• ' + customer.email : ''}</small>
+            </div>
+        `).join('');
+
+        resultsDiv.classList.add('show');
+    },
+
+    selectCustomer(customer) {
+        this.selectedCustomer = customer;
+        document.getElementById('customer').value = customer.id;
+        document.getElementById('customerSearch').value = customer.name;
+        document.getElementById('customerResults').classList.remove('show');
+    },
+
+    async searchItems(query) {
+        const storeId = document.getElementById('store').value;
+
+        if (query.length < 2 || !storeId) {
+            document.getElementById('itemResults').classList.remove('show');
+            return;
+        }
+
+        try {
+            const response = await fetch(`/sales/search-items/?q=${encodeURIComponent(query)}&store=${storeId}`);
+            const data = await response.json();
+            this.displayItems(data.items || []);
+        } catch (error) {
+            console.error('Item search error:', error);
+        }
+    },
+
+    displayItems(items) {
+        const resultsDiv = document.getElementById('itemResults');
+
+        if (items.length === 0) {
+            resultsDiv.innerHTML = '<div class="search-item text-muted">No items found</div>';
+            resultsDiv.classList.add('show');
+            return;
+        }
+
+        resultsDiv.innerHTML = items.map(item => {
+            let stockBadge = '';
+            if (item.stock) {
+                const stock = item.stock.available;
+                const badgeClass = stock > 10 ? 'stock-ok' : (stock > 0 ? 'stock-low' : 'stock-out');
+                stockBadge = `<span class="stock-badge ${badgeClass}">${stock} in stock</span>`;
+            }
+
+            return `
+                <div class="search-item" onclick='SaleForm.selectItem(${JSON.stringify(item).replace(/'/g, "&apos;")})'>
+                    <div class="d-flex justify-content-between align-items-start">
+                        <div>
+                            <strong>${item.name}</strong><br>
+                            <small class="text-muted">${item.code || ''} • ${this.currentCurrency} ${parseFloat(item.price).toFixed(2)}</small>
+                        </div>
+                        ${stockBadge}
+                    </div>
+                </div>
+            `;
+        }).join('');
+
+        resultsDiv.classList.add('show');
+    },
+
+    selectItem(item) {
+        document.getElementById('selectedItemId').value = item.id;
+        document.getElementById('selectedItemType').value = item.item_type;
+        document.getElementById('selectedItemName').textContent = item.name;
+        document.getElementById('itemUnitPrice').value = parseFloat(item.price).toFixed(2);
+        document.getElementById('itemQuantity').value = 1;
+        document.getElementById('itemDiscount').value = 0;
+        document.getElementById('itemTaxRate').value = item.tax_rate || 'A';
+        document.getElementById('itemDescription').value = '';
+
+        document.getElementById('itemForm').classList.remove('d-none');
+        document.getElementById('addSelectedItem').disabled = false;
+        document.getElementById('itemResults').classList.remove('show');
+
+        // Store full item data
+        document.getElementById('itemForm').dataset.itemData = JSON.stringify(item);
+    },
+
+    addItemToSale() {
+        const itemData = JSON.parse(document.getElementById('itemForm').dataset.itemData || '{}');
+
+        const item = {
+            item_type: document.getElementById('selectedItemType').value,
+            product_id: itemData.item_type === 'PRODUCT' ? itemData.id : null,
+            service_id: itemData.item_type === 'SERVICE' ? itemData.id : null,
+            name: itemData.name,
+            code: itemData.code || '',
+            quantity: parseFloat(document.getElementById('itemQuantity').value),
+            unit_price: parseFloat(document.getElementById('itemUnitPrice').value),
+            tax_rate: document.getElementById('itemTaxRate').value,
+            discount: parseFloat(document.getElementById('itemDiscount').value),
+            description: document.getElementById('itemDescription').value
+        };
+
+        this.items.push(item);
+        this.updateItemsTable();
+        this.updateTotals();
+        this.updateUI();
+
+        // Reset and close modal
+        document.getElementById('itemForm').classList.add('d-none');
+        document.getElementById('itemForm').reset();
+        document.getElementById('addSelectedItem').disabled = true;
+        document.getElementById('itemSearch').value = '';
+
+        const modal = bootstrap.Modal.getInstance(document.getElementById('addItemModal'));
+        if (modal) modal.hide();
+    },
+
+    updateItemsTable() {
+        const tbody = document.getElementById('itemsTableBody');
+        tbody.innerHTML = '';
+
+        this.items.forEach((item, index) => {
+            const itemTotal = item.quantity * item.unit_price;
+            const discountAmount = itemTotal * (item.discount / 100);
+            const netAmount = itemTotal - discountAmount;
+
+            const row = document.createElement('tr');
+            row.className = 'item-row';
+            row.innerHTML = `
+                <td>
+                    <strong>${item.name}</strong><br>
+                    <small class="text-muted">${item.code || ''}</small>
+                </td>
+                <td>
+                    <input type="number" class="form-control form-control-sm"
+                           value="${item.quantity}" min="1" step="1"
+                           onchange="SaleForm.updateItem(${index}, 'quantity', this.value)">
+                </td>
+                <td>
+                    <div class="input-group input-group-sm">
+                        <span class="input-group-text">${this.currentCurrency}</span>
+                        <input type="number" class="form-control"
+                               value="${item.unit_price.toFixed(2)}" step="0.01"
+                               onchange="SaleForm.updateItem(${index}, 'unit_price', this.value)">
+                    </div>
+                </td>
+                <td>
+                    <select class="form-select form-select-sm"
+                            onchange="SaleForm.updateItem(${index}, 'tax_rate', this.value)">
+                        <option value="A" ${item.tax_rate === 'A' ? 'selected' : ''}>A</option>
+                        <option value="B" ${item.tax_rate === 'B' ? 'selected' : ''}>B</option>
+                        <option value="C" ${item.tax_rate === 'C' ? 'selected' : ''}>C</option>
+                        <option value="D" ${item.tax_rate === 'D' ? 'selected' : ''}>D</option>
+                        <option value="E" ${item.tax_rate === 'E' ? 'selected' : ''}>E</option>
+                    </select>
+                </td>
+                <td>
+                    <input type="number" class="form-control form-control-sm"
+                           value="${item.discount.toFixed(2)}" min="0" max="100" step="0.01"
+                           onchange="SaleForm.updateItem(${index}, 'discount', this.value)">
+                </td>
+                <td class="fw-semibold">
+                    ${this.currentCurrency} ${netAmount.toFixed(2)}
+                </td>
+                <td>
+                    <button type="button" class="btn btn-sm btn-outline-danger"
+                            onclick="SaleForm.removeItem(${index})">
+                        <i class="bi bi-trash"></i>
+                    </button>
+                </td>
+            `;
+            tbody.appendChild(row);
+        });
+
+        document.getElementById('itemsData').value = JSON.stringify(this.items);
+    },
+
+    updateItem(index, field, value) {
+        this.items[index][field] = field === 'tax_rate' ? value : parseFloat(value);
+        this.updateItemsTable();
+        this.updateTotals();
+    },
+
+    removeItem(index) {
+        this.items.splice(index, 1);
+        this.updateItemsTable();
+        this.updateTotals();
+        this.updateUI();
+    },
+
+    updateTotals() {
+        let subtotal = 0;
+        let totalTax = 0;
+
+        this.items.forEach(item => {
+            const itemTotal = item.quantity * item.unit_price;
+            const itemDiscount = itemTotal * (item.discount / 100);
+            const netAmount = itemTotal - itemDiscount;
+
+            subtotal += itemTotal;
+
+            // Calculate tax
+            if (item.tax_rate === 'A' || item.tax_rate === 'D') {
+                totalTax += netAmount * 0.18 / 1.18;
+            } else if (item.tax_rate === 'E') {
+                totalTax += netAmount * 0.10;
+            }
+        });
+
+        const discount = parseFloat(document.getElementById('discount_amount').value) || 0;
+        const itemDiscounts = this.items.reduce((sum, item) => {
+            return sum + (item.quantity * item.unit_price * item.discount / 100);
+        }, 0);
+
+        const totalDiscount = itemDiscounts + discount;
+        const total = subtotal + totalTax - totalDiscount;
+
+        // Update displays
+        document.getElementById('subtotalDisplay').textContent =
+            `${this.currentCurrency} ${subtotal.toFixed(2)}`;
+        document.getElementById('taxDisplay').textContent =
+            `${this.currentCurrency} ${totalTax.toFixed(2)}`;
+        document.getElementById('discountDisplay').textContent =
+            `- ${this.currentCurrency} ${totalDiscount.toFixed(2)}`;
+        document.getElementById('totalDisplay').textContent =
+            `${this.currentCurrency} ${total.toFixed(2)}`;
+    },
+
+    updateUI() {
+        // Update item count
+        document.getElementById('itemCount').textContent = this.items.length;
+
+        // Show/hide empty state
+        const emptyMessage = document.getElementById('emptyMessage');
+        const itemsTable = document.querySelector('.items-table');
+
+        if (this.items.length === 0) {
+            emptyMessage.style.display = 'block';
+            itemsTable.style.display = 'none';
+        } else {
+            emptyMessage.style.display = 'none';
+            itemsTable.style.display = 'block';
+        }
+    },
+
+    updateCurrencyDisplay() {
+        document.querySelectorAll('.currency-symbol, #currencySymbol, #itemCurrency').forEach(el => {
+            el.textContent = this.currentCurrency;
+        });
+        this.updateTotals();
+    },
+
+    loadExistingItems() {
+        // Load items if editing
+        const itemsData = document.getElementById('itemsData').value;
+        if (itemsData && itemsData !== '[]') {
+            try {
+                this.items = JSON.parse(itemsData);
+                this.updateItemsTable();
+                this.updateTotals();
+                this.updateUI();
+            } catch (e) {
+                console.error('Error loading items:', e);
+            }
+        }
+    },
+
+    validate() {
+        const store = document.getElementById('store').value;
+        const docType = document.getElementById('documentType').value;
+        const customer = document.getElementById('customer').value;
+
+        if (!store) {
+            showAlert('Please select a store', 'warning');
+            return false;
+        }
+
+        if (docType === 'INVOICE' && !customer) {
+            showAlert('Customer is required for invoices', 'warning');
+            return false;
+        }
+
+        if (this.items.length === 0) {
+            showAlert('Please add at least one item', 'warning');
+            return false;
+        }
+
+        // Update hidden field
+        document.getElementById('itemsData').value = JSON.stringify(this.items);
+
+        return true;
+    }
+};
+
+// Global Functions
+async function showPreview() {
+    if (!SaleForm.validate()) return;
+
+    showLoading();
+
+    try {
+        const formData = new FormData(document.getElementById('saleForm'));
+        formData.append('action', 'preview');
+
+        const response = await fetch(window.location.pathname, {
+            method: 'POST',
+            body: formData,
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest'
+            }
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            document.getElementById('previewContent').innerHTML = data.html;
+            const modal = new bootstrap.Modal(document.getElementById('previewModal'));
+            modal.show();
+        } else {
+            showAlert(data.error || 'Preview failed', 'danger');
+        }
+    } catch (error) {
+        console.error('Preview error:', error);
+        showAlert('Error loading preview', 'danger');
+    } finally {
+        hideLoading();
+    }
+}
+
+async function saveAsDraft(fromPreview = false) {
+    if (!SaleForm.validate() && !fromPreview) return;
+
+    if (!confirm('Save this sale as a draft?')) return;
+
+    showLoading();
+
+    try {
+        const formData = new FormData(document.getElementById('saleForm'));
+        formData.append('action', 'save_draft');
+
+        const response = await fetch(window.location.pathname, {
+            method: 'POST',
+            body: formData
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            showAlert('Draft saved successfully', 'success');
+            setTimeout(() => {
+                window.location.href = data.redirect_url || '/sales/';
+            }, 1500);
+        } else {
+            showAlert(data.error || 'Failed to save draft', 'danger');
+        }
+    } catch (error) {
+        console.error('Save draft error:', error);
+        showAlert('Error saving draft', 'danger');
+    } finally {
+        hideLoading();
+    }
+}
+
+async function completeSale(fromPreview = false) {
+    if (!SaleForm.validate() && !fromPreview) return;
+
+    if (!confirm('Complete this sale? This action cannot be undone.')) return;
+
+    showLoading();
+
+    try {
+        const formData = new FormData(document.getElementById('saleForm'));
+        formData.append('action', 'complete');
+
+        const response = await fetch(window.location.pathname, {
+            method: 'POST',
+            body: formData
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            showAlert('Sale completed successfully', 'success');
+            setTimeout(() => {
+                window.location.href = data.redirect_url || '/sales/';
+            }, 1500);
+        } else {
+            showAlert(data.error || 'Failed to complete sale', 'danger');
+        }
+    } catch (error) {
+        console.error('Complete sale error:', error);
+        showAlert('Error completing sale', 'danger');
+    } finally {
+        hideLoading();
+    }
+}
+
+async function deleteDraft() {
+    if (!confirm('Delete this draft? This action cannot be undone.')) return;
+
+    const saleId = document.querySelector('input[name="sale_id"]').value;
+
+    showLoading();
+
+    try {
+        const response = await fetch(`/sales/drafts/${saleId}/delete/`, {
+            method: 'POST',
+            headers: {
+                'X-CSRFToken': getCookie('csrftoken')
+            }
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            showAlert('Draft deleted', 'success');
+            setTimeout(() => {
+                window.location.href = '/sales/';
+            }, 1500);
+        } else {
+            showAlert(data.error || 'Failed to delete draft', 'danger');
+        }
+    } catch (error) {
+        console.error('Delete draft error:', error);
+        showAlert('Error deleting draft', 'danger');
+    } finally {
+        hideLoading();
+    }
+}
+
+// Utility Functions
+function showLoading() {
+    document.getElementById('loadingOverlay').classList.add('active');
+}
+
+function hideLoading() {
+    document.getElementById('loadingOverlay').classList.remove('active');
+}
+
+function showAlert(message, type = 'info') {
+    const alertDiv = document.createElement('div');
+    alertDiv.className = `alert alert-${type} alert-dismissible fade show position-fixed`;
+    alertDiv.style.cssText = 'top: 20px; right: 20px; z-index: 10000; min-width: 300px;';
+    alertDiv.innerHTML = `
+        ${message}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    `;
+
+    document.body.appendChild(alertDiv);
+
+    setTimeout(() => {
+        alertDiv.remove();
+    }, 5000);
+}
+
+function debounce(func, wait) {
+    let timeout;
+    return function executedFunction(...args) {
+        const later = () => {
+            clearTimeout(timeout);
+            func(...args);
+        };
+        clearTimeout(timeout);
+        timeout = setTimeout(later, wait);
+    };
+}
+
+function getCookie(name) {
+    let cookieValue = null;
+    if (document.cookie && document.cookie !== '') {
+        const cookies = document.cookie.split(';');
+        for (let i = 0; i < cookies.length; i++) {
+            const cookie = cookies[i].trim();
+            if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                break;
+            }
+        }
+    }
+    return cookieValue;
+}
+
+// Initialize on DOM ready
+document.addEventListener('DOMContentLoaded', () => {
+    SaleForm.init();
+});
+</script>
+{% endblock %}

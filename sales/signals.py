@@ -9,7 +9,7 @@ from decimal import Decimal
 import logging
 from django_tenants.utils import schema_context
 from invoices.models import Invoice
-from .tasks import fiscalize_invoice_async, sync_invoice_with_efris
+from .tasks import fiscalize_invoice_async, send_document_notification
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +26,9 @@ def track_sale_state(sender, instance, **kwargs):
         try:
             old_instance = sender.objects.get(pk=instance.pk)
             _pre_save_state[f'sale_{instance.pk}'] = {
-                'is_completed': old_instance.is_completed,
+                'document_type': old_instance.document_type,
+                'status': old_instance.status,
+                'payment_status': old_instance.payment_status,
                 'is_fiscalized': old_instance.is_fiscalized,
                 'total_amount': old_instance.total_amount,
             }
@@ -34,10 +36,11 @@ def track_sale_state(sender, instance, **kwargs):
             pass
 
 
+
 @receiver(post_save, sender=Sale)
 def handle_sale_completion(sender, instance, created, **kwargs):
     """
-    Handle sale completion, invoice generation, and notifications
+    Handle sale completion with document type specific logic
     """
     try:
         # Get tenant schema
@@ -48,57 +51,15 @@ def handle_sale_completion(sender, instance, created, **kwargs):
             state_key = f'sale_{instance.pk}'
             old_state = _pre_save_state.get(state_key, {})
 
-            # Only process completed sales
-            if not instance.is_completed:
-                return
+            # Handle different document types
+            document_type = instance.document_type
 
-            # Skip if sale is voided or refunded
-            if instance.is_voided or instance.is_refunded:
-                return
-
-            # Check if this is a new completion
-            is_new_completion = created or (not old_state.get('is_completed', False))
-
-            if is_new_completion:
-                # ✅ Send sale completion notification
-                from notifications.services import SalesNotifications
-                try:
-                    SalesNotifications.notify_sale_completed(instance)
-                    logger.info(f"Sale completion notification sent for sale {instance.id}")
-                except Exception as e:
-                    logger.error(f"Failed to send sale completion notification: {e}")
-
-            # Check if invoice already exists
-            if hasattr(instance, 'invoice') and instance.invoice:
-                return
-
-            # Create invoice from sale if needed
-            if should_create_invoice(instance, instance.created_by):
-                try:
-                    invoice = create_invoice_from_sale(instance)
-                    logger.info(f"Created invoice {invoice.pk} for sale {instance.pk}")
-
-                    # Queue for EFRIS fiscalization if enabled
-                    if should_fiscalize_invoice(invoice):
-                        logger.info(f"Queueing invoice {invoice.pk} for EFRIS fiscalization")
-                        fiscalize_invoice_async.delay(
-                            invoice.pk,
-                            user_id=getattr(instance.created_by, 'pk', None)
-                        )
-
-                except Exception as e:
-                    logger.error(f"Failed to create invoice for sale {instance.pk}: {e}")
-
-            # Check for fiscalization status change
-            if not created:
-                if instance.is_fiscalized and not old_state.get('is_fiscalized', False):
-                    # ✅ Just fiscalized - send notification
-                    from notifications.services import SalesNotifications
-                    try:
-                        SalesNotifications.notify_efris_fiscalized(instance)
-                        logger.info(f"EFRIS fiscalization notification sent for sale {instance.id}")
-                    except Exception as e:
-                        logger.error(f"Failed to send fiscalization notification: {e}")
+            if document_type == 'RECEIPT':
+                handle_receipt_completion(instance, created, old_state)
+            elif document_type == 'INVOICE':
+                handle_invoice_completion(instance, created, old_state)
+            elif document_type in ['PROFORMA', 'ESTIMATE']:
+                handle_proforma_completion(instance, created, old_state)
 
             # Clean up tracked state
             if state_key in _pre_save_state:
@@ -110,6 +71,136 @@ def handle_sale_completion(sender, instance, created, **kwargs):
             exc_info=True
         )
 
+def handle_receipt_completion(sale, created, old_state):
+    """Handle receipt completion"""
+    if not sale.status == 'COMPLETED':
+        return
+
+    # Send receipt notification
+    send_document_notification.delay(
+        sale_id=sale.id,
+        notification_type='RECEIPT_CREATED',
+        user_id=getattr(sale.created_by, 'pk', None)
+    )
+
+    logger.info(f"Receipt {sale.document_number} completed")
+
+def handle_invoice_completion(sale, created, old_state):
+    """Handle invoice completion"""
+    # Check if this is a new completion
+    store_config = sale.store.effective_efris_config
+
+    # Check if EFRIS is enabled for this store
+    efris_enabled = store_config.get('enabled', False) and store_config.get('is_active', False)
+    is_new_completion = created or (old_state.get('status') != 'COMPLETED' and sale.status == 'COMPLETED')
+
+    if is_new_completion:
+        # Send invoice notification
+        send_document_notification.delay(
+            sale_id=sale.id,
+            notification_type='INVOICE_SENT',
+            user_id=getattr(sale.created_by, 'pk', None)
+        )
+
+        # Create invoice detail if not exists
+        if not hasattr(sale, 'invoice_detail') or not sale.invoice_detail:
+            from invoices.models import Invoice
+            try:
+                Invoice.objects.create(
+                    sale=sale,
+                    store=sale.store,
+                    issue_date=sale.created_at.date(),
+                    due_date=sale.due_date or (sale.created_at.date() + timezone.timedelta(days=30)),
+                    subtotal=getattr(sale, 'subtotal', 0),
+                    tax_amount=getattr(sale, 'tax_amount', 0),
+                    discount_amount=getattr(sale, 'discount_amount', 0),
+                    total_amount=getattr(sale, 'total_amount', 0),
+                    currency_code=sale.currency or 'UGX',
+                    status='SENT',
+                    fiscalization_status='pending',
+                    created_by=sale.created_by
+                )
+            except Exception as e:
+                logger.error(f"Failed to create invoice detail for sale {sale.pk}: {e}")
+
+        # Check if should auto-fiscalize
+        if should_fiscalize_invoice(sale):
+            logger.info(f"Queueing invoice {sale.document_number} for EFRIS fiscalization")
+            fiscalize_invoice_async.delay(
+                sale.pk,
+                user_id=getattr(sale.created_by, 'pk', None)
+            )
+
+    # Check for fiscalization status change
+    if sale.is_fiscalized and not old_state.get('is_fiscalized', False):
+        # Send fiscalization notification
+        from notifications.services import SalesNotifications
+        try:
+            SalesNotifications.notify_efris_fiscalized(sale)
+            logger.info(f"EFRIS fiscalization notification sent for invoice {sale.document_number}")
+        except Exception as e:
+            logger.error(f"Failed to send fiscalization notification: {e}")
+
+
+def handle_proforma_completion(sale, created, old_state):
+    """Handle proforma/estimate completion"""
+    if created:
+        # Send proforma notification
+        send_document_notification.delay(
+            sale_id=sale.id,
+            notification_type='PROFORMA_CREATED',
+            user_id=getattr(sale.created_by, 'pk', None)
+        )
+
+        logger.info(f"{sale.get_document_type_display()} {sale.document_number} created")
+
+
+def should_fiscalize_invoice(sale):
+    """Determine if invoice should be fiscalized"""
+    if sale.document_type != 'INVOICE':
+        return False
+
+    # Check if sale has a store
+    if not sale.store:
+        logger.warning(f"Sale {sale.pk} has no store associated")
+        return False
+
+    # Get store's effective EFRIS configuration
+    store_config = sale.store.effective_efris_config
+
+    # Check if EFRIS is enabled and active for this store
+    if not store_config.get('enabled', False) or not store_config.get('is_active', False):
+        logger.debug(f"Store {sale.store.name}: EFRIS not enabled or inactive")
+        return False
+
+    # Check if store can fiscalize
+    if not sale.store.can_fiscalize:
+        logger.debug(f"Store {sale.store.name} cannot fiscalize transactions")
+        return False
+
+    # Check sale criteria
+    total_amount = getattr(sale, 'total_amount', 0)
+    if total_amount <= 0:
+        logger.warning(f"Invoice {sale.pk} has zero or negative total amount")
+        return False
+
+    # Check if already fiscalized
+    if getattr(sale, 'is_fiscalized', False):
+        logger.debug(f"Invoice {sale.pk} is already fiscalized")
+        return False
+
+    # Check auto-fiscalization from store config
+    if not store_config.get('auto_fiscalize_sales', True):
+        logger.debug(f"Store {sale.store.name} has auto-fiscalization disabled")
+        return False
+
+    # Check global settings
+    auto_fiscalize = getattr(settings, 'EFRIS_AUTO_FISCALIZE', True)
+    if not auto_fiscalize:
+        logger.debug("Auto-fiscalization is disabled in settings")
+        return False
+
+    return True
 
 @receiver(pre_save, sender=Invoice)
 def store_previous_invoice_status(sender, instance, **kwargs):
@@ -118,10 +209,13 @@ def store_previous_invoice_status(sender, instance, **kwargs):
         if instance.pk:
             old_instance = Invoice.objects.get(pk=instance.pk)
             instance._previous_status = getattr(old_instance, 'status', None)
+            instance._previous_fiscalization_status = getattr(old_instance, 'fiscalization_status', None)
         else:
             instance._previous_status = None
+            instance._previous_fiscalization_status = None
     except Invoice.DoesNotExist:
         instance._previous_status = None
+        instance._previous_fiscalization_status = None
 
 
 @receiver(post_save, sender=Invoice)
@@ -132,41 +226,85 @@ def handle_invoice_changes(sender, instance, created, **kwargs):
 
         with schema_context(schema_name):
             if created:
-                logger.info(f"New invoice created: {getattr(instance, 'invoice_number', instance.pk)}")
+                logger.info(f"New invoice detail created for sale {instance.sale.document_number}")
 
-                # ✅ Send invoice creation notification (if applicable)
-                if instance.sale and instance.sale.created_by:
-                    from notifications.services import NotificationService
-                    try:
-                        NotificationService.create_from_template(
-                            event_type='invoice_created',
-                            recipient=instance.sale.created_by,
-                            context={
-                                'invoice_number': instance.invoice_number,
-                                'total_amount': f'{instance.total_amount:,.0f}',
-                                'customer_name': instance.sale.customer.name if instance.sale.customer else 'Walk-in',
-                            },
-                            related_object=instance,
-                            tenant_schema=schema_name
-                        )
-                    except Exception as e:
-                        logger.error(f"Failed to send invoice creation notification: {e}")
-
-                # Auto-fiscalize if configured
-                if should_fiscalize_invoice(instance):
-                    logger.info(f"Auto-fiscalizing invoice {instance.pk}")
-                    fiscalize_invoice_async.delay(
-                        instance.pk,
-                        user_id=getattr(instance.created_by, 'pk', None)
-                    )
+                # Update related sale
+                if instance.sale:
+                    instance.sale.save()  # This will trigger sale signals
 
             # Handle status changes
             previous_status = getattr(instance, '_previous_status', None)
+            previous_fiscal_status = getattr(instance, '_previous_fiscalization_status', None)
+
             if previous_status and previous_status != getattr(instance, 'status', None):
                 handle_invoice_status_change(instance, previous_status)
 
+            if previous_fiscal_status and previous_fiscal_status != getattr(instance, 'fiscalization_status', None):
+                handle_fiscalization_status_change(instance, previous_fiscal_status)
+
     except Exception as e:
         logger.error(f"Error in handle_invoice_changes: {e}", exc_info=True)
+
+def handle_invoice_status_change(invoice, previous_status):
+    """Handle invoice status changes"""
+    try:
+        current_status = getattr(invoice, 'status', None)
+
+        if current_status == 'SENT' and previous_status == 'DRAFT':
+            # Fiscalize when sent
+            if invoice.sale and should_fiscalize_invoice(invoice.sale):
+                # Check if store allows fiscalization
+                store_config = invoice.sale.store.effective_efris_config
+                if store_config.get('enabled', False) and store_config.get('is_active', False):
+                    logger.info(f"Fiscalizing invoice {invoice.sale.document_number} due to status change to SENT")
+                    fiscalize_invoice_async.delay(
+                        invoice.sale.pk,
+                        user_id=getattr(invoice.created_by, 'pk', None)
+                    )
+                else:
+                    logger.debug(f"Store {invoice.sale.store.name} does not allow fiscalization")
+
+        elif current_status == 'PAID' and invoice.sale:
+            # Update sale payment status
+            invoice.sale.payment_status = 'PAID'
+            invoice.sale.save()
+
+        elif current_status == 'CANCELLED' and getattr(invoice, 'is_fiscalized', False):
+            # Notify about cancelled fiscalized invoice
+            logger.warning(
+                f"Fiscalized invoice {invoice.sale.document_number} was cancelled. "
+                f"Consider creating credit note."
+            )
+
+    except Exception as e:
+        logger.error(f"Error in handle_invoice_status_change: {e}", exc_info=True)
+
+
+def handle_fiscalization_status_change(invoice, previous_status):
+    """Handle fiscalization status changes"""
+    try:
+        current_status = getattr(invoice, 'fiscalization_status', None)
+
+        if current_status == 'fiscalized' and previous_status != 'fiscalized':
+            # Update related sale
+            if invoice.sale:
+                invoice.sale.is_fiscalized = True
+                invoice.sale.fiscalization_time = invoice.fiscalization_time
+                invoice.sale.fiscalization_status = 'fiscalized'
+                invoice.sale.efris_invoice_number = invoice.fiscal_document_number
+                invoice.sale.verification_code = invoice.verification_code
+                invoice.sale.qr_code = invoice.qr_code
+                invoice.sale.save()
+
+                logger.info(f"Updated sale {invoice.sale.document_number} with fiscalization data")
+
+        elif current_status == 'failed' and invoice.sale:
+            # Update sale failure status
+            invoice.sale.fiscalization_status = 'failed'
+            invoice.sale.save()
+
+    except Exception as e:
+        logger.error(f"Error in handle_fiscalization_status_change: {e}", exc_info=True)
 
 
 def should_create_invoice(sale, user):
@@ -174,13 +312,15 @@ def should_create_invoice(sale, user):
     if not sale.is_completed:
         return False
 
-    company = sale.store.company
+    # Get store's effective configuration
+    store_config = sale.store.effective_efris_config
 
-    # Check company invoice creation policy
-    if not getattr(company, 'auto_create_invoices', False):
+    # Check if store auto-creates invoices
+    if not store_config.get('auto_create_invoices', False):
         return False
 
-    invoice_policy = getattr(company, 'invoice_required_for', 'MANUAL')
+    # Check store's invoice policy
+    invoice_policy = getattr(sale.store, 'invoice_policy', 'MANUAL')
 
     if invoice_policy == 'MANUAL':
         return False
@@ -193,8 +333,8 @@ def should_create_invoice(sale, user):
             return buyer_details.get('buyerType') == "0"  # B2B
         return False
     elif invoice_policy == 'EFRIS_ENABLED':
-        # Only create invoices if EFRIS is enabled
-        return getattr(company, 'efris_enabled', False)
+        # Only create invoices if EFRIS is enabled for this store
+        return store_config.get('enabled', False) and store_config.get('is_active', False)
 
     return False
 
@@ -245,103 +385,6 @@ def create_invoice_from_sale(sale):
     return invoice
 
 
-def should_fiscalize_invoice(invoice):
-    """Determine if invoice should be fiscalized"""
-    # Get company from invoice
-    company = invoice.store.company
-
-    if not company:
-        logger.warning(f"Cannot determine company for invoice {invoice.pk}")
-        return False
-
-    # Check company EFRIS settings
-    if not getattr(company, 'efris_enabled', False):
-        logger.debug(f"EFRIS not enabled for company {company}")
-        return False
-
-    # Check invoice criteria
-    total_amount = getattr(invoice, 'total_amount', 0)
-    if total_amount <= 0:
-        logger.warning(f"Invoice {invoice.pk} has zero or negative total amount")
-        return False
-
-    # Check if already fiscalized
-    if getattr(invoice, 'is_fiscalized', False):
-        logger.debug(f"Invoice {invoice.pk} is already fiscalized")
-        return False
-
-    if getattr(invoice, 'fiscalization_status', None) == 'fiscalized':
-        logger.debug(f"Invoice {invoice.pk} fiscalization status is already 'fiscalized'")
-        return False
-
-    # Check configuration settings
-    auto_fiscalize = getattr(settings, 'EFRIS_AUTO_FISCALIZE', True)
-    if not auto_fiscalize:
-        logger.debug("Auto-fiscalization is disabled in settings")
-        return False
-
-    # Check invoice auto_fiscalize setting
-    invoice_auto_fiscalize = getattr(invoice, 'auto_fiscalize', True)
-    if not invoice_auto_fiscalize:
-        logger.debug(f"Auto-fiscalization disabled for invoice {invoice.pk}")
-        return False
-
-    return True
-
-
-def handle_invoice_status_change(invoice, previous_status):
-    """Handle invoice status changes"""
-    try:
-        schema_name = invoice.store.company.schema_name
-        current_status = getattr(invoice, 'status', None)
-
-        with schema_context(schema_name):
-            if current_status == 'SENT' and previous_status == 'DRAFT':
-                # Fiscalize when sent
-                if should_fiscalize_invoice(invoice):
-                    logger.info(f"Fiscalizing invoice {invoice.pk} due to status change to SENT")
-                    fiscalize_invoice_async.delay(
-                        invoice.pk,
-                        user_id=getattr(invoice.created_by, 'pk', None)
-                    )
-
-            elif current_status == 'PAID' and getattr(invoice, 'is_fiscalized', False):
-                # Sync with EFRIS when marked as paid
-                logger.info(f"Syncing fiscalized invoice {invoice.pk} with EFRIS due to PAID status")
-                sync_invoice_with_efris.delay(invoice.pk)
-
-            elif current_status == 'CANCELLED' and getattr(invoice, 'is_fiscalized', False):
-                # ✅ Send cancellation notification
-                logger.warning(
-                    f"Fiscalized invoice {getattr(invoice, 'invoice_number', invoice.pk)} was cancelled. "
-                    f"Consider creating credit note."
-                )
-
-                # Notify admins
-                from notifications.services import NotificationService
-                admins = invoice.store.company.staff.filter(is_staff=True).only(
-                    'id', 'email', 'first_name', 'last_name'
-                )
-
-                for admin in admins:
-                    try:
-                        NotificationService.create_notification(
-                            recipient=admin,
-                            title='Fiscalized Invoice Cancelled',
-                            message=f'Invoice {invoice.invoice_number} was cancelled after fiscalization. Credit note may be required.',
-                            notification_type='WARNING',
-                            priority='HIGH',
-                            related_object=invoice,
-                            action_text='View Invoice',
-                            action_url=f'/invoices/{invoice.id}/',
-                            tenant_schema=schema_name
-                        )
-                    except Exception as e:
-                        logger.error(f"Failed to send cancellation notification: {e}")
-
-    except Exception as e:
-        logger.error(f"Error in handle_invoice_status_change: {e}", exc_info=True)
-
 
 def generate_invoice_number(company):
     """Generate sequential invoice number"""
@@ -389,6 +432,7 @@ def update_dashboard_on_sale(sender, instance, created, **kwargs):
         with schema_context(company.schema_name):
             today = instance.created_at.date()
 
+            # Get today's sales summary by document type
             today_sales = Sale.objects.filter(
                 store__company=company,
                 created_at__date=today
@@ -396,6 +440,15 @@ def update_dashboard_on_sale(sender, instance, created, **kwargs):
                 total_sales=Count('id'),
                 total_revenue=Sum('total_amount')
             )
+
+            # Get breakdown by document type
+            type_breakdown = Sale.objects.filter(
+                store__company=company,
+                created_at__date=today
+            ).values('document_type').annotate(
+                count=Count('id'),
+                amount=Sum('total_amount')
+            ).order_by('document_type')
 
             # Send to tenant-specific WebSocket group
             channel_layer = get_channel_layer()
@@ -407,6 +460,10 @@ def update_dashboard_on_sale(sender, instance, created, **kwargs):
                         'type': 'sale_update',
                         'total_sales': today_sales['total_sales'] or 0,
                         'total_revenue': float(today_sales['total_revenue'] or 0.0),
+                        'document_type': instance.document_type,
+                        'document_number': instance.document_number,
+                        'sale_amount': float(instance.total_amount),
+                        'type_breakdown': list(type_breakdown),
                     },
                 }
             )

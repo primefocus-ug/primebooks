@@ -213,7 +213,7 @@ class StoreAnalyticsConsumer(AsyncWebsocketConsumer):
                     store=store,
                     created_at__date__gte=thirty_days_ago,
                     is_voided=False,
-                    is_completed=True
+                    status__in=['COMPLETED', 'PAID']
                 ).aggregate(
                     total_revenue=Sum('total_amount'),
                     total_sales=Count('id'),
@@ -225,7 +225,7 @@ class StoreAnalyticsConsumer(AsyncWebsocketConsumer):
                     store=store,
                     created_at__date=today,
                     is_voided=False,
-                    is_completed=True
+                    status__in=['COMPLETED', 'PAID']
                 ).aggregate(
                     revenue=Sum('total_amount'),
                     count=Count('id')
@@ -361,7 +361,7 @@ class CompanyStoresConsumer(AsyncWebsocketConsumer):
         try:
             schema_name = getattr(user.company, "schema_name", "public")
             with schema_context(schema_name):
-                company = Company.objects.get(id=company_id)
+                company = Company.objects.get(company_id=company_id)
                 return (
                         user.company == company
                         or user.is_superuser
@@ -392,7 +392,7 @@ class CompanyStoresConsumer(AsyncWebsocketConsumer):
                     store_id__in=store_ids,
                     created_at__date__gte=thirty_days_ago,
                     is_voided=False,
-                    is_completed=True
+                    status__in=['COMPLETED', 'PAID']
                 ).aggregate(
                     total_revenue=Sum('total_amount'),
                     total_sales=Count('id'),
@@ -406,7 +406,7 @@ class CompanyStoresConsumer(AsyncWebsocketConsumer):
                         store=store,
                         created_at__date__gte=thirty_days_ago,
                         is_voided=False,
-                        is_completed=True
+                        status__in=['COMPLETED', 'PAID']
                     ).aggregate(
                         revenue=Sum('total_amount'),
                         sales=Count('id')

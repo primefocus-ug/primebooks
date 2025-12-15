@@ -6,6 +6,7 @@ from django.db.models import Sum, Count
 from django.http import HttpResponseRedirect
 from django.contrib import messages
 from django.shortcuts import get_object_or_404
+from django.utils import timezone
 
 from .models import Sale, SaleItem, Receipt, Payment, Cart, CartItem
 
@@ -40,6 +41,7 @@ class PaymentInline(admin.TabularInline):
     fields = (
         'amount',
         'payment_method',
+        'payment_type',
         'transaction_reference',
         'is_confirmed',
         'confirmed_at',
@@ -51,13 +53,14 @@ class PaymentInline(admin.TabularInline):
 @admin.register(Sale)
 class SaleAdmin(admin.ModelAdmin):
     list_display = (
-        'invoice_number',
+        'document_number_display',
+        'document_type_badge',
         'short_transaction_id',
         'store',
         'created_by',
         'customer_name',
-        'transaction_type',
         'payment_method',
+        'payment_status_badge',
         'formatted_total_amount',
         'status_display',
         'fiscalization_status',
@@ -65,18 +68,19 @@ class SaleAdmin(admin.ModelAdmin):
     )
     list_filter = (
         'store',
-        'transaction_type',
         'document_type',
         'payment_method',
-        'is_completed',
-        'is_refunded',
-        'is_voided',
+        'payment_status',
+        'status',
         'is_fiscalized',
+        'is_voided',
+        'is_refunded',
         ('created_at', admin.DateFieldListFilter),
+        ('due_date', admin.DateFieldListFilter),
         ('fiscalization_time', admin.DateFieldListFilter),
     )
     search_fields = (
-        'invoice_number',
+        'document_number',
         'transaction_id',
         'efris_invoice_number',
         'customer__name',
@@ -88,7 +92,7 @@ class SaleAdmin(admin.ModelAdmin):
     )
     readonly_fields = (
         'transaction_id',
-        'invoice_number',
+        'document_number',
         'subtotal',
         'tax_amount',
         'discount_amount',
@@ -98,6 +102,9 @@ class SaleAdmin(admin.ModelAdmin):
         'created_at',
         'updated_at',
         'fiscalization_time',
+        'amount_paid',
+        'amount_outstanding',
+        'days_overdue',
     )
     ordering = ('-created_at',)
     inlines = [SaleItemInline, PaymentInline]
@@ -108,25 +115,29 @@ class SaleAdmin(admin.ModelAdmin):
         ('Basic Information', {
             'fields': (
                 'transaction_id',
-                'invoice_number',
+                'document_number',
+                'document_type',
                 'store',
                 'created_by',
                 'customer'
             )
         }),
-        ('Transaction Details', {
+        ('Document Details', {
             'fields': (
-                'transaction_type',
-                'document_type',
+                'due_date',
                 'payment_method',
-                'currency'
+                'currency',
+                'payment_status',
+                'status'
             )
         }),
         ('Financial Summary', {
             'fields': (
                 ('subtotal', 'tax_amount'),
                 ('discount_amount', 'total_amount'),
-                ('item_count', 'total_quantity')
+                ('item_count', 'total_quantity'),
+                ('amount_paid', 'amount_outstanding'),
+                'days_overdue'
             ),
             'classes': ('collapse',)
         }),
@@ -136,15 +147,15 @@ class SaleAdmin(admin.ModelAdmin):
                 'verification_code',
                 'qr_code',
                 'is_fiscalized',
-                'fiscalization_time'
+                'fiscalization_time',
+                'fiscalization_status'
             ),
             'classes': ('collapse',)
         }),
         ('Status & Control', {
             'fields': (
-                'is_completed',
-                'is_refunded',
                 'is_voided',
+                'is_refunded',
                 'void_reason'
             )
         }),
@@ -184,24 +195,78 @@ class SaleAdmin(admin.ModelAdmin):
     formatted_total_amount.admin_order_field = 'total_amount'
 
     def status_display(self, obj):
-        if obj.is_voided:
-            return format_html(
-                '<span style="color: #dc3545; font-weight: bold;">VOIDED</span>'
-            )
-        elif obj.is_refunded:
-            return format_html(
-                '<span style="color: #fd7e14; font-weight: bold;">REFUNDED</span>'
-            )
-        elif obj.is_completed:
-            return format_html(
-                '<span style="color: #28a745; font-weight: bold;">COMPLETED</span>'
-            )
-        else:
-            return format_html(
-                '<span style="color: #6c757d; font-weight: bold;">PENDING</span>'
-            )
+        status_colors = {
+            'DRAFT': '#6c757d',
+            'PENDING_PAYMENT': '#ffc107',
+            'PARTIALLY_PAID': '#17a2b8',
+            'PAID': '#28a745',
+            'COMPLETED': '#28a745',
+            'OVERDUE': '#dc3545',
+            'VOIDED': '#dc3545',
+            'REFUNDED': '#fd7e14',
+            'CANCELLED': '#6c757d',
+        }
+        color = status_colors.get(obj.status, '#6c757d')
+        return format_html(
+            '<span style="color: {}; font-weight: bold;">{}</span>',
+            color,
+            obj.get_status_display()
+        )
 
     status_display.short_description = 'Status'
+    status_display.admin_order_field = 'status'
+
+    def payment_status_badge(self, obj):
+        status_colors = {
+            'PENDING': '#ffc107',
+            'PARTIALLY_PAID': '#17a2b8',
+            'PAID': '#28a745',
+            'OVERDUE': '#dc3545',
+            'NOT_APPLICABLE': '#6c757d',
+        }
+        color = status_colors.get(obj.payment_status, '#6c757d')
+        return format_html(
+            '<span style="color: {}; font-weight: bold;">{}</span>',
+            color,
+            obj.get_payment_status_display()
+        )
+
+    payment_status_badge.short_description = 'Payment Status'
+    payment_status_badge.admin_order_field = 'payment_status'
+
+    def document_type_badge(self, obj):
+        type_colors = {
+            'RECEIPT': '#28a745',
+            'INVOICE': '#007bff',
+            'PROFORMA': '#6c757d',
+            'ESTIMATE': '#fd7e14',
+        }
+        color = type_colors.get(obj.document_type, '#6c757d')
+        icon = {
+            'RECEIPT': '🧾',
+            'INVOICE': '📄',
+            'PROFORMA': '📑',
+            'ESTIMATE': '📋',
+        }.get(obj.document_type, '📄')
+
+        return format_html(
+            '<span style="color: {}; font-weight: bold;">{} {}</span>',
+            color,
+            icon,
+            obj.get_document_type_display()
+        )
+
+    document_type_badge.short_description = 'Document Type'
+    document_type_badge.admin_order_field = 'document_type'
+
+    def document_number_display(self, obj):
+        return format_html(
+            '<strong>{}</strong>',
+            obj.document_number
+        )
+
+    document_number_display.short_description = 'Document Number'
+    document_number_display.admin_order_field = 'document_number'
 
     def fiscalization_status(self, obj):
         if obj.is_fiscalized:
@@ -228,17 +293,40 @@ class SaleAdmin(admin.ModelAdmin):
             'void_sales',
             'Void selected sales'
         )
+        actions['mark_as_paid'] = (
+            self.mark_as_paid,
+            'mark_as_paid',
+            'Mark selected invoices as paid'
+        )
+        actions['send_invoices'] = (
+            self.send_invoices,
+            'send_invoices',
+            'Send selected invoices to customers'
+        )
+        actions['convert_to_invoice'] = (
+            self.convert_to_invoice,
+            'convert_to_invoice',
+            'Convert proforma/estimate to invoice'
+        )
         return actions
 
     def fiscalize_sales(self, request, queryset):
         """Custom admin action to fiscalize sales"""
         updated = 0
-        for sale in queryset.filter(is_fiscalized=False):
-            # Add your EFRIS integration logic here
-            sale.is_fiscalized = True
-            sale.fiscalization_time = timezone.now()
-            sale.save(update_fields=['is_fiscalized', 'fiscalization_time'])
-            updated += 1
+        for sale in queryset.filter(is_fiscalized=False, document_type='INVOICE'):
+            try:
+                # Add your EFRIS integration logic here
+                sale.is_fiscalized = True
+                sale.fiscalization_time = timezone.now()
+                sale.fiscalization_status = 'fiscalized'
+                sale.save(update_fields=['is_fiscalized', 'fiscalization_time', 'fiscalization_status'])
+                updated += 1
+            except Exception as e:
+                self.message_user(
+                    request,
+                    f'Error fiscalizing sale {sale.document_number}: {str(e)}',
+                    messages.ERROR
+                )
 
         self.message_user(
             request,
@@ -258,7 +346,7 @@ class SaleAdmin(admin.ModelAdmin):
             except Exception as e:
                 self.message_user(
                     request,
-                    f'Error voiding sale {sale.invoice_number}: {str(e)}',
+                    f'Error voiding sale {sale.document_number}: {str(e)}',
                     messages.ERROR
                 )
 
@@ -270,11 +358,67 @@ class SaleAdmin(admin.ModelAdmin):
 
     void_sales.short_description = 'Void selected sales'
 
+    def mark_as_paid(self, request, queryset):
+        """Mark selected invoices as paid"""
+        updated = 0
+        for sale in queryset.filter(document_type='INVOICE', payment_status__in=['PENDING', 'PARTIALLY_PAID']):
+            sale.payment_status = 'PAID'
+            sale.status = 'COMPLETED'
+            sale.save(update_fields=['payment_status', 'status'])
+            updated += 1
+
+        self.message_user(
+            request,
+            f'{updated} invoices were marked as paid.',
+            messages.SUCCESS
+        )
+
+    mark_as_paid.short_description = 'Mark invoices as paid'
+
+    def send_invoices(self, request, queryset):
+        """Send invoices to customers"""
+        sent = 0
+        for sale in queryset.filter(document_type='INVOICE', status='PENDING_PAYMENT'):
+            # Here you would implement email sending logic
+            sale.status = 'SENT'  # This field needs to be added to Sale model if not exists
+            sale.save()
+            sent += 1
+
+        self.message_user(
+            request,
+            f'{sent} invoices were sent to customers.',
+            messages.SUCCESS
+        )
+
+    send_invoices.short_description = 'Send invoices to customers'
+
+    def convert_to_invoice(self, request, queryset):
+        """Convert proforma/estimate to invoice"""
+        converted = 0
+        for sale in queryset.filter(document_type__in=['PROFORMA', 'ESTIMATE']):
+            try:
+                sale.convert_to_invoice()
+                converted += 1
+            except Exception as e:
+                self.message_user(
+                    request,
+                    f'Error converting {sale.document_number}: {str(e)}',
+                    messages.ERROR
+                )
+
+        self.message_user(
+            request,
+            f'{converted} documents were converted to invoices.',
+            messages.SUCCESS
+        )
+
+    convert_to_invoice.short_description = 'Convert to invoice'
+
 
 @admin.register(SaleItem)
 class SaleItemAdmin(admin.ModelAdmin):
     list_display = (
-        'sale_invoice',
+        'sale_document',
         'product_name',
         'quantity',
         'unit_price',
@@ -287,12 +431,13 @@ class SaleItemAdmin(admin.ModelAdmin):
     list_filter = (
         'tax_rate',
         'sale__store',
+        'sale__document_type',
         ('sale__created_at', admin.DateFieldListFilter),
     )
     search_fields = (
         'product__name',
         'product__sku',
-        'sale__invoice_number',
+        'sale__document_number',
         'sale__transaction_id',
         'description'
     )
@@ -327,11 +472,12 @@ class SaleItemAdmin(admin.ModelAdmin):
     def get_queryset(self, request):
         return super().get_queryset(request).select_related('sale', 'product')
 
-    def sale_invoice(self, obj):
-        return obj.sale.invoice_number or f"Sale #{obj.sale.id}"
+    def sale_document(self, obj):
+        doc_type = obj.sale.get_document_type_display()
+        return f"{doc_type} #{obj.sale.document_number}"
 
-    sale_invoice.short_description = 'Sale'
-    sale_invoice.admin_order_field = 'sale__invoice_number'
+    sale_document.short_description = 'Sale'
+    sale_document.admin_order_field = 'sale__document_number'
 
     def product_name(self, obj):
         return obj.product.name
@@ -351,7 +497,7 @@ class SaleItemAdmin(admin.ModelAdmin):
 class ReceiptAdmin(admin.ModelAdmin):
     list_display = (
         'receipt_number',
-        'sale_invoice',
+        'sale_document',
         'store',
         'printed_by',
         'printed_at',
@@ -365,7 +511,7 @@ class ReceiptAdmin(admin.ModelAdmin):
     )
     search_fields = (
         'receipt_number',
-        'sale__invoice_number',
+        'sale__document_number',
         'sale__transaction_id',
         'printed_by__username',
     )
@@ -376,11 +522,11 @@ class ReceiptAdmin(admin.ModelAdmin):
     def get_queryset(self, request):
         return super().get_queryset(request).select_related('sale', 'store', 'printed_by')
 
-    def sale_invoice(self, obj):
-        return obj.sale.invoice_number or f"Sale #{obj.sale.id}"
+    def sale_document(self, obj):
+        return obj.sale.document_number
 
-    sale_invoice.short_description = 'Sale'
-    sale_invoice.admin_order_field = 'sale__invoice_number'
+    sale_document.short_description = 'Sale'
+    sale_document.admin_order_field = 'sale__document_number'
 
     def duplicate_status(self, obj):
         if obj.is_duplicate:
@@ -399,21 +545,23 @@ class ReceiptAdmin(admin.ModelAdmin):
 @admin.register(Payment)
 class PaymentAdmin(admin.ModelAdmin):
     list_display = (
-        'sale_invoice',
+        'sale_document',
         'amount',
         'payment_method',
+        'payment_type_display',
         'confirmation_status',
         'transaction_reference',
         'created_at',
     )
     list_filter = (
         'payment_method',
+        'payment_type',
         'is_confirmed',
         ('created_at', admin.DateFieldListFilter),
         ('confirmed_at', admin.DateFieldListFilter),
     )
     search_fields = (
-        'sale__invoice_number',
+        'sale__document_number',
         'sale__transaction_id',
         'transaction_reference',
     )
@@ -423,7 +571,7 @@ class PaymentAdmin(admin.ModelAdmin):
 
     fieldsets = (
         ('Payment Information', {
-            'fields': ('sale', 'amount', 'payment_method', 'transaction_reference')
+            'fields': ('sale', 'amount', 'payment_method', 'payment_type', 'transaction_reference')
         }),
         ('Confirmation Details', {
             'fields': ('is_confirmed', 'confirmed_at')
@@ -437,11 +585,17 @@ class PaymentAdmin(admin.ModelAdmin):
     def get_queryset(self, request):
         return super().get_queryset(request).select_related('sale')
 
-    def sale_invoice(self, obj):
-        return obj.sale.invoice_number or f"Sale #{obj.sale.id}"
+    def sale_document(self, obj):
+        return obj.sale.document_number
 
-    sale_invoice.short_description = 'Sale'
-    sale_invoice.admin_order_field = 'sale__invoice_number'
+    sale_document.short_description = 'Sale'
+    sale_document.admin_order_field = 'sale__document_number'
+
+    def payment_type_display(self, obj):
+        return obj.get_payment_type_display()
+
+    payment_type_display.short_description = 'Payment Type'
+    payment_type_display.admin_order_field = 'payment_type'
 
     def confirmation_status(self, obj):
         if obj.is_confirmed:
@@ -467,7 +621,6 @@ class PaymentAdmin(admin.ModelAdmin):
 
     def confirm_payments(self, request, queryset):
         """Custom admin action to confirm payments"""
-        from django.utils import timezone
         updated = queryset.filter(is_confirmed=False).update(
             is_confirmed=True,
             confirmed_at=timezone.now()
@@ -505,6 +658,7 @@ class CartAdmin(admin.ModelAdmin):
         'user',
         'customer_name',
         'store',
+        'document_type_display',
         'status',
         'item_count_display',
         'total_amount',
@@ -513,6 +667,7 @@ class CartAdmin(admin.ModelAdmin):
     )
     list_filter = (
         'status',
+        'document_type',
         'store',
         ('created_at', admin.DateFieldListFilter),
     )
@@ -543,6 +698,23 @@ class CartAdmin(admin.ModelAdmin):
 
     customer_name.short_description = 'Customer'
     customer_name.admin_order_field = 'customer__name'
+
+    def document_type_display(self, obj):
+        type_colors = {
+            'RECEIPT': '#28a745',
+            'INVOICE': '#007bff',
+            'PROFORMA': '#6c757d',
+            'ESTIMATE': '#fd7e14',
+        }
+        color = type_colors.get(obj.document_type, '#6c757d')
+        return format_html(
+            '<span style="color: {};">{}</span>',
+            color,
+            obj.get_document_type_display()
+        )
+
+    document_type_display.short_description = 'Document Type'
+    document_type_display.admin_order_field = 'document_type'
 
     def item_count_display(self, obj):
         return obj.items.count()
@@ -585,6 +757,7 @@ class CartItemAdmin(admin.ModelAdmin):
     list_filter = (
         'tax_rate',
         'cart__store',
+        'cart__document_type',
         ('added_at', admin.DateFieldListFilter),
     )
     search_fields = (
@@ -617,3 +790,54 @@ class CartItemAdmin(admin.ModelAdmin):
 
     discount_display.short_description = 'Discount'
 
+
+# ==================== NEW: Custom Admin Views for Reports ====================
+class DocumentTypeFilter(admin.SimpleListFilter):
+    """Filter by document type with counts"""
+    title = 'Document Type'
+    parameter_name = 'document_type'
+
+    def lookups(self, request, model_admin):
+        return Sale.DOCUMENT_TYPE_CHOICES
+
+    def queryset(self, request, queryset):
+        if self.value():
+            return queryset.filter(document_type=self.value())
+        return queryset
+
+
+class PaymentStatusFilter(admin.SimpleListFilter):
+    """Filter by payment status with counts"""
+    title = 'Payment Status'
+    parameter_name = 'payment_status'
+
+    def lookups(self, request, model_admin):
+        return Sale.PAYMENT_STATUS_CHOICES
+
+    def queryset(self, request, queryset):
+        if self.value():
+            return queryset.filter(payment_status=self.value())
+        return queryset
+
+from .payment_reminders import PaymentReminder
+
+@admin.register(PaymentReminder)
+class PaymentReminderAdmin(admin.ModelAdmin):
+    list_display = ['sale', 'reminder_type', 'status', 'scheduled_for', 'sent_at']
+    list_filter = ['status', 'reminder_type', 'scheduled_for']
+    search_fields = ['sale__document_number', 'sent_to']
+    readonly_fields = ['sent_at', 'created_at', 'updated_at']
+
+    actions = ['send_reminders']
+
+    def send_reminders(self, request, queryset):
+        sent = 0
+        for reminder in queryset.filter(status='PENDING'):
+            if reminder.send():
+                sent += 1
+
+        self.message_user(
+            request,
+            f'{sent} reminders sent successfully'
+        )
+    send_reminders.short_description = 'Send selected reminders'

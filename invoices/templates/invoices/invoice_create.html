@@ -1,0 +1,752 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Create Invoice{% endblock %}
+
+{% block extra_css %}
+<style>
+    .invoice-form-container {
+        background: #f8f9fa;
+        min-height: 100vh;
+        padding: 20px 0;
+    }
+
+    .form-section {
+        background: white;
+        border-radius: 10px;
+        padding: 25px;
+        margin-bottom: 20px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+
+    .section-header {
+        border-bottom: 2px solid #667eea;
+        padding-bottom: 10px;
+        margin-bottom: 20px;
+    }
+
+    .section-header h5 {
+        color: #667eea;
+        margin: 0;
+        font-weight: 600;
+    }
+
+    .item-row {
+        border: 1px solid #dee2e6;
+        border-radius: 8px;
+        padding: 20px;
+        margin-bottom: 15px;
+        background: #f8f9fa;
+        position: relative;
+    }
+
+    .item-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 15px;
+        padding-bottom: 10px;
+        border-bottom: 1px solid #dee2e6;
+    }
+
+    .item-number {
+        font-weight: 600;
+        color: #667eea;
+    }
+
+    .remove-item {
+        cursor: pointer;
+        color: #dc3545;
+        font-size: 14px;
+        padding: 5px 10px;
+        border: 1px solid #dc3545;
+        border-radius: 5px;
+        transition: all 0.3s;
+    }
+
+    .remove-item:hover {
+        background: #dc3545;
+        color: white;
+    }
+
+    .stock-warning {
+        color: #dc3545;
+        font-size: 0.875rem;
+        margin-top: 5px;
+        font-weight: 500;
+    }
+
+    .stock-ok {
+        color: #28a745;
+        font-size: 0.875rem;
+        margin-top: 5px;
+        font-weight: 500;
+    }
+
+    .add-item-buttons {
+        display: flex;
+        gap: 10px;
+        justify-content: center;
+        margin-top: 20px;
+    }
+
+    .totals-card {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        border-radius: 10px;
+        padding: 25px;
+        position: sticky;
+        top: 20px;
+    }
+
+    .totals-card h5 {
+        color: white;
+        border-bottom: 2px solid rgba(255,255,255,0.3);
+        padding-bottom: 10px;
+        margin-bottom: 15px;
+    }
+
+    .total-row {
+        display: flex;
+        justify-content: space-between;
+        padding: 8px 0;
+        font-size: 14px;
+    }
+
+    .total-row.grand-total {
+        font-size: 20px;
+        font-weight: bold;
+        padding-top: 15px;
+        margin-top: 15px;
+        border-top: 2px solid rgba(255,255,255,0.3);
+    }
+
+    .action-buttons {
+        background: white;
+        border-radius: 10px;
+        padding: 20px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        position: sticky;
+        bottom: 0;
+        z-index: 100;
+    }
+
+    .form-label.required::after {
+        content: " *";
+        color: #dc3545;
+    }
+
+    .help-text {
+        font-size: 0.875rem;
+        color: #6c757d;
+        margin-top: 5px;
+    }
+
+    .btn-add-item {
+        padding: 10px 20px;
+        font-weight: 500;
+    }
+
+    .customer-quick-add {
+        display: inline-block;
+        margin-left: 10px;
+        font-size: 0.875rem;
+    }
+
+    .payment-method-info {
+        background: #e7f3ff;
+        border-left: 4px solid #0066cc;
+        padding: 10px 15px;
+        margin-top: 10px;
+        border-radius: 4px;
+        font-size: 0.875rem;
+    }
+
+    .draft-info {
+        background: #fff3cd;
+        border-left: 4px solid #ffc107;
+        padding: 10px 15px;
+        margin-top: 10px;
+        border-radius: 4px;
+        font-size: 0.875rem;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="invoice-form-container">
+    <div class="container">
+        <!-- Page Header -->
+        <div class="row mb-4">
+            <div class="col-md-8">
+                <h2 class="mb-1">
+                    <i class="fas fa-file-invoice"></i> Create New Invoice
+                </h2>
+                <p class="text-muted">Create a professional invoice for your customer</p>
+            </div>
+            <div class="col-md-4 text-end">
+                <a href="{% url 'invoice:invoice_lists' %}" class="btn btn-outline-secondary">
+                    <i class="fas fa-arrow-left me-2"></i>Back to Invoices
+                </a>
+            </div>
+        </div>
+
+        <form method="post" id="invoiceForm">
+            {% csrf_token %}
+
+            <div class="row">
+                <!-- Left Column - Form Fields -->
+                <div class="col-lg-8">
+
+                    <!-- Invoice Type Selection -->
+                    <div class="form-section">
+                        <div class="section-header">
+                            <h5><i class="fas fa-cog"></i> Invoice Type</h5>
+                        </div>
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label class="form-label required">Invoice Status</label>
+                                    <select name="invoice_status" id="invoiceStatus" class="form-select" required>
+                                        <option value="DRAFT" selected>Draft (Save for later)</option>
+                                        <option value="SENT">Send to Customer</option>
+                                    </select>
+                                    <div class="draft-info" id="draftInfo">
+                                        <i class="fas fa-info-circle"></i>
+                                        <strong>Draft:</strong> Invoice will be saved but not sent. No stock movement until marked as paid.
+                                    </div>
+                                    <div class="payment-method-info" id="sentInfo" style="display: none;">
+                                        <i class="fas fa-info-circle"></i>
+                                        <strong>Sent:</strong> Invoice will be marked as pending payment. Customer can view it.
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label class="form-label required">Payment Method</label>
+                                    <select name="payment_method" id="paymentMethod" class="form-select" required>
+                                        <option value="CREDIT" selected>Credit (Pay Later)</option>
+                                        <option value="CASH">Cash</option>
+                                        <option value="MOBILE_MONEY">Mobile Money</option>
+                                        <option value="BANK_TRANSFER">Bank Transfer</option>
+                                        <option value="CARD">Credit/Debit Card</option>
+                                        <option value="VOUCHER">Voucher</option>
+                                    </select>
+                                    <small class="help-text">
+                                        Select "Credit" for invoices to be paid later
+                                    </small>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Customer Information -->
+                    <div class="form-section">
+                        <div class="section-header">
+                            <h5><i class="fas fa-user"></i> Customer Information</h5>
+                        </div>
+                        <div class="row">
+                            <div class="col-md-12">
+                                <div class="mb-3">
+                                    <label class="form-label required">Customer</label>
+                                    <div class="input-group">
+                                        <select name="customer" id="customerSelect" class="form-select" required>
+                                            <option value="">Select Customer</option>
+                                            {% for customer in customers %}
+                                            <option value="{{ customer.id }}"
+                                                    data-email="{{ customer.email|default:'' }}"
+                                                    data-phone="{{ customer.phone|default:'' }}"
+                                                    data-address="{{ customer.physical_address|default:'' }}">
+                                                {{ customer.name }}
+                                                {% if customer.email %} - {{ customer.email }}{% endif %}
+                                            </option>
+                                            {% endfor %}
+                                        </select>
+                                        <a href="#" class="btn btn-outline-primary" id="addCustomerBtn">
+                                            <i class="fas fa-plus"></i> New
+                                        </a>
+                                    </div>
+                                    <small class="help-text">
+                                        Select an existing customer or create a new one
+                                    </small>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Customer Details Preview -->
+                        <div id="customerDetails" style="display: none;">
+                            <div class="alert alert-info">
+                                <h6>Customer Details:</h6>
+                                <p class="mb-1"><strong>Email:</strong> <span id="customerEmail">-</span></p>
+                                <p class="mb-1"><strong>Phone:</strong> <span id="customerPhone">-</span></p>
+                                <p class="mb-0"><strong>Address:</strong> <span id="customerAddress">-</span></p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Invoice Details -->
+                    <div class="form-section">
+                        <div class="section-header">
+                            <h5><i class="fas fa-calendar"></i> Invoice Details</h5>
+                        </div>
+                        <div class="row">
+                            <div class="col-md-4">
+                                <div class="mb-3">
+                                    <label class="form-label required">Due Date</label>
+                                    <input type="date" name="due_date" class="form-control"
+                                           value="{{ default_due_date }}" required>
+                                    <small class="help-text">
+                                        When payment is due (default: 30 days)
+                                    </small>
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="mb-3">
+                                    <label class="form-label">Purchase Order #</label>
+                                    <input type="text" name="purchase_order" class="form-control"
+                                           placeholder="Optional PO number">
+                                </div>
+                            </div>
+                            <div class="col-md-4">
+                                <div class="mb-3">
+                                    <label class="form-label">Reference</label>
+                                    <input type="text" name="reference" class="form-control"
+                                           placeholder="Optional reference">
+                                </div>
+                            </div>
+                        </div>
+                        <div class="row">
+                            <div class="col-md-12">
+                                <div class="mb-3">
+                                    <label class="form-label">Terms & Conditions</label>
+                                    <textarea name="terms" class="form-control" rows="3"
+                                              placeholder="Payment terms, delivery terms, etc.">Payment due within {{ default_payment_terms|default:"30" }} days.
+Late payments subject to 2% monthly interest.
+Goods remain property of seller until full payment received.</textarea>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="row">
+                            <div class="col-md-12">
+                                <div class="mb-3">
+                                    <label class="form-label">Internal Notes</label>
+                                    <textarea name="notes" class="form-control" rows="2"
+                                              placeholder="Internal notes (not visible to customer)"></textarea>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Items Section -->
+                    <div class="form-section">
+                        <div class="section-header">
+                            <h5><i class="fas fa-list"></i> Invoice Items</h5>
+                        </div>
+
+                        <div id="itemsContainer">
+                            <!-- Items will be added here dynamically -->
+                        </div>
+
+                        <input type="hidden" name="item_count" id="itemCount" value="0">
+
+                        <div class="add-item-buttons">
+                            <button type="button" class="btn btn-primary btn-add-item" onclick="addItem('PRODUCT')">
+                                <i class="fas fa-box me-2"></i>Add Product
+                            </button>
+                            <button type="button" class="btn btn-success btn-add-item" onclick="addItem('SERVICE')">
+                                <i class="fas fa-concierge-bell me-2"></i>Add Service
+                            </button>
+                        </div>
+                    </div>
+
+                </div>
+
+                <!-- Right Column - Totals & Actions -->
+                <div class="col-lg-4">
+                    <!-- Totals Card (Sticky) -->
+                    <div class="totals-card mb-4">
+                        <h5><i class="fas fa-calculator"></i> Invoice Summary</h5>
+
+                        <div class="total-row">
+                            <span>Subtotal:</span>
+                            <span id="subtotalDisplay">UGX 0.00</span>
+                        </div>
+
+                        <div class="total-row">
+                            <span>Tax (included):</span>
+                            <span id="taxDisplay">UGX 0.00</span>
+                        </div>
+
+                        <div class="total-row">
+                            <span>Discount:</span>
+                            <span id="discountDisplay" style="color: #ffeb3b;">UGX 0.00</span>
+                        </div>
+
+                        <div class="total-row grand-total">
+                            <span>TOTAL:</span>
+                            <span id="totalDisplay">UGX 0.00</span>
+                        </div>
+
+                        <div style="margin-top: 20px; padding-top: 20px; border-top: 1px solid rgba(255,255,255,0.3);">
+                            <small style="opacity: 0.9;">
+                                <i class="fas fa-info-circle"></i>
+                                Items: <span id="itemsCount">0</span>
+                            </small>
+                        </div>
+                    </div>
+
+                    <!-- Quick Info -->
+                    <div class="form-section">
+                        <h6 class="mb-3"><i class="fas fa-lightbulb"></i> Quick Tips</h6>
+                        <ul class="list-unstyled" style="font-size: 0.875rem;">
+                            <li class="mb-2">
+                                <i class="fas fa-check text-success"></i>
+                                Draft invoices don't affect inventory
+                            </li>
+                            <li class="mb-2">
+                                <i class="fas fa-check text-success"></i>
+                                Stock deducts only when marked as paid
+                            </li>
+                            <li class="mb-2">
+                                <i class="fas fa-check text-success"></i>
+                                You can edit draft invoices anytime
+                            </li>
+                            <li class="mb-2">
+                                <i class="fas fa-check text-success"></i>
+                                Preview before sending to customer
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Bottom Action Buttons -->
+            <div class="action-buttons">
+                <div class="row">
+                    <div class="col-md-6">
+                        <a href="{% url 'invoice:invoice_lists' %}" class="btn btn-outline-secondary btn-lg w-100">
+                            <i class="fas fa-times me-2"></i>Cancel
+                        </a>
+                    </div>
+                    <div class="col-md-6">
+                        <button type="submit" class="btn btn-primary btn-lg w-100" id="submitBtn">
+                            <i class="fas fa-save me-2"></i><span id="submitBtnText">Create Invoice</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+let itemCounter = 0;
+
+// Convert Django QuerySet to JavaScript array
+const productsData = [
+    {% for product in products %}
+    {
+        id: {{ product.id }},
+        name: "{{ product.name|escapejs }}",
+        sku: "{{ product.sku|escapejs }}",
+        price: parseFloat("{{ product.selling_price }}"),
+        tax_rate: "{{ product.tax_rate }}",
+        unit_of_measure: "{{ product.unit_of_measure|default:'pcs' }}"
+    }{% if not forloop.last %},{% endif %}
+    {% endfor %}
+];
+
+const servicesData = [
+    {% for service in services %}
+    {
+        id: {{ service.id }},
+        name: "{{ service.name|escapejs }}",
+        code: "{{ service.code|default:''|escapejs }}",
+        price: parseFloat("{{ service.price }}"),
+        tax_rate: "{{ service.tax_rate|default:'A' }}",
+        unit_of_measure: "{{ service.unit_of_measure|default:'207' }}"
+    }{% if not forloop.last %},{% endif %}
+    {% endfor %}
+];
+
+// Invoice status change handler
+document.getElementById('invoiceStatus').addEventListener('change', function() {
+    const draftInfo = document.getElementById('draftInfo');
+    const sentInfo = document.getElementById('sentInfo');
+    const submitBtn = document.getElementById('submitBtnText');
+
+    if (this.value === 'DRAFT') {
+        draftInfo.style.display = 'block';
+        sentInfo.style.display = 'none';
+        submitBtn.textContent = 'Save as Draft';
+    } else {
+        draftInfo.style.display = 'none';
+        sentInfo.style.display = 'block';
+        submitBtn.textContent = 'Create & Send Invoice';
+    }
+});
+
+// Customer selection handler
+document.getElementById('customerSelect').addEventListener('change', function() {
+    const selectedOption = this.options[this.selectedIndex];
+    const customerDetails = document.getElementById('customerDetails');
+
+    if (this.value) {
+        document.getElementById('customerEmail').textContent = selectedOption.dataset.email || 'Not provided';
+        document.getElementById('customerPhone').textContent = selectedOption.dataset.phone || 'Not provided';
+        document.getElementById('customerAddress').textContent = selectedOption.dataset.address || 'Not provided';
+        customerDetails.style.display = 'block';
+    } else {
+        customerDetails.style.display = 'none';
+    }
+});
+
+function addItem(type) {
+    const container = document.getElementById('itemsContainer');
+    const itemIndex = itemCounter++;
+
+    const itemHtml = `
+        <div class="item-row" id="item_${itemIndex}">
+            <div class="item-header">
+                <span class="item-number">
+                    <i class="fas fa-${type === 'PRODUCT' ? 'box' : 'concierge-bell'}"></i>
+                    ${type === 'PRODUCT' ? 'Product' : 'Service'} #${itemCounter}
+                </span>
+                <span class="remove-item" onclick="removeItem(${itemIndex})">
+                    <i class="fas fa-trash-alt me-1"></i>Remove
+                </span>
+            </div>
+
+            <input type="hidden" name="item_type_${itemIndex}" value="${type}">
+
+            <div class="row">
+                <div class="col-md-6">
+                    <div class="mb-3">
+                        <label class="form-label required">${type === 'PRODUCT' ? 'Product' : 'Service'}</label>
+                        <select name="item_id_${itemIndex}" class="form-select" required
+                                onchange="onItemSelect(${itemIndex}, '${type}')">
+                            <option value="">Select ${type === 'PRODUCT' ? 'Product' : 'Service'}</option>
+                            ${type === 'PRODUCT' ? getProductOptions() : getServiceOptions()}
+                        </select>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="mb-3">
+                        <label class="form-label">Description</label>
+                        <input type="text" name="description_${itemIndex}" class="form-control"
+                               placeholder="Optional description">
+                    </div>
+                </div>
+            </div>
+
+            <div class="row">
+                <div class="col-md-2">
+                    <div class="mb-3">
+                        <label class="form-label required">Quantity</label>
+                        <input type="number" name="quantity_${itemIndex}" class="form-control"
+                               value="1" min="1" required
+                               onchange="calculateItemTotal(${itemIndex})">
+                        ${type === 'PRODUCT' ? `<div id="stock_info_${itemIndex}" class="stock-info"></div>` : ''}
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="mb-3">
+                        <label class="form-label required">Unit Price</label>
+                        <input type="number" name="unit_price_${itemIndex}" class="form-control"
+                               step="0.01" min="0" required
+                               onchange="calculateItemTotal(${itemIndex})">
+                    </div>
+                </div>
+                <div class="col-md-2">
+                    <div class="mb-3">
+                        <label class="form-label">Discount %</label>
+                        <input type="number" name="discount_${itemIndex}" class="form-control"
+                               value="0" min="0" max="100" step="0.01"
+                               onchange="calculateItemTotal(${itemIndex})">
+                    </div>
+                </div>
+                <div class="col-md-2">
+                    <div class="mb-3">
+                        <label class="form-label required">Tax</label>
+                        <select name="tax_rate_${itemIndex}" class="form-select" required
+                                onchange="calculateItemTotal(${itemIndex})">
+                            <option value="A">18%</option>
+                            <option value="B">0%</option>
+                            <option value="C">Exempt</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <div class="mb-3">
+                        <label class="form-label">Line Total</label>
+                        <input type="text" id="line_total_${itemIndex}" class="form-control"
+                               readonly value="UGX 0.00" style="font-weight: bold; background: #e9ecef;">
+                    </div>
+                </div>
+            </div>
+        </div>
+    `;
+
+    container.insertAdjacentHTML('beforeend', itemHtml);
+    document.getElementById('itemCount').value = itemCounter;
+    updateTotals();
+}
+
+function getProductOptions() {
+    return productsData.map(p =>
+        `<option value="${p.id}" data-price="${p.price}" data-tax="${p.tax_rate}">
+            ${p.name} (${p.sku}) - UGX ${p.price.toFixed(2)}
+        </option>`
+    ).join('');
+}
+
+function getServiceOptions() {
+    return servicesData.map(s =>
+        `<option value="${s.id}" data-price="${s.price}" data-tax="${s.tax_rate}">
+            ${s.name} (${s.code}) - UGX ${s.price.toFixed(2)}
+        </option>`
+    ).join('');
+}
+
+function onItemSelect(index, type) {
+    const select = document.querySelector(`select[name="item_id_${index}"]`);
+    const selectedOption = select.options[select.selectedIndex];
+
+    if (selectedOption.value) {
+        const price = selectedOption.getAttribute('data-price');
+        const taxRate = selectedOption.getAttribute('data-tax');
+
+        document.querySelector(`input[name="unit_price_${index}"]`).value = price;
+        document.querySelector(`select[name="tax_rate_${index}"]`).value = taxRate;
+
+        // Auto-fill description with item name
+        const itemName = selectedOption.text.split(' (')[0];
+        document.querySelector(`input[name="description_${index}"]`).value = itemName;
+
+        if (type === 'PRODUCT') {
+            checkStock(index, selectedOption.value);
+        }
+
+        calculateItemTotal(index);
+    }
+}
+
+function checkStock(index, productId) {
+    fetch(`/invoices/api/product/${productId}/`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                const stockInfo = document.getElementById(`stock_info_${index}`);
+                const available = data.product.available_stock;
+                const quantity = parseInt(document.querySelector(`input[name="quantity_${index}"]`).value) || 0;
+
+                if (available >= quantity) {
+                    stockInfo.innerHTML = `<span class="stock-ok"><i class="fas fa-check-circle"></i> Stock: ${available}</span>`;
+                } else {
+                    stockInfo.innerHTML = `<span class="stock-warning"><i class="fas fa-exclamation-triangle"></i> Low stock: ${available}</span>`;
+                }
+            }
+        })
+        .catch(error => {
+            console.error('Error checking stock:', error);
+        });
+}
+
+function calculateItemTotal(index) {
+    const quantity = parseFloat(document.querySelector(`input[name="quantity_${index}"]`).value) || 0;
+    const unitPrice = parseFloat(document.querySelector(`input[name="unit_price_${index}"]`).value) || 0;
+    const discount = parseFloat(document.querySelector(`input[name="discount_${index}"]`).value) || 0;
+
+    const subtotal = quantity * unitPrice;
+    const discountAmount = (discount / 100) * subtotal;
+    const total = subtotal - discountAmount;
+
+    document.getElementById(`line_total_${index}`).value = `UGX ${total.toFixed(2)}`;
+
+    // Check stock if product
+    const itemType = document.querySelector(`input[name="item_type_${index}"]`).value;
+    if (itemType === 'PRODUCT') {
+        const itemId = document.querySelector(`select[name="item_id_${index}"]`).value;
+        if (itemId) {
+            checkStock(index, itemId);
+        }
+    }
+
+    updateTotals();
+}
+
+function updateTotals() {
+    let subtotal = 0;
+    let totalTax = 0;
+    let totalDiscount = 0;
+    let itemCount = 0;
+
+    for (let i = 0; i < itemCounter; i++) {
+        const itemRow = document.getElementById(`item_${i}`);
+        if (!itemRow) continue;
+
+        itemCount++;
+
+        const quantity = parseFloat(document.querySelector(`input[name="quantity_${i}"]`)?.value) || 0;
+        const unitPrice = parseFloat(document.querySelector(`input[name="unit_price_${i}"]`)?.value) || 0;
+        const discount = parseFloat(document.querySelector(`input[name="discount_${i}"]`)?.value) || 0;
+        const taxRate = document.querySelector(`select[name="tax_rate_${i}"]`)?.value;
+
+        const itemSubtotal = quantity * unitPrice;
+        const itemDiscount = (discount / 100) * itemSubtotal;
+        const itemTotal = itemSubtotal - itemDiscount;
+
+        // Calculate tax (extracted from selling price)
+        let itemTax = 0;
+        if (taxRate === 'A') {
+            itemTax = itemTotal / 1.18 * 0.18;
+        }
+
+        subtotal += itemSubtotal;
+        totalDiscount += itemDiscount;
+        totalTax += itemTax;
+    }
+
+    const total = subtotal - totalDiscount;
+
+    document.getElementById('subtotalDisplay').textContent = `UGX ${subtotal.toFixed(2)}`;
+    document.getElementById('taxDisplay').textContent = `UGX ${totalTax.toFixed(2)}`;
+    document.getElementById('discountDisplay').textContent = `UGX ${totalDiscount.toFixed(2)}`;
+    document.getElementById('totalDisplay').textContent = `UGX ${total.toFixed(2)}`;
+    document.getElementById('itemsCount').textContent = itemCount;
+}
+
+function removeItem(index) {
+    const item = document.getElementById(`item_${index}`);
+    if (item) {
+        if (confirm('Remove this item from the invoice?')) {
+            item.remove();
+            updateTotals();
+        }
+    }
+}
+
+// Form validation
+document.getElementById('invoiceForm').addEventListener('submit', function(e) {
+    const itemCount = parseInt(document.getElementById('itemCount').value);
+
+    if (itemCount === 0) {
+        e.preventDefault();
+        alert('Please add at least one item to the invoice');
+        return false;
+    }
+
+    // Show loading state
+    const submitBtn = document.getElementById('submitBtn');
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Creating Invoice...';
+});
+
+// Add first item on load
+window.addEventListener('load', function() {
+    addItem('PRODUCT');
+});
+</script>
+{% endblock %}

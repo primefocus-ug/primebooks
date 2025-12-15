@@ -10,6 +10,8 @@ from django.utils import timezone
 from django.db import transaction
 from django.views.decorators.csrf import csrf_exempt
 import json
+import logging
+from django_tenants.utils import tenant_context
 import csv
 from django.http import JsonResponse
 import json
@@ -18,15 +20,26 @@ from io import BytesIO
 from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import letter
 from efris.models import FiscalizationAudit
+from sales.models import Sale
 from .models import Invoice, InvoiceTemplate, InvoicePayment
 from .forms import (
     InvoiceForm, InvoiceSearchForm, InvoicePaymentForm,
     InvoiceTemplateForm, BulkInvoiceActionForm, FiscalizationForm
 )
 
+logger = logging.getLogger(__name__)
+
+def get_current_tenant(request):
+    """Get current tenant from request"""
+    return getattr(request, 'tenant', None)
+
+
+def get_user_company(user):
+    """Get user's company"""
+    return getattr(user, 'company', None)
+
 
 class InvoiceListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
-    """Advanced invoice list view with search, filtering, and pagination"""
     model = Invoice
     template_name = 'invoices/invoice_list.html'
     context_object_name = 'invoices'
@@ -34,100 +47,103 @@ class InvoiceListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
     permission_required = 'invoices.view_invoice'
 
     def get_queryset(self):
-        queryset = Invoice.objects.select_related(
-            'sale', 'store', 'created_by', 'fiscalized_by'
-        ).prefetch_related('payments')
+        company = get_current_tenant(self.request)
+        if not company:
+            return Invoice.objects.none()
 
-        # Apply search filters
-        form = InvoiceSearchForm(self.request.GET)
-        if form.is_valid():
-            search = form.cleaned_data.get('search')
-            if search:
-                queryset = queryset.filter(
-                    Q(invoice_number__icontains=search) |
-                    Q(sale__customer__name__icontains=search) |
-                    Q(notes__icontains=search)
-                )
+        with tenant_context(company):
+            queryset = Invoice.objects.filter(
+                sale__store__company=company,
+                sale__document_type='INVOICE'  # Only show invoices
+            ).select_related(
+                'sale', 'sale__customer', 'sale__store',
+                'created_by', 'fiscalized_by'
+            ).prefetch_related('payments')
 
-            status = form.cleaned_data.get('status')
-            if status:
-                queryset = queryset.filter(status__in=status)
+            # Apply search filters
+            form = InvoiceSearchForm(self.request.GET)
+            if form.is_valid():
+                search = form.cleaned_data.get('search')
+                if search:
+                    queryset = queryset.filter(
+                        Q(sale__document_number__icontains=search) |
+                        Q(fiscal_document_number__icontains=search) |
+                        Q(sale__customer__name__icontains=search)
+                    )
 
-            document_type = form.cleaned_data.get('document_type')
-            if document_type:
-                queryset = queryset.filter(document_type=document_type)
+                status = form.cleaned_data.get('status')
+                if status:
+                    queryset = queryset.filter(sale__status__in=status)
 
-            date_from = form.cleaned_data.get('date_from')
-            if date_from:
-                queryset = queryset.filter(issue_date__gte=date_from)
+                document_type = form.cleaned_data.get('document_type')
+                if document_type:
+                    queryset = queryset.filter(sale__document_type=document_type)
 
-            date_to = form.cleaned_data.get('date_to')
-            if date_to:
-                queryset = queryset.filter(issue_date__lte=date_to)
+                date_from = form.cleaned_data.get('date_from')
+                if date_from:
+                    queryset = queryset.filter(sale__created_at__date__gte=date_from)
 
-            amount_min = form.cleaned_data.get('amount_min')
-            if amount_min:
-                queryset = queryset.filter(total_amount__gte=amount_min)
+                date_to = form.cleaned_data.get('date_to')
+                if date_to:
+                    queryset = queryset.filter(sale__created_at__date__lte=date_to)
 
-            amount_max = form.cleaned_data.get('amount_max')
-            if amount_max:
-                queryset = queryset.filter(total_amount__lte=amount_max)
+                amount_min = form.cleaned_data.get('amount_min')
+                if amount_min:
+                    queryset = queryset.filter(sale__total_amount__gte=amount_min)
 
-            if form.cleaned_data.get('is_overdue'):
-                queryset = queryset.filter(
-                    due_date__lt=timezone.now().date(),
-                    status__in=['SENT', 'PARTIALLY_PAID']
-                )
+                amount_max = form.cleaned_data.get('amount_max')
+                if amount_max:
+                    queryset = queryset.filter(sale__total_amount__lte=amount_max)
 
-            if form.cleaned_data.get('is_fiscalized'):
-                queryset = queryset.filter(is_fiscalized=True)
+                if form.cleaned_data.get('is_overdue'):
+                    queryset = queryset.filter(
+                        sale__due_date__lt=timezone.now().date(),
+                        sale__payment_status__in=['PENDING', 'PARTIALLY_PAID']
+                    )
 
-        return queryset.order_by('-issue_date')
+                if form.cleaned_data.get('is_fiscalized'):
+                    queryset = queryset.filter(is_fiscalized=True)
+
+            return queryset.order_by('-sale__created_at')  # Use sale created_at
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context['search_form'] = InvoiceSearchForm(self.request.GET)
-        context['bulk_form'] = BulkInvoiceActionForm()
-
-        # Add summary statistics
-        queryset = self.get_queryset()
-        context['stats'] = {
-            'total_invoices': queryset.count(),
-            'total_amount': queryset.aggregate(Sum('total_amount'))['total_amount__sum'] or 0,
-            'overdue_count': queryset.filter(
-                due_date__lt=timezone.now().date(),
-                status__in=['SENT', 'PARTIALLY_PAID']
-            ).count(),
-            'unpaid_amount': queryset.exclude(status='PAID').aggregate(
-                Sum('total_amount'))['total_amount__sum'] or 0,
-        }
-
         return context
 
 
 class InvoiceDetailView(LoginRequiredMixin, PermissionRequiredMixin, DetailView):
-    """Detailed invoice view with payment history and actions"""
     model = Invoice
     template_name = 'invoices/invoice_detail.html'
     context_object_name = 'invoice'
     permission_required = 'invoices.view_invoice'
 
     def get_queryset(self):
-        return Invoice.objects.select_related(
-            'sale', 'store', 'created_by', 'fiscalized_by'
+        company = get_current_tenant(self.request)
+        if not company:
+            return Invoice.objects.none()
+
+        return Invoice.objects.filter(
+            sale__store__company=company
+        ).select_related(
+            'sale', 'sale__customer', 'sale__store', 'sale__store__company',
+            'created_by', 'fiscalized_by'
         ).prefetch_related(
             'payments__processed_by',
             'fiscalization_audits'
         )
 
     def get_context_data(self, **kwargs):
-        """Enhanced context data for InvoiceDetailView"""
         context = super().get_context_data(**kwargs)
-        context['payment_form'] = InvoicePaymentForm(invoice=self.object)
-        context['fiscalization_form'] = FiscalizationForm(invoice=self.object)
-
-        # Enhanced EFRIS status checking
         invoice = self.object
+
+        # Add sale to context for template access
+        context['sale'] = invoice.sale
+
+        context['payment_form'] = InvoicePaymentForm(invoice=invoice)
+        context['fiscalization_form'] = FiscalizationForm(invoice=invoice)
+
+        # EFRIS status
         can_fiscalize = False
         fiscalization_error = None
         efris_status = {}
@@ -137,16 +153,13 @@ class InvoiceDetailView(LoginRequiredMixin, PermissionRequiredMixin, DetailView)
             efris_enabled = getattr(company, 'efris_enabled', False)
 
             if efris_enabled:
-                can_fiscalize, fiscalization_error = invoice.can_fiscalize(self.request.user)
+                with tenant_context(company):
+                    can_fiscalize, fiscalization_error = invoice.can_fiscalize(
+                        self.request.user
+                    )
 
-                # Get EFRIS configuration status
-                try:
-                    from efris.services import validate_efris_configuration
-                    config_valid, config_errors = validate_efris_configuration(company)
                     efris_status = {
                         'enabled': True,
-                        'configured': config_valid,
-                        'config_errors': config_errors,
                         'can_fiscalize': can_fiscalize,
                         'fiscalization_error': fiscalization_error,
                         'fiscal_document_number': invoice.fiscal_document_number,
@@ -154,34 +167,27 @@ class InvoiceDetailView(LoginRequiredMixin, PermissionRequiredMixin, DetailView)
                         'is_fiscalized': invoice.is_fiscalized,
                         'fiscalization_status': invoice.fiscalization_status,
                     }
-                except ImportError:
-                    efris_status = {
-                        'enabled': True,
-                        'configured': False,
-                        'config_errors': ['EFRIS service not available'],
-                        'can_fiscalize': False,
-                        'service_available': False
-                    }
             else:
                 efris_status = {
                     'enabled': False,
-                    'reason': 'EFRIS is not enabled for this company'
+                    'reason': 'EFRIS not enabled for this company'
                 }
 
         context.update({
             'can_fiscalize': can_fiscalize,
             'fiscalize_message': fiscalization_error,
             'efris_status': efris_status,
-            'fiscalization_history': invoice.fiscalization_audits.order_by('-timestamp')[:10],
+            'fiscalization_history': invoice.fiscalization_audits.order_by(
+                '-timestamp'
+            )[:10],
         })
 
         return context
 
-
 @login_required
 @permission_required('invoices.view_invoice')
 def efris_status_dashboard(request):
-    """EFRIS status dashboard for invoices"""
+    """EFRIS status dashboard for invoices - FIXED VERSION"""
     # Get date range
     date_from = request.GET.get('date_from')
     date_to = request.GET.get('date_to')
@@ -196,10 +202,10 @@ def efris_status_dashboard(request):
     else:
         date_to = datetime.strptime(date_to, '%Y-%m-%d').date()
 
-    # Base queryset
+    # Base queryset - FIX: Use sale__created_at instead of issue_date
     invoices = Invoice.objects.filter(
-        issue_date__gte=date_from,
-        issue_date__lte=date_to
+        sale__created_at__date__gte=date_from,
+        sale__created_at__date__lte=date_to
     ).select_related('sale__store__company')
 
     # EFRIS statistics
@@ -207,7 +213,7 @@ def efris_status_dashboard(request):
     fiscalized_invoices = invoices.filter(is_fiscalized=True).count()
     pending_fiscalization = invoices.filter(
         fiscalization_status='pending',
-        status__in=['SENT', 'PAID', 'PARTIALLY_PAID']
+        sale__status__in=['PENDING_PAYMENT', 'PAID', 'PARTIALLY_PAID']
     ).count()
     failed_fiscalization = invoices.filter(fiscalization_status='failed').count()
 
@@ -250,7 +256,6 @@ def efris_status_dashboard(request):
 
 
 class InvoiceCreateView(LoginRequiredMixin, PermissionRequiredMixin, CreateView):
-    """Create new invoice with advanced form handling"""
     model = Invoice
     form_class = InvoiceForm
     template_name = 'invoices/invoice_form.html'
@@ -264,29 +269,70 @@ class InvoiceCreateView(LoginRequiredMixin, PermissionRequiredMixin, CreateView)
     def get_initial(self):
         initial = super().get_initial()
         sale_id = self.request.GET.get('sale')
+
         if sale_id:
-            initial['sale'] = sale_id
+            company = get_current_tenant(self.request)
+            if company:
+                with tenant_context(company):
+                    try:
+                        sale = Sale.objects.get(
+                            id=sale_id,
+                            store__company=company
+                        )
+                        initial['sale'] = sale
+                    except Sale.DoesNotExist:
+                        pass
+
         return initial
 
     def form_valid(self, form):
-        form.instance.created_by = self.request.user
-        response = super().form_valid(form)
-        messages.success(
-            self.request,
-            f'Invoice {self.object.invoice_number} created successfully.'
-        )
-        return response
+        company = get_current_tenant(self.request)
+        if not company:
+            messages.error(self.request, 'No company context found')
+            return redirect('invoices:list')
+
+        with tenant_context(company):
+            # Check if sale is already an invoice
+            if form.cleaned_data['sale'].document_type == 'INVOICE':
+                messages.error(
+                    self.request,
+                    'This sale is already an invoice'
+                )
+                return self.form_invalid(form)
+
+            # Update sale document type
+            sale = form.cleaned_data['sale']
+            sale.document_type = 'INVOICE'
+            sale.save()
+
+            form.instance.created_by = self.request.user
+            response = super().form_valid(form)
+
+            messages.success(
+                self.request,
+                f'Invoice created from sale {sale.document_number}.'
+            )
+
+            return response
 
     def get_success_url(self):
         return reverse('invoices:detail', kwargs={'pk': self.object.pk})
 
-
 class InvoiceUpdateView(LoginRequiredMixin, PermissionRequiredMixin, UpdateView):
-    """Update existing invoice with validation"""
+    """Update existing invoice"""
     model = Invoice
     form_class = InvoiceForm
     template_name = 'invoices/invoice_form.html'
     permission_required = 'invoices.change_invoice'
+
+    def get_queryset(self):
+        company = get_current_tenant(self.request)
+        if not company:
+            return Invoice.objects.none()
+
+        return Invoice.objects.filter(
+            sale__store__company=company
+        )
 
     def get_form_kwargs(self):
         kwargs = super().get_form_kwargs()
@@ -304,7 +350,7 @@ class InvoiceUpdateView(LoginRequiredMixin, PermissionRequiredMixin, UpdateView)
         response = super().form_valid(form)
         messages.success(
             self.request,
-            f'Invoice {self.object.invoice_number} updated successfully.'
+            f'Invoice updated successfully.'
         )
         return response
 
@@ -315,37 +361,45 @@ class InvoiceUpdateView(LoginRequiredMixin, PermissionRequiredMixin, UpdateView)
 @login_required
 @permission_required('invoices.add_invoicepayment')
 def add_payment(request, pk):
-    """AJAX view for adding invoice payments"""
-    invoice = get_object_or_404(Invoice, pk=pk)
+    """Add payment to invoice"""
+    company = get_current_tenant(request)
+    if not company:
+        return JsonResponse({'success': False, 'error': 'No company context'})
 
-    if request.method == 'POST':
-        form = InvoicePaymentForm(request.POST, invoice=invoice)
-        if form.is_valid():
-            payment = form.save(commit=False)
-            payment.invoice = invoice
-            payment.processed_by = request.user
-            payment.save()
+    with tenant_context(company):
+        invoice = get_object_or_404(
+            Invoice.objects.filter(sale__store__company=company),
+            pk=pk
+        )
 
-            messages.success(
-                request,
-                f'Payment of UGX {payment.amount:,.2f} recorded successfully.'
-            )
+        if request.method == 'POST':
+            form = InvoicePaymentForm(request.POST, invoice=invoice)
+            if form.is_valid():
+                payment = form.save(commit=False)
+                payment.invoice = invoice
+                payment.processed_by = request.user
+                payment.save()
+
+                messages.success(
+                    request,
+                    f'Payment of {payment.amount:,.2f} recorded successfully.'
+                )
+
+                if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                    return JsonResponse({
+                        'success': True,
+                        'message': 'Payment recorded successfully',
+                        'new_status': invoice.sale.status,
+                        'amount_outstanding': float(invoice.amount_outstanding)
+                    })
+
+                return redirect('invoices:detail', pk=invoice.pk)
 
             if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
                 return JsonResponse({
-                    'success': True,
-                    'message': 'Payment recorded successfully',
-                    'new_status': invoice.status,
-                    'amount_outstanding': float(invoice.amount_outstanding)
+                    'success': False,
+                    'errors': form.errors
                 })
-
-            return redirect('invoices:detail', pk=invoice.pk)
-
-        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
-            return JsonResponse({
-                'success': False,
-                'errors': form.errors
-            })
 
     return redirect('invoices:detail', pk=invoice.pk)
 
@@ -354,163 +408,197 @@ def add_payment(request, pk):
 @permission_required('invoices.change_invoice')
 @permission_required('invoices.fiscalize_invoice')
 def fiscalize_invoice(request, pk):
-    """Enhanced fiscalize invoice with proper EFRIS integration"""
-    invoice = get_object_or_404(Invoice.objects.select_related('sale__store__company'), pk=pk)
+    """Fiscalize invoice with EFRIS"""
+    company = get_current_tenant(request)
+    if not company:
+        messages.error(request, 'No company context found')
+        return redirect('invoices:list')
 
-    if request.method == 'POST':
-        form = FiscalizationForm(request.POST, invoice=invoice)
-        if form.is_valid():
-            try:
-                with transaction.atomic():
-                    # Check if invoice can be fiscalized
-                    can_fiscalize, reason = invoice.can_fiscalize(request.user)
-                    if not can_fiscalize:
-                        messages.error(request, f'Cannot fiscalize invoice: {reason}')
-                        return redirect('invoices:detail', pk=invoice.pk)
+    with tenant_context(company):
+        invoice = get_object_or_404(
+            Invoice.objects.filter(sale__store__company=company)
+            .select_related('sale__store__company'),
+            pk=pk
+        )
 
-                    # Create audit record
-                    audit = FiscalizationAudit.objects.create(
-                        invoice=invoice,
-                        action='FISCALIZE',
-                        user=request.user,
-                        success=False
-                    )
-
-                    try:
-                        # Use the new EFRIS service layer for fiscalization
-                        from invoices.services import InvoiceEFRISService
-
-                        service = InvoiceEFRISService(invoice.sale.store.company)
-                        success, message = service.fiscalize_invoice(invoice, request.user)
-
-                        if success:
-                            audit.success = True
-                            audit.fiscal_document_number = invoice.fiscal_document_number
-                            audit.verification_code = invoice.verification_code
-                            audit.device_number = getattr(invoice, 'device_number', '')
-                            audit.save()
-
-                            messages.success(
+        if request.method == 'POST':
+            form = FiscalizationForm(request.POST, invoice=invoice)
+            if form.is_valid():
+                try:
+                    with transaction.atomic():
+                        # Check if can fiscalize
+                        can_fiscalize, reason = invoice.can_fiscalize(request.user)
+                        if not can_fiscalize:
+                            messages.error(
                                 request,
-                                f'Invoice {invoice.invoice_number} fiscalized successfully! '
-                                f'Fiscal Document Number: {invoice.fiscal_document_number}'
+                                f'Cannot fiscalize: {reason}'
                             )
-                        else:
-                            audit.error_message = message
+                            return redirect('invoices:detail', pk=invoice.pk)
+
+                        # Create audit record
+                        audit = FiscalizationAudit.objects.create(
+                            invoice=invoice,
+                            action='FISCALIZE',
+                            user=request.user,
+                            success=False
+                        )
+
+                        try:
+                            # Use EFRIS service
+                            from efris.services import EFRISInvoiceService
+
+                            service = EFRISInvoiceService(company)
+                            success, message = service.fiscalize_invoice(
+                                invoice,
+                                request.user
+                            )
+
+                            if success:
+                                audit.success = True
+                                audit.fiscal_document_number = invoice.fiscal_document_number
+                                audit.verification_code = invoice.verification_code
+                                audit.device_number = getattr(invoice, 'device_number', '')
+                                audit.save()
+
+                                messages.success(
+                                    request,
+                                    f'Invoice fiscalized successfully! '
+                                    f'FDN: {invoice.fiscal_document_number}'
+                                )
+                            else:
+                                audit.error_message = message
+                                audit.save()
+                                messages.error(
+                                    request,
+                                    f'Fiscalization failed: {message}'
+                                )
+
+                        except ImportError:
+                            # Fallback to basic fiscalization
+                            success = invoice.fiscalize(request.user)
+                            audit.success = success
+                            if success:
+                                audit.fiscal_document_number = invoice.fiscal_document_number
                             audit.save()
-                            messages.error(request, f'Fiscalization failed: {message}')
 
-                    except ImportError:
-                        # Fallback to basic fiscalization if service not available
-                        success = invoice.fiscalize(request.user)
-                        audit.success = success
-                        if success:
-                            audit.fiscal_document_number = invoice.fiscal_document_number
-                        audit.save()
+                            if success:
+                                messages.success(
+                                    request,
+                                    'Invoice fiscalized successfully!'
+                                )
+                            else:
+                                messages.error(
+                                    request,
+                                    'Fiscalization failed'
+                                )
 
-                        if success:
-                            messages.success(request, f'Invoice {invoice.invoice_number} fiscalized successfully!')
-                        else:
-                            messages.error(request, 'Fiscalization failed - service unavailable')
+                except Exception as e:
+                    logger.error(f"Fiscalization error: {e}", exc_info=True)
+                    messages.error(request, f'Fiscalization failed: {str(e)}')
 
-            except Exception as e:
-                audit.error_message = str(e)
-                audit.save()
-                messages.error(request, f'Fiscalization failed: {str(e)}')
-
-    return redirect('invoices:detail', pk=invoice.pk)
+        return redirect('invoices:detail', pk=invoice.pk)
 
 
 @login_required
 @permission_required('invoices.change_invoice')
 @permission_required('invoices.fiscalize_invoice')
 def bulk_fiscalize_invoices(request):
-    """Bulk fiscalize multiple invoices using EFRIS service"""
-    if request.method == 'POST':
+    """Bulk fiscalize multiple invoices"""
+    if request.method != 'POST':
+        return redirect('invoices:list')
+
+    company = get_current_tenant(request)
+    if not company:
+        messages.error(request, 'No company context found')
+        return redirect('invoices:list')
+
+    with tenant_context(company):
         invoice_ids = request.POST.getlist('selected_invoices')
 
         if not invoice_ids:
-            messages.error(request, 'No invoices selected for fiscalization.')
+            messages.error(request, 'No invoices selected.')
             return redirect('invoices:list')
 
-        # Get invoices with related data
-        invoices = Invoice.objects.select_related(
-            'sale__store__company'
-        ).filter(id__in=invoice_ids)
-
-        # Group by company for efficient processing
-        invoices_by_company = {}
-        for invoice in invoices:
-            company = invoice.sale.store.company
-            if company not in invoices_by_company:
-                invoices_by_company[company] = []
-            invoices_by_company[company].append(invoice)
+        invoices = Invoice.objects.filter(
+            id__in=invoice_ids,
+            sale__store__company=company
+        ).select_related('sale__store__company')
 
         total_processed = 0
         total_successful = 0
         total_failed = 0
         error_messages = []
 
-        for company, company_invoices in invoices_by_company.items():
-            # Check if EFRIS is enabled for this company
-            if not getattr(company, 'efris_enabled', False):
-                total_failed += len(company_invoices)
-                error_messages.append(f"EFRIS not enabled for {company.name}")
-                continue
+        try:
+            from efris.services import EFRISInvoiceService
 
-            try:
-                # Use EFRIS service for bulk processing
-                from invoices.services import InvoiceEFRISService
+            service = EFRISInvoiceService(company)
 
-                service = InvoiceEFRISService(company)
-                result = service.bulk_fiscalize(company_invoices, request.user)
+            for invoice in invoices:
+                try:
+                    can_fiscalize, reason = invoice.can_fiscalize(request.user)
+                    if not can_fiscalize:
+                        total_failed += 1
+                        error_messages.append(
+                            f"{invoice.invoice_number}: {reason}"
+                        )
+                        continue
 
-                total_processed += len(company_invoices)
-                total_successful += result['successful_count']
-                total_failed += result['failed_count']
+                    success, message = service.fiscalize_invoice(
+                        invoice,
+                        request.user
+                    )
 
-                if result['errors']:
-                    error_messages.extend([f"{company.name}: {error['error']}" for error in result['errors'][:3]])
+                    if success:
+                        total_successful += 1
+                    else:
+                        total_failed += 1
+                        error_messages.append(
+                            f"{invoice.invoice_number}: {message}"
+                        )
 
-            except ImportError:
-                # Fallback to individual fiscalization
-                for invoice in company_invoices:
-                    try:
-                        can_fiscalize, reason = invoice.can_fiscalize(request.user)
-                        if can_fiscalize:
-                            success = invoice.fiscalize(request.user)
-                            if success:
-                                total_successful += 1
-                            else:
-                                total_failed += 1
+                    total_processed += 1
+
+                except Exception as e:
+                    total_failed += 1
+                    error_messages.append(
+                        f"{invoice.invoice_number}: {str(e)}"
+                    )
+
+        except ImportError:
+            # Fallback to individual fiscalization
+            for invoice in invoices:
+                try:
+                    can_fiscalize, reason = invoice.can_fiscalize(request.user)
+                    if can_fiscalize:
+                        success = invoice.fiscalize(request.user)
+                        if success:
+                            total_successful += 1
                         else:
                             total_failed += 1
-                            error_messages.append(f"{invoice.invoice_number}: {reason}")
-                    except Exception as e:
+                    else:
                         total_failed += 1
-                        error_messages.append(f"{invoice.invoice_number}: {str(e)}")
+                        error_messages.append(
+                            f"{invoice.invoice_number}: {reason}"
+                        )
+                except Exception as e:
+                    total_failed += 1
+                    error_messages.append(f"{invoice.invoice_number}: {str(e)}")
 
-                total_processed += len(company_invoices)
-
-            except Exception as e:
-                total_failed += len(company_invoices)
-                error_messages.append(f"{company.name}: Service error - {str(e)}")
+                total_processed += 1
 
         # Report results
         if total_successful > 0:
             messages.success(
                 request,
-                f'Successfully fiscalized {total_successful} out of {total_processed} invoices.'
+                f'Successfully fiscalized {total_successful} of {total_processed} invoices.'
             )
 
         if total_failed > 0:
-            error_summary = f'{total_failed} invoices failed to fiscalize.'
+            error_summary = f'{total_failed} invoices failed.'
             if error_messages:
-                error_summary += f' First few errors: {"; ".join(error_messages[:3])}'
+                error_summary += f' First errors: {"; ".join(error_messages[:3])}'
             messages.error(request, error_summary)
-
-        if total_processed == 0:
-            messages.warning(request, 'No invoices were processed.')
 
     return redirect('invoices:list')
 
@@ -519,73 +607,86 @@ def bulk_fiscalize_invoices(request):
 @permission_required('invoices.change_invoice')
 def bulk_actions(request):
     """Handle bulk actions on invoices"""
-    if request.method == 'POST':
+    if request.method != 'POST':
+        return redirect('invoices:list')
+
+    company = get_current_tenant(request)
+    if not company:
+        messages.error(request, 'No company context found')
+        return redirect('invoices:list')
+
+    with tenant_context(company):
         form = BulkInvoiceActionForm(request.POST)
         if form.is_valid():
             action = form.cleaned_data['action']
             invoice_ids = form.cleaned_data['selected_invoices']
 
-            invoices = Invoice.objects.filter(id__in=invoice_ids)
+            invoices = Invoice.objects.filter(
+                id__in=invoice_ids,
+                sale__store__company=company
+            )
             count = invoices.count()
 
             if action == 'mark_sent':
-                invoices.filter(status='DRAFT').update(status='SENT')
+                invoices.filter(
+                    sale__status='DRAFT'
+                ).update(sale__status='PENDING_PAYMENT')
                 messages.success(request, f'{count} invoices marked as sent.')
 
             elif action == 'mark_paid':
-                invoices.filter(status__in=['SENT', 'PARTIALLY_PAID']).update(status='PAID')
+                for invoice in invoices:
+                    invoice.sale.status = 'PAID'
+                    invoice.sale.payment_status = 'PAID'
+                    invoice.sale.save()
                 messages.success(request, f'{count} invoices marked as paid.')
 
             elif action == 'export_pdf':
                 return export_invoices_pdf(request, invoice_ids)
 
-            elif action == 'send_email':
-                # Implement email sending logic
-                messages.info(request, f'Email reminders sent for {count} invoices.')
+            elif action == 'export_csv':
+                return export_invoices_csv_bulk(request, invoice_ids)
 
             elif action == 'fiscalize':
-                fiscalized_count = 0
-                for invoice in invoices:
-                    can_fiscalize, _ = invoice.can_fiscalize(request.user)
-                    if can_fiscalize:
-                        try:
-                            invoice.fiscalize(request.user)
-                            fiscalized_count += 1
-                        except Exception:
-                            pass
-
-                messages.success(request, f'{fiscalized_count} invoices fiscalized.')
+                return bulk_fiscalize_invoices(request)
 
     return redirect('invoices:list')
 
 
 def export_invoices_pdf(request, invoice_ids):
-    """Export selected invoices to PDF"""
-    invoices = Invoice.objects.filter(id__in=invoice_ids)
+    """Export invoices to PDF"""
+    company = get_current_tenant(request)
+    if not company:
+        return HttpResponse('No company context', status=403)
 
-    response = HttpResponse(content_type='application/pdf')
-    response['Content-Disposition'] = 'attachment; filename="invoices_export.pdf"'
+    with tenant_context(company):
+        invoices = Invoice.objects.filter(
+            id__in=invoice_ids,
+            sale__store__company=company
+        )
 
-    buffer = BytesIO()
-    p = canvas.Canvas(buffer, pagesize=letter)
+        response = HttpResponse(content_type='application/pdf')
+        response['Content-Disposition'] = 'attachment; filename="invoices_export.pdf"'
 
-    y_position = 750
-    for invoice in invoices:
-        p.drawString(50, y_position, f"Invoice: {invoice.invoice_number}")
-        p.drawString(50, y_position - 20, f"Amount: UGX {invoice.total_amount:,.2f}")
-        p.drawString(50, y_position - 40, f"Status: {invoice.get_status_display()}")
-        y_position -= 80
+        buffer = BytesIO()
+        p = canvas.Canvas(buffer, pagesize=letter)
 
-        if y_position < 100:
-            p.showPage()
-            y_position = 750
+        y_position = 750
+        for invoice in invoices:
+            p.drawString(50, y_position, f"Invoice: {invoice.invoice_number}")
+            p.drawString(50, y_position - 20, f"Amount: {invoice.total_amount:,.2f}")
+            p.drawString(50, y_position - 40, f"Status: {invoice.sale.get_status_display()}")
+            y_position -= 80
 
-    p.save()
-    pdf_data = buffer.getvalue()
-    buffer.close()
-    response.write(pdf_data)
+            if y_position < 100:
+                p.showPage()
+                y_position = 750
 
-    return response
+        p.save()
+        pdf_data = buffer.getvalue()
+        buffer.close()
+        response.write(pdf_data)
+
+        return response
 
 
 class InvoiceTemplateListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
@@ -612,7 +713,7 @@ class InvoiceTemplateCreateView(LoginRequiredMixin, PermissionRequiredMixin, Cre
 @login_required
 @permission_required('invoices.view_invoice')
 def invoice_analytics(request):
-    """Enhanced analytics dashboard for invoices"""
+    """Enhanced analytics dashboard for invoices - FIXED VERSION"""
     # Get date range from request or use defaults
     try:
         start_date = request.GET.get('start_date')
@@ -631,43 +732,47 @@ def invoice_analytics(request):
         start_date = timezone.now().date() - timedelta(days=30)
         end_date = timezone.now().date()
 
-    # Basic statistics
+    # Basic statistics - FIX: Use sale__status and sale__total_amount
     total_invoices = Invoice.objects.count()
     total_revenue = Invoice.objects.filter(
-        status='PAID'
-    ).aggregate(Sum('total_amount'))['total_amount__sum'] or 0
+        sale__status='PAID'
+    ).aggregate(Sum('sale__total_amount'))['sale__total_amount__sum'] or 0
 
     pending_amount = Invoice.objects.exclude(
-        status__in=['PAID', 'CANCELLED']
-    ).aggregate(Sum('total_amount'))['total_amount__sum'] or 0
+        sale__status__in=['PAID', 'CANCELLED']
+    ).aggregate(Sum('sale__total_amount'))['sale__total_amount__sum'] or 0
 
     overdue_invoices = Invoice.objects.filter(
-        due_date__lt=end_date,
-        status__in=['SENT', 'PARTIALLY_PAID']
+        sale__due_date__lt=end_date,
+        sale__status__in=['PENDING_PAYMENT', 'PARTIALLY_PAID']
     ).count()
 
-    # Enhanced metrics
+    # Enhanced metrics - FIX: Use sale__created_at instead of issue_date
     invoices_this_month = Invoice.objects.filter(
-        issue_date__gte=timezone.now().date().replace(day=1)
+        sale__created_at__date__gte=timezone.now().date().replace(day=1)
     ).count()
 
     fiscalized_invoices = Invoice.objects.filter(is_fiscalized=True).count()
-    pending_invoices = Invoice.objects.exclude(status__in=['PAID', 'CANCELLED']).count()
+    pending_invoices = Invoice.objects.exclude(
+        sale__status__in=['PAID', 'CANCELLED']
+    ).count()
 
     # Calculate average invoice amount safely
-    avg_result = Invoice.objects.aggregate(avg_amount=Avg('total_amount'))
+    avg_result = Invoice.objects.aggregate(avg_amount=Avg('sale__total_amount'))
     avg_invoice_amount = avg_result['avg_amount'] or 0
 
     # Performance metrics with safe calculations
-    total_invoiced_amount = Invoice.objects.aggregate(Sum('total_amount'))['total_amount__sum'] or 0
+    total_invoiced_amount = Invoice.objects.aggregate(
+        Sum('sale__total_amount')
+    )['sale__total_amount__sum'] or 0
     collection_rate = (total_revenue / total_invoiced_amount * 100) if total_invoiced_amount > 0 else 0
 
     # On-time payment rate (simplified)
     on_time_payments = Invoice.objects.filter(
-        status='PAID',
-        payments__payment_date__lte=F('due_date')
+        sale__status='PAID',
+        payments__payment_date__lte=F('sale__due_date')
     ).distinct().count()
-    total_paid_invoices = Invoice.objects.filter(status='PAID').count()
+    total_paid_invoices = Invoice.objects.filter(sale__status='PAID').count()
     on_time_rate = (on_time_payments / total_paid_invoices * 100) if total_paid_invoices > 0 else 0
 
     fiscalization_rate = (fiscalized_invoices / total_invoices * 100) if total_invoices > 0 else 0
@@ -675,11 +780,11 @@ def invoice_analytics(request):
     # Average days to pay - safely handle None values
     try:
         paid_invoices_with_payments = Invoice.objects.filter(
-            status='PAID',
+            sale__status='PAID',
             payments__isnull=False
         ).annotate(
             days_to_pay=ExpressionWrapper(
-                F('payments__payment_date') - F('issue_date'),
+                F('payments__payment_date') - F('sale__created_at'),
                 output_field=DurationField()
             )
         )
@@ -695,19 +800,19 @@ def invoice_analytics(request):
     except (ValueError, TypeError):
         avg_days_to_pay = 0
 
-    # Monthly trends data
+    # Monthly trends data - FIX: Use sale__created_at
     monthly_data = []
     for i in range(12):
         month_start = (end_date.replace(day=1) - timedelta(days=i * 30)).replace(day=1)
         month_end = (month_start + timedelta(days=32)).replace(day=1) - timedelta(days=1)
 
         month_invoices = Invoice.objects.filter(
-            issue_date__range=[month_start, month_end]
+            sale__created_at__date__range=[month_start, month_end]
         )
 
-        revenue = month_invoices.filter(status='PAID').aggregate(
-            Sum('total_amount')
-        )['total_amount__sum'] or 0
+        revenue = month_invoices.filter(sale__status='PAID').aggregate(
+            Sum('sale__total_amount')
+        )['sale__total_amount__sum'] or 0
 
         monthly_data.append({
             'month': month_start.strftime('%Y-%m'),
@@ -719,10 +824,10 @@ def invoice_analytics(request):
     monthly_data.reverse()
 
     # Status distribution with safe calculations
-    status_distribution = Invoice.objects.values('status').annotate(
+    status_distribution = Invoice.objects.values('sale__status').annotate(
         count=Count('id'),
-        total_amount=Sum('total_amount')
-    ).order_by('status')
+        total_amount=Sum('sale__total_amount')
+    ).order_by('sale__status')
 
     status_data = []
     for item in status_distribution:
@@ -731,9 +836,13 @@ def invoice_analytics(request):
         percentage = (count / total_invoices * 100) if total_invoices > 0 else 0
         avg_amount = (total_amount / count) if count > 0 else 0
 
+        # Get the status label from Sale model choices
+        from sales.models import Sale
+        status_label = dict(Sale.STATUS_CHOICES).get(item['sale__status'], item['sale__status'])
+
         status_data.append({
-            'status': item['status'],
-            'label': dict(Invoice.STATUS_CHOICES).get(item['status'], item['status']),
+            'status': item['sale__status'],
+            'label': status_label,
             'count': count,
             'total_amount': float(total_amount),
             'avg_amount': float(avg_amount),
@@ -752,7 +861,7 @@ def invoice_analytics(request):
         'sale__customer__name'
     ).annotate(
         invoice_count=Count('id'),
-        total_amount=Sum('total_amount')
+        total_amount=Sum('sale__total_amount')
     ).order_by('-total_amount')[:5]
 
     # EFRIS compliance
@@ -781,7 +890,6 @@ def invoice_analytics(request):
     }
 
     return render(request, 'invoices/analytics.html', context)
-
 
 # Add API endpoint for analytics data
 @login_required
@@ -816,27 +924,37 @@ def analytics_api(request):
 @login_required
 @permission_required('invoices.view_invoice')
 def invoice_print_view(request, pk):
-    """Generate printable invoice view"""
-    invoice = get_object_or_404(Invoice, pk=pk)
-    company = getattr(request, 'tenant', None)
-    # Get the default template or first available
-    template = InvoiceTemplate.objects.filter(is_default=True).first()
-    if not template:
-        template = InvoiceTemplate.objects.first()
+    """Generate printable invoice"""
+    company = get_current_tenant(request)
+    if not company:
+        return HttpResponse('No company context', status=403)
 
-    context = {
-        'invoice': invoice,
-        'template': template,
-        'company_info': {
-            'name': company.name,
-            'address': company.physical_address,
-            'phone': company.phone,
-            'email': company.email,
-            'website': 'primebooks.sale'
+    with tenant_context(company):
+        invoice = get_object_or_404(
+            Invoice.objects.filter(sale__store__company=company),
+            pk=pk
+        )
+
+        template = InvoiceTemplate.objects.filter(
+            is_default=True
+        ).first()
+
+        if not template:
+            template = InvoiceTemplate.objects.first()
+
+        context = {
+            'invoice': invoice,
+            'template': template,
+            'company_info': {
+                'name': company.name,
+                'address': company.physical_address,
+                'phone': company.phone,
+                'email': company.email,
+                'tin': company.tin,
+            }
         }
-    }
 
-    return render(request, 'invoices/invoice_print.html', context)
+        return render(request, 'invoices/invoice_print.html', context)
 
 
 @csrf_exempt
@@ -883,30 +1001,37 @@ def ajax_invoice_status(request):
 @login_required
 @permission_required('invoices.view_invoice')
 def duplicate_invoice(request, pk):
-    """Create a duplicate of an existing invoice"""
-    original_invoice = get_object_or_404(Invoice, pk=pk)
+    """Duplicate an existing invoice"""
+    company = get_current_tenant(request)
+    if not company:
+        messages.error(request, 'No company context found')
+        return redirect('invoices:list')
 
-    # Create a copy
-    new_invoice = Invoice.objects.get(pk=pk)
-    new_invoice.pk = None
-    new_invoice.invoice_number = None  # Will be auto-generated
-    new_invoice.status = 'DRAFT'
-    new_invoice.is_fiscalized = False
-    new_invoice.fiscal_number = None
-    new_invoice.verification_code = None
-    new_invoice.fiscalization_time = None
-    new_invoice.fiscalized_by = None
-    new_invoice.created_by = request.user
-    new_invoice.issue_date = timezone.now().date()
-    new_invoice.due_date = new_invoice.issue_date + timedelta(days=30)
-    new_invoice.save()
+    with tenant_context(company):
+        original = get_object_or_404(
+            Invoice.objects.filter(sale__store__company=company),
+            pk=pk
+        )
 
-    messages.success(
-        request,
-        f'Invoice duplicated successfully. New invoice number: {new_invoice.invoice_number}'
-    )
+        # Create duplicate invoice detail
+        new_invoice = Invoice.objects.create(
+            sale=original.sale,
+            store=original.store,
+            terms=original.terms,
+            purchase_order=original.purchase_order,
+            efris_document_type='4',  # Proforma
+            business_type=original.business_type,
+            created_by=request.user,
+            fiscalization_status='pending',
+            is_fiscalized=False
+        )
 
-    return redirect('invoices:detail', pk=new_invoice.pk)
+        messages.success(
+            request,
+            f'Invoice duplicated successfully.'
+        )
+
+        return redirect('invoices:detail', pk=new_invoice.pk)
 
 
 class PaymentListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
@@ -945,40 +1070,80 @@ class PaymentListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
 @login_required
 @permission_required('invoices.view_invoice')
 def export_invoices_csv(request):
-    """Export invoices to CSV format"""
-    response = HttpResponse(content_type='text/csv')
-    response['Content-Disposition'] = 'attachment; filename="invoices_export.csv"'
+    """Export invoices to CSV"""
+    company = get_current_tenant(request)
+    if not company:
+        return HttpResponse('No company context', status=403)
 
-    writer = csv.writer(response)
-    writer.writerow([
-        'Invoice Number', 'Document Type', 'Issue Date', 'Due Date',
-        'Status', 'Customer', 'Subtotal', 'Tax Amount', 'Discount Amount',
-        'Total Amount', 'Amount Paid', 'Amount Outstanding', 'Is Overdue',
-        'Is Fiscalized', 'Fiscal Number'
-    ])
+    with tenant_context(company):
+        response = HttpResponse(content_type='text/csv')
+        response['Content-Disposition'] = 'attachment; filename="invoices_export.csv"'
 
-    invoices = Invoice.objects.select_related('sale').order_by('-issue_date')
-
-    for invoice in invoices:
+        writer = csv.writer(response)
         writer.writerow([
-            invoice.invoice_number,
-            invoice.get_document_type_display(),
-            invoice.issue_date,
-            invoice.due_date,
-            invoice.get_status_display(),
-            invoice.sale.customer.name if invoice.sale and invoice.sale.customer else '',
-            invoice.subtotal,
-            invoice.tax_amount,
-            invoice.discount_amount,
-            invoice.total_amount,
-            invoice.amount_paid,
-            invoice.amount_outstanding,
-            invoice.is_overdue,
-            invoice.is_fiscalized,
-            invoice.fiscal_number or ''
+            'Invoice Number', 'Document Type', 'Issue Date', 'Due Date',
+            'Status', 'Customer', 'Subtotal', 'Tax', 'Discount',
+            'Total', 'Paid', 'Outstanding', 'Overdue',
+            'Fiscalized', 'Fiscal Number'
         ])
 
-    return response
+        invoices = Invoice.objects.filter(
+            sale__store__company=company
+        ).select_related('sale', 'sale__customer').order_by('-created_at')
+
+        for invoice in invoices:
+            writer.writerow([
+                invoice.invoice_number,
+                invoice.sale.get_document_type_display(),
+                invoice.issue_date,
+                invoice.due_date,
+                invoice.sale.get_status_display(),
+                invoice.customer.name if invoice.customer else '',
+                invoice.subtotal,
+                invoice.tax_amount,
+                invoice.discount_amount,
+                invoice.total_amount,
+                invoice.amount_paid,
+                invoice.amount_outstanding,
+                invoice.is_overdue,
+                invoice.is_fiscalized,
+                invoice.fiscal_document_number or ''
+            ])
+
+        return response
+
+def export_invoices_csv_bulk(request, invoice_ids):
+    """Export selected invoices to CSV"""
+    company = get_current_tenant(request)
+    if not company:
+        return HttpResponse('No company context', status=403)
+
+    with tenant_context(company):
+        response = HttpResponse(content_type='text/csv')
+        response['Content-Disposition'] = 'attachment; filename="invoices_export.csv"'
+
+        writer = csv.writer(response)
+        writer.writerow([
+            'Invoice Number', 'Issue Date', 'Customer', 'Total',
+            'Status', 'Fiscalized'
+        ])
+
+        invoices = Invoice.objects.filter(
+            id__in=invoice_ids,
+            sale__store__company=company
+        ).select_related('sale', 'sale__customer')
+
+        for invoice in invoices:
+            writer.writerow([
+                invoice.invoice_number,
+                invoice.issue_date,
+                invoice.customer.name if invoice.customer else '',
+                invoice.total_amount,
+                invoice.sale.get_status_display(),
+                'Yes' if invoice.is_fiscalized else 'No'
+            ])
+
+        return response
 
 
 class FiscalizationAuditView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
@@ -998,133 +1163,86 @@ class FiscalizationAuditView(LoginRequiredMixin, PermissionRequiredMixin, ListVi
 @login_required
 @permission_required('invoices.view_invoice')
 def invoice_dashboard(request):
-    """Enhanced main dashboard with key metrics and recent activity"""
-    # Date calculations
-    today = timezone.now().date()
-    this_month = today.replace(day=1)
-    last_12_months = today - timedelta(days=365)
+    """Main dashboard with metrics"""
+    company = get_current_tenant(request)
+    if not company:
+        messages.error(request, 'No company context found')
+        return redirect('invoices:list')
 
-    # Enhanced metrics
-    total_invoices = Invoice.objects.count()
-    invoices_this_month = Invoice.objects.filter(
-        issue_date__gte=this_month
-    ).count()
+    with tenant_context(company):
+        today = timezone.now().date()
+        this_month = today.replace(day=1)
 
-    paid_invoices = Invoice.objects.filter(status='PAID')
-    total_revenue = paid_invoices.aggregate(Sum('total_amount'))['total_amount__sum'] or 0
-
-    pending_invoices = Invoice.objects.exclude(status__in=['PAID', 'CANCELLED'])
-    pending_amount = pending_invoices.aggregate(Sum('total_amount'))['total_amount__sum'] or 0
-
-    overdue_invoices = Invoice.objects.filter(
-        due_date__lt=today,
-        status__in=['SENT', 'PARTIALLY_PAID']
-    ).count()
-
-    fiscalized_invoices = Invoice.objects.filter(is_fiscalized=True).count()
-
-    # Calculate average invoice amount
-    avg_invoice_amount = Invoice.objects.aggregate(
-        avg_amount=Avg('total_amount')
-    )['avg_amount'] or 0
-
-    # Performance metrics
-    total_invoiced_amount = Invoice.objects.aggregate(Sum('total_amount'))['total_amount__sum'] or 0
-    collection_rate = (total_revenue / total_invoiced_amount * 100) if total_invoiced_amount > 0 else 0
-
-    # On-time payment rate (simplified - invoices paid before due date)
-    on_time_payments = Invoice.objects.filter(
-        status='PAID',
-        payments__payment_date__lte=F('due_date')
-    ).distinct().count()
-    total_paid_invoices = paid_invoices.count()
-    on_time_rate = (on_time_payments / total_paid_invoices * 100) if total_paid_invoices > 0 else 0
-
-    fiscalization_rate = (fiscalized_invoices / total_invoices * 100) if total_invoices > 0 else 0
-
-    # Monthly revenue data for charts
-    monthly_data = []
-    for i in range(12):
-        month_start = (today.replace(day=1) - timedelta(days=i * 30)).replace(day=1)
-        month_end = (month_start + timedelta(days=32)).replace(day=1) - timedelta(days=1)
-
-        month_invoices = Invoice.objects.filter(
-            issue_date__range=[month_start, month_end]
+        # Base queryset
+        invoices = Invoice.objects.filter(
+            sale__store__company=company
         )
 
-        revenue = month_invoices.filter(status='PAID').aggregate(
-            Sum('total_amount')
-        )['total_amount__sum'] or 0
+        # Metrics
+        total_invoices = invoices.count()
+        invoices_this_month = invoices.filter(
+            created_at__gte=this_month
+        ).count()
 
-        invoice_count = month_invoices.count()
+        paid_invoices = invoices.filter(sale__status='PAID')
+        total_revenue = paid_invoices.aggregate(
+            total=Sum('sale__total_amount')
+        )['total'] or 0
 
-        monthly_data.append({
-            'month': month_start.strftime('%Y-%m'),
-            'month_name': month_start.strftime('%b'),
-            'revenue': float(revenue),
-            'invoice_count': invoice_count
-        })
+        pending_invoices = invoices.exclude(sale__status='PAID')
+        pending_amount = pending_invoices.aggregate(
+            total=Sum('sale__total_amount')
+        )['total'] or 0
 
-    monthly_data.reverse()  # Order from oldest to newest
+        overdue_invoices = invoices.filter(
+            sale__due_date__lt=today,
+            sale__status__in=['PENDING_PAYMENT', 'PARTIALLY_PAID']
+        ).count()
 
-    # Status distribution for chart
-    status_distribution = Invoice.objects.values('status').annotate(
-        count=Count('id')
-    ).order_by('status')
+        fiscalized_invoices = invoices.filter(is_fiscalized=True).count()
 
-    status_data = []
-    for item in status_distribution:
-        status_data.append({
-            'status': item['status'],
-            'label': dict(Invoice.STATUS_CHOICES).get(item['status'], item['status']),
-            'count': item['count']
-        })
+        avg_invoice_amount = invoices.aggregate(
+            avg=Avg('sale__total_amount')
+        )['avg'] or 0
 
-    # Recent invoices
-    recent_invoices = Invoice.objects.select_related(
-        'sale', 'created_by'
-    ).order_by('-created_at')[:10]
+        # Recent activity
+        recent_invoices = invoices.select_related(
+            'sale', 'sale__customer', 'created_by'
+        ).order_by('-created_at')[:10]
 
-    # Recent payments
-    recent_payments = InvoicePayment.objects.select_related(
-        'invoice', 'processed_by'
-    ).order_by('-created_at')[:10]
+        recent_payments = InvoicePayment.objects.filter(
+            invoice__sale__store__company=company
+        ).select_related(
+            'invoice', 'processed_by'
+        ).order_by('-created_at')[:10]
 
-    # Upcoming due dates (next 7 days)
-    upcoming_due_date = today + timedelta(days=7)
-    upcoming_invoices = Invoice.objects.filter(
-        due_date__range=[today, upcoming_due_date],
-        status__in=['SENT', 'PARTIALLY_PAID']
-    ).select_related('sale__customer').order_by('due_date')[:5]
+        # Upcoming due dates
+        upcoming_due = today + timedelta(days=7)
+        upcoming_invoices = invoices.filter(
+            sale__due_date__range=[today, upcoming_due],
+            sale__status__in=['PENDING_PAYMENT', 'PARTIALLY_PAID']
+        ).select_related('sale__customer').order_by('sale__due_date')[:5]
 
-    # Add days until due for each upcoming invoice
-    for invoice in upcoming_invoices:
-        invoice.days_until_due = (invoice.due_date - today).days
+        for invoice in upcoming_invoices:
+            invoice.days_until_due = (invoice.due_date - today).days
 
-    metrics = {
-        'total_invoices': total_invoices,
-        'invoices_this_month': invoices_this_month,
-        'total_revenue': total_revenue,
-        'pending_amount': pending_amount,
-        'pending_invoices': pending_invoices.count(),
-        'overdue_invoices': overdue_invoices,
-        'fiscalized_invoices': fiscalized_invoices,
-        'avg_invoice_amount': avg_invoice_amount,
-        'collection_rate': round(collection_rate, 1),
-        'on_time_rate': round(on_time_rate, 1),
-        'fiscalization_rate': round(fiscalization_rate, 1),
-    }
+        context = {
+            'metrics': {
+                'total_invoices': total_invoices,
+                'invoices_this_month': invoices_this_month,
+                'total_revenue': total_revenue,
+                'pending_amount': pending_amount,
+                'pending_invoices': pending_invoices.count(),
+                'overdue_invoices': overdue_invoices,
+                'fiscalized_invoices': fiscalized_invoices,
+                'avg_invoice_amount': avg_invoice_amount,
+            },
+            'recent_invoices': recent_invoices,
+            'recent_payments': recent_payments,
+            'upcoming_invoices': upcoming_invoices,
+        }
 
-    context = {
-        'metrics': metrics,
-        'recent_invoices': recent_invoices,
-        'recent_payments': recent_payments,
-        'upcoming_invoices': upcoming_invoices,
-        'monthly_data': monthly_data,
-        'status_data': status_data,
-    }
-
-    return render(request, 'invoices/dashboard.html', context)
+        return render(request, 'invoices/dashboard.html', context)
 
 
 
@@ -1145,13 +1263,14 @@ def dashboard_chart_data(request):
     while current <= today:
         month_end = (current + timedelta(days=32)).replace(day=1) - timedelta(days=1)
 
+        # FIX: Use sale__created_at instead of issue_date
         month_invoices = Invoice.objects.filter(
-            issue_date__range=[current, month_end]
+            sale__created_at__date__range=[current, month_end]
         )
 
-        revenue = month_invoices.filter(status='PAID').aggregate(
-            Sum('total_amount')
-        )['total_amount__sum'] or 0
+        revenue = month_invoices.filter(sale__status='PAID').aggregate(
+            Sum('sale__total_amount')
+        )['sale__total_amount__sum'] or 0
 
         invoice_count = month_invoices.count()
 
@@ -1169,15 +1288,18 @@ def dashboard_chart_data(request):
             current = current.replace(month=current.month + 1)
 
     # Status distribution
-    status_distribution = Invoice.objects.values('status').annotate(
+    status_distribution = Invoice.objects.values('sale__status').annotate(
         count=Count('id')
-    ).order_by('status')
+    ).order_by('sale__status')
 
     status_data = []
     for item in status_distribution:
         status_data.append({
-            'status': item['status'],
-            'label': dict(Invoice.STATUS_CHOICES).get(item['status'], item['status']),
+            'status': item['sale__status'],
+            'label': dict(Invoice.sale.field.related_model.STATUS_CHOICES).get(
+                item['sale__status'],
+                item['sale__status']
+            ),
             'count': item['count']
         })
 
@@ -1195,33 +1317,43 @@ def dashboard_metrics(request):
     today = timezone.now().date()
     this_month = today.replace(day=1)
 
-    # Calculate metrics (similar to main dashboard view but for API)
+    # Calculate metrics - FIX: Use sale__created_at instead of issue_date
     total_invoices = Invoice.objects.count()
-    invoices_this_month = Invoice.objects.filter(issue_date__gte=this_month).count()
+    invoices_this_month = Invoice.objects.filter(
+        sale__created_at__date__gte=this_month
+    ).count()
 
-    paid_invoices = Invoice.objects.filter(status='PAID')
-    total_revenue = paid_invoices.aggregate(Sum('total_amount'))['total_amount__sum'] or 0
+    paid_invoices = Invoice.objects.filter(sale__status='PAID')
+    total_revenue = paid_invoices.aggregate(
+        Sum('sale__total_amount')
+    )['sale__total_amount__sum'] or 0
 
-    pending_invoices = Invoice.objects.exclude(status__in=['PAID', 'CANCELLED'])
-    pending_amount = pending_invoices.aggregate(Sum('total_amount'))['total_amount__sum'] or 0
+    pending_invoices = Invoice.objects.exclude(
+        sale__status__in=['PAID', 'CANCELLED']
+    )
+    pending_amount = pending_invoices.aggregate(
+        Sum('sale__total_amount')
+    )['sale__total_amount__sum'] or 0
 
     overdue_invoices = Invoice.objects.filter(
-        due_date__lt=today,
-        status__in=['SENT', 'PARTIALLY_PAID']
+        sale__due_date__lt=today,
+        sale__status__in=['PENDING_PAYMENT', 'PARTIALLY_PAID']
     ).count()
 
     fiscalized_invoices = Invoice.objects.filter(is_fiscalized=True).count()
 
     avg_invoice_amount = Invoice.objects.aggregate(
-        avg_amount=Avg('total_amount')
+        avg_amount=Avg('sale__total_amount')
     )['avg_amount'] or 0
 
-    total_invoiced_amount = Invoice.objects.aggregate(Sum('total_amount'))['total_amount__sum'] or 0
+    total_invoiced_amount = Invoice.objects.aggregate(
+        Sum('sale__total_amount')
+    )['sale__total_amount__sum'] or 0
     collection_rate = (total_revenue / total_invoiced_amount * 100) if total_invoiced_amount > 0 else 0
 
     on_time_payments = Invoice.objects.filter(
-        status='PAID',
-        payments__payment_date__lte=F('due_date')
+        sale__status='PAID',
+        payments__payment_date__lte=F('sale__due_date')
     ).distinct().count()
     total_paid_invoices = paid_invoices.count()
     on_time_rate = (on_time_payments / total_paid_invoices * 100) if total_paid_invoices > 0 else 0

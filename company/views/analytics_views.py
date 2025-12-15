@@ -247,7 +247,7 @@ class CompanyAnalyticsAPIView(LoginRequiredMixin, TemplateView):
             store_id__in=store_ids,
             created_at__date__gte=thirty_days_ago,
             is_voided=False,
-            is_completed=True
+            status__in=['COMPLETED', 'PAID']
         ).aggregate(
             total_revenue=Sum('total_amount'),
             total_sales=Count('id'),

@@ -1,197 +1,116 @@
 from django import forms
 from django.core.exceptions import ValidationError
-from django.utils.translation import gettext_lazy as _
 from django.utils import timezone
 from django.db.models import Q
-from crispy_forms.helper import FormHelper
-from crispy_forms.layout import Layout, Submit, Row, Column, Div, HTML
-from crispy_forms.bootstrap import Field, InlineRadios, PrependedText
+from decimal import Decimal
 import json
-from efris.models import FiscalizationAudit
-from .models import Invoice, InvoiceTemplate, InvoicePayment
+
+from .models import Invoice, InvoicePayment, InvoiceTemplate
 from sales.models import Sale
-from stores.models import Store
 
 
 class InvoiceForm(forms.ModelForm):
-    """Advanced invoice creation and editing form with dynamic features"""
-    
+    """Enhanced invoice creation/edit form"""
+
     class Meta:
         model = Invoice
         fields = [
-            'sale', 'store', 'invoice_number', 'issue_date', 'due_date',
-            'status', 'document_type', 'subtotal', 'tax_amount', 
-            'discount_amount', 'total_amount', 'notes', 'terms'
+            'sale', 'terms', 'purchase_order', 'efris_document_type',
+            'business_type', 'auto_fiscalize'
         ]
         widgets = {
-            'issue_date': forms.DateInput(attrs={'type': 'date', 'class': 'form-control'}),
-            'due_date': forms.DateInput(attrs={'type': 'date', 'class': 'form-control'}),
-            'notes': forms.Textarea(attrs={'rows': 3, 'class': 'form-control'}),
-            'terms': forms.Textarea(attrs={'rows': 3, 'class': 'form-control'}),
-            'subtotal': forms.NumberInput(attrs={'step': '0.01', 'class': 'form-control'}),
-            'tax_amount': forms.NumberInput(attrs={'step': '0.01', 'class': 'form-control'}),
-            'discount_amount': forms.NumberInput(attrs={'step': '0.01', 'class': 'form-control'}),
-            'total_amount': forms.NumberInput(attrs={'step': '0.01', 'class': 'form-control', 'readonly': True}),
+            'sale': forms.Select(attrs={
+                'class': 'form-select',
+                'required': True
+            }),
+            'terms': forms.Textarea(attrs={
+                'class': 'form-control',
+                'rows': 3,
+                'placeholder': 'Payment terms and conditions...'
+            }),
+            'purchase_order': forms.TextInput(attrs={
+                'class': 'form-control',
+                'placeholder': 'PO Number (optional)'
+            }),
+            'efris_document_type': forms.Select(attrs={
+                'class': 'form-select'
+            }),
+            'business_type': forms.Select(attrs={
+                'class': 'form-select'
+            }),
+            'auto_fiscalize': forms.CheckboxInput(attrs={
+                'class': 'form-check-input'
+            }),
         }
 
     def __init__(self, *args, **kwargs):
         self.user = kwargs.pop('user', None)
         super().__init__(*args, **kwargs)
-        
-        # Dynamic queryset filtering based on user permissions
-        if self.user:
-            self.fields['store'].queryset = Store.objects.filter(
-                Q(staff=self.user)
-            ).distinct()
-            
-        # Auto-populate fields from sale if creating new invoice
-        if not self.instance.pk and 'sale' in self.initial:
-            try:
-                sale = Sale.objects.get(pk=self.initial['sale'])
-                self.fields['subtotal'].initial = sale.subtotal
-                self.fields['tax_amount'].initial = sale.tax_amount
-                self.fields['discount_amount'].initial = sale.discount_amount
-                self.fields['total_amount'].initial = sale.total_amount
-            except Sale.DoesNotExist:
-                pass
 
-        self.helper = FormHelper()
-        self.helper.layout = Layout(
-            Row(
-                Column('document_type', css_class='col-md-4'),
-                Column('status', css_class='col-md-4'),
-                Column('invoice_number', css_class='col-md-4'),
-            ),
-            Row(
-                Column('sale', css_class='col-md-6'),
-                Column('store', css_class='col-md-6'),
-            ),
-            Row(
-                Column('issue_date', css_class='col-md-6'),
-                Column('due_date', css_class='col-md-6'),
-            ),
-            HTML('<hr><h5>Financial Details</h5>'),
-            Row(
-                Column(PrependedText('subtotal', 'UGX'), css_class='col-md-3'),
-                Column(PrependedText('tax_amount', 'UGX'), css_class='col-md-3'),
-                Column(PrependedText('discount_amount', 'UGX'), css_class='col-md-3'),
-                Column(PrependedText('total_amount', 'UGX'), css_class='col-md-3'),
-            ),
-            HTML('<hr><h5>Additional Information</h5>'),
-            Row(
-                Column('notes', css_class='col-md-6'),
-                Column('terms', css_class='col-md-6'),
-            ),
-            Div(
-                Submit('submit', 'Save Invoice', css_class='btn btn-primary me-2'),
-                HTML('<a href="{% url "invoices:list" %}" class="btn btn-secondary">Cancel</a>'),
-                css_class='d-flex justify-content-end mt-3'
-            )
-        )
+        # Filter sales to only show invoiceable sales
+        if self.user:
+            # Get company from user
+            user_company = getattr(self.user, 'company', None)
+
+            if user_company:
+                # Filter sales that don't have invoice details yet
+                self.fields['sale'].queryset = Sale.objects.filter(
+                    store__company=user_company,
+                    document_type='INVOICE',
+                    status__in=['COMPLETED', 'PAID', 'PARTIALLY_PAID']
+                ).exclude(
+                    invoice_detail__isnull=False
+                ).select_related('customer', 'store')
+            else:
+                self.fields['sale'].queryset = Sale.objects.none()
+
+        # Set field help texts
+        self.fields['terms'].help_text = 'Payment terms, delivery conditions, etc.'
+        self.fields['efris_document_type'].help_text = 'Select document type for EFRIS'
+        self.fields['business_type'].help_text = 'Transaction type for EFRIS'
+
+    def clean_sale(self):
+        """Validate sale can have an invoice"""
+        sale = self.cleaned_data.get('sale')
+
+        if not sale:
+            raise ValidationError("Sale is required.")
+
+        # Check if sale already has an invoice detail
+        if hasattr(sale, 'invoice_detail') and sale.invoice_detail:
+            if not self.instance.pk or self.instance.pk != sale.invoice_detail.pk:
+                raise ValidationError("This sale already has an invoice detail.")
+
+        # Check if sale is in correct status
+        if sale.status not in ['COMPLETED', 'PAID', 'PARTIALLY_PAID']:
+            raise ValidationError("Only completed or paid sales can have invoices.")
+
+        # Check if sale document type is INVOICE
+        if sale.document_type != 'INVOICE':
+            raise ValidationError("Only invoice-type sales can have invoice details.")
+
+        return sale
 
     def clean(self):
+        """Additional validation"""
         cleaned_data = super().clean()
-        subtotal = cleaned_data.get('subtotal', 0)
-        tax_amount = cleaned_data.get('tax_amount', 0)
-        discount_amount = cleaned_data.get('discount_amount', 0)
-        
-        # Auto-calculate total if not provided
-        if subtotal and tax_amount is not None and discount_amount is not None:
-            calculated_total = subtotal + tax_amount - discount_amount
-            cleaned_data['total_amount'] = max(0, calculated_total)
-            
+
+        efris_document_type = cleaned_data.get('efris_document_type')
+
+        # Validate credit/debit notes
+        if efris_document_type in ['2', '3']:
+            # These require original FDN
+            if not self.instance.pk:
+                raise ValidationError(
+                    "Credit/Debit notes must be created from existing invoices."
+                )
+
         return cleaned_data
 
 
-class InvoiceSearchForm(forms.Form):
-    """Advanced search form for invoices with multiple filters"""
-    
-    search = forms.CharField(
-        required=False,
-        widget=forms.TextInput(attrs={
-            'placeholder': 'Search by invoice number, customer, etc.',
-            'class': 'form-control'
-        })
-    )
-    
-    status = forms.MultipleChoiceField(
-        choices=Invoice.STATUS_CHOICES,
-        required=False,
-        widget=forms.CheckboxSelectMultiple(attrs={'class': 'form-check-input'})
-    )
-    
-    document_type = forms.ChoiceField(
-        choices=[('', 'All Types')] + Invoice.DOCUMENT_TYPES,
-        required=False,
-        widget=forms.Select(attrs={'class': 'form-select'})
-    )
-    
-    date_from = forms.DateField(
-        required=False,
-        widget=forms.DateInput(attrs={'type': 'date', 'class': 'form-control'})
-    )
-    
-    date_to = forms.DateField(
-        required=False,
-        widget=forms.DateInput(attrs={'type': 'date', 'class': 'form-control'})
-    )
-    
-    amount_min = forms.DecimalField(
-        required=False,
-        widget=forms.NumberInput(attrs={'step': '0.01', 'class': 'form-control'})
-    )
-    
-    amount_max = forms.DecimalField(
-        required=False,
-        widget=forms.NumberInput(attrs={'step': '0.01', 'class': 'form-control'})
-    )
-    
-    is_overdue = forms.BooleanField(
-        required=False,
-        widget=forms.CheckboxInput(attrs={'class': 'form-check-input'})
-    )
-    
-    is_fiscalized = forms.BooleanField(
-        required=False,
-        widget=forms.CheckboxInput(attrs={'class': 'form-check-input'})
-    )
-
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.helper = FormHelper()
-        self.helper.form_method = 'GET'
-        self.helper.layout = Layout(
-            Row(
-                Column('search', css_class='col-md-6'),
-                Column('document_type', css_class='col-md-3'),
-                Column(
-                    Submit('submit', 'Search', css_class='btn btn-primary'),
-                    css_class='col-md-3 d-flex align-items-end'
-                ),
-            ),
-            Row(
-                Column('date_from', css_class='col-md-3'),
-                Column('date_to', css_class='col-md-3'),
-                Column('amount_min', css_class='col-md-3'),
-                Column('amount_max', css_class='col-md-3'),
-            ),
-            Row(
-                Column(
-                    Field('status', template='invoices/checkbox_multiple.html'),
-                    css_class='col-md-6'
-                ),
-                Column(
-                    'is_overdue',
-                    'is_fiscalized',
-                    css_class='col-md-6'
-                ),
-            ),
-        )
-
-
 class InvoicePaymentForm(forms.ModelForm):
-    """Form for recording invoice payments"""
-    
+    """Payment form for invoices"""
+
     class Meta:
         model = InvoicePayment
         fields = [
@@ -199,269 +118,366 @@ class InvoicePaymentForm(forms.ModelForm):
             'payment_date', 'notes'
         ]
         widgets = {
-            'payment_date': forms.DateInput(attrs={'type': 'date', 'class': 'form-control'}),
-            'amount': forms.NumberInput(attrs={'step': '0.01', 'class': 'form-control'}),
-            'notes': forms.Textarea(attrs={'rows': 2, 'class': 'form-control'}),
+            'amount': forms.NumberInput(attrs={
+                'class': 'form-control',
+                'min': '0.01',
+                'step': '0.01',
+                'required': True
+            }),
+            'payment_method': forms.Select(attrs={
+                'class': 'form-select',
+                'required': True
+            }),
+            'transaction_reference': forms.TextInput(attrs={
+                'class': 'form-control',
+                'placeholder': 'Transaction reference (optional)'
+            }),
+            'payment_date': forms.DateInput(attrs={
+                'class': 'form-control',
+                'type': 'date'
+            }),
+            'notes': forms.Textarea(attrs={
+                'class': 'form-control',
+                'rows': 2,
+                'placeholder': 'Payment notes...'
+            }),
         }
 
     def __init__(self, *args, **kwargs):
         self.invoice = kwargs.pop('invoice', None)
         super().__init__(*args, **kwargs)
 
-        if self.invoice:
-            # Attach the invoice to the model instance
-            self.instance.invoice = self.invoice  
+        # Set initial payment date to today
+        if not self.instance.pk:
+            self.fields['payment_date'].initial = timezone.now().date()
 
+        # Set max amount to outstanding amount
+        if self.invoice:
             outstanding = self.invoice.amount_outstanding
             self.fields['amount'].widget.attrs['max'] = str(outstanding)
-            self.fields['amount'].initial = outstanding
-            self.fields['amount'].help_text = f'Outstanding amount: UGX {outstanding:,.2f}'
-
-        self.helper = FormHelper()
-        self.helper.layout = Layout(
-            Row(
-                Column(PrependedText('amount', 'UGX'), css_class='col-md-6'),
-                Column('payment_method', css_class='col-md-6'),
-            ),
-            Row(
-                Column('transaction_reference', css_class='col-md-6'),
-                Column('payment_date', css_class='col-md-6'),
-            ),
-            'notes',
-            Div(
-                Submit('submit', 'Record Payment', css_class='btn btn-success me-2'),
-                HTML('<button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>'),
-                css_class='d-flex justify-content-end mt-3'
+            self.fields['amount'].help_text = (
+                f'Outstanding amount: {outstanding:,.2f} '
+                f'{self.invoice.currency_code}'
             )
-        )
 
     def clean_amount(self):
+        """Validate payment amount"""
         amount = self.cleaned_data.get('amount')
-        if self.invoice and amount:
+
+        if amount <= 0:
+            raise ValidationError("Payment amount must be greater than 0.")
+
+        if self.invoice:
             outstanding = self.invoice.amount_outstanding
+
+            # Allow for existing payment updates
+            if self.instance.pk:
+                current_payment = InvoicePayment.objects.filter(
+                    pk=self.instance.pk
+                ).first()
+                if current_payment:
+                    outstanding += current_payment.amount
+
             if amount > outstanding:
                 raise ValidationError(
-                    f'Payment amount cannot exceed outstanding amount of UGX {outstanding:,.2f}'
+                    f"Payment amount cannot exceed outstanding amount "
+                    f"({outstanding:,.2f})."
                 )
+
         return amount
 
 
-class InvoiceTemplateForm(forms.ModelForm):
-    """Form for managing invoice templates"""
-    
-    class Meta:
-        model = InvoiceTemplate
-        fields = [
-            'name', 'template_file', 'is_default', 'is_efris_compliant',
-            'version'
-        ]
-        widgets = {
-            'name': forms.TextInput(attrs={'class': 'form-control'}),
-            'version': forms.TextInput(attrs={'class': 'form-control'}),
-        }
+class InvoiceSearchForm(forms.Form):
+    """Advanced search form for invoices"""
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.helper = FormHelper()
-        self.helper.layout = Layout(
-            Row(
-                Column('name', css_class='col-md-8'),
-                Column('version', css_class='col-md-4'),
-            ),
-            'template_file',
-            Row(
-                Column('is_default', css_class='col-md-6'),
-                Column('is_efris_compliant', css_class='col-md-6'),
-            ),
-            Div(
-                Submit('submit', 'Save Template', css_class='btn btn-primary me-2'),
-                HTML('<a href="{% url "invoices:templates" %}" class="btn btn-secondary">Cancel</a>'),
-                css_class='d-flex justify-content-end mt-3'
-            )
-        )
-
-    def clean(self):
-        cleaned_data = super().clean()
-        is_default = cleaned_data.get('is_default')
-        
-        # Ensure only one default template exists
-        if is_default and not self.instance.pk:
-            if InvoiceTemplate.objects.filter(is_default=True).exists():
-                raise ValidationError({
-                    'is_default': _('Only one default template can exist. Please uncheck the current default first.')
-                })
-                
-        return cleaned_data
-
-
-class BulkInvoiceActionForm(forms.Form):
-    """Form for bulk actions on invoices"""
-    
-    ACTION_CHOICES = [
-        ('', 'Select Action'),
-        ('mark_sent', 'Mark as Sent'),
-        ('mark_paid', 'Mark as Paid'),
-        ('export_pdf', 'Export to PDF'),
-        ('send_email', 'Send Email Reminders'),
-        ('fiscalize', 'Fiscalize Selected'),
-    ]
-    
-    action = forms.ChoiceField(
-        choices=ACTION_CHOICES,
-        widget=forms.Select(attrs={'class': 'form-select'})
-    )
-    
-    selected_invoices = forms.CharField(
-        widget=forms.HiddenInput()
+    search = forms.CharField(
+        required=False,
+        widget=forms.TextInput(attrs={
+            'class': 'form-control',
+            'placeholder': 'Search by invoice number, customer...'
+        })
     )
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.helper = FormHelper()
-        self.helper.layout = Layout(
-            Row(
-                Column('action', css_class='col-md-8'),
-                Column(
-                    Submit('submit', 'Execute', css_class='btn btn-warning'),
-                    css_class='col-md-4 d-flex align-items-end'
-                ),
-            ),
-            'selected_invoices'
-        )
+    status = forms.MultipleChoiceField(
+        required=False,
+        choices=Sale.STATUS_CHOICES,
+        widget=forms.SelectMultiple(attrs={
+            'class': 'form-select'
+        })
+    )
 
-    def clean_selected_invoices(self):
-        selected = self.cleaned_data.get('selected_invoices', '')
-        if not selected:
-            raise ValidationError('No invoices selected.')
-        
-        try:
-            invoice_ids = [int(x) for x in selected.split(',') if x.strip()]
-            if not invoice_ids:
-                raise ValidationError('No valid invoices selected.')
-            return invoice_ids
-        except ValueError:
-            raise ValidationError('Invalid invoice selection.')
+    document_type = forms.ChoiceField(
+        required=False,
+        choices=[('', 'All Types')] + Sale.DOCUMENT_TYPE_CHOICES,
+        widget=forms.Select(attrs={
+            'class': 'form-select'
+        })
+    )
+
+    date_from = forms.DateField(
+        required=False,
+        widget=forms.DateInput(attrs={
+            'class': 'form-control',
+            'type': 'date'
+        })
+    )
+
+    date_to = forms.DateField(
+        required=False,
+        widget=forms.DateInput(attrs={
+            'class': 'form-control',
+            'type': 'date'
+        })
+    )
+
+    amount_min = forms.DecimalField(
+        required=False,
+        min_value=0,
+        widget=forms.NumberInput(attrs={
+            'class': 'form-control',
+            'placeholder': 'Min amount'
+        })
+    )
+
+    amount_max = forms.DecimalField(
+        required=False,
+        min_value=0,
+        widget=forms.NumberInput(attrs={
+            'class': 'form-control',
+            'placeholder': 'Max amount'
+        })
+    )
+
+    is_overdue = forms.BooleanField(
+        required=False,
+        widget=forms.CheckboxInput(attrs={
+            'class': 'form-check-input'
+        }),
+        label='Show overdue only'
+    )
+
+    is_fiscalized = forms.BooleanField(
+        required=False,
+        widget=forms.CheckboxInput(attrs={
+            'class': 'form-check-input'
+        }),
+        label='Show fiscalized only'
+    )
 
 
 class FiscalizationForm(forms.Form):
-    """Form for fiscalizing invoices with EFRIS"""
+    """Form for EFRIS fiscalization"""
 
-    confirm_fiscalization = forms.BooleanField(
+    confirm = forms.BooleanField(
         required=True,
-        widget=forms.CheckboxInput(attrs={'class': 'form-check-input'}),
-        label=_('I confirm that this invoice should be fiscalized with URA EFRIS')
+        widget=forms.CheckboxInput(attrs={
+            'class': 'form-check-input'
+        }),
+        label='I confirm this invoice is ready for fiscalization'
     )
 
     notes = forms.CharField(
         required=False,
-        widget=forms.Textarea(attrs={'rows': 2, 'class': 'form-control'}),
-        label=_('Additional Notes')
-    )
-
-    severity = forms.ChoiceField(
-        required=False,
-        choices=FiscalizationAudit.SEVERITY_CHOICES,
-        initial='medium',
-        widget=forms.Select(attrs={'class': 'form-select'}),
-        label=_('Severity Level')
-    )
-
-    tags = forms.CharField(
-        required=False,
-        widget=forms.TextInput(attrs={'class': 'form-control'}),
-        label=_('Tags (comma-separated)'),
-        help_text=_('Add tags to categorize this fiscalization attempt')
+        widget=forms.Textarea(attrs={
+            'class': 'form-control',
+            'rows': 2,
+            'placeholder': 'Fiscalization notes (optional)...'
+        })
     )
 
     def __init__(self, *args, **kwargs):
         self.invoice = kwargs.pop('invoice', None)
-        self.user = kwargs.pop('user', None)
-        self.company = kwargs.pop('company', None)
         super().__init__(*args, **kwargs)
 
-        # Set initial values based on invoice data
         if self.invoice:
-            self.fields['severity'].initial = self._determine_initial_severity()
+            # Add validation messages
+            can_fiscalize, message = self.invoice.can_fiscalize()
 
-        self.helper = FormHelper()
-        self.helper.layout = Layout(
-            HTML(f'''
-                <div class="alert alert-warning">
-                    <h6>Fiscalization Details</h6>
-                    <p><strong>Invoice:</strong> {self.invoice.invoice_number if self.invoice else 'N/A'}</p>
-                    <p><strong>Amount:</strong> UGX {(self.invoice.total_amount if self.invoice else 0):,.2f}</p>
-                    <p><strong>Warning:</strong> This action cannot be undone once completed.</p>
-                </div>
-            '''),
-            'confirm_fiscalization',
-            'severity',
-            'tags',
-            'notes',
-            Div(
-                Submit('submit', 'Fiscalize Invoice', css_class='btn btn-danger me-2'),
-                HTML('<button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>'),
-                css_class='d-flex justify-content-end mt-3'
-            )
-        )
+            if not can_fiscalize:
+                self.fields['confirm'].help_text = f'⚠️ {message}'
+                self.fields['confirm'].disabled = True
 
-    def _determine_initial_severity(self):
-        """Determine initial severity based on invoice amount"""
-        if not self.invoice:
-            return 'medium'
+    def clean_confirm(self):
+        """Validate fiscalization confirmation"""
+        confirm = self.cleaned_data.get('confirm')
 
-        amount = self.invoice.total_amount
-        if amount > 1000000:  # High amount threshold
-            return 'high'
-        elif amount > 500000:  # Medium amount threshold
-            return 'medium'
-        else:
-            return 'low'
+        if not confirm:
+            raise ValidationError("You must confirm before fiscalization.")
 
-    def prepare_audit_data(self, request=None):
-        """Prepare data for creating a FiscalizationAudit record"""
-        if not self.invoice:
-            return {}
+        if self.invoice:
+            can_fiscalize, message = self.invoice.can_fiscalize()
+            if not can_fiscalize:
+                raise ValidationError(message)
 
-        # Get client IP and user agent if available
-        ip_address = None
-        user_agent = None
-        if request:
-            ip_address = self._get_client_ip(request)
-            user_agent = request.META.get('HTTP_USER_AGENT', '')
+        return confirm
 
-        # Get customer information
-        customer = self.invoice.customer
-        customer_tin = customer.tin if customer else ''
-        customer_name = customer.name if customer else ''
 
-        return {
-            'company': self.company,
-            'action': 'FISCALIZE',
-            'status': 'pending',
-            'severity': self.cleaned_data.get('severity', 'medium'),
-            'invoice': self.invoice,
-            'invoice_number': self.invoice.invoice_number,
-            'user': self.user,
-            'ip_address': ip_address,
-            'user_agent': user_agent,
-            'amount': self.invoice.total_amount,
-            'tax_amount': self.invoice.tax_amount if hasattr(self.invoice, 'tax_amount') else 0,
-            'customer_tin': customer_tin,
-            'customer_name': customer_name,
-            'notes': self.cleaned_data.get('notes', ''),
-            'tags': self.cleaned_data.get('tags', ''),
+class BulkInvoiceActionForm(forms.Form):
+    """Form for bulk actions on invoices"""
+
+    ACTION_CHOICES = [
+        ('mark_sent', 'Mark as Sent'),
+        ('mark_paid', 'Mark as Paid'),
+        ('fiscalize', 'Fiscalize with EFRIS'),
+        ('export_pdf', 'Export to PDF'),
+        ('export_csv', 'Export to CSV'),
+        ('send_email', 'Send Email Reminders'),
+    ]
+
+    action = forms.ChoiceField(
+        choices=ACTION_CHOICES,
+        widget=forms.Select(attrs={
+            'class': 'form-select'
+        })
+    )
+
+    selected_invoices = forms.CharField(
+        widget=forms.HiddenInput()
+    )
+
+    def clean_selected_invoices(self):
+        """Validate selected invoices"""
+        data = self.cleaned_data.get('selected_invoices')
+
+        try:
+            invoice_ids = json.loads(data)
+            if not invoice_ids:
+                raise ValidationError("No invoices selected.")
+            return invoice_ids
+        except (json.JSONDecodeError, ValueError):
+            raise ValidationError("Invalid invoice selection data.")
+
+
+class InvoiceTemplateForm(forms.ModelForm):
+    """Form for invoice templates"""
+
+    class Meta:
+        model = InvoiceTemplate
+        fields = [
+            'name', 'template_file', 'is_default',
+            'is_efris_compliant', 'version'
+        ]
+        widgets = {
+            'name': forms.TextInput(attrs={
+                'class': 'form-control',
+                'placeholder': 'Template name'
+            }),
+            'template_file': forms.FileInput(attrs={
+                'class': 'form-control'
+            }),
+            'is_default': forms.CheckboxInput(attrs={
+                'class': 'form-check-input'
+            }),
+            'is_efris_compliant': forms.CheckboxInput(attrs={
+                'class': 'form-check-input'
+            }),
+            'version': forms.TextInput(attrs={
+                'class': 'form-control',
+                'placeholder': '1.0'
+            }),
         }
 
-    def _get_client_ip(self, request):
-        """Get client IP address from request"""
-        x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
-        if x_forwarded_for:
-            ip = x_forwarded_for.split(',')[0]
-        else:
-            ip = request.META.get('REMOTE_ADDR')
-        return ip
+    def clean_is_default(self):
+        """Ensure only one default template"""
+        is_default = self.cleaned_data.get('is_default')
+
+        if is_default:
+            # Check if another default exists
+            existing_default = InvoiceTemplate.objects.filter(
+                is_default=True
+            ).exclude(pk=self.instance.pk if self.instance else None)
+
+            if existing_default.exists():
+                raise ValidationError(
+                    "Another default template already exists. "
+                    "Please unset it first."
+                )
+
+        return is_default
 
 
+class CreditNoteForm(forms.ModelForm):
+    """Form for creating credit notes"""
 
-"""                    <p><strong>Customer:</strong> {self.invoice.customer.name if self.invoice and self.invoice.customer else 'N/A'}</p>
-"""
+    original_invoice = forms.ModelChoiceField(
+        queryset=Invoice.objects.filter(is_fiscalized=True),
+        widget=forms.Select(attrs={
+            'class': 'form-select'
+        }),
+        label='Original Invoice'
+    )
+
+    reason = forms.CharField(
+        required=True,
+        widget=forms.Textarea(attrs={
+            'class': 'form-control',
+            'rows': 3,
+            'placeholder': 'Reason for credit note...'
+        }),
+        label='Reason for Credit Note'
+    )
+
+    class Meta:
+        model = Invoice
+        fields = ['sale', 'terms', 'business_type']
+        widgets = {
+            'sale': forms.HiddenInput(),
+            'terms': forms.Textarea(attrs={
+                'class': 'form-control',
+                'rows': 2
+            }),
+            'business_type': forms.Select(attrs={
+                'class': 'form-select'
+            }),
+        }
+
+    def __init__(self, *args, **kwargs):
+        self.user = kwargs.pop('user', None)
+        super().__init__(*args, **kwargs)
+
+        # Filter original invoices
+        if self.user:
+            user_company = getattr(self.user, 'company', None)
+            if user_company:
+                self.fields['original_invoice'].queryset = Invoice.objects.filter(
+                    sale__store__company=user_company,
+                    is_fiscalized=True,
+                    efris_document_type='1'  # Normal invoices only
+                ).select_related('sale', 'sale__customer')
+
+    def clean(self):
+        """Validate credit note creation"""
+        cleaned_data = super().clean()
+        original_invoice = cleaned_data.get('original_invoice')
+
+        if original_invoice:
+            # Set the EFRIS document type for credit note
+            cleaned_data['efris_document_type'] = '2'
+
+            # Copy business type from original
+            if not cleaned_data.get('business_type'):
+                cleaned_data['business_type'] = original_invoice.business_type
+
+        return cleaned_data
+
+    def save(self, commit=True):
+        """Create credit note invoice"""
+        invoice = super().save(commit=False)
+
+        original_invoice = self.cleaned_data.get('original_invoice')
+        if original_invoice:
+            invoice.efris_document_type = '2'  # Credit note
+            invoice.original_fdn = original_invoice.fiscal_document_number
+            invoice.business_type = original_invoice.business_type
+
+            # Check if URA approval is required
+            if invoice.business_type in ['B2B', 'B2G']:
+                invoice.requires_ura_approval = True
+
+        if self.user:
+            invoice.created_by = self.user
+
+        if commit:
+            invoice.save()
+
+        return invoice

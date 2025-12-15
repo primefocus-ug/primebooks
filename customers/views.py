@@ -3,7 +3,7 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from django.shortcuts import render, get_object_or_404, redirect
 from django.contrib import messages
-from django.contrib.auth.decorators import login_required
+from django.contrib.auth.decorators import login_required, permission_required
 from django.contrib.auth.mixins import LoginRequiredMixin, PermissionRequiredMixin
 from django.db.models import Q, Count
 from django.http import JsonResponse, HttpResponse
@@ -40,6 +40,7 @@ import pandas as pd
 
 
 @login_required
+@permission_required('customers.view_customer',raise_exception=True)
 def customer_search_with_store(request):
     """
     Enhanced customer search API that returns customers based on store
@@ -106,6 +107,7 @@ def customer_search_with_store(request):
 
 
 @login_required
+@permission_required('customers.view_customer',raise_exception=True)
 def get_store_customers(request):
     """
     Get customers associated with a specific store
@@ -617,6 +619,7 @@ def sync_customer_to_efris(request, pk):
 
 
 @login_required
+@permission_required('customers.add_customer',raise_exception=True)
 @require_http_methods(["POST"])
 def bulk_customer_action(request):
     """Handle bulk actions on customers including eFRIS sync"""
@@ -924,6 +927,7 @@ class CustomerNoteViewSet(viewsets.ModelViewSet):
         serializer.save(author=self.request.user)
 
 @login_required
+@permission_required('customers.add_customer',raise_exception=True)
 def customer_import(request):
     """Import customers from CSV/Excel file"""
     if request.method == 'POST':

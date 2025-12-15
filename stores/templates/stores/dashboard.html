@@ -1,27 +1,82 @@
-<!-- templates/stores/dashboard.html -->
 {% extends "base.html" %}
 {% load static %}
 {% load math_extras %}
 {% load custom_filters %}
 
+{% block title %}Store Dashboard | Prime Book{% endblock %}
 
-{% block title %}Branch Dashboard | Prime Book{% endblock %}
 {% block extra_css %}
 <link rel="stylesheet" href="{% static 'themes.css' %}">
+<style>
+    .store-status-badge {
+        font-size: 0.75em;
+    }
+    .store-type-badge {
+        font-size: 0.7em;
+        opacity: 0.9;
+    }
+    .stat-card {
+        transition: transform 0.2s;
+    }
+    .stat-card:hover {
+        transform: translateY(-5px);
+    }
+    .quick-action-btn {
+        height: 100px;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+    }
+    .quick-action-icon {
+        font-size: 2rem;
+        margin-bottom: 0.5rem;
+    }
+    .recent-store-item {
+        transition: background-color 0.2s;
+    }
+    .recent-store-item:hover {
+        background-color: var(--bs-light);
+    }
+    .store-avatar {
+        width: 40px;
+        height: 40px;
+        border-radius: 8px;
+        background: linear-gradient(135deg, var(--bs-primary), var(--bs-info));
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: white;
+        font-weight: bold;
+    }
+</style>
 {% endblock %}
 
 {% block page_header %}
 <div class="d-flex justify-content-between align-items-center mb-4">
     <div>
-        <h1 class="h3 mb-1">Branch Dashboard</h1>
-        <p class="text-muted mb-0">Monitor and manage your Branches</p>
+        <h1 class="h3 mb-1">Store Dashboard</h1>
+        <p class="text-muted mb-0">Monitor and manage your stores and branches</p>
+        {% if current_store %}
+        <div class="mt-2">
+            <span class="badge bg-info">Current Store: {{ current_store.name }}</span>
+            {% if can_switch_stores %}
+            <button type="button" class="btn btn-sm btn-outline-info ms-2" data-bs-toggle="modal" data-bs-target="#switchStoreModal">
+                <i class="bi bi-arrow-left-right me-1"></i>Switch Store
+            </button>
+            {% endif %}
+        </div>
+        {% endif %}
     </div>
     <div class="d-flex gap-2">
         {% if perms.stores.add_store %}
         <a href="{% url 'stores:store_create' %}" class="btn btn-primary">
-            <i class="bi bi-plus-circle me-1"></i>Add Branch
+            <i class="bi bi-plus-circle me-1"></i>Add Store
         </a>
         {% endif %}
+        <a href="{% url 'stores:store_map' %}" class="btn btn-outline-primary">
+            <i class="bi bi-map me-1"></i>Map View
+        </a>
         <a href="{% url 'stores:analytics' %}" class="btn btn-outline-primary">
             <i class="bi bi-graph-up me-1"></i>Analytics
         </a>
@@ -32,54 +87,124 @@
 {% block content %}
 <!-- Stats Cards -->
 <div class="row mb-4">
-    <div class="col-md-3">
-        <div class="card bg-primary text-white">
+    <div class="col-xl-2 col-md-4 col-sm-6 mb-3">
+        <div class="card stat-card bg-primary bg-opacity-10 border-primary">
             <div class="card-body">
                 <div class="d-flex justify-content-between align-items-center">
                     <div>
-                        <h6 class="card-title mb-1">Total Branches</h6>
+                        <h6 class="card-title mb-1 text-muted">Total Stores</h6>
                         <h3 class="mb-0">{{ stats.total_stores }}</h3>
+                        <small class="text-muted">{{ stats.active_stores }} active</small>
                     </div>
-                    <i class="bi bi-shop fs-1 opacity-75"></i>
+                    <i class="bi bi-shop fs-1 text-primary opacity-75"></i>
+                </div>
+                <div class="mt-2">
+                    <small class="text-muted">
+                        {% if stats.inactive_stores > 0 %}
+                        <span class="text-warning">{{ stats.inactive_stores }} inactive</span>
+                        {% endif %}
+                    </small>
                 </div>
             </div>
         </div>
     </div>
-    <div class="col-md-3">
-        <div class="card bg-success text-white">
+
+    <div class="col-xl-2 col-md-4 col-sm-6 mb-3">
+        <div class="card stat-card bg-success bg-opacity-10 border-success">
             <div class="card-body">
                 <div class="d-flex justify-content-between align-items-center">
                     <div>
-                        <h6 class="card-title mb-1">Active Branches</h6>
-                        <h3 class="mb-0">{{ stats.active_stores }}</h3>
+                        <h6 class="card-title mb-1 text-muted">EFRIS Enabled</h6>
+                        <h3 class="mb-0">{{ stats.efris_enabled }}</h3>
+                        <small class="text-muted">{{ stats.efris_enabled|div:stats.active_stores|mul:100|floatformat:0 }}% of active</small>
                     </div>
-                    <i class="bi bi-check-circle fs-1 opacity-75"></i>
+                    <i class="bi bi-receipt-cutoff fs-1 text-success opacity-75"></i>
                 </div>
             </div>
         </div>
     </div>
-    <div class="col-md-3">
-        <div class="card bg-info text-white">
+
+    <div class="col-xl-2 col-md-4 col-sm-6 mb-3">
+        <div class="card stat-card bg-info bg-opacity-10 border-info">
             <div class="card-body">
                 <div class="d-flex justify-content-between align-items-center">
                     <div>
-                        <h6 class="card-title mb-1">Total Devices</h6>
+                        <h6 class="card-title mb-1 text-muted">Total Devices</h6>
                         <h3 class="mb-0">{{ stats.total_devices }}</h3>
+                        <small class="text-muted">{{ stats.active_devices }} active</small>
                     </div>
-                    <i class="bi bi-phone fs-1 opacity-75"></i>
+                    <i class="bi bi-phone fs-1 text-info opacity-75"></i>
+                </div>
+                <div class="mt-2">
+                    {% if stats.active_devices and stats.total_devices %}
+                    <div class="progress" style="height: 5px;">
+                        <div class="progress-bar bg-info" style="width: {{ stats.active_devices|div:stats.total_devices|mul:100 }}%"></div>
+                    </div>
+                    {% endif %}
                 </div>
             </div>
         </div>
     </div>
-    <div class="col-md-3">
-        <div class="card bg-warning text-white">
+
+    <div class="col-xl-2 col-md-4 col-sm-6 mb-3">
+        <div class="card stat-card bg-warning bg-opacity-10 border-warning">
             <div class="card-body">
                 <div class="d-flex justify-content-between align-items-center">
                     <div>
-                        <h6 class="card-title mb-1">Low Stock Items</h6>
+                        <h6 class="card-title mb-1 text-muted">Low Stock Items</h6>
                         <h3 class="mb-0">{{ low_stock_count }}</h3>
+                        <small class="text-muted">Requires attention</small>
                     </div>
-                    <i class="bi bi-exclamation-triangle fs-1 opacity-75"></i>
+                    <i class="bi bi-exclamation-triangle fs-1 text-warning opacity-75"></i>
+                </div>
+                {% if low_stock_count > 0 %}
+                <div class="mt-2">
+                    <a href="{% url 'stores:low_stock_alert' %}" class="btn btn-sm btn-warning w-100">
+                        <i class="bi bi-eye me-1"></i>View Alerts
+                    </a>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <div class="col-xl-2 col-md-4 col-sm-6 mb-3">
+        <div class="card stat-card bg-purple bg-opacity-10 border-purple">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <h6 class="card-title mb-1 text-muted">Main Stores</h6>
+                        <h3 class="mb-0">
+                            {% if stats.main_branch_count %}
+                            {{ stats.main_branch_count }}
+                            {% else %}
+                            0
+                            {% endif %}
+                        </h3>
+                        <small class="text-muted">Primary locations</small>
+                    </div>
+                    <i class="bi bi-house fs-1 text-purple opacity-75"></i>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-xl-2 col-md-4 col-sm-6 mb-3">
+        <div class="card stat-card bg-teal bg-opacity-10 border-teal">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <h6 class="card-title mb-1 text-muted">Avg Inventory</h6>
+                        <h3 class="mb-0">
+                            {% if stats.average_inventory %}
+                            {{ stats.average_inventory|floatformat:0 }}
+                            {% else %}
+                            0
+                            {% endif %}
+                        </h3>
+                        <small class="text-muted">Per store</small>
+                    </div>
+                    <i class="bi bi-box-seam fs-1 text-teal opacity-75"></i>
                 </div>
             </div>
         </div>
@@ -89,10 +214,17 @@
 <div class="row">
     <!-- Recent Stores -->
     <div class="col-lg-6 mb-4">
-        <div class="card">
+        <div class="card h-100">
             <div class="card-header d-flex justify-content-between align-items-center">
-                <h5 class="card-title mb-0">Recent Branches</h5>
-                <a href="{% url 'stores:store_list' %}" class="btn btn-sm btn-outline-primary">View All</a>
+                <h5 class="card-title mb-0">Recent Stores</h5>
+                <div>
+                    <a href="{% url 'stores:store_list' %}" class="btn btn-sm btn-outline-primary">View All</a>
+                    {% if accessible_stores.count > 1 %}
+                    <button type="button" class="btn btn-sm btn-outline-info ms-1" data-bs-toggle="modal" data-bs-target="#switchStoreModal">
+                        Switch
+                    </button>
+                    {% endif %}
+                </div>
             </div>
             <div class="card-body p-0">
                 {% if recent_stores %}
@@ -100,72 +232,163 @@
                         <table class="table table-hover mb-0">
                             <thead class="table-light">
                                 <tr>
-                                    <th>Branch</th>
-                                    <th>Region</th>
+                                    <th>Store</th>
+                                    <th>Type</th>
                                     <th>Status</th>
                                     <th>Created</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 {% for store in recent_stores %}
-                                <tr>
+                                <tr class="recent-store-item">
                                     <td>
-                                        <div>
-                                            <a href="{% url 'stores:store_detail' store.pk %}" class="text-decoration-none">
-                                            <strong>{{ store.name }}</strong>
-                                            </a>
-                                            <small class="text-muted d-block">{{ store.code }}</small>
+                                        <div class="d-flex align-items-center">
+                                            <div class="store-avatar me-2">
+                                                {{ store.name|slice:":1"|upper }}
+                                            </div>
+                                            <div>
+                                                <a href="{% url 'stores:store_detail' store.pk %}" class="text-decoration-none">
+                                                    <strong>{{ store.name|truncatechars:20 }}</strong>
+                                                </a>
+                                                <small class="text-muted d-block">
+                                                    {{ store.code|default:"No code" }}
+                                                    {% if store.region %}
+                                                    • {{ store.region }}
+                                                    {% endif %}
+                                                </small>
+                                            </div>
                                         </div>
                                     </td>
-                                    <td>{{ store.region|default:"-" }}</td>
                                     <td>
-                                        {% if store.is_active %}
-                                            <span class="badge bg-success">Active</span>
-                                        {% else %}
-                                            <span class="badge bg-secondary">Inactive</span>
+                                        <span class="badge store-type-badge
+                                            {% if store.store_type == 'MAIN' %}bg-primary
+                                            {% elif store.store_type == 'BRANCH' %}bg-info
+                                            {% elif store.store_type == 'WAREHOUSE' %}bg-warning
+                                            {% else %}bg-secondary{% endif %}">
+                                            {{ store.get_store_type_display|slice:":1" }}
+                                        </span>
+                                        {% if store.is_main_branch %}
+                                        <span class="badge bg-success store-status-badge">Main</span>
                                         {% endif %}
                                     </td>
-                                    <td>{{ store.created_at|date:"M d, Y" }}</td>
+                                    <td>
+                                        {% if store.is_active %}
+                                            {% if store.efris_enabled %}
+                                            <span class="badge bg-success store-status-badge">
+                                                <i class="bi bi-check-circle me-1"></i>Active
+                                            </span>
+                                            {% else %}
+                                            <span class="badge bg-info store-status-badge">Active</span>
+                                            {% endif %}
+                                        {% else %}
+                                            <span class="badge bg-secondary store-status-badge">Inactive</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        <small class="text-muted">{{ store.created_at|date:"M d" }}</small>
+                                        <br>
+                                        <small class="text-muted">{{ store.created_at|date:"Y" }}</small>
+                                    </td>
                                 </tr>
                                 {% endfor %}
                             </tbody>
                         </table>
                     </div>
                 {% else %}
-                    <div class="text-center py-4">
-                        <i class="bi bi-shop fs-1 text-muted"></i>
-                        <p class="text-muted mt-2">No stores found</p>
+                    <div class="text-center py-5">
+                        <i class="bi bi-shop fs-1 text-muted mb-3"></i>
+                        <p class="text-muted mb-2">No stores found</p>
+                        {% if perms.stores.add_store %}
+                        <a href="{% url 'stores:store_create' %}" class="btn btn-primary btn-sm">
+                            <i class="bi bi-plus-circle me-1"></i>Add Your First Store
+                        </a>
+                        {% endif %}
                     </div>
                 {% endif %}
             </div>
+            {% if recent_stores and accessible_stores.count > 5 %}
+            <div class="card-footer text-center">
+                <a href="{% url 'stores:store_list' %}" class="btn btn-link btn-sm">
+                    View all {{ accessible_stores.count }} stores <i class="bi bi-arrow-right"></i>
+                </a>
+            </div>
+            {% endif %}
         </div>
     </div>
 
-    <!-- Regional Distribution -->
+    <!-- Regional Distribution & Activity -->
     <div class="col-lg-6 mb-4">
-        <div class="card">
-            <div class="card-header">
-                <h5 class="card-title mb-0">Stores by Region</h5>
-            </div>
-            <div class="card-body">
-                {% if stores_by_region %}
-                    {% for region_data in stores_by_region %}
-                    <div class="d-flex justify-content-between align-items-center mb-3 totall">
-                        <span>{{ region_data.region|default:"Not Specified" }}</span>
-                        <div class="d-flex align-items-center">
-                            <div class="progress me-2" style="width: 100px; height: 8px;">
-                                <div class="progress-bar bg-primary" style="width: {{ region_data.count|div:stats.total_stores|mul:100 }}%"></div>
+        <div class="row h-100">
+            <!-- Regional Distribution -->
+            <div class="col-12 mb-4">
+                <div class="card h-100">
+                    <div class="card-header">
+                        <h5 class="card-title mb-0">Stores by Region</h5>
+                    </div>
+                    <div class="card-body">
+                        {% if stores_by_region %}
+                            {% for region_data in stores_by_region %}
+                            <div class="d-flex justify-content-between align-items-center mb-3">
+                                <div class="d-flex align-items-center">
+                                    <i class="bi bi-geo-alt me-2 text-primary"></i>
+                                    <span>{{ region_data.region|default:"Not Specified" }}</span>
+                                </div>
+                                <div class="d-flex align-items-center">
+                                    <div class="progress me-2" style="width: 120px; height: 8px;">
+                                        <div class="progress-bar bg-primary" style="width: {{ region_data.count|div:stats.total_stores|mul:100 }}%"></div>
+                                    </div>
+                                    <span class="badge bg-light text-dark border">{{ region_data.count }}</span>
+                                </div>
                             </div>
-                            <span class="badge bg-light text-dark">{{ region_data.count }}</span>
+                            {% endfor %}
+                        {% else %}
+                            <div class="text-center py-3">
+                                <i class="bi bi-geo-alt fs-1 text-muted mb-3"></i>
+                                <p class="text-muted mb-2">No regional data available</p>
+                                <a href="{% url 'stores:store_map' %}" class="btn btn-outline-primary btn-sm">
+                                    <i class="bi bi-map me-1"></i>View on Map
+                                </a>
+                            </div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+
+            <!-- Quick Stats -->
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="card-title mb-0">Quick Stats</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row text-center">
+                            <div class="col-4">
+                                <div class="p-2">
+                                    <h4 class="mb-1">{{ stats.active_devices|default:0 }}</h4>
+                                    <small class="text-muted">Active Devices</small>
+                                </div>
+                            </div>
+                            <div class="col-4">
+                                <div class="p-2">
+                                    <h4 class="mb-1">{{ stats.efris_enabled|default:0 }}</h4>
+                                    <small class="text-muted">EFRIS Stores</small>
+                                </div>
+                            </div>
+                            <div class="col-4">
+                                <div class="p-2">
+                                    <h4 class="mb-1">
+                                        {% if stats.main_branch_count %}
+                                        {{ stats.main_branch_count }}
+                                        {% else %}
+                                        0
+                                        {% endif %}
+                                    </h4>
+                                    <small class="text-muted">Main Stores</small>
+                                </div>
+                            </div>
                         </div>
                     </div>
-                    {% endfor %}
-                {% else %}
-                    <div class="text-center py-3">
-                        <i class="bi bi-geo-alt fs-1 text-muted"></i>
-                        <p class="text-muted mt-2">No regional data available</p>
-                    </div>
-                {% endif %}
+                </div>
             </div>
         </div>
     </div>
@@ -173,10 +396,13 @@
 
 <!-- Recent Activity -->
 {% if recent_activity %}
-<div class="card">
+<div class="card mb-4">
     <div class="card-header d-flex justify-content-between align-items-center">
         <h5 class="card-title mb-0">Recent Activity</h5>
-        <a href="{% url 'stores:device_logs' %}" class="btn btn-sm btn-outline-primary">View All Logs</a>
+        <div>
+            <a href="{% url 'stores:device_logs' %}" class="btn btn-sm btn-outline-primary me-2">View All Logs</a>
+            <a href="{% url 'stores:device_sessions_dashboard' %}" class="btn btn-sm btn-outline-info">Device Sessions</a>
+        </div>
     </div>
     <div class="card-body p-0">
         <div class="table-responsive">
@@ -185,8 +411,8 @@
                     <tr>
                         <th>User</th>
                         <th>Action</th>
-                        <th>Device</th>
-                        <th>Store</th>
+                        <th>Device/Store</th>
+                        <th>Status</th>
                         <th>Time</th>
                     </tr>
                 </thead>
@@ -196,20 +422,59 @@
                         <td>
                             <div class="d-flex align-items-center">
                                 {% if log.user.avatar %}
-                                    <img src="{{ log.user.avatar.url }}" class="rounded-circle me-2" width="32" height="32" alt="Avatar">
+                                    <img src="{{ log.user.avatar.url }}" class="rounded-circle me-2" width="32" height="32" alt="{{ log.user.get_full_name }}">
                                 {% else %}
-                                    <i class="bi bi-person-circle fs-5 me-2 text-muted"></i>
+                                    <div class="avatar-placeholder rounded-circle bg-primary bg-opacity-10 text-primary me-2 d-flex align-items-center justify-content-center" style="width: 32px; height: 32px;">
+                                        <i class="bi bi-person fs-6"></i>
+                                    </div>
                                 {% endif %}
-                                <span>{{ log.user.get_full_name|default:log.user.username }}</span>
+                                <div>
+                                    <div class="fw-medium">{{ log.user.get_full_name|default:log.user.username|truncatechars:15 }}</div>
+                                    <small class="text-muted">{{ log.user.email|truncatechars:20 }}</small>
+                                </div>
                             </div>
                         </td>
                         <td>
-                            <span class="badge bg-light text-dark">{{ log.action|title }}</span>
+                            <span class="badge
+                                {% if log.action == 'LOGIN' %}bg-success
+                                {% elif log.action == 'LOGOUT' %}bg-secondary
+                                {% elif 'ERROR' in log.action %}bg-danger
+                                {% elif log.action == 'FISCALIZE' %}bg-warning
+                                {% else %}bg-info{% endif %}">
+                                {{ log.get_action_display }}
+                            </span>
+                            {% if log.is_efris_related %}
+                            <span class="badge bg-purple ms-1">EFRIS</span>
+                            {% endif %}
                         </td>
-                        <td>{{ log.device.name }}</td>
-                        <td>{{ log.device.store.name }}</td>
                         <td>
-                            <small class="text-muted">{{ log.timestamp|timesince }} ago</small>
+                            <div>
+                                {% if log.device %}
+                                <small class="d-block">
+                                    <i class="bi bi-phone me-1"></i>{{ log.device.name|truncatechars:15 }}
+                                </small>
+                                {% endif %}
+                                {% if log.store %}
+                                <small class="text-muted">
+                                    <i class="bi bi-shop me-1"></i>{{ log.store.name|truncatechars:15 }}
+                                </small>
+                                {% endif %}
+                            </div>
+                        </td>
+                        <td>
+                            {% if log.success %}
+                            <span class="badge bg-success">
+                                <i class="bi bi-check-circle me-1"></i>Success
+                            </span>
+                            {% else %}
+                            <span class="badge bg-danger">
+                                <i class="bi bi-x-circle me-1"></i>Failed
+                            </span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <small class="text-muted d-block">{{ log.timestamp|date:"M d" }}</small>
+                            <small class="text-muted">{{ log.timestamp|date:"H:i" }}</small>
                         </td>
                     </tr>
                     {% endfor %}
@@ -221,43 +486,68 @@
 {% endif %}
 
 <!-- Quick Actions -->
-<div class="row mt-4">
-    <div class="col-lg-12">
+<div class="row mt-2">
+    <div class="col-12">
         <div class="card">
             <div class="card-header">
                 <h5 class="card-title mb-0">Quick Actions</h5>
             </div>
             <div class="card-body">
-                <div class="row">
-                    <div class="col-md-3 mb-3">
+                <div class="row g-3">
+                    <div class="col-xl-2 col-md-4 col-sm-6">
                         {% if perms.stores.add_store %}
-                        <a href="{% url 'stores:store_create' %}" class="btn btn-outline-primary w-100">
-                            <i class="bi bi-plus-circle d-block fs-1 mb-2"></i>
-                            Add New Store
+                        <a href="{% url 'stores:store_create' %}" class="btn btn-outline-primary quick-action-btn">
+                            <i class="bi bi-plus-circle quick-action-icon text-primary"></i>
+                            <span>Add New Store</span>
                         </a>
                         {% endif %}
                     </div>
-                    <div class="col-md-3 mb-3">
+
+                    <div class="col-xl-2 col-md-4 col-sm-6">
                         {% if perms.stores.add_storedevice %}
-                        <a href="{% url 'stores:device_create' %}" class="btn btn-outline-info w-100">
-                            <i class="bi bi-phone-fill d-block fs-1 mb-2"></i>
-                            Register Device
+                        <a href="{% url 'stores:device_create' %}" class="btn btn-outline-info quick-action-btn">
+                            <i class="bi bi-phone quick-action-icon text-info"></i>
+                            <span>Register Device</span>
                         </a>
                         {% endif %}
                     </div>
-                    <div class="col-md-3 mb-3">
-                        {% if perms.stores.view_storeinventory %}
-                        <a href="{% url 'stores:low_stock_alert' %}" class="btn btn-outline-warning w-100">
-                            <i class="bi bi-exclamation-triangle d-block fs-1 mb-2"></i>
-                            Stock Alerts
+
+                    <div class="col-xl-2 col-md-4 col-sm-6">
+                        {% if perms.inventory.view_stock %}
+                        <a href="{% url 'stores:low_stock_alert' %}" class="btn btn-outline-warning quick-action-btn">
+                            <i class="bi bi-exclamation-triangle quick-action-icon text-warning"></i>
+                            <span>Stock Alerts
+                                {% if low_stock_count > 0 %}
+                                <span class="badge bg-danger ms-1">{{ low_stock_count }}</span>
+                                {% endif %}
+                            </span>
                         </a>
                         {% endif %}
                     </div>
-                    <div class="col-md-3 mb-3">
+
+                    <div class="col-xl-2 col-md-4 col-sm-6">
                         {% if perms.stores.view_store %}
-                        <a href="{% url 'stores:generate_report' %}" class="btn btn-outline-success w-100">
-                            <i class="bi bi-file-earmark-text d-block fs-1 mb-2"></i>
-                            Generate Report
+                        <a href="{% url 'stores:generate_report' %}" class="btn btn-outline-success quick-action-btn">
+                            <i class="bi bi-file-earmark-text quick-action-icon text-success"></i>
+                            <span>Generate Report</span>
+                        </a>
+                        {% endif %}
+                    </div>
+
+                    <div class="col-xl-2 col-md-4 col-sm-6">
+                        {% if perms.stores.view_store %}
+                        <a href="{% url 'stores:store_map' %}" class="btn btn-outline-primary quick-action-btn">
+                            <i class="bi bi-map quick-action-icon text-primary"></i>
+                            <span>Store Map</span>
+                        </a>
+                        {% endif %}
+                    </div>
+
+                    <div class="col-xl-2 col-md-4 col-sm-6">
+                        {% if perms.stores.view_store %}
+                        <a href="{% url 'stores:device_sessions_dashboard' %}" class="btn btn-outline-dark quick-action-btn">
+                            <i class="bi bi-shield-check quick-action-icon text-dark"></i>
+                            <span>Security Dashboard</span>
                         </a>
                         {% endif %}
                     </div>
@@ -266,4 +556,117 @@
         </div>
     </div>
 </div>
+
+<!-- Switch Store Modal -->
+{% if can_switch_stores and accessible_stores.count > 1 %}
+<div class="modal fade" id="switchStoreModal" tabindex="-1" aria-labelledby="switchStoreModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="switchStoreModalLabel">Switch Store</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p class="text-muted mb-3">Select a store to switch to:</p>
+                <div class="row">
+                    {% for store in accessible_stores %}
+                    <div class="col-md-6 mb-3">
+                        <div class="card store-card {% if current_store.id == store.id %}border-primary{% endif %}"
+                             data-store-id="{{ store.id }}"
+                             data-store-name="{{ store.name }}"
+                             style="cursor: pointer;">
+                            <div class="card-body">
+                                <div class="d-flex align-items-center">
+                                    <div class="store-avatar me-3">
+                                        {{ store.name|slice:":1"|upper }}
+                                    </div>
+                                    <div class="flex-grow-1">
+                                        <h6 class="mb-1">{{ store.name }}</h6>
+                                        <small class="text-muted d-block">
+                                            {{ store.code|default:"No code" }}
+                                            {% if store.region %}
+                                            • {{ store.region }}
+                                            {% endif %}
+                                        </small>
+                                        <div class="mt-2">
+                                            {% if store.is_active %}
+                                            <span class="badge bg-success">Active</span>
+                                            {% else %}
+                                            <span class="badge bg-secondary">Inactive</span>
+                                            {% endif %}
+                                            {% if store.efris_enabled %}
+                                            <span class="badge bg-info ms-1">EFRIS</span>
+                                            {% endif %}
+                                            {% if store.is_main_branch %}
+                                            <span class="badge bg-warning ms-1">Main</span>
+                                            {% endif %}
+                                        </div>
+                                    </div>
+                                    {% if current_store.id == store.id %}
+                                    <i class="bi bi-check-circle-fill text-primary fs-5"></i>
+                                    {% else %}
+                                    <i class="bi bi-arrow-right text-muted fs-5"></i>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <form id="switchStoreForm" method="post" action="{% url 'stores:switch_store' store_id=0 %}" style="display: none;">
+                    {% csrf_token %}
+                    <input type="hidden" name="next" value="{{ request.path }}">
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Store switching functionality
+        const storeCards = document.querySelectorAll('.store-card');
+        storeCards.forEach(card => {
+            card.addEventListener('click', function() {
+                const storeId = this.dataset.storeId;
+                const storeName = this.dataset.storeName;
+
+                if (confirm(`Switch to ${storeName}?`)) {
+                    const form = document.getElementById('switchStoreForm');
+                    form.action = form.action.replace('/0/', `/${storeId}/`);
+                    form.submit();
+                }
+            });
+        });
+
+        // Add hover effects to store cards in modal
+        storeCards.forEach(card => {
+            card.addEventListener('mouseenter', function() {
+                if (!this.classList.contains('border-primary')) {
+                    this.classList.add('border-info');
+                    this.classList.add('shadow-sm');
+                }
+            });
+
+            card.addEventListener('mouseleave', function() {
+                if (!this.classList.contains('border-primary')) {
+                    this.classList.remove('border-info');
+                    this.classList.remove('shadow-sm');
+                }
+            });
+        });
+
+        // Initialize tooltips
+        var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+        var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
+            return new bootstrap.Tooltip(tooltipTriggerEl);
+        });
+    });
+</script>
 {% endblock %}

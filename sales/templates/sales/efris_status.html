@@ -1,0 +1,413 @@
+{% extends "base.html" %}
+{% load i18n %}
+
+{% block title %}{% trans "EFRIS Status Dashboard" %}{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <!-- Page Header -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-body">
+                    <h1 class="h3 mb-0">
+                        <i class="fas fa-chart-bar text-primary me-2"></i>
+                        {% trans "EFRIS Status Dashboard" %}
+                    </h1>
+                    <p class="text-muted mb-0">
+                        {% trans "Overview of EFRIS fiscalization status and performance" %}
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- EFRIS Not Enabled Message -->
+    {% if not efris_enabled %}
+    <div class="row">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-body text-center py-5">
+                    <div class="mb-4">
+                        <i class="fas fa-exclamation-triangle fa-4x text-warning"></i>
+                    </div>
+                    <h3 class="text-warning">{% trans "EFRIS Not Enabled" %}</h3>
+                    <p class="text-muted">
+                        {% trans "No companies with EFRIS enabled found. Please contact your administrator to enable EFRIS integration." %}
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% else %}
+    
+    <!-- Date Range Filter -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">{% trans "Filter Options" %}</h5>
+                </div>
+                <div class="card-body">
+                    <form method="get" class="row g-3">
+                        <div class="col-md-4">
+                            <label for="date_from" class="form-label">{% trans "From Date" %}</label>
+                            <input type="date" class="form-control" id="date_from" name="date_from" 
+                                   value="{{ date_from|date:'Y-m-d' }}">
+                        </div>
+                        <div class="col-md-4">
+                            <label for="date_to" class="form-label">{% trans "To Date" %}</label>
+                            <input type="date" class="form-control" id="date_to" name="date_to" 
+                                   value="{{ date_to|date:'Y-m-d' }}">
+                        </div>
+                        <div class="col-md-4 d-flex align-items-end">
+                            <button type="submit" class="btn btn-primary">
+                                <i class="fas fa-filter me-1"></i> {% trans "Apply Filter" %}
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Key Metrics -->
+    <div class="row mb-4">
+        <!-- Total Sales Card -->
+        <div class="col-xl-3 col-md-6 mb-4">
+            <div class="card border-left-primary shadow h-100 py-2">
+                <div class="card-body">
+                    <div class="row no-gutters align-items-center">
+                        <div class="col mr-2">
+                            <div class="text-xs font-weight-bold text-primary text-uppercase mb-1">
+                                {% trans "Total Sales" %}
+                            </div>
+                            <div class="h5 mb-0 font-weight-bold text-gray-800">{{ total_sales }}</div>
+                            <div class="mt-2">
+                                <span class="text-muted small">
+                                    {% trans "Period" %}: {{ date_from|date:"M d" }} - {{ date_to|date:"M d, Y" }}
+                                </span>
+                            </div>
+                        </div>
+                        <div class="col-auto">
+                            <i class="fas fa-shopping-cart fa-2x text-primary"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Fiscalized Sales Card -->
+        <div class="col-xl-3 col-md-6 mb-4">
+            <div class="card border-left-success shadow h-100 py-2">
+                <div class="card-body">
+                    <div class="row no-gutters align-items-center">
+                        <div class="col mr-2">
+                            <div class="text-xs font-weight-bold text-success text-uppercase mb-1">
+                                {% trans "Fiscalized Sales" %}
+                            </div>
+                            <div class="h5 mb-0 font-weight-bold text-gray-800">{{ fiscalized_sales }}</div>
+                            <div class="mt-2">
+                                <span class="text-success font-weight-bold">
+                                    {{ fiscalization_rate|floatformat:1 }}% {% trans "rate" %}
+                                </span>
+                            </div>
+                        </div>
+                        <div class="col-auto">
+                            <i class="fas fa-check-circle fa-2x text-success"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Recent Fiscalized Card -->
+        <div class="col-xl-3 col-md-6 mb-4">
+            <div class="card border-left-info shadow h-100 py-2">
+                <div class="card-body">
+                    <div class="row no-gutters align-items-center">
+                        <div class="col mr-2">
+                            <div class="text-xs font-weight-bold text-info text-uppercase mb-1">
+                                {% trans "Last 24 Hours" %}
+                            </div>
+                            <div class="h5 mb-0 font-weight-bold text-gray-800">{{ recent_fiscalized }}</div>
+                            <div class="mt-2">
+                                <span class="text-info small">
+                                    <i class="fas fa-clock me-1"></i> {% trans "Recently fiscalized" %}
+                                </span>
+                            </div>
+                        </div>
+                        <div class="col-auto">
+                            <i class="fas fa-bolt fa-2x text-info"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- EFRIS Companies Card -->
+        <div class="col-xl-3 col-md-6 mb-4">
+            <div class="card border-left-warning shadow h-100 py-2">
+                <div class="card-body">
+                    <div class="row no-gutters align-items-center">
+                        <div class="col mr-2">
+                            <div class="text-xs font-weight-bold text-warning text-uppercase mb-1">
+                                {% trans "EFRIS Companies" %}
+                            </div>
+                            <div class="h5 mb-0 font-weight-bold text-gray-800">{{ efris_companies|length }}</div>
+                            <div class="mt-2">
+                                <span class="text-warning small">
+                                    <i class="fas fa-building me-1"></i> {% trans "Active integrations" %}
+                                </span>
+                            </div>
+                        </div>
+                        <div class="col-auto">
+                            <i class="fas fa-building fa-2x text-warning"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Company-wise Statistics -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">
+                        <i class="fas fa-chart-pie text-primary me-2"></i>
+                        {% trans "Company-wise EFRIS Performance" %}
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>{% trans "Company" %}</th>
+                                    <th class="text-center">{% trans "Total Sales" %}</th>
+                                    <th class="text-center">{% trans "Fiscalized" %}</th>
+                                    <th class="text-center">{% trans "Fiscalization Rate" %}</th>
+                                    <th class="text-center">{% trans "Configuration" %}</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for stat in company_stats %}
+                                <tr>
+                                    <td>
+                                        <strong>{{ stat.company.name }}</strong>
+                                        <div class="text-muted small">{{ stat.company.tin|default:"No TIN" }}</div>
+                                    </td>
+                                    <td class="text-center">
+                                        <span class="badge bg-primary rounded-pill">{{ stat.total_sales }}</span>
+                                    </td>
+                                    <td class="text-center">
+                                        <span class="badge {% if stat.fiscalized_count > 0 %}bg-success{% else %}bg-secondary{% endif %} rounded-pill">
+                                            {{ stat.fiscalized_count }}
+                                        </span>
+                                    </td>
+                                    <td class="text-center">
+                                        <div class="d-flex align-items-center">
+                                            <div class="progress flex-grow-1 me-2" style="height: 6px;">
+                                                <div class="progress-bar {% if stat.fiscalization_rate > 80 %}bg-success{% elif stat.fiscalization_rate > 50 %}bg-warning{% else %}bg-danger{% endif %}" 
+                                                     role="progressbar" 
+                                                     style="width: {{ stat.fiscalization_rate|floatformat:0 }}%;"
+                                                     aria-valuenow="{{ stat.fiscalization_rate }}" 
+                                                     aria-valuemin="0" 
+                                                     aria-valuemax="100">
+                                                </div>
+                                            </div>
+                                            <span class="small">{{ stat.fiscalization_rate|floatformat:1 }}%</span>
+                                        </div>
+                                    </td>
+                                    <td class="text-center">
+                                        {% if stat.efris_config_valid %}
+                                        <span class="badge bg-success">
+                                            <i class="fas fa-check-circle me-1"></i> {% trans "Valid" %}
+                                        </span>
+                                        {% else %}
+                                        <span class="badge bg-danger">
+                                            <i class="fas fa-exclamation-circle me-1"></i> {% trans "Invalid" %}
+                                        </span>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                                {% empty %}
+                                <tr>
+                                    <td colspan="5" class="text-center py-4">
+                                        <div class="text-muted">
+                                            <i class="fas fa-database fa-2x mb-3"></i>
+                                            <p>{% trans "No company statistics available" %}</p>
+                                        </div>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Performance Summary -->
+    <div class="row">
+        <div class="col-lg-6 mb-4">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">
+                        <i class="fas fa-info-circle text-info me-2"></i>
+                        {% trans "EFRIS Integration Summary" %}
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-6 mb-3">
+                            <div class="d-flex align-items-center">
+                                <div class="flex-shrink-0">
+                                    <i class="fas fa-calendar-alt fa-2x text-primary"></i>
+                                </div>
+                                <div class="flex-grow-1 ms-3">
+                                    <h6 class="mb-0">{% trans "Reporting Period" %}</h6>
+                                    <p class="text-muted mb-0">
+                                        {{ date_from|date:"F d, Y" }} - {{ date_to|date:"F d, Y" }}
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-6 mb-3">
+                            <div class="d-flex align-items-center">
+                                <div class="flex-shrink-0">
+                                    <i class="fas fa-chart-line fa-2x text-success"></i>
+                                </div>
+                                <div class="flex-grow-1 ms-3">
+                                    <h6 class="mb-0">{% trans "Overall Fiscalization" %}</h6>
+                                    <p class="text-muted mb-0">
+                                        {{ fiscalized_sales }} of {{ total_sales }} sales
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-6 mb-3">
+                            <div class="d-flex align-items-center">
+                                <div class="flex-shrink-0">
+                                    <i class="fas fa-building fa-2x text-warning"></i>
+                                </div>
+                                <div class="flex-grow-1 ms-3">
+                                    <h6 class="mb-0">{% trans "Active Companies" %}</h6>
+                                    <p class="text-muted mb-0">
+                                        {{ efris_companies|length }} company/companies
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-6 mb-3">
+                            <div class="d-flex align-items-center">
+                                <div class="flex-shrink-0">
+                                    <i class="fas fa-sync-alt fa-2x text-info"></i>
+                                </div>
+                                <div class="flex-grow-1 ms-3">
+                                    <h6 class="mb-0">{% trans "Recent Activity" %}</h6>
+                                    <p class="text-muted mb-0">
+                                        {{ recent_fiscalized }} sales in last 24h
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="card-footer bg-transparent">
+                    <div class="alert alert-info mb-0">
+                        <div class="d-flex">
+                            <div class="flex-shrink-0">
+                                <i class="fas fa-lightbulb"></i>
+                            </div>
+                            <div class="flex-grow-1 ms-3">
+                                <small>
+                                    <strong>{% trans "Tip" %}:</strong> 
+                                    {% trans "Ensure all your stores have valid EFRIS configurations to maximize fiscalization rates." %}
+                                </small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-lg-6 mb-4">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">
+                        <i class="fas fa-cogs text-secondary me-2"></i>
+                        {% trans "Quick Actions" %}
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <a href="{% url 'sales:sales_list' %}" class="btn btn-outline-primary w-100">
+                                <i class="fas fa-list me-2"></i> {% trans "View All Sales" %}
+                            </a>
+                        </div>
+                        <div class="col-md-6">
+                            <a href="{% url 'sales:store_sales_api' %}?store_id={{ stores.first.id|default:'' }}" 
+                               class="btn btn-outline-success w-100">
+                                <i class="fas fa-chart-bar me-2"></i> {% trans "Sales Analytics" %}
+                            </a>
+                        </div>
+                        <div class="col-md-6">
+                            <a href="{% url 'sales:create_sale' %}" class="btn btn-outline-info w-100">
+                                <i class="fas fa-plus-circle me-2"></i> {% trans "Create New Sale" %}
+                            </a>
+                        </div>
+                        <div class="col-md-6">
+                            <button type="button" class="btn btn-outline-warning w-100" onclick="location.reload()">
+                                <i class="fas fa-sync-alt me-2"></i> {% trans "Refresh Data" %}
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <hr class="my-4">
+                    
+                    <div class="alert alert-warning">
+                        <h6 class="alert-heading">
+                            <i class="fas fa-exclamation-triangle me-2"></i> {% trans "Attention Required" %}
+                        </h6>
+                        <p class="mb-0 small">
+                            {% if fiscalization_rate < 50 %}
+                                {% trans "Low fiscalization rate detected. Consider reviewing EFRIS configurations for your stores." %}
+                            {% elif total_sales == 0 %}
+                                {% trans "No sales recorded in this period. Start by creating sales to track EFRIS performance." %}
+                            {% else %}
+                                {% trans "Monitor EFRIS performance regularly to ensure compliance and optimal operation." %}
+                            {% endif %}
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+{% endblock %}
+
+{% block extra_js %}
+<script>
+$(document).ready(function() {
+    // Date picker initialization
+    $('#date_from, #date_to').flatpickr({
+        dateFormat: "Y-m-d",
+        maxDate: "today"
+    });
+    
+    // Auto-submit form on date change for quick filtering
+    $('#date_from, #date_to').on('change', function() {
+        if($('#date_from').val() && $('#date_to').val()) {
+            $(this).closest('form').submit();
+        }
+    });
+});
+</script>
+{% endblock %}

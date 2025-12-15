@@ -1396,7 +1396,7 @@ class EFRISSalesReportView(TemplateView):
             # Base queryset
             sales = Sale.objects.filter(
                 store__company=company,
-                is_completed=True
+                status__in=['COMPLETED', 'PAID']
             ).select_related('store', 'customer', 'created_by')
 
             # Apply filters

@@ -25,6 +25,8 @@ from .tasks import generate_report_async, log_report_access
 from sales.models import Sale, SaleItem
 from inventory.models import Product, Stock, StockMovement, Category
 from stores.models import Store
+from stores.utils import get_user_accessible_stores, validate_store_access
+from django.core.exceptions import PermissionDenied
 from accounts.models import CustomUser
 from invoices.models import Invoice
 
@@ -46,40 +48,15 @@ def get_client_ip(request):
 
 
 def user_can_access_all_stores(user):
-    """Check if user can access all stores (SaaS admin or high-priority role)"""
-    return (
-        user.is_superuser or
-        (hasattr(user, 'primary_role') and user.primary_role and user.primary_role.priority >= 90)
-    )
+    """Check if user can access all stores using new utility"""
+    # Use the imported get_user_accessible_stores function to check
+    from stores.utils import get_user_accessible_stores
+    all_stores_count = Store.objects.filter(is_active=True).count()
+    accessible_stores_count = get_user_accessible_stores(user).count()
 
+    # If user can access all active stores, they have full access
+    return accessible_stores_count == all_stores_count
 
-def get_user_accessible_stores(user):
-    """
-    Get stores accessible by a user.
-    Users can access stores where they're staff OR stores from their company.
-    """
-    if user.is_superuser:
-        return Store.objects.filter(is_active=True)
-
-    # Get user's company if exists
-    user_company = getattr(user, 'company', None)
-
-    if user_company:
-        # User can access stores where they're staff OR stores from their company
-        stores = Store.objects.filter(
-            Q(is_active=True) & (
-                    Q(staff=user) |
-                    Q(company=user_company)
-            )
-        ).distinct()
-    else:
-        # Users without company can only access stores where they're staff
-        stores = Store.objects.filter(
-            staff=user,
-            is_active=True
-        ).distinct()
-
-    return stores
 
 @login_required
 @permission_required('reports.view_savedreport')
@@ -103,25 +80,25 @@ def report_dashboard(request):
             'total_sales_today': Sale.objects.filter(
                 store__in=stores,
                 created_at__date=today,
-                is_completed=True
+                status__in=['COMPLETED', 'PAID']
             ).aggregate(total=Sum('total_amount'))['total'] or 0,
 
             'total_sales_week': Sale.objects.filter(
                 store__in=stores,
                 created_at__date__gte=week_ago,
-                is_completed=True
+                status__in=['COMPLETED', 'PAID']
             ).aggregate(total=Sum('total_amount'))['total'] or 0,
 
             'total_sales_month': Sale.objects.filter(
                 store__in=stores,
                 created_at__date__gte=month_ago,
-                is_completed=True
+                status__in=['COMPLETED', 'PAID']
             ).aggregate(total=Sum('total_amount'))['total'] or 0,
 
             'transactions_today': Sale.objects.filter(
                 store__in=stores,
                 created_at__date=today,
-                is_completed=True
+                status__in=['COMPLETED', 'PAID']
             ).count(),
 
             'low_stock_products': Stock.objects.filter(
@@ -140,7 +117,7 @@ def report_dashboard(request):
 
             'pending_fiscalization': Sale.objects.filter(
                 store__in=stores,
-                is_completed=True,
+                status__in=['COMPLETED', 'PAID'],
                 is_fiscalized=False,
                 created_at__date__gte=week_ago
             ).count(),
@@ -160,7 +137,7 @@ def report_dashboard(request):
             daily_sales = Sale.objects.filter(
                 store__in=stores,
                 created_at__date=date,
-                is_completed=True
+                status__in=['COMPLETED', 'PAID']
             ).aggregate(
                 total=Sum('total_amount'),
                 count=Count('id')
@@ -181,7 +158,7 @@ def report_dashboard(request):
         top_products = SaleItem.objects.filter(
             sale__store__in=stores,
             sale__created_at__date__gte=month_ago,
-            sale__is_completed=True
+            sale__status__in=['COMPLETED', 'PAID']
         ).values('product__name', 'product__sku').annotate(
             total_quantity=Sum('quantity'),
             total_revenue=Sum('total_price')
@@ -622,7 +599,7 @@ def analytics_dashboard(request):
         daily_sales = Sale.objects.filter(
             store__in=stores,
             created_at__date=date,
-            is_completed=True
+            status__in=['COMPLETED', 'PAID']
         ).aggregate(
             amount=Sum('total_amount'),
             count=Count('id')
@@ -640,14 +617,14 @@ def analytics_dashboard(request):
             store__in=stores,
             created_at__year=today.year,
             created_at__month=month,
-            is_completed=True
+            status__in=['COMPLETED', 'PAID']
         ).aggregate(total=Sum('total_amount'))['total'] or 0
 
         last_year_sales = Sale.objects.filter(
             store__in=stores,
             created_at__year=today.year - 1,
             created_at__month=month,
-            is_completed=True
+            status__in=['COMPLETED', 'PAID']
         ).aggregate(total=Sum('total_amount'))['total'] or 0
 
         monthly_comparison.append({
@@ -660,7 +637,7 @@ def analytics_dashboard(request):
     top_products = SaleItem.objects.filter(
         sale__store__in=stores,
         sale__created_at__date__gte=last_30_days,
-        sale__is_completed=True
+        sale__status__in=['COMPLETED', 'PAID']
     ).values('product__name').annotate(
         revenue=Sum('total_price'),
         quantity=Sum('quantity')
@@ -670,7 +647,7 @@ def analytics_dashboard(request):
     store_performance = Sale.objects.filter(
         store__in=stores,
         created_at__date__gte=last_30_days,
-        is_completed=True
+        status__in=['COMPLETED', 'PAID']
     ).values('store__name', 'store__company__name').annotate(
         revenue=Sum('total_amount'),
         transactions=Count('id'),
@@ -681,7 +658,7 @@ def analytics_dashboard(request):
     customer_stats = Sale.objects.filter(
         store__in=stores,
         created_at__date__gte=last_30_days,
-        is_completed=True,
+        status__in=['COMPLETED', 'PAID'],
         customer__isnull=False
     ).aggregate(
         unique_customers=Count('customer', distinct=True),
@@ -692,7 +669,7 @@ def analytics_dashboard(request):
     payment_methods = Sale.objects.filter(
         store__in=stores,
         created_at__date__gte=last_30_days,
-        is_completed=True
+        status__in=['COMPLETED', 'PAID']
     ).values('payment_method').annotate(
         count=Count('id'),
         amount=Sum('total_amount')
@@ -738,7 +715,7 @@ def export_report(request, report_type):
 
         sales_data = Sale.objects.filter(
             store__in=stores,
-            is_completed=True
+            status__in=['COMPLETED', 'PAID']
         ).select_related('store', 'store__company').order_by('-created_at')
 
         for sale in sales_data:
@@ -1268,7 +1245,7 @@ def get_chart_data(request):
             daily_sales = Sale.objects.filter(
                 store__in=stores,
                 created_at__date=date,
-                is_completed=True
+                status__in=['COMPLETED', 'PAID']
             ).aggregate(total=Sum('total_amount'))['total'] or 0
 
             data.insert(0, {
@@ -1286,7 +1263,7 @@ def get_chart_data(request):
         products = SaleItem.objects.filter(
             sale__store__in=stores,
             sale__created_at__date__gte=start_date,
-            sale__is_completed=True
+            sale__status__in=['COMPLETED', 'PAID']
         ).values('product__name').annotate(
             revenue=Sum('total_price')
         ).order_by('-revenue')[:limit]
@@ -1312,13 +1289,13 @@ def get_quick_stats(request):
         'today_sales': float(Sale.objects.filter(
             store__in=stores,
             created_at__date=today,
-            is_completed=True
+            status__in=['COMPLETED', 'PAID']
         ).aggregate(total=Sum('total_amount'))['total'] or 0),
 
         'week_sales': float(Sale.objects.filter(
             store__in=stores,
             created_at__date__gte=week_ago,
-            is_completed=True
+            status__in=['COMPLETED', 'PAID']
         ).aggregate(total=Sum('total_amount'))['total'] or 0),
 
         'low_stock_count': Stock.objects.filter(
@@ -1378,7 +1355,7 @@ def z_report(request):
 
         queryset = Sale.objects.filter(
             store__in=stores,
-            is_completed=True,
+            status__in=['COMPLETED', 'PAID'],
             created_at__date__gte=start_date,
             created_at__date__lte=end_date
         )
@@ -1563,7 +1540,7 @@ def cashier_performance_report(request):
         # Build queryset
         queryset = Sale.objects.filter(
             store__in=stores,
-            is_completed=True,
+            status__in=['COMPLETED', 'PAID'],
             created_by__in=cashiers
         )
 
@@ -1637,13 +1614,13 @@ def get_dashboard_stats_ajax(request):
             'sales_today': float(Sale.objects.filter(
                 store__in=stores,
                 created_at__date=today,
-                is_completed=True
+                status__in=['COMPLETED', 'PAID']
             ).aggregate(total=Sum('total_amount'))['total'] or 0),
 
             'transactions_today': Sale.objects.filter(
                 store__in=stores,
                 created_at__date=today,
-                is_completed=True
+                status__in=['COMPLETED', 'PAID']
             ).count(),
 
             'low_stock_count': Stock.objects.filter(

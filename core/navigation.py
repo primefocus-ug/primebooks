@@ -178,7 +178,7 @@ NAVIGATION_ITEMS = [
                 name="Branches",
                 url_name="companies:branch_list",
                 icon="bi bi-diagram-3",
-                permission="branches.view_companybranch"
+                permission="stores.view_store"
             ),
             NavigationItem(
                 name="Employees",
@@ -206,6 +206,7 @@ NAVIGATION_ITEMS = [
         name="Stores Dashboard",
         url_name="stores:store_dashboard",
         icon="bi bi-speedometer2",
+        permission='stores.view_store'
     ),
 
     NavigationItem(
@@ -251,7 +252,8 @@ NAVIGATION_ITEMS = [
             NavigationItem(
                 name="Sales Reports",
                 url_name="stores:analytics",
-                icon="bi bi-graph-up"
+                icon="bi bi-graph-up",
+                permission='stores.add_store'
             ),
         ]
     ),
@@ -426,7 +428,7 @@ NAVIGATION_ITEMS = [
             ),
             NavigationItem(
                 name="Reports",
-                url_name="expense:reports",
+                url_name="expenses:reports",
                 icon="bi bi-file-earmark-bar-graph",
             ),
             NavigationItem(

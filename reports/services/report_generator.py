@@ -1,5 +1,5 @@
 from django.core.cache import cache
-from django.db.models import Sum, Count, Avg, F, Q, Value, Case, When
+from django.db.models import Sum, Count, Avg, F, Q, Value, Case, When,Max
 from django.utils import timezone
 import time
 import logging
@@ -135,7 +135,7 @@ class ReportGeneratorService:
         # Build optimized queryset
         queryset = Sale.objects.filter(
             store__in=stores,
-            is_completed=True
+            status__in=['COMPLETED', 'PAID']
         ).select_related('store', 'store__company', 'created_by')
 
         if start_date:
@@ -209,7 +209,7 @@ class ReportGeneratorService:
         # Top products in period
         top_products = list(SaleItem.objects.filter(
             sale__in=queryset,
-            sale__is_completed=True
+            sale__status__in=['COMPLETED', 'PAID']
         ).values(
             'product__name', 'product__sku'
         ).annotate(
@@ -257,7 +257,7 @@ class ReportGeneratorService:
         # Build queryset
         queryset = Sale.objects.filter(
             store__in=stores,
-            is_completed=True,
+            status__in=['COMPLETED', 'PAID'],
             customer__isnull=False  # Only sales with customer data
         ).select_related('customer', 'store')
 
@@ -381,7 +381,7 @@ class ReportGeneratorService:
 
         queryset = Sale.objects.filter(
             store__in=stores,
-            is_completed=True
+            status__in=['COMPLETED', 'PAID']
         ).select_related('created_by', 'store')
 
         if start_date:
@@ -448,7 +448,7 @@ class ReportGeneratorService:
         # Revenue from sales
         sales_queryset = SaleItem.objects.filter(
             sale__store__in=stores,
-            sale__is_completed=True
+            sale__status__in=['COMPLETED', 'PAID']
         ).select_related('sale', 'product')
 
         if start_date:
@@ -469,7 +469,7 @@ class ReportGeneratorService:
         from sales.models import Sale
         discount_sum = Sale.objects.filter(
             store__in=stores,
-            is_completed=True
+            status__in=['COMPLETED', 'PAID']
         )
         if start_date:
             discount_sum = discount_sum.filter(created_at__date__gte=start_date)
@@ -593,7 +593,7 @@ class ReportGeneratorService:
 
         queryset = SaleItem.objects.filter(
             sale__store__in=stores,
-            sale__is_completed=True
+            sale__status__in=['COMPLETED', 'PAID']
         ).select_related('product', 'product__category', 'sale__store')
 
         if start_date:
@@ -750,7 +750,7 @@ class ReportGeneratorService:
 
         queryset = SaleItem.objects.filter(
             sale__store__in=stores,
-            sale__is_completed=True
+            sale__status__in=['COMPLETED', 'PAID']
         ).select_related('sale', 'sale__store', 'product')
 
         if start_date:
@@ -787,7 +787,7 @@ class ReportGeneratorService:
         # EFRIS compliance check
         sales_queryset = Sale.objects.filter(
             store__in=stores,
-            is_completed=True
+            status__in=['COMPLETED', 'PAID']
         )
         if start_date:
             sales_queryset = sales_queryset.filter(created_at__date__gte=start_date)
@@ -836,7 +836,7 @@ class ReportGeneratorService:
 
         queryset = Sale.objects.filter(
             store__in=stores,
-            is_completed=True,
+            status__in=['COMPLETED', 'PAID'],
             created_at__date=report_date
         ).select_related('store', 'created_by')
 
@@ -918,9 +918,13 @@ class ReportGeneratorService:
 
         stores = self.get_accessible_stores()
 
+        # ✅ FIXED: Use status field instead of is_completed
+        # Completed sales are those with status 'COMPLETED' or 'PAID'
+        completed_statuses = ['COMPLETED', 'PAID']
+
         queryset = Sale.objects.filter(
             store__in=stores,
-            is_completed=True
+            status__in=completed_statuses  # ✅ Filter by status
         ).select_related('store')
 
         if start_date:
@@ -931,11 +935,13 @@ class ReportGeneratorService:
             queryset = queryset.filter(store_id=store_id)
 
         # Overall compliance
+        # ✅ FIXED: Replace is_completed=False check with status not in completed_statuses
         compliance = queryset.aggregate(
             total_sales=Count('id'),
             fiscalized=Count('id', filter=Q(is_fiscalized=True)),
             pending=Count('id', filter=Q(is_fiscalized=False)),
-            failed=Count('id', filter=Q(is_completed=False)),
+            # ✅ Count sales that are not in completed statuses
+            failed=Count('id', filter=~Q(status__in=completed_statuses)),
         )
         compliance['compliance_rate'] = (
             (compliance['fiscalized'] / compliance['total_sales'] * 100)
@@ -949,7 +955,8 @@ class ReportGeneratorService:
             total=Count('id'),
             fiscalized=Count('id', filter=Q(is_fiscalized=True)),
             pending=Count('id', filter=Q(is_fiscalized=False)),
-            failed=Count('id', filter=Q(is_completed=False)),
+            # ✅ Count sales that are not in completed statuses
+            failed=Count('id', filter=~Q(status__in=completed_statuses)),
         ).order_by('-total'))
 
         for store in store_breakdown:
@@ -974,11 +981,12 @@ class ReportGeneratorService:
             )
 
         # Failed fiscalization details
+        # ✅ FIXED: Filter by status not in completed statuses
         failed_sales = list(queryset.filter(
-            is_completed=False
+            ~Q(status__in=completed_statuses)  # Sales not completed
         ).values(
-            'id', 'invoice_number', 'store__name', 'total_amount',
-            'created_at'
+            'id', 'document_number', 'store__name', 'total_amount',  # ✅ Changed invoice_number to document_number
+            'created_at', 'status'  # ✅ Added status to see why it failed
         ).order_by('-created_at')[:50])
 
         return {
@@ -987,186 +995,5 @@ class ReportGeneratorService:
             'daily_breakdown': daily_breakdown,
             'failed_sales': failed_sales,
             'filters': kwargs,
-        }
-
-    def _generate_cashier_performance(self, **kwargs) -> Dict:
-        """Generate cashier performance report"""
-        start_date = kwargs.get('start_date')
-        end_date = kwargs.get('end_date')
-        store_id = kwargs.get('store_id')
-
-        stores = self.get_accessible_stores()
-
-        queryset = Sale.objects.filter(
-            store__in=stores,
-            is_completed=True
-        ).select_related('created_by', 'store')
-
-        if start_date:
-            queryset = queryset.filter(created_at__date__gte=start_date)
-        if end_date:
-            queryset = queryset.filter(created_at__date__lte=end_date)
-        if store_id:
-            queryset = queryset.filter(store_id=store_id)
-
-        # Cashier performance
-        performance = list(queryset.values(
-            'created_by__id',
-            'created_by__first_name',
-            'created_by__last_name',
-            'created_by__username',
-            'store__name'
-        ).annotate(
-            total_sales=Sum('total_amount'),
-            transaction_count=Count('id'),
-            avg_transaction=Avg('total_amount'),
-            total_items=Sum('items__quantity'),
-            total_discount=Sum('discount_amount'),
-            refund_count=Count('id', filter=Q(is_refunded=True)),
-        ).order_by('-total_sales'))
-
-        # Calculate additional metrics
-        for cashier in performance:
-            if cashier['transaction_count'] > 0:
-                cashier['items_per_transaction'] = (
-                        cashier['total_items'] / cashier['transaction_count']
-                )
-                cashier['refund_rate'] = (
-                        cashier['refund_count'] / cashier['transaction_count'] * 100
-                )
-            else:
-                cashier['items_per_transaction'] = 0
-                cashier['refund_rate'] = 0
-
-        # Summary
-        summary = queryset.aggregate(
-            total_cashiers=Count('created_by', distinct=True),
-            total_sales=Sum('total_amount'),
-            total_transactions=Count('id'),
-            avg_per_cashier=Avg('total_amount'),
-        )
-
-        return {
-            'performance': performance,
-            'summary': summary,
-            'filters': kwargs,
-        }
-
-    def _generate_profit_loss(self, **kwargs) -> Dict:
-        """Generate profit and loss statement"""
-        start_date = kwargs.get('start_date')
-        end_date = kwargs.get('end_date')
-        store_id = kwargs.get('store_id')
-
-        stores = self.get_accessible_stores()
-
-        # Revenue from sales
-        sales_queryset = SaleItem.objects.filter(
-            sale__store__in=stores,
-            sale__is_completed=True
-        ).select_related('sale', 'product')
-
-        if start_date:
-            sales_queryset = sales_queryset.filter(sale__created_at__date__gte=start_date)
-        if end_date:
-            sales_queryset = sales_queryset.filter(sale__created_at__date__lte=end_date)
-        if store_id:
-            sales_queryset = sales_queryset.filter(sale__store_id=store_id)
-
-        # Calculate revenue and costs
-        financial_summary = sales_queryset.aggregate(
-            gross_revenue=Sum('total_price'),
-            cost_of_goods_sold=Sum(F('product__cost_price') * F('quantity')),
-            total_tax=Sum('tax_amount'),
-            total_discount=Sum('sale__discount_amount'),
-        )
-
-        # Calculate profit metrics
-        gross_revenue = financial_summary['gross_revenue'] or 0
-        cogs = financial_summary['cost_of_goods_sold'] or 0
-        tax = financial_summary['total_tax'] or 0
-        discount = financial_summary['total_discount'] or 0
-
-        gross_profit = gross_revenue - cogs
-        net_profit = gross_profit - tax - discount
-
-        profit_loss = {
-            'revenue': {
-                'gross_revenue': gross_revenue,
-                'discounts': discount,
-                'net_revenue': gross_revenue - discount,
-            },
-            'costs': {
-                'cost_of_goods_sold': cogs,
-                'tax': tax,
-                'total_costs': cogs + tax,
-            },
-            'profit': {
-                'gross_profit': gross_profit,
-                'gross_margin': (gross_profit / gross_revenue * 100) if gross_revenue > 0 else 0,
-                'net_profit': net_profit,
-                'net_margin': (net_profit / gross_revenue * 100) if gross_revenue > 0 else 0,
-            }
-        }
-
-        # Category-wise profit
-        category_profit = list(sales_queryset.values(
-            'product__category__name'
-        ).annotate(
-            revenue=Sum('total_price'),
-            cost=Sum(F('product__cost_price') * F('quantity')),
-            quantity=Sum('quantity')
-        ).order_by('-revenue'))
-
-        for cat in category_profit:
-            revenue = cat['revenue'] or 0
-            cost = cat['cost'] or 0
-            cat['profit'] = revenue - cost
-            cat['margin'] = ((revenue - cost) / revenue * 100) if revenue > 0 else 0
-
-        return {
-            'profit_loss': profit_loss,
-            'category_profit': category_profit,
-            'filters': kwargs,
-        }
-
-    def _generate_stock_movement(self, **kwargs) -> Dict:
-        """Generate stock movement report"""
-        start_date = kwargs.get('start_date')
-        end_date = kwargs.get('end_date')
-        store_id = kwargs.get('store_id')
-        movement_type = kwargs.get('movement_type')
-
-        stores = self.get_accessible_stores()
-
-        queryset = StockMovement.objects.filter(
-            store__in=stores
-        ).select_related('product', 'store', 'created_by')
-
-        if start_date:
-            queryset = queryset.filter(created_at__date__gte=start_date)
-        if end_date:
-            queryset = queryset.filter(created_at__date__lte=end_date)
-        if store_id:
-            queryset = queryset.filter(store_id=store_id)
-        if movement_type:
-            queryset = queryset.filter(movement_type=movement_type)
-
-        # Movement summary
-        movements = list(queryset.values(
-            'id', 'product__name', 'product__sku', 'store__name',
-            'movement_type', 'quantity', 'reference_number',
-            'created_at', 'created_by__username', 'notes'
-        ).order_by('-created_at')[:500])
-
-        # Summary by type
-        summary = queryset.values('movement_type').annotate(
-            total_quantity=Sum('quantity'),
-            movement_count=Count('id')
-        ).order_by('movement_type')
-
-        return {
-            'movements': movements,
-            'summary': list(summary),
-            'filters': kwargs,
+            'completed_statuses': completed_statuses,  # ✅ Added for reference
         }

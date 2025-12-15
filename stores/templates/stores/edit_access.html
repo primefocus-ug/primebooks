@@ -1,0 +1,341 @@
+{% extends 'base.html' %}
+{% load static %}
+{% load crispy_forms_tags %}
+
+{% block title %}Edit Access - {{ store.name }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-12">
+            <!-- Breadcrumb -->
+            <nav aria-label="breadcrumb">
+                <ol class="breadcrumb">
+                    <li class="breadcrumb-item"><a href="{% url 'stores:store_list' %}">Stores</a></li>
+                    <li class="breadcrumb-item"><a href="{% url 'stores:store_detail' pk=store.id %}">{{ store.name }}</a></li>
+                    <li class="breadcrumb-item"><a href="{% url 'stores:manage_store_access' store_id=store.id %}">Manage Access</a></li>
+                    <li class="breadcrumb-item active" aria-current="page">Edit Access</li>
+                </ol>
+            </nav>
+
+            <!-- Page Header -->
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <div>
+                    <h1 class="h3 mb-0">Edit Access Permissions</h1>
+                    <p class="text-muted mb-0">{{ user.get_full_name }} - {{ store.name }}</p>
+                </div>
+                <div>
+                    <a href="{% url 'stores:manage_store_access' store_id=store.id %}" class="btn btn-outline-secondary">
+                        <i class="fas fa-arrow-left"></i> Back to Access List
+                    </a>
+                </div>
+            </div>
+
+            <!-- User and Store Info -->
+            <div class="row mb-4">
+                <div class="col-md-6">
+                    <div class="card">
+                        <div class="card-body">
+                            <h6 class="card-title">User Information</h6>
+                            <div class="d-flex align-items-center">
+                                <div class="avatar-lg me-3">
+                                    <div class="avatar-title bg-primary rounded-circle">
+                                        {{ user.get_full_name|slice:":1"|upper }}
+                                    </div>
+                                </div>
+                                <div>
+                                    <h5 class="mb-1">{{ user.get_full_name }}</h5>
+                                    <p class="text-muted mb-1">{{ user.email }}</p>
+                                    {% if user.phone %}
+                                    <p class="text-muted mb-0"><i class="fas fa-phone"></i> {{ user.phone }}</p>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="card">
+                        <div class="card-body">
+                            <h6 class="card-title">Store Information</h6>
+                            <h5 class="mb-2">{{ store.name }}</h5>
+                            <p class="text-muted mb-1">
+                                <i class="fas fa-map-marker-alt"></i> {{ store.physical_address }}
+                            </p>
+                            <p class="text-muted mb-0">
+                                <i class="fas fa-store"></i> {{ store.get_store_type_display }}
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Edit Access Form -->
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">Access Permissions</h5>
+                </div>
+                <div class="card-body">
+                    <form method="post">
+                        {% csrf_token %}
+                        
+                        <!-- Access Level -->
+                        <div class="row mb-4">
+                            <div class="col-md-6">
+                                <label for="id_access_level" class="form-label">Access Level</label>
+                                <select name="access_level" id="id_access_level" class="form-select" required>
+                                    {% for value, label in access_level_choices %}
+                                    <option value="{{ value }}" {% if store_access.access_level == value %}selected{% endif %}>
+                                        {{ label }}
+                                    </option>
+                                    {% endfor %}
+                                </select>
+                                <small class="form-text text-muted">
+                                    Defines the base permission set for this user
+                                </small>
+                            </div>
+                        </div>
+
+                        <hr class="my-4">
+
+                        <!-- Granular Permissions -->
+                        <h6 class="mb-3">Granular Permissions</h6>
+                        
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="form-check mb-3">
+                                    <input class="form-check-input" type="checkbox" 
+                                           name="can_view_sales" id="id_can_view_sales"
+                                           {% if store_access.can_view_sales %}checked{% endif %}>
+                                    <label class="form-check-label" for="id_can_view_sales">
+                                        <strong>View Sales</strong>
+                                        <p class="text-muted mb-0 small">
+                                            Can view sales transactions and history
+                                        </p>
+                                    </label>
+                                </div>
+
+                                <div class="form-check mb-3">
+                                    <input class="form-check-input" type="checkbox" 
+                                           name="can_create_sales" id="id_can_create_sales"
+                                           {% if store_access.can_create_sales %}checked{% endif %}>
+                                    <label class="form-check-label" for="id_can_create_sales">
+                                        <strong>Create Sales</strong>
+                                        <p class="text-muted mb-0 small">
+                                            Can create new sales transactions
+                                        </p>
+                                    </label>
+                                </div>
+
+                                <div class="form-check mb-3">
+                                    <input class="form-check-input" type="checkbox" 
+                                           name="can_view_inventory" id="id_can_view_inventory"
+                                           {% if store_access.can_view_inventory %}checked{% endif %}>
+                                    <label class="form-check-label" for="id_can_view_inventory">
+                                        <strong>View Inventory</strong>
+                                        <p class="text-muted mb-0 small">
+                                            Can view inventory levels and products
+                                        </p>
+                                    </label>
+                                </div>
+                            </div>
+
+                            <div class="col-md-6">
+                                <div class="form-check mb-3">
+                                    <input class="form-check-input" type="checkbox" 
+                                           name="can_manage_inventory" id="id_can_manage_inventory"
+                                           {% if store_access.can_manage_inventory %}checked{% endif %}>
+                                    <label class="form-check-label" for="id_can_manage_inventory">
+                                        <strong>Manage Inventory</strong>
+                                        <p class="text-muted mb-0 small">
+                                            Can update inventory levels and manage stock
+                                        </p>
+                                    </label>
+                                </div>
+
+                                <div class="form-check mb-3">
+                                    <input class="form-check-input" type="checkbox" 
+                                           name="can_view_reports" id="id_can_view_reports"
+                                           {% if store_access.can_view_reports %}checked{% endif %}>
+                                    <label class="form-check-label" for="id_can_view_reports">
+                                        <strong>View Reports</strong>
+                                        <p class="text-muted mb-0 small">
+                                            Can view sales and inventory reports
+                                        </p>
+                                    </label>
+                                </div>
+
+                                <div class="form-check mb-3">
+                                    <input class="form-check-input" type="checkbox" 
+                                           name="can_fiscalize" id="id_can_fiscalize"
+                                           {% if store_access.can_fiscalize %}checked{% endif %}>
+                                    <label class="form-check-label" for="id_can_fiscalize">
+                                        <strong>Fiscalize Transactions</strong>
+                                        <p class="text-muted mb-0 small">
+                                            Can fiscalize sales transactions (EFRIS)
+                                        </p>
+                                    </label>
+                                </div>
+
+                                <div class="form-check mb-3">
+                                    <input class="form-check-input" type="checkbox" 
+                                           name="can_manage_staff" id="id_can_manage_staff"
+                                           {% if store_access.can_manage_staff %}checked{% endif %}>
+                                    <label class="form-check-label" for="id_can_manage_staff">
+                                        <strong>Manage Staff</strong>
+                                        <p class="text-muted mb-0 small">
+                                            Can manage other staff members' access
+                                        </p>
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Form Actions -->
+                        <div class="row mt-4">
+                            <div class="col-12">
+                                <div class="d-flex justify-content-between">
+                                    <a href="{% url 'stores:manage_store_access' store_id=store.id %}" 
+                                       class="btn btn-outline-secondary">
+                                        Cancel
+                                    </a>
+                                    <div>
+                                        <button type="submit" class="btn btn-primary">
+                                            <i class="fas fa-save"></i> Save Changes
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Access History -->
+            <div class="card mt-4">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">Access History</h5>
+                </div>
+                <div class="card-body">
+                    <div class="timeline">
+                        <div class="timeline-item">
+                            <div class="timeline-marker"></div>
+                            <div class="timeline-content">
+                                <h6 class="mb-1">Access Granted</h6>
+                                <p class="text-muted mb-1">
+                                    {{ store_access.granted_by.get_full_name|default:"System" }} 
+                                    granted {{ store_access.get_access_level_display }} access
+                                </p>
+                                <small class="text-muted">{{ store_access.granted_at|date:"F j, Y g:i A" }}</small>
+                            </div>
+                        </div>
+                        
+                        {% if store_access.revoked_at %}
+                        <div class="timeline-item">
+                            <div class="timeline-marker bg-danger"></div>
+                            <div class="timeline-content">
+                                <h6 class="mb-1 text-danger">Access Revoked</h6>
+                                <p class="text-muted mb-1">
+                                    {% if store_access.revoked_by %}
+                                    {{ store_access.revoked_by.get_full_name }} revoked access
+                                    {% else %}
+                                    Access was revoked
+                                    {% endif %}
+                                </p>
+                                <small class="text-muted">{{ store_access.revoked_at|date:"F j, Y g:i A" }}</small>
+                            </div>
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // Auto-update permissions based on access level
+    document.getElementById('id_access_level').addEventListener('change', function() {
+        var accessLevel = this.value;
+        var permissions = {
+            'view': {
+                can_view_sales: true,
+                can_create_sales: false,
+                can_view_inventory: true,
+                can_manage_inventory: false,
+                can_view_reports: false,
+                can_fiscalize: false,
+                can_manage_staff: false
+            },
+            'staff': {
+                can_view_sales: true,
+                can_create_sales: true,
+                can_view_inventory: true,
+                can_manage_inventory: false,
+                can_view_reports: false,
+                can_fiscalize: false,
+                can_manage_staff: false
+            },
+            'manager': {
+                can_view_sales: true,
+                can_create_sales: true,
+                can_view_inventory: true,
+                can_manage_inventory: true,
+                can_view_reports: true,
+                can_fiscalize: true,
+                can_manage_staff: false
+            },
+            'admin': {
+                can_view_sales: true,
+                can_create_sales: true,
+                can_view_inventory: true,
+                can_manage_inventory: true,
+                can_view_reports: true,
+                can_fiscalize: true,
+                can_manage_staff: true
+            }
+        };
+
+        if (permissions[accessLevel]) {
+            var levelPermissions = permissions[accessLevel];
+            for (var key in levelPermissions) {
+                var checkbox = document.getElementById('id_' + key);
+                if (checkbox) {
+                    checkbox.checked = levelPermissions[key];
+                }
+            }
+        }
+    });
+</script>
+
+<style>
+    .timeline {
+        position: relative;
+        padding-left: 30px;
+    }
+    .timeline-item {
+        position: relative;
+        margin-bottom: 20px;
+    }
+    .timeline-marker {
+        position: absolute;
+        left: -30px;
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        background-color: #0d6efd;
+        border: 2px solid white;
+        box-shadow: 0 0 0 3px #0d6efd;
+    }
+    .timeline-content {
+        padding-bottom: 10px;
+        border-bottom: 1px solid #e9ecef;
+    }
+    .timeline-item:last-child .timeline-content {
+        border-bottom: none;
+        padding-bottom: 0;
+    }
+</style>
+{% endblock %}

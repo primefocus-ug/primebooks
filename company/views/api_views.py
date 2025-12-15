@@ -93,7 +93,7 @@ class QuickStatsAPIView(LoginRequiredMixin, View):
                 store_id__in=store_ids,
                 created_at__date__gte=start_date,
                 is_voided=False,
-                is_completed=True
+                status__in=['COMPLETED', 'PAID']
             ).aggregate(
                 total_revenue=Sum('total_amount'),
                 total_sales=Count('id'),
@@ -106,7 +106,7 @@ class QuickStatsAPIView(LoginRequiredMixin, View):
                 store_id__in=store_ids,
                 created_at__date=today,
                 is_voided=False,
-                is_completed=True
+                status__in=['COMPLETED', 'PAID']
             ).aggregate(
                 revenue=Sum('total_amount'),
                 sales=Count('id')
@@ -443,7 +443,7 @@ class RevenueChartAPIView(LoginRequiredMixin, View):
                         store_id__in=store_ids,
                         created_at__date=date,
                         is_voided=False,
-                        is_completed=True
+                        status__in=['COMPLETED', 'PAID']
                     ).aggregate(total=Sum('total_amount'))['total'] or 0
 
                     labels.append(date.strftime('%a, %b %d'))
@@ -459,7 +459,7 @@ class RevenueChartAPIView(LoginRequiredMixin, View):
                         store_id__in=store_ids,
                         created_at__date__range=[week_start, week_end],
                         is_voided=False,
-                        is_completed=True
+                        status__in=['COMPLETED', 'PAID']
                     ).aggregate(total=Sum('total_amount'))['total'] or 0
 
                     labels.append(f'{week_start.strftime("%b %d")} - {week_end.strftime("%d")}')
@@ -481,7 +481,7 @@ class RevenueChartAPIView(LoginRequiredMixin, View):
                         store_id__in=store_ids,
                         created_at__date__range=[month_start, month_end],
                         is_voided=False,
-                        is_completed=True
+                        status__in=['COMPLETED', 'PAID']
                     ).aggregate(total=Sum('total_amount'))['total'] or 0
 
                     labels.append(month_start.strftime('%b %Y'))

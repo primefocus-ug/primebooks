@@ -1,13 +1,1038 @@
 {% extends "base.html" %}
-{% load custom_filters %}
+{% load i18n %}
 {% load static %}
-{% block content %}
-<form method="post" enctype="multipart/form-data">
-    {% csrf_token %}
-    {{ form.as_p }}
-    <button type="submit">Save</button>
-    {% if perms.invoices.view_invoice %}
-    <a href="{% url 'invoice_list' %}">Cancel</a>
-    {% endif %}
-</form>
+
+{% block title %}{% trans "Create Invoice" %} | {{ company.name }}{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'themes.css' %}">
+<style>
+:root {
+    --primary-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    --success-gradient: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+    --warning-gradient: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+}
+
+[data-bs-theme="light"] {
+    --bg-primary: #ffffff;
+    --bg-secondary: #f8f9fa;
+    --text-primary: #212529;
+    --border-color: #dee2e6;
+}
+
+[data-bs-theme="dark"] {
+    --bg-primary: #1a1d29;
+    --bg-secondary: #242736;
+    --text-primary: #e9ecef;
+    --border-color: #3d4152;
+}
+
+/* Invoice-specific styles */
+.invoice-header {
+    background: var(--primary-gradient);
+    color: white;
+    border-radius: 16px;
+    padding: 2rem;
+    margin-bottom: 2rem;
+}
+
+.invoice-badge {
+    background: rgba(255, 255, 255, 0.2);
+    padding: 0.5rem 1rem;
+    border-radius: 50px;
+    font-weight: 600;
+}
+
+.draft-badge {
+    background: var(--warning-gradient);
+}
+
+.completed-badge {
+    background: var(--success-gradient);
+}
+
+/* Product search section */
+.product-search-section {
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+}
+
+/* Cart/Invoice items */
+.invoice-items-section {
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+}
+
+.invoice-item {
+    padding: 1rem;
+    border-bottom: 1px solid var(--border-color);
+    transition: background 0.2s;
+}
+
+.invoice-item:hover {
+    background: rgba(0, 0, 0, 0.03);
+}
+
+[data-bs-theme="dark"] .invoice-item:hover {
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.item-type-badge {
+    font-size: 0.7rem;
+    padding: 0.25rem 0.75rem;
+    border-radius: 20px;
+    font-weight: 600;
+}
+
+.product-badge {
+    background: var(--success-gradient);
+    color: white;
+}
+
+.service-badge {
+    background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+    color: white;
+}
+
+/* Totals section */
+.totals-section {
+    background: var(--bg-secondary);
+    border-radius: 12px;
+    padding: 1.5rem;
+    margin-top: 1.5rem;
+}
+
+.totals-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 0.75rem 0;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.totals-row:last-child {
+    border-bottom: none;
+    font-weight: bold;
+    font-size: 1.2rem;
+    color: var(--primary-color);
+}
+
+/* Status pills */
+.status-pill {
+    padding: 0.5rem 1rem;
+    border-radius: 50px;
+    font-weight: 600;
+    font-size: 0.875rem;
+}
+
+.status-draft {
+    background: #ffc107;
+    color: #212529;
+}
+
+.status-pending {
+    background: #0dcaf0;
+    color: #212529;
+}
+
+.status-sent {
+    background: #6c757d;
+    color: white;
+}
+
+.status-paid {
+    background: #198754;
+    color: white;
+}
+
+/* Action buttons */
+.action-buttons {
+    display: flex;
+    gap: 1rem;
+    margin-top: 2rem;
+}
+
+.btn-save-draft {
+    background: #6c757d;
+    color: white;
+    border: none;
+    padding: 0.75rem 2rem;
+    border-radius: 8px;
+    font-weight: 600;
+}
+
+.btn-save-draft:hover {
+    background: #5a6268;
+    color: white;
+}
+
+.btn-send-invoice {
+    background: var(--primary-gradient);
+    color: white;
+    border: none;
+    padding: 0.75rem 2rem;
+    border-radius: 8px;
+    font-weight: 600;
+}
+
+.btn-send-invoice:hover {
+    color: white;
+    opacity: 0.9;
+}
+
+/* Preview modal */
+.invoice-preview {
+    background: white;
+    padding: 2rem;
+    border-radius: 12px;
+}
+
+@media print {
+    .no-print {
+        display: none !important;
+    }
+
+    .invoice-preview {
+        box-shadow: none;
+        padding: 0;
+    }
+}
+</style>
 {% endblock %}
+
+{% block content %}
+<!-- Header -->
+<div class="invoice-header">
+    <div class="d-flex justify-content-between align-items-center">
+        <div>
+            <h2><i class="bi bi-file-text me-2"></i>{% trans "Create New Invoice" %}</h2>
+            <p class="mb-0">{% trans "Create and manage professional invoices" %}</p>
+        </div>
+        <div id="invoiceStatus" class="invoice-badge draft-badge">
+            <i class="bi bi-clock me-1"></i>{% trans "DRAFT" %}
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <!-- Left Column - Customer & Products -->
+    <div class="col-lg-8">
+        <!-- Store Selection -->
+        <div class="card mb-3">
+            <div class="card-body">
+                <h5 class="card-title mb-3">
+                    <i class="bi bi-shop me-2"></i>{% trans "Store Selection" %}
+                </h5>
+                <select id="storeSelect" class="form-select" required>
+                    <option value="">{% trans "-- Select Store --" %}</option>
+                    {% for store in stores %}
+                    <option value="{{ store.id }}"
+                            {% if default_store and store.id == default_store.id %}selected{% endif %}>
+                        {{ store.name }} ({{ store.code }})
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+        </div>
+
+        <!-- Customer Selection -->
+        <div class="card mb-3">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h5 class="card-title mb-0">
+                        <i class="bi bi-person me-2"></i>{% trans "Customer" %}
+                    </h5>
+                    <button type="button" class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#newCustomerModal">
+                        <i class="bi bi-plus"></i> {% trans "New Customer" %}
+                    </button>
+                </div>
+
+                <div class="mb-3">
+                    <input type="text" class="form-control" id="customerSearch"
+                           placeholder="{% trans 'Search customers by name, phone, or TIN...' %}"
+                           autocomplete="off">
+                    <div class="customer-dropdown" id="customerDropdown"></div>
+                </div>
+
+                <div id="selectedCustomer" class="alert alert-success" style="display: none;">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <strong id="customerName"></strong>
+                            <br>
+                            <small id="customerDetails"></small>
+                        </div>
+                        <button type="button" class="btn btn-sm btn-danger" onclick="removeCustomer()">
+                            <i class="bi bi-x"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <input type="hidden" id="customerId" name="customer">
+            </div>
+        </div>
+
+        <!-- Product/Search Section -->
+        <div class="product-search-section">
+            <h5 class="mb-3">
+                <i class="bi bi-search me-2"></i>{% trans "Add Products & Services" %}
+            </h5>
+
+            <div class="mb-3">
+                <div class="input-group">
+                    <input type="text" class="form-control" id="itemSearch"
+                           placeholder="{% trans 'Search products or services...' %}">
+                    <button class="btn btn-outline-primary" type="button" onclick="searchItems()">
+                        <i class="bi bi-search"></i>
+                    </button>
+                </div>
+            </div>
+
+            <div id="searchResults" class="row g-2"></div>
+        </div>
+    </div>
+
+    <!-- Right Column - Invoice Details & Actions -->
+    <div class="col-lg-4">
+        <!-- Invoice Details -->
+        <div class="card mb-3">
+            <div class="card-body">
+                <h5 class="card-title mb-3">
+                    <i class="bi bi-gear me-2"></i>{% trans "Invoice Details" %}
+                </h5>
+
+                <div class="mb-3">
+                    <label class="form-label">{% trans "Invoice Date" %}</label>
+                    <input type="date" class="form-control" id="invoiceDate"
+                           value="{{ today|date:'Y-m-d' }}" required>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label">{% trans "Due Date" %} *</label>
+                    <input type="date" class="form-control" id="dueDate"
+                           value="{{ due_date|date:'Y-m-d' }}" required>
+                    <small class="text-muted">{% trans "Required for invoices" %}</small>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label">{% trans "Payment Terms" %}</label>
+                    <textarea class="form-control" id="paymentTerms" rows="3"
+                              placeholder="{% trans 'Payment terms and conditions...' %}"></textarea>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label">{% trans "Notes" %}</label>
+                    <textarea class="form-control" id="invoiceNotes" rows="3"
+                              placeholder="{% trans 'Additional notes...' %}"></textarea>
+                </div>
+            </div>
+        </div>
+
+        <!-- Invoice Items -->
+        <div class="invoice-items-section">
+            <h5 class="mb-3">
+                <i class="bi bi-cart me-2"></i>{% trans "Invoice Items" %}
+                <span class="badge bg-primary float-end" id="itemCount">0</span>
+            </h5>
+
+            <div id="invoiceItems">
+                <div class="text-center py-4 text-muted">
+                    <i class="bi bi-inbox" style="font-size: 2rem;"></i>
+                    <p class="mt-2">{% trans "No items added yet" %}</p>
+                </div>
+            </div>
+
+            <!-- Totals -->
+            <div class="totals-section">
+                <div class="totals-row">
+                    <span>{% trans "Subtotal:" %}</span>
+                    <span id="subtotalAmount">0.00 UGX</span>
+                </div>
+                <div class="totals-row">
+                    <span>{% trans "Tax:" %}</span>
+                    <span id="taxAmount">0.00 UGX</span>
+                </div>
+                <div class="totals-row">
+                    <span>{% trans "Discount:" %}</span>
+                    <span id="discountAmount">0.00 UGX</span>
+                </div>
+                <div class="totals-row">
+                    <span><strong>{% trans "Total:" %}</strong></span>
+                    <span id="totalAmount"><strong>0.00 UGX</strong></span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Action Buttons -->
+        <div class="action-buttons">
+            <button type="button" class="btn btn-save-draft flex-fill" onclick="saveAsDraft()">
+                <i class="bi bi-save me-2"></i>{% trans "Save Draft" %}
+            </button>
+            <button type="button" class="btn btn-send-invoice flex-fill" onclick="completeInvoice()" disabled>
+                <i class="bi bi-check-circle me-2"></i>{% trans "Complete Invoice" %}
+            </button>
+        </div>
+
+        <!-- Quick Actions -->
+        <div class="mt-3">
+            <button type="button" class="btn btn-outline-primary w-100 mb-2" onclick="previewInvoice()">
+                <i class="bi bi-eye me-2"></i>{% trans "Preview Invoice" %}
+            </button>
+            <button type="button" class="btn btn-outline-secondary w-100" onclick="clearInvoice()">
+                <i class="bi bi-trash me-2"></i>{% trans "Clear Invoice" %}
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- New Customer Modal -->
+<div class="modal fade" id="newCustomerModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">{% trans "Add New Customer" %}</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="newCustomerForm">
+                    <div class="mb-3">
+                        <label class="form-label">{% trans "Name" %} *</label>
+                        <input type="text" class="form-control" name="name" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">{% trans "Phone" %} *</label>
+                        <input type="tel" class="form-control" name="phone" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">{% trans "Email" %}</label>
+                        <input type="email" class="form-control" name="email">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">{% trans "TIN" %}</label>
+                        <input type="text" class="form-control" name="tin">
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                    {% trans "Cancel" %}
+                </button>
+                <button type="button" class="btn btn-primary" onclick="saveNewCustomer()">
+                    {% trans "Save Customer" %}
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Preview Modal -->
+<div class="modal fade" id="previewModal" tabindex="-1">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">{% trans "Invoice Preview" %}</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div id="invoicePreviewContent" class="invoice-preview">
+                    <!-- Preview will be loaded here -->
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                    {% trans "Close" %}
+                </button>
+                <button type="button" class="btn btn-primary" onclick="printPreview()">
+                    <i class="bi bi-printer me-2"></i>{% trans "Print" %}
+                </button>
+                <button type="button" class="btn btn-success" onclick="emailInvoice()">
+                    <i class="bi bi-envelope me-2"></i>{% trans "Email" %}
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// State management
+const InvoiceState = {
+    storeId: null,
+    customer: null,
+    items: [],
+    invoiceData: {
+        invoice_date: new Date().toISOString().split('T')[0],
+        due_date: '',
+        terms: '',
+        notes: '',
+        status: 'DRAFT',
+        payment_method: 'CREDIT'
+    }
+};
+
+// Initialize
+document.addEventListener('DOMContentLoaded', function() {
+    // Set default due date (30 days from today)
+    const today = new Date();
+    const dueDate = new Date(today);
+    dueDate.setDate(dueDate.getDate() + 30);
+    document.getElementById('dueDate').value = dueDate.toISOString().split('T')[0];
+    InvoiceState.invoiceData.due_date = dueDate.toISOString().split('T')[0];
+
+    // Set invoice date
+    document.getElementById('invoiceDate').value = today.toISOString().split('T')[0];
+
+    setupEventListeners();
+});
+
+// Setup event listeners
+function setupEventListeners() {
+    document.getElementById('storeSelect').addEventListener('change', function() {
+        InvoiceState.storeId = this.value;
+        validateForm();
+    });
+
+    document.getElementById('customerSearch').addEventListener('input', debounce(searchCustomers, 300));
+    document.getElementById('itemSearch').addEventListener('input', debounce(searchItems, 300));
+
+    // Invoice details
+    document.getElementById('dueDate').addEventListener('change', function() {
+        InvoiceState.invoiceData.due_date = this.value;
+    });
+
+    document.getElementById('paymentTerms').addEventListener('input', function() {
+        InvoiceState.invoiceData.terms = this.value;
+    });
+
+    document.getElementById('invoiceNotes').addEventListener('input', function() {
+        InvoiceState.invoiceData.notes = this.value;
+    });
+}
+
+// Search customers
+async function searchCustomers() {
+    const query = document.getElementById('customerSearch').value;
+    if (query.length < 2) {
+        document.getElementById('customerDropdown').innerHTML = '';
+        return;
+    }
+
+    try {
+        const response = await fetch(`/sales/search-customers/?q=${encodeURIComponent(query)}`);
+        const data = await response.json();
+
+        if (data.customers && data.customers.length > 0) {
+            displayCustomerResults(data.customers);
+        } else {
+            document.getElementById('customerDropdown').innerHTML = `
+                <div class="p-3 text-center text-muted">
+                    No customers found
+                </div>
+            `;
+        }
+    } catch (error) {
+        console.error('Error searching customers:', error);
+    }
+}
+
+function displayCustomerResults(customers) {
+    const dropdown = document.getElementById('customerDropdown');
+    dropdown.innerHTML = customers.map(customer => `
+        <div class="customer-result p-2 border-bottom hover-bg"
+             onclick="selectCustomer(${JSON.stringify(customer)})"
+             style="cursor: pointer;">
+            <div class="d-flex justify-content-between">
+                <div>
+                    <strong>${customer.name}</strong>
+                    <br>
+                    <small class="text-muted">${customer.phone}</small>
+                </div>
+                ${customer.tin ? `<span class="badge bg-info">${customer.tin}</span>` : ''}
+            </div>
+        </div>
+    `).join('');
+
+    // Show dropdown
+    dropdown.style.display = 'block';
+}
+
+function selectCustomer(customer) {
+    InvoiceState.customer = customer;
+
+    // Update UI
+    document.getElementById('customerId').value = customer.id;
+    document.getElementById('customerName').textContent = customer.name;
+    document.getElementById('customerDetails').textContent =
+        `${customer.phone} ${customer.email ? '| ' + customer.email : ''} ${customer.tin ? '| TIN: ' + customer.tin : ''}`;
+    document.getElementById('selectedCustomer').style.display = 'block';
+    document.getElementById('customerDropdown').style.display = 'none';
+    document.getElementById('customerSearch').value = '';
+
+    validateForm();
+}
+
+function removeCustomer() {
+    InvoiceState.customer = null;
+    document.getElementById('customerId').value = '';
+    document.getElementById('selectedCustomer').style.display = 'none';
+    document.getElementById('customerSearch').value = '';
+    validateForm();
+}
+
+// Save new customer
+async function saveNewCustomer() {
+    const form = document.getElementById('newCustomerForm');
+    const formData = new FormData(form);
+
+    try {
+        const response = await fetch('{% url "sales:create_customer_ajax" %}', {
+            method: 'POST',
+            body: formData,
+            headers: {
+                'X-CSRFToken': '{{ csrf_token }}'
+            }
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            selectCustomer(data.customer);
+            bootstrap.Modal.getInstance(document.getElementById('newCustomerModal')).hide();
+            form.reset();
+        } else {
+            alert(data.error);
+        }
+    } catch (error) {
+        console.error('Error creating customer:', error);
+        alert('Failed to create customer');
+    }
+}
+
+// Search items
+async function searchItems() {
+    const query = document.getElementById('itemSearch').value;
+    const storeId = InvoiceState.storeId;
+
+    if (!storeId) {
+        alert('Please select a store first');
+        return;
+    }
+
+    if (query.length < 2) {
+        document.getElementById('searchResults').innerHTML = '';
+        return;
+    }
+
+    try {
+        const params = new URLSearchParams({
+            store_id: storeId,
+            q: query,
+            item_type: 'all'
+        });
+
+        const response = await fetch(`/sales/search-items/?${params}`);
+        const data = await response.json();
+
+        if (data.items && data.items.length > 0) {
+            displayItemResults(data.items);
+        } else {
+            document.getElementById('searchResults').innerHTML = `
+                <div class="col-12 text-center p-3 text-muted">
+                    No items found
+                </div>
+            `;
+        }
+    } catch (error) {
+        console.error('Error searching items:', error);
+    }
+}
+
+function displayItemResults(items) {
+    const results = document.getElementById('searchResults');
+    results.innerHTML = items.map(item => `
+        <div class="col-md-6">
+            <div class="card mb-2">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between align-items-start">
+                        <div>
+                            <h6 class="mb-1">${item.name}</h6>
+                            <small class="text-muted">${item.code || 'No code'}</small>
+                        </div>
+                        <span class="item-type-badge ${item.item_type === 'PRODUCT' ? 'product-badge' : 'service-badge'}">
+                            ${item.item_type}
+                        </span>
+                    </div>
+                    <div class="mt-2">
+                        <strong class="text-primary">${item.final_price} UGX</strong>
+                        ${item.stock ? `
+                            <small class="text-muted ms-2">
+                                <i class="bi bi-box"></i> ${item.stock.available} ${item.stock.unit}
+                            </small>
+                        ` : ''}
+                    </div>
+                    <button class="btn btn-sm btn-primary w-100 mt-2"
+                            onclick="addItemToInvoice(${JSON.stringify(item)})">
+                        <i class="bi bi-plus"></i> Add to Invoice
+                    </button>
+                </div>
+            </div>
+        </div>
+    `).join('');
+}
+
+// Add item to invoice
+function addItemToInvoice(item) {
+    const invoiceItem = {
+        item_type: item.item_type,
+        product_id: item.item_type === 'PRODUCT' ? item.id : null,
+        service_id: item.item_type === 'SERVICE' ? item.id : null,
+        name: item.name,
+        code: item.code || '',
+        quantity: 1,
+        unit_price: item.final_price,
+        tax_rate: item.tax_rate || 'A',
+        discount: 0,
+        unit_of_measure: item.unit_of_measure || 'pcs'
+    };
+
+    InvoiceState.items.push(invoiceItem);
+    updateInvoiceDisplay();
+    document.getElementById('itemSearch').value = '';
+    document.getElementById('searchResults').innerHTML = '';
+}
+
+// Update invoice display
+function updateInvoiceDisplay() {
+    const itemsContainer = document.getElementById('invoiceItems');
+    const itemCount = document.getElementById('itemCount');
+
+    itemCount.textContent = InvoiceState.items.length;
+
+    if (InvoiceState.items.length === 0) {
+        itemsContainer.innerHTML = `
+            <div class="text-center py-4 text-muted">
+                <i class="bi bi-inbox" style="font-size: 2rem;"></i>
+                <p class="mt-2">No items added yet</p>
+            </div>
+        `;
+        document.querySelector('.btn-send-invoice').disabled = true;
+        updateTotals();
+        return;
+    }
+
+    itemsContainer.innerHTML = InvoiceState.items.map((item, index) => `
+        <div class="invoice-item" id="item-${index}">
+            <div class="d-flex justify-content-between align-items-start mb-2">
+                <div>
+                    <strong>${item.name}</strong>
+                    <br>
+                    <small class="text-muted">${item.code}</small>
+                </div>
+                <button class="btn btn-sm btn-danger" onclick="removeItemFromInvoice(${index})">
+                    <i class="bi bi-trash"></i>
+                </button>
+            </div>
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <span class="item-type-badge ${item.item_type === 'PRODUCT' ? 'product-badge' : 'service-badge'}">
+                        ${item.item_type}
+                    </span>
+                    <small class="ms-2">${item.unit_of_measure}</small>
+                </div>
+                <div class="d-flex align-items-center">
+                    <button class="btn btn-sm btn-outline-secondary" onclick="adjustQuantity(${index}, -1)">
+                        <i class="bi bi-dash"></i>
+                    </button>
+                    <input type="number" class="form-control form-control-sm mx-2"
+                           value="${item.quantity}" min="1" style="width: 60px;"
+                           onchange="updateItemQuantity(${index}, this.value)">
+                    <button class="btn btn-sm btn-outline-secondary" onclick="adjustQuantity(${index}, 1)">
+                        <i class="bi bi-plus"></i>
+                    </button>
+                    <span class="ms-3 fw-bold">${(item.quantity * item.unit_price).toFixed(2)} UGX</span>
+                </div>
+            </div>
+        </div>
+    `).join('');
+
+    document.querySelector('.btn-send-invoice').disabled = false;
+    updateTotals();
+    validateForm();
+}
+
+function adjustQuantity(index, change) {
+    const item = InvoiceState.items[index];
+    const newQuantity = item.quantity + change;
+
+    if (newQuantity < 1) return;
+
+    item.quantity = newQuantity;
+    updateInvoiceDisplay();
+}
+
+function updateItemQuantity(index, value) {
+    const quantity = parseInt(value);
+    if (quantity < 1) return;
+
+    InvoiceState.items[index].quantity = quantity;
+    updateInvoiceDisplay();
+}
+
+function removeItemFromInvoice(index) {
+    InvoiceState.items.splice(index, 1);
+    updateInvoiceDisplay();
+}
+
+// Calculate totals
+function updateTotals() {
+    let subtotal = 0;
+    let tax = 0;
+    let discount = 0;
+
+    InvoiceState.items.forEach(item => {
+        const itemTotal = item.quantity * item.unit_price;
+        subtotal += itemTotal;
+
+        // Simple tax calculation (18% for demonstration)
+        if (item.tax_rate === 'A') {
+            tax += itemTotal * 0.18;
+        }
+    });
+
+    const total = subtotal + tax - discount;
+
+    document.getElementById('subtotalAmount').textContent = `${subtotal.toFixed(2)} UGX`;
+    document.getElementById('taxAmount').textContent = `${tax.toFixed(2)} UGX`;
+    document.getElementById('discountAmount').textContent = `${discount.toFixed(2)} UGX`;
+    document.getElementById('totalAmount').innerHTML = `<strong>${total.toFixed(2)} UGX</strong>`;
+
+    // Update state
+    InvoiceState.invoiceData.subtotal = subtotal;
+    InvoiceState.invoiceData.tax_amount = tax;
+    InvoiceState.invoiceData.discount_amount = discount;
+    InvoiceState.invoiceData.total_amount = total;
+}
+
+// Form validation
+function validateForm() {
+    const isValid = InvoiceState.storeId &&
+                    InvoiceState.customer &&
+                    InvoiceState.items.length > 0;
+
+    return isValid;
+}
+
+// Save as draft
+async function saveAsDraft() {
+    if (!validateForm()) {
+        alert('Please fill in all required fields and add at least one item');
+        return;
+    }
+
+    const invoiceData = {
+        store_id: InvoiceState.storeId,
+        customer_id: InvoiceState.customer.id,
+        items: InvoiceState.items,
+        ...InvoiceState.invoiceData,
+        status: 'DRAFT'
+    };
+
+    try {
+        const response = await fetch('{% url "sales:create_invoice_draft" %}', {
+            method: 'POST',
+            body: JSON.stringify(invoiceData),
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': '{{ csrf_token }}'
+            }
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            alert('Invoice saved as draft successfully!');
+            window.location.href = data.redirect_url || '{% url "sales:sales_list" %}';
+        } else {
+            alert(data.error || 'Failed to save draft');
+        }
+    } catch (error) {
+        console.error('Error saving draft:', error);
+        alert('Failed to save draft');
+    }
+}
+
+// Complete invoice (with stock movement)
+async function completeInvoice() {
+    if (!validateForm()) {
+        alert('Please fill in all required fields and add at least one item');
+        return;
+    }
+
+    if (!confirm('Are you sure you want to complete this invoice? This will create stock movements for products.')) {
+        return;
+    }
+
+    const invoiceData = {
+        store_id: InvoiceState.storeId,
+        customer_id: InvoiceState.customer.id,
+        items: InvoiceState.items,
+        ...InvoiceState.invoiceData,
+        status: 'COMPLETED',
+        move_stock: true  // Flag to indicate stock should be moved
+    };
+
+    try {
+        const response = await fetch('{% url "sales:create_invoice_complete" %}', {
+            method: 'POST',
+            body: JSON.stringify(invoiceData),
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': '{{ csrf_token }}'
+            }
+        });
+
+        const data = await response.json();
+
+        if (data.success) {
+            alert('Invoice completed successfully! Stock has been updated.');
+            window.location.href = data.redirect_url || data.invoice_url;
+        } else {
+            alert(data.error || 'Failed to complete invoice');
+        }
+    } catch (error) {
+        console.error('Error completing invoice:', error);
+        alert('Failed to complete invoice');
+    }
+}
+
+// Preview invoice
+function previewInvoice() {
+    if (!validateForm()) {
+        alert('Please fill in all required fields before previewing');
+        return;
+    }
+
+    // Generate preview HTML
+    const previewContent = generatePreviewHTML();
+    document.getElementById('invoicePreviewContent').innerHTML = previewContent;
+
+    // Show modal
+    const previewModal = new bootstrap.Modal(document.getElementById('previewModal'));
+    previewModal.show();
+}
+
+function generatePreviewHTML() {
+    return `
+        <div class="container">
+            <!-- Invoice Header -->
+            <div class="text-center mb-4">
+                <h2>INVOICE</h2>
+                <p class="text-muted">DRAFT - NOT YET ISSUED</p>
+            </div>
+
+            <!-- Company & Customer Info -->
+            <div class="row mb-4">
+                <div class="col-6">
+                    <h5>From:</h5>
+                    <strong>${company.name}</strong><br>
+                    ${company.physical_address || ''}<br>
+                    ${company.phone || ''}<br>
+                    TIN: ${company.tin || 'Not provided'}
+                </div>
+                <div class="col-6 text-end">
+                    <h5>To:</h5>
+                    <strong>${InvoiceState.customer.name}</strong><br>
+                    ${InvoiceState.customer.phone || ''}<br>
+                    ${InvoiceState.customer.email || ''}<br>
+                    ${InvoiceState.customer.tin ? 'TIN: ' + InvoiceState.customer.tin : ''}
+                </div>
+            </div>
+
+            <!-- Invoice Details -->
+            <div class="row mb-4">
+                <div class="col-6">
+                    <p><strong>Invoice Date:</strong> ${InvoiceState.invoiceData.invoice_date}</p>
+                </div>
+                <div class="col-6 text-end">
+                    <p><strong>Due Date:</strong> ${InvoiceState.invoiceData.due_date}</p>
+                </div>
+            </div>
+
+            <!-- Items Table -->
+            <table class="table table-bordered">
+                <thead>
+                    <tr>
+                        <th>Item</th>
+                        <th>Type</th>
+                        <th>Qty</th>
+                        <th>Unit Price</th>
+                        <th>Total</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${InvoiceState.items.map(item => `
+                        <tr>
+                            <td>${item.name}</td>
+                            <td><span class="badge ${item.item_type === 'PRODUCT' ? 'bg-success' : 'bg-info'}">${item.item_type}</span></td>
+                            <td>${item.quantity} ${item.unit_of_measure}</td>
+                            <td>${item.unit_price.toFixed(2)} UGX</td>
+                            <td>${(item.quantity * item.unit_price).toFixed(2)} UGX</td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+                <tfoot>
+                    <tr>
+                        <td colspan="4" class="text-end"><strong>Subtotal:</strong></td>
+                        <td>${InvoiceState.invoiceData.subtotal.toFixed(2)} UGX</td>
+                    </tr>
+                    <tr>
+                        <td colspan="4" class="text-end"><strong>Tax:</strong></td>
+                        <td>${InvoiceState.invoiceData.tax_amount.toFixed(2)} UGX</td>
+                    </tr>
+                    <tr>
+                        <td colspan="4" class="text-end"><strong>Total:</strong></td>
+                        <td><strong>${InvoiceState.invoiceData.total_amount.toFixed(2)} UGX</strong></td>
+                    </tr>
+                </tfoot>
+            </table>
+
+            <!-- Terms & Notes -->
+            ${InvoiceState.invoiceData.terms ? `
+                <div class="mb-3">
+                    <h6>Payment Terms:</h6>
+                    <p>${InvoiceState.invoiceData.terms}</p>
+                </div>
+            ` : ''}
+
+            ${InvoiceState.invoiceData.notes ? `
+                <div class="mb-3">
+                    <h6>Notes:</h6>
+                    <p>${InvoiceState.invoiceData.notes}</p>
+                </div>
+            ` : ''}
+
+            <!-- Footer -->
+            <div class="text-center mt-4 pt-4 border-top">
+                <p class="text-muted">
+                    This is a preview. Invoice will be officially issued when completed.
+                </p>
+            </div>
+        </div>
+    `;
+}
+
+function printPreview() {
+    const printWindow = window.open('', '_blank');
+    printWindow.document.write(`
+        <html>
+            <head>
+                <title>Invoice Preview</title>
+                <style>
+                    body { font-family: Arial, sans-serif; margin: 20px; }
+                    table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+                    th, td { border: 1px solid #ddd; padding: 8px

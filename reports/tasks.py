@@ -403,19 +403,19 @@ def update_dashboard_cache():
                     'sales_today': float(Sale.objects.filter(
                         store__in=stores,
                         created_at__date=today,
-                        is_completed=True
+                        status__in=['COMPLETED', 'PAID']
                     ).aggregate(total=Sum('total_amount'))['total'] or 0),
 
                     'sales_week': float(Sale.objects.filter(
                         store__in=stores,
                         created_at__date__gte=week_ago,
-                        is_completed=True
+                        status__in=['COMPLETED', 'PAID']
                     ).aggregate(total=Sum('total_amount'))['total'] or 0),
 
                     'transactions_today': Sale.objects.filter(
                         store__in=stores,
                         created_at__date=today,
-                        is_completed=True
+                        status__in=['COMPLETED', 'PAID']
                     ).count(),
 
                     'low_stock_count': Stock.objects.filter(
@@ -425,7 +425,7 @@ def update_dashboard_cache():
 
                     'pending_fiscalization': Sale.objects.filter(
                         store__in=stores,
-                        is_completed=True,
+                        status__in=['COMPLETED', 'PAID'],
                         is_fiscalized=False,
                         created_at__date__gte=week_ago
                     ).count(),
@@ -523,7 +523,7 @@ def check_efris_compliance():
                     # Check pending fiscalization
                     pending = Sale.objects.filter(
                         store=store,
-                        is_completed=True,
+                        status__in=['COMPLETED', 'PAID'],
                         is_fiscalized=False,
                         created_at__date__gte=week_ago
                     ).count()
@@ -543,7 +543,7 @@ def check_efris_compliance():
                     # Check failed fiscalization
                     failed = Sale.objects.filter(
                         store=store,
-                        is_completed=True,
+                        status__in=['COMPLETED', 'PAID'],
                         fiscalization_failed=True,
                         created_at__date__gte=week_ago
                     ).count()
@@ -708,7 +708,7 @@ def generate_efris_compliance_report(store_id, start_date, end_date, schema_name
             # Get sales in period
             sales = Sale.objects.filter(
                 store=store,
-                is_completed=True,
+                status__in=['COMPLETED', 'PAID'],
                 created_at__date__gte=start_date,
                 created_at__date__lte=end_date
             )

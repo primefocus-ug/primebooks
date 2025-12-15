@@ -1,0 +1,418 @@
+ <!DOCTYPE html>
+             <html lang="{{ LANGUAGE_CODE|default:'en' }}">
+                        <head>
+                        <meta charset="UTF-8">
+                                      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                                                                    <title>{% trans "Receipt" %} {{ sale.invoice_number }}</title>
+                                                                                                                            <style>
+@media print {
+@page {
+    size: A4 portrait;
+margin: 0.5cm;
+}
+
+body {
+    -webkit-print-color-adjust: exact;
+print-color-adjust: exact;
+}
+
+.no-print {
+    display: none !important;
+}
+}
+
+body {
+font-family: 'Courier New', monospace;
+font-size: 12px;
+line-height: 1.4;
+color: #000;
+margin: 0;
+padding: 10px;
+background: white;
+}
+
+.receipt-container {
+max-width: 80mm;
+margin: 0 auto;
+border: 1px solid #000;
+padding: 10px;
+}
+
+.header {
+text-align: center;
+border-bottom: 1px dashed #000;
+padding-bottom: 10px;
+margin-bottom: 10px;
+}
+
+.company-name {
+font-weight: bold;
+font-size: 16px;
+margin-bottom: 5px;
+}
+
+.company-address {
+font-size: 10px;
+margin-bottom: 5px;
+}
+
+.company-tax {
+font-size: 10px;
+margin-bottom: 10px;
+}
+
+.receipt-title {
+font-weight: bold;
+font-size: 14px;
+text-align: center;
+margin: 10px 0;
+}
+
+.receipt-info {
+margin-bottom: 10px;
+}
+
+.info-row {
+display: flex;
+justify-content: space-between;
+margin-bottom: 3px;
+}
+
+.info-label {
+font-weight: bold;
+}
+
+.items-table {
+width: 100%;
+border-collapse: collapse;
+margin: 10px 0;
+}
+
+.items-table th {
+text-align: left;
+border-bottom: 1px solid #000;
+padding: 5px 0;
+font-weight: bold;
+}
+
+.items-table td {
+padding: 3px 0;
+border-bottom: 1px dotted #ccc;
+}
+
+.items-table .text-right {
+text-align: right;
+}
+
+.totals {
+margin-top: 10px;
+border-top: 1px solid #000;
+padding-top: 10px;
+}
+
+.total-row {
+display: flex;
+justify-content: space-between;
+margin-bottom: 5px;
+}
+
+.grand-total {
+font-weight: bold;
+font-size: 14px;
+border-top: 2px solid #000;
+padding-top: 5px;
+margin-top: 5px;
+}
+
+.footer {
+margin-top: 15px;
+text-align: center;
+font-size: 10px;
+border-top: 1px dashed #000;
+padding-top: 10px;
+}
+
+.thank-you {
+font-style: italic;
+margin: 10px 0;
+}
+
+.qr-code {
+text-align: center;
+margin: 10px 0;
+}
+
+.qr-code img {
+max-width: 100px;
+height: auto;
+}
+
+.verification {
+font-family: monospace;
+font-size: 9px;
+word-break: break-all;
+margin: 5px 0;
+text-align: center;
+}
+
+.barcode {
+text-align: center;
+margin: 10px 0;
+}
+
+.powered-by {
+font-size: 9px;
+color: #666;
+text-align: center;
+margin-top: 5px;
+}
+
+.terms {
+font-size: 9px;
+margin-top: 10px;
+text-align: center;
+}
+
+/* Dark mode for print */
+                 @media (prefers-color-scheme: dark) {
+body {
+    background: white !important;
+color: black !important;
+}
+}
+
+.no-print {
+text-align: center;
+margin: 20px 0;
+}
+
+.no-print button {
+padding: 10px 20px;
+font-size: 14px;
+cursor: pointer;
+}
+</style>
+  </head>
+    <body>
+    <div class="no-print">
+<button onclick="window.print()">{% trans "Print Receipt" %}</button>
+<button onclick="window.close()">{% trans "Close" %}</button>
+<button onclick="downloadAsPDF()">{% trans "Download as PDF" %}</button>
+</div>
+
+<div class="receipt-container">
+<!-- Header -->
+<div class="header">
+<div class="company-name">{{ company.trading_name|default:company.name }}</div>
+{% if company.address %}
+<div class="company-address">{{ company.address }}</div>
+{% endif %}
+{% if company.phone %}
+<div class="company-address">{% trans "Tel:" %} {{ company.phone }}</div>
+{% endif %}
+{% if company.email %}
+<div class="company-address">{% trans "Email:" %} {{ company.email }}</div>
+{% endif %}
+{% if company.tin %}
+<div class="company-tax">{% trans "TIN:" %} {{ company.tin }}</div>
+{% endif %}
+{% if store.license_number %}
+<div class="company-tax">{% trans "License:" %} {{ store.license_number }}</div>
+{% endif %}
+</div>
+
+<!-- Receipt Title -->
+<div class="receipt-title">
+{% if sale.document_type == 'INVOICE' %}
+{% trans "INVOICE" %}
+{% else %}
+{% trans "RECEIPT" %}
+{% endif %}
+</div>
+
+<!-- Receipt Information -->
+<div class="receipt-info">
+<div class="info-row">
+<span class="info-label">{% trans "Receipt #:" %}</span>
+<span>{{ sale.invoice_number }}</span>
+</div>
+<div class="info-row">
+<span class="info-label">{% trans "Date:" %}</span>
+<span>{{ sale.created_at|date:"d/m/Y H:i" }}</span>
+</div>
+<div class="info-row">
+<span class="info-label">{% trans "Cashier:" %}</span>
+<span>{{ sale.created_by.get_full_name|default:sale.created_by.username }}</span>
+</div>
+{% if sale.customer %}
+<div class="info-row">
+<span class="info-label">{% trans "Customer:" %}</span>
+<span>{{ sale.customer.name }}</span>
+</div>
+{% endif %}
+<div class="info-row">
+<span class="info-label">{% trans "Store:" %}</span>
+<span>{{ store.name }}</span>
+</div>
+</div>
+
+<!-- Items Table -->
+<table class="items-table">
+<thead>
+<tr>
+<th>{% trans "Item" %}</th>
+<th class="text-right">{% trans "Qty" %}</th>
+<th class="text-right">{% trans "Price" %}</th>
+<th class="text-right">{% trans "Total" %}</th>
+</tr>
+</thead>
+<tbody>
+{% for item in items %}
+<tr>
+<td>
+{{ item.item_name|truncatechars:20 }}
+{% if item.tax_rate != 'B' %}
+<br><small>({% trans "Tax:" %} {{ item.get_tax_rate_display }})</small>
+{% endif %}
+</td>
+<td class="text-right">{{ item.quantity }}</td>
+<td class="text-right">{{ item.unit_price|floatformat:2 }}</td>
+<td class="text-right">{{ item.total_price|floatformat:2 }}</td>
+</tr>
+{% endfor %}
+</tbody>
+</table>
+
+<!-- Totals -->
+<div class="totals">
+<div class="total-row">
+<span>{% trans "Subtotal:" %}</span>
+<span>{{ sale.subtotal|floatformat:2 }} {{ sale.currency }}</span>
+</div>
+<div class="total-row">
+<span>{% trans "Tax:" %}</span>
+<span>{{ sale.tax_amount|floatformat:2 }} {{ sale.currency }}</span>
+</div>
+{% if sale.discount_amount %}
+<div class="total-row">
+<span>{% trans "Discount:" %}</span>
+<span class="text-danger">-{{ sale.discount_amount|floatformat:2 }} {{ sale.currency }}</span>
+</div>
+{% endif %}
+<div class="total-row grand-total">
+<span>{% trans "TOTAL:" %}</span>
+<span>{{ sale.total_amount|floatformat:2 }} {{ sale.currency }}</span>
+</div>
+</div>
+
+<!-- Payment Information -->
+<div class="receipt-info">
+<div class="info-row">
+<span class="info-label">{% trans "Payment Method:" %}</span>
+<span>{{ sale.get_payment_method_display }}</span>
+</div>
+{% if payment.transaction_reference %}
+<div class="info-row">
+<span class="info-label">{% trans "Reference:" %}</span>
+<span>{{ payment.transaction_reference }}</span>
+</div>
+{% endif %}
+</div>
+
+<!-- EFRIS Information -->
+{% if sale.is_fiscalized %}
+<div class="qr-code">
+{% if sale.qr_code %}
+<img src="data:image/png;base64,{{ sale.qr_code }}" alt="{% trans 'EFRIS QR Code' %}">
+{% endif %}
+</div>
+
+{% if sale.efris_invoice_number %}
+<div class="verification">
+<strong>{% trans "EFRIS Invoice:" %}</strong><br>
+{{ sale.efris_invoice_number }}
+</div>
+{% endif %}
+
+{% if sale.verification_code %}
+<div class="verification">
+<strong>{% trans "Verification Code:" %}</strong><br>
+{{ sale.verification_code }}
+</div>
+{% endif %}
+{% endif %}
+
+<!-- Footer -->
+<div class="footer">
+<div class="thank-you">
+{% trans "Thank you for your business!" %}
+</div>
+
+{% if sale.document_type == 'INVOICE' %}
+<div class="terms">
+{% trans "Terms:" %} {% trans "Payment due within 30 days" %}
+</div>
+{% endif %}
+
+<div class="powered-by">
+{% trans "Powered by PrimeBooks" %}
+</div>
+
+<div class="barcode">
+<!-- Barcode for invoice number -->
+<svg id="barcode"></svg>
+</div>
+</div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
+<script>
+// Generate barcode
+document.addEventListener('DOMContentLoaded', function() {
+if (typeof JsBarcode !== 'undefined') {
+    JsBarcode("#barcode", "{{ sale.invoice_number }}", {
+        format: "CODE128",
+        width: 1,
+        height: 40,
+        displayValue: false
+    });
+}
+});
+
+function downloadAsPDF() {
+                         // Use html2canvas and jsPDF for PDF generation
+const { jsPDF } = window.jspdf;
+const receipt = document.querySelector('.receipt-container');
+
+html2canvas(receipt).then(canvas => {
+const imgData = canvas.toDataURL('image/png');
+const pdf = new jsPDF({
+orientation: 'portrait',
+unit: 'mm',
+format: [80, 297] // Receipt size
+});
+
+const imgWidth = 80;
+const imgHeight = canvas.height * imgWidth / canvas.width;
+
+pdf.addImage(imgData, 'PNG', 0, 0, imgWidth, imgHeight);
+pdf.save('receipt_{{ sale.invoice_number }}.pdf');
+});
+}
+
+// Auto-print if requested
+const urlParams = new URLSearchParams(window.location.search);
+if (urlParams.get('print') === 'true') {
+window.print();
+}
+
+// Auto-close after printing
+window.onafterprint = function() {
+    setTimeout(() => {
+    window.close();
+}, 1000);
+};
+</script>
+</body>
+</html>
+

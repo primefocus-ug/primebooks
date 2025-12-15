@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+            border-radius: 10px 10px 0 0;
+        }
+        .content {
+            background: #f8f9fa;
+            padding: 30px;
+            border-radius: 0 0 10px 10px;
+        }
+        .invoice-details {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            margin: 20px 0;
+            border-left: 4px solid #667eea;
+        }
+        .amount-box {
+            background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+            color: white;
+            padding: 20px;
+            text-align: center;
+            border-radius: 8px;
+            margin: 20px 0;
+        }
+        .amount-box.overdue {
+            background: linear-gradient(135deg, #ff6b6b 0%, #ff5252 100%);
+        }
+        .amount-box .label {
+            font-size: 14px;
+            opacity: 0.9;
+        }
+        .amount-box .amount {
+            font-size: 32px;
+            font-weight: bold;
+            margin: 10px 0;
+        }
+        .button {
+            display: inline-block;
+            padding: 12px 30px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            text-decoration: none;
+            border-radius: 5px;
+            margin: 20px 0;
+            font-weight: bold;
+        }
+        .footer {
+            text-align: center;
+            margin-top: 30px;
+            padding-top: 20px;
+            border-top: 1px solid #ddd;
+            color: #666;
+            font-size: 12px;
+        }
+        .urgency-high {
+            color: #ff6b6b;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Payment Reminder</h1>
+        {% if reminder.reminder_type == 'BEFORE_DUE' %}
+            <p>Your payment is due soon</p>
+        {% elif reminder.reminder_type == 'ON_DUE' %}
+            <p>Your payment is due today</p>
+        {% else %}
+            <p class="urgency-high">⚠️ Overdue Payment</p>
+        {% endif %}
+    </div>
+
+    <div class="content">
+        <p>Dear {{ customer.name }},</p>
+
+        {% if reminder.reminder_type == 'BEFORE_DUE' %}
+            <p>This is a friendly reminder that your invoice payment will be due in <strong>3 days</strong>.</p>
+        {% elif reminder.reminder_type == 'ON_DUE' %}
+            <p>This is a reminder that your invoice payment is <strong>due today</strong>.</p>
+        {% elif reminder.reminder_type == 'OVERDUE_3' %}
+            <p class="urgency-high">Your invoice payment is now <strong>3 days overdue</strong>. Please arrange payment as soon as possible.</p>
+        {% elif reminder.reminder_type == 'OVERDUE_7' %}
+            <p class="urgency-high">Your invoice payment is now <strong>7 days overdue</strong>. Immediate payment is required to avoid late fees.</p>
+        {% elif reminder.reminder_type == 'OVERDUE_14' %}
+            <p class="urgency-high">Your invoice payment is now <strong>14 days overdue</strong>. This is a final notice before further action is taken.</p>
+        {% elif reminder.reminder_type == 'OVERDUE_30' %}
+            <p class="urgency-high">Your invoice payment is now <strong>30 days overdue</strong>. Please contact us immediately to resolve this matter.</p>
+        {% endif %}
+
+        <div class="invoice-details">
+            <h3>Invoice Details</h3>
+            <table style="width: 100%; border-collapse: collapse;">
+                <tr>
+                    <td><strong>Invoice Number:</strong></td>
+                    <td>{{ sale.document_number }}</td>
+                </tr>
+                <tr>
+                    <td><strong>Issue Date:</strong></td>
+                    <td>{{ sale.created_at|date:"F d, Y" }}</td>
+                </tr>
+                <tr>
+                    <td><strong>Due Date:</strong></td>
+                    <td>{{ sale.due_date|date:"F d, Y" }}</td>
+                </tr>
+                {% if days_overdue > 0 %}
+                <tr>
+                    <td><strong>Days Overdue:</strong></td>
+                    <td class="urgency-high">{{ days_overdue }} days</td>
+                </tr>
+                {% endif %}
+                <tr>
+                    <td><strong>Purchase Order:</strong></td>
+                    <td>{{ invoice.purchase_order|default:"N/A" }}</td>
+                </tr>
+            </table>
+        </div>
+
+        <div class="amount-box {% if days_overdue > 0 %}overdue{% endif %}">
+            <div class="label">Outstanding Amount</div>
+            <div class="amount">{{ amount_outstanding|floatformat:0 }} UGX</div>
+            {% if sale.amount_paid > 0 %}
+            <div class="label">
+                ({{ sale.amount_paid|floatformat:0 }} UGX paid, {{ sale.total_amount|floatformat:0 }} UGX total)
+            </div>
+            {% endif %}
+        </div>
+
+        <h3>Payment Methods</h3>
+        <div style="background: white; padding: 15px; border-radius: 8px; margin: 15px 0;">
+            <p><strong>Bank Transfer:</strong><br>
+            Account Name: {{ company.name }}<br>
+            Bank: {{ company.bank_name|default:"[Bank Name]" }}<br>
+            Account Number: {{ company.bank_account|default:"[Account Number]" }}<br>
+            Reference: {{ sale.document_number }}</p>
+
+            <p><strong>Mobile Money:</strong><br>
+            {{ company.mobile_money_name|default:"MTN/Airtel" }}: {{ company.mobile_money_number|default:"[Number]" }}<br>
+            Name: {{ company.name }}<br>
+            Reference: {{ sale.document_number }}</p>
+        </div>
+
+        <center>
+            <a href="{{ company.website }}/invoices/{{ sale.id }}/" class="button">
+                View Invoice Online
+            </a>
+        </center>
+
+        <p style="margin-top: 30px;">
+            If you have already made this payment, please disregard this reminder and accept our thanks.
+            If you have any questions about this invoice, please contact us.
+        </p>
+
+        <p>
+            <strong>Contact Information:</strong><br>
+            Email: {{ store.email|default:company.email }}<br>
+            Phone: {{ store.phone|default:company.phone }}<br>
+            Address: {{ store.address|default:company.physical_address }}
+        </p>
+    </div>
+
+    <div class="footer">
+        <p><strong>{{ company.name }}</strong></p>
+        <p>{{ company.physical_address }}</p>
+        <p>TIN: {{ company.tin }}</p>
+        <p>This is an automated email. Please do not reply directly to this message.</p>
+    </div>
+</body>
+</html>

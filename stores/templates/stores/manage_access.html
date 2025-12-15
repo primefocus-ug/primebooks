@@ -1,0 +1,321 @@
+{% extends 'base.html' %}
+{% load static %}
+{% load crispy_forms_tags %}
+
+{% block title %}Manage Store Access - {{ store.name }}{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-12">
+            <!-- Breadcrumb -->
+            <nav aria-label="breadcrumb">
+                <ol class="breadcrumb">
+                    <li class="breadcrumb-item"><a href="{% url 'stores:store_list' %}">Stores</a></li>
+                    <li class="breadcrumb-item"><a href="{% url 'stores:store_detail' pk=store.id %}">{{ store.name }}</a></li>
+                    <li class="breadcrumb-item active" aria-current="page">Manage Access</li>
+                </ol>
+            </nav>
+
+            <!-- Page Header -->
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <div>
+                    <h1 class="h3 mb-0">Manage Store Access</h1>
+                    <p class="text-muted mb-0">Manage user permissions for {{ store.name }}</p>
+                </div>
+                <div>
+                    <a href="{% url 'stores:store_detail' pk=store.id %}" class="btn btn-outline-secondary">
+                        <i class="fas fa-arrow-left"></i> Back to Store
+                    </a>
+                </div>
+            </div>
+
+            <!-- Store Info Card -->
+            <div class="card mb-4">
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <h5 class="card-title">{{ store.name }}</h5>
+                            <p class="card-text">
+                                <i class="fas fa-map-marker-alt text-muted"></i> {{ store.physical_address }}<br>
+                                <i class="fas fa-phone text-muted"></i> {{ store.phone|default:"No phone" }}<br>
+                                <i class="fas fa-store text-muted"></i> {{ store.get_store_type_display }}
+                            </p>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="row">
+                                <div class="col-6">
+                                    <div class="text-center p-3 border rounded">
+                                        <h3 class="mb-0">{{ store.staff.count }}</h3>
+                                        <small class="text-muted">Staff Members</small>
+                                    </div>
+                                </div>
+                                <div class="col-6">
+                                    <div class="text-center p-3 border rounded">
+                                        <h3 class="mb-0">{{ access_permissions.count }}</h3>
+                                        <small class="text-muted">Access Permissions</small>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Grant Access Form -->
+            {% if can_manage_access %}
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5 class="card-title mb-0">Grant New Access</h5>
+                </div>
+                <div class="card-body">
+                    <form method="post" action="{% url 'stores:create_store_access' store_id=store.id %}">
+                        {% csrf_token %}
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label for="user_id" class="form-label">Select User</label>
+                                <select class="form-select" id="user_id" name="user_id" required>
+                                    <option value="">Choose a user...</option>
+                                    {% for user in available_users %}
+                                    <option value="{{ user.id }}">
+                                        {{ user.get_full_name }} ({{ user.email }})
+                                        {% if user.primary_role %}
+                                        - {{ user.primary_role.group.name }}
+                                        {% endif %}
+                                    </option>
+                                    {% empty %}
+                                    <option value="" disabled>No users available</option>
+                                    {% endfor %}
+                                </select>
+                                <small class="form-text text-muted">
+                                    Only active users in your company are shown
+                                </small>
+                            </div>
+                            <div class="col-md-4 mb-3">
+                                <label for="access_level" class="form-label">Access Level</label>
+                                <select class="form-select" id="access_level" name="access_level" required>
+                                    {% for value, label in access_level_choices %}
+                                    <option value="{{ value }}">{{ label }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="col-md-2 mb-3 d-flex align-items-end">
+                                <button type="submit" class="btn btn-primary w-100">
+                                    <i class="fas fa-plus"></i> Grant Access
+                                </button>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+            </div>
+            {% endif %}
+
+            <!-- Access Permissions Table -->
+            <div class="card">
+                <div class="card-header">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <h5 class="card-title mb-0">Current Access Permissions</h5>
+                        <span class="badge bg-primary">{{ access_permissions.count }} users</span>
+                    </div>
+                </div>
+                <div class="card-body">
+                    {% if access_permissions %}
+                    <div class="table-responsive">
+                        <table class="table table-hover">
+                            <thead>
+                                <tr>
+                                    <th>User</th>
+                                    <th>Access Level</th>
+                                    <th>Permissions</th>
+                                    <th>Granted By</th>
+                                    <th>Granted On</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for access in access_permissions %}
+                                <tr>
+                                    <td>
+                                        <div class="d-flex align-items-center">
+                                            <div class="avatar-sm me-2">
+                                                <div class="avatar-title bg-light rounded-circle">
+                                                    {{ access.user.get_full_name|slice:":1"|upper }}
+                                                </div>
+                                            </div>
+                                            <div>
+                                                <h6 class="mb-0">{{ access.user.get_full_name }}</h6>
+                                                <small class="text-muted">{{ access.user.email }}</small>
+                                                {% if access.user == store.manager %}
+                                                <span class="badge bg-warning ms-2">Manager</span>
+                                                {% endif %}
+                                            </div>
+                                        </div>
+                                    </td>
+                                    <td>
+                                        <span class="badge {% if access.access_level == 'admin' %}bg-danger
+                                                          {% elif access.access_level == 'manager' %}bg-warning
+                                                          {% elif access.access_level == 'staff' %}bg-info
+                                                          {% else %}bg-secondary{% endif %}">
+                                            {{ access.get_access_level_display }}
+                                        </span>
+                                    </td>
+                                    <td>
+                                        <div class="permission-badges">
+                                            {% if access.can_view_sales %}
+                                            <span class="badge bg-success" data-bs-toggle="tooltip" title="View Sales">VS</span>
+                                            {% endif %}
+                                            {% if access.can_create_sales %}
+                                            <span class="badge bg-success" data-bs-toggle="tooltip" title="Create Sales">CS</span>
+                                            {% endif %}
+                                            {% if access.can_view_inventory %}
+                                            <span class="badge bg-success" data-bs-toggle="tooltip" title="View Inventory">VI</span>
+                                            {% endif %}
+                                            {% if access.can_manage_inventory %}
+                                            <span class="badge bg-success" data-bs-toggle="tooltip" title="Manage Inventory">MI</span>
+                                            {% endif %}
+                                            {% if access.can_fiscalize %}
+                                            <span class="badge bg-success" data-bs-toggle="tooltip" title="Fiscalize">F</span>
+                                            {% endif %}
+                                            {% if access.can_manage_staff %}
+                                            <span class="badge bg-success" data-bs-toggle="tooltip" title="Manage Staff">MS</span>
+                                            {% endif %}
+                                        </div>
+                                    </td>
+                                    <td>
+                                        {% if access.granted_by %}
+                                        {{ access.granted_by.get_full_name }}
+                                        {% else %}
+                                        <span class="text-muted">System</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>{{ access.granted_at|date:"M d, Y" }}</td>
+                                    <td>
+                                        <div class="btn-group" role="group">
+                                            <a href="{% url 'stores:edit_store_access' store_id=store.id user_id=access.user.id %}" 
+                                               class="btn btn-sm btn-outline-primary" 
+                                               title="Edit Permissions">
+                                                <i class="fas fa-edit"></i>
+                                            </a>
+                                            {% if can_manage_access and access.user != request.user %}
+                                            <form method="post" 
+                                                  action="{% url 'stores:revoke_store_access' store_id=store.id user_id=access.user.id %}"
+                                                  class="d-inline"
+                                                  onsubmit="return confirm('Are you sure you want to revoke access for {{ access.user.get_full_name }}?');">
+                                                {% csrf_token %}
+                                                <button type="submit" class="btn btn-sm btn-outline-danger" title="Revoke Access">
+                                                    <i class="fas fa-user-times"></i>
+                                                </button>
+                                            </form>
+                                            {% endif %}
+                                        </div>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- Pagination -->
+                    {% if is_paginated %}
+                    <nav aria-label="Page navigation" class="mt-4">
+                        <ul class="pagination justify-content-center">
+                            {% if page_obj.has_previous %}
+                            <li class="page-item">
+                                <a class="page-link" href="?page={{ page_obj.previous_page_number }}">Previous</a>
+                            </li>
+                            {% endif %}
+                            
+                            {% for num in page_obj.paginator.page_range %}
+                            {% if page_obj.number == num %}
+                            <li class="page-item active">
+                                <span class="page-link">{{ num }}</span>
+                            </li>
+                            {% elif num > page_obj.number|add:'-3' and num < page_obj.number|add:'3' %}
+                            <li class="page-item">
+                                <a class="page-link" href="?page={{ num }}">{{ num }}</a>
+                            </li>
+                            {% endif %}
+                            {% endfor %}
+                            
+                            {% if page_obj.has_next %}
+                            <li class="page-item">
+                                <a class="page-link" href="?page={{ page_obj.next_page_number }}">Next</a>
+                            </li>
+                            {% endif %}
+                        </ul>
+                    </nav>
+                    {% endif %}
+
+                    {% else %}
+                    <div class="text-center py-5">
+                        <div class="mb-3">
+                            <i class="fas fa-user-lock fa-4x text-muted"></i>
+                        </div>
+                        <h4 class="text-muted">No Access Permissions Found</h4>
+                        <p class="text-muted">No users have been granted access to this store yet.</p>
+                        {% if can_manage_access %}
+                        <a href="#grant-access" class="btn btn-primary">
+                            <i class="fas fa-plus"></i> Grant First Access
+                        </a>
+                        {% endif %}
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+
+            <!-- Permissions Legend -->
+            <div class="card mt-4">
+                <div class="card-header">
+                    <h6 class="card-title mb-0">Permissions Legend</h6>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <h6>Access Levels:</h6>
+                            <ul class="list-unstyled">
+                                <li><span class="badge bg-danger">Admin</span> - Full access including staff management</li>
+                                <li><span class="badge bg-warning">Manager</span> - Can manage inventory and view reports</li>
+                                <li><span class="badge bg-info">Staff</span> - Can view and create sales</li>
+                                <li><span class="badge bg-secondary">View Only</span> - Can only view data</li>
+                            </ul>
+                        </div>
+                        <div class="col-md-6">
+                            <h6>Permission Badges:</h6>
+                            <ul class="list-unstyled">
+                                <li><span class="badge bg-success">VS</span> - View Sales</li>
+                                <li><span class="badge bg-success">CS</span> - Create Sales</li>
+                                <li><span class="badge bg-success">VI</span> - View Inventory</li>
+                                <li><span class="badge bg-success">MI</span> - Manage Inventory</li>
+                                <li><span class="badge bg-success">F</span> - Fiscalize</li>
+                                <li><span class="badge bg-success">MS</span> - Manage Staff</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // Initialize tooltips
+    document.addEventListener('DOMContentLoaded', function() {
+        var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+        var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
+            return new bootstrap.Tooltip(tooltipTriggerEl);
+        });
+    });
+
+    // Auto-select access level based on user role
+    document.getElementById('user_id').addEventListener('change', function() {
+        var userId = this.value;
+        if (userId) {
+            // You could add AJAX call here to get user's role and suggest access level
+            // For now, default to 'staff'
+            document.getElementById('access_level').value = 'staff';
+        }
+    });
+</script>
+{% endblock %}

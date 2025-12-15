@@ -14,7 +14,6 @@ from django.contrib.contenttypes.models import ContentType
 import json
 
 
-
 def validate_phone_number(value):
     """Enhanced phone number validation"""
     if value and not value.startswith('+'):
@@ -133,11 +132,11 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
     last_name = models.CharField(max_length=50, blank=True, verbose_name=_("Last Name"))
     middle_name = models.CharField(max_length=50, blank=True, verbose_name=_("Middle Name"))
     primary_role = models.ForeignKey(
-    'Role', 
-    on_delete=models.SET_NULL, 
-    null=True, 
-    blank=True,
-    related_name='users_with_primary_role'
+        'Role',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='users_with_primary_role'
     )
     # SaaS Admin specific fields (special system user)
     is_saas_admin = models.BooleanField(
@@ -270,7 +269,7 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
     def effective_primary_role(self):
         """Get primary role from database or compute it"""
         return self.primary_role or self.computed_primary_role
-    
+
     @property
     def all_roles(self):
         """Get all roles assigned to this user"""
@@ -405,7 +404,6 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
 
         return my_priority >= target_priority
 
-
     def get_manageable_users(self):
         """Get queryset of users this user can manage"""
         if self.is_saas_admin:
@@ -445,6 +443,188 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
         if self.is_saas_admin or self.can_access_all_companies:
             return True
         return self.company == company
+
+    def get_accessible_stores(self):
+        """
+        Get all stores this user can access based on:
+        1. Direct store assignment (staff field)
+        2. StoreAccess permissions
+        3. Role-based access
+        4. Company-wide access flags
+        """
+        from stores.models import Store, StoreAccess
+
+        # SaaS admin can access all stores
+        if self.is_saas_admin:
+            return Store.objects.filter(is_active=True)
+
+        # Company admin can access all stores in their company
+        if self.company_admin:
+            return Store.objects.filter(
+                company=self.company,
+                is_active=True
+            )
+
+        # Get stores through StoreAccess model
+        accessible_store_ids = StoreAccess.objects.filter(
+            user=self,
+            is_active=True
+        ).values_list('store_id', flat=True)
+
+        # Get stores where user is directly assigned as staff
+        directly_assigned = self.stores.filter(is_active=True)
+
+        # Get stores where user is a manager
+        managed_stores = self.managed_stores.filter(is_active=True)
+
+        # Get stores accessible by all company users
+        company_wide_stores = Store.objects.filter(
+            company=self.company,
+            accessible_by_all=True,
+            is_active=True
+        )
+
+        # Combine all querysets
+        from django.db.models import Q
+        all_accessible = Store.objects.filter(
+            Q(id__in=accessible_store_ids) |
+            Q(id__in=directly_assigned.values_list('id', flat=True)) |
+            Q(id__in=managed_stores.values_list('id', flat=True)) |
+            Q(id__in=company_wide_stores.values_list('id', flat=True)),
+            company=self.company,
+            is_active=True
+        ).distinct()
+
+        return all_accessible
+
+    def can_access_store(self, store):
+        """
+        Check if user can access a specific store
+        """
+        # SaaS admin can access all stores
+        if self.is_saas_admin:
+            return True
+
+        # Check company match
+        if self.company_id != store.company_id:
+            return False
+
+        # Company admin can access all stores
+        if self.company_admin:
+            return True
+
+        # Check if store is accessible by all
+        if store.accessible_by_all:
+            return True
+
+        # Check direct assignment
+        if store.staff.filter(id=self.id).exists():
+            return True
+
+        # Check manager assignment
+        if store.store_managers.filter(id=self.id).exists():
+            return True
+
+        # Check StoreAccess permission
+        from stores.models import StoreAccess
+        return StoreAccess.objects.filter(
+            user=self,
+            store=store,
+            is_active=True
+        ).exists()
+
+    def get_store_access_level(self, store):
+        """
+        Get user's access level for a specific store
+        Returns: 'admin', 'manager', 'staff', 'view', or None
+        """
+        from stores.models import StoreAccess
+
+        if self.is_saas_admin or self.company_admin:
+            return 'admin'
+
+        if store.store_managers.filter(id=self.id).exists():
+            return 'manager'
+
+        access_perm = StoreAccess.objects.filter(
+            user=self,
+            store=store,
+            is_active=True
+        ).first()
+
+        if access_perm:
+            return access_perm.access_level
+
+        if store.staff.filter(id=self.id).exists():
+            return 'staff'
+
+        if store.accessible_by_all:
+            return 'view'
+
+        return None
+
+    def has_store_permission(self, store, permission):
+        """
+        Check if user has a specific permission for a store
+
+        Args:
+            store: Store instance
+            permission: String like 'can_create_sales', 'can_manage_inventory'
+        """
+        from stores.models import StoreAccess
+
+        # SaaS admin and company admin have all permissions
+        if self.is_saas_admin or self.company_admin:
+            return True
+
+        # Store managers have elevated permissions
+        if store.store_managers.filter(id=self.id).exists():
+            return permission not in ['can_delete_store']  # Managers can't delete stores
+
+        # Check StoreAccess permissions
+        access = StoreAccess.objects.filter(
+            user=self,
+            store=store,
+            is_active=True
+        ).first()
+
+        if access:
+            return getattr(access, permission, False)
+
+        # Default staff permissions if directly assigned
+        if store.staff.filter(id=self.id).exists():
+            basic_permissions = ['can_view_sales', 'can_create_sales', 'can_view_inventory']
+            return permission in basic_permissions
+
+        return False
+
+    @property
+    def default_store(self):
+        """
+        Get user's default/primary store
+        """
+        accessible_stores = self.get_accessible_stores()
+
+        # Try to get from user preferences first
+        if self.metadata.get('default_store_id'):
+            store = accessible_stores.filter(
+                id=self.metadata['default_store_id']
+            ).first()
+            if store:
+                return store
+
+        # Return first accessible store
+        return accessible_stores.first()
+
+    def set_default_store(self, store):
+        """
+        Set user's default store
+        """
+        if self.can_access_store(store):
+            self.metadata['default_store_id'] = store.id
+            self.save(update_fields=['metadata'])
+            return True
+        return False
 
     def get_accessible_companies(self):
         """Get all companies this user can access"""
@@ -559,6 +739,7 @@ class UserSignature(models.Model):
 
     def __str__(self):
         return f"Signature for {self.user}"
+
 
 class RoleManager(models.Manager):
     """Custom manager for Role model with useful querysets"""
@@ -841,7 +1022,6 @@ class AuditLogManager(models.Manager):
 
 
 class AuditLog(models.Model):
-
     ACTION_TYPES = [
         # User Management
         ('user_created', _('User Created')),

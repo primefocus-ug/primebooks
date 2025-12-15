@@ -1,5 +1,5 @@
 from math import radians, sin, cos, atan2, sqrt
-
+from accounts.models import AuditLog
 from django.db import models
 from django.core.validators import RegexValidator, MinValueValidator
 from django.urls import reverse
@@ -19,7 +19,6 @@ class Store(models.Model):
         ('OUTLET', _('Retail Outlet')),
     ]
 
-    # CRITICAL: Add company ForeignKey (from CompanyBranch)
     company = models.ForeignKey(
         'company.Company',
         on_delete=models.CASCADE,
@@ -30,10 +29,24 @@ class Store(models.Model):
     staff = models.ManyToManyField(
         settings.AUTH_USER_MODEL,
         blank=True,
-        related_name='stores'
+        related_name='stores',
+        verbose_name=_("Assigned Staff"),
+        help_text=_("Users who can access this store")
+    )
+    store_managers = models.ManyToManyField(
+        settings.AUTH_USER_MODEL,
+        blank=True,
+        related_name='managed_stores',
+        verbose_name=_("Store Managers"),
+        help_text=_("Users who can manage this store")
     )
 
-    # Existing Store fields
+    accessible_by_all = models.BooleanField(
+        default=False,
+        verbose_name=_("Accessible by All Company Users"),
+        help_text=_("If checked, all users in the company can access this store")
+    )
+
     name = models.CharField(max_length=255, verbose_name=_("Store Name"))
     code = models.CharField(
         max_length=20,
@@ -65,7 +78,86 @@ class Store(models.Model):
         verbose_name=_("TIN"),
         help_text=_("Tax Identification Number")
     )
+    # EFRIS Store Override Configuration
+    use_company_efris = models.BooleanField(
+        default=True,
+        verbose_name=_("Use Company EFRIS Configuration"),
+        help_text=_("When checked, uses company-level EFRIS settings. Uncheck to use store-specific settings.")
+    )
 
+    # Store-specific EFRIS credentials
+    store_efris_client_id = models.CharField(
+        max_length=100,
+        blank=True,
+        null=True,
+        verbose_name=_("Store EFRIS Client ID")
+    )
+
+    store_efris_api_key = models.CharField(
+        max_length=200,
+        blank=True,
+        null=True,
+        verbose_name=_("Store EFRIS API Key")
+    )
+
+    store_efris_private_key = models.TextField(
+        blank=True,
+        null=True,
+        verbose_name=_("Store Private Key")
+    )
+
+    store_efris_public_certificate = models.TextField(
+        blank=True,
+        null=True,
+        verbose_name=_("Store Public Certificate")
+    )
+
+    store_efris_key_password = models.CharField(
+        max_length=255,
+        blank=True,
+        null=True,
+        verbose_name=_("Store Key Password")
+    )
+
+    store_efris_certificate_fingerprint = models.CharField(
+        max_length=128,
+        blank=True,
+        null=True,
+        verbose_name=_("Store Certificate Fingerprint")
+    )
+
+    store_efris_is_production = models.BooleanField(
+        default=False,
+        verbose_name=_("Store EFRIS Production Mode")
+    )
+
+    store_efris_integration_mode = models.CharField(
+        max_length=10,
+        choices=[('online', 'Online Mode'), ('offline', 'Offline Mode')],
+        default='online',
+        verbose_name=_("Store EFRIS Integration Mode")
+    )
+
+    store_auto_fiscalize_sales = models.BooleanField(
+        default=True,
+        verbose_name=_("Store Auto-Fiscalize Sales")
+    )
+
+    store_auto_sync_products = models.BooleanField(
+        default=True,
+        verbose_name=_("Store Auto-Sync Products")
+    )
+
+    store_efris_is_active = models.BooleanField(
+        default=False,
+        verbose_name=_("Store EFRIS Active")
+    )
+
+    store_efris_last_sync = models.DateTimeField(
+        blank=True,
+        null=True,
+        verbose_name=_("Store EFRIS Last Sync")
+    )
     # Branch behavior flags
     is_main_branch = models.BooleanField(
         default=False,
@@ -353,7 +445,16 @@ class Store(models.Model):
         from django.db.models import Sum, Count, Avg
 
         start_date = timezone.now() - timedelta(days=days)
-        sales = self.sales.filter(date__gte=start_date)
+
+        # Use 'created_at' or 'date' field based on what your Sale model has
+        try:
+            sales = self.sales.filter(created_at__gte=start_date)
+        except:
+            # Try alternative field names
+            try:
+                sales = self.sales.filter(date__gte=start_date)
+            except:
+                sales = self.sales.all()
 
         return {
             'total_sales': sales.count(),
@@ -362,6 +463,306 @@ class Store(models.Model):
             'paid_sales': sales.filter(payment_status='PAID').count(),
             'pending_sales': sales.filter(payment_status='PENDING').count(),
         }
+
+
+    def get_company_efris_config(self):
+        """
+        Fetch company EFRIS configuration with improved error handling.
+        Returns a dictionary of company EFRIS values.
+        """
+        if not self.company_id:
+            return {}
+
+        try:
+            from django_tenants.utils import schema_context
+            from company.models import Company
+
+            with schema_context('public'):
+                company = Company.objects.get(company_id=self.company_id)
+
+                config = {
+                    # Business Information
+                    'tin': company.tin or '',
+                    'nin': company.nin or '',
+                    'email': company.email or '',
+                    'phone': company.phone or '',
+                    'business_address': company.physical_address or '',
+                    'business_name': company.trading_name or company.name or '',
+                    'taxpayer_name': company.name or '',
+
+                    # EFRIS Configuration
+                    'efris_enabled': company.efris_enabled,
+                    'efris_is_active': company.efris_is_active,
+                    'efris_device_number': company.efris_device_number or '',
+                    'efris_client_id': company.efris_client_id or '',
+                    'efris_api_key': company.efris_api_key or '',
+                    'efris_is_production': company.efris_is_production,
+                    'efris_integration_mode': company.efris_integration_mode,
+                    'efris_auto_fiscalize_sales': company.efris_auto_fiscalize_sales,
+                    'efris_auto_sync_products': company.efris_auto_sync_products,
+                }
+
+                # Handle certificate data from JSONField
+                if company.efris_certificate_data and isinstance(company.efris_certificate_data, dict):
+                    config.update({
+                        'efris_private_key': company.efris_certificate_data.get('private_key', ''),
+                        'efris_public_certificate': company.efris_certificate_data.get('public_certificate', ''),
+                        'efris_key_password': company.efris_certificate_data.get('key_password', ''),
+                        'efris_certificate_fingerprint': company.efris_certificate_data.get('certificate_fingerprint',
+                                                                                            ''),
+                    })
+
+                return config
+
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Error fetching company EFRIS config for store {self.id}: {e}")
+            return {}
+
+    def get_efris_value(self, field_name, company_value=None):
+        """
+        Get EFRIS value with store override logic.
+
+        Args:
+            field_name: The base field name (without 'store_' prefix)
+            company_value: The company's value for this field (optional)
+
+        Returns:
+            The effective value (store-specific or company value)
+        """
+        # If using company config, return company value
+        if self.use_company_efris:
+            return company_value
+
+        # Try to get store-specific field
+        store_field_name = f"store_{field_name}"
+
+        # Handle special field mappings
+        if field_name == 'tin':
+            store_field_name = 'tin'
+        elif field_name == 'efris_device_number':
+            store_field_name = 'efris_device_number'
+        elif field_name == 'efris_certificate_fingerprint':
+            store_field_name = 'store_efris_certificate_fingerprint'
+
+        if hasattr(self, store_field_name):
+            store_value = getattr(self, store_field_name)
+            # Return store value if it's not empty
+            if store_value not in [None, '', [], {}]:
+                return store_value
+
+        # Fallback to company value
+        return company_value
+
+    @property
+    def effective_efris_config(self):
+        """
+        Returns the effective EFRIS configuration for this store.
+        Automatically uses store-specific values when available and enabled.
+        """
+        # Get company config as base
+        company_config = self.get_company_efris_config()
+
+        # Build effective config with overrides
+        effective_config = {
+            # Core EFRIS fields
+            'tin': self.get_efris_value('tin', company_config.get('tin')),
+            'nin': self.get_efris_value('nin', company_config.get('nin')),
+            'device_number': self.get_efris_value('efris_device_number', company_config.get('efris_device_number')),
+
+            # API Configuration
+            'client_id': self.get_efris_value('efris_client_id', company_config.get('efris_client_id')),
+            'api_key': self.get_efris_value('efris_api_key', company_config.get('efris_api_key')),
+
+            # Certificate Configuration
+            'private_key': self.get_efris_value('efris_private_key', company_config.get('efris_private_key')),
+            'public_certificate': self.get_efris_value('efris_public_certificate',
+                                                       company_config.get('efris_public_certificate')),
+            'key_password': self.get_efris_value('efris_key_password', company_config.get('efris_key_password')),
+            'certificate_fingerprint': self.get_efris_value('efris_certificate_fingerprint',
+                                                            company_config.get('efris_certificate_fingerprint')),
+
+            # Environment & Mode
+            'is_production': self.get_efris_value('efris_is_production', company_config.get('efris_is_production')),
+            'integration_mode': self.get_efris_value('efris_integration_mode',
+                                                     company_config.get('efris_integration_mode')),
+
+            # Automation Settings
+            'auto_fiscalize_sales': self.get_efris_value('auto_fiscalize_sales',
+                                                         company_config.get('efris_auto_fiscalize_sales')),
+            'auto_sync_products': self.get_efris_value('auto_sync_products',
+                                                       company_config.get('efris_auto_sync_products')),
+
+            # Status
+            'is_active': self.get_efris_value('efris_is_active', company_config.get('efris_is_active')),
+            'enabled': self.get_efris_value('efris_enabled', company_config.get('efris_enabled')),
+            'last_sync': self.get_efris_value('efris_last_sync', company_config.get('efris_last_sync')),
+
+            'email': self.email or company_config.get('email'),
+            'phone': self.phone or company_config.get('phone'),
+            'business_address': self.physical_address or company_config.get('business_address'),
+
+            # Store Information
+            'store_name': self.name,
+            'store_code': self.code,
+            'store_id': self.id,
+
+            # Configuration Source
+            'use_company_efris': self.use_company_efris,
+            'config_source': 'company' if self.use_company_efris else 'store',
+        }
+
+        effective_config['business_name'] = company_config.get('business_name', '')
+        effective_config['taxpayer_name'] = company_config.get('taxpayer_name', '')
+
+        return effective_config
+
+    @property
+    def can_fiscalize(self):
+        """
+        Enhanced check if store can fiscalize transactions.
+        Considers both company and store-specific EFRIS config.
+        """
+        config = self.effective_efris_config
+
+        # Required fields for fiscalization
+        required_fields = [
+            config.get('enabled'),
+            config.get('is_active'),
+            config.get('device_number'),
+            config.get('tin'),
+            config.get('private_key'),
+            config.get('public_certificate'),
+        ]
+
+        return (
+                all(required_fields) and
+                self.is_active and
+                self.allows_sales
+        )
+
+    @property
+    def efris_config_status(self):
+        """
+        Get detailed EFRIS configuration status.
+        Returns dict with status information.
+        """
+        config = self.effective_efris_config
+
+        status = {
+            'configured': False,
+            'config_source': config.get('config_source'),
+            'missing_fields': [],
+            'warnings': [],
+        }
+
+        # Check required fields
+        required_fields = {
+            'tin': 'TIN Number',
+            'device_number': 'Device Number',
+            'private_key': 'Private Key',
+            'public_certificate': 'Public Certificate',
+            'email': 'Email Address',
+            'phone': 'Phone Number',
+        }
+
+        for field, label in required_fields.items():
+            if not config.get(field):
+                status['missing_fields'].append(label)
+
+        # Check optional but recommended fields
+        if not config.get('business_address'):
+            status['warnings'].append('Business address not set')
+
+        if not config.get('key_password') and config.get('private_key'):
+            status['warnings'].append('Private key may not be encrypted')
+
+        # Determine if configured
+        status['configured'] = len(status['missing_fields']) == 0
+
+        return status
+
+    def validate_efris_configuration(self):
+        """
+        Validate EFRIS configuration and return errors.
+        Returns tuple: (is_valid, errors_list)
+        """
+        config = self.effective_efris_config
+        errors = []
+
+        # Check if EFRIS is enabled
+        if not config.get('enabled'):
+            return True, []  # Not an error if EFRIS is disabled
+
+        # Required fields validation
+        if not config.get('tin'):
+            errors.append("TIN number is required for EFRIS integration")
+
+        if not config.get('device_number'):
+            errors.append("EFRIS device number is required")
+
+        if not config.get('private_key'):
+            errors.append("Private key is required for EFRIS integration")
+
+        if not config.get('public_certificate'):
+            errors.append("Public certificate is required for EFRIS integration")
+
+        if not config.get('email'):
+            errors.append("Email address is required for EFRIS integration")
+
+        if not config.get('phone'):
+            errors.append("Phone number is required for EFRIS integration")
+
+        # Validate certificate fingerprint if provided
+        if config.get('certificate_fingerprint'):
+            fingerprint = config.get('certificate_fingerprint')
+            if len(fingerprint) not in [64, 128]:  # SHA256 or SHA512
+                errors.append("Invalid certificate fingerprint format")
+
+        return len(errors) == 0, errors
+
+    def switch_to_company_efris(self):
+        """Switch to using company EFRIS configuration."""
+        self.use_company_efris = True
+        self.save(update_fields=['use_company_efris', 'updated_at'])
+
+    def switch_to_store_efris(self):
+        """
+        Switch to using store-specific EFRIS configuration.
+        Validates that required store fields are set.
+        """
+        is_valid, errors = self.validate_efris_configuration()
+
+        if not is_valid:
+            raise ValueError(f"Cannot switch to store EFRIS config. Missing: {', '.join(errors)}")
+
+        self.use_company_efris = False
+        self.save(update_fields=['use_company_efris', 'updated_at'])
+
+    def copy_company_efris_to_store(self):
+        """
+        Copy company EFRIS configuration to store-specific fields.
+        Useful for creating a store-specific config based on company settings.
+        """
+        company_config = self.get_company_efris_config()
+
+        # Copy relevant fields
+        self.tin = company_config.get('tin')
+        self.efris_device_number = company_config.get('efris_device_number')
+        self.store_efris_client_id = company_config.get('efris_client_id')
+        self.store_efris_api_key = company_config.get('efris_api_key')
+        self.store_efris_private_key = company_config.get('efris_private_key')
+        self.store_efris_public_certificate = company_config.get('efris_public_certificate')
+        self.store_efris_key_password = company_config.get('efris_key_password')
+        self.store_efris_certificate_fingerprint = company_config.get('efris_certificate_fingerprint')
+        self.store_efris_is_production = company_config.get('efris_is_production')
+        self.store_efris_integration_mode = company_config.get('efris_integration_mode')
+        self.store_auto_fiscalize_sales = company_config.get('efris_auto_fiscalize_sales')
+        self.store_auto_sync_products = company_config.get('efris_auto_sync_products')
+        self.store_efris_is_active = company_config.get('efris_is_active')
+
+        self.save()
 
     def get_device_summary(self):
         """Get summary of devices for this store."""
@@ -559,15 +960,6 @@ class Store(models.Model):
             'nin': self.nin,
         }
 
-    @property
-    def can_fiscalize(self):
-        """Check if store can fiscalize transactions"""
-        return (
-                self.is_registered_with_efris and
-                self.efris_device_number and
-                self.efris_enabled and
-                self.is_active
-        )
 
     @property
     def efris_status(self):
@@ -619,6 +1011,94 @@ class Store(models.Model):
         """Backward compatibility for templates using branch.code"""
         return self.code
 
+
+class StoreAccess(models.Model):
+    """
+    Detailed store access control with permissions
+    """
+    ACCESS_LEVELS = [
+        ('view', _('View Only')),
+        ('staff', _('Staff Access')),
+        ('manager', _('Manager Access')),
+        ('admin', _('Admin Access')),
+    ]
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='store_access_permissions',
+        verbose_name=_("User")
+    )
+
+    store = models.ForeignKey(
+        'Store',
+        on_delete=models.CASCADE,
+        related_name='access_permissions',
+        verbose_name=_("Store")
+    )
+
+    access_level = models.CharField(
+        max_length=20,
+        choices=ACCESS_LEVELS,
+        default='staff',
+        verbose_name=_("Access Level")
+    )
+
+    # Granular permissions
+    can_view_sales = models.BooleanField(default=True)
+    can_create_sales = models.BooleanField(default=True)
+    can_view_inventory = models.BooleanField(default=True)
+    can_manage_inventory = models.BooleanField(default=False)
+    can_view_reports = models.BooleanField(default=False)
+    can_fiscalize = models.BooleanField(default=False)
+    can_manage_staff = models.BooleanField(default=False)
+
+    # Metadata
+    granted_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='store_access_grants',
+        verbose_name=_("Granted By")
+    )
+
+    granted_at = models.DateTimeField(auto_now_add=True)
+    revoked_at = models.DateTimeField(null=True, blank=True)
+    is_active = models.BooleanField(default=True)
+
+    notes = models.TextField(blank=True)
+
+    class Meta:
+        verbose_name = _("Store Access Permission")
+        verbose_name_plural = _("Store Access Permissions")
+        unique_together = [['user', 'store']]
+        indexes = [
+            models.Index(fields=['user', 'is_active']),
+            models.Index(fields=['store', 'is_active']),
+            models.Index(fields=['access_level', 'is_active']),
+        ]
+
+    def __str__(self):
+        return f"{self.user.get_full_name()} - {self.store.name} ({self.get_access_level_display()})"
+
+    def revoke(self, revoked_by=None):
+        """Revoke access to this store"""
+        self.is_active = False
+        self.revoked_at = timezone.now()
+        self.save(update_fields=['is_active', 'revoked_at'])
+
+        # Log the revocation
+        AuditLog.log(
+            action='store_access_revoked',
+            user=revoked_by,
+            description=f"Revoked {self.user.get_full_name()}'s access to {self.store.name}",
+            store=self.store,
+            metadata={
+                'affected_user_id': self.user.id,
+                'access_level': self.access_level
+            }
+        )
 
 def geocode_address(address_string):
     """

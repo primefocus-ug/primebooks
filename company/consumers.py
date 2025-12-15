@@ -144,7 +144,7 @@ class CompanyDashboardConsumer(AsyncWebsocketConsumer):
                 store_id__in=store_ids,
                 created_at__date__gte=thirty_days_ago,
                 is_voided=False,
-                is_completed=True
+                status__in=['COMPLETED', 'PAID']
             ).aggregate(
                 total_revenue=Sum('total_amount'),
                 total_sales=Count('id'),
@@ -193,7 +193,7 @@ class CompanyDashboardConsumer(AsyncWebsocketConsumer):
                 store_id__in=store_ids,
                 created_at__date=today,
                 is_voided=False,
-                is_completed=True
+                status__in=['COMPLETED', 'PAID']
             ).aggregate(
                 revenue=Sum('total_amount'),
                 count=Count('id')
@@ -208,7 +208,7 @@ class CompanyDashboardConsumer(AsyncWebsocketConsumer):
                 store_id__in=store_ids,
                 created_at__gte=hour_ago,
                 is_voided=False,
-                is_completed=True
+                status__in=['COMPLETED', 'PAID']
             ).select_related('company').order_by('-created_at')[:5]
 
             for sale in recent_sales:
@@ -305,7 +305,7 @@ class CompanyDashboardConsumer(AsyncWebsocketConsumer):
                 store_id__in=store_ids,
                 created_at__date__gte=thirty_days_ago,
                 is_voided=False,
-                is_completed=True
+                status__in=['COMPLETED', 'PAID']
             ).aggregate(
                 total_revenue=Sum('total_amount'),
                 total_sales=Count('id'),
@@ -320,7 +320,7 @@ class CompanyDashboardConsumer(AsyncWebsocketConsumer):
                     store_id__in=store_ids,
                     created_at__date=date,
                     is_voided=False,
-                    is_completed=True
+                    status__in=['COMPLETED', 'PAID']
                 ).aggregate(total=Sum('total_amount'))['total'] or 0
 
                 daily_revenue.append({
@@ -335,7 +335,7 @@ class CompanyDashboardConsumer(AsyncWebsocketConsumer):
                     store=store,
                     created_at__date__gte=thirty_days_ago,
                     is_voided=False,
-                    is_completed=True
+                    status__in=['COMPLETED', 'PAID']
                 ).aggregate(
                     revenue=Sum('total_amount'),
                     sales_count=Count('id')
@@ -401,7 +401,7 @@ class CompanyDashboardConsumer(AsyncWebsocketConsumer):
                     store_id__in=store_ids,
                     created_at__date__gte=thirty_days_ago,
                     is_voided=False,
-                    is_completed=True
+                    status__in=['COMPLETED', 'PAID']
                 ).aggregate(
                     revenue=Sum('total_amount'),
                     sales_count=Count('id')
@@ -579,7 +579,7 @@ class BranchAnalyticsConsumer(AsyncWebsocketConsumer):
                 store_id__in=store_ids,
                 created_at__date__gte=thirty_days_ago,
                 is_voided=False,
-                is_completed=True
+                status__in=['COMPLETED', 'PAID']
             ).aggregate(
                 total_revenue=Sum('total_amount'),
                 total_sales=Count('id'),
@@ -598,7 +598,7 @@ class BranchAnalyticsConsumer(AsyncWebsocketConsumer):
                     store_id__in=store_ids,
                     created_at__range=[hour_start, hour_end],
                     is_voided=False,
-                    is_completed=True
+                    status__in=['COMPLETED', 'PAID']
                 ).count()
 
                 hourly_sales.append({
@@ -644,7 +644,7 @@ class BranchAnalyticsConsumer(AsyncWebsocketConsumer):
                 store_id__in=store_ids,
                 created_at__date=today,
                 is_voided=False,
-                is_completed=True
+                status__in=['COMPLETED', 'PAID']
             ).aggregate(
                 revenue=Sum('total_amount'),
                 sales_count=Count('id')
@@ -656,7 +656,7 @@ class BranchAnalyticsConsumer(AsyncWebsocketConsumer):
                 store_id__in=store_ids,
                 created_at__gte=hour_ago,
                 is_voided=False,
-                is_completed=True
+                status__in=['COMPLETED', 'PAID']
             ).count()
 
             return {

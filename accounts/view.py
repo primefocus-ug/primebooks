@@ -318,7 +318,7 @@ def password_reset_request_simple(request):
     return render(request, 'accounts/password_reset_request.html', {'form': form})
 
 @login_required
-@permission_required('accounts.add_customuser', raise_exception=True)
+@permission_required('accounts.view_role', raise_exception=True)
 def role_list(request):
     """Display all roles with statistics"""
     company = request.tenant
@@ -345,7 +345,7 @@ def role_list(request):
 
 
 @login_required
-@permission_required('accounts.add_customuser', raise_exception=True)
+@permission_required('accounts.view_role', raise_exception=True)
 def role_detail(request, pk):
     """Show detailed view of a role with permissions and users"""
     company = request.tenant
@@ -382,7 +382,7 @@ def role_detail(request, pk):
 
 
 @login_required
-@permission_required('accounts.add_customuser', raise_exception=True)
+@permission_required('accounts.add_role', raise_exception=True)
 def role_create(request):
     """Create a new custom role"""
     company = request.tenant
@@ -411,7 +411,7 @@ def role_create(request):
 
 
 @login_required
-@permission_required('accounts.add_customuser', raise_exception=True)
+@permission_required('accounts.change_role', raise_exception=True)
 def role_edit(request, pk):
     """Edit an existing role"""
     company = request.tenant
@@ -447,7 +447,7 @@ def role_edit(request, pk):
 
 
 @login_required
-@permission_required('accounts.add_customuser', raise_exception=True)
+@permission_required('accounts.add_role', raise_exception=True)
 def role_permissions(request, pk):
     """Manage permissions for a role with visual interface"""
     company = request.tenant
@@ -519,7 +519,7 @@ def role_permissions(request, pk):
 
 
 @login_required
-@permission_required('accounts.add_customuser', raise_exception=True)
+@permission_required('accounts.add_role', raise_exception=True)
 def role_users(request, pk):
     """Manage users assigned to a role"""
     company = request.tenant
@@ -582,7 +582,7 @@ def role_users(request, pk):
 
 
 @login_required
-@permission_required('accounts.add_customuser', raise_exception=True)
+@permission_required('accounts.delete_role', raise_exception=True)
 def role_delete(request, pk):
     """Delete a custom role"""
     company = request.tenant

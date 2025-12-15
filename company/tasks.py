@@ -151,7 +151,7 @@ def check_performance_alerts():
                         store_id__in=store_ids,
                         created_at__date__gte=thirty_days_ago,
                         is_voided=False,
-                        is_completed=True
+                        status__in=['COMPLETED', 'PAID']
                     ).count()
 
                     # Alert if no sales in 7 days
@@ -160,7 +160,7 @@ def check_performance_alerts():
                         store_id__in=store_ids,
                         created_at__date__gte=week_ago,
                         is_voided=False,
-                        is_completed=True
+                        status__in=['COMPLETED', 'PAID']
                     ).count()
 
                     if week_sales == 0 and recent_sales > 0:  # Was active but now inactive
@@ -975,7 +975,7 @@ def calculate_company_metrics(company):
                         store_id__in=store_ids,
                         created_at__date=today,
                         is_voided=False,
-                        is_completed=True
+                        status__in=['COMPLETED', 'PAID']
                     ).aggregate(
                         revenue=Sum('total_amount'),
                         count=Count('id')
@@ -997,7 +997,7 @@ def calculate_company_metrics(company):
                         store_id__in=store_ids,
                         created_at__gte=hour_ago,
                         is_voided=False,
-                        is_completed=True
+                        status__in=['COMPLETED', 'PAID']
                     ).select_related('store__company').order_by('-created_at')[:5]
 
                     for sale in recent_sales:
@@ -1007,7 +1007,9 @@ def calculate_company_metrics(company):
                             'timestamp': sale.created_at.isoformat(),
                             'amount': float(sale.total_amount),
                             'store_name': sale.store.name,
-                            'branch_name': sale.store.company.name
+                            'branch_name': sale.store.company.name,
+                            'status': sale.status,  # Added status to response
+                            'document_type': sale.document_type  # Added document type
                         })
 
                     # Recent device activities
@@ -1064,10 +1066,47 @@ def calculate_company_metrics(company):
             except Exception as user_error:
                 logger.error(f"Error getting active users for company {company.company_id}: {user_error}")
 
+            # ADDITIONAL METRICS: Today's invoices and receipts (optional)
+            try:
+                if store_ids:
+                    # Today's invoices
+                    today_invoices = Sale.objects.filter(
+                        store_id__in=store_ids,
+                        created_at__date=today,
+                        is_voided=False,
+                        document_type='INVOICE',
+                        status__in=['COMPLETED', 'PAID', 'PARTIALLY_PAID', 'PENDING_PAYMENT']
+                    ).aggregate(
+                        revenue=Sum('total_amount'),
+                        count=Count('id')
+                    )
+
+                    # Today's receipts
+                    today_receipts = Sale.objects.filter(
+                        store_id__in=store_ids,
+                        created_at__date=today,
+                        is_voided=False,
+                        document_type='RECEIPT',
+                        status__in=['COMPLETED', 'PAID']
+                    ).aggregate(
+                        revenue=Sum('total_amount'),
+                        count=Count('id')
+                    )
+                else:
+                    today_invoices = {'revenue': 0, 'count': 0}
+                    today_receipts = {'revenue': 0, 'count': 0}
+            except Exception:
+                today_invoices = {'revenue': 0, 'count': 0}
+                today_receipts = {'revenue': 0, 'count': 0}
+
             return {
                 'company_id': company.company_id,
                 'today_revenue': float(today_sales['revenue'] or 0),
                 'today_sales_count': today_sales['count'] or 0,
+                'today_invoice_revenue': float(today_invoices['revenue'] or 0),
+                'today_invoice_count': today_invoices['count'] or 0,
+                'today_receipt_revenue': float(today_receipts['revenue'] or 0),
+                'today_receipt_count': today_receipts['count'] or 0,
                 'recent_activities': recent_activities[:8],
                 'inventory_alerts': {
                     'low_stock_items': low_stock_count,
@@ -1083,6 +1122,10 @@ def calculate_company_metrics(company):
             'company_id': company.company_id,
             'today_revenue': 0.0,
             'today_sales_count': 0,
+            'today_invoice_revenue': 0.0,
+            'today_invoice_count': 0,
+            'today_receipt_revenue': 0.0,
+            'today_receipt_count': 0,
             'recent_activities': [],
             'inventory_alerts': {
                 'low_stock_items': 0,
@@ -1092,7 +1135,6 @@ def calculate_company_metrics(company):
             'timestamp': timezone.now().isoformat(),
             'error': str(e)
         }
-
 
 @shared_task(name='company.tasks.send_branch_analytics_update')
 def send_branch_analytics_update(branch_id):
@@ -1118,7 +1160,7 @@ def send_branch_analytics_update(branch_id):
                 store_id__in=store_ids,
                 created_at__date=today,
                 is_voided=False,
-                is_completed=True
+                status__in=['COMPLETED', 'PAID']
             ).aggregate(
                 revenue=Sum('total_amount'),
                 sales_count=Count('id')
@@ -1130,7 +1172,7 @@ def send_branch_analytics_update(branch_id):
                 store_id__in=store_ids,
                 created_at__gte=hour_ago,
                 is_voided=False,
-                is_completed=True
+                status__in=['COMPLETED', 'PAID']
             ).count()
 
             metrics = {

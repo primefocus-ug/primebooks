@@ -6,6 +6,42 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+from django.db import connection
+from django_tenants.utils import get_public_schema_name
+
+def store_context(request):
+    """
+    Add store-related context to all templates
+    SAFE for public + tenant schemas
+    """
+    context = {
+        'current_store': None,
+        'accessible_stores': [],
+        'can_switch_stores': False,
+    }
+
+    public_schema = get_public_schema_name()
+    current_schema = connection.schema_name
+
+    # 🔒 NEVER run tenant logic in public schema
+    if current_schema == public_schema:
+        return context
+
+    if not request.user.is_authenticated:
+        return context
+
+    # 🛡 Attribute-safe access
+    get_stores = getattr(request.user, 'get_accessible_stores', None)
+    if callable(get_stores):
+        stores = get_stores()
+        context['accessible_stores'] = stores
+        context['can_switch_stores'] = stores.count() > 1
+
+    context['current_store'] = getattr(request, 'current_store', None)
+
+    return context
+
+
 
 def current_store(request):
     """

@@ -6,7 +6,7 @@ from django.http import JsonResponse, HttpResponse
 from django.views.generic import ListView, DetailView
 from django.views.decorators.http import require_POST, require_http_methods
 from django.views.decorators.csrf import csrf_exempt
-from django.db.models import Q, Sum, Count, Avg, F,Min
+from django.db.models import Q, Sum, Count, Avg, F,Min,Max
 from django.db import transaction, IntegrityError
 from django.utils import timezone
 from django.core.mail import EmailMessage
@@ -25,87 +25,106 @@ import logging
 from datetime import timedelta
 from django.utils import timezone
 from django_tenants.utils import tenant_context
-
 from .models import Sale, SaleItem, Payment, Cart, CartItem, Receipt
 from .forms import (
     SaleForm, SaleItemForm, PaymentForm, CartForm, QuickSaleForm,
     SaleSearchForm, RefundForm, ReceiptForm, BulkActionForm,
     SaleItemFormSet, PaymentFormSet
 )
-from inventory.models import Product, Stock, StockMovement
+from inventory.models import Product, Stock, StockMovement,Service
 from customers.models import Customer
 from stores.models import Store
+from stores.utils import validate_store_access, get_user_accessible_stores
 from company.models import Company
 
 logger = logging.getLogger(__name__)
 
+def get_current_tenant(request):
+    """Get current tenant from request"""
+    return getattr(request, 'tenant', None)
+
+
+def get_user_company(user):
+    """Get user's company"""
+    return getattr(user, 'company', None)
+
 @login_required
 @require_POST
 def create_customer_ajax(request):
-    """
-    Simplified customer creation for the current tenant company
-    """
+    """Create customer within tenant context"""
     try:
-        name = request.POST.get('name', '').strip()
-        phone = request.POST.get('phone', '').strip()
-        email = request.POST.get('email', '').strip()
-        address = request.POST.get('address', '').strip()
-        customer_type = request.POST.get('customer_type', 'INDIVIDUAL').strip()
-        tin = request.POST.get('tin', '').strip()
-        nin = request.POST.get('nin', '').strip()
-        from_efris = request.POST.get('from_efris', 'false') == 'true'
-
-        logger.info(f"Creating customer: {name}, {phone}")
-
-        # --- Validation ---
-        if not name or not phone:
-            return JsonResponse({
-                'success': False,
-                'error': 'Name and phone are required'
-            })
-
-        if Customer.objects.filter(phone=phone).exists():
-            return JsonResponse({
-                'success': False,
-                'error': 'Customer with this phone number already exists'
-            })
-
-        # --- Get current company and store ---
-        company = getattr(request, 'tenant', None)
+        company = get_current_tenant(request)
         if not company:
-            return JsonResponse({'success': False, 'error': 'No company context found'})
+            return JsonResponse({
+                'success': False,
+                'error': 'No company context found'
+            })
 
-        store = Store.objects.filter(company=company).first()
-        if not store:
-            return JsonResponse({'success': False, 'error': 'No store available for this company'})
+        with tenant_context(company):
+            name = request.POST.get('name', '').strip()
+            phone = request.POST.get('phone', '').strip()
+            email = request.POST.get('email', '').strip()
+            address = request.POST.get('address', '').strip()
+            customer_type = request.POST.get('customer_type', 'INDIVIDUAL').strip()
+            tin = request.POST.get('tin', '').strip()
+            nin = request.POST.get('nin', '').strip()
+            brn = request.POST.get('brn', '').strip()
+            from_efris = request.POST.get('from_efris', 'false') == 'true'
 
-        # --- Create customer ---
-        customer = Customer.objects.create(
-            name=name,
-            phone=phone,
-            store=store,
-            email=email or None,
-            physical_address=address or None,
-            customer_type=customer_type,
-            tin=tin or None,
-            nin=nin or None,
-            efris_customer_type='2' if customer_type == 'BUSINESS' else '1'
-        )
+            logger.info(f"Creating customer: {name}, {phone} for tenant {company.schema_name}")
 
-        logger.info(f"✅ Customer created: {customer.name} (ID: {customer.id})")
+            # Validation
+            if not name or not phone:
+                return JsonResponse({
+                    'success': False,
+                    'error': 'Name and phone are required'
+                })
 
-        return JsonResponse({
-            'success': True,
-            'customer': {
-                'id': customer.id,
-                'name': customer.name,
-                'phone': customer.phone,
-                'email': customer.email or '',
-                'address': customer.physical_address or '',
-                'customer_type': customer.customer_type,
-                'tin': customer.tin or '',
-            }
-        })
+            if Customer.objects.filter(phone=phone).exists():
+                return JsonResponse({
+                    'success': False,
+                    'error': 'Customer with this phone number already exists'
+                })
+
+            # Get store (first active store for this company)
+            store = Store.objects.filter(company=company, is_active=True).first()
+            if not store:
+                return JsonResponse({
+                    'success': False,
+                    'error': 'No active store available for this company'
+                })
+
+            # Create customer
+            customer = Customer.objects.create(
+                name=name,
+                phone=phone,
+                store=store,
+                email=email or None,
+                physical_address=address or None,
+                customer_type=customer_type,
+                tin=tin or None,
+                nin=nin or None,
+                brn=brn or None,
+                efris_customer_type='2' if customer_type == 'BUSINESS' else '1',
+                created_by=request.user
+            )
+
+            logger.info(f"✅ Customer created: {customer.name} (ID: {customer.id})")
+
+            return JsonResponse({
+                'success': True,
+                'customer': {
+                    'id': customer.id,
+                    'name': customer.name,
+                    'phone': customer.phone,
+                    'email': customer.email or '',
+                    'address': customer.physical_address or '',
+                    'customer_type': customer.customer_type,
+                    'tin': customer.tin or '',
+                    'nin': customer.nin or '',
+                    'brn': customer.brn or '',
+                }
+            })
 
     except Exception as e:
         logger.error(f"❌ Error creating customer: {e}", exc_info=True)
@@ -114,154 +133,123 @@ def create_customer_ajax(request):
 
 @login_required
 def search_products_and_services(request):
-    """
-    Combined search endpoint for both products and services
-    """
+    """Combined search for products and services within tenant context"""
     try:
-        query = request.GET.get('q', '').strip()
-        store_id = request.GET.get('store_id')
-        item_type = request.GET.get('item_type', 'all')  # 'product', 'service', or 'all'
+        company = get_current_tenant(request)
+        if not company:
+            return JsonResponse({'error': 'No company context'}, status=403)
 
-        # Allow empty query for browsing (not just searching)
-        # Remove this restriction to let users browse without typing
-        # if len(query) < 2 and item_type == 'all':
-        #     return JsonResponse({'items': []})
+        with tenant_context(company):
+            query = request.GET.get('q', '').strip()
+            store_id = request.GET.get('store_id')
+            item_type = request.GET.get('item_type', 'all')
 
-        # Validate store access
-        store = None
-        if store_id:
-            try:
-                store_id = int(store_id)
-                if request.user.is_superuser:
-                    store = Store.objects.get(id=store_id, is_active=True)
-                else:
-                    # FIXED: Check both user relationships
+            # Validate store access
+            store = None
+            if store_id:
+                try:
+                    store_id = int(store_id)
                     store = Store.objects.filter(
-                        Q(is_active=True) & (
-                            # User is directly assigned as staff
-                                Q(staff=request.user) |
-                                # User is from the same company as the store
-                                Q(company=request.user.company)
-                        ),
-                        id=store_id
+                        id=store_id,
+                        company=company,
+                        is_active=True
                     ).first()
 
                     if not store:
                         return JsonResponse({
-                            'error': 'Access denied to store',
-                            'message': 'You do not have permission to access this store'
+                            'error': 'Access denied to store'
                         }, status=403)
 
-            except (ValueError, Store.DoesNotExist):
-                return JsonResponse({
-                    'error': 'Invalid store',
-                    'message': 'Store not found or inactive'
-                }, status=400)
+                except (ValueError, Store.DoesNotExist):
+                    return JsonResponse({
+                        'error': 'Invalid store'
+                    }, status=400)
 
-        items_data = []
+            items_data = []
 
-        # Search products if requested
-        if item_type in ['product', 'all']:
-            # FIX: Handle both cases - with store and without store
-            products_query = Product.objects.filter(
-                is_active=True
-            )
-
-            # Only filter by name if query is provided
-            if query:
-                products_query = products_query.filter(
-                    Q(name__icontains=query) |
-                    Q(sku__icontains=query) |
-                    Q(barcode__icontains=query)
+            # Search products
+            if item_type in ['product', 'all']:
+                products_query = Product.objects.filter(
+                    is_active=True,
                 )
 
-            # Filter by store stock if store is selected
-            if store:
-                products_query = products_query.filter(
-                    store_inventory__store=store,
-                    store_inventory__quantity__gt=0
-                )
-            else:
-                # If no store selected, only show products available in any store
-                # or show all products for browsing
-                products_query = products_query.filter(
-                    store_inventory__quantity__gt=0
-                ).distinct()
+                if query:
+                    products_query = products_query.filter(
+                        Q(name__icontains=query) |
+                        Q(sku__icontains=query) |
+                        Q(barcode__icontains=query)
+                    )
 
-            products = products_query.select_related('category', 'supplier')[:20]
-
-            for product in products:
-                stock_info = None
                 if store:
-                    try:
-                        stock = product.store_inventory.get(store=store)
-                        stock_info = {
-                            'available': float(stock.quantity),
-                            'unit': product.unit_of_measure or 'pcs',
-                            'store_id': store.id
-                        }
-                    except product.store_inventory.model.DoesNotExist:
-                        stock_info = {'available': 0, 'unit': product.unit_of_measure or 'pcs'}
-                else:
-                    # Show total available across all stores
-                    total_stock = product.store_inventory.aggregate(
-                        total=Sum('quantity')
-                    )['total'] or 0
-                    stock_info = {
-                        'available': float(total_stock),
-                        'unit': product.unit_of_measure or 'pcs',
-                        'store_id': None
-                    }
+                    products_query = products_query.filter(
+                        store_inventory__store=store,
+                        store_inventory__quantity__gt=0
+                    )
 
-                items_data.append({
-                    'id': product.id,
-                    'name': product.name,
-                    'code': product.sku or '',
-                    'price': float(product.selling_price or 0),
-                    'final_price': float(product.selling_price or 0),
-                    'discount_percentage': float(getattr(product, 'discount_percentage', 0)),
-                    'tax_rate': getattr(product, 'tax_rate', 'A'),
-                    'unit_of_measure': product.unit_of_measure or 'pcs',
-                    'stock': stock_info,
-                    'category': product.category.name if product.category else '',
-                    'item_type': 'PRODUCT',
-                    'has_stock': stock_info['available'] > 0 if stock_info else True,
-                })
+                products = products_query.select_related('category', 'supplier')[:20]
 
-        # Search services if requested
-        if item_type in ['service', 'all']:
-            from inventory.models import Service
+                for product in products:
+                    stock_info = None
+                    if store:
+                        try:
+                            stock = product.store_inventory.get(store=store)
+                            stock_info = {
+                                'available': float(stock.quantity),
+                                'unit': product.unit_of_measure or 'pcs',
+                                'store_id': store.id
+                            }
+                        except Stock.DoesNotExist:
+                            stock_info = {
+                                'available': 0,
+                                'unit': product.unit_of_measure or 'pcs'
+                            }
 
-            services_query = Service.objects.filter(
-                is_active=True
-            )
+                    items_data.append({
+                        'id': product.id,
+                        'name': product.name,
+                        'code': product.sku or '',
+                        'price': float(product.selling_price or 0),
+                        'final_price': float(product.selling_price or 0),
+                        'discount_percentage': float(getattr(product, 'discount_percentage', 0)),
+                        'tax_rate': getattr(product, 'tax_rate', 'A'),
+                        'unit_of_measure': product.unit_of_measure or 'pcs',
+                        'stock': stock_info,
+                        'category': product.category.name if product.category else '',
+                        'item_type': 'PRODUCT',
+                        'has_stock': stock_info['available'] > 0 if stock_info else True,
+                    })
 
-            if query:
-                services_query = services_query.filter(
-                    Q(name__icontains=query) |
-                    Q(code__icontains=query) |
-                    Q(description__icontains=query)
-                )
+            # Search services
+            if item_type in ['service', 'all']:
+                services_query = Service.objects.filter(
+                    is_active=True,   )
 
-            services = services_query.select_related('category')[:10]
+                if query:
+                    services_query = services_query.filter(
+                        Q(name__icontains=query) |
+                        Q(code__icontains=query) |
+                        Q(description__icontains=query)
+                    )
 
-            for service in services:
-                items_data.append({
-                    'id': service.id,
-                    'name': service.name,
-                    'code': service.code or '',
-                    'price': float(service.unit_price or 0),
-                    'final_price': float(service.unit_price or 0),
-                    'tax_rate': getattr(service, 'tax_rate', 'A'),
-                    'unit_of_measure': service.unit_of_measure or 'unit',
-                    'category': service.category.name if service.category else '',
-                    'description': service.description or '',
-                    'item_type': 'SERVICE',
-                    'stock': None,  # Services don't have stock
-                    'has_stock': True,
-                })
+                services = services_query.select_related('category')[:10]
 
-        return JsonResponse({'items': items_data})
+                for service in services:
+                    items_data.append({
+                        'id': service.id,
+                        'name': service.name,
+                        'code': service.code or '',
+                        'price': float(service.unit_price or 0),
+                        'final_price': float(service.unit_price or 0),
+                        'tax_rate': getattr(service, 'tax_rate', 'A'),
+                        'unit_of_measure': service.unit_of_measure or 'unit',
+                        'category': service.category.name if service.category else '',
+                        'description': service.description or '',
+                        'item_type': 'SERVICE',
+                        'stock': None,
+                        'has_stock': True,
+                    })
+
+            return JsonResponse({'items': items_data})
 
     except Exception as e:
         logger.error(f"Error in combined search: {e}", exc_info=True)
@@ -273,11 +261,12 @@ def search_products_and_services(request):
 
 @login_required
 def search_services(request):
-    user=request.user
     """
     AJAX endpoint for searching services (similar to product search)
     """
     try:
+        from stores.utils import validate_store_access
+
         query = request.GET.get('q', '').strip()
         store_id = request.GET.get('store_id')
 
@@ -289,16 +278,14 @@ def search_services(request):
         if store_id:
             try:
                 store_id = int(store_id)
-                if request.user.is_superuser:
-                    store = Store.objects.get(id=store_id)
-                else:
-                    user_company=getattr(user,'company',None)
-                    store = Store.objects.filter(
-                        Q(staff=request.user) | Q(company=user_company),
-                        id=store_id
-                    ).first()
-                    if not store:
-                        return JsonResponse({'error': 'Access denied to store'}, status=403)
+                store = Store.objects.get(id=store_id)
+
+                # Validate store access using utility function
+                try:
+                    validate_store_access(request.user, store, action='view', raise_exception=True)
+                except PermissionDenied:
+                    return JsonResponse({'error': 'Access denied to store'}, status=403)
+
             except (ValueError, Store.DoesNotExist):
                 return JsonResponse({'error': 'Invalid store'}, status=400)
 
@@ -361,32 +348,41 @@ class SalesListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
     permission_required = 'sales.view_sale'
 
     def get_queryset(self):
-        queryset = Sale.objects.select_related(
+        # Get accessible stores for this user
+        accessible_stores = get_user_accessible_stores(self.request.user)
+
+        # Filter sales by accessible stores
+        queryset = Sale.objects.filter(
+            store__in=accessible_stores
+        ).select_related(
             'store', 'customer', 'created_by'
         ).prefetch_related('items', 'payments')
-
-        # Filter by user's accessible stores
-        if not self.request.user.is_superuser:
-            user_stores = Store.objects.filter(
-                staff=self.request.user
-            ).distinct()
-            queryset = queryset.filter(store__in=user_stores)
 
         form = SaleSearchForm(self.request.GET)
         if form.is_valid():
             search = form.cleaned_data.get('search')
             if search:
+                # Updated to use document_number instead of invoice_number
                 queryset = queryset.filter(
-                    Q(invoice_number__icontains=search) |
+                    Q(document_number__icontains=search) |
                     Q(transaction_id__icontains=search) |
                     Q(customer__name__icontains=search) |
                     Q(customer__phone__icontains=search) |
-                    Q(efris_invoice_number__icontains=search)  # FIXED: Use efris_invoice_number from Sale
+                    Q(efris_invoice_number__icontains=search) |
+                    Q(store__name__icontains=search)
                 )
 
             store = form.cleaned_data.get('store')
             if store:
-                queryset = queryset.filter(store=store)
+                # Ensure the selected store is accessible to the user
+                if store in accessible_stores:
+                    queryset = queryset.filter(store=store)
+                else:
+                    # If user tries to filter by a store they don't have access to,
+                    # ignore the filter but show a warning
+                    from django.contrib import messages
+                    messages.warning(self.request,
+                                     f"You don't have access to store '{store.name}'. Filter ignored.")
 
             transaction_type = form.cleaned_data.get('transaction_type')
             if transaction_type:
@@ -395,6 +391,10 @@ class SalesListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
             payment_method = form.cleaned_data.get('payment_method')
             if payment_method:
                 queryset = queryset.filter(payment_method=payment_method)
+
+            document_type = form.cleaned_data.get('document_type')
+            if document_type:
+                queryset = queryset.filter(document_type=document_type)
 
             date_from = form.cleaned_data.get('date_from')
             if date_from:
@@ -416,12 +416,34 @@ class SalesListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
             if is_fiscalized:
                 queryset = queryset.filter(is_fiscalized=is_fiscalized == '1')
 
+            payment_status = form.cleaned_data.get('payment_status')
+            if payment_status:
+                queryset = queryset.filter(payment_status=payment_status)
+
+            status = form.cleaned_data.get('status')
+            if status:
+                queryset = queryset.filter(status=status)
+
         return queryset.order_by('-created_at')
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        context['search_form'] = SaleSearchForm(self.request.GET)
+
+        # Get accessible stores for filter dropdown
+        accessible_stores = get_user_accessible_stores(self.request.user)
+
+        # Initialize form with GET data
+        search_form = SaleSearchForm(self.request.GET)
+
+        # Limit store choices to accessible stores
+        if search_form.fields.get('store'):
+            search_form.fields['store'].queryset = accessible_stores
+
+        context['search_form'] = search_form
         context['bulk_form'] = BulkActionForm()
+
+        # Add accessible stores to context for template display
+        context['accessible_stores'] = accessible_stores
 
         # Add summary statistics
         queryset = self.get_queryset()
@@ -430,10 +452,67 @@ class SalesListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
             'total_amount': queryset.aggregate(Sum('total_amount'))['total_amount__sum'] or 0,
             'avg_amount': queryset.aggregate(Avg('total_amount'))['total_amount__avg'] or 0,
             'fiscalized_count': queryset.filter(is_fiscalized=True).count(),
+            'receipt_count': queryset.filter(document_type='RECEIPT').count(),
+            'invoice_count': queryset.filter(document_type='INVOICE').count(),
+            'proforma_count': queryset.filter(document_type='PROFORMA').count(),
+            'estimate_count': queryset.filter(document_type='ESTIMATE').count(),
         }
 
-        return context
+        # Add document type distribution for chart
+        doc_type_stats = queryset.values('document_type').annotate(
+            count=Count('id'),
+            total=Sum('total_amount')
+        ).order_by('-count')
 
+        context['document_type_stats'] = [
+            {
+                'type': stat['document_type'],
+                'type_display': dict(Sale.DOCUMENT_TYPE_CHOICES).get(stat['document_type'], stat['document_type']),
+                'count': stat['count'],
+                'total': stat['total'] or 0,
+                'percentage': (stat['count'] / context['stats']['total_sales'] * 100) if context['stats'][
+                                                                                             'total_sales'] > 0 else 0
+            }
+            for stat in doc_type_stats
+        ]
+
+        # Add payment status distribution
+        payment_status_stats = queryset.values('payment_status').annotate(
+            count=Count('id'),
+            total=Sum('total_amount')
+        ).order_by('-count')
+
+        context['payment_status_stats'] = [
+            {
+                'status': stat['payment_status'],
+                'status_display': dict(Sale.PAYMENT_STATUS_CHOICES).get(stat['payment_status'], stat['payment_status']),
+                'count': stat['count'],
+                'total': stat['total'] or 0,
+            }
+            for stat in payment_status_stats
+        ]
+
+        # Add EFRIS status information
+        efris_sales = queryset.filter(is_fiscalized=True)
+        if efris_sales.exists():
+            context['efris_stats'] = {
+                'count': efris_sales.count(),
+                'total_amount': efris_sales.aggregate(Sum('total_amount'))['total_amount__sum'] or 0,
+                'latest_fiscalized': efris_sales.order_by('-fiscalization_time').first(),
+            }
+
+        # Add store performance statistics
+        store_performance = queryset.values(
+            'store__id', 'store__name'
+        ).annotate(
+            sales_count=Count('id'),
+            total_amount=Sum('total_amount'),
+            fiscalized_count=Count('id', filter=Q(is_fiscalized=True))
+        ).order_by('-total_amount')[:10]
+
+        context['store_performance'] = store_performance
+
+        return context
 
 class SaleDetailView(LoginRequiredMixin, PermissionRequiredMixin, DetailView):
     """Enhanced sale detail view with comprehensive information and EFRIS integration"""
@@ -444,27 +523,19 @@ class SaleDetailView(LoginRequiredMixin, PermissionRequiredMixin, DetailView):
     login_url = 'login'
 
     def get_object(self):
+        # FIXED: Changed 'receipt' to 'receipt_detail' in prefetch_related
         sale = get_object_or_404(
             Sale.objects.select_related('store', 'customer', 'created_by')
-            .prefetch_related('items__product', 'payments', 'receipt'),
+            .prefetch_related('items__product', 'items__service', 'payments', 'receipt_detail'),
             pk=self.kwargs['pk']
         )
 
-        # Check user access to this sale - FIXED
-        if not self.request.user.is_superuser:
-            user = self.request.user
-            user_company = getattr(user, 'company', None)
-
-            # User has access if:
-            # 1. They're staff at the sale's store, OR
-            # 2. They belong to the same company as the store
-            has_access = (
-                    sale.store.staff.filter(id=user.id).exists() or
-                    (user_company and sale.store.company == user_company)
-            )
-
-            if not has_access:
-                raise PermissionDenied("You don't have access to this sale.")
+        # Check user access to this sale using utility function
+        try:
+            validate_store_access(self.request.user, sale.store, action='view', raise_exception=True)
+        except PermissionDenied as e:
+            messages.error(self.request, str(e))
+            raise
 
         return sale
 
@@ -472,28 +543,25 @@ class SaleDetailView(LoginRequiredMixin, PermissionRequiredMixin, DetailView):
         context = super().get_context_data(**kwargs)
         sale = self.object
 
-        # Check company's EFRIS configuration for display context
-        company = sale.store.company
-        efris_enabled = getattr(company, 'efris_enabled', False)
+        # Check store's EFRIS configuration for display context
+        store_config = sale.store.effective_efris_config
+        efris_enabled = store_config.get('enabled', False)
 
         # Use the Sale model's EFRIS mixin methods for fiscalization checks
         can_fiscalize = False
         fiscalization_error = None
 
         if efris_enabled:
-            # Use the mixin method can_fiscalize from the Sale model
+            # WORKS FOR ALL DOCUMENT TYPES (receipts and invoices)
             can_fiscalize, fiscalization_error = sale.can_fiscalize(self.request.user)
 
-        # Check if sale has an associated invoice
-        has_invoice = hasattr(sale, 'invoice') and sale.invoice is not None
-
-        # Get fiscalization data - handle both Invoice and direct Sale fiscalization
-        fiscal_data = self._get_fiscalization_data(sale, has_invoice)
+        # Get fiscalization data - works for all document types
+        fiscal_data = self._get_fiscalization_data(sale)
 
         # Calculate total paid
         total_paid = sale.payments.filter(is_confirmed=True).aggregate(
             Sum('amount')
-        )['amount__sum'] or 0
+        )['amount__sum'] or Decimal('0')
 
         # Check refund and void permissions
         can_refund = (
@@ -508,49 +576,53 @@ class SaleDetailView(LoginRequiredMixin, PermissionRequiredMixin, DetailView):
                 self.request.user.has_perm('sales.can_void_sale')
         )
 
-        # Check invoice creation permission
-        can_create_invoice = (
-                not has_invoice and
-                self.request.user.has_perm('invoices.add_invoice')
-        )
+        # Get receipt if exists
+        receipt = getattr(sale, 'receipt_detail', None)
+
+        # Get invoice detail if exists (for INVOICE document type)
+        invoice_detail = None
+        if sale.document_type == 'INVOICE' and hasattr(sale, 'invoice_detail'):
+            invoice_detail = sale.invoice_detail
 
         context.update({
             'refund_form': RefundForm(),
             'receipt_form': ReceiptForm(),
             'can_refund': can_refund,
             'can_void': can_void,
-            'can_create_invoice': can_create_invoice,
-            'has_invoice': has_invoice,
             'can_fiscalize': can_fiscalize,
             'fiscalization_error': fiscalization_error,
             'efris_enabled': efris_enabled,
+            'store_config': store_config,
             'total_paid': total_paid,
             'balance_due': sale.total_amount - total_paid,
-            **fiscal_data  # Add all fiscal data to context
+            'receipt': receipt,
+            'invoice_detail': invoice_detail,
+            **fiscal_data
         })
 
         return context
 
-    def _get_fiscalization_data(self, sale, has_invoice):
-        """Extract fiscalization data from invoice or sale with proper URL handling"""
+    def _get_fiscalization_data(self, sale):
+        """Extract fiscalization data directly from sale (works for all document types)"""
         fiscal_data = {
-            'invoice_fiscalized': False,
-            'fiscal_document_number': None,
-            'fiscal_qr_code': None,
-            'fiscal_verification_url': None,
-            'fiscalization_time': None,
-            'efris_invoice_no': None,
-            'efris_invoice_id': None,
-            'efris_antifake_code': None,
-            'verification_code': None,
+            'invoice_fiscalized': sale.is_fiscalized,
+            'fiscal_document_number': sale.efris_invoice_number,
+            'fiscal_qr_code': sale.qr_code,
+            'fiscal_verification_url': self._get_verification_url(
+                sale.efris_invoice_number,
+                sale.verification_code
+            ),
+            'fiscalization_time': sale.fiscalization_time,
+            'efris_invoice_no': sale.efris_invoice_number,
+            'efris_antifake_code': sale.verification_code,
+            'verification_code': sale.verification_code,
             'is_fiscalized': sale.is_fiscalized,
         }
 
-        if has_invoice:
-            invoice = sale.invoice
-            fiscal_data.update(self._get_invoice_fiscal_data(invoice))
-        elif sale.is_fiscalized:
-            fiscal_data.update(self._get_sale_fiscal_data(sale))
+        # If sale has QR code URL from EFRIS, use it
+        qr_code = sale.qr_code
+        if qr_code and qr_code.startswith('http'):
+            fiscal_data['fiscal_verification_url'] = qr_code
 
         return fiscal_data
 
@@ -615,12 +687,12 @@ class SaleDetailView(LoginRequiredMixin, PermissionRequiredMixin, DetailView):
         if not invoice_no or not verification_code:
             return None
 
-        # Get company to check environment
+        # Get store to check environment
         sale = self.object
-        company = sale.store.company
+        store_config = sale.store.effective_efris_config
 
         # Check if we're in test or production mode
-        is_production = getattr(company, 'efris_environment', 'production') == 'production'
+        is_production = store_config.get('is_production', False)
 
         if is_production:
             # Production EFRIS URL
@@ -638,8 +710,8 @@ class SaleDetailView(LoginRequiredMixin, PermissionRequiredMixin, DetailView):
             return None
 
         sale = self.object
-        company = sale.store.company
-        is_production = getattr(company, 'efris_environment', 'production') == 'production'
+        store_config = sale.store.effective_efris_config
+        is_production = store_config.get('is_production', False)
 
         if is_production:
             base_url = "https://efris.ura.go.ug"
@@ -687,15 +759,46 @@ def create_invoice_for_sale(sale, user):
     Enhanced invoice creation using Sale model's EFRIS mixins to build proper data.
     """
     from invoices.models import Invoice
+    from django.core.exceptions import ValidationError
 
     try:
         company = sale.store.company
         with tenant_context(company):
 
-            # Check if invoice already exists
-            if hasattr(sale, 'invoice') and sale.invoice:
-                logger.warning(f"Invoice already exists for sale {sale.id}")
-                return sale.invoice
+            # ========== FIXED: Check for existing InvoiceDetail ==========
+            # Check if invoice already exists in InvoiceDetail model
+            try:
+                from sales.models import InvoiceDetail
+                existing_invoice_detail = InvoiceDetail.objects.filter(sale=sale).first()
+                if existing_invoice_detail:
+                    logger.warning(
+                        f"InvoiceDetail already exists for sale {sale.id}: {existing_invoice_detail.invoice_number}")
+
+                    # Also check if Invoice model has a record
+                    try:
+                        existing_invoice = Invoice.objects.filter(sale=sale).first()
+                        if existing_invoice:
+                            return existing_invoice
+                    except Invoice.DoesNotExist:
+                        pass
+
+                    # Create Invoice model instance if it doesn't exist
+                    invoice, created = Invoice.objects.get_or_create(
+                        sale=sale,
+                        defaults={
+                            'store': sale.store,
+                            'business_type': 'B2C',
+                            'operator_name': user.get_full_name() or str(user),
+                            'created_by': user,
+                        }
+                    )
+                    if created:
+                        logger.info(f"Created Invoice model instance for existing InvoiceDetail")
+
+                    return invoice
+            except ImportError:
+                logger.warning("InvoiceDetail model not available")
+            # =============================================================
 
             logger.info(f"Creating invoice for sale {sale.id}")
 
@@ -713,41 +816,46 @@ def create_invoice_for_sale(sale, user):
             efris_basic_info = sale.get_efris_basic_info() if hasattr(sale, 'get_efris_basic_info') else {}
             efris_summary = sale.get_efris_summary() if hasattr(sale, 'get_efris_summary') else {}
 
-            # ========== FIXED: Removed 'customer' field ==========
-            # Create invoice with enhanced data
-            invoice = Invoice.objects.create(
+            # ========== SAFE CREATE: Use get_or_create to prevent duplicates ==========
+            invoice, created = Invoice.objects.get_or_create(
                 sale=sale,
-                store=sale.store,
-                # customer=sale.customer,  # REMOVED - Invoice doesn't have customer field
-                issue_date=timezone.now().date(),
-                due_date=timezone.now().date() + timedelta(days=30),
-                subtotal=sale.subtotal,
-                tax_amount=sale.tax_amount,
-                discount_amount=sale.discount_amount,
-                total_amount=sale.total_amount,
-                currency_code=sale.currency,
-                business_type=business_type,
-                operator_name=efris_basic_info.get('operator', user.get_full_name() or str(user)),
-                created_by=user,
-                status='SENT'  # Ready for fiscalization
+                defaults={
+                    'store': sale.store,
+                    'business_type': business_type,
+                    'operator_name': efris_basic_info.get('operator', user.get_full_name() or str(user)),
+                    'created_by': user,
+                }
             )
-            # =====================================================
+
+            if not created:
+                logger.info(f"Invoice already exists for sale {sale.id}: {invoice.invoice_number}")
+                return invoice
+            # ===========================================================================
 
             logger.info(f"Created invoice {invoice.invoice_number} for sale {sale.id}")
 
-            # Copy sale items to invoice items
+            # Copy sale items to invoice items (only if newly created)
             try:
                 from invoices.models import InvoiceItem
                 for sale_item in sale.items.all():
-                    InvoiceItem.objects.create(
+                    # Check if item already exists
+                    existing_item = InvoiceItem.objects.filter(
                         invoice=invoice,
-                        product=sale_item.product,
-                        quantity=sale_item.quantity,
-                        unit_price=sale_item.unit_price,
-                        total_price=sale_item.total_price,
-                        tax_amount=getattr(sale_item, 'tax_amount', 0),
-                        discount_amount=getattr(sale_item, 'discount_amount', 0),
-                    )
+                        product=sale_item.product
+                    ).exists()
+
+                    if not existing_item:
+                        InvoiceItem.objects.create(
+                            invoice=invoice,
+                            product=sale_item.product,
+                            quantity=sale_item.quantity,
+                            unit_price=sale_item.unit_price,
+                            total_price=sale_item.total_price,
+                            tax_amount=getattr(sale_item, 'tax_amount', 0),
+                            discount_amount=getattr(sale_item, 'discount_amount', 0),
+                        )
+                    else:
+                        logger.debug(f"Invoice item already exists for product {sale_item.product.name}")
             except ImportError:
                 logger.warning("InvoiceItem model not available")
 
@@ -822,356 +930,270 @@ def fiscalize_invoice_immediately(invoice, user):
 @permission_required("sales.add_sale", raise_exception=True)
 @require_http_methods(["GET", "POST"])
 def create_sale(request):
-    """Create a new sale with improved error handling and EFRIS integration"""
+    """Create new sale with tenant support"""
     if request.method == 'GET':
         return render_sale_form(request)
     else:
         return process_sale_creation(request)
 
 
-@login_required
 def render_sale_form(request):
-    """Render the sale creation form with necessary context data"""
+    """Render sale creation form"""
     user = request.user
+    company = get_current_tenant(request)
 
-    # DEBUG: Log user information
-    logger.info(f"Sale form requested by: {user.username} (ID: {user.id})")
-    logger.info(f"User is superuser: {user.is_superuser}")
-    logger.info(f"User company: {getattr(user, 'company', None)}")
+    if not company:
+        messages.error(request, 'No company context found')
+        return redirect('sales:sales_list')
 
-    # Get stores accessible to the user
-    if user.is_superuser:
-        # Superusers see all active stores
-        stores = Store.objects.filter(is_active=True)
-        logger.info(f"Superuser - Found {stores.count()} stores")
-    else:
-        # Check if user has a company
-        user_company = getattr(user, 'company', None)
+    with tenant_context(company):
+        # Get accessible stores using utility function
+        accessible_stores = get_user_accessible_stores(user).filter(
+            is_active=True,
+            company=company
+        )
 
-        if user_company:
-            # Company Admin/User: Show all stores from user's company
-            stores = Store.objects.filter(
-                company=user_company,
-                is_active=True
-            )
-            logger.info(f"Company user - Found {stores.count()} stores for company: {user_company.name}")
+        stores = accessible_stores.order_by('name').distinct()
 
-            # Also check if user is staff in any stores (in case they have both)
-            user_staff_stores = Store.objects.filter(
-                staff=user,
-                is_active=True
-            ).exclude(company=user_company)
+        if not stores.exists():
+            context = {
+                'stores': stores,
+                'page_title': 'Create New Sale',
+                'form': SaleForm(user=user),
+                'no_stores_message': True,
+                'error_message': (
+                    'No stores available. Please contact administrator.'
+                )
+            }
+            return render(request, 'sales/create_sale.html', context)
 
-            if user_staff_stores.exists():
-                stores = stores | user_staff_stores
-                logger.info(f"Added {user_staff_stores.count()} staff-assigned stores")
-        else:
-            # Users without company: Only show stores where they're staff
-            stores = Store.objects.filter(
-                staff=user,
-                is_active=True
-            )
-            logger.info(f"No company - Found {stores.count()} stores where user is staff")
-
-        # Check special permissions
-        if user.has_perm('sales.can_access_all_stores'):
-            stores = Store.objects.filter(is_active=True)
-            logger.info(f"User has can_access_all_stores permission - Showing all {stores.count()} stores")
-
-    # Order stores and distinct (in case of duplicates)
-    stores = stores.order_by('name').distinct()
-
-    # Debug log final stores
-    store_list = list(stores.values('id', 'name', 'company__name'))
-    logger.info(f"Final stores available: {store_list}")
-
-    # If no stores found, show message
-    if not stores.exists():
-        logger.warning(f"No stores found for user {user.username}")
         context = {
             'stores': stores,
             'page_title': 'Create New Sale',
             'form': SaleForm(user=user),
-            'no_stores_message': True,
-            'error_message': (
-                "No stores available. You need to either: "
-                "1) Be assigned to a company that has stores, or "
-                "2) Be added as staff to a store, or "
-                "3) Create a store first."
-            )
+            'company': company,
         }
+
+        # Set default store
+        if hasattr(user, 'default_store') and user.default_store:
+            if stores.filter(id=user.default_store.id).exists():
+                context['default_store'] = user.default_store
+
         return render(request, 'sales/create_sale.html', context)
-
-    # Prepare context
-    context = {
-        'stores': stores,
-        'page_title': 'Create New Sale',
-        'form': SaleForm(user=user),
-    }
-
-    # Add default store if user has one and it's accessible
-    if hasattr(user, 'default_store') and user.default_store:
-        if stores.filter(id=user.default_store.id).exists():
-            context['default_store'] = user.default_store
-            logger.info(f"Setting default store: {user.default_store.name}")
-        else:
-            logger.warning(
-                f"User's default store {user.default_store.name} is not in accessible stores"
-            )
-
-    return render(request, 'sales/create_sale.html', context)
-
 
 @transaction.atomic
 def process_sale_creation(request):
+    """Process sale creation with comprehensive validation"""
     sale = None
+    company = get_current_tenant(request)
+
+    if not company:
+        messages.error(request, 'No company context found')
+        return redirect('sales:sales_list')
+
     try:
-        logger.info(f"Processing sale creation for user {request.user.id}")
+        with tenant_context(company):
+            logger.info(f"Processing sale creation for user {request.user.id}")
 
-        # Validate and extract form data
-        sale_data = validate_sale_data(request.POST, request.user)
-        items_data = validate_items_data(request.POST.get('items_data', '[]'))
+            # Validate and extract form data
+            sale_data = validate_sale_data(request.POST, request.user, company)
+            items_data = validate_items_data(request.POST.get('items_data', '[]'))
 
-        if not items_data:
-            messages.error(request, 'At least one item is required to create a sale.')
-            return render_sale_form_with_errors(request)
+            if not items_data:
+                messages.error(request, 'At least one item is required.')
+                return render_sale_form(request)
 
-        # Pre-validate stock availability for all items
-        stock_validation_errors = validate_stock_availability(sale_data['store'], items_data)
-        if stock_validation_errors:
-            for error in stock_validation_errors:
-                messages.error(request, error)
-            return render_sale_form_with_errors(request)
+            # Pre-validate stock for products
+            stock_errors = validate_stock_availability(
+                sale_data['store'],
+                items_data
+            )
+            if stock_errors:
+                for error in stock_errors:
+                    messages.error(request, error)
+                return render_sale_form(request)
 
-        # Create the sale
-        sale = create_sale_record(request, sale_data)
+            # Create sale
+            sale = create_sale_record(request, sale_data, company)
 
-        # Add items to the sale (this will handle stock deduction automatically)
-        create_sale_items(sale, items_data)
-        sale.update_totals()  # This will calculate and save the correct totals
+            # Add items
+            create_sale_items(sale, items_data)
 
-        # Now mark as completed
-        sale.is_completed = True
-        sale.save()
-
-        # Handle payment if provided
-        if request.POST.get('payment_amount'):
-            handle_payment(sale, request.POST)
-
-        # Create stock movement records
-        create_stock_movements(sale)
-
-        # Update sale totals (this will be done automatically by SaleItem.save())
-        sale.refresh_from_db()
-
-        # Enhanced invoice creation logic with EFRIS integration
-        invoice_created = False
-        if should_create_invoice(sale, request.user):
-            try:
-                invoice = create_invoice_for_sale(sale, request.user)
-                invoice_created = True
-
-                # Check if the invoice was automatically fiscalized
-                if invoice.is_fiscalized:
-                    messages.success(
-                        request,
-                        f'Invoice {invoice.invoice_number} created and fiscalized automatically!'
-                    )
-                else:
-                    messages.info(
-                        request,
-                        f'Invoice {invoice.invoice_number} created. '
-                        f'Visit the invoice detail page to fiscalize with EFRIS.'
-                    )
-            except Exception as e:
-                logger.error(f"Failed to create invoice for sale {sale.id}: {e}")
-                messages.warning(request, 'Sale created but invoice creation failed.')
-
-        success_message = f'Sale #{sale.invoice_number} created successfully! Total amount: {sale.currency} {sale.total_amount:,.2f}'
-
-        # Add EFRIS status information to success message
-        company = sale.store.company
-        if getattr(company, 'efris_enabled', False):
-            if sale.is_fiscalized:
-                success_message += ' Sale has been fiscalized with EFRIS.'
-            elif invoice_created:
-                success_message += ' Ready for EFRIS fiscalization.'
-
-        messages.success(request, success_message)
-
-        # Store sale ID for notification (outside transaction)
-        sale_id = sale.id
-
-        # Redirect based on action
-        if 'save_draft' in request.POST:
-            sale.is_completed = False
+            # Update totals and mark as completed
+            sale.update_totals()
+            sale.status = 'COMPLETED' if sale.document_type == 'RECEIPT' else 'PENDING_PAYMENT'
             sale.save()
-            return redirect('invoices:sale_detail', pk=sale.pk)
-        else:
+
+            # Handle payment
+            if request.POST.get('payment_amount'):
+                handle_payment(sale, request.POST)
+
+            # Create stock movements
+            create_stock_movements(sale)
+
+            # REMOVED: Old invoice creation logic
+            # Auto-fiscalization will happen in Sale.save() method based on store config
+
+            success_message = (
+                f'{sale.get_document_type_display()} #{sale.document_number} created successfully! '
+                f'Total: {sale.currency} {sale.total_amount:,.2f}'
+            )
+
+            # EFRIS status
+            store_config = sale.store.effective_efris_config
+            if store_config.get('enabled', False):
+                if sale.is_fiscalized:
+                    success_message += ' Sale has been fiscalized.'
+                else:
+                    success_message += ' Ready for EFRIS fiscalization.'
+
+            messages.success(request, success_message)
+
+            # Redirect
             return redirect('sales:sale_detail', pk=sale.pk)
 
     except ValidationError as e:
         logger.error(f"Sale validation error: {e}")
         messages.error(request, f'Validation Error: {str(e)}')
-        return render_sale_form_with_errors(request)
-    except IntegrityError as e:
-        logger.error(f"Database integrity error during sale creation: {e}")
-        messages.error(request, 'A database error occurred. This might be due to concurrent access or data conflicts.')
-        return render_sale_form_with_errors(request)
+        return render_sale_form(request)
     except Exception as e:
-        logger.error(f"Unexpected error in sale creation: {e}", exc_info=True)
-        messages.error(request, 'An unexpected error occurred while creating the sale. Please try again.')
-        return render_sale_form_with_errors(request)
-    finally:
-        # Create notification outside the transaction block to avoid transaction issues
-        if sale and sale.id and sale.is_completed:
-            try:
-                from notifications.services import create_notification
-                create_notification(
-                    user=request.user,
-                    notification_type='INFO',
-                    title='Sale Completed',
-                    message=f'Sale #{sale.invoice_number} has been completed successfully.',
-                    event_type='sale_completed',
-                    context_data={'sale_id': sale.id}
-                )
-            except Exception as e:
-                logger.error(f"Failed to create notification for sale {sale.id}: {e}")
-                # Don't fail the sale creation because of notification error
+        logger.error(f"Error in sale creation: {e}", exc_info=True)
+        messages.error(request, 'An error occurred. Please try again.')
+        return render_sale_form(request)
 
 
-def validate_sale_data(post_data, user):
-    """
-    Enhanced sale data validation with customer EFRIS validation.
-    Now uses Customer model's EFRIS mixins for validation.
-    """
-    required_fields = ['store', 'payment_method', 'transaction_type']
+def validate_sale_data(post_data, user, company):
+    """Enhanced validation with tenant support"""
+    required_fields = ['store', 'payment_method']
 
     for field in required_fields:
         if not post_data.get(field):
             raise ValidationError(f'{field.replace("_", " ").title()} is required.')
 
-    # Validate store exists and user has access
+    # Validate store
     try:
-        store = Store.objects.get(id=post_data['store'])
+        store = Store.objects.get(
+            id=post_data['store'],
+            company=company,
+            is_active=True
+        )
 
-        # Check store is active
-        if not store.is_active:
-            raise ValidationError('Selected store is not active.')
+        # Check user access using utility function
+        try:
+            validate_store_access(user, store, action='view', raise_exception=True)
+        except PermissionDenied:
+            raise ValidationError('Access denied to selected store.')
 
-        # Check store has a company
-        if not store.company:
-            raise ValidationError('Selected store is not assigned to any company.')
-
-        # Check user access - FIXED
-        if not user.is_superuser:
-            user_company = getattr(user, 'company', None)
-            has_access = False
-
-            if user_company:
-                # User can access if: they're staff OR store belongs to their company
-                has_access = (
-                        store.staff.filter(id=user.id).exists() or
-                        store.company == user_company
-                )
-            else:
-                # Users without company can only access stores where they're staff
-                has_access = store.staff.filter(id=user.id).exists()
-
-            if not has_access:
-                raise ValidationError('You do not have access to the selected store.')
+        # Check if store allows sales
+        if not store.allows_sales:
+            raise ValidationError(f'Store "{store.name}" does not allow sales.')
 
     except Store.DoesNotExist:
         raise ValidationError('Invalid store selected.')
 
-    # Enhanced customer validation with EFRIS checks
+    # Validate customer
     customer = None
     if post_data.get('customer'):
         try:
-            customer = Customer.objects.get(id=post_data['customer'])
+            customer = Customer.objects.get(
+                id=post_data['customer'],
+                store=store
+            )
 
-            # Check if customer belongs to same company as store (optional)
-            if customer.company and store.company and customer.company != store.company:
-                logger.warning(
-                    f"Customer {customer.name} ({customer.company}) "
-                    f"from different company than store {store.name} ({store.company})"
-                )
-            # Don't block the sale, just log warning
-
-            # If company has EFRIS enabled, validate customer for EFRIS
-            if getattr(store.company, 'efris_enabled', False):
+            # Get store's EFRIS configuration for validation
+            store_config = store.effective_efris_config
+            if store_config.get('enabled', False):
+                # EFRIS validation if enabled for this store
                 if hasattr(customer, 'validate_for_efris'):
                     is_valid, errors = customer.validate_for_efris()
                     if not is_valid:
-                        error_msg = f"Customer EFRIS validation failed: {'; '.join(errors)}"
-                        logger.warning(error_msg)
-                        # For strict mode, uncomment:
-                        # raise ValidationError(f"Customer EFRIS validation failed: {errors[0]}")
+                        logger.warning(
+                            f"Customer EFRIS validation: {'; '.join(errors)}"
+                        )
+                        # Only warn, don't block sale if customer has minor EFRIS issues
 
         except Customer.DoesNotExist:
             raise ValidationError('Invalid customer selected.')
 
-    # Validate payment method
-    valid_payment_methods = [choice[0] for choice in Sale.PAYMENT_METHODS]
-    if post_data['payment_method'] not in valid_payment_methods:
-        raise ValidationError(f'Invalid payment method. Valid options: {valid_payment_methods}')
-
-    # Validate transaction type
-    valid_transaction_types = [choice[0] for choice in Sale.TRANSACTION_TYPES]
-    if post_data['transaction_type'] not in valid_transaction_types:
-        raise ValidationError(f'Invalid transaction type. Valid options: {valid_transaction_types}')
-
     # Validate document type
-    document_type = post_data.get('document_type', '').strip()
-    if not document_type:
-        document_type = 'ORIGINAL'
-    else:
-        valid_document_types = [choice[0] for choice in Sale.DOCUMENT_TYPES]
-        if document_type not in valid_document_types:
-            document_type = 'ORIGINAL'  # Default fallback
+    document_type = post_data.get('document_type', 'RECEIPT').strip()
+    valid_types = [choice[0] for choice in Sale.DOCUMENT_TYPE_CHOICES]
+    if document_type not in valid_types:
+        document_type = 'RECEIPT'
 
-    # Validate discount amount with business rules
+    # Validate payment method
+    payment_method = post_data.get('payment_method', 'CASH')
+    valid_methods = [choice[0] for choice in Sale.PAYMENT_METHODS]
+    if payment_method not in valid_methods:
+        raise ValidationError('Invalid payment method.')
+
+    # Validate discount
     try:
         discount_amount = Decimal(post_data.get('discount_amount', '0'))
         if discount_amount < 0:
-            raise ValidationError('Discount amount cannot be negative.')
-
-        # Check if user has permission to apply discounts
-        if discount_amount > 0 and not user.has_perm('sales.can_apply_discounts'):
-            raise ValidationError('You do not have permission to apply discounts.')
-
-    except (InvalidOperation, ValueError, TypeError):
+            raise ValidationError('Discount cannot be negative.')
+    except (InvalidOperation, ValueError):
         raise ValidationError('Invalid discount amount.')
 
     # Validate currency
     currency = post_data.get('currency', 'UGX')
-    valid_currencies = ['UGX', 'USD', 'EUR', 'KES', 'TZS']  # Customize as needed
-    if currency not in valid_currencies:
-        raise ValidationError(f'Invalid currency. Valid options: {", ".join(valid_currencies)}')
+    if len(currency) != 3:
+        currency = 'UGX'  # Default to UGX if invalid
+
+    # Validate due date for invoices
+    due_date = None
+    if document_type == 'INVOICE':
+        due_date_str = post_data.get('due_date')
+        if due_date_str:
+            try:
+                due_date = datetime.strptime(due_date_str, '%Y-%m-%d').date()
+                if due_date < timezone.now().date():
+                    raise ValidationError('Due date cannot be in the past.')
+            except (ValueError, TypeError):
+                raise ValidationError('Invalid due date format. Use YYYY-MM-DD.')
+        else:
+            # Default to 30 days from now for invoices
+            due_date = timezone.now().date() + timedelta(days=30)
+
+    # Validate store inventory permissions for product items
+    # This is a preliminary check - detailed item validation happens later
+    items_data_json = post_data.get('items_data', '[]')
+    try:
+        items_data = json.loads(items_data_json) if items_data_json else []
+
+        # Check if any products require inventory management
+        has_products = False
+        for item in items_data:
+            item_type = item.get('item_type', 'PRODUCT')
+            if item_type == 'PRODUCT':
+                has_products = True
+                break
+
+        # If sale has products, check if store allows inventory
+        if has_products and not store.allows_inventory:
+            raise ValidationError(f'Store "{store.name}" does not allow inventory management for products.')
+
+    except json.JSONDecodeError:
+        # Will be caught in validate_items_data
+        pass
 
     return {
         'store': store,
         'customer': customer,
-        'payment_method': post_data['payment_method'],
-        'transaction_type': post_data['transaction_type'],
+        'payment_method': payment_method,
         'document_type': document_type,
         'currency': currency,
         'discount_amount': discount_amount,
         'notes': post_data.get('notes', '').strip(),
+        'due_date': due_date,
     }
 
-
 def validate_items_data(items_json):
-    """
-    Enhanced items validation supporting both products and services
-    """
+    """Validate items supporting products and services"""
     try:
         items_data = json.loads(items_json) if items_json else []
-    except (json.JSONDecodeError, ValueError, TypeError):
+    except (json.JSONDecodeError, ValueError):
         raise ValidationError('Invalid items data format.')
-
-    if not isinstance(items_data, list):
-        raise ValidationError('Items data must be a list.')
 
     if not items_data:
         raise ValidationError('At least one item is required.')
@@ -1183,26 +1205,14 @@ def validate_items_data(items_json):
             item_type = item.get('item_type', 'PRODUCT')
 
             if item_type == 'PRODUCT':
-                # Validate product
                 product_id = item.get('product_id')
                 if not product_id:
                     raise ValidationError(f'Missing product_id in item {i + 1}.')
 
-                try:
-                    product = Product.objects.select_related('category', 'supplier').get(
-                        id=product_id
-                    )
-                    if not product.is_active:
-                        raise ValidationError(f'Product {product.name} is not active.')
-
-                    # EFRIS validation for products if they support it
-                    if hasattr(product, 'validate_for_efris_upload'):
-                        is_valid, errors = product.validate_for_efris_upload()
-                        if not is_valid:
-                            logger.warning(f"Product EFRIS validation warning for {product.name}: {errors}")
-
-                except Product.DoesNotExist:
-                    raise ValidationError(f'Invalid product in item {i + 1}.')
+                product = Product.objects.select_related('category').get(
+                    id=product_id,
+                    is_active=True
+                )
 
                 validated_item = {
                     'item_type': 'PRODUCT',
@@ -1211,21 +1221,14 @@ def validate_items_data(items_json):
                 }
 
             elif item_type == 'SERVICE':
-                # Validate service
                 service_id = item.get('service_id')
                 if not service_id:
                     raise ValidationError(f'Missing service_id in item {i + 1}.')
 
-                from inventory.models import Service
-                try:
-                    service = Service.objects.select_related('category').get(
-                        id=service_id
-                    )
-                    if not service.is_active:
-                        raise ValidationError(f'Service {service.name} is not active.')
-
-                except Service.DoesNotExist:
-                    raise ValidationError(f'Invalid service in item {i + 1}.')
+                service = Service.objects.select_related('category').get(
+                    id=service_id,
+                    is_active=True
+                )
 
                 validated_item = {
                     'item_type': 'SERVICE',
@@ -1233,37 +1236,27 @@ def validate_items_data(items_json):
                     'service': service,
                 }
             else:
-                raise ValidationError(f'Invalid item type in item {i + 1}: {item_type}')
+                raise ValidationError(f'Invalid item type: {item_type}')
 
             # Validate quantity
-            try:
-                quantity = Decimal(str(item.get('quantity', '0')))
-                if quantity <= 0:
-                    item_name = validated_item.get('product', validated_item.get('service')).name
-                    raise ValidationError(f'Quantity for {item_name} must be greater than 0.')
-            except (InvalidOperation, ValueError, TypeError):
-                raise ValidationError(f'Invalid quantity in item {i + 1}.')
+            quantity = Decimal(str(item.get('quantity', '0')))
+            if quantity <= 0:
+                raise ValidationError('Quantity must be greater than 0.')
 
-            # Validate unit price
-            try:
-                unit_price = Decimal(str(item.get('unit_price', '0')))
-                if unit_price < 0:
-                    raise ValidationError(f'Unit price in item {i + 1} cannot be negative.')
-            except (InvalidOperation, ValueError, TypeError):
-                raise ValidationError(f'Invalid unit price in item {i + 1}.')
+            # Validate price
+            unit_price = Decimal(str(item.get('unit_price', '0')))
+            if unit_price < 0:
+                raise ValidationError('Price cannot be negative.')
 
             # Validate tax rate
-            valid_tax_rates = [choice[0] for choice in SaleItem.TAX_RATE_CHOICES]
             tax_rate = item.get('tax_rate', 'A')
-            if tax_rate not in valid_tax_rates:
+            valid_rates = [choice[0] for choice in SaleItem.TAX_RATE_CHOICES]
+            if tax_rate not in valid_rates:
                 tax_rate = 'A'
 
             # Validate discount
-            try:
-                discount = Decimal(str(item.get('discount', '0')))
-                if discount < 0 or discount > 100:
-                    discount = Decimal('0')
-            except (InvalidOperation, ValueError, TypeError):
+            discount = Decimal(str(item.get('discount', '0')))
+            if discount < 0 or discount > 100:
                 discount = Decimal('0')
 
             validated_item.update({
@@ -1276,124 +1269,93 @@ def validate_items_data(items_json):
 
             validated_items.append(validated_item)
 
-        except ValidationError:
-            raise
+        except Product.DoesNotExist:
+            raise ValidationError(f'Invalid product in item {i + 1}.')
+        except Service.DoesNotExist:
+            raise ValidationError(f'Invalid service in item {i + 1}.')
         except Exception as e:
-            raise ValidationError(f'Error validating item {i + 1}: {str(e)}')
+            raise ValidationError(f'Error in item {i + 1}: {str(e)}')
 
     return validated_items
 
-def create_sale_record(request, sale_data):
-    """Create the main Sale record - FIXED VERSION"""
-    # Create sale with minimal data first
+
+def create_sale_record(request, sale_data, company):
+    """Create sale record"""
     sale = Sale.objects.create(
         store=sale_data['store'],
         created_by=request.user,
         customer=sale_data['customer'],
-        transaction_type=sale_data['transaction_type'],
         document_type=sale_data['document_type'],
         payment_method=sale_data['payment_method'],
         currency=sale_data['currency'],
         discount_amount=sale_data['discount_amount'],
         notes=sale_data['notes'],
-        is_completed=False,  # Set to False initially
-        # Don't set totals here - let update_totals() calculate them
+        due_date=sale_data.get('due_date'),
+        status='DRAFT',
     )
 
-    logger.info(f"Created sale {sale.id} by user {request.user.id}")
+    logger.info(f"Created sale {sale.id} (#{sale.document_number})")
     return sale
 
 
 def create_sale_items(sale, items_data):
-    """
-    Create SaleItem records for both products and services
-    FIXED: Properly handle both products and services
-    """
+    """Create sale items for products and services"""
     for item_data in items_data:
         try:
-            item_type = item_data.get('item_type', 'PRODUCT')
-
-            # Get the product or service object
-            product = item_data.get('product')
-            service = item_data.get('service')
-
-            # Validate that we have either product or service
-            if not product and not service:
-                raise ValidationError(f"Item data missing both product and service")
-
-            # Get the item name for logging
-            if product:
-                item_name = product.name
-            elif service:
-                item_name = service.name
-            else:
-                item_name = "Unknown Item"
-
-            # Create sale item with the appropriate product or service
-            sale_item = SaleItem.objects.create(
+            # Create the SaleItem instance without _skip_sale_update parameter
+            sale_item = SaleItem(
                 sale=sale,
-                item_type=item_type,
-                product=product,  # Will be None for services
-                service=service,  # Will be None for products
+                item_type=item_data['item_type'],
+                product=item_data.get('product'),
+                service=item_data.get('service'),
                 quantity=item_data['quantity'],
                 unit_price=item_data['unit_price'],
-                tax_rate=item_data.get('tax_rate', 'A'),
-                discount=item_data.get('discount', 0),
-                description=item_data.get('description', ''),
+                tax_rate=item_data['tax_rate'],
+                discount=item_data['discount'],
+                description=item_data.get('description', '')
             )
 
-            logger.info(
-                f"Created sale item {sale_item.id} for sale {sale.id}: "
-                f"{item_name} (Type: {item_type})"
-            )
+            # Set the _skip_sale_update flag as an attribute
+            sale_item._skip_sale_update = True
+
+            # Save the item
+            sale_item.save()
 
         except Exception as e:
-            # Better error message with item details
-            item_identifier = "Unknown"
-            if item_data.get('product'):
-                item_identifier = f"Product: {item_data['product'].name}"
-            elif item_data.get('service'):
-                item_identifier = f"Service: {item_data['service'].name}"
+            logger.error(f"Error creating sale item: {e}", exc_info=True)
+            raise ValidationError(f"Failed to create sale item: {str(e)}")
 
-            logger.error(f"Error creating sale item for {item_identifier}: {e}", exc_info=True)
-            raise ValidationError(f"Failed to create sale item for {item_identifier}: {str(e)}")
 
 def handle_payment(sale, post_data):
-    """Handle payment creation if payment information is provided"""
+    """Handle payment creation"""
     try:
         payment_amount = post_data.get('payment_amount', '').strip()
-        payment_reference = post_data.get('payment_reference', '').strip()
+        if not payment_amount:
+            return
 
-        if payment_amount:
-            amount = Decimal(payment_amount)
-            if amount > 0:
-                Payment.objects.create(
-                    sale=sale,
-                    store=sale.store,
-                    amount=amount,
-                    payment_method=sale.payment_method,
-                    transaction_reference=payment_reference,
-                    is_confirmed=True,
-                    confirmed_at=timezone.now(),
-                )
-                logger.info(f"Created payment {amount} for sale {sale.id}")
-    except (InvalidOperation, ValueError, TypeError) as e:
-        logger.warning(f"Invalid payment amount '{payment_amount}': {e}")
+        amount = Decimal(payment_amount)
+        if amount > 0:
+            Payment.objects.create(
+                sale=sale,
+                store=sale.store,
+                amount=amount,
+                payment_method=sale.payment_method,
+                transaction_reference=post_data.get('payment_reference', ''),
+                is_confirmed=True,
+                confirmed_at=timezone.now(),
+                created_by=sale.created_by
+            )
+            logger.info(f"Created payment {amount} for sale {sale.id}")
+
     except Exception as e:
-        logger.error(f"Error creating payment for sale {sale.id}: {e}")
+        logger.error(f"Error creating payment: {e}")
 
 
 def create_stock_movements(sale):
-    """Create stock movement records for product-based sale items only."""
+    """Create stock movements for products only"""
     try:
-        for item in sale.items.select_related('product'):
-
-            # Skip services or invalid items
-            if item.product is None:
-                logger.warning(
-                    f"Skipping stock movement for sale item {item.id} "
-                    f"(Type: {item.item_type}) because it has no product."
-                )
+        for item in sale.items.select_related('product', 'service'):
+            if item.item_type != 'PRODUCT' or not item.product:
                 continue
 
             StockMovement.objects.create(
@@ -1401,20 +1363,15 @@ def create_stock_movements(sale):
                 store=sale.store,
                 movement_type='SALE',
                 quantity=item.quantity,
-                reference=sale.invoice_number or f"SALE-{sale.id}",
+                reference=sale.document_number or f"SALE-{sale.id}",
                 unit_price=item.unit_price,
                 total_value=item.total_price,
                 created_by=sale.created_by,
-                notes=f"Sale: {sale.invoice_number or sale.transaction_id}"
-            )
-
-            logger.info(
-                f"Created stock movement for product '{item.product.name}' "
-                f"in sale {sale.id}"
+                notes=f"Sale: {sale.document_number}"
             )
 
     except Exception as e:
-        logger.error(f"Error creating stock movements for sale {sale.id}: {e}")
+        logger.error(f"Error creating stock movements: {e}")
 
 
 def render_sale_form_with_errors(request):
@@ -1456,8 +1413,9 @@ def render_sale_form_with_errors(request):
 
 @login_required
 def search_products(request):
-    user=request.user
     try:
+        from stores.utils import validate_store_access
+
         query = request.GET.get('q', '').strip()
         store_id = request.GET.get('store_id')
 
@@ -1469,16 +1427,14 @@ def search_products(request):
         if store_id:
             try:
                 store_id = int(store_id)
-                if request.user.is_superuser:
-                    store = Store.objects.get(id=store_id)
-                else:
-                    user_company=getattr(user,'company',None)
-                    store = Store.objects.filter(
-                        Q(staff=request.user) | Q(company=user_company),
-                        id=store_id
-                    ).first()
-                    if not store:
-                        return JsonResponse({'error': 'Access denied to store'}, status=403)
+                store = Store.objects.get(id=store_id)
+
+                # Validate store access using utility function
+                try:
+                    validate_store_access(request.user, store, action='view', raise_exception=True)
+                except PermissionDenied:
+                    return JsonResponse({'error': 'Access denied to store'}, status=403)
+
             except (ValueError, Store.DoesNotExist):
                 return JsonResponse({'error': 'Invalid store'}, status=400)
 
@@ -1616,72 +1572,73 @@ def search_customers(request):
 
 @login_required
 @permission_required('sales.add_sale', raise_exception=True)
+@require_http_methods(["GET", "POST"])
 def fiscalize_sale(request, sale_id):
-    user=request.user
+    """
+    Fiscalize a sale - works for both RECEIPTS and INVOICES using store-specific EFRIS configuration
+    """
     sale = get_object_or_404(
-        Sale.objects.select_related('store__company', 'customer'),
+        Sale.objects.select_related('store', 'customer', 'created_by'),
         pk=sale_id
     )
 
-    if not request.user.is_superuser:
-        user_company =getattr(user,'company',None)
-        user_stores = Store.objects.filter(
-            Q(staff=request.user) | Q(company=user_company)
-        ).distinct()
-        if sale.store not in user_stores:
-            messages.error(request, "You don't have access to this sale.")
-            return redirect('sales:sales_list')
+    # Check user access using utility function
+    try:
+        validate_store_access(request.user, sale.store, action='change', raise_exception=True)
+    except PermissionDenied as e:
+        messages.error(request, str(e))
+        return redirect('sales:sales_list')
 
-    company = sale.store.company
+    # Check if store can fiscalize transactions
+    if not sale.store.can_fiscalize:
+        config = sale.store.effective_efris_config
+        error_parts = []
+        if not config.get('enabled', False):
+            error_parts.append("EFRIS not enabled")
+        if not config.get('is_active', False):
+            error_parts.append("EFRIS not active")
+        if not config.get('device_number'):
+            error_parts.append("No EFRIS device number configured")
+        if not config.get('tin'):
+            error_parts.append("No TIN configured")
+        if not sale.store.is_active:
+            error_parts.append("Store is not active")
+        if not sale.store.allows_sales:
+            error_parts.append("Store doesn't allow sales")
 
-    if not getattr(company, 'efris_enabled', False):
-        messages.error(request, 'EFRIS is not enabled for this company.')
+        error_message = f'Store cannot fiscalize transactions: {", ".join(error_parts)}'
+        messages.error(request, error_message)
         return redirect('sales:sale_detail', pk=sale_id)
 
     try:
-        # Check if sale can be fiscalized
+        # Check if sale can be fiscalized using Sale model's method
         if hasattr(sale, 'can_fiscalize'):
             can_fiscalize, reason = sale.can_fiscalize(request.user)
             if not can_fiscalize:
                 messages.error(request, f'Cannot fiscalize sale: {reason}')
                 return redirect('sales:sale_detail', pk=sale_id)
 
-        invoice = None
-        if hasattr(sale, 'invoice') and sale.invoice:
-            invoice = sale.invoice
-        else:
-            try:
-                invoice = create_invoice_for_sale(sale, request.user)
-                messages.info(request, f'Invoice {invoice.invoice_number} created for fiscalization.')
-            except Exception as e:
-                logger.error(f"Failed to create invoice for sale {sale_id}: {e}")
-                messages.error(request, 'Failed to create invoice for fiscalization.')
-                return redirect('sales:sale_detail', pk=sale_id)
-
-        if not invoice:
-            messages.error(request, 'No invoice available for fiscalization.')
-            return redirect('sales:sale_detail', pk=sale_id)
-
         # Check if already fiscalized
-        if invoice.is_fiscalized:
-            messages.warning(request, 'Invoice is already fiscalized.')
+        if sale.is_fiscalized:
+            messages.warning(request, f'{sale.get_document_type_display()} is already fiscalized.')
             return redirect('sales:sale_detail', pk=sale_id)
 
+        # ALL SALES (receipts and invoices) can be fiscalized directly
         try:
-            from .tasks import fiscalize_invoice_async
+            from .tasks import fiscalize_sale_async
 
-            # Queue the task with proper error handling
-            task_result = fiscalize_invoice_async.delay(invoice.pk, request.user.pk)
+            # Queue the fiscalization task
+            task_result = fiscalize_sale_async.delay(sale.pk, request.user.pk)
 
             messages.success(
                 request,
-                f'Fiscalization queued for invoice {invoice.invoice_number}. '
+                f'Fiscalization queued for {sale.get_document_type_display()} {sale.document_number}. '
                 f'Task ID: {task_result.id}. Please check back in a few moments.'
             )
 
             logger.info(
                 f"Fiscalization task queued for sale {sale_id}, "
-                f"invoice {invoice.pk}, task_id: {task_result.id}"
+                f"document_type: {sale.document_type}, task_id: {task_result.id}"
             )
 
         except ImportError as e:
@@ -1697,11 +1654,10 @@ def fiscalize_sale(request, sale_id):
 
     return redirect('sales:sale_detail', pk=sale_id)
 
-
-
 @login_required
 @require_POST
 def bulk_actions(request):
+    """Handle bulk actions on sales - supports all document types"""
     form = BulkActionForm(request.POST)
 
     if form.is_valid():
@@ -1721,9 +1677,10 @@ def bulk_actions(request):
 
                 for sale in sales:
                     try:
-                        company = sale.store.company
-                        if not getattr(company, 'efris_enabled', False):
-                            error_messages.append(f"EFRIS not enabled for sale {sale.id}")
+                        # Validate store EFRIS configuration
+                        store_config = sale.store.effective_efris_config
+                        if not store_config.get('enabled', False):
+                            error_messages.append(f"EFRIS not enabled for sale {sale.document_number}")
                             total_errors += 1
                             continue
 
@@ -1731,41 +1688,22 @@ def bulk_actions(request):
                         if hasattr(sale, 'can_fiscalize'):
                             can_fiscalize, reason = sale.can_fiscalize(request.user)
                             if not can_fiscalize:
-                                error_messages.append(f"Sale {sale.id}: {reason}")
+                                error_messages.append(f"Sale {sale.document_number}: {reason}")
                                 total_errors += 1
                                 continue
 
-                        # Get or create invoice
-                        invoice = None
-                        if hasattr(sale, 'invoice') and sale.invoice:
-                            invoice = sale.invoice
-                        else:
-                            # Create invoice if needed
-                            if should_create_invoice(sale, request.user):
-                                try:
-                                    invoice = create_invoice_for_sale(sale, request.user)
-                                except Exception as e:
-                                    error_messages.append(f"Invoice creation failed for sale {sale.id}: {str(e)}")
-                                    total_errors += 1
-                                    continue
-
-                        if not invoice:
-                            error_messages.append(f"No invoice available for sale {sale.id}")
-                            total_errors += 1
-                            continue
-
                         # Skip if already fiscalized
-                        if invoice.is_fiscalized:
+                        if sale.is_fiscalized:
                             continue
 
-                        # FIXED: Queue fiscalization using correct task
-                        from .tasks import fiscalize_invoice_async
-                        fiscalize_invoice_async.delay(invoice.pk, request.user.pk)
+                        # Queue fiscalization for ANY sale type (receipt or invoice)
+                        from .tasks import fiscalize_sale_async
+                        fiscalize_sale_async.delay(sale.pk, request.user.pk)
                         total_queued += 1
 
                     except Exception as e:
                         logger.error(f"Error processing sale {sale.id} for bulk fiscalization: {e}")
-                        error_messages.append(f"Sale {sale.id}: {str(e)}")
+                        error_messages.append(f"Sale {sale.document_number}: {str(e)}")
                         total_errors += 1
 
                 # Prepare result message
@@ -1791,7 +1729,7 @@ def bulk_actions(request):
                 receipt, created = Receipt.objects.get_or_create(
                     sale=sale,
                     defaults={
-                        'receipt_number': f"RCP-{sale.invoice_number}",
+                        'receipt_number': f"RCP-{sale.document_number}",
                         'printed_by': request.user,
                         'receipt_data': {}
                     }
@@ -1807,38 +1745,38 @@ def bulk_actions(request):
 
 
 def validate_stock_availability(store, items_data):
-    """
-    Pre-validate stock availability for product items only
-    Services don't have stock, so they're skipped
-    """
+    """Validate stock for products only"""
     errors = []
 
     for item_data in items_data:
-        # Only validate stock for products
-        if item_data['item_type'] != 'PRODUCT' or not item_data.get('product'):
+        if item_data['item_type'] != 'PRODUCT':
+            continue
+
+        product = item_data.get('product')
+        if not product:
             continue
 
         try:
-            stock = Stock.objects.select_for_update().filter(
-                product=item_data['product'],
+            stock = Stock.objects.filter(
+                product=product,
                 store=store
             ).first()
 
             if not stock:
-                errors.append(f'No stock record found for {item_data["product"].name} at {store.name}')
+                errors.append(
+                    f'No stock record for {product.name} at {store.name}'
+                )
                 continue
 
-            available_quantity = stock.quantity
-            requested_quantity = item_data['quantity']
-
-            if available_quantity < requested_quantity:
+            if stock.quantity < item_data['quantity']:
                 errors.append(
-                    f'Insufficient stock for {item_data["product"].name}. '
-                    f'Available: {available_quantity}, Requested: {requested_quantity}'
+                    f'Insufficient stock for {product.name}. '
+                    f'Available: {stock.quantity}, Required: {item_data["quantity"]}'
                 )
+
         except Exception as e:
-            logger.error(f"Stock validation error for product {item_data['product'].id}: {e}")
-            errors.append(f'Stock validation failed for {item_data["product"].name}')
+            logger.error(f"Stock validation error: {e}")
+            errors.append(f'Stock check failed for {product.name}')
 
     return errors
 
@@ -1941,13 +1879,20 @@ def pos_interface(request):
     store_id = request.GET.get('store')
 
     if not store_id or not store_id.isdigit():
-        stores = Store.objects.all().distinct()
+        # Get accessible stores for user
+        stores = get_user_accessible_stores(request.user).filter(is_active=True)
         return render(request, 'sales/select_store.html', {'stores': stores})
 
-    store = get_object_or_404(
-        Store.objects.filter(Q(staff=request.user)).distinct(),
-        id=store_id
-    )
+    store = get_object_or_404(Store, id=store_id)
+
+    # Validate store access
+    try:
+        validate_store_access(request.user, store, action='view', raise_exception=True)
+    except PermissionDenied:
+        messages.error(request, 'You do not have access to this store')
+        # Redirect to store selection with accessible stores
+        stores = get_user_accessible_stores(request.user).filter(is_active=True)
+        return render(request, 'sales/select_store.html', {'stores': stores})
 
     if not request.session.session_key:
         request.session.create()
@@ -2134,36 +2079,32 @@ def checkout_cart(request):
 def quick_sale(request):
     if request.method == 'GET':
         # Get stores user has access to
-        if request.user.is_superuser:
-            stores = Store.objects.all().order_by('name')
-        else:
-            stores = Store.objects.filter(
-                Q(staff=request.user) | Q(company__staff=request.user)
-            ).distinct().order_by('name')
+        accessible_stores = get_user_accessible_stores(request.user).filter(
+            is_active=True
+        ).order_by('name')
 
         # Get customers from stores user has access to
-        if request.user.is_superuser:
-            customers = Customer.objects.all().order_by('name')[:100]
-        else:
-            customers = Customer.objects.filter(
-                company__staff=request.user
-            ).distinct().order_by('name')[:100]
+        store_ids = accessible_stores.values_list('id', flat=True)
+        customers = Customer.objects.filter(
+            store_id__in=store_ids
+        ).distinct().order_by('name')[:100]
 
         # Add EFRIS status information to context
         context = {
-            'stores': stores,
+            'stores': accessible_stores,
             'customers': customers,
         }
 
         # Add EFRIS configuration info for stores
         efris_stores = []
-        for store in stores:
+        for store in accessible_stores:
+            store_config = store.effective_efris_config
             store_info = {
                 'id': store.id,
                 'name': store.name,
-                'efris_enabled': getattr(store.company, 'efris_enabled', False),
-                'auto_create_invoices': getattr(store.company, 'auto_create_invoices', False),
-                'auto_fiscalize': getattr(store.company, 'auto_fiscalize', False),
+                'efris_enabled': store_config.get('enabled', False),
+                'auto_create_invoices': getattr(store.company, 'auto_create_invoices', False) if store.company else False,
+                'auto_fiscalize': store_config.get('auto_fiscalize_sales', False),
             }
             efris_stores.append(store_info)
 
@@ -2179,7 +2120,6 @@ def quick_sale(request):
 @permission_required("sales.add_sale", raise_exception=True)
 @require_http_methods(["GET", "POST"])
 def process_refund(request, sale_id):
-    user=request.user
     """Enhanced refund processing with dedicated template and comprehensive validation"""
     sale = get_object_or_404(
         Sale.objects.select_related('store', 'customer', 'created_by')
@@ -2187,15 +2127,12 @@ def process_refund(request, sale_id):
         pk=sale_id
     )
 
-    # Check user access to this sale
-    if not request.user.is_superuser:
-        user_company=getattr(user,'company',None)
-        user_stores = Store.objects.filter(
-            Q(staff=request.user) | Q(company=user_company)
-        ).distinct()
-        if sale.store not in user_stores:
-            messages.error(request, "You don't have access to this sale.")
-            return redirect('sales:sales_list')
+    # Check user access to this sale and store
+    try:
+        validate_store_access(request.user, sale.store, action='change', raise_exception=True)
+    except PermissionDenied as e:
+        messages.error(request, str(e))
+        return redirect('sales:sales_list')
 
     # Check if sale can be refunded
     if sale.transaction_type != 'SALE':
@@ -2264,7 +2201,6 @@ def process_refund(request, sale_id):
     return JsonResponse({'success': False, 'error': 'POST refund processing not implemented in this snippet'})
 
 
-@permission_required('sales.view_sale', raise_exception=True)
 def export_sales(request, sales, format_type):
     """Export sales data"""
     if format_type == 'export_csv':
@@ -2274,13 +2210,14 @@ def export_sales(request, sales, format_type):
 
         writer = csv.writer(response)
         writer.writerow([
-            'Invoice Number', 'Transaction ID', 'Date', 'Customer', 'Store',
+            'Document Number', 'Document Type', 'Transaction ID', 'Date', 'Customer', 'Store',
             'Payment Method', 'Subtotal', 'Tax', 'Discount', 'Total', 'Status'
         ])
 
         for sale in sales:
             writer.writerow([
-                sale.invoice_number,
+                sale.document_number,  # Changed from invoice_number
+                sale.get_document_type_display(),  # Added document type
                 str(sale.transaction_id),
                 sale.created_at.strftime('%Y-%m-%d %H:%M:%S'),
                 sale.customer.name if sale.customer else 'Walk-in',
@@ -2302,7 +2239,7 @@ def export_sales(request, sales, format_type):
 
         # Add headers
         headers = [
-            'Invoice Number', 'Transaction ID', 'Date', 'Customer', 'Store',
+            'Document Number', 'Document Type', 'Transaction ID', 'Date', 'Customer', 'Store',
             'Payment Method', 'Subtotal', 'Tax', 'Discount', 'Total', 'Status'
         ]
 
@@ -2311,17 +2248,18 @@ def export_sales(request, sales, format_type):
 
         # Add data
         for row, sale in enumerate(sales, 1):
-            worksheet.write(row, 0, sale.invoice_number)
-            worksheet.write(row, 1, str(sale.transaction_id))
-            worksheet.write(row, 2, sale.created_at.strftime('%Y-%m-%d %H:%M:%S'))
-            worksheet.write(row, 3, sale.customer.name if sale.customer else 'Walk-in')
-            worksheet.write(row, 4, sale.store.name)
-            worksheet.write(row, 5, sale.get_payment_method_display())
-            worksheet.write(row, 6, float(sale.subtotal))
-            worksheet.write(row, 7, float(sale.tax_amount))
-            worksheet.write(row, 8, float(sale.discount_amount))
-            worksheet.write(row, 9, float(sale.total_amount))
-            worksheet.write(row, 10, 'Fiscalized' if sale.is_fiscalized else 'Not Fiscalized')
+            worksheet.write(row, 0, sale.document_number)  # Changed from invoice_number
+            worksheet.write(row, 1, sale.get_document_type_display())  # Added
+            worksheet.write(row, 2, str(sale.transaction_id))
+            worksheet.write(row, 3, sale.created_at.strftime('%Y-%m-%d %H:%M:%S'))
+            worksheet.write(row, 4, sale.customer.name if sale.customer else 'Walk-in')
+            worksheet.write(row, 5, sale.store.name)
+            worksheet.write(row, 6, sale.get_payment_method_display())
+            worksheet.write(row, 7, float(sale.subtotal))
+            worksheet.write(row, 8, float(sale.tax_amount))
+            worksheet.write(row, 9, float(sale.discount_amount))
+            worksheet.write(row, 10, float(sale.total_amount))
+            worksheet.write(row, 11, 'Fiscalized' if sale.is_fiscalized else 'Not Fiscalized')
 
         workbook.close()
         output.seek(0)
@@ -2362,6 +2300,7 @@ def store_sales_api(request):
         date_range = request.GET.get('date_range', 'week')
         transaction_type = request.GET.get('transaction_type', '')
         payment_method = request.GET.get('payment_method', '')
+        document_type = request.GET.get('document_type', '')  # Added document_type filter
         search = request.GET.get('search', '')
         per_page = 25
 
@@ -2402,6 +2341,10 @@ def store_sales_api(request):
                 start_date = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
                 queryset = queryset.filter(created_at__gte=start_date)
                 logger.debug(f"Applied 'month' filter from {start_date}")
+            elif date_range == 'year':
+                start_date = now.replace(month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
+                queryset = queryset.filter(created_at__gte=start_date)
+                logger.debug(f"Applied 'year' filter from {start_date}")
 
             logger.debug(f"Queryset count after date filter: {queryset.count()}")
         except Exception as e:
@@ -2415,12 +2358,19 @@ def store_sales_api(request):
         if payment_method:
             queryset = queryset.filter(payment_method=payment_method)
 
+        if document_type:  # Added document_type filter
+            queryset = queryset.filter(document_type=document_type)
+
         if search:
+            # Updated search to use document_number instead of invoice_number
             queryset = queryset.filter(
-                Q(invoice_number__icontains=search) |
+                Q(document_number__icontains=search) |
                 Q(transaction_id__icontains=search) |
+                Q(efris_invoice_number__icontains=search) |  # Added EFRIS invoice number search
                 Q(customer__name__icontains=search) |
-                Q(customer__phone__icontains=search)
+                Q(customer__phone__icontains=search) |
+                Q(customer__email__icontains=search) |
+                Q(customer__tin__icontains=search)
             ).distinct()
 
         # Order by creation date (newest first)
@@ -2432,16 +2382,40 @@ def store_sales_api(request):
         today_stats = today_sales.aggregate(
             count=Count('id'),
             revenue=Sum('total_amount'),
-            fiscalized_count=Count('id', filter=Q(is_fiscalized=True))
+            fiscalized_count=Count('id', filter=Q(is_fiscalized=True)),
+            receipts_count=Count('id', filter=Q(document_type='RECEIPT')),
+            invoices_count=Count('id', filter=Q(document_type='INVOICE')),
         )
 
-        overall_stats = queryset.aggregate(avg_amount=Avg('total_amount'))
+        # Calculate document type statistics
+        document_type_stats = queryset.values('document_type').annotate(
+            count=Count('id'),
+            total=Sum('total_amount')
+        )
+
+        overall_stats = queryset.aggregate(
+            avg_amount=Avg('total_amount'),
+            min_amount=Min('total_amount'),
+            max_amount=Max('total_amount')
+        )
 
         stats = {
             'today_count': today_stats['count'] or 0,
             'today_revenue': float(today_stats['revenue'] or 0),
+            'today_fiscalized': today_stats['fiscalized_count'] or 0,
+            'today_receipts': today_stats['receipts_count'] or 0,
+            'today_invoices': today_stats['invoices_count'] or 0,
             'avg_amount': float(overall_stats['avg_amount'] or 0),
-            'fiscalized_count': today_stats['fiscalized_count'] or 0
+            'min_amount': float(overall_stats['min_amount'] or 0),
+            'max_amount': float(overall_stats['max_amount'] or 0),
+            'fiscalized_count': today_stats['fiscalized_count'] or 0,
+            'document_type_stats': {
+                doc['document_type']: {
+                    'count': doc['count'],
+                    'total': float(doc['total'] or 0)
+                }
+                for doc in document_type_stats
+            }
         }
 
         # Paginate results
@@ -2457,22 +2431,56 @@ def store_sales_api(request):
                     'id': sale.customer.id,
                     'name': sale.customer.name,
                     'phone': getattr(sale.customer, 'phone', ''),
+                    'email': getattr(sale.customer, 'email', ''),
+                    'tin': getattr(sale.customer, 'tin', ''),
                 }
+
+            # Get payment status and amount paid
+            payments = sale.payments.filter(is_confirmed=True).aggregate(
+                total_paid=Sum('amount')
+            )
+            total_paid = payments['total_paid'] or Decimal('0')
 
             sale_data = {
                 'id': sale.id,
-                'invoice_number': getattr(sale, 'invoice_number', ''),
-                'transaction_id': str(getattr(sale, 'transaction_id', '')),
+                'document_number': sale.document_number or '',  # Changed from invoice_number
+                'document_type': sale.document_type,
+                'document_type_display': sale.get_document_type_display(),
+                'transaction_id': str(sale.transaction_id),
                 'created_at': sale.created_at.isoformat() if sale.created_at else '',
                 'customer': customer_data,
-                'payment_method': getattr(sale, 'payment_method', ''),
-                'payment_method_display': getattr(sale, 'get_payment_method_display', lambda: '')(),
-                'transaction_type': getattr(sale, 'transaction_type', ''),
-                'transaction_type_display': getattr(sale, 'get_transaction_type_display', lambda: '')(),
-                'total_amount': float(getattr(sale, 'total_amount', 0)),
-                'is_fiscalized': getattr(sale, 'is_fiscalized', False),
-                'is_refunded': getattr(sale, 'is_refunded', False),
-                'is_voided': getattr(sale, 'is_voided', False),
+                'payment_method': sale.payment_method,
+                'payment_method_display': sale.get_payment_method_display(),
+                'payment_status': sale.payment_status,
+                'payment_status_display': sale.get_payment_status_display(),
+                'transaction_type': sale.transaction_type,
+                'transaction_type_display': sale.get_transaction_type_display(),
+                'subtotal': float(sale.subtotal),
+                'tax_amount': float(sale.tax_amount),
+                'discount_amount': float(sale.discount_amount),
+                'total_amount': float(sale.total_amount),
+                'currency': sale.currency,
+                'status': sale.status,
+                'status_display': sale.get_status_display(),
+                'is_fiscalized': sale.is_fiscalized,
+                'is_refunded': sale.is_refunded,
+                'is_voided': sale.is_voided,
+                'efris_invoice_number': sale.efris_invoice_number or '',
+                'verification_code': sale.verification_code or '',
+                'fiscalization_time': sale.fiscalization_time.isoformat() if sale.fiscalization_time else None,
+                'total_paid': float(total_paid),
+                'amount_outstanding': float(sale.amount_outstanding),
+                'item_count': sale.item_count,
+                'created_by': {
+                    'id': sale.created_by.id,
+                    'name': sale.created_by.get_full_name() or sale.created_by.username,
+                } if sale.created_by else None,
+                'store': {
+                    'id': sale.store.id,
+                    'name': sale.store.name,
+                } if sale.store else None,
+                'notes': sale.notes or '',
+                'due_date': sale.due_date.isoformat() if sale.due_date else None,
             }
             sales_data.append(sale_data)
 
@@ -2485,13 +2493,45 @@ def store_sales_api(request):
             'previous_page_number': page_obj.previous_page_number() if page_obj.has_previous() else None,
             'next_page_number': page_obj.next_page_number() if page_obj.has_next() else None,
             'total_count': paginator.count,
-            'per_page': per_page
+            'per_page': per_page,
+            'start_index': page_obj.start_index(),
+            'end_index': page_obj.end_index(),
         }
 
+        # Prepare response with enhanced data
         response_data = {
             'sales': sales_data,
             'stats': stats,
-            'pagination': pagination
+            'pagination': pagination,
+            'filters': {
+                'store_id': store_id,
+                'date_range': date_range,
+                'transaction_type': transaction_type,
+                'payment_method': payment_method,
+                'document_type': document_type,
+                'search': search,
+                'per_page': per_page,
+            },
+            'document_types': [
+                {'value': choice[0], 'label': choice[1]}
+                for choice in Sale.DOCUMENT_TYPE_CHOICES
+            ],
+            'transaction_types': [
+                {'value': choice[0], 'label': choice[1]}
+                for choice in Sale.TRANSACTION_TYPES
+            ],
+            'payment_methods': [
+                {'value': choice[0], 'label': choice[1]}
+                for choice in Sale.PAYMENT_METHODS
+            ],
+            'status_choices': [
+                {'value': choice[0], 'label': choice[1]}
+                for choice in Sale.STATUS_CHOICES
+            ],
+            'payment_status_choices': [
+                {'value': choice[0], 'label': choice[1]}
+                for choice in Sale.PAYMENT_STATUS_CHOICES
+            ],
         }
 
         logger.info(f"Successfully returning {len(sales_data)} sales records for store {store_id}")
@@ -2501,14 +2541,14 @@ def store_sales_api(request):
         logger.error(f"Unexpected error in store_sales_api: {e}", exc_info=True)
         return JsonResponse({
             'error': 'An unexpected error occurred while fetching sales data',
-            'details': str(e)
+            'details': str(e),
+            'traceback': str(e.__traceback__) if hasattr(e, '__traceback__') else None
         }, status=500)
 
 
 @login_required
 @permission_required('sales.view_sale', raise_exception=True)
 def sales_analytics(request):
-    user=request.user
     """
     Enhanced sales analytics dashboard supporting both products and services
     """
@@ -2533,8 +2573,12 @@ def sales_analytics(request):
         if date_from > date_to:
             date_from, date_to = date_to, date_from
 
-        # Base queryset with optimizations
+        # Get user's accessible stores
+        accessible_stores = get_user_accessible_stores(request.user).filter(is_active=True)
+
+        # Base queryset filtered by accessible stores
         sales_qs = Sale.objects.filter(
+            store__in=accessible_stores,
             created_at__date__gte=date_from,
             created_at__date__lte=date_to,
             transaction_type='SALE',
@@ -2543,17 +2587,21 @@ def sales_analytics(request):
 
         # Filter by store if specified
         if store_id and store_id != '':
-            sales_qs = sales_qs.filter(store_id=store_id)
+            try:
+                store = Store.objects.get(id=store_id)
+                # Validate user has access to the selected store
+                try:
+                    validate_store_access(request.user, store, action='view', raise_exception=True)
+                    sales_qs = sales_qs.filter(store_id=store_id)
+                except PermissionDenied:
+                    messages.error(request, 'Access denied to selected store.')
+                    store_id = None  # Reset store_id if access denied
+            except Store.DoesNotExist:
+                messages.error(request, 'Invalid store selected.')
+                store_id = None
 
-        # Get user's accessible stores for filter dropdown
-        if request.user.is_superuser:
-            stores = Store.objects.filter(is_active=True).order_by('name')
-        else:
-            user_company=getattr(user,'company',None)
-            stores = Store.objects.filter(
-                Q(staff=request.user) | Q(company=user_company),
-                is_active=True
-            ).distinct().order_by('name')
+        # Get stores for filter dropdown (already filtered by access)
+        stores = accessible_stores.order_by('name')
 
         # Calculate core metrics
         total_sales = sales_qs.count()
@@ -2715,6 +2763,7 @@ def sales_analytics(request):
         previous_period_end = date_from - timedelta(days=1)
 
         previous_sales = Sale.objects.filter(
+            store__in=accessible_stores,
             created_at__date__gte=previous_period_start,
             created_at__date__lte=previous_period_end,
             transaction_type='SALE',
@@ -2744,6 +2793,7 @@ def sales_analytics(request):
 
         # Return rate calculation
         refunded_sales = Sale.objects.filter(
+            store__in=accessible_stores,
             created_at__date__gte=date_from,
             created_at__date__lte=date_to,
             transaction_type='REFUND'
@@ -2782,6 +2832,26 @@ def sales_analytics(request):
             total_revenue=Sum('total_price')
         ).order_by('-total_revenue')
 
+        # Get store statistics with EFRIS status
+        store_stats = []
+        for store in stores:
+            store_config = store.effective_efris_config
+            store_sales = sales_qs.filter(store=store)
+            store_sales_count = store_sales.count()
+            store_revenue = store_sales.aggregate(Sum('total_amount'))['total_amount__sum'] or Decimal('0')
+
+            store_stats.append({
+                'id': store.id,
+                'name': store.name,
+                'sales_count': store_sales_count,
+                'revenue': store_revenue,
+                'efris_enabled': store_config.get('enabled', False),
+                'efris_active': store_config.get('is_active', False),
+                'allows_sales': store.allows_sales,
+                'allows_inventory': store.allows_inventory,
+                'is_main_branch': store.is_main_branch,
+            })
+
         context = {
             # Date range
             'date_from': date_from,
@@ -2796,7 +2866,7 @@ def sales_analytics(request):
             # Charts data
             'payment_methods': payment_methods,
             'daily_sales': daily_sales,
-            'top_items': top_items,  # Changed from top_products to top_items
+            'top_items': top_items,
             'hourly_sales': hourly_data,
 
             # Additional insights
@@ -2806,15 +2876,19 @@ def sales_analytics(request):
 
             # Filter options
             'stores': stores,
+            'store_stats': store_stats,
             'selected_store': store_id,
 
             # Additional analytics
             'store_performance': store_performance,
             'payment_efficiency': payment_efficiency,
-            'item_type_breakdown': item_type_breakdown,  # NEW
+            'item_type_breakdown': item_type_breakdown,
 
             # Period information
             'period_days': (date_to - date_from).days + 1,
+
+            # Access information
+            'has_multiple_stores': stores.count() > 1,
         }
 
         # Handle exports
@@ -2832,14 +2906,8 @@ def sales_analytics(request):
         default_date_from = timezone.now().date() - timedelta(days=30)
         default_date_to = timezone.now().date()
 
-        if request.user.is_superuser:
-            stores = Store.objects.filter(is_active=True).order_by('name')
-        else:
-
-            stores = Store.objects.filter(
-                Q(staff=request.user) | Q(company=user_company),
-                is_active=True
-            ).distinct().order_by('name')
+        # Get accessible stores for error context
+        stores = get_user_accessible_stores(request.user).filter(is_active=True)
 
         return render(request, 'sales/analytics.html', {
             'date_from': default_date_from,
@@ -3118,7 +3186,6 @@ def analytics_day_details(request):
 @permission_required('sales.change_sale', raise_exception=True)
 @require_http_methods(["GET", "POST"])
 def void_sale(request, sale_id):
-    user=request.user
     """Enhanced void sale functionality with dedicated template"""
     sale = get_object_or_404(
         Sale.objects.select_related('store', 'customer', 'created_by')
@@ -3126,15 +3193,12 @@ def void_sale(request, sale_id):
         pk=sale_id
     )
 
-    # Check user access to this sale
-    if not request.user.is_superuser:
-        user_company=getattr(user,'company',None)
-        user_stores = Store.objects.filter(
-            Q(staff=request.user) | Q(company=user_company)
-        ).distinct()
-        if sale.store not in user_stores:
-            messages.error(request, "You don't have access to this sale.")
-            return redirect('sales:sales_list')
+    # Check user access to this sale and store
+    try:
+        validate_store_access(request.user, sale.store, action='change', raise_exception=True)
+    except PermissionDenied as e:
+        messages.error(request, str(e))
+        return redirect('sales:sales_list')
 
     # Check if sale can be voided
     if sale.is_voided:
@@ -3201,7 +3265,7 @@ def void_sale(request, sale_id):
 
             # Store original values for logging
             original_total = sale.total_amount
-            original_invoice = sale.invoice_number
+            original_invoice = sale.document_number  # Updated from invoice_number
 
             # Restore stock for all items
             for item in sale.items.all():
@@ -3219,7 +3283,7 @@ def void_sale(request, sale_id):
                         store=sale.store,
                         movement_type='VOID',
                         quantity=item.quantity,  # Positive for incoming
-                        reference=f"VOID-{sale.invoice_number or sale.id}",
+                        reference=f"VOID-{sale.document_number or sale.id}",
                         unit_price=item.unit_price,
                         total_value=item.line_total,
                         created_by=request.user,
@@ -3254,7 +3318,7 @@ def void_sale(request, sale_id):
 
             # Create audit log entry
             logger.info(
-                f"Sale voided: ID={sale.id}, Invoice={original_invoice}, "
+                f"Sale voided: ID={sale.id}, Document={original_invoice}, "
                 f"Amount={original_total}, Reason={void_reason}, "
                 f"User={request.user.id}, Items={sale.items.count()}, "
                 f"Payments={voided_payments_count}"
@@ -3278,7 +3342,14 @@ def void_sale(request, sale_id):
 @permission_required('sales.view_sale', raise_exception=True)
 def print_receipt(request, sale_id):
     """Generate and print receipt - supports both products and services"""
-    sale = get_object_or_404(Sale, id=sale_id)
+    sale = get_object_or_404(
+        Sale.objects.select_related('store', 'customer', 'created_by', 'receipt_detail')
+        .prefetch_related('items__product', 'items__service', 'payments'),
+        id=sale_id
+    )
+
+    # Get receipt if exists
+    receipt = getattr(sale, 'receipt_detail', None)
 
     # Build items list that handles both products and services
     items_list = []
@@ -3307,14 +3378,16 @@ def print_receipt(request, sale_id):
         })
 
     # Get or create receipt
-    receipt, created = Receipt.objects.get_or_create(
-        sale=sale,
-        defaults={
-            'receipt_number': f"RCP-{sale.invoice_number}",
-            'printed_by': request.user,
-            'receipt_data': {
+    if not receipt:
+        receipt = Receipt.objects.create(
+            sale=sale,
+            receipt_number=f"RCP-{sale.document_number}",
+            printed_by=request.user,
+            receipt_data={
                 'sale_data': {
-                    'invoice_number': sale.invoice_number,
+                    'document_number': sale.document_number,
+                    'document_type': sale.document_type,
+                    'document_type_display': sale.get_document_type_display(),
                     'transaction_id': str(sale.transaction_id),
                     'created_at': sale.created_at.isoformat(),
                     'subtotal': str(sale.subtotal),
@@ -3341,10 +3414,8 @@ def print_receipt(request, sale_id):
                     'tin': getattr(sale.store, 'tin', ''),
                 }
             }
-        }
-    )
-
-    if not created:
+        )
+    else:
         receipt.print_count += 1
         receipt.is_duplicate = True
         receipt.save()
@@ -3365,7 +3436,7 @@ def duplicate_sale(request, sale_id):
 
     # Optional: check user has access to this store
     if not request.user.is_superuser and original.store not in request.user.stores.all():
-        messages.error(request, "You don’t have access to this sale.")
+        messages.error(request, "You don't have access to this sale.")
         return redirect("sales:sales_list")
 
     with transaction.atomic():
@@ -3373,22 +3444,23 @@ def duplicate_sale(request, sale_id):
             store=original.store,
             customer=original.customer,
             created_by=request.user,
-            transaction_type="SALE",
+            document_type=original.document_type,  # Copy document type
             payment_method=original.payment_method or Sale.PAYMENT_METHODS[0][0],
             duplicated_from=original,
-            notes=f"Duplicated from sale {original.invoice_number}"
+            notes=f"Duplicated from {original.get_document_type_display().lower()} {original.document_number}"
         )
 
         for item in original.items.all():
             SaleItem.objects.create(
                 sale=new_sale,
                 product=item.product,
+                service=item.service,  # Include service if present
                 quantity=item.quantity,
                 unit_price=item.unit_price,
                 tax_rate=item.tax_rate,
             )
 
-    messages.success(request, f"Sale {original.invoice_number} duplicated successfully.")
+    messages.success(request, f"{original.get_document_type_display()} {original.document_number} duplicated successfully.")
     return redirect("sales:sale_detail", pk=new_sale.pk)
 
 @login_required
@@ -3410,7 +3482,7 @@ def send_receipt(request, sale_id):
 
     try:
         # Render HTML email template
-        subject = f"Receipt for Sale #{sale.invoice_number}"
+        subject = f"{sale.get_document_type_display()} #{sale.document_number}"
         html_content = render_to_string("sales/email_receipt.html", {"sale": sale})
 
         # Create email
@@ -3422,7 +3494,7 @@ def send_receipt(request, sale_id):
         email.content_subtype = "html"  # Important for HTML email
 
         email.send(fail_silently=False)
-        messages.success(request, f"Receipt emailed successfully to {sale.customer.email}.")
+        messages.success(request, f"{sale.get_document_type_display()} emailed successfully to {sale.customer.email}.")
 
     except Exception as e:
         messages.error(request, f"Error sending receipt: {str(e)}")
@@ -3453,7 +3525,7 @@ def api_create_sale(request):
                 customer_id=data.get('customer_id'),
                 payment_method=data['payment_method'],
                 notes=data.get('notes', ''),
-                is_completed=True
+                status__in=['COMPLETED', 'PAID']
             )
 
             # Add items

@@ -1,0 +1,684 @@
+{% extends "base.html" %}
+{% load i18n %}
+{% load static %}
+{% load custom_filters %}
+{% load efris_tags %}
+
+{% block title %}{% trans "Sale Details" %}{% endblock %}
+
+{% block breadcrumb_items %}
+<li class="breadcrumb-item"><a href="{% url 'sales:sales_list' %}">{% trans "Sales" %}</a></li>
+<li class="breadcrumb-item active" aria-current="page">{% trans "Sale Details" %}</li>
+{% endblock %}
+
+{% block page_actions %}
+<div class="d-flex gap-2">
+{% if sale.status == 'completed' and not sale.is_voided and not sale.is_refunded %}
+<a href="{% url 'sales:print_receipt' sale.pk %}"
+class="btn btn-outline-primary"
+target="_blank">
+<i class="bi bi-printer me-1"></i>{% trans "Print" %}
+</a>
+{% endif %}
+
+{% if sale.status == 'completed' and not sale.is_voided and not sale.is_refunded and perms.sales.void_sale %}
+<button type="button"
+class="btn btn-outline-warning"
+onclick="voidSale()">
+<i class="bi bi-x-circle me-1"></i>{% trans "Void" %}
+</button>
+{% endif %}
+
+{% if sale.status == 'completed' and not sale.is_fiscalized and perms.sales.fiscalize_sale %}
+<button type="button"
+class="btn btn-outline-info"
+onclick="fiscalizeSale()">
+<i class="bi bi-file-earmark-text me-1"></i>{% trans "Fiscalize" %}
+</button>
+{% endif %}
+
+{% if perms.sales.add_sale %}
+<a href="{% url 'sales:duplicate_sale' sale.pk %}"
+class="btn btn-outline-success">
+<i class="bi bi-copy me-1"></i>{% trans "Duplicate" %}
+</a>
+{% endif %}
+</div>
+{% endblock %}
+
+{% block extra_css %}
+{{ block.super }}
+<style>
+.qr-code-container {
+    max-width: 200px;
+margin: 0 auto;
+}
+
+.verification-code {
+    font-family: monospace;
+background-color: var(--bg-tertiary);
+padding: 0.5rem;
+border-radius: var(--border-radius-sm);
+word-break: break-all;
+}
+
+.status-indicator {
+width: 12px;
+height: 12px;
+border-radius: 50%;
+display: inline-block;
+margin-right: 0.5rem;
+}
+
+.payment-status {
+display: inline-flex;
+align-items: center;
+gap: 0.5rem;
+}
+
+.invoice-header {
+background: linear-gradient(135deg, var(--primary-600) 0%, var(--primary-700) 100%);
+color: white;
+border-radius: var(--border-radius) var(--border-radius) 0 0;
+}
+</style>
+  {% endblock %}
+
+{% block content %}
+<div class="sale-detail-container">
+<!-- Sale Header -->
+<div class="card invoice-header mb-4">
+<div class="card-body">
+<div class="row align-items-center">
+<div class="col-md-8">
+<h2 class="card-title mb-1">{{ sale.invoice_number }}</h2>
+<p class="card-text mb-2">
+<i class="bi bi-calendar me-1"></i>
+{{ sale.created_at|date:"F d, Y H:i" }}
+{% if sale.document_type != 'RECEIPT' %}
+• {{ sale.get_document_type_display }}
+{% endif %}
+</p>
+<div class="d-flex align-items-center gap-3">
+<span class="badge bg-light text-dark">
+<i class="bi bi-shop me-1"></i>{{ sale.store.name }}
+</span>
+<span class="badge bg-light text-dark">
+<i class="bi bi-person me-1"></i>{{ sale.created_by.get_full_name }}
+</span>
+{% if sale.customer %}
+<span class="badge bg-light text-dark">
+<i class="bi bi-person-badge me-1"></i>{{ sale.customer.name }}
+</span>
+{% endif %}
+</div>
+</div>
+<div class="col-md-4 text-md-end">
+<h1 class="display-6 mb-2">{{ sale.total_amount|floatformat:2 }} {{ sale.currency }}</h1>
+<div class="payment-status">
+{% if sale.status == 'completed' %}
+<span class="status-indicator bg-success"></span>
+<span>{% trans "Completed" %}</span>
+{% elif sale.status == 'pending' %}
+<span class="status-indicator bg-warning"></span>
+<span>{% trans "Pending" %}</span>
+{% elif sale.status == 'voided' %}
+<span class="status-indicator bg-danger"></span>
+<span>{% trans "Voided" %}</span>
+{% elif sale.status == 'refunded' %}
+<span class="status-indicator bg-info"></span>
+<span>{% trans "Refunded" %}</span>
+{% endif %}
+</div>
+</div>
+</div>
+</div>
+</div>
+
+<div class="row">
+<!-- Left Column - Details -->
+<div class="col-lg-8">
+<!-- Items -->
+<div class="card mb-4">
+<div class="card-header">
+<h5 class="card-title mb-0">
+<i class="bi bi-list-ul me-2"></i>{% trans "Items" %}
+</h5>
+</div>
+<div class="card-body p-0">
+<div class="table-responsive">
+<table class="table table-hover mb-0">
+<thead>
+<tr>
+<th>{% trans "Item" %}</th>
+<th class="text-center">{% trans "Qty" %}</th>
+<th class="text-end">{% trans "Unit Price" %}</th>
+<th class="text-end">{% trans "Tax" %}</th>
+<th class="text-end">{% trans "Discount" %}</th>
+<th class="text-end">{% trans "Total" %}</th>
+</tr>
+</thead>
+<tbody>
+{% for item in items %}
+<tr>
+<td>
+<strong>{{ item.item_name }}</strong>
+{% if item.description %}
+<br><small class="text-muted">{{ item.description }}</small>
+{% endif %}
+<br><small class="text-muted">{{ item.get_item_type_display }}</small>
+</td>
+<td class="text-center">{{ item.quantity }}</td>
+<td class="text-end">{{ item.unit_price|floatformat:2 }} {{ sale.currency }}</td>
+<td class="text-end">
+{{ item.get_tax_rate_display }}
+<br><small class="text-muted">{{ item.tax_amount|floatformat:2 }}</small>
+</td>
+<td class="text-end">
+{% if item.discount %}
+<span class="text-danger">-{{ item.discount }}%</span>
+<br><small class="text-muted">{{ item.discount_amount|floatformat:2 }}</small>
+{% else %}
+-
+{% endif %}
+</td>
+<td class="text-end fw-semibold">
+{{ item.total_price|floatformat:2 }} {{ sale.currency }}
+</td>
+</tr>
+{% endfor %}
+</tbody>
+</table>
+</div>
+</div>
+</div>
+
+<!-- Payments -->
+{% if payments %}
+<div class="card mb-4">
+<div class="card-header">
+<h5 class="card-title mb-0">
+<i class="bi bi-credit-card me-2"></i>{% trans "Payments" %}
+</h5>
+</div>
+<div class="card-body p-0">
+<div class="table-responsive">
+<table class="table table-hover mb-0">
+<thead>
+<tr>
+<th>{% trans "Date" %}</th>
+<th>{% trans "Method" %}</th>
+<th>{% trans "Reference" %}</th>
+<th class="text-end">{% trans "Amount" %}</th>
+<th>{% trans "Status" %}</th>
+</tr>
+</thead>
+<tbody>
+{% for payment in payments %}
+<tr>
+<td>{{ payment.created_at|date:"M d, Y H:i" }}</td>
+<td>{{ payment.get_payment_method_display }}</td>
+<td>{{ payment.transaction_reference|default:"-" }}</td>
+<td class="text-end fw-semibold">
+{{ payment.amount|floatformat:2 }} {{ sale.currency }}
+</td>
+<td>
+{% if payment.is_confirmed %}
+<span class="badge bg-success">{% trans "Confirmed" %}</span>
+{% else %}
+<span class="badge bg-warning">{% trans "Pending" %}</span>
+{% endif %}
+</td>
+</tr>
+{% endfor %}
+</tbody>
+</table>
+</div>
+</div>
+</div>
+{% endif %}
+
+<!-- Notes -->
+{% if sale.notes %}
+<div class="card mb-4">
+<div class="card-header">
+<h5 class="card-title mb-0">
+<i class="bi bi-chat-text me-2"></i>{% trans "Notes" %}
+</h5>
+</div>
+<div class="card-body">
+<p class="mb-0">{{ sale.notes|linebreaks }}</p>
+</div>
+</div>
+{% endif %}
+
+<!-- Void/Refund Information -->
+{% if sale.is_voided or sale.is_refunded %}
+<div class="card mb-4 border-{% if sale.is_voided %}danger{% else %}warning{% endif %}">
+<div class="card-header bg-{% if sale.is_voided %}danger{% else %}warning{% endif %} text-white">
+<h5 class="card-title mb-0">
+<i class="bi bi-exclamation-triangle me-2"></i>
+{% if sale.is_voided %}{% trans "Voided Sale" %}{% else %}{% trans "Refunded Sale" %}{% endif %}
+</h5>
+</div>
+<div class="card-body">
+{% if sale.void_reason %}
+<p><strong>{% trans "Reason:" %}</strong> {{ sale.void_reason }}</p>
+{% endif %}
+<p class="mb-0">
+<strong>{% trans "Date:" %}</strong> {{ sale.updated_at|date:"F d, Y H:i" }}
+</p>
+</div>
+</div>
+{% endif %}
+</div>
+
+<!-- Right Column - Summary & EFRIS -->
+<div class="col-lg-4">
+<!-- Totals -->
+<div class="card mb-4">
+<div class="card-header">
+<h5 class="card-title mb-0">
+<i class="bi bi-calculator me-2"></i>{% trans "Totals" %}
+</h5>
+</div>
+<div class="card-body">
+<div class="d-flex justify-content-between align-items-center mb-3">
+<span class="text-muted">{% trans "Subtotal" %}</span>
+<span class="fw-semibold">{{ sale.subtotal|floatformat:2 }} {{ sale.currency }}</span>
+</div>
+<div class="d-flex justify-content-between align-items-center mb-3">
+<span class="text-muted">{% trans "Tax" %}</span>
+<span class="fw-semibold">{{ sale.tax_amount|floatformat:2 }} {{ sale.currency }}</span>
+</div>
+{% if sale.discount_amount %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+<span class="text-muted">{% trans "Discount" %}</span>
+<span class="fw-semibold text-danger">-{{ sale.discount_amount|floatformat:2 }} {{ sale.currency }}</span>
+</div>
+{% endif %}
+<hr>
+<div class="d-flex justify-content-between align-items-center mb-0">
+<span class="h5 mb-0">{% trans "Total" %}</span>
+<span class="h4 mb-0 fw-bold text-primary">{{ sale.total_amount|floatformat:2 }} {{ sale.currency }}</span>
+</div>
+</div>
+</div>
+
+<!-- EFRIS Information -->
+{% if sale.is_fiscalized or can_fiscalize %}
+<div class="card mb-4 {% if sale.is_fiscalized %}border-success{% else %}border-info{% endif %}">
+<div class="card-header {% if sale.is_fiscalized %}bg-success{% else %}bg-info{% endif %} text-white">
+<h5 class="card-title mb-0">
+<i class="bi bi-file-earmark-text me-2"></i>{% trans "EFRIS" %}
+</h5>
+</div>
+<div class="card-body">
+{% if sale.is_fiscalized %}
+<div class="text-center mb-3">
+{% if sale.qr_code %}
+<div class="qr-code-container mb-3">
+<img src="data:image/png;base64,{{ sale.qr_code }}"
+alt="{% trans 'EFRIS QR Code' %}"
+class="img-fluid">
+</div>
+{% endif %}
+
+{% if sale.efris_invoice_number %}
+<p class="mb-2">
+<strong>{% trans "Invoice Number:" %}</strong><br>
+<span class="verification-code">{{ sale.efris_invoice_number }}</span>
+</p>
+{% endif %}
+
+{% if sale.verification_code %}
+<p class="mb-0">
+<strong>{% trans "Verification Code:" %}</strong><br>
+<span class="verification-code">{{ sale.verification_code }}</span>
+</p>
+{% endif %}
+
+{% if sale.fiscalization_time %}
+<p class="mt-3 mb-0 text-muted">
+<small>
+<i class="bi bi-clock me-1"></i>
+{% trans "Fiscalized on" %} {{ sale.fiscalization_time|date:"F d, Y H:i" }}
+</small>
+</p>
+{% endif %}
+</div>
+
+<div class="d-grid gap-2">
+<button type="button"
+class="btn btn-outline-success"
+onclick="downloadEFRISCertificate()">
+<i class="bi bi-download me-1"></i>{% trans "Download Certificate" %}
+</button>
+<button type="button"
+class="btn btn-outline-info"
+onclick="verifyEFRISOnline()">
+<i class="bi bi-globe me-1"></i>{% trans "Verify Online" %}
+</button>
+</div>
+{% elif can_fiscalize %}
+<div class="alert alert-warning mb-0">
+<div class="d-flex">
+<div class="flex-shrink-0">
+<i class="bi bi-exclamation-triangle"></i>
+</div>
+<div class="flex-grow-1 ms-3">
+<p class="mb-2">{% trans "This sale is ready for EFRIS fiscalization." %}</p>
+<button type="button"
+class="btn btn-sm btn-primary"
+onclick="fiscalizeSale()">
+<i class="bi bi-file-earmark-text me-1"></i>{% trans "Fiscalize Now" %}
+</button>
+</div>
+</div>
+</div>
+{% endif %}
+</div>
+</div>
+{% endif %}
+
+<!-- Customer Information -->
+{% if sale.customer %}
+<div class="card mb-4">
+<div class="card-header">
+<h5 class="card-title mb-0">
+<i class="bi bi-person-badge me-2"></i>{% trans "Customer" %}
+</h5>
+</div>
+<div class="card-body">
+<h6 class="mb-2">{{ sale.customer.name }}</h6>
+{% if sale.customer.phone %}
+<p class="mb-1">
+<i class="bi bi-telephone me-1"></i>
+{{ sale.customer.phone }}
+</p>
+{% endif %}
+{% if sale.customer.email %}
+<p class="mb-1">
+<i class="bi bi-envelope me-1"></i>
+{{ sale.customer.email }}
+</p>
+{% endif %}
+{% if sale.customer.address %}
+<p class="mb-0">
+<i class="bi bi-geo-alt me-1"></i>
+{{ sale.customer.address|truncatechars:50 }}
+</p>
+{% endif %}
+</div>
+</div>
+{% endif %}
+
+<!-- Audit Information -->
+<div class="card">
+<div class="card-header">
+<h5 class="card-title mb-0">
+<i class="bi bi-info-circle me-2"></i>{% trans "Audit Information" %}
+</h5>
+</div>
+<div class="card-body">
+<dl class="mb-0">
+<dt>{% trans "Transaction ID" %}</dt>
+<dd class="mb-2"><code>{{ sale.transaction_id }}</code></dd>
+
+<dt>{% trans "Created" %}</dt>
+<dd class="mb-2">{{ sale.created_at|date:"F d, Y H:i" }}</dd>
+
+<dt>{% trans "Last Updated" %}</dt>
+<dd class="mb-2">{{ sale.updated_at|date:"F d, Y H:i" }}</dd>
+
+<dt>{% trans "Items Count" %}</dt>
+<dd class="mb-2">{{ sale.item_count }}</dd>
+
+{% if sale.duplicated_from %}
+<dt>{% trans "Duplicated From" %}</dt>
+<dd class="mb-0">
+<a href="{% url 'sales:sale_detail' sale.duplicated_from.pk %}">
+{{ sale.duplicated_from.invoice_number }}
+</a>
+</dd>
+{% endif %}
+</dl>
+</div>
+</div>
+</div>
+</div>
+</div>
+
+<!-- Void Sale Modal -->
+<div class="modal fade" id="voidModal" tabindex="-1" aria-hidden="true">
+<div class="modal-dialog">
+<div class="modal-content">
+<div class="modal-header">
+<h5 class="modal-title text-warning">
+<i class="bi bi-exclamation-triangle me-2"></i>{% trans "Void Sale" %}
+</h5>
+<button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+</div>
+<div class="modal-body">
+<div class="alert alert-warning">
+<i class="bi bi-exclamation-triangle me-2"></i>
+{% trans "This action cannot be undone. All stock will be restored and any payments will be refunded." %}
+</div>
+<div class="mb-3">
+<label for="voidReason" class="form-label">{% trans "Reason for voiding" %} <span class="text-danger">*</span></label>
+<textarea id="voidReason" class="form-control" rows="3" required></textarea>
+</div>
+</div>
+<div class="modal-footer">
+<button type="button" class="btn btn-secondary" data-bs-dismiss="modal">{% trans "Cancel" %}</button>
+<button type="button" class="btn btn-warning" onclick="confirmVoid()">{% trans "Void Sale" %}</button>
+</div>
+</div>
+</div>
+</div>
+
+<!-- Fiscalize Modal -->
+<div class="modal fade" id="fiscalizeModal" tabindex="-1" aria-hidden="true">
+<div class="modal-dialog">
+<div class="modal-content">
+<div class="modal-header">
+<h5 class="modal-title text-info">
+<i class="bi bi-file-earmark-text me-2"></i>{% trans "Fiscalize Sale" %}
+</h5>
+<button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+</div>
+<div class="modal-body">
+<div id="fiscalizeStatus" class="text-center">
+<div class="spinner-border text-primary mb-3" role="status">
+<span class="visually-hidden">{% trans "Fiscalizing..." %}</span>
+</div>
+<p class="mb-0">{% trans "Submitting to EFRIS..." %}</p>
+</div>
+<div id="fiscalizeResult" class="d-none">
+<!-- Result will be shown here -->
+</div>
+</div>
+<div class="modal-footer">
+<button type="button" class="btn btn-secondary" data-bs-dismiss="modal">{% trans "Close" %}</button>
+</div>
+</div>
+</div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+{{ block.super }}
+<script>
+function voidSale() {
+    const voidModal = new bootstrap.Modal(document.getElementById('voidModal'));
+voidModal.show();
+}
+
+function confirmVoid() {
+    const reason = document.getElementById('voidReason').value.trim();
+if (!reason) {
+    alert('{% trans "Please provide a reason for voiding the sale." %}');
+return;
+}
+
+fetch('{% url "sales:void_sale" sale.pk %}', {
+    method: 'POST',
+    headers: {
+        'X-CSRFToken': window.csrfToken,
+        'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+        reason: reason
+    })
+})
+.then(response => response.json())
+.then(data => {
+if (data.success) {
+    const voidModal = bootstrap.Modal.getInstance(document.getElementById('voidModal'));
+voidModal.hide();
+
+showAlert('{% trans "Sale voided successfully" %}', 'success');
+setTimeout(() => {
+    window.location.reload();
+}, 1000);
+} else {
+    showAlert(data.error, 'danger');
+}
+})
+.catch(error => {
+    console.error('Error:', error);
+showAlert('{% trans "Error voiding sale" %}', 'danger');
+});
+}
+
+function fiscalizeSale() {
+    const fiscalizeModal = new bootstrap.Modal(document.getElementById('fiscalizeModal'));
+fiscalizeModal.show();
+
+fetch('{% url "sales:fiscalize_sale" sale.pk %}', {
+    method: 'POST',
+    headers: {
+        'X-CSRFToken': window.csrfToken
+    }
+})
+.then(response => response.json())
+.then(data => {
+    const statusDiv = document.getElementById('fiscalizeStatus');
+const resultDiv = document.getElementById('fiscalizeResult');
+
+statusDiv.classList.add('d-none');
+resultDiv.classList.remove('d-none');
+
+if (data.success) {
+    resultDiv.innerHTML = `
+                          <div class="alert alert-success">
+<div class="d-flex">
+<div class="flex-shrink-0">
+<i class="bi bi-check-circle fs-4"></i>
+</div>
+<div class="flex-grow-1 ms-3">
+<h6 class="alert-heading">{% trans "Success!" %}</h6>
+<p class="mb-2">{% trans "Sale has been fiscalized successfully." %}</p>
+${data.efris_invoice_number ?
+`<p><strong>{% trans "EFRIS Invoice:" %}</strong> ${data.efris_invoice_number}</p>` : ''}
+${data.verification_code ?
+`<p><strong>{% trans "Verification Code:" %}</strong> ${data.verification_code}</p>` : ''}
+</div>
+</div>
+</div>
+`;
+
+setTimeout(() => {
+    fiscalizeModal.hide();
+window.location.reload();
+}, 2000);
+} else {
+resultDiv.innerHTML = `
+<div class="alert alert-danger">
+<div class="d-flex">
+<div class="flex-shrink-0">
+<i class="bi bi-x-circle fs-4"></i>
+</div>
+<div class="flex-grow-1 ms-3">
+<h6 class="alert-heading">{% trans "Fiscalization Failed" %}</h6>
+<p class="mb-0">${data.error}</p>
+</div>
+</div>
+</div>
+`;
+}
+})
+.catch(error => {
+    console.error('Error:', error);
+
+const statusDiv = document.getElementById('fiscalizeStatus');
+const resultDiv = document.getElementById('fiscalizeResult');
+
+statusDiv.classList.add('d-none');
+resultDiv.classList.remove('d-none');
+
+resultDiv.innerHTML = `
+                      <div class="alert alert-danger">
+<div class="d-flex">
+<div class="flex-shrink-0">
+<i class="bi bi-x-circle fs-4"></i>
+</div>
+<div class="flex-grow-1 ms-3">
+<h6 class="alert-heading">{% trans "Connection Error" %}</h6>
+<p class="mb-0">{% trans "Failed to connect to EFRIS. Please try again later." %}</p>
+</div>
+</div>
+</div>
+`;
+});
+}
+
+function downloadEFRISCertificate() {
+    fetch('{% url "sales:download_efris_certificate" sale.pk %}')
+    .then(response => response.blob())
+.then(blob => {
+const url = window.URL.createObjectURL(blob);
+const a = document.createElement('a');
+a.href = url;
+a.download = `efris_certificate_${sale.efris_invoice_number || sale.invoice_number}.pdf`;
+document.body.appendChild(a);
+a.click();
+document.body.removeChild(a);
+window.URL.revokeObjectURL(url);
+})
+.catch(error => {
+console.error('Error:', error);
+showAlert('{% trans "Error downloading certificate" %}', 'danger');
+});
+}
+
+function verifyEFRISOnline() {
+    {% if sale.efris_invoice_number and sale.verification_code %}
+const url = `https://efris.ura.go.ug/efrisweb/faces/index.jsf?invoiceNo={{ sale.efris_invoice_number }}&anticode={{ sale.verification_code }}`;
+window.open(url, '_blank');
+{% else %}
+showAlert('{% trans "EFRIS information not available for verification" %}', 'warning');
+{% endif %}
+}
+
+// Show alert function
+function showAlert(message, type) {
+    const alertDiv = document.createElement('div');
+alertDiv.className = `alert alert-${type} alert-dismissible fade show`;
+alertDiv.innerHTML = `
+${message}
+ <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+`;
+
+const container = document.querySelector('.sale-detail-container');
+container.prepend(alertDiv);
+
+setTimeout(() => {
+    const closeBtn = alertDiv.querySelector('.btn-close');
+if (closeBtn) closeBtn.click();
+}, 5000);
+}
+</script>
+  {% endblock %}
+
+

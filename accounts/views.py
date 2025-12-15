@@ -97,6 +97,7 @@ from .forms import (
     BulkUserActionForm, TwoFactorSetupForm,RoleForm, BulkRoleAssignmentForm,BulkUserRoleAssignForm, RoleFilterForm
 )
 from django_otp.plugins.otp_totp.models import TOTPDevice
+
 logger = logging.getLogger(__name__)
 
 DASHBOARD_MAPPING = [
@@ -816,7 +817,7 @@ def saas_admin_dashboard(request):
 
 class RolePermissionMixin(PermissionRequiredMixin):
     """Base mixin for role management permissions"""
-    permission_required = 'auth.view_group'
+    permission_required = 'accounts.add_role'
 
     def handle_no_permission(self):
         messages.error(
@@ -1164,7 +1165,7 @@ class RoleCreateView(LoginRequiredMixin, PermissionRequiredMixin, CreateView):
     model = Role
     form_class = RoleForm
     template_name = 'accounts/roles/role_form.html'
-    permission_required = 'auth.add_group'
+    permission_required = 'accounts.add_role'
 
     def get_form_kwargs(self):
         kwargs = super().get_form_kwargs()
@@ -1202,7 +1203,7 @@ class RoleUpdateView(LoginRequiredMixin, PermissionRequiredMixin, UpdateView):
     model = Role
     form_class = RoleForm
     template_name = 'accounts/roles/role_form.html'
-    permission_required = 'auth.change_group'
+    permission_required = 'accounts.change_role'
 
     def dispatch(self, request, *args, **kwargs):
         # Prevent editing system roles unless user has special permission
@@ -1249,7 +1250,7 @@ class RoleDeleteView(LoginRequiredMixin, PermissionRequiredMixin, DeleteView):
     model = Role
     template_name = 'accounts/roles/role_confirm_delete.html'
     success_url = reverse_lazy('role_list')
-    permission_required = 'auth.delete_group'
+    permission_required = 'accounts.delete_role'
 
     def dispatch(self, request, *args, **kwargs):
         role = self.get_object()
@@ -1327,7 +1328,7 @@ class RoleAnalyticsView(LoginRequiredMixin, PermissionRequiredMixin, DetailView)
     """
     model = Role
     template_name = 'accounts/roles/role_analytics.html'
-    permission_required = 'accounts.can_view_role_analytics'
+    permission_required = 'accounts.change_role'
     context_object_name = 'role'
 
     def get_context_data(self, **kwargs):
@@ -1522,7 +1523,7 @@ class RoleToggleActiveView(LoginRequiredMixin, PermissionRequiredMixin, DetailVi
         })
 
 
-class RolePermissionsAPIView(LoginRequiredMixin, DetailView):
+class RolePermissionsAPIView(LoginRequiredMixin,RolePermissionMixin, DetailView):
     """
     API endpoint for role permissions (used by frontend)
     """
@@ -1562,7 +1563,7 @@ class RolePermissionsAPIView(LoginRequiredMixin, DetailView):
         })
 
 
-class RoleAutocompleteView(LoginRequiredMixin, ListView):
+class RoleAutocompleteView(LoginRequiredMixin,RolePermissionMixin, ListView):
     """
     Autocomplete API for role selection (for Select2, etc.)
     """
@@ -1723,7 +1724,7 @@ def user_dashboard(request):
 
 
 @login_required
-@permission_required('accounts.view_customuser', raise_exception=True)
+@permission_required('accounts.change_customuser', raise_exception=True)
 def company_user_list(request):
     """List users for the current tenant company."""
     company = getattr(request, 'tenant', None)
@@ -3447,7 +3448,7 @@ def _user_has_management_access(current_user, target_user):
 
     return current_priority >= target_priority
 
-
+@require_saas_admin
 @login_required
 def system_admin_dashboard(request):
     """System admin dashboard with global statistics"""
@@ -4763,6 +4764,7 @@ def check_email_availability(request):
 
 
 # Company switching for multi-tenant users
+@require_saas_admin
 @login_required
 def switch_company(request, company_id):
     """Switch active company context"""
@@ -5038,6 +5040,7 @@ def user_security_settings(request):
 
 
 @login_required
+@require_saas_admin
 def system_companies_list(request):
     """System admin view of all companies"""
     from company.models import Company,SubscriptionPlan

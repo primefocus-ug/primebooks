@@ -1,0 +1,574 @@
+{% extends 'base.html' %}
+{% load static %}
+{% load i18n %}
+{% load crispy_forms_tags %}
+
+{% block title %}{{ title }}{% endblock %}
+
+{% block extra_css %}
+<style>
+    .form-section {
+        background: white;
+        padding: 2rem;
+        border-radius: 8px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        margin-bottom: 1.5rem;
+    }
+
+    .form-section-title {
+        font-size: 1.25rem;
+        font-weight: 600;
+        margin-bottom: 1.5rem;
+        padding-bottom: 0.75rem;
+        border-bottom: 2px solid #e9ecef;
+        color: #2c3e50;
+    }
+
+    .map-preview {
+        height: 300px;
+        width: 100%;
+        border: 1px solid #dee2e6;
+        border-radius: 4px;
+        margin-top: 1rem;
+    }
+
+    .coordinate-display {
+        background: #f8f9fa;
+        padding: 1rem;
+        border-radius: 4px;
+        margin-top: 1rem;
+    }
+
+    .help-text {
+        font-size: 0.875rem;
+        color: #6c757d;
+        margin-top: 0.25rem;
+    }
+
+    .required-field::after {
+        content: " *";
+        color: #dc3545;
+    }
+
+    .geocode-section {
+        background: #e7f3ff;
+        padding: 1.5rem;
+        border-radius: 6px;
+        border-left: 4px solid #0066cc;
+    }
+
+    .efris-override-section {
+        background: #fff3cd;
+        padding: 1.5rem;
+        border-radius: 6px;
+        border-left: 4px solid #ffc107;
+    }
+
+    .btn-geocode {
+        margin-top: 0.5rem;
+    }
+
+    .alert-coordinates {
+        display: none;
+        margin-top: 1rem;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <!-- Page Header -->
+    <div class="row mb-4">
+        <div class="col-12">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <h1 class="h3 mb-1">{{ title }}</h1>
+                    <nav aria-label="breadcrumb">
+                        <ol class="breadcrumb mb-0">
+                            <li class="breadcrumb-item"><a href="{% url 'user_dashboard' %}">{% trans "Dashboard" %}</a></li>
+                            <li class="breadcrumb-item"><a href="{% url 'stores:store_list' %}">{% trans "Stores" %}</a></li>
+                            {% if store %}
+                            <li class="breadcrumb-item"><a href="{% url 'stores:store_detail' store.pk %}">{{ store.name }}</a></li>
+                            {% endif %}
+                            <li class="breadcrumb-item active">{{ title }}</li>
+                        </ol>
+                    </nav>
+                </div>
+                <div>
+                    {% if cancel_url_kwargs %}
+                    <a href="{% url cancel_url pk=cancel_url_kwargs.pk %}" class="btn btn-secondary">
+                        <i class="bi bi-x-circle me-2"></i>{% trans "Cancel" %}
+                    </a>
+                    {% else %}
+                    <a href="{% url cancel_url %}" class="btn btn-secondary">
+                        <i class="bi bi-x-circle me-2"></i>{% trans "Cancel" %}
+                    </a>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <form method="post" enctype="multipart/form-data" id="storeForm">
+        {% csrf_token %}
+
+        <div class="row">
+            <div class="col-lg-8">
+                <!-- Basic Information -->
+                <div class="form-section">
+                    <h2 class="form-section-title">
+                        <i class="bi bi-shop me-2"></i>{% trans "Basic Information" %}
+                    </h2>
+
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label for="{{ form.name.id_for_label }}" class="form-label required-field">
+                                {{ form.name.label }}
+                            </label>
+                            {{ form.name }}
+                            {% if form.name.errors %}
+                                <div class="invalid-feedback d-block">{{ form.name.errors }}</div>
+                            {% endif %}
+                            {% if form.name.help_text %}
+                                <small class="help-text">{{ form.name.help_text }}</small>
+                            {% endif %}
+                        </div>
+
+                        <div class="col-md-6 mb-3">
+                            <label for="{{ form.code.id_for_label }}" class="form-label">
+                                {{ form.code.label }}
+                            </label>
+                            {{ form.code }}
+                            {% if form.code.errors %}
+                                <div class="invalid-feedback d-block">{{ form.code.errors }}</div>
+                            {% endif %}
+                            {% if form.code.help_text %}
+                                <small class="help-text">{{ form.code.help_text }}</small>
+                            {% endif %}
+                        </div>
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label for="{{ form.store_type.id_for_label }}" class="form-label required-field">
+                                {{ form.store_type.label }}
+                            </label>
+                            {{ form.store_type }}
+                            {% if form.store_type.errors %}
+                                <div class="invalid-feedback d-block">{{ form.store_type.errors }}</div>
+                            {% endif %}
+                        </div>
+
+                        <div class="col-md-6 mb-3">
+                            <label for="{{ form.region.id_for_label }}" class="form-label">
+                                {{ form.region.label }}
+                            </label>
+                            {{ form.region }}
+                            {% if form.region.errors %}
+                                <div class="invalid-feedback d-block">{{ form.region.errors }}</div>
+                            {% endif %}
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="{{ form.physical_address.id_for_label }}" class="form-label required-field">
+                            {{ form.physical_address.label }}
+                        </label>
+                        {{ form.physical_address }}
+                        {% if form.physical_address.errors %}
+                            <div class="invalid-feedback d-block">{{ form.physical_address.errors }}</div>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <!-- Location & GPS Coordinates -->
+                <div class="form-section">
+                    <h2 class="form-section-title">
+                        <i class="bi bi-geo-alt me-2"></i>{% trans "Location & GPS Coordinates" %}
+                    </h2>
+
+                    <!-- Geocoding Helper -->
+                    <div class="geocode-section mb-4">
+                        <h5 class="mb-3">
+                            <i class="bi bi-search me-2"></i>{% trans "Find Coordinates Automatically" %}
+                        </h5>
+                        <p class="text-muted mb-3">
+                            {% trans "Enter an address and we'll find the GPS coordinates for you." %}
+                        </p>
+                        <div class="row">
+                            <div class="col-md-9 mb-2">
+                                {{ form.geocode_address }}
+                            </div>
+                            <div class="col-md-3 mb-2">
+                                <button type="button" class="btn btn-primary w-100 btn-geocode" id="btnGeocode">
+                                    <i class="bi bi-search me-2"></i>{% trans "Find Coordinates" %}
+                                </button>
+                            </div>
+                        </div>
+                        <div class="alert alert-success alert-coordinates" id="geocodeResult"></div>
+                    </div>
+
+                    <!-- Manual Coordinates -->
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label for="{{ form.latitude.id_for_label }}" class="form-label">
+                                {{ form.latitude.label }}
+                            </label>
+                            {{ form.latitude }}
+                            {% if form.latitude.errors %}
+                                <div class="invalid-feedback d-block">{{ form.latitude.errors }}</div>
+                            {% endif %}
+                            <small class="help-text">{% trans "Example: 0.347596" %}</small>
+                        </div>
+
+                        <div class="col-md-6 mb-3">
+                            <label for="{{ form.longitude.id_for_label }}" class="form-label">
+                                {{ form.longitude.label }}
+                            </label>
+                            {{ form.longitude }}
+                            {% if form.longitude.errors %}
+                                <div class="invalid-feedback d-block">{{ form.longitude.errors }}</div>
+                            {% endif %}
+                            <small class="help-text">{% trans "Example: 32.582520" %}</small>
+                        </div>
+                    </div>
+
+                    <!-- GPS Coordinates Display -->
+                    <div class="mb-3">
+                        <label for="{{ form.location_gps.id_for_label }}" class="form-label">
+                            {{ form.location_gps.label }}
+                        </label>
+                        {{ form.location_gps }}
+                        <small class="help-text">{% trans "Auto-generated from latitude and longitude" %}</small>
+                    </div>
+
+                    <!-- Map Preview -->
+                    <div id="mapPreview" class="map-preview" style="display: none;">
+                        <!-- Map will be loaded here via JavaScript -->
+                    </div>
+                </div>
+
+                <!-- Contact Information -->
+                <div class="form-section">
+                    <h2 class="form-section-title">
+                        <i class="bi bi-telephone me-2"></i>{% trans "Contact Information" %}
+                    </h2>
+
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label for="{{ form.phone.id_for_label }}" class="form-label">
+                                {{ form.phone.label }}
+                            </label>
+                            {{ form.phone }}
+                            {% if form.phone.errors %}
+                                <div class="invalid-feedback d-block">{{ form.phone.errors }}</div>
+                            {% endif %}
+                        </div>
+
+                        <div class="col-md-6 mb-3">
+                            <label for="{{ form.secondary_phone.id_for_label }}" class="form-label">
+                                {{ form.secondary_phone.label }}
+                            </label>
+                            {{ form.secondary_phone }}
+                            {% if form.secondary_phone.errors %}
+                                <div class="invalid-feedback d-block">{{ form.secondary_phone.errors }}</div>
+                            {% endif %}
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="{{ form.email.id_for_label }}" class="form-label">
+                            {{ form.email.label }}
+                        </label>
+                        {{ form.email }}
+                        {% if form.email.errors %}
+                            <div class="invalid-feedback d-block">{{ form.email.errors }}</div>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <!-- EFRIS Configuration -->
+                <div class="form-section">
+                    <h2 class="form-section-title">
+                        <i class="bi bi-receipt me-2"></i>{% trans "EFRIS Configuration" %}
+                    </h2>
+
+                    <div class="mb-3">
+                        <div class="form-check form-switch">
+                            {{ form.efris_enabled }}
+                            <label class="form-check-label" for="{{ form.efris_enabled.id_for_label }}">
+                                {{ form.efris_enabled.label }}
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="{{ form.efris_device_number.id_for_label }}" class="form-label">
+                            {{ form.efris_device_number.label }}
+                        </label>
+                        {{ form.efris_device_number }}
+                        {% if form.efris_device_number.errors %}
+                            <div class="invalid-feedback d-block">{{ form.efris_device_number.errors }}</div>
+                        {% endif %}
+                        {% if form.efris_device_number.help_text %}
+                            <small class="help-text">{{ form.efris_device_number.help_text }}</small>
+                        {% endif %}
+                    </div>
+
+                    <!-- Store-specific EFRIS override -->
+                    <div class="efris-override-section">
+                        <h5 class="mb-3">
+                            <i class="bi bi-gear me-2"></i>{% trans "Store-Specific EFRIS Settings" %}
+                        </h5>
+
+                        <div class="mb-3">
+                            <div class="form-check form-switch">
+                                {{ form.use_company_efris }}
+                                <label class="form-check-label" for="{{ form.use_company_efris.id_for_label }}">
+                                    {{ form.use_company_efris.label }}
+                                </label>
+                            </div>
+                            {% if form.use_company_efris.help_text %}
+                                <small class="help-text">{{ form.use_company_efris.help_text }}</small>
+                            {% endif %}
+                        </div>
+
+                        <div class="collapse efris-override-fields" id="efrisOverrideFields">
+                            <div class="alert alert-info">
+                                <i class="bi bi-info-circle me-2"></i>
+                                {% trans "These settings will override company-level EFRIS configuration for this store only." %}
+                            </div>
+
+                            <div class="row">
+                                <div class="col-md-6 mb-3">
+                                    <label for="{{ form.store_efris_client_id.id_for_label }}" class="form-label">
+                                        {{ form.store_efris_client_id.label }}
+                                    </label>
+                                    {{ form.store_efris_client_id }}
+                                </div>
+
+                                <div class="col-md-6 mb-3">
+                                    <label for="{{ form.store_efris_api_key.id_for_label }}" class="form-label">
+                                        {{ form.store_efris_api_key.label }}
+                                    </label>
+                                    {{ form.store_efris_api_key }}
+                                </div>
+                            </div>
+
+                            <!-- Additional EFRIS fields can be added here -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Sidebar -->
+            <div class="col-lg-4">
+                <!-- Status & Settings -->
+                <div class="form-section">
+                    <h2 class="form-section-title">
+                        <i class="bi bi-gear me-2"></i>{% trans "Status & Settings" %}
+                    </h2>
+
+                    <div class="mb-3">
+                        <div class="form-check form-switch">
+                            {{ form.is_active }}
+                            <label class="form-check-label" for="{{ form.is_active.id_for_label }}">
+                                {{ form.is_active.label }}
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <div class="form-check form-switch">
+                            {{ form.is_main_branch }}
+                            <label class="form-check-label" for="{{ form.is_main_branch.id_for_label }}">
+                                {{ form.is_main_branch.label }}
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <div class="form-check form-switch">
+                            {{ form.accessible_by_all }}
+                            <label class="form-check-label" for="{{ form.accessible_by_all.id_for_label }}">
+                                {{ form.accessible_by_all.label }}
+                            </label>
+                        </div>
+                        {% if form.accessible_by_all.help_text %}
+                            <small class="help-text">{{ form.accessible_by_all.help_text }}</small>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <!-- Branding -->
+                <div class="form-section">
+                    <h2 class="form-section-title">
+                        <i class="bi bi-image me-2"></i>{% trans "Branding" %}
+                    </h2>
+
+                    <div class="mb-3">
+                        <label for="{{ form.logo.id_for_label }}" class="form-label">
+                            {{ form.logo.label }}
+                        </label>
+                        {{ form.logo }}
+                        {% if form.logo.errors %}
+                            <div class="invalid-feedback d-block">{{ form.logo.errors }}</div>
+                        {% endif %}
+
+                        {% if store and store.logo %}
+                        <div class="mt-2">
+                            <img src="{{ store.logo.url }}" alt="Store Logo" class="img-thumbnail" style="max-width: 200px;">
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+                <!-- Hidden Company Field -->
+            {% if form.company %}
+                <div style="display: none;">
+                    {{ form.company }}
+                </div>
+            {% endif %}
+
+            <!-- Action Buttons -->
+            <div class="form-section">
+                <button type="submit" class="btn btn-primary w-100 mb-2">
+                    <i class="bi bi-check-circle me-2"></i>{{ submit_text }}
+                </button>
+
+                {% if cancel_url_kwargs %}
+                <a href="{% url cancel_url pk=cancel_url_kwargs.pk %}" class="btn btn-secondary w-100">
+                    <i class="bi bi-x-circle me-2"></i>{% trans "Cancel" %}
+                </a>
+                {% else %}
+                <a href="{% url cancel_url %}" class="btn btn-secondary w-100">
+                    <i class="bi bi-x-circle me-2"></i>{% trans "Cancel" %}
+                </a>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</form>
+    </div>
+{% endblock %}
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Geocoding functionality
+    const btnGeocode = document.getElementById('btnGeocode');
+    const geocodeAddress = document.getElementById('{{ form.geocode_address.id_for_label }}');
+    const latitudeField = document.getElementById('{{ form.latitude.id_for_label }}');
+    const longitudeField = document.getElementById('{{ form.longitude.id_for_label }}');
+    const locationGpsField = document.getElementById('{{ form.location_gps.id_for_label }}');
+    const geocodeResult = document.getElementById('geocodeResult');
+
+    if (btnGeocode) {
+        btnGeocode.addEventListener('click', function() {
+            const address = geocodeAddress.value;
+
+            if (!address) {
+                alert('{% trans "Please enter an address to geocode" %}');
+                return;
+            }
+
+            btnGeocode.disabled = true;
+            btnGeocode.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>{% trans "Searching..." %}';
+
+            fetch('{% url "stores:geocode_address_ajax" %}', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                    'X-CSRFToken': '{{ csrf_token }}'
+                },
+                body: `address=${encodeURIComponent(address)}`
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    latitudeField.value = data.latitude;
+                    longitudeField.value = data.longitude;
+                    locationGpsField.value = `${data.latitude}, ${data.longitude}`;
+
+                    geocodeResult.style.display = 'block';
+                    geocodeResult.innerHTML = `
+                        <strong>{% trans "Success!" %}</strong><br>
+                        {% trans "Found:" %} ${data.display_name}<br>
+                        {% trans "Coordinates:" %} ${data.latitude}, ${data.longitude}
+                    `;
+
+                    // Show map preview if available
+                    showMapPreview(data.latitude, data.longitude);
+                } else {
+                    alert('{% trans "Error:" %} ' + data.error);
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('{% trans "An error occurred while geocoding the address" %}');
+            })
+            .finally(() => {
+                btnGeocode.disabled = false;
+                btnGeocode.innerHTML = '<i class="bi bi-search me-2"></i>{% trans "Find Coordinates" %}';
+            });
+        });
+    }
+
+    // Auto-update location_gps when latitude/longitude change
+    if (latitudeField && longitudeField) {
+        function updateLocationGps() {
+            const lat = latitudeField.value;
+            const lon = longitudeField.value;
+
+            if (lat && lon) {
+                locationGpsField.value = `${lat}, ${lon}`;
+            }
+        }
+
+        latitudeField.addEventListener('change', updateLocationGps);
+        longitudeField.addEventListener('change', updateLocationGps);
+    }
+
+    // EFRIS override toggle
+    const useCompanyEfris = document.getElementById('{{ form.use_company_efris.id_for_label }}');
+    const efrisOverrideFields = document.getElementById('efrisOverrideFields');
+
+    if (useCompanyEfris && efrisOverrideFields) {
+        useCompanyEfris.addEventListener('change', function() {
+            if (!this.checked) {
+                efrisOverrideFields.classList.add('show');
+            } else {
+                efrisOverrideFields.classList.remove('show');
+            }
+        });
+
+        // Initialize on page load
+        if (!useCompanyEfris.checked) {
+            efrisOverrideFields.classList.add('show');
+        }
+    }
+
+    function showMapPreview(lat, lon) {
+        const mapPreview = document.getElementById('mapPreview');
+        mapPreview.style.display = 'block';
+
+        // Using OpenStreetMap iframe
+        mapPreview.innerHTML = `
+            <iframe
+                width="100%"
+                height="300"
+                frameborder="0"
+                scrolling="no"
+                marginheight="0"
+                marginwidth="0"
+                src="https://www.openstreetmap.org/export/embed.html?bbox=${lon-0.01},${lat-0.01},${lon+0.01},${lat+0.01}&layer=mapnik&marker=${lat},${lon}"
+                style="border: 1px solid #dee2e6; border-radius: 4px;">
+            </iframe>
+        `;
+    }
+
+    // Initialize map if coordinates exist
+    if (latitudeField.value && longitudeField.value) {
+        showMapPreview(latitudeField.value, longitudeField.value);
+    }
+});
+</script>
+{% endblock %}

@@ -1,0 +1,208 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Invoices{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <!-- Header -->
+    <div class="row mb-4">
+        <div class="col-md-6">
+            <h2 class="mb-0">Invoices</h2>
+            <p class="text-muted">Manage customer invoices</p>
+        </div>
+        <div class="col-md-6 text-end">
+            <a href="{% url 'invoice:invoice_creates' %}" class="btn btn-primary">
+                <i class="fas fa-plus me-2"></i>Create Invoice
+            </a>
+        </div>
+    </div>
+
+    <!-- Statistics Cards -->
+    <div class="row mb-4">
+        <div class="col-md-3">
+            <div class="card bg-primary text-white">
+                <div class="card-body">
+                    <h6 class="card-title">Total Invoices</h6>
+                    <h3>{{ stats.total_invoices }}</h3>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card bg-warning text-white">
+                <div class="card-body">
+                    <h6 class="card-title">Pending Payment</h6>
+                    <h3>{{ stats.pending_count }}</h3>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card bg-success text-white">
+                <div class="card-body">
+                    <h6 class="card-title">Paid</h6>
+<h3>{{ stats.paid_count }}</h3>
+</div>
+</div>
+</div>
+<div class="col-md-3">
+<div class="card bg-danger text-white">
+<div class="card-body">
+<h6 class="card-title">Overdue</h6>
+<h3>{{ stats.overdue_count }}</h3>
+</div>
+</div>
+</div>
+</div>
+    <!-- Filters -->
+<div class="card mb-4">
+    <div class="card-body">
+        <form method="get" class="row g-3">
+            <div class="col-md-3">
+                <label class="form-label">Search</label>
+                <input type="text" name="search" class="form-control"
+                       placeholder="Invoice #, Customer..."
+                       value="{{ search_query }}">
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">Status</label>
+                <select name="status" class="form-select">
+                    <option value="">All</option>
+                    <option value="DRAFT" {% if status_filter == 'DRAFT' %}selected{% endif %}>Draft</option>
+                    <option value="PENDING_PAYMENT" {% if status_filter == 'PENDING_PAYMENT' %}selected{% endif %}>Pending</option>
+                    <option value="PAID" {% if status_filter == 'PAID' %}selected{% endif %}>Paid</option>
+                    <option value="CANCELLED" {% if status_filter == 'CANCELLED' %}selected{% endif %}>Cancelled</option>
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">Payment Status</label>
+                <select name="payment_status" class="form-select">
+                    <option value="">All</option>
+                    <option value="PENDING" {% if payment_status == 'PENDING' %}selected{% endif %}>Pending</option>
+                    <option value="PARTIALLY_PAID" {% if payment_status == 'PARTIALLY_PAID' %}selected{% endif %}>Partially Paid</option>
+                    <option value="PAID" {% if payment_status == 'PAID' %}selected{% endif %}>Paid</option>
+                    <option value="OVERDUE" {% if payment_status == 'OVERDUE' %}selected{% endif %}>Overdue</option>
+                </select>
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">From Date</label>
+                <input type="date" name="date_from" class="form-control" value="{{ date_from }}">
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">To Date</label>
+                <input type="date" name="date_to" class="form-control" value="{{ date_to }}">
+            </div>
+            <div class="col-md-1 d-flex align-items-end">
+                <button type="submit" class="btn btn-primary w-100">Filter</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Invoice Table -->
+<div class="card">
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-hover">
+                <thead>
+                    <tr>
+                        <th>Invoice #</th>
+                        <th>Customer</th>
+                        <th>Date</th>
+                        <th>Due Date</th>
+                        <th>Amount</th>
+                        <th>Status</th>
+                        <th>Payment</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for invoice in invoices %}
+                    <tr>
+                        <td>
+                            <a href="{% url 'invoice:invoice_detail' invoice.pk %}">
+                                {{ invoice.sale.document_number }}
+                            </a>
+                        </td>
+                        <td>{{ invoice.sale.customer.name|default:"Walk-in Customer" }}</td>
+                        <td>{{ invoice.sale.created_at|date:"Y-m-d" }}</td>
+                        <td>
+                            {{ invoice.sale.due_date|date:"Y-m-d" }}
+                            {% if invoice.sale.days_overdue > 0 %}
+                            <span class="badge bg-danger">{{ invoice.sale.days_overdue }} days overdue</span>
+                            {% endif %}
+                        </td>
+                        <td>UGX {{ invoice.sale.total_amount|floatformat:2 }}</td>
+                        <td>
+                            {% if invoice.sale.status == 'DRAFT' %}
+                            <span class="badge bg-secondary">Draft</span>
+                            {% elif invoice.sale.status == 'PENDING_PAYMENT' %}
+                            <span class="badge bg-warning">Pending</span>
+                            {% elif invoice.sale.status == 'PAID' %}
+                            <span class="badge bg-success">Paid</span>
+                            {% elif invoice.sale.status == 'CANCELLED' %}
+                            <span class="badge bg-danger">Cancelled</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if invoice.sale.payment_status == 'PENDING' %}
+                            <span class="badge bg-warning">Unpaid</span>
+                            {% elif invoice.sale.payment_status == 'PARTIALLY_PAID' %}
+                            <span class="badge bg-info">Partial</span>
+                            {% elif invoice.sale.payment_status == 'PAID' %}
+                            <span class="badge bg-success">Paid</span>
+                            {% elif invoice.sale.payment_status == 'OVERDUE' %}
+                            <span class="badge bg-danger">Overdue</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <a href="{% url 'invoice:invoice_detail' invoice.pk %}"
+                               class="btn btn-sm btn-info" title="View">
+                                <i class="fas fa-eye"></i>
+                            </a>
+                            {% if invoice.sale.status == 'DRAFT' %}
+                            <a href="{% url 'invoice:invoice_edit' invoice.pk %}"
+                               class="btn btn-sm btn-warning" title="Edit">
+                                <i class="fas fa-edit"></i>
+                            </a>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="8" class="text-center py-4">
+                            <p class="text-muted mb-0">No invoices found</p>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Pagination -->
+        {% if page_obj.has_other_pages %}
+        <nav aria-label="Page navigation">
+            <ul class="pagination justify-content-center">
+                {% if page_obj.has_previous %}
+                <li class="page-item">
+                    <a class="page-link" href="?page={{ page_obj.previous_page_number }}">Previous</a>
+                </li>
+                {% endif %}
+
+                {% for num in page_obj.paginator.page_range %}
+                <li class="page-item {% if page_obj.number == num %}active{% endif %}">
+                    <a class="page-link" href="?page={{ num }}">{{ num }}</a>
+                </li>
+                {% endfor %}
+
+                {% if page_obj.has_next %}
+                <li class="page-item">
+                    <a class="page-link" href="?page={{ page_obj.next_page_number }}">Next</a>
+                </li>
+                {% endif %}
+            </ul>
+        </nav>
+        {% endif %}
+    </div>
+</div>
+    </div>
+{% endblock %}

@@ -1,7 +1,6 @@
-# stores/urls.py
-
 from django.urls import path
 from . import views
+from . import view
 
 app_name = 'stores'
 
@@ -12,10 +11,20 @@ urlpatterns = [
 
     # Store CRUD
     path('stores/', views.StoreListView.as_view(), name='store_list'),
-    path('stores/create/', views.StoreCreateView.as_view(), name='store_create'),
+    path('stores/create/', views.StoreCreateView.as_view(), name='store_creatte'),
     path('stores/<int:pk>/', views.StoreDetailView.as_view(), name='store_detail'),
     path('stores/<int:pk>/edit/', views.StoreUpdateView.as_view(), name='store_edit'),
     path('stores/<int:pk>/delete/', views.StoreDeleteView.as_view(), name='store_delete'),
+    path('create/', view.store_create, name='store_create'),
+    path('<int:pk>/edit/', view.store_update, name='store_update'),
+    path('<int:pk>/staff/', view.store_staff_assignment, name='store_staff_assignment'),
+
+    # AJAX endpoints
+    path('ajax/geocode/', view.geocode_address_ajax, name='geocode_address_ajax'),
+    path('select/', views.SelectStoreView.as_view(), name='select_store'),
+    path('switch/<int:store_id>/', views.SwitchStoreView.as_view(), name='switch_store'),
+    path('no-access/', views.NoStoreAccessView.as_view(), name='no_store_access'),
+
 
     # Staff Management
     path('stores/<int:pk>/staff/', views.manage_store_staff, name='manage_staff'),
@@ -40,6 +49,12 @@ urlpatterns = [
     path('inventory/<int:pk>/', views.StoreInventoryDetailView.as_view(), name='inventory_detail'),
     path('inventory/<int:pk>/edit/', views.StoreInventoryUpdateView.as_view(), name='inventory_update'),
     path('inventory/<int:pk>/delete/', views.StoreInventoryDeleteView.as_view(), name='inventory_delete'),
+    path('<int:store_id>/access/', views.ManageStoreAccessView.as_view(), name='manage_store_access'),
+    path('<int:store_id>/access/create/', views.CreateStoreAccessView.as_view(), name='create_store_access'),
+    path('<int:store_id>/access/<int:user_id>/', views.EditStoreAccessView.as_view(), name='edit_store_access'),
+    path('<int:store_id>/access/<int:user_id>/revoke/', views.RevokeStoreAccessView.as_view(),
+         name='revoke_store_access'),
+
 
     # AJAX/API endpoints
     path('api/inventory/search/', views.inventory_search_api, name='inventory_search_api'),

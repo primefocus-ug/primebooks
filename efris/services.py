@@ -385,24 +385,35 @@ class SecurityManager:
 class ConfigurationManager:
     """Enhanced configuration management"""
 
-    def __init__(self, company):
+    def __init__(self, company, store=None):
         self.company = company
+        self.store = store
         self._config_cache = {}
         self._last_validation = None
         self.config = self._load_and_validate_config()
 
-    def _load_and_validate_config(self) -> EFRISConfiguration:
-        """Load and validate EFRIS configuration with caching"""
+    def _load_and_validate_config(self):
+        """
+        Load and validate EFRIS configuration with caching
+        UPDATED: Use store config if available
+        """
         cache_key = f"efris_config_{self.company.pk}"
+        if self.store:
+            cache_key += f"_store_{self.store.pk}"
 
         # Check cache first
         if cache_key in self._config_cache and self._is_cache_valid():
             return self._config_cache[cache_key]
 
         try:
-            config = EFRISConfiguration.objects.select_related('company').get(
-                company=self.company
-            )
+            if self.store and not self.store.use_company_efris:
+                # ✅ Use store's effective configuration
+                config = self.store.effective_efris_config
+                logger.info(f"Using store-specific EFRIS config for {self.store.name}")
+            else:
+                # Use company configuration
+                config = self.company.efris_config
+                logger.info(f"Using company EFRIS config for {self.company.name}")
 
             # Validate configuration
             validation_errors = self._validate_config(config)
@@ -417,10 +428,11 @@ class ConfigurationManager:
 
             return config
 
-        except EFRISConfiguration.DoesNotExist:
+        except AttributeError as e:
             raise EFRISConfigurationError(
-                f"EFRIS configuration not found for company {self.company}"
+                f"EFRIS configuration not found: {e}"
             )
+
 
     def _is_cache_valid(self) -> bool:
         """Check if cached config is still valid"""
@@ -430,43 +442,52 @@ class ConfigurationManager:
         # Cache valid for 5 minutes
         return (timezone.now() - self._last_validation) < timedelta(minutes=5)
 
-    def _validate_config(self, config: EFRISConfiguration) -> List[str]:
-        """Comprehensive configuration validation"""
+    def _validate_config(self, config) -> List[str]:
+        """
+        Comprehensive configuration validation
+        UPDATED: Handle both dict and object configs
+        """
         errors = []
 
-        # Required fields validation
-        required_fields = {
-            'app_id': 'Application ID',
-            'version': 'Version',
-            'device_mac': 'Device MAC address',
-            'api_url': 'API URL'
-        }
+        # ✅ Handle dict config (from store.effective_efris_config)
+        if isinstance(config, dict):
+            required_fields = {
+                'device_number': 'Device Number',
+                'client_id': 'Client ID',
+                'api_key': 'API Key',
+                'tin': 'TIN',
+            }
 
-        for field, display_name in required_fields.items():
-            if not getattr(config, field, None):
-                errors.append(f"Missing {display_name}")
+            for field, display_name in required_fields.items():
+                value = config.get(field)
+                if not value:
+                    errors.append(f"Missing {display_name}")
 
-        # API URL validation
-        if config.api_url:
-            if not config.api_url.startswith('https://'):
-                errors.append("API URL must use HTTPS")
+            # Validate TIN format
+            tin = config.get('tin')
+            if tin:
+                is_valid, error = DataValidator.validate_tin(tin)
+                if not is_valid:
+                    errors.append(f"TIN: {error}")
 
-            # Basic URL format validation
-            try:
-                from urllib.parse import urlparse
-                parsed = urlparse(config.api_url)
-                if not parsed.netloc:
-                    errors.append("Invalid API URL format")
-            except Exception:
-                errors.append("Invalid API URL format")
+        # ✅ Handle object config (from company.efris_config)
+        else:
+            required_fields = {
+                'device_number': 'Device Number',
+                'api_url': 'API URL',
+            }
 
-        # Company-specific validation
-        company_errors = self._validate_company_efris_settings()
-        errors.extend(company_errors)
+            for field, display_name in required_fields.items():
+                if not getattr(config, field, None):
+                    errors.append(f"Missing {display_name}")
+
+            # API URL validation
+            api_url = getattr(config, 'api_url', None)
+            if api_url:
+                if not api_url.startswith('https://'):
+                    errors.append("API URL must use HTTPS")
 
         return errors
-
-
 
     def _validate_company_efris_settings(self) -> List[str]:
         """Validate company EFRIS settings"""
@@ -515,16 +536,32 @@ class ConfigurationManager:
         return len(clean_tin) == 10 and clean_tin.isdigit()
 
     def get_api_config(self) -> Dict[str, Any]:
-        """Get API configuration with defaults"""
-        return {
-            'api_url': self.config.api_url,
-            'app_id': self.config.app_id,
-            'version': self.config.version,
-            'timeout': getattr(self.config, 'timeout_seconds', None) or EFRISConstants.DEFAULT_TIMEOUT,
-            'device_mac': self.config.device_mac,
-            'device_number': getattr(self.config, 'device_number', None) or '00000000000',
-            'mode': getattr(self.config, 'mode', 'online')
-        }
+        """
+        Get API configuration with defaults
+        UPDATED: Handle both dict and object configs
+        """
+        if isinstance(self.config, dict):
+            # Dict config (from store)
+            return {
+                'api_url': self.config.get('api_url', 'https://efristest.ura.go.ug/efrisws/ws/taapp/getInformation'),
+                'app_id': self.config.get('app_id', 'AP04'),
+                'version': self.config.get('version', '1.1.20191201'),
+                'timeout': self.config.get('timeout', EFRISConstants.DEFAULT_TIMEOUT),
+                'device_mac': self.config.get('device_mac', 'FFFFFFFFFFFF'),
+                'device_number': self.config.get('device_number', '00000000000'),
+                'mode': self.config.get('integration_mode', 'online')
+            }
+        else:
+            # Object config (from company)
+            return {
+                'api_url': self.config.api_url,
+                'app_id': self.config.app_id,
+                'version': self.config.version,
+                'timeout': getattr(self.config, 'timeout_seconds', None) or EFRISConstants.DEFAULT_TIMEOUT,
+                'device_mac': self.config.device_mac,
+                'device_number': getattr(self.config, 'device_number', None) or '00000000000',
+                'mode': getattr(self.config, 'mode', 'online')
+            }
 
     def refresh_config(self) -> EFRISConfiguration:
         """Force refresh configuration from database"""
@@ -2048,8 +2085,7 @@ class EFRISDataTransformer:
         except (ValueError, TypeError):
             return 18.0
 
-    def build_invoice_data(self, invoice) -> Dict[str, Any]:
-        """Build complete T109 invoice data structure"""
+    """def build_invoice_data(self, invoice) -> Dict[str, Any]:
         try:
             # Build sections
             seller_details = self._build_seller_details()
@@ -2089,7 +2125,435 @@ class EFRISDataTransformer:
 
         except Exception as e:
             logger.error(f"Invoice data building failed: {e}", exc_info=True)
-            raise Exception(f"Failed to build invoice data: {e}")
+            raise Exception(f"Failed to build invoice data: {e}")"""
+
+    def build_invoice_data(self, sale_or_invoice) -> Dict[str, Any]:
+        """
+        Build complete T109 data structure for ANY sale document (Receipt or Invoice)
+        UPDATED: Works with both Sale (receipts) and Invoice objects
+        """
+        try:
+            # ✅ Determine if we're working with Sale or Invoice
+            if hasattr(sale_or_invoice, 'sale') and sale_or_invoice.sale:
+                # This is an Invoice object
+                sale = sale_or_invoice.sale
+                invoice = sale_or_invoice
+            else:
+                # This is a Sale object (receipt)
+                sale = sale_or_invoice
+                invoice = None
+
+            # Build sections using Sale data
+            seller_details = self._build_seller_details()
+            basic_info = self._build_basic_info_from_sale(sale, invoice)
+            buyer_details = self._build_buyer_details_from_sale(sale)
+            goods_details = self._build_goods_details_from_sale(sale)
+            tax_details = self._build_tax_details_from_sale(sale)
+            summary = self._build_summary_from_tax_details(sale, tax_details)
+
+            sale_data = {
+                "sellerDetails": seller_details,
+                "basicInformation": basic_info,
+                "buyerDetails": buyer_details,
+                "goodsDetails": goods_details,
+                "taxDetails": tax_details,
+                "summary": summary
+            }
+
+            # Validate payWay exists
+            if 'payWay' not in sale_data['summary']:
+                logger.error("Missing payWay in summary!")
+                raise Exception("Payment modes (payWay) are required")
+
+            logger.info(
+                f"Built EFRIS data for {sale.document_type} {sale.document_number}",
+                extra={
+                    'document_type': sale.document_type,
+                    'document_no': sale.document_number,
+                    'gross_amount': sale_data['summary']['grossAmount'],
+                    'payment_count': len(sale_data['summary']['payWay'])
+                }
+            )
+
+            return sale_data
+
+        except Exception as e:
+            logger.error(f"Sale data building failed: {e}", exc_info=True)
+            raise Exception(f"Failed to build sale data: {e}")
+
+    def _build_basic_info_from_sale(self, sale, invoice=None) -> Dict[str, Any]:
+        """
+        Build basic information from Sale object
+        UPDATED: Works with both receipts and invoices with VAT-aware invoiceKind
+        """
+        # Get document number
+        document_number = sale.document_number or ''
+
+        if not document_number:
+            document_number = f"TMP-{timezone.now().strftime('%Y%m%d%H%M%S')}-{sale.id}"
+            logger.warning(f"Sale has no document_number, using: {document_number}")
+
+        # Handle timezone conversion for EAT (UTC+3)
+        from datetime import timezone as dt_timezone
+        tz_eat = dt_timezone(timedelta(hours=3))
+
+        issue_date = sale.created_at
+
+        if issue_date:
+            if isinstance(issue_date, date) and not isinstance(issue_date, datetime):
+                issue_date = datetime.combine(issue_date, datetime.now().time())
+
+            if issue_date.tzinfo is None:
+                issue_date = django_timezone.make_aware(issue_date)
+
+            # Check age
+            age_hours = (django_timezone.now() - issue_date).total_seconds() / 3600
+            if age_hours > 24:
+                logger.warning(
+                    f"Sale {document_number} is {age_hours:.1f} hours old, using current time"
+                )
+                issue_date = datetime.now(dt_timezone.utc).astimezone(tz_eat)
+            else:
+                issue_date = issue_date.astimezone(tz_eat)
+        else:
+            issue_date = datetime.now(dt_timezone.utc).astimezone(tz_eat)
+
+        issued_date_str = issue_date.strftime('%Y-%m-%d %H:%M:%S')
+
+        # Get operator
+        operator = (
+            getattr(invoice, 'operator_name', None) if invoice else None or
+                                                                    (
+                                                                        sale.created_by.get_full_name() if sale.created_by else None) or
+                                                                    'System'
+        )
+
+        # ========== CRITICAL FIX: VAT-aware invoiceKind and invoiceType ==========
+        # Get company VAT status
+        company = sale.store.company if sale.store else None
+        is_vat_enabled = getattr(company, 'is_vat_enabled', False) if company else False
+
+        if is_vat_enabled:
+            # VAT registered company - MUST use Tax Invoice (invoiceKind='1')
+            efris_invoice_kind = {
+                'RECEIPT': '1',  # Tax Invoice (immediate payment) - CHANGED from '2'
+                'INVOICE': '1',  # Tax Invoice (credit sale)
+                'PROFORMA': '4',  # Proforma
+                'ESTIMATE': '4',  # Estimate (same as proforma)
+            }.get(sale.document_type, '1')
+
+            efris_invoice_type = '1'  # Tax Invoice
+        else:
+            # Non-VAT registered company - Use Simplified Invoice/Receipt
+            efris_invoice_kind = {
+                'RECEIPT': '2',  # Simplified Receipt
+                'INVOICE': '2',  # Simplified Invoice - CHANGED from '1'
+                'PROFORMA': '4',  # Proforma
+                'ESTIMATE': '4',  # Estimate
+            }.get(sale.document_type, '2')
+
+            efris_invoice_type = '2'  # Simplified Invoice
+
+        # Log for debugging
+        logger.info(
+            f"EFRIS Basic Info for {document_number}: "
+            f"invoiceKind={efris_invoice_kind}, "
+            f"invoiceType={efris_invoice_type}, "
+            f"VAT={is_vat_enabled}, "
+            f"DocType={sale.document_type}"
+        )
+
+        return {
+            "deviceNo": self.device_no,
+            "invoiceNo": '',  # EFRIS assigns this
+            "issuedDate": issued_date_str,
+            "operator": operator,
+            "currency": sale.currency or 'UGX',
+            "invoiceType": efris_invoice_type,  # ✅ Now dynamic based on VAT
+            "invoiceKind": efris_invoice_kind,  # ✅ Now VAT-aware
+            "dataSource": "103",
+            "invoiceIndustryCode": "101"
+        }
+
+    def _build_buyer_details_from_sale(self, sale) -> Dict[str, Any]:
+        """Build buyer details from Sale"""
+        customer = sale.customer
+
+        if not customer:
+            return {
+                "buyerType": "1",  # B2C
+                "buyerLegalName": "Walk-in Customer",
+                "buyerTin": "",
+                "buyerNinBrn": "",
+                "buyerAddress": "",
+                "buyerEmail": "",
+                "buyerMobilePhone": ""
+            }
+
+        # Determine buyer type
+        buyer_type = "1"  # Default B2C
+        customer_tin = getattr(customer, 'tin', None)
+        if customer_tin:
+            buyer_type = "0"  # B2B if has TIN
+
+        return {
+            "buyerTin": customer_tin or "",
+            "buyerNinBrn": (getattr(customer, 'nin', '') or
+                            getattr(customer, 'brn', '') or ""),
+            "buyerLegalName": getattr(customer, 'name', '') or "Unknown Customer",
+            "buyerType": buyer_type,
+            "buyerEmail": getattr(customer, 'email', '') or "",
+            "buyerMobilePhone": getattr(customer, 'phone', '') or "",
+            "buyerAddress": getattr(customer, 'address', '') or ""
+        }
+
+    def _build_goods_details_from_sale(self, sale) -> List[Dict[str, Any]]:
+        """
+        Build goods details from Sale items
+        UPDATED: Support both Product and Service items
+        """
+        goods_details = []
+        items = sale.items.all()  # SaleItem queryset
+
+        if not items:
+            raise Exception("Sale must have at least one item")
+
+        for idx, item in enumerate(items, 0):
+            try:
+                # ✅ Check for both product AND service
+                product = getattr(item, 'product', None)
+                service = getattr(item, 'service', None) if not product else None
+
+                if product:
+                    # Product processing
+                    item_code = getattr(product, 'efris_goods_code', None) or \
+                                getattr(product, 'sku', None) or \
+                                f"PROD{product.id}"
+                    item_name = product.name[:200]
+                    unit_of_measure = product.unit_of_measure
+
+                    if product.category:
+                        goods_category_id = product.category.efris_commodity_category_code or ''
+                        goods_category_name = product.category.name or ''
+                    else:
+                        goods_category_id = ''
+                        goods_category_name = ''
+
+                    has_excise = getattr(product, 'has_excise_tax', False)
+                    excise_entity = product if has_excise else None
+
+                elif service:
+                    # ✅ Service processing
+                    item_code = service.code
+                    item_name = service.name[:200]
+                    unit_of_measure = service.unit_of_measure
+
+                    if service.category:
+                        goods_category_id = service.category.efris_commodity_category_code or ''
+                        goods_category_name = service.category.name or ''
+                    else:
+                        goods_category_id = '100000000000000000'
+                        goods_category_name = 'General Services'
+
+                    has_excise = service.tax_rate == 'E'
+                    excise_entity = service if has_excise else None
+
+                else:
+                    raise Exception(f"Item {idx} has neither product nor service")
+
+                # Get amounts
+                quantity = float(item.quantity)
+                unit_price = float(item.unit_price)
+                line_total = quantity * unit_price
+
+                # Tax calculation
+                tax_rate_raw = item.tax_rate
+                tax_rate = self.get_numeric_tax_rate(tax_rate_raw)
+
+                # Calculate net and tax from gross (line_total)
+                net_amount = line_total / (1 + tax_rate / 100)
+                tax_amount = line_total - net_amount
+
+                # Build goods detail
+                goods_detail = {
+                    "item": item_name,
+                    "invoiceNo": str(sale.document_number),
+                    "itemCode": item_code[:50],
+                    "qty": f"{quantity:.2f}",
+                    "unitOfMeasure": unit_of_measure,
+                    "unitPrice": f"{unit_price:.2f}",
+                    "total": f"{line_total:.2f}",
+                    "taxRate": f"{tax_rate / 100:.4f}",
+                    "tax": f"{tax_amount:.2f}",
+                    "orderNumber": idx,
+                    "discountFlag": "2",
+                    "deemedFlag": "2",
+                    "exciseFlag": "2",
+                    "goodsCategoryId": goods_category_id,
+                    "goodsCategoryName": goods_category_name,
+                }
+
+                # Discount handling
+                discount_amount = float(getattr(item, 'discount_amount', 0) or 0)
+                if discount_amount > 0:
+                    goods_detail["discountTotal"] = f"{discount_amount:.2f}"
+                    goods_detail["discountTaxRate"] = goods_detail["taxRate"]
+                else:
+                    goods_detail["discountTotal"] = ""
+
+                # Excise tax fields
+                if has_excise and excise_entity:
+                    goods_detail["exciseFlag"] = "1"
+                    goods_detail["categoryId"] = str(getattr(excise_entity, 'excise_category_id', ''))[:18]
+                    goods_detail["categoryName"] = str(getattr(excise_entity, 'excise_category_name', ''))[:1024]
+                    goods_detail["exciseRate"] = str(getattr(excise_entity, 'excise_duty_rate', '0'))[:21]
+                    goods_detail["exciseRule"] = str(getattr(excise_entity, 'excise_rule', '1'))
+                    goods_detail["exciseTax"] = f"{float(getattr(excise_entity, 'excise_tax', 0)):.2f}"
+                else:
+                    goods_detail["categoryId"] = ""
+                    goods_detail["categoryName"] = ""
+                    goods_detail["exciseCurrency"] = ""
+                    goods_detail["exciseTax"] = ""
+                    goods_detail["pack"] = ""
+                    goods_detail["stick"] = ""
+                    goods_detail["exciseUnit"] = ""
+                    goods_detail["exciseDutyCode"] = ""
+
+                goods_details.append(goods_detail)
+
+            except Exception as e:
+                logger.error(f"Failed to process item {idx}: {e}", exc_info=True)
+                raise Exception(f"Item {idx} processing failed: {e}")
+
+        return goods_details
+
+    def _build_tax_details_from_sale(self, sale) -> List[Dict[str, Any]]:
+        """Build tax details from Sale items"""
+        items = sale.items.all()
+
+        # Group items by tax rate
+        tax_categories = {}
+
+        for item in items:
+            tax_rate_raw = item.tax_rate
+            tax_rate = self.get_numeric_tax_rate(tax_rate_raw)
+
+            # Calculate amounts
+            quantity = float(item.quantity)
+            unit_price = float(item.unit_price)
+            line_total = quantity * unit_price
+
+            # Split into net and tax
+            net_amount = line_total / (1 + tax_rate / 100)
+            tax_amount = line_total - net_amount
+
+            # Group by tax rate
+            rate_key = f"{tax_rate:.2f}"
+            if rate_key not in tax_categories:
+                tax_categories[rate_key] = {
+                    'rate': tax_rate,
+                    'net_amount': 0,
+                    'tax_amount': 0
+                }
+
+            tax_categories[rate_key]['net_amount'] += net_amount
+            tax_categories[rate_key]['tax_amount'] += tax_amount
+
+        # Build tax details array
+        tax_details = []
+        for rate_key, amounts in tax_categories.items():
+            rate = amounts['rate']
+            net = amounts['net_amount']
+            tax = amounts['tax_amount']
+            gross = net + tax
+
+            # Determine tax category code
+            if rate == 18.0:
+                tax_category_code = "01"
+                tax_rate_name = "Standard Rate (18%)"
+            elif rate == 0.0:
+                tax_category_code = "02"
+                tax_rate_name = "Zero Rate (0%)"
+            else:
+                tax_category_code = "01"
+                tax_rate_name = f"Rate ({rate}%)"
+
+            tax_details.append({
+                "taxCategoryCode": tax_category_code,
+                "netAmount": f"{net:.2f}",
+                "taxRate": f"{rate / 100:.4f}",
+                "taxAmount": f"{tax:.2f}",
+                "grossAmount": f"{gross:.2f}",
+                "taxRateName": tax_rate_name
+            })
+
+        return tax_details
+
+    def _build_summary_from_tax_details(self, sale, tax_details: List[Dict]) -> Dict[str, Any]:
+        """Build summary from tax_details"""
+        from decimal import Decimal
+
+        # Sum from tax_details
+        total_net = Decimal('0')
+        total_tax = Decimal('0')
+        total_gross = Decimal('0')
+
+        for tax_detail in tax_details:
+            total_net += Decimal(tax_detail['netAmount'])
+            total_tax += Decimal(tax_detail['taxAmount'])
+            total_gross += Decimal(tax_detail['grossAmount'])
+
+        # Get item count
+        item_count = sale.items.count()
+
+        # Build payment modes
+        payment_modes = self._build_payment_modes_from_sale(sale, float(total_gross))
+
+        return {
+            "netAmount": f"{total_net:.2f}",
+            "taxAmount": f"{total_tax:.2f}",
+            "grossAmount": f"{total_gross:.2f}",
+            "itemCount": str(item_count),
+            "modeCode": "1",
+            "remarks": sale.notes or f"{sale.get_document_type_display()} via EFRIS",
+            "payWay": payment_modes
+        }
+
+    def _build_payment_modes_from_sale(self, sale, total_amount: float) -> List[Dict]:
+        """Build payment modes from Sale"""
+        payment_modes = []
+
+        # Try to get actual payment methods
+        if hasattr(sale, 'payments') and hasattr(sale.payments, 'exists'):
+            if sale.payments.exists():
+                for idx, payment in enumerate(sale.payments.all()):
+                    payment_method = getattr(payment, 'payment_method', 'CASH')
+                    amount = getattr(payment, 'amount', 0)
+
+                    payment_modes.append({
+                        "paymentMode": self._map_payment_mode(payment_method),
+                        "paymentAmount": f"{float(amount):.2f}",
+                        "orderNumber": chr(97 + idx)
+                    })
+
+        # Try payment_method field on sale itself
+        elif hasattr(sale, 'payment_method'):
+            payment_method = sale.payment_method
+            payment_modes.append({
+                "paymentMode": self._map_payment_mode(payment_method),
+                "paymentAmount": f"{total_amount:.2f}",
+                "orderNumber": "a"
+            })
+
+        # Default to cash
+        if not payment_modes:
+            payment_modes.append({
+                "paymentMode": "102",  # Cash
+                "paymentAmount": f"{total_amount:.2f}",
+                "orderNumber": "a"
+            })
+
+        return payment_modes
 
     def _build_buyer_details(self, invoice) -> Dict[str, Any]:
         """Build buyer details from invoice/sale"""
@@ -2595,28 +3059,50 @@ class EFRISDataTransformer:
 class EnhancedEFRISAPIClient:
     """Main EFRIS API Client - Django version matching WORKING test script"""
 
-    def __init__(self, company):
+    def __init__(self, company, store=None):
+        """
+        Initialize EFRIS client with company and optional store
+        UPDATED: Support store-level EFRIS configuration overrides
+
+        Args:
+            company: Company instance
+            store: Optional Store instance for store-specific config
+        """
         self.company = company
+        self.store = store  # ✅ NEW: Store context
 
         # Get schema name from company
         schema_name = getattr(company, 'schema_name', None)
         if not schema_name:
             raise Exception(f"Company {company} has no schema_name attribute")
 
-        try:
-            self.efris_config = company.efris_config
+        # ✅ Get effective EFRIS configuration (company or store override)
+        if store:
+            self.efris_config = self._get_effective_store_config(store)
+            logger.info(
+                f"EFRIS client initialized for store: {store.name}",
+                extra={
+                    'store_id': store.id,
+                    'use_company_efris': store.use_company_efris,
+                    'schema': schema_name
+                }
+            )
+        else:
+            # Company-level config only
+            try:
+                self.efris_config = company.efris_config
+                if not self.efris_config.is_active:
+                    logger.warning(
+                        f"EFRIS configuration exists but is inactive for {company.name}"
+                    )
+            except Exception as e:
+                raise Exception(f"Failed to load EFRIS configuration: {e}")
 
-            if not self.efris_config.is_active:
-                logger.warning(
-                    f"EFRIS configuration exists but is inactive for {company.name}"
-                )
-        except Exception as e:
-            raise Exception(f"Failed to load EFRIS configuration: {e}")
+        # ✅ Get effective device number and TIN
+        device_no = self._get_effective_device_number()
+        tin = self._get_effective_tin()
 
-        device_no = self.efris_config.device_number or '1026925503_01'
-        tin = getattr(company, 'tin', '')
         self.security_manager = SecurityManager(device_no, tin)
-
         self._is_authenticated = False
         self._last_login = None
 
@@ -2632,9 +3118,107 @@ class EnhancedEFRISAPIClient:
             extra={
                 'schema': schema_name,
                 'device_no': device_no,
-                'tin': tin
+                'tin': tin,
+                'has_store_override': store is not None and not store.use_company_efris
             }
         )
+
+    def _get_effective_store_config(self, store):
+        """
+        Get effective EFRIS configuration for store
+        Uses store override if enabled, otherwise company config
+
+        Args:
+            store: Store instance
+
+        Returns:
+            Configuration object or dict with effective settings
+        """
+        if store.use_company_efris:
+            # Use company configuration
+            return self.company.efris_config
+
+        # ✅ Build store-specific configuration object
+        # Create a configuration-like object with store's override values
+
+        # ✅ Build store-specific configuration object
+        class StoreEFRISConfig:
+            """Wrapper for store-level EFRIS configuration"""
+
+            def __init__(self, store, company_config):
+                self.store = store
+                self.company_config = company_config
+
+                # Store-specific fields (with fallback to company)
+                self.device_number = store.efris_device_number or company_config.device_number
+                self.private_key = store.store_efris_private_key or company_config.private_key
+                self.public_certificate = store.store_efris_public_certificate or company_config.public_certificate
+                self.key_password = store.store_efris_key_password or company_config.key_password
+                self.is_production = store.store_efris_is_production if hasattr(store,
+                                                                                'store_efris_is_production') else company_config.is_production
+                self.integration_mode = store.store_efris_integration_mode or company_config.integration_mode
+                self.is_active = store.store_efris_is_active if hasattr(store,
+                                                                        'store_efris_is_active') else company_config.is_active
+
+                # Always from company config
+                self.api_url = company_config.api_url
+                self.app_id = company_config.app_id
+                self.version = company_config.version
+                self.device_mac = company_config.device_mac
+
+        return StoreEFRISConfig(store, self.company.efris_config)
+
+    def _get_effective_device_number(self) -> str:
+        """
+        Get effective device number (store or company)
+
+        Returns:
+            Device number string
+        """
+        if self.store and not self.store.use_company_efris:
+            device_no = (
+                    self.store.efris_device_number or
+                    getattr(self.efris_config, 'device_number', '1026925503_01')
+            )
+        else:
+            device_no = getattr(self.efris_config, 'device_number', '1026925503_01')
+
+        return device_no or '1026925503_01'
+
+    def _get_effective_tin(self) -> str:
+        """
+        Get effective TIN (store or company)
+
+        Returns:
+            TIN string
+        """
+        if self.store:
+            # Try store TIN first, fallback to company
+            tin = self.store.tin or getattr(self.company, 'tin', '')
+        else:
+            tin = getattr(self.company, 'tin', '')
+
+        return tin
+
+    def _get_effective_certificates(self) -> Dict[str, str]:
+        """
+        Get effective certificates (store or company)
+
+        Returns:
+            Dict with private_key, public_certificate, key_password
+        """
+        if self.store and not self.store.use_company_efris:
+            return {
+                'private_key': self.store.store_efris_private_key or self.efris_config.private_key,
+                'public_certificate': self.store.store_efris_public_certificate or self.efris_config.public_certificate,
+                'key_password': self.store.store_efris_key_password or self.efris_config.key_password
+            }
+        else:
+            return {
+                'private_key': self.efris_config.private_key,
+                'public_certificate': self.efris_config.public_certificate,
+                'key_password': self.efris_config.key_password
+            }
 
     def __enter__(self):
         """Context manager entry"""
@@ -2646,24 +3230,42 @@ class EnhancedEFRISAPIClient:
         pass
 
     def _load_private_key(self):
-        """Load private key from configuration"""
+        """
+        Load private key from configuration
+        UPDATED: Use effective certificates (store or company)
+        """
         try:
-            private_key_pem = self.efris_config.private_key
+            # ✅ Get effective certificates
+            certs = self._get_effective_certificates()
+            private_key_pem = certs['private_key']
+            key_password = certs['key_password']
+
             if isinstance(private_key_pem, str):
                 private_key_pem = private_key_pem.encode('utf-8')
 
             private_key = serialization.load_pem_private_key(
                 private_key_pem,
                 password=(
-                    self.efris_config.key_password.encode('utf-8')
-                    if self.efris_config.key_password else None
+                    key_password.encode('utf-8')
+                    if key_password else None
                 ),
                 backend=default_backend()
             )
+
             # Store in security manager for signing
             self.security_manager.private_key = private_key
+
+            logger.debug(
+                "Private key loaded successfully",
+                extra={
+                    'from_store': self.store is not None and not self.store.use_company_efris if self.store else False
+                }
+            )
+
             return private_key
+
         except Exception as e:
+            logger.error(f"Failed to load private key: {e}")
             raise Exception(f"Failed to load private key: {e}")
 
     def _make_http_request(self, data: Dict) -> requests.Response:
@@ -3995,13 +4597,8 @@ class EnhancedEFRISAPIClient:
                 "categories": []
             }
 
-    def upload_invoice(self, invoice, user=None) -> Dict[str, Any]:
-        """
-        Upload invoice to EFRIS - PRODUCTION VERSION
-
-        Returns:
-            Dict with keys: success, message, data, error_code
-        """
+    """def upload_invoice(self, invoice, user=None) -> Dict[str, Any]:
+        
         try:
             # Build invoice data
             transformer = EFRISDataTransformer(self.company)
@@ -4068,6 +4665,104 @@ class EnhancedEFRISAPIClient:
 
         except Exception as e:
             logger.error(f"Invoice upload exception: {e}", exc_info=True)
+            return {
+                "success": False,
+                "message": f"Upload error: {str(e)}",
+                "error_code": "EXCEPTION",
+                "data": None
+            }"""
+
+    def upload_invoice(self, sale_or_invoice, user=None) -> Dict[str, Any]:
+        """
+        Upload sale (receipt or invoice) to EFRIS - PRODUCTION VERSION
+        UPDATED: Works with both Sale and Invoice objects
+
+        Args:
+            sale_or_invoice: Either a Sale object (receipt) or Invoice object
+            user: Optional user performing the action
+
+        Returns:
+            Dict with keys: success, message, data, error_code
+        """
+        try:
+            # ✅ Determine what we're working with
+            if hasattr(sale_or_invoice, 'sale') and sale_or_invoice.sale:
+                # This is an Invoice
+                sale = sale_or_invoice.sale
+                invoice = sale_or_invoice
+                document_type = "Invoice"
+            else:
+                # This is a Sale (receipt)
+                sale = sale_or_invoice
+                invoice = None
+                document_type = sale.get_document_type_display()
+
+            # Build sale data
+            transformer = EFRISDataTransformer(self.company)
+            sale_data = transformer.build_invoice_data(sale_or_invoice)
+
+            # Validate data
+            validation_errors = DataValidator.validate_invoice_data(sale_data)
+            if validation_errors:
+                logger.error(f"{document_type} validation failed: {validation_errors}")
+                return {
+                    "success": False,
+                    "message": f"Validation failed: {'; '.join(validation_errors)}",
+                    "error_code": "VALIDATION_ERROR",
+                    "data": None
+                }
+
+            # Ensure authenticated
+            auth_result = self.ensure_authenticated()
+            if not auth_result.get("success"):
+                return {
+                    "success": False,
+                    "message": f"Authentication failed: {auth_result.get('error')}",
+                    "error_code": "AUTH_FAILED",
+                    "data": None
+                }
+
+            # Log the request
+            logger.info(
+                f"Uploading {document_type} {sale.document_number} to EFRIS",
+                extra={
+                    'sale_id': sale.id,
+                    'document_type': sale.document_type,
+                    'gross_amount': sale_data['summary']['grossAmount']
+                }
+            )
+
+            response = self._make_request("T109", sale_data, encrypt=True)
+
+            # Extract details from response
+            basic_info = response.get('basicInformation', {})
+            invoice_no = basic_info.get('invoiceNo')
+            invoice_id = basic_info.get('invoiceId')
+            fiscal_code = basic_info.get('antifakeCode', '')
+
+            logger.info(
+                f"{document_type} uploaded successfully: {invoice_no} (ID: {invoice_id})",
+                extra={
+                    'invoice_no': invoice_no,
+                    'invoice_id': invoice_id,
+                    'fiscal_code': fiscal_code
+                }
+            )
+
+            return {
+                "success": True,
+                "message": f"{document_type} {invoice_no} uploaded successfully",
+                "data": {
+                    "invoice_no": invoice_no,
+                    "invoice_id": invoice_id,
+                    "fiscal_code": fiscal_code,
+                    "full_response": response
+                },
+                "error_code": None
+            }
+
+        except Exception as e:
+            logger.error(f"{document_type} upload exception: {e}", exc_info=True)
             return {
                 "success": False,
                 "message": f"Upload error: {str(e)}",
@@ -9400,25 +10095,41 @@ def bulk_register_services_with_efris(company):
     return results
 
 
-def bulk_register_products_with_efris(company):
+def bulk_register_products_with_efris(company, store=None):
+    """
+    Bulk register products with EFRIS
+    UPDATED: Use store-specific configuration if provided
+
+    Args:
+        company: Company instance
+        store: Optional Store instance for store-specific config
+    """
     results = {
         'total': 0,
         'successful': 0,
         'failed': 0,
         'errors': [],
         'warnings': [],
-        'registered_products': []
+        'registered_products': [],
+        'using_store_config': store and not store.use_company_efris if store else False
     }
 
     try:
         with schema_context(company.schema_name):
             from inventory.models import Product
 
-            # Get products that need registration
+            # Get products (optionally filtered by store)
             products = Product.objects.filter(
                 is_active=True,
                 efris_is_uploaded=False
-            ).select_related('category')  # Optimize queries
+            ).select_related('category')
+
+            if store:
+                # Filter products available in this store
+                products = products.filter(
+                    stock__store=store,
+                    stock__quantity__gt=0
+                ).distinct()
 
             results['total'] = products.count()
 
@@ -9426,35 +10137,23 @@ def bulk_register_products_with_efris(company):
                 results['warnings'].append('No products found that need EFRIS registration')
                 return results
 
-            logger.info(f"Starting bulk registration of {results['total']} products for company {company.name}")
+            logger.info(
+                f"Starting bulk registration of {results['total']} products",
+                extra={
+                    'company': company.name,
+                    'store': store.name if store else 'All stores',
+                    'use_store_config': results['using_store_config']
+                }
+            )
 
-            with EnhancedEFRISAPIClient(company) as client:
-                # Process products in smaller batches to avoid timeouts
+            # ✅ Use store-aware client
+            with EnhancedEFRISAPIClient(company, store) as client:
                 batch_size = 10
                 for i in range(0, results['total'], batch_size):
                     batch_products = products[i:i + batch_size]
 
                     for product in batch_products:
                         try:
-                            # Validate product before registration
-                            validation_errors = []
-
-                            if not product.name or len(product.name.strip()) < 2:
-                                validation_errors.append("Product name is too short")
-
-                            if not hasattr(product, 'selling_price') or product.selling_price is None:
-                                validation_errors.append("Selling price is missing")
-
-                            if validation_errors:
-                                results['failed'] += 1
-                                results['errors'].append({
-                                    'product_id': product.id,
-                                    'sku': getattr(product, 'sku', 'N/A'),
-                                    'name': product.name,
-                                    'error': f"Validation failed: {'; '.join(validation_errors)}"
-                                })
-                                continue
-
                             # Register the product
                             result = client.register_product_with_efris(product)
 
@@ -9490,7 +10189,7 @@ def bulk_register_products_with_efris(company):
                             results['errors'].append(error_detail)
                             logger.error(f"Exception during product registration: {e}", exc_info=True)
 
-                    # Add small delay between batches to avoid overwhelming EFRIS
+                    # Small delay between batches
                     if i + batch_size < results['total']:
                         import time
                         time.sleep(1)
@@ -9513,13 +10212,17 @@ def bulk_register_products_with_efris(company):
 
     return results
 
-
 class EFRISCustomerService:
     """Enhanced service for handling EFRIS customer operations"""
 
-    def __init__(self, company):
+    def __init__(self, company, store=None):
+        """
+        Initialize customer service
+        UPDATED: Accept optional store for store-specific config
+        """
         self.company = company
-        self.client = EnhancedEFRISAPIClient(company)
+        self.store = store
+        self.client = EnhancedEFRISAPIClient(company, store)
         self.validator = DataValidator()
 
     def query_taxpayer(self, tin: str, nin_brn: Optional[str] = None) -> Tuple[bool, Union[Dict, str]]:
@@ -9709,54 +10412,48 @@ class EFRISCustomerService:
 class EFRISInvoiceService:
     """Service wrapper for invoice fiscalization with consistent return format"""
 
-    def __init__(self, company):
+    def __init__(self, company, store=None):
+        """
+        Initialize invoice service
+        UPDATED: Accept optional store for store-specific config
+
+        Args:
+            company: Company instance
+            store: Optional Store instance
+        """
         self.company = company
+        self.store = store
 
-    def fiscalize_invoice(self, invoice, user=None) -> Dict[str, Any]:
-        """Fiscalize invoice with proper return format"""
+    def fiscalize_sale(self, sale_or_invoice, user=None) -> Dict[str, Any]:
         try:
-            with EnhancedEFRISAPIClient(self.company) as client:
-                result = client.upload_invoice(invoice, user)
+            # ✅ Get store from sale if not provided
+            store = self.store
+            if not store:
+                if hasattr(sale_or_invoice, 'sale') and sale_or_invoice.sale:
+                    store = sale_or_invoice.sale.store
+                elif hasattr(sale_or_invoice, 'store'):
+                    store = sale_or_invoice.store
 
-                # Log raw result for debugging
-                logger.debug(f"Raw upload_invoice result for invoice {invoice.id}: {result} (type: {type(result)})")
+            # ✅ Use store-aware client
+            with EnhancedEFRISAPIClient(self.company, store) as client:
+                result = client.upload_invoice(sale_or_invoice, user)
 
                 # Ensure consistent return format
                 if isinstance(result, dict):
                     if result.get('success', False):
                         return {
                             "success": True,
-                            "message": result.get("message", "Invoice fiscalized successfully"),
+                            "message": result.get("message", "Sale fiscalized successfully"),
                             "data": result.get("data", {})
                         }
                     else:
                         return {
                             "success": False,
-                            "message": result.get("error", "Fiscalization failed"),
+                            "message": result.get("message", "Fiscalization failed"),
                             "error_code": result.get("error_code"),
-                            "data": result.get("response_data")
-                        }
-                elif isinstance(result, tuple):
-                    # Temporary handling for unexpected tuple response
-                    logger.warning(f"Unexpected tuple response from upload_invoice: {result}")
-                    if len(result) >= 2:
-                        success, message = result[:2]
-                        extra_data = result[2:] if len(result) > 2 else None
-                        return {
-                            "success": bool(success),
-                            "message": str(message) if message else "Unexpected tuple format",
-                            "data": {"extra": extra_data} if extra_data else {},
-                            "error_code": None
-                        }
-                    else:
-                        return {
-                            "success": False,
-                            "message": f"Invalid tuple format: {result}",
-                            "data": None,
-                            "error_code": None
+                            "data": result.get("data")
                         }
                 else:
-                    logger.error(f"Unexpected response type from upload_invoice: {type(result)}")
                     return {
                         "success": False,
                         "message": f"Unexpected response type: {type(result)}",
@@ -9765,13 +10462,23 @@ class EFRISInvoiceService:
                     }
 
         except Exception as e:
-            logger.error(f"Invoice fiscalization failed for invoice {invoice.id}: {str(e)}", exc_info=True)
+            # Determine document type for logging
+            if hasattr(sale_or_invoice, 'sale'):
+                doc_id = f"invoice {sale_or_invoice.id}"
+            else:
+                doc_id = f"sale {sale_or_invoice.id}"
+
+            logger.error(f"Fiscalization failed for {doc_id}: {str(e)}", exc_info=True)
             return {
                 "success": False,
                 "message": f"Fiscalization error: {str(e)}",
                 "data": None,
                 "error_code": None
             }
+
+    def fiscalize_invoice(self, invoice, user=None) -> Dict[str, Any]:
+        """Backward compatibility wrapper"""
+        return self.fiscalize_sale(invoice, user)
 
     def bulk_fiscalize_invoices(self, invoices: List, user=None) -> Dict[str, Any]:
         """
@@ -10205,9 +10912,14 @@ class EFRISServiceManager:
     Handles service-specific EFRIS logic
     """
 
-    def __init__(self, company):
+    def __init__(self, company, store=None):
+        """
+        Initialize service manager
+        UPDATED: Accept optional store for store-specific config
+        """
         self.company = company
-        self.client = EnhancedEFRISAPIClient(company)
+        self.store = store
+        self.client = EnhancedEFRISAPIClient(company, store)
 
     def register_service(self, service, user=None) -> Dict[str, Any]:
         """
@@ -10417,9 +11129,18 @@ class EFRISServiceManager:
 class EFRISProductService:
     """Enhanced service for handling EFRIS product operations"""
 
-    def __init__(self, company):
+    def __init__(self, company, store=None):
+        """
+        Initialize product service
+        UPDATED: Accept optional store for store-specific config
+
+        Args:
+            company: Company instance
+            store: Optional Store instance
+        """
         self.company = company
-        self.client = EnhancedEFRISAPIClient(company)
+        self.store = store
+        self.client = EnhancedEFRISAPIClient(company, store)
 
     async def upload_products_async(self, products: List[Any], user: Optional[Any] = None) -> Tuple[bool, str]:
         """Async version of product upload for better performance"""
@@ -10631,9 +11352,20 @@ class EFRISProductService:
 
         return False
 
-def create_efris_service(company, service_type: str = 'client'):
-    """Factory function to create EFRIS services with validation"""
 
+def create_efris_service(company, service_type: str = 'client', store=None):
+    """
+    Factory function to create EFRIS services with validation
+    UPDATED: Accept optional store parameter
+
+    Args:
+        company: Company instance
+        service_type: Type of service to create
+        store: Optional Store instance for store-specific config
+
+    Returns:
+        Service instance
+    """
     if not company:
         raise EFRISConfigurationError("Company is required")
 
@@ -10645,6 +11377,7 @@ def create_efris_service(company, service_type: str = 'client'):
         'product': EFRISProductService,
         'invoice': EFRISInvoiceService,
         'customer': EFRISCustomerService,
+        'service_manager': EFRISServiceManager,
     }
 
     service_class = services.get(service_type)
@@ -10653,11 +11386,13 @@ def create_efris_service(company, service_type: str = 'client'):
         raise ValueError(f"Unknown service type '{service_type}'. Available: {available}")
 
     try:
-        return service_class(company)
+        # ✅ Pass store to service class
+        return service_class(company, store)
     except Exception as e:
         logger.error(
             "Failed to create EFRIS service",
             company_id=getattr(company, 'pk', None),
+            store_id=getattr(store, 'pk', None) if store else None,
             service_type=service_type,
             error=str(e)
         )
@@ -10689,8 +11424,9 @@ async def efris_client_context(company):
 class EFRISHealthChecker:
     """Health check utilities for EFRIS integration"""
 
-    def __init__(self, company):
+    def __init__(self, company, store=None):
         self.company = company
+        self.store = store
 
     def check_system_health(self) -> Dict[str, Any]:
         """Comprehensive health check"""
@@ -10698,7 +11434,9 @@ class EFRISHealthChecker:
             'overall_status': 'healthy',
             'checks': {},
             'timestamp': timezone.now().isoformat(),
-            'company_id': self.company.pk
+            'company_id': self.company.pk,
+            'store_id': self.store.pk if self.store else None,
+            'using_store_config': self.store and not self.store.use_company_efris if self.store else False
         }
 
         # Check configuration
@@ -10729,13 +11467,32 @@ class EFRISHealthChecker:
         return health_status
 
     def _check_configuration(self) -> Dict[str, Any]:
-        """Check EFRIS configuration validity"""
+        """
+        Check EFRIS configuration validity
+        UPDATED: Check store config if applicable
+        """
         try:
-            is_valid, errors = validate_efris_configuration(self.company)
+            config_manager = ConfigurationManager(self.company, self.store)  # ✅ Pass store
+            is_valid = True
+            errors = []
+
+            # Additional store-specific checks
+            if self.store and not self.store.use_company_efris:
+                store_config = self.store.effective_efris_config
+
+                if not store_config.get('enabled'):
+                    errors.append("EFRIS not enabled for this store")
+
+                if not store_config.get('device_number'):
+                    errors.append("Store missing device number")
+
+                is_valid = len(errors) == 0
+
             return {
                 'healthy': is_valid,
                 'errors': errors,
-                'check_type': 'configuration'
+                'check_type': 'configuration',
+                'config_source': 'store' if (self.store and not self.store.use_company_efris) else 'company'
             }
         except Exception as e:
             return {
@@ -10763,16 +11520,19 @@ class EFRISHealthChecker:
             }
 
     def _check_authentication(self) -> Dict[str, Any]:
-        """Check EFRIS authentication status"""
+        """
+        Check EFRIS authentication status
+        UPDATED: Use store configuration
+        """
         try:
-            with EnhancedEFRISAPIClient(self.company) as client:
-                # Try a simple authenticated operation
+            with EnhancedEFRISAPIClient(self.company, self.store) as client:  # ✅ Pass store
                 auth_response = client.ensure_authenticated()
                 return {
                     'healthy': auth_response['success'],
                     'authenticated': client._is_authenticated,
                     'error': auth_response.get('error') if not auth_response['success'] else None,
-                    'check_type': 'authentication'
+                    'check_type': 'authentication',
+                    'used_store_config': self.store and not self.store.use_company_efris if self.store else False
                 }
         except Exception as e:
             return {

@@ -1,0 +1,607 @@
+{% extends "base.html" %}
+{% load i18n %}
+{% load static %}
+{% load custom_filters %}
+
+{% block page_title %}{% trans "Sales" %}{% endblock %}
+
+{% block breadcrumb_items %}
+<li class="breadcrumb-item active" aria-current="page">{% trans "Sales List" %}</li>
+{% endblock %}
+
+{% block page_actions %}
+<a href="{% url 'sales:create_sale_enhanced' %}" class="btn btn-primary">
+<i class="bi bi-plus-circle me-1"></i>{% trans "New Sale" %}
+</a>
+{% endblock %}
+
+{% block extra_css %}
+{{ block.super }}
+<style>
+.status-badge {
+    font-size: 0.75rem;
+padding: 0.25rem 0.75rem;
+border-radius: 50rem;
+}
+
+.filter-card {
+    background: linear-gradient(135deg, var(--bg-secondary) 0%, var(--bg-primary) 100%);
+border: 1px solid var(--border-color);
+box-shadow: var(--shadow-sm);
+}
+
+.sale-row {
+    transition: all 0.3s ease;
+cursor: pointer;
+}
+
+.sale-row:hover {
+    background-color: rgba(59, 130, 246, 0.05);
+transform: translateX(4px);
+}
+
+.action-dropdown .btn {
+    padding: 0.25rem 0.5rem;
+}
+</style>
+{% endblock %}
+
+{% block sales_content %}
+<!-- Filters Card -->
+<div class="card filter-card mb-4">
+<div class="card-body">
+<form method="get" class="row g-3">
+<div class="col-md-3">
+<label for="status" class="form-label">{% trans "Status" %}</label>
+<select name="status" id="status" class="form-select">
+<option value="">{% trans "All Statuses" %}</option>
+{% for value, label in status_choices %}
+<option value="{{ value }}" {% if request.GET.status == value %}selected{% endif %}>
+{{ label }}
+</option>
+{% endfor %}
+</select>
+</div>
+<div class="col-md-3">
+<label for="store" class="form-label">{% trans "Store" %}</label>
+<select name="store" id="store" class="form-select">
+<option value="">{% trans "All Stores" %}</option>
+{% for store in stores %}
+<option value="{{ store.id }}" {% if request.GET.store|add:"0" == store.id %}selected{% endif %}>
+{{ store.name }}
+</option>
+{% endfor %}
+</select>
+</div>
+<div class="col-md-3">
+<label for="customer" class="form-label">{% trans "Customer" %}</label>
+<select name="customer" id="customer" class="form-select">
+<option value="">{% trans "All Customers" %}</option>
+{% for customer in customers %}
+<option value="{{ customer.id }}" {% if request.GET.customer|add:"0" == customer.id %}selected{% endif %}>
+{{ customer.name }}
+</option>
+{% endfor %}
+</select>
+</div>
+<div class="col-md-3">
+<label for="date_range" class="form-label">{% trans "Date Range" %}</label>
+<input type="text"
+name="date_range"
+id="date_range"
+class="form-control"
+placeholder="{% trans 'Select date range' %}"
+value="{{ request.GET.date_range }}">
+</div>
+<div class="col-12">
+<div class="d-flex justify-content-between">
+<button type="submit" class="btn btn-primary">
+<i class="bi bi-filter me-1"></i>{% trans "Apply Filters" %}
+</button>
+<a href="{% url 'sales:sales_list' %}" class="btn btn-outline-secondary">
+<i class="bi bi-x-circle me-1"></i>{% trans "Clear Filters" %}
+</a>
+</div>
+</div>
+</form>
+</div>
+</div>
+
+<!-- Summary Cards -->
+<div class="row mb-4">
+<div class="col-xl-3 col-md-6">
+<div class="card border-start border-primary border-4">
+<div class="card-body">
+<div class="d-flex align-items-center">
+<div class="flex-grow-1">
+<h6 class="text-muted mb-2">{% trans "Today's Sales" %}</h6>
+<h4 class="mb-0">{{ today_sales.total|floatformat:2 }} {{ default_currency }}</h4>
+<small class="text-muted">{{ today_sales.count }} {% trans "transactions" %}</small>
+</div>
+<div class="flex-shrink-0">
+<i class="bi bi-calendar-day text-primary fs-1"></i>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div class="col-xl-3 col-md-6">
+<div class="card border-start border-success border-4">
+<div class="card-body">
+<div class="d-flex align-items-center">
+<div class="flex-grow-1">
+<h6 class="text-muted mb-2">{% trans "This Month" %}</h6>
+<h4 class="mb-0">{{ month_sales.total|floatformat:2 }} {{ default_currency }}</h4>
+<small class="text-muted">{{ month_sales.count }} {% trans "transactions" %}</small>
+</div>
+<div class="flex-shrink-0">
+<i class="bi bi-calendar-month text-success fs-1"></i>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div class="col-xl-3 col-md-6">
+<div class="card border-start border-warning border-4">
+<div class="card-body">
+<div class="d-flex align-items-center">
+<div class="flex-grow-1">
+<h6 class="text-muted mb-2">{% trans "Pending Invoices" %}</h6>
+<h4 class="mb-0">{{ pending_invoices.total|floatformat:2 }} {{ default_currency }}</h4>
+<small class="text-muted">{{ pending_invoices.count }} {% trans "invoices" %}</small>
+</div>
+<div class="flex-shrink-0">
+<i class="bi bi-clock text-warning fs-1"></i>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div class="col-xl-3 col-md-6">
+<div class="card border-start border-info border-4">
+<div class="card-body">
+<div class="d-flex align-items-center">
+<div class="flex-grow-1">
+<h6 class="text-muted mb-2">{% trans "Fiscalized" %}</h6>
+<h4 class="mb-0">{{ fiscalized_sales.total|floatformat:2 }} {{ default_currency }}</h4>
+<small class="text-muted">{{ fiscalized_sales.count }} {% trans "sales" %}</small>
+</div>
+<div class="flex-shrink-0">
+<i class="bi bi-check-circle text-info fs-1"></i>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+
+<!-- Sales Table -->
+<div class="card">
+<div class="card-header">
+<div class="d-flex justify-content-between align-items-center">
+<h5 class="card-title mb-0">{% trans "Sales List" %}</h5>
+<div class="d-flex gap-2">
+<button type="button" class="btn btn-sm btn-outline-secondary" onclick="exportToExcel()">
+<i class="bi bi-download me-1"></i>{% trans "Export" %}
+</button>
+<div class="dropdown">
+<button class="btn btn-sm btn-outline-primary dropdown-toggle" type="button" data-bs-toggle="dropdown">
+<i class="bi bi-printer me-1"></i>{% trans "Print" %}
+</button>
+<ul class="dropdown-menu">
+<li><a class="dropdown-item" href="#" onclick="printSummaryReport()">{% trans "Summary Report" %}</a></li>
+<li><a class="dropdown-item" href="#" onclick="printDetailedReport()">{% trans "Detailed Report" %}</a></li>
+</ul>
+</div>
+</div>
+</div>
+</div>
+<div class="card-body p-0">
+<div class="table-responsive">
+<table class="table table-hover mb-0">
+<thead>
+<tr>
+<th>{% trans "Invoice #" %}</th>
+<th>{% trans "Date" %}</th>
+<th>{% trans "Customer" %}</th>
+<th>{% trans "Store" %}</th>
+<th class="text-end">{% trans "Amount" %}</th>
+<th>{% trans "Status" %}</th>
+<th>{% trans "EFRIS" %}</th>
+<th>{% trans "Actions" %}</th>
+</tr>
+</thead>
+<tbody>
+{% for sale in sales %}
+<tr class="sale-row" onclick="window.location.href='{% url 'sales:sale_detail' sale.pk %}'">
+<td>
+<strong>{{ sale.invoice_number|default:sale.transaction_id|truncatechars:15 }}</strong>
+{% if sale.document_type != 'RECEIPT' %}
+<br><small class="text-muted">{{ sale.get_document_type_display }}</small>
+{% endif %}
+</td>
+<td>{{ sale.created_at|date:"M d, Y H:i" }}</td>
+<td>
+{% if sale.customer %}
+{{ sale.customer.name|truncatechars:20 }}
+{% else %}
+<span class="text-muted">{% trans "Walk-in" %}</span>
+{% endif %}
+</td>
+<td>{{ sale.store.name|truncatechars:20 }}</td>
+<td class="text-end fw-semibold">
+{{ sale.total_amount|floatformat:2 }} {{ sale.currency }}
+</td>
+<td>
+{% if sale.status == 'completed' %}
+<span class="status-badge bg-success">{% trans "Completed" %}</span>
+{% elif sale.status == 'pending' %}
+<span class="status-badge bg-warning">{% trans "Pending" %}</span>
+{% elif sale.status == 'voided' %}
+<span class="status-badge bg-danger">{% trans "Voided" %}</span>
+{% elif sale.status == 'refunded' %}
+<span class="status-badge bg-info">{% trans "Refunded" %}</span>
+{% endif %}
+</td>
+<td>
+{% if sale.is_fiscalized %}
+<i class="bi bi-check-circle text-success" title="{% trans 'Fiscalized' %}"></i>
+<small class="text-muted d-block">{{ sale.efris_invoice_number|truncatechars:10 }}</small>
+{% else %}
+<i class="bi bi-clock text-warning" title="{% trans 'Not fiscalized' %}"></i>
+{% endif %}
+</td>
+<td class="action-dropdown">
+<div class="dropdown">
+<button class="btn btn-sm btn-outline-secondary dropdown-toggle"
+type="button"
+data-bs-toggle="dropdown"
+onclick="event.stopPropagation()">
+<i class="bi bi-three-dots"></i>
+</button>
+<ul class="dropdown-menu">
+<li>
+<a class="dropdown-item" href="{% url 'sales:sale_detail' sale.pk %}">
+<i class="bi bi-eye me-2"></i>{% trans "View" %}
+</a>
+</li>
+{% if sale.status == 'completed' and not sale.is_voided and not sale.is_refunded %}
+<li>
+<a class="dropdown-item" href="{% url 'sales:print_receipt' sale.pk %}" target="_blank">
+<i class="bi bi-printer me-2"></i>{% trans "Print" %}
+</a>
+</li>
+{% endif %}
+{% if sale.status == 'pending' and perms.sales.change_sale %}
+<li>
+<a class="dropdown-item" href="{% url 'sales:edit_draft' sale.pk %}">
+<i class="bi bi-pencil me-2"></i>{% trans "Edit" %}
+</a>
+</li>
+{% endif %}
+{% if sale.status == 'completed' and not sale.is_voided and not sale.is_refunded and perms.sales.void_sale %}
+<li><hr class="dropdown-divider"></li>
+<li>
+<a class="dropdown-item text-warning" href="#"
+onclick="event.stopPropagation(); voidSale({{ sale.pk }})">
+<i class="bi bi-x-circle me-2"></i>{% trans "Void Sale" %}
+</a>
+</li>
+{% endif %}
+{% if sale.is_fiscalized and perms.sales.view_efris %}
+<li>
+<a class="dropdown-item text-info" href="#"
+onclick="event.stopPropagation(); viewEFRISDetails({{ sale.pk }})">
+<i class="bi bi-file-earmark-text me-2"></i>{% trans "EFRIS Details" %}
+</a>
+</li>
+{% endif %}
+</ul>
+</div>
+</td>
+</tr>
+{% empty %}
+<tr>
+<td colspan="8" class="text-center py-4">
+<div class="text-muted">
+<i class="bi bi-cart-x fs-1"></i>
+<p class="mt-2">{% trans "No sales found" %}</p>
+</div>
+</td>
+</tr>
+{% endfor %}
+</tbody>
+</table>
+</div>
+</div>
+{% if sales.paginator.num_pages > 1 %}
+<div class="card-footer">
+<nav aria-label="Page navigation">
+<ul class="pagination justify-content-center mb-0">
+{% if sales.has_previous %}
+<li class="page-item">
+<a class="page-link" href="?page={{ sales.previous_page_number }}{% for key,value in request.GET.items %}{% if key != 'page' %}&{{ key }}={{ value }}{% endif %}{% endfor %}">
+{% trans "Previous" %}
+</a>
+</li>
+{% endif %}
+
+{% for num in sales.paginator.page_range %}
+{% if num == sales.number %}
+<li class="page-item active">
+<span class="page-link">{{ num }}</span>
+</li>
+{% elif num > sales.number|add:'-3' and num < sales.number|add:'3' %}
+<li class="page-item">
+<a class="page-link" href="?page={{ num }}{% for key,value in request.GET.items %}{% if key != 'page' %}&{{ key }}={{ value }}{% endif %}{% endfor %}">{{ num }}</a>
+</li>
+{% endif %}
+{% endfor %}
+
+{% if sales.has_next %}
+<li class="page-item">
+<a class="page-link" href="?page={{ sales.next_page_number }}{% for key,value in request.GET.items %}{% if key != 'page' %}&{{ key }}={{ value }}{% endif %}{% endfor %}">
+{% trans "Next" %}
+</a>
+</li>
+{% endif %}
+</ul>
+</nav>
+</div>
+{% endif %}
+</div>
+
+<!-- Export Modal -->
+<div class="modal fade" id="exportModal" tabindex="-1" aria-hidden="true">
+<div class="modal-dialog">
+<div class="modal-content">
+<div class="modal-header">
+<h5 class="modal-title">{% trans "Export Sales Data" %}</h5>
+<button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+</div>
+<div class="modal-body">
+<form id="exportForm">
+<div class="mb-3">
+<label class="form-label">{% trans "Format" %}</label>
+<select class="form-select" name="format">
+<option value="excel">Excel (.xlsx)</option>
+<option value="csv">CSV (.csv)</option>
+<option value="pdf">PDF (.pdf)</option>
+</select>
+</div>
+<div class="mb-3">
+<label class="form-label">{% trans "Date Range" %}</label>
+<input type="text"
+class="form-control"
+name="export_date_range"
+placeholder="{% trans 'Select date range' %}">
+</div>
+<div class="mb-3">
+<label class="form-label">{% trans "Columns" %}</label>
+<div class="form-check">
+<input class="form-check-input" type="checkbox" name="columns[]" value="invoice_number" checked>
+<label class="form-check-label">{% trans "Invoice Number" %}</label>
+</div>
+<div class="form-check">
+<input class="form-check-input" type="checkbox" name="columns[]" value="date" checked>
+<label class="form-check-label">{% trans "Date" %}</label>
+</div>
+<div class="form-check">
+<input class="form-check-input" type="checkbox" name="columns[]" value="customer" checked>
+<label class="form-check-label">{% trans "Customer" %}</label>
+</div>
+<div class="form-check">
+<input class="form-check-input" type="checkbox" name="columns[]" value="amount" checked>
+<label class="form-check-label">{% trans "Amount" %}</label>
+</div>
+<div class="form-check">
+<input class="form-check-input" type="checkbox" name="columns[]" value="status" checked>
+<label class="form-check-label">{% trans "Status" %}</label>
+</div>
+</div>
+</form>
+</div>
+<div class="modal-footer">
+<button type="button" class="btn btn-secondary" data-bs-dismiss="modal">{% trans "Cancel" %}</button>
+<button type="button" class="btn btn-primary" onclick="generateExport()">
+<i class="bi bi-download me-1"></i>{% trans "Export" %}
+</button>
+</div>
+</div>
+</div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+{{ block.super }}
+<script src="https://cdn.jsdelivr.net/npm/daterangepicker@3.1.0/daterangepicker.js"></script>
+<link href="https://cdn.jsdelivr.net/npm/daterangepicker@3.1.0/daterangepicker.css" rel="stylesheet">
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+                                                         // Initialize date range picker
+$('#date_range').daterangepicker({
+    locale: {
+        format: 'YYYY-MM-DD',
+        cancelLabel: '{% trans "Clear" %}',
+        applyLabel: '{% trans "Apply" %}',
+        fromLabel: '{% trans "From" %}',
+        toLabel: '{% trans "To" %}',
+        customRangeLabel: '{% trans "Custom" %}',
+        weekLabel: 'W',
+        daysOfWeek: [
+            '{% trans "Su" %}',
+            '{% trans "Mo" %}',
+            '{% trans "Tu" %}',
+            '{% trans "We" %}',
+            '{% trans "Th" %}',
+            '{% trans "Fr" %}',
+            '{% trans "Sa" %}'
+        ],
+        monthNames: [
+            '{% trans "January" %}',
+            '{% trans "February" %}',
+            '{% trans "March" %}',
+            '{% trans "April" %}',
+            '{% trans "May" %}',
+            '{% trans "June" %}',
+            '{% trans "July" %}',
+            '{% trans "August" %}',
+            '{% trans "September" %}',
+            '{% trans "October" %}',
+            '{% trans "November" %}',
+            '{% trans "December" %}'
+        ]
+    },
+    startDate: '{{ start_date|date:"Y-m-d" }}',
+    endDate: '{{ end_date|date:"Y-m-d" }}',
+    opens: 'left'
+});
+
+// Initialize date range for export modal
+$('input[name="export_date_range"]').daterangepicker({
+locale: {
+    format: 'YYYY-MM-DD',
+    cancelLabel: '{% trans "Clear" %}',
+    applyLabel: '{% trans "Apply" %}',
+    fromLabel: '{% trans "From" %}',
+    toLabel: '{% trans "To" %}',
+    customRangeLabel: '{% trans "Custom" %}',
+    weekLabel: 'W',
+    daysOfWeek: [
+        '{% trans "Su" %}',
+        '{% trans "Mo" %}',
+        '{% trans "Tu" %}',
+        '{% trans "We" %}',
+        '{% trans "Th" %}',
+        '{% trans "Fr" %}',
+        '{% trans "Sa" %}'
+    ],
+    monthNames: [
+        '{% trans "January" %}',
+        '{% trans "February" %}',
+        '{% trans "March" %}',
+        '{% trans "April" %}',
+        '{% trans "May" %}',
+        '{% trans "June" %}',
+        '{% trans "July" %}',
+        '{% trans "August" %}',
+        '{% trans "September" %}',
+        '{% trans "October" %}',
+        '{% trans "November" %}',
+        '{% trans "December" %}'
+    ]
+},
+opens: 'left'
+});
+});
+
+function exportToExcel() {
+    const exportModal = new bootstrap.Modal(document.getElementById('exportModal'));
+exportModal.show();
+}
+
+function generateExport() {
+    const form = document.getElementById('exportForm');
+const formData = new FormData(form);
+
+// Add current filters
+const currentFilters = new URLSearchParams(window.location.search);
+currentFilters.forEach((value, key) => {
+if (key !== 'page') {
+    formData.append(key, value);
+}
+});
+
+// Submit form
+fetch('{% url "sales:export_sales" %}', {
+    method: 'POST',
+    body: formData,
+    headers: {
+        'X-CSRFToken': window.csrfToken
+    }
+})
+.then(response => response.blob())
+.then(blob => {
+    const url = window.URL.createObjectURL(blob);
+const a = document.createElement('a');
+a.href = url;
+a.download = `sales_export_${new Date().toISOString().slice(0,10)}.xlsx`;
+document.body.appendChild(a);
+a.click();
+document.body.removeChild(a);
+window.URL.revokeObjectURL(url);
+
+const exportModal = bootstrap.Modal.getInstance(document.getElementById('exportModal'));
+exportModal.hide();
+})
+.catch(error => {
+    console.error('Error exporting:', error);
+showAlert('{% trans "Error exporting data" %}', 'danger');
+});
+}
+
+function printSummaryReport() {
+    window.open('{% url "sales:print_summary_report" %}?' + window.location.search, '_blank');
+}
+
+function printDetailedReport() {
+    window.open('{% url "sales:print_detailed_report" %}?' + window.location.search, '_blank');
+}
+
+function voidSale(saleId) {
+if (!confirm('{% trans "Are you sure you want to void this sale? This action cannot be undone." %}')) {
+return;
+}
+
+fetch(`/sales/${saleId}/void/`, {
+    method: 'POST',
+    headers: {
+        'X-CSRFToken': window.csrfToken,
+        'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+        reason: prompt('{% trans "Please enter a reason for voiding this sale:" %}', '')
+    })
+})
+.then(response => response.json())
+.then(data => {
+if (data.success) {
+    showAlert('{% trans "Sale voided successfully" %}', 'success');
+setTimeout(() => {
+    window.location.reload();
+}, 1000);
+} else {
+    showAlert(data.error, 'danger');
+}
+})
+.catch(error => {
+    console.error('Error:', error);
+showAlert('{% trans "Error voiding sale" %}', 'danger');
+});
+}
+
+function viewEFRISDetails(saleId) {
+    window.open(`/sales/${saleId}/efris-details/`, '_blank');
+}
+
+// Show alert function
+function showAlert(message, type) {
+    const alertDiv = document.createElement('div');
+alertDiv.className = `alert alert-${type} alert-dismissible fade show`;
+alertDiv.innerHTML = `
+${message}
+ <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+`;
+
+const container = document.querySelector('.sales-container');
+container.prepend(alertDiv);
+
+setTimeout(() => {
+    const closeBtn = alertDiv.querySelector('.btn-close');
+if (closeBtn) closeBtn.click();
+}, 5000);
+}
+</script>
+  {% endblock %}
+

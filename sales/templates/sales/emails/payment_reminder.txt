@@ -1,0 +1,49 @@
+Payment Reminder - {{ company.name }}
+
+Dear {{ customer.name }},
+
+{% if reminder.reminder_type == 'BEFORE_DUE' %}
+This is a friendly reminder that your invoice payment will be due in 3 days.
+{% elif reminder.reminder_type == 'ON_DUE' %}
+This is a reminder that your invoice payment is due today.
+{% elif 'OVERDUE' in reminder.reminder_type %}
+Your invoice payment is now {{ days_overdue }} days overdue. Please arrange payment as soon as possible.
+{% endif %}
+
+INVOICE DETAILS:
+================
+Invoice Number: {{ sale.document_number }}
+Issue Date: {{ sale.created_at|date:"F d, Y" }}
+Due Date: {{ sale.due_date|date:"F d, Y" }}
+{% if days_overdue > 0 %}Days Overdue: {{ days_overdue }} days{% endif %}
+
+OUTSTANDING AMOUNT: {{ amount_outstanding|floatformat:0 }} UGX
+{% if sale.amount_paid > 0 %}({{ sale.amount_paid|floatformat:0 }} UGX paid of {{ sale.total_amount|floatformat:0 }} UGX total){% endif %}
+
+PAYMENT METHODS:
+================
+Bank Transfer:
+Account Name: {{ company.name }}
+Bank: {{ company.bank_name|default:"[Bank Name]" }}
+Account Number: {{ company.bank_account|default:"[Account Number]" }}
+Reference: {{ sale.document_number }}
+
+Mobile Money:
+{{ company.mobile_money_name|default:"MTN/Airtel" }}: {{ company.mobile_money_number|default:"[Number]" }}
+Name: {{ company.name }}
+Reference: {{ sale.document_number }}
+
+View your invoice online: {{ company.website }}/invoices/{{ sale.id }}/
+
+If you have already made this payment, please disregard this reminder.
+For questions, contact us at:
+Email: {{ store.email|default:company.email }}
+Phone: {{ store.phone|default:company.phone }}
+
+Thank you,
+{{ company.name }}
+{{ company.physical_address }}
+TIN: {{ company.tin }}
+
+---
+This is an automated message. Please do not reply directly to this email

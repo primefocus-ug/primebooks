@@ -117,14 +117,14 @@ class CompanyMetricsAPIView(LoginRequiredMixin, View):
                 store_id__in=store_ids,
                 created_at__date=today,
                 is_voided=False,
-                is_completed=True
+                status__in=['COMPLETED', 'PAID']
             ).aggregate(total=Sum('total_amount'))['total'] or Decimal('0')
 
             today_sales = Sale.objects.filter(
                 store_id__in=store_ids,
                 created_at__date=today,
                 is_voided=False,
-                is_completed=True
+                status__in=['COMPLETED', 'PAID']
             ).count()
 
             # Active users (last 15 minutes)
@@ -214,7 +214,7 @@ class BranchAnalyticsAPIView(LoginRequiredMixin, View):
                 store_id__in=store_ids,
                 created_at__date__gte=thirty_days_ago,
                 is_voided=False,
-                is_completed=True
+                status__in=['COMPLETED', 'PAID']
             ).aggregate(
                 total_revenue=Sum('total_amount'),
                 total_sales=Count('id'),
@@ -227,7 +227,7 @@ class BranchAnalyticsAPIView(LoginRequiredMixin, View):
                 store_id__in=store_ids,
                 created_at__date__range=[sixty_days_ago, thirty_days_ago],
                 is_voided=False,
-                is_completed=True
+                status__in=['COMPLETED', 'PAID']
             ).aggregate(
                 total_revenue=Sum('total_amount'),
                 total_sales=Count('id')
@@ -258,7 +258,7 @@ class BranchAnalyticsAPIView(LoginRequiredMixin, View):
                     store_id__in=store_ids,
                     created_at__date=date,
                     is_voided=False,
-                    is_completed=True
+                    status__in=['COMPLETED', 'PAID']
                 ).aggregate(total=Sum('total_amount'))['total'] or 0
 
                 revenue_data['labels'].append(date.strftime('%m/%d'))
@@ -273,7 +273,7 @@ class BranchAnalyticsAPIView(LoginRequiredMixin, View):
                     store=store,
                     created_at__date__gte=thirty_days_ago,
                     is_voided=False,
-                    is_completed=True
+                    status__in=['COMPLETED', 'PAID']
                 ).aggregate(
                     revenue=Sum('total_amount'),
                     sales_count=Count('id')
@@ -321,7 +321,6 @@ class BranchAnalyticsAPIView(LoginRequiredMixin, View):
 
 
 
-#@method_decorator(require_saas_admin, name='dispatch')
 class DashboardView(LoginRequiredMixin, PermissionRequiredMixin, TemplateView):
     """Enhanced dashboard for SaaS admin or single company view."""
     template_name = 'company/dashboard.html'
@@ -716,7 +715,7 @@ class CompanyDetailView(LoginRequiredMixin, PermissionRequiredMixin, DetailView)
                         store=store,  # Just this store
                         created_at__date__gte=thirty_days_ago,
                         is_voided=False,
-                        is_completed=True
+                        status__in=['COMPLETED', 'PAID']
                     ).aggregate(
                         total_revenue=Sum('total_amount'),
                         total_sales=Count('id'),
@@ -896,7 +895,7 @@ class CompanyDetailView(LoginRequiredMixin, PermissionRequiredMixin, DetailView)
                     store_id__in=store_ids,
                     created_at__date__gte=thirty_days_ago,
                     is_voided=False,
-                    is_completed=True
+                    status__in=['COMPLETED', 'PAID']
                 ).aggregate(
                     revenue=Sum('total_amount'),
                     sales_count=Count('id'),
@@ -1034,7 +1033,7 @@ class CompanyDetailView(LoginRequiredMixin, PermissionRequiredMixin, DetailView)
                 store_id__in=store_ids,
                 created_at__date__gte=thirty_days_ago,
                 is_voided=False,
-                is_completed=True
+                status__in=['COMPLETED', 'PAID']
             ).aggregate(
                 total_revenue=Sum('total_amount'),
                 total_sales=Count('id'),
@@ -1046,7 +1045,7 @@ class CompanyDetailView(LoginRequiredMixin, PermissionRequiredMixin, DetailView)
                 store_id__in=store_ids,
                 created_at__date__range=[sixty_days_ago, thirty_days_ago],
                 is_voided=False,
-                is_completed=True
+                status__in=['COMPLETED', 'PAID']
             ).aggregate(
                 total_revenue=Sum('total_amount'),
                 total_sales=Count('id'),
@@ -1077,7 +1076,7 @@ class CompanyDetailView(LoginRequiredMixin, PermissionRequiredMixin, DetailView)
                     store_id__in=store_ids,
                     created_at__date=date,
                     is_voided=False,
-                    is_completed=True
+                    status__in=['COMPLETED', 'PAID']
                 ).aggregate(total=Sum('total_amount'))['total'] or 0
 
                 weekly_trend.append({

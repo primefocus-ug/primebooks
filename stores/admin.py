@@ -78,7 +78,24 @@ class RegionFilter(SimpleListFilter):
             return queryset.filter(region=self.value())
         return queryset
 
-class EFRISStatusFilter(SimpleListFilter):
+
+
+from django.contrib import admin
+from django.utils.html import format_html
+from django.urls import path, reverse
+from django.http import HttpResponse, HttpResponseRedirect
+from django.template.response import TemplateResponse
+from django.utils.translation import gettext_lazy as _
+from django.db import models
+import csv
+from datetime import datetime
+
+from .models import Store
+from .forms import StoreAdminForm
+
+
+class EFRISStatusFilter(admin.SimpleListFilter):
+    """Custom filter for EFRIS status"""
     title = _('EFRIS Status')
     parameter_name = 'efris_status'
 
@@ -92,76 +109,441 @@ class EFRISStatusFilter(SimpleListFilter):
         ]
 
     def queryset(self, request, queryset):
-        if self.value():
-            return queryset.filter(efris_status=self.value())
+        if self.value() == 'active':
+            return queryset.filter(
+                efris_enabled=True,
+                efris_device_number__isnull=False,
+                is_registered_with_efris=True
+            )
+        elif self.value() == 'disabled':
+            return queryset.filter(efris_enabled=False)
+        elif self.value() == 'no_device':
+            return queryset.filter(
+                efris_enabled=True,
+                efris_device_number__isnull=True
+            )
+        elif self.value() == 'unregistered':
+            return queryset.filter(
+                efris_enabled=True,
+                efris_device_number__isnull=False,
+                is_registered_with_efris=False
+            )
+        elif self.value() == 'inactive':
+            return queryset.filter(
+                efris_enabled=True,
+                efris_device_number__isnull=False,
+                is_registered_with_efris=True,
+                is_active=False
+            )
         return queryset
+
 
 @admin.register(Store)
 class StoreAdmin(admin.ModelAdmin):
+    form = StoreAdminForm
     list_display = [
         'name', 'code', 'company_link', 'store_type', 'region',
-        'status_display', 'efris_status_display', 'staff_count',
+        'status_display', 'efris_source_badge', 'efris_status_display',
+        'efris_config_status_badge', 'can_fiscalize_display', 'staff_count',
         'device_count', 'inventory_status', 'created_at'
     ]
+
     list_filter = [
         'is_active', 'company', 'store_type', 'efris_enabled',
-        'is_main_branch', 'region', EFRISStatusFilter, 'created_at'
+        'is_main_branch', 'region', 'use_company_efris',
+        EFRISStatusFilter, 'created_at'
     ]
-    search_fields = ['name', 'code', 'physical_address', 'region', 'tin', 'nin', 'manager_name']
+
+    search_fields = [
+        'name', 'code', 'physical_address', 'region',
+        'tin', 'nin', 'manager_name', 'company__name'
+    ]
+
     list_per_page = 25
     ordering = ['-is_main_branch', 'sort_order', 'name']
     date_hierarchy = 'created_at'
 
     fieldsets = (
         (_('Basic Information'), {
-            'fields': ('company',  ('name', 'code'), 'store_type', 'is_main_branch')
+            'fields': (
+                'company',
+                ('name', 'code'),
+                'store_type',
+                'is_main_branch',
+                'accessible_by_all'
+            )
         }),
+
         (_('Location'), {
-            'fields': ('physical_address', 'location', 'region', 'location_gps', ('latitude', 'longitude')),
+            'fields': (
+                'physical_address',
+                'location',
+                'region',
+                'location_gps',
+                ('latitude', 'longitude')
+            ),
             'classes': ('collapse',)
         }),
+
         (_('Contact Information'), {
-            'fields': (('phone', 'secondary_phone'), 'email', 'manager_name', 'manager_phone')
+            'fields': (
+                ('phone', 'secondary_phone'),
+                'email',
+                'manager_name',
+                'manager_phone'
+            )
         }),
+
+        (_('Store Management'), {
+            'fields': (
+                'staff',
+                'store_managers',
+            ),
+            'classes': ('collapse',)
+        }),
+
         (_('Tax Information'), {
             'fields': ('nin', 'tin'),
             'classes': ('collapse',)
         }),
+
         (_('Operating Hours'), {
             'fields': ('operating_hours', 'timezone'),
             'classes': ('collapse',)
         }),
-        (_('EFRIS Configuration'), {
+
+        (_('Store Capabilities'), {
             'fields': (
-                'efris_device_number', 'device_serial_number', 'efris_enabled',
-                'is_registered_with_efris', 'efris_registration_date', 'efris_last_sync',
-                'auto_fiscalize_sales', 'allow_manual_fiscalization', 'report_stock_movements'
+                'allows_sales',
+                'allows_inventory',
+                'sort_order',
+                'notes'
             ),
             'classes': ('collapse',)
         }),
-        (_('Settings'), {
-            'fields': ('allows_sales', 'allows_inventory', 'logo', 'is_active', 'staff', 'notes', 'sort_order')
+
+        (_('Base EFRIS Configuration'), {
+            'fields': (
+                'efris_device_number',
+                'device_serial_number',
+                'efris_enabled',
+                'is_registered_with_efris',
+                'efris_registration_date',
+                'efris_last_sync',
+                'last_stock_sync',
+                'auto_fiscalize_sales',
+                'allow_manual_fiscalization',
+                'report_stock_movements'
+            ),
+            'classes': ('collapse',),
+            'description': _('Basic EFRIS settings for backward compatibility')
         }),
-        (_('Timestamps'), {
+
+        (_('Store-Specific EFRIS Configuration'), {
+            'fields': (
+                'use_company_efris',
+                ('store_efris_client_id', 'store_efris_api_key'),
+                'store_efris_private_key',
+                'store_efris_public_certificate',
+                'store_efris_key_password',
+                'store_efris_certificate_fingerprint',
+                ('store_efris_is_production', 'store_efris_integration_mode'),
+                ('store_auto_fiscalize_sales', 'store_auto_sync_products'),
+                ('store_efris_is_active', 'store_efris_last_sync')
+            ),
+            'classes': ('collapse',),
+            'description': _('Override company EFRIS settings with store-specific configuration')
+        }),
+
+        (_('Store Branding'), {
+            'fields': ('logo',),
+            'classes': ('collapse',)
+        }),
+
+        (_('Status'), {
+            'fields': ('is_active',),
+        }),
+
+        (_('System Information'), {
             'fields': ('created_at', 'updated_at'),
             'classes': ('collapse',)
         }),
+
+        (_('EFRIS Configuration Preview'), {
+            'fields': ('effective_efris_config_display', 'efris_config_status_display'),
+            'classes': ('wide', 'collapse'),
+        }),
     )
 
-    readonly_fields = ['created_at', 'updated_at', 'code']
-    filter_horizontal = ['staff']
-    inlines = [StoreOperatingHoursInline, StoreDeviceInline]
-    actions = [
-        'make_active', 'make_inactive', 'enable_efris',
-        'disable_efris', 'export_selected_stores'
+    readonly_fields = [
+        'created_at',
+        'updated_at',
+        'code',
+        'effective_efris_config_display',
+        'efris_config_status_display',
+        'can_fiscalize_display'
     ]
+
+    filter_horizontal = ['staff', 'store_managers']
+    inlines = [StoreOperatingHoursInline, StoreDeviceInline]
+
+    actions = [
+        'make_active',
+        'make_inactive',
+        'enable_efris',
+        'disable_efris',
+        'export_selected_stores',
+        'switch_to_company_efris',
+        'switch_to_store_efris',
+        'copy_company_efris_to_store'
+    ]
+
+    class Media:
+        css = {
+            'all': (
+                'css/store-admin.css',
+            )
+        }
+        js = (
+            'js/store-admin.js',
+        )
 
     def get_queryset(self, request):
         return super().get_queryset(request).select_related(
             'company'
         ).prefetch_related(
-            'staff', 'devices', 'inventory_items'
+            'staff',
+            'store_managers',
+            'devices',
+            'inventory_items'
         )
+
+    def efris_source_badge(self, obj):
+        """Show source of EFRIS configuration"""
+        if obj.use_company_efris:
+            return format_html(
+                '<span class="badge bg-info" title="Using company EFRIS configuration">'
+                '<i class="bi bi-building"></i> Company'
+                '</span>'
+            )
+        return format_html(
+            '<span class="badge bg-warning" title="Using store-specific EFRIS configuration">'
+            '<i class="bi bi-shop"></i> Store'
+            '</span>'
+        )
+
+    efris_source_badge.short_description = _('EFRIS Source')
+    efris_source_badge.admin_order_field = 'use_company_efris'
+
+    def efris_config_status_badge(self, obj):
+        """Show EFRIS configuration status"""
+        status_info = obj.efris_config_status
+
+        if not obj.efris_enabled:
+            return format_html(
+                '<span class="badge bg-secondary" title="EFRIS disabled">'
+                '<i class="bi bi-x-circle"></i> Disabled'
+                '</span>'
+            )
+
+        if status_info['configured']:
+            return format_html(
+                '<span class="badge bg-success" title="EFRIS fully configured">'
+                '<i class="bi bi-check-circle"></i> Configured'
+                '</span>'
+            )
+        else:
+            missing_count = len(status_info['missing_fields'])
+            return format_html(
+                '<span class="badge bg-danger" title="Missing {} required field{}">'
+                '<i class="bi bi-exclamation-triangle"></i> Incomplete ({})'
+                '</span>',
+                missing_count,
+                's' if missing_count > 1 else '',
+                missing_count
+            )
+
+    efris_config_status_badge.short_description = _('EFRIS Config')
+    efris_config_status_badge.admin_order_field = 'store_efris_is_active'
+
+    def effective_efris_config_display(self, obj):
+        """Display effective EFRIS configuration"""
+        config = obj.effective_efris_config
+
+        if not config.get('enabled'):
+            return format_html('<div class="alert alert-secondary">EFRIS not enabled</div>')
+
+        html = '''
+        <div class="efris-config-display card">
+            <div class="card-header">
+                <strong>Effective EFRIS Configuration</strong>
+                <span class="badge bg-{} float-end">{}</span>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <h6>Business Information</h6>
+                        <table class="table table-sm">
+                            <tr><td><strong>TIN:</strong></td><td>{}</td></tr>
+                            <tr><td><strong>NIN:</strong></td><td>{}</td></tr>
+                            <tr><td><strong>Device No:</strong></td><td>{}</td></tr>
+                            <tr><td><strong>Store Name:</strong></td><td>{}</td></tr>
+                        </table>
+                    </div>
+                    <div class="col-md-6">
+                        <h6>Environment & Mode</h6>
+                        <table class="table table-sm">
+                            <tr><td><strong>Environment:</strong></td><td>{}</td></tr>
+                            <tr><td><strong>Integration Mode:</strong></td><td>{}</td></tr>
+                            <tr><td><strong>Auto Fiscalize:</strong></td><td>{}</td></tr>
+                            <tr><td><strong>Auto Sync:</strong></td><td>{}</td></tr>
+                        </table>
+                    </div>
+                </div>
+                <div class="row mt-2">
+                    <div class="col-md-6">
+                        <h6>API Configuration</h6>
+                        <table class="table table-sm">
+                            <tr><td><strong>Client ID:</strong></td><td><code>{}</code></td></tr>
+                            <tr><td><strong>API Key:</strong></td><td><code>{}...</code></td></tr>
+                        </table>
+                    </div>
+                    <div class="col-md-6">
+                        <h6>Certificate Status</h6>
+                        <table class="table table-sm">
+                            <tr><td><strong>Private Key:</strong></td><td>{}</td></tr>
+                            <tr><td><strong>Certificate:</strong></td><td>{}</td></tr>
+                            <tr><td><strong>Fingerprint:</strong></td><td><code>{}</code></td></tr>
+                        </table>
+                    </div>
+                </div>
+                <div class="alert alert-info mt-2">
+                    <small><strong>Configuration Source:</strong> {} | <strong>Last Sync:</strong> {}</small>
+                </div>
+            </div>
+        </div>
+        '''
+
+        return format_html(
+            html,
+            'success' if config.get('is_active') else 'warning',
+            'Active' if config.get('is_active') else 'Inactive',
+            config.get('tin', 'N/A'),
+            config.get('nin', 'N/A'),
+            config.get('device_number', 'N/A'),
+            config.get('store_name', 'N/A'),
+            'Production' if config.get('is_production') else 'Sandbox',
+            config.get('integration_mode', 'N/A'),
+            'Yes' if config.get('auto_fiscalize_sales') else 'No',
+            'Yes' if config.get('auto_sync_products') else 'No',
+            config.get('client_id', 'N/A'),
+            config.get('api_key', 'N/A')[:20] if config.get('api_key') else 'N/A',
+            '✓ Present' if config.get('private_key') else '✗ Missing',
+            '✓ Present' if config.get('public_certificate') else '✗ Missing',
+            config.get('certificate_fingerprint', 'N/A')[:20] + '...' if config.get(
+                'certificate_fingerprint') else 'N/A',
+            config.get('config_source', 'N/A').title(),
+            config.get('last_sync', 'Never')
+        )
+
+    effective_efris_config_display.short_description = _('Effective EFRIS Configuration')
+
+    def efris_config_status_display(self, obj):
+        """Display detailed EFRIS configuration status"""
+        status_info = obj.efris_config_status
+
+        if not obj.efris_enabled:
+            return format_html('<div class="alert alert-secondary">EFRIS is disabled</div>')
+
+        html = '''
+        <div class="efris-status-display card">
+            <div class="card-header">
+                <strong>EFRIS Configuration Status</strong>
+                <span class="badge bg-{} float-end">{}</span>
+            </div>
+            <div class="card-body">
+        '''
+
+        if status_info['configured']:
+            html += '''
+                <div class="alert alert-success">
+                    <i class="bi bi-check-circle"></i> All required fields are configured
+                </div>
+            '''
+        else:
+            html += '''
+                <div class="alert alert-danger">
+                    <i class="bi bi-exclamation-triangle"></i> Missing required fields:
+                    <ul>
+            '''
+            for field in status_info['missing_fields']:
+                html += f'<li>{field}</li>'
+            html += '''
+                    </ul>
+                </div>
+            '''
+
+        if status_info['warnings']:
+            html += '''
+                <div class="alert alert-warning">
+                    <i class="bi bi-info-circle"></i> Warnings:
+                    <ul>
+            '''
+            for warning in status_info['warnings']:
+                html += f'<li>{warning}</li>'
+            html += '''
+                    </ul>
+                </div>
+            '''
+
+        html += f'''
+                <div class="mt-2">
+                    <small><strong>Configuration Source:</strong> {status_info['config_source'].title()}</small>
+                </div>
+            </div>
+        </div>
+        '''
+
+        return format_html(
+            html,
+            'success' if status_info['configured'] else 'danger',
+            'Complete' if status_info['configured'] else 'Incomplete'
+        )
+
+    efris_config_status_display.short_description = _('Configuration Status')
+
+    def can_fiscalize_display(self, obj):
+        """Display fiscalization capability"""
+        if obj.can_fiscalize:
+            return format_html(
+                '<span class="badge bg-success" title="Store can fiscalize transactions">'
+                '<i class="bi bi-check-circle"></i> Can Fiscalize'
+                '</span>'
+            )
+
+        # Provide reason why cannot fiscalize
+        if not obj.is_active:
+            reason = "Store is inactive"
+        elif not obj.allows_sales:
+            reason = "Store doesn't allow sales"
+        else:
+            config = obj.effective_efris_config
+            if not config.get('enabled'):
+                reason = "EFRIS not enabled"
+            elif not config.get('is_active'):
+                reason = "EFRIS not active"
+            else:
+                reason = "Missing required EFRIS configuration"
+
+        return format_html(
+            '<span class="badge bg-danger" title="{}">'
+            '<i class="bi bi-x-circle"></i> Cannot Fiscalize'
+            '</span>',
+            reason
+        )
+
+    can_fiscalize_display.short_description = _('Fiscalization')
+    can_fiscalize_display.admin_order_field = 'efris_enabled'
 
     def company_link(self, obj):
         if obj.company:
@@ -171,100 +553,226 @@ class StoreAdmin(admin.ModelAdmin):
             except:
                 return obj.company.display_name
         return '-'
+
     company_link.short_description = _('Company')
     company_link.admin_order_field = 'company__display_name'
 
     def status_display(self, obj):
         if obj.is_active:
+            if obj.is_main_branch:
+                return format_html(
+                    '<span class="badge bg-primary" title="Main branch">'
+                    '<i class="bi bi-star-fill"></i> Main'
+                    '</span>'
+                )
             return format_html(
-                '<span class="badge bg-success"><i class="bi bi-check-circle"></i> Active</span>'
+                '<span class="badge bg-success" title="Store is active">'
+                '<i class="bi bi-check-circle"></i> Active'
+                '</span>'
             )
         return format_html(
-            '<span class="badge bg-secondary"><i class="bi bi-x-circle"></i> Inactive</span>'
+            '<span class="badge bg-secondary" title="Store is inactive">'
+            '<i class="bi bi-x-circle"></i> Inactive'
+            '</span>'
         )
+
     status_display.short_description = _('Status')
     status_display.admin_order_field = 'is_active'
 
     def efris_status_display(self, obj):
         status = obj.efris_status
         status_map = {
-            'active': ('bg-primary', 'shield-check', 'Active'),
-            'disabled': ('bg-warning', 'shield-x', 'Disabled'),
-            'no_device': ('bg-danger', 'shield-x', 'No Device'),
-            'unregistered': ('bg-warning', 'shield-x', 'Unregistered'),
-            'inactive': ('bg-secondary', 'shield-x', 'Inactive'),
+            'active': ('bg-primary', 'shield-check', 'Active', 'EFRIS is active and ready'),
+            'disabled': ('bg-warning', 'shield-x', 'Disabled', 'EFRIS is disabled'),
+            'no_device': ('bg-danger', 'device-ssd', 'No Device', 'No device number configured'),
+            'unregistered': ('bg-warning', 'shield-exclamation', 'Unregistered', 'Device not registered with EFRIS'),
+            'inactive': ('bg-secondary', 'shield-slash', 'Inactive', 'EFRIS is inactive'),
         }
-        bg_class, icon, label = status_map.get(status, ('bg-secondary', 'shield-x', 'Inactive'))
+        bg_class, icon, label, title = status_map.get(status, ('bg-secondary', 'shield-x', 'Unknown', 'Unknown status'))
         return format_html(
-            f'<span class="badge {bg_class}"><i class="bi bi-{icon}"></i> {label}</span>'
+            '<span class="badge {}" title="{}"><i class="bi bi-{}"></i> {}</span>',
+            bg_class, title, icon, label
         )
-    efris_status_display.short_description = _('EFRIS')
-    efris_status_display.admin_order_field = 'efris_status'
+
+    efris_status_display.short_description = _('EFRIS Status')
+    efris_status_display.admin_order_field = 'efris_enabled'
 
     def staff_count(self, obj):
         count = obj.staff.count()
+        managers_count = obj.store_managers.count()
+
         if count > 0:
+            tooltip = f"{count} staff members, {managers_count} managers"
             return format_html(
-                '<span class="badge bg-info">{} staff</span>', count
+                '<span class="badge bg-info" title="{}">'
+                '<i class="bi bi-people"></i> {} ({})'
+                '</span>',
+                tooltip, count, managers_count
             )
-        return format_html('<span class="text-muted">No staff</span>')
+        return format_html(
+            '<span class="text-muted" title="No staff assigned">'
+            '<i class="bi bi-people"></i> 0'
+            '</span>'
+        )
+
     staff_count.short_description = _('Staff')
 
     def device_count(self, obj):
         total = obj.devices.count()
         active = obj.devices.filter(is_active=True).count()
+        efris_devices = obj.devices.filter(is_efris_linked=True).count()
+
         if total > 0:
+            tooltip = f"{active} active, {efris_devices} EFRIS-linked"
             return format_html(
-                '<span class="badge bg-primary">{}/{} devices</span>', active, total
+                '<span class="badge bg-primary" title="{}">'
+                '<i class="bi bi-device-hdd"></i> {}/{}'
+                '</span>',
+                tooltip, active, total
             )
-        return format_html('<span class="text-muted">No devices</span>')
+        return format_html(
+            '<span class="text-muted" title="No devices">'
+            '<i class="bi bi-device-hdd"></i> 0'
+            '</span>'
+        )
+
     device_count.short_description = _('Devices')
 
     def inventory_status(self, obj):
-        total_items = obj.inventory_items.count()
-        low_stock = obj.inventory_items.filter(
-            quantity__lte=models.F('low_stock_threshold')
-        ).count()
-        if total_items == 0:
-            return format_html('<span class="text-muted">No inventory</span>')
-        if low_stock > 0:
+        try:
+            summary = obj.get_inventory_summary()
+            total_items = summary['total_products']
+            low_stock = summary['low_stock_count']
+            out_of_stock = summary['out_of_stock_count']
+
+            if total_items == 0:
+                return format_html(
+                    '<span class="text-muted" title="No inventory items">'
+                    '<i class="bi bi-box"></i> 0'
+                    '</span>'
+                )
+
+            tooltip = f"Total: {total_items}, Low: {low_stock}, Out: {out_of_stock}"
+
+            if out_of_stock > 0:
+                badge_class = 'bg-danger'
+            elif low_stock > 0:
+                badge_class = 'bg-warning'
+            else:
+                badge_class = 'bg-success'
+
             return format_html(
-                '<span class="badge bg-warning">{} items ({} low)</span>',
-                total_items, low_stock
+                '<span class="badge {}" title="{}">'
+                '<i class="bi bi-box"></i> {}'
+                '</span>',
+                badge_class, tooltip, total_items
             )
-        return format_html(
-            '<span class="badge bg-success">{} items</span>', total_items
-        )
+        except:
+            return format_html('<span class="text-muted">N/A</span>')
+
     inventory_status.short_description = _('Inventory')
+
+    # Custom actions
+    def switch_to_company_efris(self, request, queryset):
+        """Switch selected stores to use company EFRIS configuration"""
+        count = 0
+        for store in queryset:
+            try:
+                store.switch_to_company_efris()
+                count += 1
+            except Exception as e:
+                self.message_user(
+                    request,
+                    f"Error switching store {store.name}: {str(e)}",
+                    level='error'
+                )
+        self.message_user(
+            request,
+            f"Switched {count} stores to use company EFRIS configuration"
+        )
+
+    switch_to_company_efris.short_description = _('Switch to Company EFRIS')
+
+    def switch_to_store_efris(self, request, queryset):
+        """Switch selected stores to use store-specific EFRIS configuration"""
+        count = 0
+        errors = []
+        for store in queryset:
+            try:
+                store.switch_to_store_efris()
+                count += 1
+            except Exception as e:
+                errors.append(f"{store.name}: {str(e)}")
+
+        if errors:
+            self.message_user(
+                request,
+                f"Switched {count} stores. Errors: {'; '.join(errors)}",
+                level='warning' if count > 0 else 'error'
+            )
+        else:
+            self.message_user(
+                request,
+                f"Switched {count} stores to use store-specific EFRIS configuration"
+            )
+
+    switch_to_store_efris.short_description = _('Switch to Store EFRIS')
+
+    def copy_company_efris_to_store(self, request, queryset):
+        """Copy company EFRIS configuration to store-specific fields"""
+        count = 0
+        for store in queryset:
+            try:
+                store.copy_company_efris_to_store()
+                count += 1
+            except Exception as e:
+                self.message_user(
+                    request,
+                    f"Error copying configuration for {store.name}: {str(e)}",
+                    level='error'
+                )
+        self.message_user(
+            request,
+            f"Copied company EFRIS configuration to {count} stores"
+        )
+
+    copy_company_efris_to_store.short_description = _('Copy Company EFRIS to Store')
 
     def make_active(self, request, queryset):
         updated = queryset.update(is_active=True)
         self.message_user(request, f'{updated} stores activated successfully.')
+
     make_active.short_description = _('Activate selected stores')
 
     def make_inactive(self, request, queryset):
         updated = queryset.update(is_active=False)
         self.message_user(request, f'{updated} stores deactivated successfully.')
+
     make_inactive.short_description = _('Deactivate selected stores')
 
     def enable_efris(self, request, queryset):
         updated = queryset.update(efris_enabled=True)
         self.message_user(request, f'EFRIS enabled for {updated} stores.')
+
     enable_efris.short_description = _('Enable EFRIS for selected stores')
 
     def disable_efris(self, request, queryset):
         updated = queryset.update(efris_enabled=False)
         self.message_user(request, f'EFRIS disabled for {updated} stores.')
+
     disable_efris.short_description = _('Disable EFRIS for selected stores')
 
     def export_selected_stores(self, request, queryset):
         response = HttpResponse(content_type='text/csv')
-        response['Content-Disposition'] = f'attachment; filename="stores_export_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv"'
+        response[
+            'Content-Disposition'] = f'attachment; filename="stores_export_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv"'
         writer = csv.writer(response)
         writer.writerow([
             'Name', 'Code', 'Company', 'Store Type', 'Address', 'Region',
-            'Phone', 'Email', 'TIN', 'NIN', 'EFRIS Enabled', 'Status',
-            'Created At', 'Manager Name', 'Is Main Branch'
+            'Phone', 'Email', 'TIN', 'NIN', 'EFRIS Enabled',
+            'EFRIS Source', 'Can Fiscalize', 'Status',
+            'Created At', 'Manager Name', 'Is Main Branch',
+            'Allows Sales', 'Allows Inventory', 'Staff Count'
         ])
         for store in queryset:
             writer.writerow([
@@ -279,40 +787,64 @@ class StoreAdmin(admin.ModelAdmin):
                 store.tin or '',
                 store.nin or '',
                 'Yes' if store.efris_enabled else 'No',
+                'Company' if store.use_company_efris else 'Store',
+                'Yes' if store.can_fiscalize else 'No',
                 'Active' if store.is_active else 'Inactive',
                 store.created_at.strftime('%Y-%m-%d %H:%M'),
                 store.manager_name or '',
-                'Yes' if store.is_main_branch else 'No'
+                'Yes' if store.is_main_branch else 'No',
+                'Yes' if store.allows_sales else 'No',
+                'Yes' if store.allows_inventory else 'No',
+                store.staff.count()
             ])
         return response
+
     export_selected_stores.short_description = _('Export selected stores')
+
+    def change_view(self, request, object_id, form_url='', extra_context=None):
+        """Add extra context for change view"""
+        extra_context = extra_context or {}
+        obj = self.get_object(request, object_id)
+        if obj:
+            extra_context['efris_config'] = obj.effective_efris_config
+            extra_context['efris_status'] = obj.efris_config_status
+            extra_context['can_fiscalize'] = obj.can_fiscalize
+        return super().change_view(request, object_id, form_url, extra_context)
 
     def get_urls(self):
         urls = super().get_urls()
         custom_urls = [
             path('analytics/', self.admin_site.admin_view(self.analytics_view), name='store_analytics'),
             path('map/', self.admin_site.admin_view(self.map_view), name='store_map'),
+            path('<path:object_id>/efris-test/', self.admin_site.admin_view(self.efris_test_view),
+                 name='store_efris_test'),
         ]
         return custom_urls + urls
 
     def analytics_view(self, request):
-        from django.db.models import Count
+        from django.db.models import Count, Q
         stores = Store.objects.all()
+
         analytics_data = {
             'total_stores': stores.count(),
             'active_stores': stores.filter(is_active=True).count(),
             'main_branches': stores.filter(is_main_branch=True).count(),
             'stores_by_type': stores.values('store_type').annotate(count=Count('id')).order_by(),
-            'stores_by_region': stores.values('region').annotate(count=Count('id')).order_by(),
+            'stores_by_region': stores.values('region').annotate(count=Count('id')).order_by('-count'),
             'efris_adoption': {
                 'enabled': stores.filter(efris_enabled=True).count(),
-                'total': stores.count()
+                'total': stores.count(),
+                'company_config': stores.filter(use_company_efris=True).count(),
+                'store_config': stores.filter(use_company_efris=False).count(),
+                'can_fiscalize': stores.filter(efris_enabled=True, is_active=True).count()
             }
         }
+
         context = {
             'title': 'Store Analytics',
             'analytics_data': analytics_data,
             'opts': self.model._meta,
+            'has_permission': True,
         }
         return TemplateResponse(request, 'admin/stores/analytics.html', context)
 
@@ -320,13 +852,32 @@ class StoreAdmin(admin.ModelAdmin):
         stores_with_coords = Store.objects.filter(
             latitude__isnull=False,
             longitude__isnull=False
-        ).values('id', 'name', 'latitude', 'longitude', 'physical_address', 'store_type')
+        ).values('id', 'name', 'code', 'latitude', 'longitude',
+                 'physical_address', 'store_type', 'is_active', 'efris_enabled')
+
         context = {
             'title': 'Store Locations Map',
             'stores_data': list(stores_with_coords),
             'opts': self.model._meta,
+            'has_permission': True,
         }
         return TemplateResponse(request, 'admin/stores/map.html', context)
+
+    def efris_test_view(self, request, object_id):
+        """View to test EFRIS configuration for a store"""
+        from django.shortcuts import get_object_or_404
+        store = get_object_or_404(Store, pk=object_id)
+
+        context = {
+            'title': f'EFRIS Test - {store.name}',
+            'store': store,
+            'opts': self.model._meta,
+            'has_permission': True,
+            'config': store.effective_efris_config,
+            'status': store.efris_config_status,
+            'can_fiscalize': store.can_fiscalize,
+        }
+        return TemplateResponse(request, 'admin/stores/efris_test.html', context)
 
 @admin.register(StoreOperatingHours)
 class StoreOperatingHoursAdmin(admin.ModelAdmin):

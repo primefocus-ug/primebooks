@@ -14,7 +14,79 @@
 {% block extra_css %}
 <link href="{% static 'themes.css' %}" rel="stylesheet">
 <style>
-   </style>
+.metric-card {
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.metric-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 8px 25px rgba(0,0,0,0.15) !important;
+}
+
+.metric-icon {
+    width: 60px;
+    height: 60px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.status-badge {
+    font-size: 0.75em;
+    padding: 0.35em 0.65em;
+}
+
+.status-paid { background-color: #10B981; color: white; }
+.status-sent { background-color: #3B82F6; color: white; }
+.status-draft { background-color: #6B7280; color: white; }
+.status-pending_payment { background-color: #F59E0B; color: white; }
+.status-overdue { background-color: #EF4444; color: white; }
+.status-partially_paid { background-color: #F59E0B; color: white; }
+.status-cancelled { background-color: #374151; color: white; }
+.status-completed { background-color: #10B981; color: white; }
+
+.avatar-sm {
+    width: 24px;
+    height: 24px;
+    font-size: 0.75rem;
+}
+
+.table > :not(caption) > * > * {
+    padding: 0.75rem 0.5rem;
+}
+
+.chart-container {
+    position: relative;
+}
+
+[data-theme="dark"] .metric-card {
+    background: var(--bg-primary);
+}
+
+[data-theme="dark"] .table-light {
+    background-color: var(--bg-secondary) !important;
+    color: var(--text-primary);
+}
+
+[data-theme="dark"] .progress {
+    background-color: var(--bg-tertiary);
+}
+
+.loading {
+    opacity: 0.7;
+    pointer-events: none;
+}
+
+.refreshing::after {
+    content: '';
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+</style>
 {% endblock %}
 
 {% block content %}
@@ -220,15 +292,15 @@
                                         {% endif %}
                                     </td>
                                     <td>
-                                        <span class="badge status-badge status-{{ invoice.status|lower }}">
+                                        <span class="badge status-badge status-{{ invoice.sale.status|lower }}">
                                             <i class="bi
-                                                {% if invoice.status == 'PAID' %}bi-check-circle
-                                                {% elif invoice.status == 'SENT' %}bi-send
-                                                {% elif invoice.status == 'DRAFT' %}bi-file-earmark
-                                                {% elif invoice.status == 'OVERDUE' %}bi-exclamation-triangle
+                                                {% if invoice.sale.status == 'PAID' or invoice.sale.status == 'COMPLETED' %}bi-check-circle
+                                                {% elif invoice.sale.status == 'PENDING_PAYMENT' %}bi-send
+                                                {% elif invoice.sale.status == 'DRAFT' %}bi-file-earmark
+                                                {% elif invoice.sale.status == 'OVERDUE' %}bi-exclamation-triangle
                                                 {% else %}bi-clock{% endif %} me-1">
                                             </i>
-                                            {{ invoice.get_status_display }}
+                                            {{ invoice.sale.get_status_display }}
                                         </span>
                                     </td>
                                     <td>
@@ -253,7 +325,7 @@
                                                data-bs-toggle="tooltip">
                                                 <i class="bi bi-printer"></i>
                                             </a>
-                                            {% if not invoice.is_fiscalized and invoice.status != 'PAID' %}
+                                            {% if not invoice.is_fiscalized and invoice.sale.status != 'PAID' and invoice.sale.status != 'COMPLETED' %}
                                             <a href="{% url 'invoices:edit' pk=invoice.pk %}"
                                                class="btn btn-outline-info btn-sm"
                                                title="{% trans 'Edit' %}"
@@ -303,7 +375,7 @@
                         <a href="{% url 'invoices:analytics' %}" class="btn btn-outline-info">
                             <i class="bi bi-graph-up me-2"></i>{% trans "View Analytics" %}
                         </a>
-                        {% if EFRIS_ENABLED %}
+                        {% if company.efris_enabled %}
                         <a href="{% url 'invoices:efris_dashboard' %}" class="btn btn-outline-warning">
                             <i class="bi bi-shield-check me-2"></i>{% trans "EFRIS Status" %}
                         </a>
@@ -323,30 +395,30 @@
                     <div class="mb-3">
                         <div class="d-flex justify-content-between mb-1">
                             <span class="small text-muted">{% trans "Collection Rate" %}</span>
-                            <span class="small fw-bold">{{ metrics.collection_rate|floatformat:1 }}%</span>
+                            <span class="small fw-bold">{{ metrics.collection_rate|floatformat:1|default:"0" }}%</span>
                         </div>
                         <div class="progress" style="height: 6px;">
-                            <div class="progress-bar bg-success" data-progress="collection_rate" style="width: {{ metrics.collection_rate }}%"></div>
+                            <div class="progress-bar bg-success" data-progress="collection_rate" style="width: {{ metrics.collection_rate|default:0 }}%"></div>
                         </div>
                     </div>
 
                     <div class="mb-3">
                         <div class="d-flex justify-content-between mb-1">
-                            <span class="small text-muted ">{% trans "On-Time Payment" %}</span>
-                            <span class="small fw-bold">{{ metrics.on_time_rate|floatformat:1 }}%</span>
+                            <span class="small text-muted">{% trans "On-Time Payment" %}</span>
+                            <span class="small fw-bold">{{ metrics.on_time_rate|floatformat:1|default:"0" }}%</span>
                         </div>
-                        <div class="progress tptall" style="height: 6px;">
-                            <div class="progress-bar bg-info" data-progress="on_time_rate" style="width: {{ metrics.on_time_rate }}%"></div>
+                        <div class="progress" style="height: 6px;">
+                            <div class="progress-bar bg-info" data-progress="on_time_rate" style="width: {{ metrics.on_time_rate|default:0 }}%"></div>
                         </div>
                     </div>
 
                     <div class="mb-3">
                         <div class="d-flex justify-content-between mb-1">
                             <span class="small text-muted">{% trans "Fiscalization Rate" %}</span>
-                            <span class="small fw-bold">{{ metrics.fiscalization_rate|floatformat:1 }}%</span>
+                            <span class="small fw-bold">{{ metrics.fiscalization_rate|floatformat:1|default:"0" }}%</span>
                         </div>
                         <div class="progress" style="height: 6px;">
-                            <div class="progress-bar bg-warning" data-progress="fiscalization_rate" style="width: {{ metrics.fiscalization_rate }}%"></div>
+                            <div class="progress-bar bg-warning" data-progress="fiscalization_rate" style="width: {{ metrics.fiscalization_rate|default:0 }}%"></div>
                         </div>
                     </div>
                 </div>
@@ -362,7 +434,7 @@
                 <div class="card-body p-0">
                     <div class="list-group list-group-flush">
                         {% for invoice in upcoming_invoices|slice:":5" %}
-                        <div class="dre">
+                        <div class="list-group-item">
                             <div class="d-flex w-100 justify-content-between">
                                 <h6 class="mb-1">{{ invoice.invoice_number }}</h6>
                                 <small class="text-{% if invoice.days_until_due <= 3 %}danger{% else %}warning{% endif %}">
@@ -373,7 +445,7 @@
                             <small class="text-muted">{{ invoice.sale.customer.name|default:"No customer" }}</small>
                         </div>
                         {% empty %}
-                        <div class="dre text-center text-muted py-4">
+                        <div class="list-group-item text-center text-muted py-4">
                             <i class="bi bi-check-circle fs-1 mb-2 d-block opacity-50"></i>
                             {% trans "No upcoming due dates" %}
                         </div>
@@ -482,7 +554,8 @@ document.addEventListener('DOMContentLoaded', function() {
             if (data.success) {
                 return data;
             } else {
-                throw new Error('Failed to fetch chart data');
+                console.error('API returned error:', data);
+                return null;
             }
         } catch (error) {
             console.error('Error fetching chart data:', error);
@@ -499,7 +572,8 @@ document.addEventListener('DOMContentLoaded', function() {
             if (data.success) {
                 return data.metrics;
             } else {
-                throw new Error('Failed to fetch metrics data');
+                console.error('API returned error:', data);
+                return null;
             }
         } catch (error) {
             console.error('Error fetching metrics data:', error);
@@ -512,9 +586,8 @@ document.addEventListener('DOMContentLoaded', function() {
         const metrics = await fetchMetricsData();
 
         if (metrics) {
-            // Update metric cards
             updateMetricElement('[data-metric="total_invoices"]', metrics.total_invoices);
-            updateMetricElement('[data-metric="invoices_this_month"]', `+${metrics.invoices_this_month} {% trans "this month" %}`);
+            updateMetricElement('[data-metric="invoices_this_month"]', `${metrics.invoices_this_month} {% trans "this month" %}`);
             updateMetricElement('[data-metric="total_revenue"]', `UGX ${formatCurrency(metrics.total_revenue)}`);
             updateMetricElement('[data-metric="pending_amount"]', `UGX ${formatCurrency(metrics.pending_amount)}`);
             updateMetricElement('[data-metric="pending_invoices"]', `${metrics.pending_invoices} {% trans "pending" %}`);
@@ -522,64 +595,54 @@ document.addEventListener('DOMContentLoaded', function() {
             updateMetricElement('[data-metric="fiscalized_invoices"]', metrics.fiscalized_invoices);
             updateMetricElement('[data-metric="avg_invoice_amount"]', `UGX ${formatCurrency(metrics.avg_invoice_amount)}`);
 
-            // Update progress bars
             updateProgressBar('collection_rate', metrics.collection_rate);
             updateProgressBar('on_time_rate', metrics.on_time_rate);
             updateProgressBar('fiscalization_rate', metrics.fiscalization_rate);
         }
     }
 
-    // Helper function to update metric elements
     function updateMetricElement(selector, value) {
         const element = document.querySelector(selector);
         if (element) {
             if (typeof value === 'number') {
                 element.textContent = value.toLocaleString();
             } else {
-                element.textContent = value;
+                element.innerHTML = value;
             }
         }
     }
 
-    // Helper function to format currency values
     function formatCurrency(value) {
         return Math.round(value).toLocaleString();
     }
 
-    // Helper function to update progress bars
     function updateProgressBar(metric, value) {
         const progressBar = document.querySelector(`[data-progress="${metric}"]`);
-        const valueElement = progressBar ? progressBar.parentElement.querySelector('span') : null;
+        const parentDiv = progressBar ? progressBar.closest('.mb-3') : null;
+        const valueElement = parentDiv ? parentDiv.querySelector('.fw-bold') : null;
 
         if (progressBar) {
             progressBar.style.width = `${value}%`;
         }
         if (valueElement) {
-            valueElement.textContent = `${value}%`;
+            valueElement.textContent = `${value.toFixed(1)}%`;
         }
     }
 
-    // Function to initialize charts with real data
     async function initializeCharts(period = 12) {
         const chartData = await fetchChartData(period);
 
         if (!chartData) {
-            // Fallback to sample data if API fails
-            console.warn('Using sample data - API might be unavailable');
-            initializeSampleCharts();
+            console.warn('Using fallback - API might be unavailable');
+            initializeFallbackCharts();
             return;
         }
 
-        const monthlyData = chartData.monthly_data;
-        const statusData = chartData.status_data;
+        const monthlyData = chartData.monthly_data || [];
+        const statusData = chartData.status_data || [];
 
-        // Destroy existing charts if they exist
-        if (revenueChart) {
-            revenueChart.destroy();
-        }
-        if (statusChart) {
-            statusChart.destroy();
-        }
+        if (revenueChart) revenueChart.destroy();
+        if (statusChart) statusChart.destroy();
 
         // Revenue Trend Chart
         const revenueCtx = document.getElementById('revenueTrendChart').getContext('2d');
@@ -700,7 +763,7 @@ document.addEventListener('DOMContentLoaded', function() {
                                 const label = context.label || '';
                                 const value = context.parsed || 0;
                                 const total = context.dataset.data.reduce((a, b) => a + b, 0);
-                                const percentage = Math.round((value / total) * 100);
+                                const percentage = total > 0 ? Math.round((value / total) * 100) : 0;
                                 return `${label}: ${value} (${percentage}%)`;
                             }
                         }
@@ -710,108 +773,50 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
-    // Fallback function with sample data (in case API fails)
-    function initializeSampleCharts() {
-        const sampleMonthlyData = [
-            { month_name: 'Jan', revenue: 1200000, invoice_count: 45 },
-            { month_name: 'Feb', revenue: 1900000, invoice_count: 52 },
-            { month_name: 'Mar', revenue: 1500000, invoice_count: 48 },
-            { month_name: 'Apr', revenue: 1800000, invoice_count: 55 },
-            { month_name: 'May', revenue: 2200000, invoice_count: 58 },
-            { month_name: 'Jun', revenue: 2500000, invoice_count: 62 },
-            { month_name: 'Jul', revenue: 2800000, invoice_count: 65 },
-            { month_name: 'Aug', revenue: 2600000, invoice_count: 63 },
-            { month_name: 'Sep', revenue: 2400000, invoice_count: 60 },
-            { month_name: 'Oct', revenue: 2100000, invoice_count: 57 },
-            { month_name: 'Nov', revenue: 2300000, invoice_count: 59 },
-            { month_name: 'Dec', revenue: 2700000, invoice_count: 64 }
+    function initializeFallbackCharts() {
+        const fallbackMonthly = [
+            { month_name: 'Jan', revenue: 0, invoice_count: 0 },
+            { month_name: 'Feb', revenue: 0, invoice_count: 0 },
+            { month_name: 'Mar', revenue: 0, invoice_count: 0 },
+            { month_name: 'Apr', revenue: 0, invoice_count: 0 },
+            { month_name: 'May', revenue: 0, invoice_count: 0 },
+            { month_name: 'Jun', revenue: 0, invoice_count: 0 },
+            { month_name: 'Jul', revenue: 0, invoice_count: 0 },
+            { month_name: 'Aug', revenue: 0, invoice_count: 0 },
+            { month_name: 'Sep', revenue: 0, invoice_count: 0 },
+            { month_name: 'Oct', revenue: 0, invoice_count: 0 },
+            { month_name: 'Nov', revenue: 0, invoice_count: 0 },
+            { month_name: 'Dec', revenue: 0, invoice_count: 0 }
         ];
 
-        const sampleStatusData = [
-            { label: '{% trans "Paid" %}', count: 35 },
-            { label: '{% trans "Sent" %}', count: 25 },
-            { label: '{% trans "Draft" %}', count: 15 },
-            { label: '{% trans "Overdue" %}', count: 10 },
-            { label: '{% trans "Partially Paid" %}', count: 15 }
+        const fallbackStatus = [
+            { label: '{% trans "No Data" %}', count: 1 }
         ];
 
-        // Initialize charts with sample data
         const revenueCtx = document.getElementById('revenueTrendChart').getContext('2d');
         revenueChart = new Chart(revenueCtx, {
             type: 'line',
             data: {
-                labels: sampleMonthlyData.map(item => item.month_name),
+                labels: fallbackMonthly.map(item => item.month_name),
                 datasets: [{
                     label: '{% trans "Revenue" %}',
-                    data: sampleMonthlyData.map(item => item.revenue),
+                    data: fallbackMonthly.map(item => item.revenue),
                     borderColor: '#3B82F6',
                     backgroundColor: 'rgba(59, 130, 246, 0.1)',
                     borderWidth: 3,
                     fill: true,
                     tension: 0.4
-                }, {
-                    label: '{% trans "Invoices" %}',
-                    data: sampleMonthlyData.map(item => item.invoice_count),
-                    borderColor: '#10B981',
-                    backgroundColor: 'rgba(16, 185, 129, 0.1)',
-                    borderWidth: 2,
-                    fill: true,
-                    tension: 0.4,
-                    yAxisID: 'y1'
                 }]
             },
             options: {
                 responsive: true,
                 maintainAspectRatio: false,
-                interaction: {
-                    mode: 'index',
-                    intersect: false,
-                },
                 scales: {
                     y: {
                         beginAtZero: true,
                         title: {
                             display: true,
                             text: '{% trans "Revenue (UGX)" %}'
-                        },
-                        ticks: {
-                            callback: function(value) {
-                                if (value >= 1000000) {
-                                    return 'UGX ' + (value / 1000000).toFixed(1) + 'M';
-                                } else if (value >= 1000) {
-                                    return 'UGX ' + (value / 1000).toFixed(0) + 'K';
-                                }
-                                return 'UGX ' + value;
-                            }
-                        }
-                    },
-                    y1: {
-                        beginAtZero: true,
-                        position: 'right',
-                        title: {
-                            display: true,
-                            text: '{% trans "Number of Invoices" %}'
-                        },
-                        grid: {
-                            drawOnChartArea: false
-                        }
-                    }
-                },
-                plugins: {
-                    legend: {
-                        position: 'top',
-                    },
-                    tooltip: {
-                        callbacks: {
-                            label: function(context) {
-                                let label = context.dataset.label || '';
-                                if (context.dataset.yAxisID === 'y1') {
-                                    label += ': ' + context.parsed.y + ' {% trans "invoices" %}';
-                                } else {
-                                    label += ': UGX ' + context.parsed.y.toLocaleString();
-                                }
-                                return label;
-                            }
                         }
                     }
                 }
@@ -822,12 +827,10 @@ document.addEventListener('DOMContentLoaded', function() {
         statusChart = new Chart(statusCtx, {
             type: 'doughnut',
             data: {
-                labels: sampleStatusData.map(item => item.label),
+                labels: fallbackStatus.map(item => item.label),
                 datasets: [{
-                    data: sampleStatusData.map(item => item.count),
-                    backgroundColor: [
-                        '#10B981', '#3B82F6', '#6B7280', '#EF4444', '#F59E0B'
-                    ],
+                    data: fallbackStatus.map(item => item.count),
+                    backgroundColor: ['#6B7280'],
                     borderWidth: 2,
                     borderColor: '#fff'
                 }]
@@ -838,51 +841,33 @@ document.addEventListener('DOMContentLoaded', function() {
                 cutout: '70%',
                 plugins: {
                     legend: {
-                        position: 'bottom',
-                        labels: {
-                            padding: 20,
-                            usePointStyle: true,
-                            font: {
-                                size: 11
-                            }
-                        }
-                    },
-                    tooltip: {
-                        callbacks: {
-                            label: function(context) {
-                                const label = context.label || '';
-                                const value = context.parsed || 0;
-                                const total = context.dataset.data.reduce((a, b) => a + b, 0);
-                                const percentage = Math.round((value / total) * 100);
-                                return `${label}: ${value} (${percentage}%)`;
-                            }
-                        }
+                        position: 'bottom'
                     }
                 }
             }
         });
     }
 
-    // Refresh chart button
-    document.getElementById('refreshStatusChart').addEventListener('click', function() {
+    // Event handlers
+    document.getElementById('refreshStatusChart')?.addEventListener('click', function() {
         initializeCharts(currentPeriod);
         updateMetricsCards();
     });
 
-    // Period selector for revenue chart
     document.querySelectorAll('.dropdown-item[data-period]').forEach(item => {
         item.addEventListener('click', function(e) {
             e.preventDefault();
             currentPeriod = parseInt(this.getAttribute('data-period'));
             initializeCharts(currentPeriod);
 
-            // Update dropdown button text
             const dropdownBtn = this.closest('.dropdown').querySelector('.dropdown-toggle');
-            dropdownBtn.innerHTML = `<i class="bi bi-calendar me-1"></i>${this.textContent}`;
+            if (dropdownBtn) {
+                dropdownBtn.innerHTML = `<i class="bi bi-calendar me-1"></i>${this.textContent}`;
+            }
         });
     });
 
-    // Auto-refresh data every 30 seconds
+    // Auto-refresh every 30 seconds
     setInterval(() => {
         initializeCharts(currentPeriod);
         updateMetricsCards();
@@ -893,79 +878,4 @@ document.addEventListener('DOMContentLoaded', function() {
     updateMetricsCards();
 });
 </script>
-
-<style>
-.metric-card {
-    transition: transform 0.2s ease, box-shadow 0.2s ease;
-}
-
-.metric-card:hover {
-    transform: translateY(-5px);
-    box-shadow: 0 8px 25px rgba(0,0,0,0.15) !important;
-}
-
-.metric-icon {
-    width: 60px;
-    height: 60px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-}
-
-.status-badge {
-    font-size: 0.75em;
-    padding: 0.35em 0.65em;
-}
-
-.status-paid { background-color: #10B981; color: white; }
-.status-sent { background-color: #3B82F6; color: white; }
-.status-draft { background-color: #6B7280; color: white; }
-.status-overdue { background-color: #EF4444; color: white; }
-.status-partially_paid { background-color: #F59E0B; color: white; }
-.status-cancelled { background-color: #374151; color: white; }
-
-.avatar-sm {
-    width: 24px;
-    height: 24px;
-    font-size: 0.75rem;
-}
-
-.table > :not(caption) > * > * {
-    padding: 0.75rem 0.5rem;
-}
-
-.chart-container {
-    position: relative;
-}
-
-/* Dark theme adjustments */
-[data-theme="dark"] .metric-card {
-    background: var(--bg-primary);
-}
-
-[data-theme="dark"] .table-light {
-    background-color: var(--bg-secondary) !important;
-    color: var(--text-primary);
-}
-
-[data-theme="dark"] .progress {
-    background-color: var(--bg-tertiary);
-}
-
-/* Loading states */
-.loading {
-    opacity: 0.7;
-    pointer-events: none;
-}
-
-.refreshing::after {
-    content: '';
-    animation: spin 1s linear infinite;
-}
-
-@keyframes spin {
-    0% { transform: rotate(0deg); }
-    100% { transform: rotate(360deg); }
-}
-</style>
 {% endblock %}

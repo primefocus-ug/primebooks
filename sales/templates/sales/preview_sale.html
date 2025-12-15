@@ -1,0 +1,244 @@
+{% load i18n %}
+{% load custom_filters %}
+{% load static %}
+
+<div class="preview-container">
+    <!-- Document Header -->
+    <div class="preview-header mb-4">
+        <div class="d-flex justify-content-between align-items-start">
+            <div>
+                <h3 class="mb-2">
+                    <i class="bi bi-{% if sale_data.document_type == 'RECEIPT' %}receipt{% elif sale_data.document_type == 'INVOICE' %}file-text{% else %}file-earmark{% endif %} me-2"></i>
+                    {{ sale_data.document_type|title }}
+                </h3>
+                <p class="text-muted mb-0">
+                    {% if sale_data.customer %}
+                        {{ sale_data.customer.name }}
+                    {% else %}
+                        {% trans "Walk-in Customer" %}
+                    {% endif %}
+                </p>
+            </div>
+            <div class="text-end">
+                <span class="badge bg-primary">{% trans "Preview" %}</span>
+                <p class="text-muted small mb-0 mt-2">
+                    {{ sale_data.store.name }}
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Customer & Sale Details -->
+    <div class="row mb-4">
+        <div class="col-md-6">
+            <div class="card border">
+                <div class="card-body">
+                    <h6 class="card-subtitle mb-3 text-muted">
+                        <i class="bi bi-person me-1"></i>{% trans "Customer Details" %}
+                    </h6>
+                    {% if sale_data.customer %}
+                        <p class="mb-1"><strong>{{ sale_data.customer.name }}</strong></p>
+                        {% if sale_data.customer.phone %}
+                        <p class="mb-1 small">
+                            <i class="bi bi-telephone me-1"></i>{{ sale_data.customer.phone }}
+                        </p>
+                        {% endif %}
+                        {% if sale_data.customer.email %}
+                        <p class="mb-1 small">
+                            <i class="bi bi-envelope me-1"></i>{{ sale_data.customer.email }}
+                        </p>
+                        {% endif %}
+                        {% if sale_data.customer.tin %}
+                        <p class="mb-0 small">
+                            <i class="bi bi-hash me-1"></i>TIN: {{ sale_data.customer.tin }}
+                        </p>
+                        {% endif %}
+                    {% else %}
+                        <p class="text-muted mb-0">{% trans "No customer selected" %}</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="card border">
+                <div class="card-body">
+                    <h6 class="card-subtitle mb-3 text-muted">
+                        <i class="bi bi-info-circle me-1"></i>{% trans "Sale Details" %}
+                    </h6>
+                    <p class="mb-1 small">
+                        <strong>{% trans "Document Type" %}:</strong>
+                        {{ sale_data.document_type|title }}
+                    </p>
+                    <p class="mb-1 small">
+                        <strong>{% trans "Payment Method" %}:</strong>
+                        {{ sale_data.payment_method_display }}
+                    </p>
+                    {% if sale_data.due_date and sale_data.document_type == 'INVOICE' %}
+                    <p class="mb-1 small">
+                        <strong>{% trans "Due Date" %}:</strong>
+                        {{ sale_data.due_date|date:"M d, Y" }}
+                    </p>
+                    {% endif %}
+                    {% if sale_data.payment_terms %}
+                    <p class="mb-0 small">
+                        <strong>{% trans "Payment Terms" %}:</strong>
+                        {{ sale_data.payment_terms }}
+                    </p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Items Table -->
+    <div class="card border mb-4">
+        <div class="card-header bg-light">
+            <h6 class="mb-0">
+                <i class="bi bi-cart3 me-2"></i>{% trans "Items" %}
+                <span class="badge bg-primary ms-2">{{ items|length }}</span>
+            </h6>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th width="40%">{% trans "Item" %}</th>
+                            <th width="10%" class="text-center">{% trans "Qty" %}</th>
+                            <th width="15%" class="text-end">{% trans "Price" %}</th>
+                            <th width="10%" class="text-center">{% trans "Tax" %}</th>
+                            <th width="10%" class="text-end">{% trans "Disc%" %}</th>
+                            <th width="15%" class="text-end">{% trans "Total" %}</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for item in items %}
+                        <tr>
+                            <td>
+                                <strong>{{ item.name }}</strong>
+                                {% if item.code %}
+                                <br><small class="text-muted">{{ item.code }}</small>
+                                {% endif %}
+                                {% if item.description %}
+                                <br><small class="text-muted fst-italic">{{ item.description }}</small>
+                                {% endif %}
+                            </td>
+                            <td class="text-center">{{ item.quantity }}</td>
+                            <td class="text-end">{{ sale_data.currency }} {{ item.unit_price|floatformat:2 }}</td>
+                            <td class="text-center">
+                                <span class="badge bg-secondary">{{ item.tax_rate }}</span>
+                            </td>
+                            <td class="text-end">
+                                {% if item.discount > 0 %}
+                                    {{ item.discount|floatformat:1 }}%
+                                {% else %}
+                                    -
+                                {% endif %}
+                            </td>
+                            <td class="text-end">
+                                {{ sale_data.currency }}
+                                {% widthratio item.quantity 1 item.unit_price as line_total %}
+                                {% widthratio line_total 1 item.discount as discount_amt %}
+                                {% widthratio discount_amt 100 1 as final_discount %}
+                                {% widthratio line_total 1 final_discount as net_total %}
+                                {{ net_total|sub:final_discount|floatformat:2 }}
+                            </td>
+                        </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="6" class="text-center text-muted py-4">
+                                {% trans "No items added" %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Totals Summary -->
+    <div class="row">
+        <div class="col-md-6 offset-md-6">
+            <div class="card border-primary">
+                <div class="card-body">
+                    <div class="d-flex justify-content-between mb-2 pb-2 border-bottom">
+                        <span class="text-muted">{% trans "Subtotal" %}:</span>
+                        <span class="fw-semibold">
+                            {{ sale_data.currency }} {{ subtotal|floatformat:2 }}
+                        </span>
+                    </div>
+
+                    <div class="d-flex justify-content-between mb-2 pb-2 border-bottom">
+                        <span class="text-muted">{% trans "Tax" %}:</span>
+                        <span class="fw-semibold">
+                            {{ sale_data.currency }} {{ tax|floatformat:2 }}
+                        </span>
+                    </div>
+
+                    {% if discount > 0 %}
+                    <div class="d-flex justify-content-between mb-2 pb-2 border-bottom">
+                        <span class="text-muted">{% trans "Discount" %}:</span>
+                        <span class="fw-semibold text-danger">
+                            - {{ sale_data.currency }} {{ discount|floatformat:2 }}
+                        </span>
+                    </div>
+                    {% endif %}
+
+                    <div class="d-flex justify-content-between pt-2">
+                        <span class="h5 mb-0">{% trans "Total" %}:</span>
+                        <span class="h4 mb-0 text-primary fw-bold">
+                            {{ sale_data.currency }} {{ total|floatformat:2 }}
+                        </span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Notes -->
+    {% if sale_data.notes %}
+    <div class="card border mt-3">
+        <div class="card-body">
+            <h6 class="card-subtitle mb-2 text-muted">
+                <i class="bi bi-sticky me-1"></i>{% trans "Notes" %}
+            </h6>
+            <p class="mb-0">{{ sale_data.notes|linebreaks }}</p>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Preview Notice -->
+    <div class="alert alert-info mt-4 mb-0">
+        <i class="bi bi-info-circle me-2"></i>
+        <strong>{% trans "Preview Mode" %}</strong> -
+        {% trans "This is a preview. The sale has not been saved yet." %}
+    </div>
+</div>
+
+<style>
+.preview-container {
+    font-size: 0.95rem;
+}
+
+.preview-header {
+    padding-bottom: 1rem;
+    border-bottom: 2px solid #e5e7eb;
+}
+
+.card.border {
+    border-color: #e5e7eb !important;
+}
+
+.card.border-primary {
+    border-width: 2px !important;
+}
+
+.table > :not(caption) > * > * {
+    padding: 0.75rem;
+}
+
+.badge {
+    font-size: 0.75rem;
+}
+</style>

@@ -1,0 +1,474 @@
+{% extends "base.html" %}
+{% load i18n %}
+{% load static %}
+
+{% block title %}{% trans "Preview Receipt" %} | {{ company.name }}{% endblock %}
+
+{% block extra_css %}
+<style>
+:root {
+    --bg-primary: #ffffff;
+    --bg-secondary: #f8f9fa;
+    --text-primary: #212529;
+    --text-secondary: #6c757d;
+    --border-color: #dee2e6;
+    --shadow-md: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
+    --success-gradient: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+    --accent-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    --warning-gradient: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+}
+
+[data-bs-theme="dark"] {
+    --bg-primary: #1a1d29;
+    --bg-secondary: #242736;
+    --text-primary: #e9ecef;
+    --text-secondary: #adb5bd;
+    --border-color: #3d4152;
+    --shadow-md: 0 0.5rem 1rem rgba(0, 0, 0, 0.5);
+}
+
+body {
+    background-color: var(--bg-secondary);
+    color: var(--text-primary);
+}
+
+.preview-header {
+    background: var(--success-gradient);
+    color: white;
+    border-radius: 16px;
+    padding: 2rem;
+    margin-bottom: 2rem;
+    box-shadow: var(--shadow-md);
+}
+
+.receipt-preview {
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    padding: 2rem;
+    box-shadow: var(--shadow-md);
+    max-width: 800px;
+    margin: 0 auto;
+}
+
+.receipt-section {
+    margin-bottom: 2rem;
+    padding-bottom: 2rem;
+    border-bottom: 2px dashed var(--border-color);
+}
+
+.receipt-section:last-child {
+    border-bottom: none;
+}
+
+.receipt-header-info {
+    text-align: center;
+    margin-bottom: 2rem;
+}
+
+.receipt-header-info h2 {
+    margin-bottom: 0.5rem;
+    color: var(--text-primary);
+}
+
+.receipt-number {
+    font-size: 1.5rem;
+    font-weight: bold;
+    color: #11998e;
+    margin: 1rem 0;
+}
+
+.info-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+}
+
+.info-item {
+    padding: 1rem;
+    background: var(--bg-secondary);
+    border-radius: 8px;
+}
+
+.info-label {
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+    margin-bottom: 0.25rem;
+}
+
+.info-value {
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.items-table {
+    width: 100%;
+    margin-bottom: 2rem;
+}
+
+.items-table th {
+    background: var(--bg-secondary);
+    padding: 0.75rem;
+    text-align: left;
+    font-weight: 600;
+    border-bottom: 2px solid var(--border-color);
+}
+
+.items-table td {
+    padding: 0.75rem;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.item-badge {
+    font-size: 0.7rem;
+    padding: 0.25rem 0.5rem;
+    border-radius: 12px;
+    font-weight: 600;
+}
+
+.product-badge {
+    background: var(--success-gradient);
+    color: white;
+}
+
+.service-badge {
+    background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+    color: white;
+}
+
+.totals-section {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 2rem;
+}
+
+.totals-table {
+    min-width: 300px;
+}
+
+.totals-table tr td {
+    padding: 0.5rem;
+}
+
+.totals-table tr:last-child td {
+    border-top: 2px solid var(--border-color);
+    font-weight: bold;
+    font-size: 1.25rem;
+    padding-top: 1rem;
+}
+
+.action-buttons {
+    display: flex;
+    gap: 1rem;
+    justify-content: center;
+    margin-top: 2rem;
+}
+
+.btn-action {
+    padding: 1rem 2rem;
+    border-radius: 10px;
+    font-weight: 600;
+    border: none;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.btn-complete {
+    background: var(--success-gradient);
+    color: white;
+}
+
+.btn-print {
+    background: var(--accent-gradient);
+    color: white;
+}
+
+.btn-edit {
+    background: var(--warning-gradient);
+    color: white;
+}
+
+.btn-action:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-md);
+}
+
+.status-badge {
+    display: inline-block;
+    padding: 0.5rem 1rem;
+    border-radius: 20px;
+    font-weight: 600;
+    font-size: 0.875rem;
+}
+
+.status-draft {
+    background: #ffc107;
+    color: #000;
+}
+
+.status-completed {
+    background: var(--success-gradient);
+    color: white;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="preview-header">
+    <div class="d-flex align-items-center justify-content-between">
+        <div>
+            <h3 class="mb-1">
+                <i class="bi bi-eye me-2"></i>{% trans "Preview Receipt" %}
+            </h3>
+            <p class="mb-0 opacity-75">{% trans "Review before completing" %}</p>
+        </div>
+        <div>
+            <span class="status-badge status-{{ receipt.status|lower }}">
+                {{ receipt.get_status_display }}
+            </span>
+        </div>
+    </div>
+</div>
+
+<div class="receipt-preview">
+    <!-- Receipt Header -->
+    <div class="receipt-header-info receipt-section">
+        <h2>{{ company.name }}</h2>
+        <p class="text-muted mb-1">{{ receipt.store.name }}</p>
+        {% if receipt.store.physical_address %}
+        <p class="text-muted mb-1">{{ receipt.store.physical_address }}</p>
+        {% endif %}
+        {% if company.tin %}
+        <p class="text-muted">TIN: {{ company.tin }}</p>
+        {% endif %}
+
+        <div class="receipt-number">
+            <i class="bi bi-receipt me-2"></i>{{ receipt.document_number }}
+        </div>
+
+        <p class="text-muted">
+            <i class="bi bi-calendar me-1"></i>
+            {{ receipt.created_at|date:"F d, Y H:i" }}
+        </p>
+    </div>
+
+    <!-- Customer Information -->
+    <div class="receipt-section">
+        <h5 class="mb-3">
+            <i class="bi bi-person me-2"></i>{% trans "Customer Information" %}
+        </h5>
+        <div class="info-grid">
+            <div class="info-item">
+                <div class="info-label">{% trans "Customer" %}</div>
+                <div class="info-value">
+                    {% if receipt.customer %}
+                        {{ receipt.customer.name }}
+                    {% else %}
+                        {% trans "Walk-in Customer" %}
+                    {% endif %}
+                </div>
+            </div>
+            {% if receipt.customer %}
+            <div class="info-item">
+                <div class="info-label">{% trans "Phone" %}</div>
+                <div class="info-value">{{ receipt.customer.phone|default:"N/A" }}</div>
+            </div>
+            {% if receipt.customer.email %}
+            <div class="info-item">
+                <div class="info-label">{% trans "Email" %}</div>
+                <div class="info-value">{{ receipt.customer.email }}</div>
+            </div>
+            {% endif %}
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Payment Information -->
+    <div class="receipt-section">
+        <h5 class="mb-3">
+            <i class="bi bi-credit-card me-2"></i>{% trans "Payment Information" %}
+        </h5>
+        <div class="info-grid">
+            <div class="info-item">
+                <div class="info-label">{% trans "Payment Method" %}</div>
+                <div class="info-value">{{ receipt.get_payment_method_display }}</div>
+            </div>
+            <div class="info-item">
+                <div class="info-label">{% trans "Status" %}</div>
+                <div class="info-value text-success">
+                    <i class="bi bi-check-circle me-1"></i>
+                    {% trans "PAID" %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Items -->
+    <div class="receipt-section">
+        <h5 class="mb-3">
+            <i class="bi bi-list-ul me-2"></i>{% trans "Items" %}
+        </h5>
+        <table class="items-table">
+            <thead>
+                <tr>
+                    <th>{% trans "Item" %}</th>
+                    <th>{% trans "Type" %}</th>
+                    <th class="text-end">{% trans "Qty" %}</th>
+                    <th class="text-end">{% trans "Price" %}</th>
+                    <th class="text-end">{% trans "Total" %}</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in receipt.items.all %}
+                <tr>
+                    <td>
+                        <strong>{{ item.item_name }}</strong>
+                        {% if item.description %}
+                        <br>
+                        <small class="text-muted">{{ item.description }}</small>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <span class="item-badge {% if item.item_type == 'PRODUCT' %}product-badge{% else %}service-badge{% endif %}">
+                            {{ item.item_type }}
+                        </span>
+                    </td>
+                    <td class="text-end">{{ item.quantity }}</td>
+                    <td class="text-end">{{ receipt.currency }} {{ item.unit_price|floatformat:2 }}</td>
+                    <td class="text-end">{{ receipt.currency }} {{ item.total_price|floatformat:2 }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Totals -->
+    <div class="totals-section">
+        <table class="totals-table">
+            <tr>
+                <td>{% trans "Subtotal:" %}</td>
+                <td class="text-end">{{ receipt.currency }} {{ receipt.subtotal|floatformat:2 }}</td>
+            </tr>
+            <tr>
+                <td>{% trans "Tax:" %}</td>
+                <td class="text-end">{{ receipt.currency }} {{ receipt.tax_amount|floatformat:2 }}</td>
+            </tr>
+            {% if receipt.discount_amount > 0 %}
+            <tr>
+                <td>{% trans "Discount:" %}</td>
+                <td class="text-end text-danger">-{{ receipt.currency }} {{ receipt.discount_amount|floatformat:2 }}</td>
+            </tr>
+            {% endif %}
+            <tr>
+                <td>{% trans "Total:" %}</td>
+                <td class="text-end">{{ receipt.currency }} {{ receipt.total_amount|floatformat:2 }}</td>
+            </tr>
+        </table>
+    </div>
+
+    <!-- Notes -->
+    {% if receipt.notes %}
+    <div class="receipt-section">
+        <h6 class="mb-2">
+            <i class="bi bi-chat-left-text me-2"></i>{% trans "Notes" %}
+        </h6>
+        <p class="text-muted mb-0">{{ receipt.notes }}</p>
+    </div>
+    {% endif %}
+
+    <!-- Action Buttons -->
+    <div class="action-buttons">
+        {% if can_edit %}
+        <a href="{% url 'sales:edit_draft' receipt.pk %}" class="btn btn-action btn-edit">
+            <i class="bi bi-pencil"></i>
+            {% trans "Edit" %}
+        </a>
+        {% endif %}
+
+        <button type="button" class="btn btn-action btn-print" onclick="printReceipt()">
+            <i class="bi bi-printer"></i>
+            {% trans "Print PDF" %}
+        </button>
+
+        {% if can_complete %}
+        <button type="button" class="btn btn-action btn-complete" onclick="completeSale()">
+            <i class="bi bi-check-circle"></i>
+            {% trans "Complete Sale" %}
+        </button>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Loading Modal -->
+<div class="modal fade" id="loadingModal" data-bs-backdrop="static" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-body text-center py-4">
+                <div class="spinner-border text-primary mb-3" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+                <p id="loadingMessage">{% trans "Processing..." %}</p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const csrfToken = '{{ csrf_token }}';
+const receiptId = {{ receipt.pk }};
+
+function completeSale() {
+    if (!confirm('{% trans "Complete this receipt? This action cannot be undone." %}')) {
+        return;
+    }
+
+    const loadingModal = new bootstrap.Modal(document.getElementById('loadingModal'));
+    document.getElementById('loadingMessage').textContent = '{% trans "Completing receipt..." %}';
+    loadingModal.show();
+
+    fetch(`/sales/receipt/${receiptId}/complete/`, {
+        method: 'POST',
+        headers: {
+            'X-CSRFToken': csrfToken,
+            'Content-Type': 'application/json'
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        loadingModal.hide();
+
+        if (data.success) {
+            // Show success message
+            alert(data.message || '{% trans "Receipt completed successfully!" %}');
+
+            // Redirect to print or detail page
+            if (data.redirect_url) {
+                window.location.href = data.redirect_url;
+            } else {
+                window.location.href = `/sales/receipt/${receiptId}/print/`;
+            }
+        } else {
+            alert(data.error || '{% trans "Failed to complete receipt" %}');
+            if (data.errors) {
+                console.error('Errors:', data.errors);
+            }
+        }
+    })
+    .catch(error => {
+        loadingModal.hide();
+        console.error('Error:', error);
+        alert('{% trans "An error occurred while completing the receipt" %}');
+    });
+}
+
+function printReceipt() {
+    window.open(`/sales/receipt/${receiptId}/print/`, '_blank');
+}
+</script>
+{% endblock %}

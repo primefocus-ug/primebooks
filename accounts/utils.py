@@ -94,7 +94,7 @@ def require_company_access(company_param='company_id'):
             # Get company instance
             try:
                 from company.models import Company
-                company = Company.objects.get(id=company_id)
+                company = Company.objects.get(company_id=company_id)
             except Company.DoesNotExist:
                 raise PermissionDenied("Company not found")
 

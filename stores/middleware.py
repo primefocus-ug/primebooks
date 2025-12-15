@@ -1,10 +1,73 @@
 from django.utils import timezone
+from django.shortcuts import redirect
+from django.contrib import messages
 from django.utils.deprecation import MiddlewareMixin
 from .utils import (
     get_device_session_from_request,
     detect_suspicious_activity,
     get_client_ip
 )
+
+from django_tenants.utils import get_tenant
+from django.utils.deprecation import MiddlewareMixin
+from django.shortcuts import redirect
+from django.contrib import messages
+
+class StoreAccessMiddleware(MiddlewareMixin):
+    """
+    Middleware to enforce store access control and set current store in request
+    """
+
+    def process_request(self, request):
+        tenant = get_tenant(request)
+
+
+        # 🔒 Skip public schema entirely
+        if tenant.schema_name == "public":
+            return None
+
+        # Skip unauthenticated users
+        if not request.user.is_authenticated:
+            return None
+
+        # Skip SaaS admin safely
+        if getattr(request.user, "is_saas_admin", False):
+            return None
+
+        current_store_id = request.session.get("current_store_id")
+
+        from stores.models import Store
+
+        if current_store_id:
+            try:
+                store = Store.objects.get(id=current_store_id, is_active=True)
+
+                if not getattr(request.user, "can_access_store", lambda s: False)(store):
+                    messages.warning(request, "You no longer have access to that store.")
+                    request.session.pop("current_store_id", None)
+                    return redirect("stores:select_store")
+
+                request.current_store = store
+
+            except Store.DoesNotExist:
+                request.session.pop("current_store_id", None)
+                return redirect("stores:select_store")
+
+        else:
+            default_store = getattr(request.user, "default_store", None)
+
+            if default_store:
+                request.session["current_store_id"] = default_store.id
+                request.current_store = default_store
+            else:
+                if not request.path.startswith("/accounts/"):
+                    messages.error(
+                        request,
+                        "You have not been assigned to any store. Please contact your administrator."
+                    )
+                    return redirect("accounts:no_store_access")
+
+        return None
 
 
 class DeviceSessionMiddleware(MiddlewareMixin):

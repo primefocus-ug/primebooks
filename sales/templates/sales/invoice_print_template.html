@@ -1,0 +1,416 @@
+{% load i18n %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Invoice {{ invoice.document_number }}</title>
+    <style>
+        @media print {
+            @page {
+                size: A4 portrait;
+                margin: 20mm;
+            }
+
+            body {
+                font-family: Arial, sans-serif;
+                font-size: 12px;
+                line-height: 1.4;
+                color: #333;
+            }
+        }
+
+        body {
+            font-family: Arial, sans-serif;
+            font-size: 12px;
+            line-height: 1.4;
+            color: #333;
+            max-width: 210mm;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .invoice-container {
+            border: 1px solid #ddd;
+            padding: 30px;
+            position: relative;
+        }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            border-bottom: 3px solid #0066cc;
+            padding-bottom: 20px;
+            margin-bottom: 20px;
+        }
+
+        .company-info {
+            flex: 1;
+        }
+
+        .company-name {
+            font-size: 20px;
+            font-weight: bold;
+            color: #0066cc;
+            margin-bottom: 5px;
+        }
+
+        .invoice-title {
+            text-align: right;
+        }
+
+        .invoice-title h1 {
+            font-size: 24px;
+            color: #333;
+            margin: 0 0 5px 0;
+        }
+
+        .invoice-number {
+            font-size: 16px;
+            font-weight: bold;
+            color: #666;
+        }
+
+        .parties {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 30px;
+            margin-bottom: 30px;
+        }
+
+        .party {
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+
+        .party h3 {
+            color: #0066cc;
+            border-bottom: 1px solid #ddd;
+            padding-bottom: 8px;
+            margin: 0 0 15px 0;
+            font-size: 14px;
+        }
+
+        .invoice-details {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 4px;
+            margin-bottom: 20px;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .invoice-details div {
+            flex: 1;
+        }
+
+        .invoice-details .text-right {
+            text-align: right;
+        }
+
+        .items-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 20px;
+        }
+
+        .items-table th {
+            background: #0066cc;
+            color: white;
+            padding: 10px;
+            text-align: left;
+            font-weight: bold;
+            border: none;
+        }
+
+        .items-table td {
+            padding: 10px;
+            border-bottom: 1px solid #ddd;
+        }
+
+        .items-table tr:nth-child(even) {
+            background: #f8f9fa;
+        }
+
+        .totals {
+            float: right;
+            width: 300px;
+            margin-top: 20px;
+        }
+
+        .total-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid #ddd;
+        }
+
+        .total-row.grand-total {
+            font-size: 16px;
+            font-weight: bold;
+            color: #0066cc;
+            border-top: 2px solid #0066cc;
+            border-bottom: none;
+            padding-top: 12px;
+            margin-top: 12px;
+        }
+
+        .terms-section {
+            clear: both;
+            margin-top: 40px;
+            padding-top: 20px;
+            border-top: 1px solid #ddd;
+        }
+
+        .footer {
+            margin-top: 40px;
+            padding-top: 20px;
+            border-top: 1px solid #ddd;
+            text-align: center;
+            font-size: 11px;
+            color: #666;
+        }
+
+        .status-badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-weight: bold;
+            font-size: 11px;
+        }
+
+        .status-paid {
+            background: #28a745;
+            color: white;
+        }
+
+        .status-pending {
+            background: #ffc107;
+            color: #000;
+        }
+
+        .status-draft {
+            background: #6c757d;
+            color: white;
+        }
+
+        .watermark {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%) rotate(-45deg);
+            font-size: 80px;
+            color: rgba(0,0,0,0.1);
+            font-weight: bold;
+            pointer-events: none;
+            z-index: -1;
+        }
+
+        .amount-words {
+            margin-top: 10px;
+            font-style: italic;
+            color: #666;
+            font-size: 11px;
+        }
+    </style>
+</head>
+<body>
+    <div class="invoice-container">
+        <!-- Watermark -->
+        {% if invoice.status == 'DRAFT' %}
+        <div class="watermark">DRAFT</div>
+        {% endif %}
+
+        <!-- Header -->
+        <div class="header">
+            <div class="company-info">
+                {% if company %}
+                <div class="company-name">{{ company.name }}</div>
+                {% if company.physical_address %}
+                <div>{{ company.physical_address }}</div>
+                {% endif %}
+                {% if company.phone %}
+                <div>Tel: {{ company.phone }}</div>
+                {% endif %}
+                {% if company.email %}
+                <div>Email: {{ company.email }}</div>
+                {% endif %}
+                {% if company.tin %}
+                <div><strong>TIN:</strong> {{ company.tin }}</div>
+                {% endif %}
+                {% endif %}
+            </div>
+
+            <div class="invoice-title">
+                <h1>TAX INVOICE</h1>
+                <div class="invoice-number">#{{ invoice.document_number }}</div>
+                <div>Date: {{ invoice.created_at|date:"d/m/Y" }}</div>
+            </div>
+        </div>
+
+        <!-- Parties -->
+        <div class="parties">
+            <!-- Bill From -->
+            <div class="party">
+                <h3>{% trans "Bill From" %}</h3>
+                {% if company %}
+                <p><strong>{{ company.name }}</strong></p>
+                {% if company.physical_address %}
+                <p>{{ company.physical_address }}</p>
+                {% endif %}
+                {% if company.tin %}
+                <p><strong>TIN:</strong> {{ company.tin }}</p>
+                {% endif %}
+                {% endif %}
+            </div>
+
+            <!-- Bill To -->
+            <div class="party">
+                <h3>{% trans "Bill To" %}</h3>
+                {% if invoice.customer %}
+                <p><strong>{{ invoice.customer.name }}</strong></p>
+                {% if invoice.customer.physical_address %}
+                <p>{{ invoice.customer.physical_address }}</p>
+                {% endif %}
+                {% if invoice.customer.phone %}
+                <p>Phone: {{ invoice.customer.phone }}</p>
+                {% endif %}
+                {% if invoice.customer.email %}
+                <p>Email: {{ invoice.customer.email }}</p>
+                {% endif %}
+                {% if invoice.customer.tin %}
+                <p><strong>TIN:</strong> {{ invoice.customer.tin }}</p>
+                {% endif %}
+                {% else %}
+                <p>{% trans "Customer information not available" %}</p>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Invoice Details -->
+        <div class="invoice-details">
+            <div>
+                <strong>{% trans "Store:" %}</strong> {{ invoice.store.name|default:"N/A" }}<br>
+                <strong>{% trans "Cashier:" %}</strong> {{ invoice.cashier.get_full_name }}
+            </div>
+            <div class="text-right">
+                {% if invoice.due_date %}
+                <strong>{% trans "Due Date:" %}</strong> {{ invoice.due_date|date:"d/m/Y" }}<br>
+                {% endif %}
+                {% if invoice.purchase_order %}
+                <strong>{% trans "PO#:" %}</strong> {{ invoice.purchase_order }}<br>
+                {% endif %}
+                <strong>{% trans "Status:" %}</strong>
+                <span class="status-badge
+                    {% if invoice.status == 'PAID' %}status-paid
+                    {% elif invoice.status == 'PENDING_PAYMENT' %}status-pending
+                    {% else %}status-draft{% endif %}">
+                    {{ invoice.get_status_display }}
+                </span>
+            </div>
+        </div>
+
+        <!-- Items Table -->
+        <table class="items-table">
+            <thead>
+                <tr>
+                    <th width="5%">#</th>
+                    <th width="45%">Description</th>
+                    <th width="10%">Qty</th>
+                    <th width="15%">Unit Price</th>
+                    <th width="10%">Tax</th>
+                    <th width="15%">Amount</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in invoice_items %}
+                <tr>
+                    <td>{{ forloop.counter }}</td>
+                    <td>{{ item.name }}</td>
+                    <td>{{ item.quantity }} {{ item.unit }}</td>
+                    <td>{{ item.unit_price|floatformat:2 }} UGX</td>
+                    <td>{{ item.tax_rate|default:"A" }}</td>
+                    <td>{{ item.total_price|floatformat:2 }} UGX</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+
+        <!-- Totals -->
+        <div class="totals">
+            <div class="total-row">
+                <span>Subtotal:</span>
+                <span>{{ invoice.subtotal|floatformat:2 }} UGX</span>
+            </div>
+            <div class="total-row">
+                <span>Tax:</span>
+                <span>{{ invoice.tax_amount|floatformat:2 }} UGX</span>
+            </div>
+            {% if invoice.discount_amount %}
+            <div class="total-row">
+                <span>Discount:</span>
+                <span>-{{ invoice.discount_amount|floatformat:2 }} UGX</span>
+            </div>
+            {% endif %}
+            <div class="total-row grand-total">
+                <span>TOTAL DUE:</span>
+                <span>{{ invoice.total_amount|floatformat:2 }} UGX</span>
+            </div>
+
+            <!-- Amount in words -->
+            <div class="amount-words">
+                Amount in words: {{ total_amount_words|default:"" }}
+            </div>
+        </div>
+
+        <!-- Terms & Notes -->
+        <div class="terms-section">
+            {% if invoice.terms %}
+            <h4>{% trans "Terms & Conditions" %}</h4>
+            <p>{{ invoice.terms }}</p>
+            {% endif %}
+
+            {% if invoice.notes %}
+            <h4>{% trans "Notes" %}</h4>
+            <p>{{ invoice.notes }}</p>
+            {% endif %}
+        </div>
+
+        <!-- Payment Instructions -->
+        <div class="terms-section">
+            <h4>{% trans "Payment Instructions" %}</h4>
+            <p>
+                {% trans "Please make payment to:" %}<br>
+                {% trans "Bank:" %} {{ company.bank_name|default:"Not specified" }}<br>
+                {% trans "Account:" %} {{ company.bank_account|default:"Not specified" }}<br>
+                {% trans "SWIFT:" %} {{ company.swift_code|default:"Not specified" }}
+            </p>
+        </div>
+
+        <!-- Footer -->
+        <div class="footer">
+            <p>
+                {% trans "Invoice generated by" %} {{ company.name|default:"Sales System" }} •
+                {{ now|date:"d/m/Y H:i" }}<br>
+                {% if invoice.payment_method == 'CREDIT' %}
+                    {% trans "This is a credit invoice. Payment is due by the specified due date." %}
+                {% endif %}
+            </p>
+            <p>
+                {% if invoice.status == 'DRAFT' %}
+                    <strong>{% trans "THIS IS A DRAFT INVOICE - NOT VALID FOR PAYMENT" %}</strong>
+                {% endif %}
+            </p>
+        </div>
+    </div>
+
+    <script>
+        // Auto-print when loaded (optional - you can remove if you don't want auto-print)
+        window.onload = function() {
+            window.print();
+        };
+    </script>
+</body>
+</html>

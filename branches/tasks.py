@@ -24,7 +24,7 @@ def send_periodic_analytics_update():
                 store=store,
                 created_at__date=today,
                 is_voided=False,
-                is_completed=True
+                status__in=['COMPLETED', 'PAID']
             ).aggregate(
                 revenue=Sum('total_amount'),
                 count=Count('id')
@@ -61,7 +61,7 @@ def send_company_summary_update(company_id):
         from django.db.models import Sum, Count
         from datetime import timedelta
 
-        company = Company.objects.get(id=company_id)
+        company = Company.objects.get(company_id=company_id)
         stores = Store.objects.filter(company=company, is_active=True)
 
         today = timezone.now().date()
@@ -71,7 +71,7 @@ def send_company_summary_update(company_id):
             store_id__in=store_ids,
             created_at__date=today,
             is_voided=False,
-            is_completed=True
+            status__in=['COMPLETED', 'PAID']
         ).aggregate(
             revenue=Sum('total_amount'),
             count=Count('id')

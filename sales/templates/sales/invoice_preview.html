@@ -1,0 +1,556 @@
+{% extends "base.html" %}
+{% load i18n %}
+{% load static %}
+
+{% block title %}{% trans "Preview Invoice" %} | {{ company.name }}{% endblock %}
+
+{% block extra_css %}
+<style>
+:root {
+    --bg-primary: #ffffff;
+    --bg-secondary: #f8f9fa;
+    --text-primary: #212529;
+    --text-secondary: #6c757d;
+    --border-color: #dee2e6;
+    --shadow-md: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
+    --accent-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    --success-gradient: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+    --warning-gradient: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+}
+
+[data-bs-theme="dark"] {
+    --bg-primary: #1a1d29;
+    --bg-secondary: #242736;
+    --text-primary: #e9ecef;
+    --text-secondary: #adb5bd;
+    --border-color: #3d4152;
+    --shadow-md: 0 0.5rem 1rem rgba(0, 0, 0, 0.5);
+}
+
+body {
+    background-color: var(--bg-secondary);
+    color: var(--text-primary);
+}
+
+.preview-header {
+    background: var(--accent-gradient);
+    color: white;
+    border-radius: 16px;
+    padding: 2rem;
+    margin-bottom: 2rem;
+    box-shadow: var(--shadow-md);
+}
+
+.invoice-preview {
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    padding: 2rem;
+    box-shadow: var(--shadow-md);
+    max-width: 900px;
+    margin: 0 auto;
+}
+
+.invoice-section {
+    margin-bottom: 2rem;
+    padding-bottom: 2rem;
+    border-bottom: 2px solid var(--border-color);
+}
+
+.invoice-section:last-child {
+    border-bottom: none;
+}
+
+.invoice-header-info {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 2rem;
+    margin-bottom: 2rem;
+}
+
+.company-info h2 {
+    margin-bottom: 0.5rem;
+    color: var(--text-primary);
+}
+
+.invoice-meta {
+    text-align: right;
+}
+
+.invoice-number {
+    font-size: 1.75rem;
+    font-weight: bold;
+    color: #667eea;
+    margin-bottom: 1rem;
+}
+
+.info-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+}
+
+.info-item {
+    padding: 1rem;
+    background: var(--bg-secondary);
+    border-radius: 8px;
+}
+
+.info-label {
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+    margin-bottom: 0.25rem;
+}
+
+.info-value {
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.customer-section {
+    background: var(--bg-secondary);
+    padding: 1.5rem;
+    border-radius: 8px;
+    margin-bottom: 2rem;
+}
+
+.items-table {
+    width: 100%;
+    margin-bottom: 2rem;
+}
+
+.items-table th {
+    background: var(--bg-secondary);
+    padding: 0.75rem;
+    text-align: left;
+    font-weight: 600;
+    border-bottom: 2px solid var(--border-color);
+}
+
+.items-table td {
+    padding: 0.75rem;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.item-badge {
+    font-size: 0.7rem;
+    padding: 0.25rem 0.5rem;
+    border-radius: 12px;
+    font-weight: 600;
+}
+
+.product-badge {
+    background: var(--success-gradient);
+    color: white;
+}
+
+.service-badge {
+    background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+    color: white;
+}
+
+.totals-section {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 2rem;
+}
+
+.totals-table {
+    min-width: 350px;
+}
+
+.totals-table tr td {
+    padding: 0.5rem;
+}
+
+.totals-table tr:last-child td {
+    border-top: 2px solid var(--border-color);
+    font-weight: bold;
+    font-size: 1.25rem;
+    padding-top: 1rem;
+}
+
+.payment-info-box {
+    background: var(--accent-gradient);
+    color: white;
+    padding: 1.5rem;
+    border-radius: 8px;
+    margin-bottom: 2rem;
+}
+
+.credit-warning {
+    background: #fff3cd;
+    border-left: 4px solid #ffc107;
+    padding: 1rem;
+    border-radius: 4px;
+    margin-bottom: 1rem;
+    color: #856404;
+}
+
+.action-buttons {
+    display: flex;
+    gap: 1rem;
+    justify-content: center;
+    margin-top: 2rem;
+}
+
+.btn-action {
+    padding: 1rem 2rem;
+    border-radius: 10px;
+    font-weight: 600;
+    border: none;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.btn-complete {
+    background: var(--success-gradient);
+    color: white;
+}
+
+.btn-print {
+    background: var(--accent-gradient);
+    color: white;
+}
+
+.btn-edit {
+    background: var(--warning-gradient);
+    color: white;
+}
+
+.btn-action:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-md);
+}
+
+.status-badge {
+    display: inline-block;
+    padding: 0.5rem 1rem;
+    border-radius: 20px;
+    font-weight: 600;
+    font-size: 0.875rem;
+}
+
+.status-draft {
+    background: #ffc107;
+    color: #000;
+}
+
+.status-completed {
+    background: var(--success-gradient);
+    color: white;
+}
+
+.status-pending {
+    background: #fd7e14;
+    color: white;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="preview-header">
+    <div class="d-flex align-items-center justify-content-between">
+        <div>
+            <h3 class="mb-1">
+                <i class="bi bi-file-earmark-text me-2"></i>{% trans "Preview Invoice" %}
+            </h3>
+            <p class="mb-0 opacity-75">{% trans "Review before completing" %}</p>
+        </div>
+        <div>
+            <span class="status-badge status-{{ invoice.status|lower }}">
+                {{ invoice.get_status_display }}
+            </span>
+        </div>
+    </div>
+</div>
+
+<div class="invoice-preview">
+    <!-- Invoice Header -->
+    <div class="invoice-header-info">
+        <div class="company-info">
+            <h2>{{ company.name }}</h2>
+            <p class="text-muted mb-1">{{ invoice.store.name }}</p>
+            {% if invoice.store.physical_address %}
+            <p class="text-muted mb-1">{{ invoice.store.physical_address }}</p>
+            {% endif %}
+            {% if company.tin %}
+            <p class="text-muted mb-1">TIN: {{ company.tin }}</p>
+            {% endif %}
+            {% if invoice.store.phone %}
+            <p class="text-muted">Tel: {{ invoice.store.phone }}</p>
+            {% endif %}
+        </div>
+
+        <div class="invoice-meta">
+            <h4 class="text-muted">{% trans "TAX INVOICE" %}</h4>
+            <div class="invoice-number">
+                {{ invoice.document_number }}
+            </div>
+            <p class="text-muted mb-1">
+                <strong>{% trans "Issue Date:" %}</strong>
+                {{ invoice.created_at|date:"F d, Y" }}
+            </p>
+            {% if invoice.due_date %}
+            <p class="text-muted">
+                <strong>{% trans "Due Date:" %}</strong>
+                {{ invoice.due_date|date:"F d, Y" }}
+            </p>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Payment Method Info -->
+    {% if invoice.payment_method == 'CREDIT' %}
+    <div class="credit-warning">
+        <i class="bi bi-exclamation-triangle me-2"></i>
+        <strong>{% trans "Credit Sale" %}</strong> -
+        {% trans "Payment is due by" %} {{ invoice.due_date|date:"F d, Y" }}
+    </div>
+    {% endif %}
+
+    <!-- Customer Information -->
+    <div class="customer-section">
+        <h5 class="mb-3">
+            <i class="bi bi-person me-2"></i>{% trans "Bill To:" %}
+        </h5>
+        <div class="row">
+            <div class="col-md-6">
+                <p class="mb-1"><strong>{{ invoice.customer.name }}</strong></p>
+                {% if invoice.customer.physical_address %}
+                <p class="text-muted mb-1">{{ invoice.customer.physical_address }}</p>
+                {% endif %}
+                {% if invoice.customer.phone %}
+                <p class="text-muted mb-1">
+                    <i class="bi bi-telephone me-1"></i>{{ invoice.customer.phone }}
+                </p>
+                {% endif %}
+                {% if invoice.customer.email %}
+                <p class="text-muted mb-1">
+                    <i class="bi bi-envelope me-1"></i>{{ invoice.customer.email }}
+                </p>
+                {% endif %}
+            </div>
+            <div class="col-md-6">
+                {% if invoice.customer.tin %}
+                <p class="mb-1">
+                    <strong>{% trans "TIN:" %}</strong> {{ invoice.customer.tin }}
+                </p>
+                {% endif %}
+                {% if invoice.customer.customer_type %}
+                <p class="mb-1">
+                    <strong>{% trans "Type:" %}</strong>
+                    {{ invoice.customer.get_customer_type_display }}
+                </p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Payment Information -->
+    <div class="payment-info-box">
+        <div class="row">
+            <div class="col-md-6">
+                <p class="mb-1 opacity-75">{% trans "Payment Method" %}</p>
+                <p class="mb-0 h5">{{ invoice.get_payment_method_display }}</p>
+            </div>
+            <div class="col-md-6 text-end">
+                <p class="mb-1 opacity-75">{% trans "Payment Status" %}</p>
+                <p class="mb-0 h5">
+                    {% if invoice.payment_method == 'CREDIT' %}
+                        <i class="bi bi-clock-history me-1"></i>
+                        {% trans "PENDING" %}
+                    {% else %}
+                        <i class="bi bi-check-circle me-1"></i>
+                        {% trans "PAID" %}
+                    {% endif %}
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Items -->
+    <div class="invoice-section">
+        <h5 class="mb-3">
+            <i class="bi bi-list-ul me-2"></i>{% trans "Items" %}
+        </h5>
+        <table class="items-table">
+            <thead>
+                <tr>
+                    <th style="width: 40%;">{% trans "Description" %}</th>
+                    <th>{% trans "Type" %}</th>
+                    <th class="text-center">{% trans "Qty" %}</th>
+                    <th class="text-end">{% trans "Unit Price" %}</th>
+                    <th class="text-end">{% trans "Tax" %}</th>
+                    <th class="text-end">{% trans "Amount" %}</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in invoice.items.all %}
+                <tr>
+                    <td>
+                        <strong>{{ item.item_name }}</strong>
+                        {% if item.description %}
+                        <br>
+                        <small class="text-muted">{{ item.description }}</small>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <span class="item-badge {% if item.item_type == 'PRODUCT' %}product-badge{% else %}service-badge{% endif %}">
+                            {{ item.item_type }}
+                        </span>
+                    </td>
+                    <td class="text-center">{{ item.quantity }}</td>
+                    <td class="text-end">{{ invoice.currency }} {{ item.unit_price|floatformat:2 }}</td>
+                    <td class="text-end">{{ invoice.currency }} {{ item.tax_amount|floatformat:2 }}</td>
+                    <td class="text-end"><strong>{{ invoice.currency }} {{ item.total_price|floatformat:2 }}</strong></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Totals -->
+    <div class="totals-section">
+        <table class="totals-table">
+            <tr>
+                <td>{% trans "Subtotal:" %}</td>
+                <td class="text-end">{{ invoice.currency }} {{ invoice.subtotal|floatformat:2 }}</td>
+            </tr>
+            <tr>
+                <td>{% trans "Tax:" %}</td>
+                <td class="text-end">{{ invoice.currency }} {{ invoice.tax_amount|floatformat:2 }}</td>
+            </tr>
+            {% if invoice.discount_amount > 0 %}
+            <tr>
+                <td>{% trans "Discount:" %}</td>
+                <td class="text-end text-danger">-{{ invoice.currency }} {{ invoice.discount_amount|floatformat:2 }}</td>
+            </tr>
+            {% endif %}
+            <tr>
+                <td>{% trans "Total Amount:" %}</td>
+                <td class="text-end">{{ invoice.currency }} {{ invoice.total_amount|floatformat:2 }}</td>
+            </tr>
+        </table>
+    </div>
+
+    <!-- Terms & Notes -->
+    {% if invoice.notes %}
+    <div class="invoice-section">
+        <h6 class="mb-2">
+            <i class="bi bi-chat-left-text me-2"></i>{% trans "Notes" %}
+        </h6>
+        <p class="text-muted mb-0">{{ invoice.notes }}</p>
+    </div>
+    {% endif %}
+
+    <!-- Action Buttons -->
+    <div class="action-buttons">
+        {% if can_edit %}
+        <a href="{% url 'sales:edit_draft' invoice.pk %}" class="btn btn-action btn-edit">
+            <i class="bi bi-pencil"></i>
+            {% trans "Edit" %}
+        </a>
+        {% endif %}
+
+        <button type="button" class="btn btn-action btn-print" onclick="printInvoice()">
+            <i class="bi bi-printer"></i>
+            {% trans "Print PDF" %}
+        </button>
+
+        {% if can_complete %}
+        <button type="button" class="btn btn-action btn-complete" onclick="completeSale()">
+            <i class="bi bi-check-circle"></i>
+            {% trans "Complete Invoice" %}
+        </button>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Loading Modal -->
+<div class="modal fade" id="loadingModal" data-bs-backdrop="static" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-body text-center py-4">
+                <div class="spinner-border text-primary mb-3" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+                <p id="loadingMessage">{% trans "Processing..." %}</p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+const csrfToken = '{{ csrf_token }}';
+const invoiceId = {{ invoice.pk }};
+
+function completeSale() {
+    const confirmMsg = '{% trans "Complete this invoice? This action cannot be undone." %}';
+
+    {% if invoice.payment_method == 'CREDIT' %}
+    const creditMsg = '\n\n{% trans "This is a credit sale. Payment will be tracked separately." %}';
+    if (!confirm(confirmMsg + creditMsg)) {
+        return;
+    }
+    {% else %}
+    if (!confirm(confirmMsg)) {
+        return;
+    }
+    {% endif %}
+
+    const loadingModal = new bootstrap.Modal(document.getElementById('loadingModal'));
+    document.getElementById('loadingMessage').textContent = '{% trans "Completing invoice..." %}';
+    loadingModal.show();
+
+    // Collect additional data if needed
+    const formData = new FormData();
+    formData.append('terms', document.querySelector('[name="terms"]')?.value || '');
+    formData.append('purchase_order', document.querySelector('[name="purchase_order"]')?.value || '');
+
+    fetch(`/sales/invoice/${invoiceId}/complete/`, {
+        method: 'POST',
+        headers: {
+            'X-CSRFToken': csrfToken
+        },
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        loadingModal.hide();
+
+        if (data.success) {
+            // Show success message
+            alert(data.message || '{% trans "Invoice completed successfully!" %}');
+
+            // Redirect to detail page
+            if (data.redirect_url) {
+                window.location.href = data.redirect_url;
+            } else {
+                window.location.href = `/sales/invoice/${invoiceId}/detail/`;
+            }
+        } else {
+            alert(data.error || '{% trans "Failed to complete invoice" %}');
+            if (data.errors) {
+                console.error('Errors:', data.errors);
+            }
+        }
+    })
+    .catch(error => {
+        loadingModal.hide();
+        console.error('Error:', error);
+        alert('{% trans "An error occurred while completing the invoice" %}');
+    });
+}
+
+function printInvoice() {
+    window.open(`/sales/invoice/${invoiceId}/print/`, '_blank');
+}
+</script>
+{% endblock %}

@@ -291,19 +291,19 @@ class ReportDashboardConsumer(AsyncJsonWebsocketConsumer):
         sales_today_result = Sale.objects.filter(
             store__in=stores,
             created_at__date=today,
-            is_completed=True
+            status__in=['COMPLETED', 'PAID']
         ).aggregate(total=Sum('total_amount'))
 
         sales_week_result = Sale.objects.filter(
             store__in=stores,
             created_at__date__gte=week_ago,
-            is_completed=True
+            status__in=['COMPLETED', 'PAID']
         ).aggregate(total=Sum('total_amount'))
 
         sales_month_result = Sale.objects.filter(
             store__in=stores,
             created_at__date__gte=month_ago,
-            is_completed=True
+            status__in=['COMPLETED', 'PAID']
         ).aggregate(total=Sum('total_amount'))
 
         # Convert Decimal values to float
@@ -315,7 +315,7 @@ class ReportDashboardConsumer(AsyncJsonWebsocketConsumer):
             'transactions_today': Sale.objects.filter(
                 store__in=stores,
                 created_at__date=today,
-                is_completed=True
+                status__in=['COMPLETED', 'PAID']
             ).count(),
 
             # Inventory alerts
@@ -333,19 +333,19 @@ class ReportDashboardConsumer(AsyncJsonWebsocketConsumer):
             # Invoice statistics
             'pending_invoices': Invoice.objects.filter(
                 store__in=stores,
-                status__in=['SENT', 'PARTIALLY_PAID']
+                efris_status='pending'
             ).count(),
 
             'overdue_invoices': Invoice.objects.filter(
                 store__in=stores,
-                status__in=['SENT', 'PARTIALLY_PAID'],
-                due_date__lt=today
+                efris_status='pending',
+                sale__due_date__lt=today
             ).count(),
 
             # EFRIS compliance
             'pending_fiscalization': Sale.objects.filter(
                 store__in=stores,
-                is_completed=True,
+                status__in=['COMPLETED', 'PAID'],
                 is_fiscalized=False,
                 created_at__date__gte=today - timedelta(days=7)
             ).count(),
@@ -452,7 +452,7 @@ class ReportDashboardConsumer(AsyncJsonWebsocketConsumer):
         today = timezone.now().date()
         pending_fiscal = Sale.objects.filter(
             store__in=stores,
-            is_completed=True,
+            status__in=['COMPLETED', 'PAID'],
             is_fiscalized=False,
             created_at__date__gte=today - timedelta(days=7)
         ).count()
@@ -468,7 +468,7 @@ class ReportDashboardConsumer(AsyncJsonWebsocketConsumer):
         # Failed fiscalization alerts
         failed_fiscal = Sale.objects.filter(
             store__in=stores,
-            is_completed=True,
+            status__in=['COMPLETED', 'PAID'],
             fiscalization_failed=True,
             created_at__date__gte=today - timedelta(days=7)
         ).count()

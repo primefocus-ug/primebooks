@@ -6,13 +6,15 @@ from django.conf import settings
 from channels.layers import get_channel_layer
 from asgiref.sync import async_to_sync
 import logging
+from django.db.models import Q
+from django.contrib.auth import get_user_model
 from django_tenants.utils import schema_context, get_tenant_model
 
 from .models import (
     Notification, NotificationTemplate, NotificationPreference,
     NotificationCategory, NotificationLog, NotificationRule
 )
-
+User=get_user_model()
 logger = logging.getLogger(__name__)
 
 
@@ -546,6 +548,12 @@ class SalesNotifications:
             # Get tenant schema from sale
             schema_name = sale.store.company.schema_name
 
+            # Get the appropriate document number based on type
+            if sale.document_type == 'RECEIPT' and hasattr(sale, 'receipt_detail'):
+                doc_number = sale.receipt_detail.receipt_number
+            else:
+                doc_number = sale.document_number
+
             # Notify cashier
             if sale.created_by:
                 NotificationService.create_from_template(
@@ -553,10 +561,13 @@ class SalesNotifications:
                     recipient=sale.created_by,
                     context={
                         'sale_id': sale.id,
-                        'invoice_number': sale.invoice_number,
+                        'document_number': doc_number,  # Changed from invoice_number
+                        'invoice_number': doc_number,  # Keep for backward compatibility in templates
                         'total_amount': f'{sale.total_amount:,.0f}',
                         'customer_name': sale.customer.name if sale.customer else 'Walk-in',
                         'store_name': sale.store.name,
+                        'document_type': sale.document_type.lower(),
+                        'document_type_display': sale.get_document_type_display(),
                     },
                     related_object=sale,
                     tenant_schema=schema_name
@@ -592,14 +603,19 @@ class SalesNotifications:
         try:
             schema_name = sale.store.company.schema_name
 
+            # Get the appropriate document number
+            doc_number = sale.document_number
+
             if sale.created_by:
                 NotificationService.create_from_template(
                     event_type='efris_fiscalized',
                     recipient=sale.created_by,
                     context={
-                        'invoice_number': sale.invoice_number,
+                        'document_number': doc_number,  # Changed from invoice_number
+                        'invoice_number': doc_number,  # Keep for backward compatibility
                         'fiscal_number': sale.efris_invoice_number,
                         'verification_code': sale.verification_code,
+                        'document_type': sale.document_type.lower(),
                     },
                     related_object=sale,
                     priority='SUCCESS',
@@ -615,12 +631,15 @@ class SalesNotifications:
         try:
             schema_name = sale.store.company.schema_name
 
+            # Get the appropriate document number
+            doc_number = sale.document_number
+
             # Notify cashier
             if sale.created_by:
                 NotificationService.create_notification(
                     recipient=sale.created_by,
                     title='EFRIS Fiscalization Failed',
-                    message=f'Sale {sale.invoice_number} failed to fiscalize: {error_message}',
+                    message=f'{sale.get_document_type_display()} {doc_number} failed to fiscalize: {error_message}',
                     notification_type='ERROR',
                     priority='HIGH',
                     related_object=sale,
@@ -648,6 +667,81 @@ class SalesNotifications:
 
         except Exception as e:
             logger.error(f"Error in notify_efris_failed: {e}", exc_info=True)
+
+    @staticmethod
+    def notify_sale_voided(sale, voided_by, reason):
+        """Notify when a sale is voided"""
+        try:
+            schema_name = sale.store.company.schema_name
+
+            # Get the appropriate document number
+            doc_number = sale.document_number
+
+            # Notify the original cashier
+            if sale.created_by and sale.created_by != voided_by:
+                NotificationService.create_notification(
+                    recipient=sale.created_by,
+                    title='Sale Voided',
+                    message=f'Your {sale.get_document_type_display().lower()} {doc_number} was voided by {voided_by.get_full_name()}. Reason: {reason}',
+                    notification_type='WARNING',
+                    priority='MEDIUM',
+                    related_object=sale,
+                    tenant_schema=schema_name
+                )
+
+            # Notify store manager
+            manager = sale.store.manager
+            if manager and manager != voided_by:
+                NotificationService.create_notification(
+                    recipient=manager,
+                    title='Sale Voided',
+                    message=f'{sale.get_document_type_display()} {doc_number} voided at {sale.store.name}',
+                    notification_type='WARNING',
+                    priority='HIGH',
+                    related_object=sale,
+                    tenant_schema=schema_name
+                )
+
+        except Exception as e:
+            logger.error(f"Error in notify_sale_voided: {e}", exc_info=True)
+
+    @staticmethod
+    def notify_sale_refunded(sale, refunded_by):
+        """Notify when a sale is refunded"""
+        try:
+            schema_name = sale.store.company.schema_name
+
+            # Get the appropriate document number
+            doc_number = sale.document_number
+
+            # Notify the original cashier
+            if sale.created_by and sale.created_by != refunded_by:
+                NotificationService.create_notification(
+                    recipient=sale.created_by,
+                    title='Sale Refunded',
+                    message=f'Your {sale.get_document_type_display().lower()} {doc_number} was refunded by {refunded_by.get_full_name()}',
+                    notification_type='INFO',
+                    priority='MEDIUM',
+                    related_object=sale,
+                    tenant_schema=schema_name
+                )
+
+            # Notify store manager for large refunds
+            if sale.total_amount > 500000:  # UGX 500,000 threshold
+                manager = sale.store.manager
+                if manager and manager != refunded_by:
+                    NotificationService.create_notification(
+                        recipient=manager,
+                        title='Large Refund Processed',
+                        message=f'Refund of UGX {sale.total_amount:,.0f} processed at {sale.store.name}',
+                        notification_type='WARNING',
+                        priority='HIGH',
+                        related_object=sale,
+                        tenant_schema=schema_name
+                    )
+
+        except Exception as e:
+            logger.error(f"Error in notify_sale_refunded: {e}", exc_info=True)
 
 
 class InventoryNotifications:

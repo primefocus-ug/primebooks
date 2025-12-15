@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Invoice {{ sale.document_number }}</title>
+    <style>
+        @page {
+            size: A4;
+            margin: 1cm;
+        }
+
+        body {
+            font-family: Arial, sans-serif;
+            font-size: 12px;
+            line-height: 1.6;
+            color: #333;
+        }
+
+        .invoice-container {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+
+        .invoice-header {
+            border-bottom: 3px solid #667eea;
+            padding-bottom: 20px;
+            margin-bottom: 30px;
+        }
+
+        .invoice-header h1 {
+            color: #667eea;
+            margin: 0;
+            font-size: 32px;
+        }
+
+        .company-info {
+            text-align: right;
+            float: right;
+            width: 50%;
+        }
+
+        .invoice-title {
+            float: left;
+            width: 50%;
+        }
+
+        .clearfix::after {
+            content: "";
+            display: table;
+            clear: both;
+        }
+
+        .invoice-meta {
+            margin: 30px 0;
+        }
+
+        .bill-to, .invoice-details {
+            width: 48%;
+            display: inline-block;
+            vertical-align: top;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 5px;
+        }
+
+        .bill-to {
+            margin-right: 2%;
+        }
+
+        h5 {
+            margin-top: 0;
+            color: #667eea;
+        }
+
+        .items-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 30px 0;
+        }
+
+        .items-table th {
+            background: #667eea;
+            color: white;
+            padding: 10px;
+            text-align: left;
+        }
+
+        .items-table td {
+            padding: 8px;
+            border-bottom: 1px solid #dee2e6;
+        }
+
+        .text-end {
+            text-align: right;
+        }
+
+        .totals-section {
+            float: right;
+            width: 300px;
+            margin-top: 20px;
+        }
+
+        .totals-section table {
+            width: 100%;
+        }
+
+        .totals-section td {
+            padding: 5px;
+        }
+
+        .total-row {
+            font-size: 16px;
+            font-weight: bold;
+            background: #667eea;
+            color: white;
+        }
+
+        .total-row td {
+            padding: 10px;
+        }
+
+        .terms {
+            margin-top: 50px;
+            page-break-inside: avoid;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 3px 8px;
+            font-size: 10px;
+            border-radius: 3px;
+            background: #ffc107;
+            color: #000;
+        }
+    </style>
+</head>
+<body>
+    <div class="invoice-container">
+        <!-- Header -->
+        <div class="invoice-header clearfix">
+            <div class="invoice-title">
+                <h1>INVOICE</h1>
+                {% if sale.status == 'DRAFT' %}
+                <span class="badge">DRAFT</span>
+                {% endif %}
+            </div>
+            <div class="company-info">
+                <h3>{{ company.name }}</h3>
+                <p>{{ company.physical_address|default:"" }}</p>
+                <p>{{ company.phone|default:"" }}</p>
+                <p>{{ company.email|default:"" }}</p>
+                {% if company.tin %}
+                <p><strong>TIN:</strong> {{ company.tin }}</p>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Invoice Meta -->
+        <div class="invoice-meta clearfix">
+            <div class="bill-to">
+                <h5>Bill To:</h5>
+                <p><strong>{{ sale.customer.name|default:"Walk-in Customer" }}</strong></p>
+                {% if sale.customer %}
+                {% if sale.customer.email %}<p>{{ sale.customer.email }}</p>{% endif %}
+                {% if sale.customer.phone %}<p>{{ sale.customer.phone }}</p>{% endif %}
+                {% if sale.customer.physical_address %}<p>{{ sale.customer.physical_address }}</p>{% endif %}
+                {% if sale.customer.tin %}<p><strong>TIN:</strong> {{ sale.customer.tin }}</p>{% endif %}
+                {% endif %}
+            </div>
+
+            <div class="invoice-details">
+                <h5>Invoice Details:</h5>
+                <p><strong>Invoice #:</strong> {{ sale.document_number }}</p>
+                <p><strong>Date:</strong> {{ sale.created_at|date:"F d, Y" }}</p>
+                <p><strong>Due Date:</strong> {{ sale.due_date|date:"F d, Y" }}</p>
+                {% if invoice.purchase_order %}
+                <p><strong>PO #:</strong> {{ invoice.purchase_order }}</p>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Items Table -->
+        <table class="items-table">
+            <thead>
+                <tr>
+                    <th>#</th>
+                    <th>Item Description</th>
+                    <th>Type</th>
+                    <th class="text-end">Qty</th>
+                    <th class="text-end">Unit Price</th>
+                    <th class="text-end">Amount</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in items %}
+                <tr>
+                    <td>{{ forloop.counter }}</td>
+                    <td>{{ item.item_name }}</td>
+                    <td>{{ item.get_item_type_display }}</td>
+                    <td class="text-end">{{ item.quantity }}</td>
+                    <td class="text-end">{{ item.unit_price|floatformat:2 }}</td>
+                    <td class="text-end">{{ item.line_total|floatformat:2 }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+
+        <!-- Totals -->
+        <div class="totals-section">
+            <table>
+                <tr>
+                    <td>Subtotal:</td>
+                    <td class="text-end">UGX {{ sale.subtotal|floatformat:2 }}</td>
+                </tr>
+                {% if sale.discount_amount > 0 %}
+                <tr>
+                    <td>Discount:</td>
+                    <td class="text-end">-UGX {{ sale.discount_amount|floatformat:2 }}</td>
+                </tr>
+                {% endif %}
+                <tr>
+                    <td>Tax (included):</td>
+                    <td class="text-end">UGX {{ sale.tax_amount|floatformat:2 }}</td>
+                </tr>
+                <tr class="total-row">
+                    <td>TOTAL:</td>
+                    <td class="text-end">UGX {{ sale.total_amount|floatformat:2 }}</td>
+                </tr>
+            </table>
+        </div>
+
+        <!-- Terms -->
+        {% if invoice.terms %}
+        <div class="terms clearfix">
+            <h5>Terms & Conditions:</h5>
+            <p>{{ invoice.terms }}</p>
+        </div>
+        {% endif %}
+    </div>
+</body>
+</html>

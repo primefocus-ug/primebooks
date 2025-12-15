@@ -592,10 +592,10 @@ def stock_movement_created(sender, instance: StockMovement, created: bool, **kwa
             send_to_websocket('inventory_dashboard', 'high_value_alert', high_value_data)
 
             # Notify store manager for high-value movements
-            if instance.store.manager and instance.created_by != instance.store.manager:
+            if instance.store.manager_name and instance.created_by != instance.store.manager_name:
                 try:
                     NotificationService.create_notification(
-                        recipient=instance.store.manager,
+                        recipient=instance.store.manager_name,
                         title=f'High Value {instance.get_movement_type_display()}',
                         message=f'{instance.quantity} units of {instance.product.name} valued at UGX {instance.total_value:,.0f}',
                         notification_type='INFO',
@@ -686,13 +686,13 @@ def product_updated(sender, instance: Product, created: bool, **kwargs):
 
                         # NOTIFICATION INTEGRATION: Price changes
                         try:
-                            if instance.store and instance.store.manager:
+                            if instance.store and instance.store.manager_name:
                                 old_price = changes.get('selling_price', {}).get('old', 0)
                                 new_price = changes.get('selling_price', {}).get('new', 0)
 
                                 if old_price != new_price:
                                     NotificationService.create_notification(
-                                        recipient=instance.store.manager,
+                                        recipient=instance.store.manager_name,
                                         title=f'Price Updated: {instance.name}',
                                         message=f'Price changed from UGX {old_price:,.0f} to UGX {new_price:,.0f}',
                                         notification_type='INFO',
@@ -981,8 +981,8 @@ def handle_inventory_alert(sender, **kwargs):
             try:
                 # Notify store manager and company admins
                 recipients = []
-                if stock.store.manager:
-                    recipients.append(stock.store.manager)
+                if stock.store.manager_name:
+                    recipients.append(stock.store.manager_name)
 
                 # Add company admins
                 company = _get_company_from_context()

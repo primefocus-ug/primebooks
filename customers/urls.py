@@ -1,8 +1,10 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from .views import CustomerViewSet, CustomerGroupViewSet, CustomerNoteViewSet
-from . import views
-from . import view
+# Import everything from views.py with an alias
+from . import views as customers_views
+# Import everything from view.py with an alias
+from . import view as import_export_views
 
 app_name = 'customers'
 
@@ -12,47 +14,56 @@ router.register(r'groups', CustomerGroupViewSet)
 router.register(r'notes', CustomerNoteViewSet)
 
 urlpatterns = [
-    path('', views.CustomerDashboardView.as_view(), name='dashboard'),
+    path('', customers_views.CustomerDashboardView.as_view(), name='dashboard'),
 
-    # Customer CRUD operations
-    path('list/', views.CustomerListView.as_view(), name='customer_list'),  # Changed name for consistency
-    path('create/', views.CustomerCreateView.as_view(), name='create'),
-    path('<int:pk>/', views.CustomerDetailView.as_view(), name='detail'),
-    path('<int:pk>/edit/', views.CustomerUpdateView.as_view(), name='update'),
-    path('<int:pk>/delete/', views.CustomerDeleteView.as_view(), name='delete'),
+    # Customer CRUD operations - from views.py
+    path('list/', customers_views.CustomerListView.as_view(), name='customer_list'),
+    path('create/', customers_views.CustomerCreateView.as_view(), name='create'),
+    path('<int:pk>/', customers_views.CustomerDetailView.as_view(), name='detail'),
+    path('<int:pk>/edit/', customers_views.CustomerUpdateView.as_view(), name='update'),
+    path('<int:pk>/delete/', customers_views.CustomerDeleteView.as_view(), name='delete'),
 
-    # Customer notes
-    path('<int:pk>/add-note/', views.add_customer_note, name='add_note'),
+    # Customer notes - from views.py
+    path('<int:pk>/add-note/', customers_views.add_customer_note, name='add_note'),
 
-    # Bulk operations
-    path('bulk-action/', views.bulk_customer_action, name='bulk_action'),
-    path('export/', views.export_customers, name='export'),
+    # Bulk operations - from views.py
+    path('bulk-action/', customers_views.bulk_customer_action, name='bulk_action'),
 
-    # Customer Groups
-    path('groups/', views.CustomerGroupListView.as_view(), name='group_list'),
-    path('groups/create/', views.CustomerGroupCreateView.as_view(), name='group_create'),
-    path('groups/<int:pk>/edit/', views.CustomerGroupUpdateView.as_view(), name='group_update'),
-    path('groups/<int:pk>/delete/', views.CustomerGroupDeleteView.as_view(), name='group_delete'),
+    # Import/Export operations - from view.py
+    path('import/', import_export_views.customer_import, name='customer_import'),
 
-    # API endpoints
-    path('api/autocomplete/', views.customer_autocomplete, name='autocomplete'),
-    path('api/stats/', views.customer_stats_api, name='stats_api'),
-    path('api/validate-field/', views.validate_customer_field, name='validate_field'),
-    path('api/search-with-store/', views.customer_search_with_store, name='search_with_store'),
-    path('api/store-customers/', views.get_store_customers, name='store_customers'),
+    # Sample file downloads - from view.py
+    path('import/sample/csv/', import_export_views.download_sample_customers_csv, name='download_sample_csv'),
+    path('import/sample/excel/', import_export_views.download_sample_customers_excel, name='download_sample_excel'),
+    path('import/preview/', import_export_views.preview_customer_import, name='preview_import'),
+    path('import/validate/', import_export_views.validate_customer_import, name='validate_import'),
 
-    # Sample file downloads (must come BEFORE import/ to avoid conflicts)
-    path('import/sample/csv/', view.download_sample_customers_csv, name='download_sample_csv'),
-    path('import/sample/excel/', view.download_sample_customers_excel, name='download_sample_excel'),
+    # Export views - from view.py
+    path('export/csv/', import_export_views.export_customers_csv, name='export_csv'),
+    path('export/excel/', import_export_views.export_customers_excel, name='export_excel'),
+    path('export/pdf/', import_export_views.export_customers_pdf, name='export_pdf'),
 
-    # Import views (validation and preview must come BEFORE main import)
-    path('import/preview/', view.preview_customer_import, name='preview_import'),
-    path('import/validate/', view.validate_customer_import, name='validate_import'),
-    path('import/', view.customer_import, name='customer_import'),  # Main import - must be LAST
-    # Export views
-    path('export/csv/', view.export_customers_csv, name='export_csv'),
-    path('export/excel/', view.export_customers_excel, name='export_excel'),
-    path('export/pdf/', view.export_customers_pdf, name='export_pdf'),
+    # API endpoints - from views.py
+    path('api/autocomplete/', customers_views.customer_autocomplete, name='autocomplete'),
+    path('api/stats/', customers_views.customer_stats_api, name='stats_api'),
+    path('api/validate-field/', customers_views.validate_customer_field, name='validate_field'),
+    path('api/search-with-store/', customers_views.customer_search_with_store, name='search_with_store'),
+    path('api/store-customers/', customers_views.get_store_customers, name='store_customers'),
+
+    # Customer Groups - from views.py
+    path('groups/', customers_views.CustomerGroupListView.as_view(), name='group_list'),
+    path('groups/create/', customers_views.CustomerGroupCreateView.as_view(), name='group_create'),
+    path('groups/<int:pk>/edit/', customers_views.CustomerGroupUpdateView.as_view(), name='group_update'),
+    path('groups/<int:pk>/delete/', customers_views.CustomerGroupDeleteView.as_view(), name='group_delete'),
+
+    # eFRIS operations - from views.py
+    path('efris/dashboard/', customers_views.EFRISCustomerDashboardView.as_view(), name='efris_dashboard'),
+    path('<int:pk>/sync-efris/', customers_views.sync_customer_to_efris, name='sync_efris'),
+    path('api/efris-status/', customers_views.efris_sync_status_api, name='efris_status_api'),
+    path('efris/sync/<int:sync_id>/retry/', customers_views.retry_failed_efris_sync, name='retry_efris_sync'),
+
+    # Export from views.py (general export)
+    path('export/', customers_views.export_customers, name='export'),
 
     # API router (must be last)
     path('api/', include(router.urls)),
