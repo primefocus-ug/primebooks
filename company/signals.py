@@ -284,26 +284,54 @@ def device_activity_handler(sender, instance, created, **kwargs):
         return
 
     try:
-        company = instance.device.store.branch.company
+        # Check if device exists and has store
+        if not instance.device or not instance.device.store:
+            print(f"Device or store is None for DeviceOperatorLog {instance.id}")
+            return
+
+        # Check if store exists (should always exist based on FK constraint)
+        store = instance.device.store
+        if not store.company:
+            print(f"Store {store.id} has no company")
+            return
+
+        company = store.company
+
+        # Get company_id - use schema_name if available
+        company_id = getattr(company, 'company_id', getattr(company, 'schema_name', None))
+        if not company_id:
+            print(f"No company_id found for company {company.id}")
+            return
+
+        # Prepare user name
+        user_name = instance.user.get_full_name() or instance.user.username
+
+        # Prepare store name
+        store_name = store.name
+
+        # Get branch name if exists (backward compatibility)
+        branch_name = store.name  # Use store name as fallback
 
         async_to_sync(channel_layer.group_send)(
-            f'company_dashboard_{company.company_id}',
+            f'company_dashboard_{company_id}',
             {
                 'type': 'dashboard_update',
                 'data': {
                     'event_type': 'device_activity',
-                    'user_name': instance.user.get_full_name() or instance.user.username,
+                    'user_name': user_name,
                     'action': instance.action.replace('_', ' ').title(),
-                    'store_name': instance.device.store.name,
-                    'branch_name': instance.device.store.branch.name,
-                    'timestamp': instance.timestamp.isoformat()
+                    'store_name': store_name,
+                    'branch_name': branch_name,
+                    'timestamp': instance.timestamp.isoformat(),
+                    'device_name': instance.device.name if instance.device else 'Unknown Device'
                 }
             }
         )
 
+    except AttributeError as e:
+        print(f"AttributeError in device_activity_handler: {e}")
     except Exception as e:
         print(f"Error sending device activity update: {e}")
-
 
 @receiver(post_save, sender=CompanyBranch)
 def branch_updated_handler(sender, instance, created, **kwargs):

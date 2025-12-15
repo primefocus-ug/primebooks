@@ -13,6 +13,7 @@ from django.utils.deprecation import MiddlewareMixin
 from django.shortcuts import redirect
 from django.contrib import messages
 
+
 class StoreAccessMiddleware(MiddlewareMixin):
     """
     Middleware to enforce store access control and set current store in request
@@ -20,7 +21,6 @@ class StoreAccessMiddleware(MiddlewareMixin):
 
     def process_request(self, request):
         tenant = get_tenant(request)
-
 
         # 🔒 Skip public schema entirely
         if tenant.schema_name == "public":
@@ -105,22 +105,28 @@ class DeviceSessionMiddleware(MiddlewareMixin):
             current_ip = get_client_ip(request)
             if session.ip_address != current_ip:
                 from .models import SecurityAlert
-                SecurityAlert.objects.create(
-                    user=request.user,
-                    store=session.store,
-                    session=session,
-                    device=session.store_device,
-                    alert_type='IP_CHANGE',
-                    severity='MEDIUM',
-                    title=f'IP address changed during session for {request.user.get_full_name()}',
-                    description=f'Session IP changed from {session.ip_address} to {current_ip}',
-                    ip_address=current_ip,
-                    alert_data={
-                        'original_ip': session.ip_address,
-                        'new_ip': current_ip,
-                        'session_age': str(timezone.now() - session.created_at),
-                    }
-                )
+
+                # ✅ FIX: Safely get store from session
+                store = getattr(session, 'store', None)
+
+                if store:  # Only create alert if store exists
+                    SecurityAlert.objects.create(
+                        user=request.user,
+                        store=store,
+                        session=session,
+                        device=getattr(session, 'store_device', None),
+                        alert_type='IP_CHANGE',
+                        severity='MEDIUM',
+                        title=f'IP address changed during session for {request.user.get_full_name()}',
+                        description=f'Session IP changed from {session.ip_address} to {current_ip}',
+                        ip_address=current_ip,
+                        alert_data={
+                            'original_ip': session.ip_address,
+                            'new_ip': current_ip,
+                            'session_age': str(timezone.now() - session.created_at),
+                        }
+                    )
+
                 # Update session IP
                 session.ip_address = current_ip
                 session.security_alerts_count += 1
@@ -149,10 +155,21 @@ class SessionActivityMiddleware(MiddlewareMixin):
         if request.path.startswith('/admin/') or request.path.startswith('/static/'):
             return None
 
-        # Get store from request
+        # ✅ FIX: Safely get store from multiple sources
         store = getattr(request, 'store', None)
+
+        if not store:
+            store = getattr(request, 'current_store', None)
+
         if not store and hasattr(request.user, 'company'):
-            store = request.user.company.stores.first()
+            try:
+                from stores.models import Store
+                store = Store.objects.filter(
+                    company=request.user.company,
+                    is_active=True
+                ).first()
+            except Exception:
+                pass
 
         if not store:
             return None
@@ -164,20 +181,25 @@ class SessionActivityMiddleware(MiddlewareMixin):
 
         # Run check every 5 minutes
         if not last_check or (now - last_check) > 300:
-            is_suspicious, reasons = detect_suspicious_activity(
-                request.user,
-                store,
-                timeframe_hours=1
-            )
+            try:
+                is_suspicious, reasons = detect_suspicious_activity(
+                    request.user,
+                    store,
+                    timeframe_hours=1
+                )
 
-            if is_suspicious:
-                # Mark current session as suspicious if it exists
-                session = get_device_session_from_request(request)
-                if session and not session.is_suspicious:
-                    session.flag_suspicious('. '.join(reasons))
+                if is_suspicious:
+                    # Mark current session as suspicious if it exists
+                    session = get_device_session_from_request(request)
+                    if session and not session.is_suspicious:
+                        session.flag_suspicious('. '.join(reasons))
 
-            # Update last check time
-            request.session['last_suspicious_check'] = now
+                # Update last check time
+                request.session['last_suspicious_check'] = now
+            except Exception as e:
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.error(f"Error detecting suspicious activity: {e}")
 
         return None
 
@@ -200,44 +222,71 @@ class ConcurrentSessionLimitMiddleware(MiddlewareMixin):
         if request.path.startswith('/admin/'):
             return None
 
-        # Get active sessions count
-        from .models import UserDeviceSession
+        try:
+            # Get active sessions count
+            from .models import UserDeviceSession
 
-        active_count = UserDeviceSession.objects.filter(
-            user=request.user,
-            is_active=True,
-            expires_at__gt=timezone.now()
-        ).count()
-
-        # If over limit, terminate oldest sessions
-        if active_count > self.MAX_CONCURRENT_SESSIONS:
-            from .utils import log_device_action
-
-            # Get oldest sessions to terminate
-            oldest_sessions = UserDeviceSession.objects.filter(
+            active_count = UserDeviceSession.objects.filter(
                 user=request.user,
                 is_active=True,
                 expires_at__gt=timezone.now()
-            ).order_by('created_at')[:(active_count - self.MAX_CONCURRENT_SESSIONS)]
+            ).count()
 
-            store = getattr(request, 'store', None) or (
-                request.user.company.stores.first() if hasattr(request.user, 'company') else None
-            )
+            # If over limit, terminate oldest sessions
+            if active_count > self.MAX_CONCURRENT_SESSIONS:
+                from .utils import log_device_action
 
-            for session in oldest_sessions:
-                # Log the termination
-                if store:
-                    log_device_action(
-                        user=request.user,
-                        store=store,
-                        action='SESSION_TERMINATED',
-                        device=session.store_device,
-                        session=session,
-                        success=True,
-                        reason='Concurrent session limit exceeded',
-                        terminated_sessions=active_count
-                    )
+                # Get oldest sessions to terminate
+                oldest_sessions = UserDeviceSession.objects.filter(
+                    user=request.user,
+                    is_active=True,
+                    expires_at__gt=timezone.now()
+                ).order_by('created_at')[:(active_count - self.MAX_CONCURRENT_SESSIONS)]
 
-                session.terminate(reason='FORCE_CLOSED')
+                # ✅ FIX: Safely get store from multiple sources
+                store = getattr(request, 'store', None)
+
+                if not store:
+                    store = getattr(request, 'current_store', None)
+
+                if not store and hasattr(request.user, 'company'):
+                    try:
+                        from stores.models import Store
+                        store = Store.objects.filter(
+                            company=request.user.company,
+                            is_active=True
+                        ).first()
+                    except Exception:
+                        pass
+
+                for session in oldest_sessions:
+                    # ✅ FIX: Use store from session if request store not available
+                    session_store = getattr(session, 'store', None) or store
+
+                    # Log the termination only if we have a store
+                    if session_store:
+                        try:
+                            log_device_action(
+                                user=request.user,
+                                store=session_store,
+                                action='SESSION_TERMINATED',
+                                device=getattr(session, 'store_device', None),
+                                session=session,
+                                success=True,
+                                reason='Concurrent session limit exceeded',
+                                terminated_sessions=active_count
+                            )
+                        except Exception as e:
+                            import logging
+                            logger = logging.getLogger(__name__)
+                            logger.error(f"Error logging session termination: {e}")
+
+                    # Terminate session regardless
+                    session.terminate(reason='FORCE_CLOSED')
+
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Error in ConcurrentSessionLimitMiddleware: {e}")
 
         return None

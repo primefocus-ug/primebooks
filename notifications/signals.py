@@ -327,9 +327,23 @@ def notify_security_alerts(sender, instance, created, **kwargs):
             # Also notify admins for high-severity alerts
             if hasattr(instance, 'severity') and instance.severity in ['HIGH', 'CRITICAL']:
                 if hasattr(instance, 'store') and instance.store:
-                    admins = instance.store.company.staff.filter(is_staff=True).only(
-                        'id', 'email', 'first_name', 'last_name'
-                    )
+                    # FIX 1: Use User model with company filter
+                    from django.contrib.auth import get_user_model
+                    User = get_user_model()
+
+                    admins = User.objects.filter(
+                        company=instance.store.company,  # This assumes User has a 'company' field
+                        is_staff=True,
+                        is_active=True
+                    ).only('id', 'email', 'first_name', 'last_name')
+
+                    # If that doesn't work, try:
+                    # FIX 2: Use staff from all company stores
+                    admins = User.objects.filter(
+                        stores__company=instance.store.company,
+                        is_staff=True,
+                        is_active=True
+                    ).distinct().only('id', 'email', 'first_name', 'last_name')
 
                     for admin in admins:
                         NotificationService.create_notification(

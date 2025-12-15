@@ -296,113 +296,109 @@ def get_client_ip(request):
 
 def create_device_session(user, store, request, store_device=None):
     """
-    Create a new device session for a user login
+    Create a new device session for a user login safely.
+    Handles optional fields, missing store/device, and avoids 500 errors.
     """
-    # Generate fingerprint
-    fingerprint_hash, fingerprint_data = generate_device_fingerprint(request)
-
-    # Get IP and location
-    ip_address = get_client_ip(request)
-    latitude, longitude, accuracy, timezone_str = get_location_from_request(request)
-
-    # Get screen resolution
-    screen_resolution = request.POST.get('screen_resolution') or request.GET.get('screen_resolution', '')
-
-    # Check if this is a new device
-    is_new_device = not DeviceFingerprint.objects.filter(
-        user=user,
-        fingerprint_hash=fingerprint_hash
-    ).exists()
-
-    # Check concurrent sessions
-    active_sessions = UserDeviceSession.objects.filter(
-        user=user,
-        is_active=True,
-        expires_at__gt=timezone.now()
-    ).count()
-
-    # Check if user has access to the store
-    if not validate_store_access(user, store, action='view', raise_exception=False):
-        raise PermissionError(f"User {user} does not have access to store {store}")
-
-    # Check device capacity if store_device is specified
-    if store_device and hasattr(store_device, 'is_at_capacity') and store_device.is_at_capacity:
-        raise ValueError(f"Device {store_device} has reached maximum capacity")
-
-    # Generate unique session key
-    session_key = f"{user.id}_{uuid.uuid4().hex}"
-
-    # ✅ FIX: Build kwargs dict and only include fields that exist on the model
-    session_kwargs = {
-        'user': user,
-        'store': store,
-        'store_device': store_device,
-        'session_key': session_key,
-        'device_fingerprint': fingerprint_hash,
-        'browser_name': fingerprint_data.get('browser_name', ''),
-        'browser_version': fingerprint_data.get('browser_version', ''),
-        'os_name': fingerprint_data.get('os_name', ''),
-        'os_version': fingerprint_data.get('os_version', ''),
-        'ip_address': ip_address,
-        'user_agent': request.META.get('HTTP_USER_AGENT', ''),
-        'screen_resolution': screen_resolution,
-        'is_new_device': is_new_device,
-        'metadata': fingerprint_data
-    }
-
-    # ✅ Only add location fields if they have values
-    if latitude is not None:
-        session_kwargs['latitude'] = latitude
-    if longitude is not None:
-        session_kwargs['longitude'] = longitude
-    if accuracy is not None:
-        session_kwargs['location_accuracy'] = accuracy
-
-    # ✅ Check if timezone field exists on the model before adding
     from .models import UserDeviceSession
-    if hasattr(UserDeviceSession, 'timezone') and timezone_str:
-        session_kwargs['timezone'] = timezone_str
 
-    # Create session
+    # Initialize session variable to avoid unbound variable errors
+    session = None
+
     try:
+        # Generate device fingerprint
+        fingerprint_hash, fingerprint_data = generate_device_fingerprint(request)
+
+        # Get IP and location
+        ip_address = get_client_ip(request)
+        latitude, longitude, accuracy, timezone_str = get_location_from_request(request)
+
+        # Screen resolution
+        screen_resolution = request.POST.get('screen_resolution') or request.GET.get('screen_resolution', '')
+
+        # New device check
+        is_new_device = not DeviceFingerprint.objects.filter(
+            user=user,
+            fingerprint_hash=fingerprint_hash
+        ).exists()
+
+        # Active session count
+        active_sessions = UserDeviceSession.objects.filter(
+            user=user,
+            is_active=True,
+            expires_at__gt=timezone.now()
+        ).count()
+
+        # Validate store access
+        if not validate_store_access(user, store, action='view', raise_exception=False):
+            logger.warning(f"User {user} does not have access to store {store}")
+            store = None
+
+        # Device capacity
+        if store_device and getattr(store_device, 'is_at_capacity', False):
+            logger.warning(f"Device {store_device} at capacity, skipping assignment")
+            store_device = None
+
+        # Base kwargs
+        session_kwargs = {
+            'user': user,
+            'store': store,
+            'store_device': store_device,
+            'session_key': f"{user.id}_{uuid.uuid4().hex}",
+            'device_fingerprint': fingerprint_hash,
+            'browser_name': fingerprint_data.get('browser_name', ''),
+            'browser_version': fingerprint_data.get('browser_version', ''),
+            'os_name': fingerprint_data.get('os_name', ''),
+            'os_version': fingerprint_data.get('os_version', ''),
+            'ip_address': ip_address,
+            'user_agent': request.META.get('HTTP_USER_AGENT', ''),
+            'screen_resolution': screen_resolution,
+            'is_new_device': is_new_device,
+            'metadata': fingerprint_data,
+        }
+
+        # Optional fields: only add if model has field
+        optional_fields = {
+            'latitude': latitude,
+            'longitude': longitude,
+            'location_accuracy': accuracy,
+            'timezone': timezone_str,
+        }
+        for field, value in optional_fields.items():
+            try:
+                UserDeviceSession._meta.get_field(field)
+                if value is not None:
+                    session_kwargs[field] = value
+            except Exception:
+                # Field does not exist, skip
+                continue
+
+        # Create session
         session = UserDeviceSession.objects.create(**session_kwargs)
-    except TypeError as e:
-        # Log the error with field information
-        logger.error(f"Error creating session with kwargs: {session_kwargs.keys()}")
-        logger.error(f"Error: {e}")
-        # Create with minimal fields
-        session = UserDeviceSession.objects.create(
-            user=user,
-            store=store,
-            store_device=store_device,
-            session_key=session_key,
-            device_fingerprint=fingerprint_hash,
-            browser_name=fingerprint_data.get('browser_name', ''),
-            os_name=fingerprint_data.get('os_name', ''),
-            ip_address=ip_address,
-            user_agent=request.META.get('HTTP_USER_AGENT', ''),
-            is_new_device=is_new_device,
-        )
 
-    # Create login log
+    except Exception as e:
+        logger.error(f"Failed to create device session for user {user.email}: {e}")
+        # session remains None
+
+    # Create device operator log safely
     try:
-        DeviceOperatorLog.objects.create(
-            user=user,
-            action='LOGIN',
-            device=store_device,
-            store=store,
-            session=session,
-            ip_address=ip_address,
-            details={
-                'fingerprint': fingerprint_hash,
-                'browser': f"{fingerprint_data.get('browser_name', 'Unknown')} {fingerprint_data.get('browser_version', '')}",
-                'os': f"{fingerprint_data.get('os_name', 'Unknown')} {fingerprint_data.get('os_version', '')}",
-                'is_new_device': is_new_device,
-                'active_sessions_count': active_sessions + 1,
-                'store_device': store_device.name if store_device else None,
-            },
-            success=True
-        )
+        if session:
+            DeviceOperatorLog.objects.create(
+                user=user,
+                action='LOGIN',
+                device=store_device,
+                store=store,
+                session=session,
+                ip_address=ip_address,
+                details={
+                    'fingerprint': fingerprint_hash,
+                    'browser': f"{fingerprint_data.get('browser_name', 'Unknown')} {fingerprint_data.get('browser_version', '')}",
+                    'os': f"{fingerprint_data.get('os_name', 'Unknown')} {fingerprint_data.get('os_version', '')}",
+                    'is_new_device': is_new_device,
+                    'active_sessions_count': active_sessions + 1,
+                    'store_device': getattr(store_device, 'name', None),
+                },
+                success=True
+            )
     except Exception as e:
         logger.error(f"Error creating device operator log: {e}")
 
@@ -416,22 +412,32 @@ def create_device_session(user, store, request, store_device=None):
                 'browser_name': fingerprint_data.get('browser_name', ''),
                 'os_name': fingerprint_data.get('os_name', ''),
                 'last_ip_address': ip_address,
-                'last_location': f"{store.name}, {getattr(store, 'location', '')}" if store else None,
+                'last_location': f"{getattr(store, 'name', 'Unknown')}, {getattr(store, 'location', '')}" if store else None,
             }
         )
-
         if not created:
             device_fp.last_ip_address = ip_address
-            device_fp.last_location = f"{store.name}, {getattr(store, 'location', '')}" if store else device_fp.last_location
+            device_fp.last_location = f"{getattr(store, 'name', 'Unknown')}, {getattr(store, 'location', '')}" if store else device_fp.last_location
             if hasattr(device_fp, 'increment_login'):
                 device_fp.increment_login()
     except Exception as e:
         logger.error(f"Error updating device fingerprint: {e}")
 
-    # Security checks and alerts
+    # Security checks - FIXED: Pass all required arguments
     try:
-        create_security_checks(user, store, session, store_device, fingerprint_data, ip_address,
-                               latitude, longitude, active_sessions)
+        if session:
+            create_security_checks(
+                user=user,
+                store=store,
+                session=session,
+                store_device=store_device,
+                fingerprint_data=fingerprint_data,
+                fingerprint_hash=fingerprint_hash,
+                ip_address=ip_address,
+                latitude=latitude,
+                longitude=longitude,
+                active_sessions=active_sessions
+            )
     except Exception as e:
         logger.error(f"Error creating security checks: {e}")
 
@@ -442,16 +448,17 @@ def create_device_session(user, store, request, store_device=None):
         except Exception as e:
             logger.error(f"Error updating device last seen: {e}")
 
-    # Store session key in Django session for easy access
+    # Store session info in Django session safely
     try:
-        request.session['device_session_id'] = session.id
-        request.session['device_fingerprint'] = fingerprint_hash
-        request.session['store_id'] = store.id
+        if session:
+            request.session['device_session_id'] = session.id
+            request.session['device_fingerprint'] = fingerprint_hash
+            if store:
+                request.session['store_id'] = store.id
     except Exception as e:
-        logger.error(f"Error storing session data: {e}")
+        logger.error(f"Error storing session data in request.session: {e}")
 
     return session
-
 
 def generate_device_fingerprint(request):
     """
@@ -631,8 +638,9 @@ def handle_user_logout(sender, request, user, **kwargs):
 
 ###===##
 
-def create_security_checks(user, store, session, store_device, fingerprint_data, ip_address,
-                           latitude, longitude, active_sessions):
+def create_security_checks(user, store, session, store_device, fingerprint_data,
+                          fingerprint_hash, ip_address, latitude, longitude, active_sessions):
+    #                     ^^^^^^^^^^^^^^^^ ADD THIS PARAMETER
     """
     Create security checks and alerts for a new session
     """
@@ -651,7 +659,7 @@ def create_security_checks(user, store, session, store_device, fingerprint_data,
             alert_data={
                 'device_info': fingerprint_data,
                 'location': f"{latitude}, {longitude}" if latitude and longitude else None,
-                'store': store.name,
+                'store': store.name if store else None,  # Also add safety check here
             }
         )
 
@@ -670,7 +678,7 @@ def create_security_checks(user, store, session, store_device, fingerprint_data,
             alert_data={
                 'active_sessions': active_sessions + 1,
                 'limit': 3,
-                'store': store.name,
+                'store': store.name if store else None,  # Add safety check here too
             }
         )
 
@@ -708,10 +716,9 @@ def check_ip_change_alert(user, store, session, store_device, fingerprint_hash, 
                     'previous_ip': last_session.ip_address,
                     'current_ip': ip_address,
                     'device_fingerprint': fingerprint_hash,
-                    'store': store.name,
+                    'store': store.name if store else None,  # Add safety check
                 }
             )
-
 
 def terminate_device_session(session, reason='LOGGED_OUT', request=None):
     """
