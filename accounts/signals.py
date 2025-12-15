@@ -152,6 +152,7 @@ def get_default_roles_config():
 
                 # Store Management
                 'stores.store': ['add', 'change', 'view', 'delete'],
+                'stores.storeaccess': ['add', 'change', 'view', 'delete'],
                 'stores.storeoperatinghours': ['add', 'change', 'view', 'delete'],
                 'stores.storedevice': ['add', 'change', 'view', 'delete'],
                 'stores.userdevicesession': ['add', 'change', 'view', 'delete'],
@@ -235,6 +236,7 @@ def get_default_roles_config():
 
                 # Store Operations
                 'stores.store': ['change', 'view'],
+                'stores.storeaccess': [ 'change', 'view', ],
                 'stores.storeoperatinghours': ['add', 'change', 'view'],
                 'stores.storedevice': ['change', 'view'],
                 'stores.userdevicesession': ['view', 'delete'],
@@ -315,6 +317,7 @@ def get_default_roles_config():
 
                 # Store Management
                 'stores.store': ['change', 'view'],
+                'stores.storeaccess': ['change', 'view', ],
                 'stores.storeoperatinghours': ['add', 'change', 'view'],
                 'stores.storedevice': ['change', 'view'],
                 'stores.userdevicesession': ['view', 'change'],
@@ -394,6 +397,7 @@ def get_default_roles_config():
 
                 # Store View
                 'stores.store': ['view'],
+                'stores.storeaccess': [ 'view', ],
 
                 'branches.companybranch': ['view'],
 
@@ -440,6 +444,7 @@ def get_default_roles_config():
 
                 # Store Management (View employee-related)
                 'stores.store': ['view'],
+                'stores.storeaccess': [ 'view', ],
                 'stores.storedevice': ['view'],
                 'stores.userdevicesession': ['view'],
 
@@ -499,6 +504,7 @@ def get_default_roles_config():
 
                 # Store Management (Limited to assigned store)
                 'stores.store': ['view'],
+                'stores.storeaccess': [ 'view', ],
                 'stores.storeoperatinghours': ['view'],
                 'stores.storedevice': ['view'],  # For POS device management
                 'stores.userdevicesession': ['add', 'change', 'view'],  # For login/logout tracking
@@ -563,6 +569,7 @@ def get_default_roles_config():
 
                 # Store Management (View inventory-related)
                 'stores.store': ['view'],
+                'stores.storeaccess': ['view', ],
 
                 # Reports (Inventory reports only)
                 'reports.savedreport': ['add', 'change', 'view'],
@@ -620,6 +627,7 @@ def get_default_roles_config():
 
                 # Store Management (Sales-focused)
                 'stores.store': ['view'],
+                'stores.storeaccess': ['view', ],
                 'stores.storeoperatinghours': ['view'],
 
                 # Reports (Sales reports full access)
@@ -688,6 +696,7 @@ def get_default_roles_config():
 
                 # Store Management (Minimal)
                 'stores.store': ['view'],
+                'stores.storeaccess': ['view', ],
 
                 # Reports (Limited - data quality reports)
                 'reports.savedreport': ['view'],
@@ -764,6 +773,7 @@ def get_default_roles_config():
 
                 # Store Management (View only - all store operations)
                 'stores.store': ['view'],
+                'stores.storeaccess': ['view', ],
                 'stores.storeoperatinghours': ['view'],
                 'stores.storedevice': ['view'],
                 'stores.userdevicesession': ['view'],
