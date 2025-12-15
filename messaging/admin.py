@@ -34,4 +34,4 @@ class EncryptionKeyManagerAdmin(admin.ModelAdmin):
         return False  # Keys auto-generated
 
     def has_delete_permission(self, request, obj=None):
-        return False  # Never delete keys
+        return request.user.is_superuser
