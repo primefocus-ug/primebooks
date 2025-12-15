@@ -744,6 +744,11 @@ class NoStoreAccessView(LoginRequiredMixin, TemplateView):
     """
     template_name = 'stores/no_store_access.html'
 
+    def dispatch(self, request, *args, **kwargs):
+        # Allow access to this view even without store access
+        # We'll handle the check manually
+        return super().dispatch(request, *args, **kwargs)
+
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
 
@@ -754,16 +759,29 @@ class NoStoreAccessView(LoginRequiredMixin, TemplateView):
         # Add user info
         context['user'] = self.request.user
 
-        # Check if user might have access through company-wide settings
-        if hasattr(self.request, 'company'):
-            context['accessible_stores'] = Store.objects.filter(
-                company=self.request.company,
-                is_active=True,
-                accessible_by_all=True
-            ).exists()
+        # Check if user might have access now
+        from stores.models import Store, StoreAccess
+
+        user = self.request.user
+        has_access = False
+
+        if hasattr(user, 'stores') and user.stores.filter(is_active=True).exists():
+            has_access = True
+        elif hasattr(user, 'managed_stores') and user.managed_stores.filter(is_active=True).exists():
+            has_access = True
+        elif StoreAccess.objects.filter(user=user, is_active=True, store__is_active=True).exists():
+            has_access = True
+        elif hasattr(self.request, 'company'):
+            if Store.objects.filter(
+                    company=self.request.company,
+                    is_active=True,
+                    accessible_by_all=True
+            ).exists():
+                has_access = True
+
+        context['has_access'] = has_access
 
         return context
-
 
 class CheckStoreAccessView(LoginRequiredMixin, View):
     """
