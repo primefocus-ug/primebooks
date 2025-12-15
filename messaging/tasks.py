@@ -1,5 +1,6 @@
 from celery import shared_task
 from django.core.mail import send_mail
+from django.db import ProgrammingError
 from django.template.loader import render_to_string
 from django.conf import settings
 from channels.layers import get_channel_layer
@@ -18,7 +19,7 @@ from .models import (
 )
 from django.contrib.auth import get_user_model
 from asgiref.sync import async_to_sync
-from django.db.models import Count, Sum
+from django.db.models import Count, Sum,Q
 from django.utils import timezone
 from celery import shared_task
 from django_tenants.utils import schema_context
@@ -27,10 +28,8 @@ from datetime import timedelta
 import logging
 
 
-# ✅ Import your real tenant model here
-from company.models import Company       # <-- change to your real model
+from company.models import Company
 
-# ✅ Import messaging models outside the task (Celery will load faster)
 from messaging.models import Message, Conversation
 from django.core.cache import cache
 
@@ -639,18 +638,21 @@ def send_admin_digest_email(admin_user_id):
                     'company': company,
                 })
 
-                send_mail(
-                    subject=f"Messaging Digest - {yesterday.strftime('%B %d, %Y')}",
-                    message=f"Daily messaging digest for {yesterday}",
-                    html_message=html_message,
-                    from_email=settings.DEFAULT_FROM_EMAIL,
-                    recipient_list=[admin.email],
-                    fail_silently=True
-                )
+                # Commented out to prevent sending emails
+                # send_mail(
+                #     subject=f"Messaging Digest - {yesterday.strftime('%B %d, %Y')}",
+                #     message=f"Daily messaging digest for {yesterday}",
+                #     html_message=html_message,
+                #     from_email=settings.DEFAULT_FROM_EMAIL,
+                #     recipient_list=[admin.email],
+                #     fail_silently=True
+                # )
 
-                logger.info(f"Admin digest sent for {company.schema_name} to {admin.email}")
+                # Optional: log that it *would have sent* the email
+                logger.info(f"(Skipped sending) Admin digest for {company.schema_name} to {admin.email}")
 
             except Exception as e:
-                logger.error(f"Error sending digest for {company.schema_name}: {e}", exc_info=True)
+                logger.error(f"Error processing digest for {company.schema_name}: {e}", exc_info=True)
+
 
 
