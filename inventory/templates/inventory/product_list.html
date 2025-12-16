@@ -8,10 +8,7 @@
 
 {% block title %}Product Inventory - {{ store.name }} | {{ company.trading_name|default:company.name }}{% endblock %}
 
-{% load %}
 {% block breadcrumbs %}
-
-
 
 <li class="breadcrumb-item">
     {% if perms.inventory.view_product %}
@@ -252,49 +249,50 @@
         </div>
 
         <!-- Pagination -->
-        {% if is_paginated %}
-        <nav aria-label="Products pagination">
-            <ul class="pagination justify-content-center">
-                {% if page_obj.has_previous %}
-                <li class="page-item">
-                    <a class="page-link" href="?page=1{{ request.GET.urlencode|slice:'1:' }}">
-                        <i class="fas fa-angle-double-left"></i>
-                    </a>
-                </li>
-                <li class="page-item">
-                    <a class="page-link" href="?page={{ page_obj.previous_page_number }}{{ request.GET.urlencode|slice:'1:' }}">
-                        <i class="fas fa-angle-left"></i>
-                    </a>
-                </li>
-                {% endif %}
-
-                {% for num in page_obj.paginator.page_range %}
-                    {% if page_obj.number == num %}
-                    <li class="page-item active">
-                        <span class="page-link">{{ num }}</span>
-                    </li>
-                    {% elif num > page_obj.number|add:'-3' and num < page_obj.number|add:'3' %}
-                    <li class="page-item">
-                        <a class="page-link" href="?page={{ num }}{{ request.GET.urlencode|slice:'1:' }}">{{ num }}</a>
-                    </li>
-                    {% endif %}
-                {% endfor %}
-
-                {% if page_obj.has_next %}
-                <li class="page-item">
-                    <a class="page-link" href="?page={{ page_obj.next_page_number }}{{ request.GET.urlencode|slice:'1:' }}">
-                        <i class="fas fa-angle-right"></i>
-                    </a>
-                </li>
-                <li class="page-item">
-                    <a class="page-link" href="?page={{ page_obj.paginator.num_pages }}{{ request.GET.urlencode|slice:'1:' }}">
-                        <i class="fas fa-angle-double-right"></i>
-                    </a>
-                </li>
-                {% endif %}
-            </ul>
-        </nav>
+        <!-- Pagination -->
+{% if is_paginated %}
+<nav aria-label="Products pagination">
+    <ul class="pagination justify-content-center">
+        {% if page_obj.has_previous %}
+        <li class="page-item">
+            <a class="page-link" href="?page=1{% for key, value in request.GET.items %}{% if key != 'page' %}&{{ key }}={{ value }}{% endif %}{% endfor %}">
+                <i class="fas fa-angle-double-left"></i>
+            </a>
+        </li>
+        <li class="page-item">
+            <a class="page-link" href="?page={{ page_obj.previous_page_number }}{% for key, value in request.GET.items %}{% if key != 'page' %}&{{ key }}={{ value }}{% endif %}{% endfor %}">
+                <i class="fas fa-angle-left"></i>
+            </a>
+        </li>
         {% endif %}
+
+        {% for num in page_obj.paginator.page_range %}
+            {% if page_obj.number == num %}
+            <li class="page-item active">
+                <span class="page-link">{{ num }}</span>
+            </li>
+            {% elif num > page_obj.number|add:'-3' and num < page_obj.number|add:'3' %}
+            <li class="page-item">
+                <a class="page-link" href="?page={{ num }}{% for key, value in request.GET.items %}{% if key != 'page' %}&{{ key }}={{ value }}{% endif %}{% endfor %}">{{ num }}</a>
+            </li>
+            {% endif %}
+        {% endfor %}
+
+        {% if page_obj.has_next %}
+        <li class="page-item">
+            <a class="page-link" href="?page={{ page_obj.next_page_number }}{% for key, value in request.GET.items %}{% if key != 'page' %}&{{ key }}={{ value }}{% endif %}{% endfor %}">
+                <i class="fas fa-angle-right"></i>
+            </a>
+        </li>
+        <li class="page-item">
+            <a class="page-link" href="?page={{ page_obj.paginator.num_pages }}{% for key, value in request.GET.items %}{% if key != 'page' %}&{{ key }}={{ value }}{% endif %}{% endfor %}">
+                <i class="fas fa-angle-double-right"></i>
+            </a>
+        </li>
+        {% endif %}
+    </ul>
+</nav>
+{% endif %}
 
         {% else %}
         <div class="empty-state">
@@ -896,33 +894,6 @@
 {% block extra_js %}
 <script>
 $(document).ready(function() {
-    // Initialize DataTable
-    const productsTable = $('#productsTable').DataTable({
-        responsive: true,
-        dom: '<"top"f>{% trans "rt" %}<"bottom"lip><"clear">',
-        pageLength: 25,
-        language: {
-            search: "_INPUT_",
-            searchPlaceholder: "Search products...",
-            lengthMenu: "Show _MENU_ products",
-            info: "Showing _START_ to _END_ of _TOTAL_ products",
-            infoEmpty: "No products found",
-            infoFiltered: "(filtered from _MAX_ total products)"
-        },
-        columnDefs: [
-            { orderable: false, targets: [0, 6] }, // Disable sorting for checkbox and actions columns
-            { responsivePriority: 1, targets: 1 }, // Product details column
-            { responsivePriority: 2, targets: 3 }  // Pricing column
-        ],
-        initComplete: function() {
-            // Add custom search input
-            $('.dataTables_filter input').addClass('form-control form-control-sm');
-            $('.dataTables_filter label').contents().filter(function() {
-                return this.nodeType === 3;
-            }).remove();
-        }
-    });
-
     // Checkbox selection functionality
     $('#selectAll').on('change', function() {
         $('.product-checkbox').prop('checked', this.checked);
@@ -989,7 +960,8 @@ $(document).ready(function() {
     });
 
     // Quick stock adjustment
-    $('.quick-stock-btn').on('click', function() {
+    $('.quick-stock-btn').on('click', function(e) {
+        e.preventDefault(); // Prevent default link behavior
         const productId = $(this).data('product-id');
         const productName = $(this).data('product-name');
 
@@ -1007,6 +979,8 @@ $(document).ready(function() {
                 stockInfo = data.stock_levels.map(s => `${s.store_name}: ${s.quantity}`).join(', ');
             }
             $('#currentStock').val(stockInfo);
+        }).fail(function() {
+            $('#currentStock').val('Failed to load');
         });
 
         $('#quickStockModal').modal('show');
@@ -1074,7 +1048,7 @@ $(document).ready(function() {
         $('#productQuickViewContent').html(`
             <div class="text-center py-4">
                 <i class="fas fa-spinner fa-spin fa-2x"></i>
-                <p>{% trans "Loading product details..." %}</p>
+                <p>Loading product details...</p>
             </div>
         `);
 
@@ -1090,53 +1064,53 @@ $(document).ready(function() {
                               `<div class="image-placeholder"><i class="fas fa-box"></i></div>`}
                         </div>
                         <div>
-                            <h4>{% trans "${data.name}" %}</h4>
-                            <div class="text-muted">{% trans "SKU: ${data.sku || 'N/A'}" %}</div>
+                            <h4>${data.name}</h4>
+                            <div class="text-muted">SKU: ${data.sku || 'N/A'}</div>
                         </div>
                     </div>
 
                     <div class="detail-row">
-                        <div class="detail-label">{% trans "Category" %}</div>
-                        <div class="detail-value">{% trans "${data.category || 'Uncategorized'}" %}</div>
+                        <div class="detail-label">Category</div>
+                        <div class="detail-value">${data.category || 'Uncategorized'}</div>
                     </div>
                     <div class="detail-row">
-                        <div class="detail-label">{% trans "Supplier" %}</div>
-                        <div class="detail-value">{% trans "${data.supplier || 'No supplier'}" %}</div>
+                        <div class="detail-label">Supplier</div>
+                        <div class="detail-value">${data.supplier || 'No supplier'}</div>
                     </div>
                     <div class="detail-row">
-                        <div class="detail-label">{% trans "Barcode" %}</div>
-                        <div class="detail-value">{% trans "${data.barcode || 'N/A'}" %}</div>
+                        <div class="detail-label">Barcode</div>
+                        <div class="detail-value">${data.barcode || 'N/A'}</div>
                     </div>
                 </div>
 
                 <div class="product-detail-section">
-                    <h5 class="mb-3">{% trans "Pricing Information" %}</h5>
+                    <h5 class="mb-3">Pricing Information</h5>
                     <div class="detail-row">
-                        <div class="detail-label">{% trans "Selling Price" %}</div>
-                        <div class="detail-value">{% trans "UGX ${data.selling_price|money}" %}</div>
+                        <div class="detail-label">Selling Price</div>
+                        <div class="detail-value">UGX ${parseFloat(data.selling_price).toLocaleString()}</div>
                     </div>
                     <div class="detail-row">
-                        <div class="detail-label">{% trans "Cost Price" %}</div>
-                        <div class="detail-value">{% trans "UGX ${data.cost_price|money}" %}</div>
+                        <div class="detail-label">Cost Price</div>
+                        <div class="detail-value">UGX ${parseFloat(data.cost_price).toLocaleString()}</div>
                     </div>
                     <div class="detail-row">
-                        <div class="detail-label">{% trans "Tax Rate" %}</div>
-                        <div class="detail-value">{% trans "${data.tax_rate || 'N/A'}" %}</div>
+                        <div class="detail-label">Tax Rate</div>
+                        <div class="detail-value">${data.tax_rate || 'N/A'}</div>
                     </div>
                     <div class="detail-row">
-                        <div class="detail-label">{% trans "Unit of Measure" %}</div>
-                        <div class="detail-value">{% trans "${data.unit_of_measure || 'N/A'}" %}</div>
+                        <div class="detail-label">Unit of Measure</div>
+                        <div class="detail-value">${data.unit_of_measure || 'N/A'}</div>
                     </div>
                 </div>
 
                 <div class="product-detail-section">
-                    <h5 class="mb-3">{% trans "Inventory Status" %}</h5>
+                    <h5 class="mb-3">Inventory Status</h5>
                     <table class="stock-table">
                         <thead>
                             <tr>
-                                <th>{% trans "Store" %}</th>
-                                <th>{% trans "Current Stock" %}</th>
-                                <th>{% trans "Status" %}</th>
+                                <th>Store</th>
+                                <th>Current Stock</th>
+                                <th>Status</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -1146,25 +1120,25 @@ $(document).ready(function() {
                 data.stock_levels.forEach(stock => {
                     let statusBadge = '';
                     if (stock.status === 'in_stock') {
-                        statusBadge = '<span class="badge bg-success">{% trans "In Stock" %}</span>';
+                        statusBadge = '<span class="badge bg-success">In Stock</span>';
                     } else if (stock.status === 'low_stock') {
-                        statusBadge = '<span class="badge bg-warning">{% trans "Low Stock" %}</span>';
+                        statusBadge = '<span class="badge bg-warning">Low Stock</span>';
                     } else {
-                        statusBadge = '<span class="badge bg-danger">{% trans "Out of Stock" %}</span>';
+                        statusBadge = '<span class="badge bg-danger">Out of Stock</span>';
                     }
 
                     content += `
                         <tr>
-                            <td>{% trans "${stock.store_name}" %}</td>
-                            <td>{% trans "${stock.quantity} ${data.unit_of_measure}" %}</td>
-                            <td>{% trans "${statusBadge}" %}</td>
+                            <td>${stock.store_name}</td>
+                            <td>${stock.quantity} ${data.unit_of_measure || ''}</td>
+                            <td>${statusBadge}</td>
                         </tr>
                     `;
                 });
             } else {
                 content += `
                     <tr>
-                        <td colspan="3" class="text-center text-muted py-3">{% trans "No stock records available" %}</td>
+                        <td colspan="3" class="text-center text-muted py-3">No stock records available</td>
                     </tr>
                 `;
             }
@@ -1199,25 +1173,32 @@ $(document).ready(function() {
 
         // Show loading state
         const $btn = $('.export-btn');
-        const originalHtml = $btn.html();
-        $btn.html('<i class="fas fa-spinner fa-spin"></i> Exporting...');
-        $btn.prop('disabled', true);
+        if ($btn.length) {
+            const originalHtml = $btn.html();
+            $btn.html('<i class="fas fa-spinner fa-spin"></i> Exporting...');
+            $btn.prop('disabled', true);
 
-        // Simulate export process
-        setTimeout(() => {
-            // In a real application, this would trigger a file download
-            console.log('Exporting products:', selectedIds);
+            // Simulate export process
+            setTimeout(() => {
+                // In a real application, this would trigger a file download
+                console.log('Exporting products:', selectedIds);
 
-            // Reset button state
-            $btn.html(originalHtml);
-            $btn.prop('disabled', false);
+                // Reset button state
+                $btn.html(originalHtml);
+                $btn.prop('disabled', false);
 
-            // Show success message
-            alert(`Exported ${selectedIds.length > 0 ? selectedIds.length : 'all'} products successfully`);
-        }, 1500);
+                // Show success message
+                alert(`Exported ${selectedIds.length > 0 ? selectedIds.length : 'all'} products successfully`);
+            }, 1500);
+        } else {
+            // Direct download if button not found
+            window.location.href = url;
+        }
     };
 
-    // Auto-submit filter form on change with debounce
+    // Auto-submit filter form on change with debounce (REMOVED to prevent conflicts with pagination)
+    // Comment this out if you want manual filter submission only
+    /*
     let filterTimeout;
     $('#filterForm select, #filterForm input').on('change keyup', function() {
         clearTimeout(filterTimeout);
@@ -1225,12 +1206,1071 @@ $(document).ready(function() {
             $('#filterForm').submit();
         }, 500);
     });
+    */
 
     // Initialize tooltips
-    $('[data-bs-toggle="tooltip"]').tooltip({
-        trigger: 'hover',
-        placement: 'top'
+    if (typeof bootstrap !== 'undefined') {
+        const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+        tooltipTriggerList.map(function (tooltipTriggerEl) {
+            return new bootstrap.Tooltip(tooltipTriggerEl);
+        });
+    } else {
+        // Fallback for older Bootstrap versions
+        $('[data-bs-toggle="tooltip"]').tooltip({
+            trigger: 'hover',
+            placement: 'top'
+        });
+    }
+
+    // Preserve checkbox state after page reload (optional feature)
+    // Uncomment if you want checkboxes to remember selection
+    /*
+    $('.product-checkbox').each(function() {
+        const productId = $(this).val();
+        const isChecked = sessionStorage.getItem('product_' + productId) === 'true';
+        $(this).prop('checked', isChecked);
     });
+
+    $('.product-checkbox').on('change', function() {
+        const productId = $(this).val();
+        sessionStorage.setItem('product_' + productId, $(this).is(':checked'));
+    });
+    */
+});
+</script><script>
+$(document).ready(function() {
+    // Checkbox selection functionality
+    $('#selectAll').on('change', function() {
+        $('.product-checkbox').prop('checked', this.checked);
+        toggleBulkActions();
+    });
+
+    $('.product-checkbox').on('change', function() {
+        if ($('.product-checkbox:checked').length === $('.product-checkbox').length) {
+            $('#selectAll').prop('checked', true);
+        } else {
+            $('#selectAll').prop('checked', false);
+        }
+        toggleBulkActions();
+    });
+
+    function toggleBulkActions() {
+        const selectedCount = $('.product-checkbox:checked').length;
+        if (selectedCount > 0) {
+            $('.bulk-actions-dropdown').show();
+            $('#selectedCount').text(selectedCount);
+        } else {
+            $('.bulk-actions-dropdown').hide();
+        }
+    }
+
+    // Bulk actions
+    $('[data-action]').on('click', function(e) {
+        e.preventDefault();
+        const action = $(this).data('action');
+        const selectedIds = $('.product-checkbox:checked').map(function() {
+            return $(this).val();
+        }).get();
+
+        if (selectedIds.length === 0) {
+            alert('Please select at least one product');
+            return;
+        }
+
+        if (action === 'delete' && !confirm('Are you sure you want to delete the selected products?')) {
+            return;
+        }
+
+        // Show loading state
+        const $btn = $(this);
+        const originalHtml = $btn.html();
+        $btn.html('<i class="fas fa-spinner fa-spin"></i> Processing...');
+        $btn.prop('disabled', true);
+
+        // Simulate API call
+        setTimeout(() => {
+            // In a real application, this would be an AJAX call
+            console.log(`Performing ${action} on:`, selectedIds);
+
+            // Reset button state
+            $btn.html(originalHtml);
+            $btn.prop('disabled', false);
+
+            // Show success message
+            alert(`${selectedIds.length} product(s) ${action}d successfully`);
+
+            // Reload the page to reflect changes
+            location.reload();
+        }, 1000);
+    });
+
+    // Quick stock adjustment
+    $('.quick-stock-btn').on('click', function(e) {
+        e.preventDefault(); // Prevent default link behavior
+        const productId = $(this).data('product-id');
+        const productName = $(this).data('product-name');
+
+        $('#quickProductId').val(productId);
+        $('#quickProductName').val(productName);
+        $('#adjustmentQuantity').val('');
+        $('#adjustmentReason').val('');
+        $('#adjustmentNotes').val('');
+        $('#reasonNoteContainer').hide();
+
+        // Load current stock levels
+        $.get(`/api/products/${productId}/stock/`, function(data) {
+            let stockInfo = 'Not available';
+            if (data.stock_levels && data.stock_levels.length > 0) {
+                stockInfo = data.stock_levels.map(s => `${s.store_name}: ${s.quantity}`).join(', ');
+            }
+            $('#currentStock').val(stockInfo);
+        }).fail(function() {
+            $('#currentStock').val('Failed to load');
+        });
+
+        $('#quickStockModal').modal('show');
+    });
+
+    // Show notes field when "Other" is selected
+    $('#adjustmentReason').on('change', function() {
+        if ($(this).val() === 'other') {
+            $('#reasonNoteContainer').show();
+        } else {
+            $('#reasonNoteContainer').hide();
+        }
+    });
+
+    // Handle quick stock form submission
+    $('#quickStockForm').on('submit', function(e) {
+        e.preventDefault();
+
+        const formData = {
+            product_id: $('#quickProductId').val(),
+            store_id: $('#quickStore').val(),
+            adjustment_type: $('input[name="adjustmentType"]:checked').val(),
+            quantity: $('#adjustmentQuantity').val(),
+            reason: $('#adjustmentReason').val(),
+            notes: $('#adjustmentNotes').val(),
+            csrfmiddlewaretoken: $('input[name=csrfmiddlewaretoken]').val()
+        };
+
+        // Validate form
+        if (!formData.store_id || !formData.quantity || !formData.reason) {
+            alert('Please fill all required fields');
+            return;
+        }
+
+        // Show loading state
+        const $submitBtn = $('#quickStockForm button[type="submit"]');
+        const originalBtnText = $submitBtn.html();
+        $submitBtn.html('<i class="fas fa-spinner fa-spin"></i> Processing...');
+        $submitBtn.prop('disabled', true);
+
+        // Simulate API call
+        setTimeout(() => {
+            console.log('Stock adjustment submitted:', formData);
+
+            // Reset form and button
+            $submitBtn.html(originalBtnText);
+            $submitBtn.prop('disabled', false);
+
+            // Close modal and show success message
+            $('#quickStockModal').modal('hide');
+            alert('Stock adjustment saved successfully');
+
+            // In a real app, you might want to update the UI or reload data
+            // For now, we'll just reload the page
+            location.reload();
+        }, 1500);
+    });
+
+    // Product quick view
+    $('.view-details-btn').on('click', function(e) {
+        e.preventDefault();
+        const productId = $(this).data('product-id');
+
+        // Show loading state
+        $('#productQuickViewContent').html(`
+            <div class="text-center py-4">
+                <i class="fas fa-spinner fa-spin fa-2x"></i>
+                <p>Loading product details...</p>
+            </div>
+        `);
+
+        $('#productQuickViewModal').modal('show');
+
+        // Load product details
+        $.get(`/api/products/${productId}/`, function(data) {
+            let content = `
+                <div class="product-detail-section">
+                    <div class="d-flex align-items-center mb-3">
+                        <div class="product-image me-3">
+                            ${data.image ? `<img src="${data.image}" alt="${data.name}" class="img-fluid rounded">` :
+                              `<div class="image-placeholder"><i class="fas fa-box"></i></div>`}
+                        </div>
+                        <div>
+                            <h4>${data.name}</h4>
+                            <div class="text-muted">SKU: ${data.sku || 'N/A'}</div>
+                        </div>
+                    </div>
+
+                    <div class="detail-row">
+                        <div class="detail-label">Category</div>
+                        <div class="detail-value">${data.category || 'Uncategorized'}</div>
+                    </div>
+                    <div class="detail-row">
+                        <div class="detail-label">Supplier</div>
+                        <div class="detail-value">${data.supplier || 'No supplier'}</div>
+                    </div>
+                    <div class="detail-row">
+                        <div class="detail-label">Barcode</div>
+                        <div class="detail-value">${data.barcode || 'N/A'}</div>
+                    </div>
+                </div>
+
+                <div class="product-detail-section">
+                    <h5 class="mb-3">Pricing Information</h5>
+                    <div class="detail-row">
+                        <div class="detail-label">Selling Price</div>
+                        <div class="detail-value">UGX ${parseFloat(data.selling_price).toLocaleString()}</div>
+                    </div>
+                    <div class="detail-row">
+                        <div class="detail-label">Cost Price</div>
+                        <div class="detail-value">UGX ${parseFloat(data.cost_price).toLocaleString()}</div>
+                    </div>
+                    <div class="detail-row">
+                        <div class="detail-label">Tax Rate</div>
+                        <div class="detail-value">${data.tax_rate || 'N/A'}</div>
+                    </div>
+                    <div class="detail-row">
+                        <div class="detail-label">Unit of Measure</div>
+                        <div class="detail-value">${data.unit_of_measure || 'N/A'}</div>
+                    </div>
+                </div>
+
+                <div class="product-detail-section">
+                    <h5 class="mb-3">Inventory Status</h5>
+                    <table class="stock-table">
+                        <thead>
+                            <tr>
+                                <th>Store</th>
+                                <th>Current Stock</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+            `;
+
+            if (data.stock_levels && data.stock_levels.length > 0) {
+                data.stock_levels.forEach(stock => {
+                    let statusBadge = '';
+                    if (stock.status === 'in_stock') {
+                        statusBadge = '<span class="badge bg-success">In Stock</span>';
+                    } else if (stock.status === 'low_stock') {
+                        statusBadge = '<span class="badge bg-warning">Low Stock</span>';
+                    } else {
+                        statusBadge = '<span class="badge bg-danger">Out of Stock</span>';
+                    }
+
+                    content += `
+                        <tr>
+                            <td>${stock.store_name}</td>
+                            <td>${stock.quantity} ${data.unit_of_measure || ''}</td>
+                            <td>${statusBadge}</td>
+                        </tr>
+                    `;
+                });
+            } else {
+                content += `
+                    <tr>
+                        <td colspan="3" class="text-center text-muted py-3">No stock records available</td>
+                    </tr>
+                `;
+            }
+
+            content += `
+                        </tbody>
+                    </table>
+                </div>
+            `;
+
+            $('#productQuickViewContent').html(content);
+            $('#editProductBtn').attr('href', `/inventory/products/${productId}/edit/`);
+        }).fail(function() {
+            $('#productQuickViewContent').html(`
+                <div class="alert alert-danger m-3">
+                    Failed to load product details. Please try again.
+                </div>
+            `);
+        });
+    });
+
+    // Export functionality
+    window.exportProducts = function() {
+        const selectedIds = $('.product-checkbox:checked').map(function() {
+            return $(this).val();
+        }).get();
+
+        let url = '/inventory/products/export/';
+        if (selectedIds.length > 0) {
+            url += '?ids=' + selectedIds.join(',');
+        }
+
+        // Show loading state
+        const $btn = $('.export-btn');
+        if ($btn.length) {
+            const originalHtml = $btn.html();
+            $btn.html('<i class="fas fa-spinner fa-spin"></i> Exporting...');
+            $btn.prop('disabled', true);
+
+            // Simulate export process
+            setTimeout(() => {
+                // In a real application, this would trigger a file download
+                console.log('Exporting products:', selectedIds);
+
+                // Reset button state
+                $btn.html(originalHtml);
+                $btn.prop('disabled', false);
+
+                // Show success message
+                alert(`Exported ${selectedIds.length > 0 ? selectedIds.length : 'all'} products successfully`);
+            }, 1500);
+        } else {
+            // Direct download if button not found
+            window.location.href = url;
+        }
+    };
+
+    // Auto-submit filter form on change with debounce (REMOVED to prevent conflicts with pagination)
+    // Comment this out if you want manual filter submission only
+    /*
+    let filterTimeout;
+    $('#filterForm select, #filterForm input').on('change keyup', function() {
+        clearTimeout(filterTimeout);
+        filterTimeout = setTimeout(function() {
+            $('#filterForm').submit();
+        }, 500);
+    });
+    */
+
+    // Initialize tooltips
+    if (typeof bootstrap !== 'undefined') {
+        const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+        tooltipTriggerList.map(function (tooltipTriggerEl) {
+            return new bootstrap.Tooltip(tooltipTriggerEl);
+        });
+    } else {
+        // Fallback for older Bootstrap versions
+        $('[data-bs-toggle="tooltip"]').tooltip({
+            trigger: 'hover',
+            placement: 'top'
+        });
+    }
+
+    // Preserve checkbox state after page reload (optional feature)
+    // Uncomment if you want checkboxes to remember selection
+    /*
+    $('.product-checkbox').each(function() {
+        const productId = $(this).val();
+        const isChecked = sessionStorage.getItem('product_' + productId) === 'true';
+        $(this).prop('checked', isChecked);
+    });
+
+    $('.product-checkbox').on('change', function() {
+        const productId = $(this).val();
+        sessionStorage.setItem('product_' + productId, $(this).is(':checked'));
+    });
+    */
+});
+</script><script>
+$(document).ready(function() {
+    // Checkbox selection functionality
+    $('#selectAll').on('change', function() {
+        $('.product-checkbox').prop('checked', this.checked);
+        toggleBulkActions();
+    });
+
+    $('.product-checkbox').on('change', function() {
+        if ($('.product-checkbox:checked').length === $('.product-checkbox').length) {
+            $('#selectAll').prop('checked', true);
+        } else {
+            $('#selectAll').prop('checked', false);
+        }
+        toggleBulkActions();
+    });
+
+    function toggleBulkActions() {
+        const selectedCount = $('.product-checkbox:checked').length;
+        if (selectedCount > 0) {
+            $('.bulk-actions-dropdown').show();
+            $('#selectedCount').text(selectedCount);
+        } else {
+            $('.bulk-actions-dropdown').hide();
+        }
+    }
+
+    // Bulk actions
+    $('[data-action]').on('click', function(e) {
+        e.preventDefault();
+        const action = $(this).data('action');
+        const selectedIds = $('.product-checkbox:checked').map(function() {
+            return $(this).val();
+        }).get();
+
+        if (selectedIds.length === 0) {
+            alert('Please select at least one product');
+            return;
+        }
+
+        if (action === 'delete' && !confirm('Are you sure you want to delete the selected products?')) {
+            return;
+        }
+
+        // Show loading state
+        const $btn = $(this);
+        const originalHtml = $btn.html();
+        $btn.html('<i class="fas fa-spinner fa-spin"></i> Processing...');
+        $btn.prop('disabled', true);
+
+        // Simulate API call
+        setTimeout(() => {
+            // In a real application, this would be an AJAX call
+            console.log(`Performing ${action} on:`, selectedIds);
+
+            // Reset button state
+            $btn.html(originalHtml);
+            $btn.prop('disabled', false);
+
+            // Show success message
+            alert(`${selectedIds.length} product(s) ${action}d successfully`);
+
+            // Reload the page to reflect changes
+            location.reload();
+        }, 1000);
+    });
+
+    // Quick stock adjustment
+    $('.quick-stock-btn').on('click', function(e) {
+        e.preventDefault(); // Prevent default link behavior
+        const productId = $(this).data('product-id');
+        const productName = $(this).data('product-name');
+
+        $('#quickProductId').val(productId);
+        $('#quickProductName').val(productName);
+        $('#adjustmentQuantity').val('');
+        $('#adjustmentReason').val('');
+        $('#adjustmentNotes').val('');
+        $('#reasonNoteContainer').hide();
+
+        // Load current stock levels
+        $.get(`/api/products/${productId}/stock/`, function(data) {
+            let stockInfo = 'Not available';
+            if (data.stock_levels && data.stock_levels.length > 0) {
+                stockInfo = data.stock_levels.map(s => `${s.store_name}: ${s.quantity}`).join(', ');
+            }
+            $('#currentStock').val(stockInfo);
+        }).fail(function() {
+            $('#currentStock').val('Failed to load');
+        });
+
+        $('#quickStockModal').modal('show');
+    });
+
+    // Show notes field when "Other" is selected
+    $('#adjustmentReason').on('change', function() {
+        if ($(this).val() === 'other') {
+            $('#reasonNoteContainer').show();
+        } else {
+            $('#reasonNoteContainer').hide();
+        }
+    });
+
+    // Handle quick stock form submission
+    $('#quickStockForm').on('submit', function(e) {
+        e.preventDefault();
+
+        const formData = {
+            product_id: $('#quickProductId').val(),
+            store_id: $('#quickStore').val(),
+            adjustment_type: $('input[name="adjustmentType"]:checked').val(),
+            quantity: $('#adjustmentQuantity').val(),
+            reason: $('#adjustmentReason').val(),
+            notes: $('#adjustmentNotes').val(),
+            csrfmiddlewaretoken: $('input[name=csrfmiddlewaretoken]').val()
+        };
+
+        // Validate form
+        if (!formData.store_id || !formData.quantity || !formData.reason) {
+            alert('Please fill all required fields');
+            return;
+        }
+
+        // Show loading state
+        const $submitBtn = $('#quickStockForm button[type="submit"]');
+        const originalBtnText = $submitBtn.html();
+        $submitBtn.html('<i class="fas fa-spinner fa-spin"></i> Processing...');
+        $submitBtn.prop('disabled', true);
+
+        // Simulate API call
+        setTimeout(() => {
+            console.log('Stock adjustment submitted:', formData);
+
+            // Reset form and button
+            $submitBtn.html(originalBtnText);
+            $submitBtn.prop('disabled', false);
+
+            // Close modal and show success message
+            $('#quickStockModal').modal('hide');
+            alert('Stock adjustment saved successfully');
+
+            // In a real app, you might want to update the UI or reload data
+            // For now, we'll just reload the page
+            location.reload();
+        }, 1500);
+    });
+
+    // Product quick view
+    $('.view-details-btn').on('click', function(e) {
+        e.preventDefault();
+        const productId = $(this).data('product-id');
+
+        // Show loading state
+        $('#productQuickViewContent').html(`
+            <div class="text-center py-4">
+                <i class="fas fa-spinner fa-spin fa-2x"></i>
+                <p>Loading product details...</p>
+            </div>
+        `);
+
+        $('#productQuickViewModal').modal('show');
+
+        // Load product details
+        $.get(`/api/products/${productId}/`, function(data) {
+            let content = `
+                <div class="product-detail-section">
+                    <div class="d-flex align-items-center mb-3">
+                        <div class="product-image me-3">
+                            ${data.image ? `<img src="${data.image}" alt="${data.name}" class="img-fluid rounded">` :
+                              `<div class="image-placeholder"><i class="fas fa-box"></i></div>`}
+                        </div>
+                        <div>
+                            <h4>${data.name}</h4>
+                            <div class="text-muted">SKU: ${data.sku || 'N/A'}</div>
+                        </div>
+                    </div>
+
+                    <div class="detail-row">
+                        <div class="detail-label">Category</div>
+                        <div class="detail-value">${data.category || 'Uncategorized'}</div>
+                    </div>
+                    <div class="detail-row">
+                        <div class="detail-label">Supplier</div>
+                        <div class="detail-value">${data.supplier || 'No supplier'}</div>
+                    </div>
+                    <div class="detail-row">
+                        <div class="detail-label">Barcode</div>
+                        <div class="detail-value">${data.barcode || 'N/A'}</div>
+                    </div>
+                </div>
+
+                <div class="product-detail-section">
+                    <h5 class="mb-3">Pricing Information</h5>
+                    <div class="detail-row">
+                        <div class="detail-label">Selling Price</div>
+                        <div class="detail-value">UGX ${parseFloat(data.selling_price).toLocaleString()}</div>
+                    </div>
+                    <div class="detail-row">
+                        <div class="detail-label">Cost Price</div>
+                        <div class="detail-value">UGX ${parseFloat(data.cost_price).toLocaleString()}</div>
+                    </div>
+                    <div class="detail-row">
+                        <div class="detail-label">Tax Rate</div>
+                        <div class="detail-value">${data.tax_rate || 'N/A'}</div>
+                    </div>
+                    <div class="detail-row">
+                        <div class="detail-label">Unit of Measure</div>
+                        <div class="detail-value">${data.unit_of_measure || 'N/A'}</div>
+                    </div>
+                </div>
+
+                <div class="product-detail-section">
+                    <h5 class="mb-3">Inventory Status</h5>
+                    <table class="stock-table">
+                        <thead>
+                            <tr>
+                                <th>Store</th>
+                                <th>Current Stock</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+            `;
+
+            if (data.stock_levels && data.stock_levels.length > 0) {
+                data.stock_levels.forEach(stock => {
+                    let statusBadge = '';
+                    if (stock.status === 'in_stock') {
+                        statusBadge = '<span class="badge bg-success">In Stock</span>';
+                    } else if (stock.status === 'low_stock') {
+                        statusBadge = '<span class="badge bg-warning">Low Stock</span>';
+                    } else {
+                        statusBadge = '<span class="badge bg-danger">Out of Stock</span>';
+                    }
+
+                    content += `
+                        <tr>
+                            <td>${stock.store_name}</td>
+                            <td>${stock.quantity} ${data.unit_of_measure || ''}</td>
+                            <td>${statusBadge}</td>
+                        </tr>
+                    `;
+                });
+            } else {
+                content += `
+                    <tr>
+                        <td colspan="3" class="text-center text-muted py-3">No stock records available</td>
+                    </tr>
+                `;
+            }
+
+            content += `
+                        </tbody>
+                    </table>
+                </div>
+            `;
+
+            $('#productQuickViewContent').html(content);
+            $('#editProductBtn').attr('href', `/inventory/products/${productId}/edit/`);
+        }).fail(function() {
+            $('#productQuickViewContent').html(`
+                <div class="alert alert-danger m-3">
+                    Failed to load product details. Please try again.
+                </div>
+            `);
+        });
+    });
+
+    // Export functionality
+    window.exportProducts = function() {
+        const selectedIds = $('.product-checkbox:checked').map(function() {
+            return $(this).val();
+        }).get();
+
+        let url = '/inventory/products/export/';
+        if (selectedIds.length > 0) {
+            url += '?ids=' + selectedIds.join(',');
+        }
+
+        // Show loading state
+        const $btn = $('.export-btn');
+        if ($btn.length) {
+            const originalHtml = $btn.html();
+            $btn.html('<i class="fas fa-spinner fa-spin"></i> Exporting...');
+            $btn.prop('disabled', true);
+
+            // Simulate export process
+            setTimeout(() => {
+                // In a real application, this would trigger a file download
+                console.log('Exporting products:', selectedIds);
+
+                // Reset button state
+                $btn.html(originalHtml);
+                $btn.prop('disabled', false);
+
+                // Show success message
+                alert(`Exported ${selectedIds.length > 0 ? selectedIds.length : 'all'} products successfully`);
+            }, 1500);
+        } else {
+            // Direct download if button not found
+            window.location.href = url;
+        }
+    };
+
+    // Auto-submit filter form on change with debounce (REMOVED to prevent conflicts with pagination)
+    // Comment this out if you want manual filter submission only
+    /*
+    let filterTimeout;
+    $('#filterForm select, #filterForm input').on('change keyup', function() {
+        clearTimeout(filterTimeout);
+        filterTimeout = setTimeout(function() {
+            $('#filterForm').submit();
+        }, 500);
+    });
+    */
+
+    // Initialize tooltips
+    if (typeof bootstrap !== 'undefined') {
+        const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+        tooltipTriggerList.map(function (tooltipTriggerEl) {
+            return new bootstrap.Tooltip(tooltipTriggerEl);
+        });
+    } else {
+        // Fallback for older Bootstrap versions
+        $('[data-bs-toggle="tooltip"]').tooltip({
+            trigger: 'hover',
+            placement: 'top'
+        });
+    }
+
+    // Preserve checkbox state after page reload (optional feature)
+    // Uncomment if you want checkboxes to remember selection
+    /*
+    $('.product-checkbox').each(function() {
+        const productId = $(this).val();
+        const isChecked = sessionStorage.getItem('product_' + productId) === 'true';
+        $(this).prop('checked', isChecked);
+    });
+
+    $('.product-checkbox').on('change', function() {
+        const productId = $(this).val();
+        sessionStorage.setItem('product_' + productId, $(this).is(':checked'));
+    });
+    */
+});
+</script><script>
+$(document).ready(function() {
+    // Checkbox selection functionality
+    $('#selectAll').on('change', function() {
+        $('.product-checkbox').prop('checked', this.checked);
+        toggleBulkActions();
+    });
+
+    $('.product-checkbox').on('change', function() {
+        if ($('.product-checkbox:checked').length === $('.product-checkbox').length) {
+            $('#selectAll').prop('checked', true);
+        } else {
+            $('#selectAll').prop('checked', false);
+        }
+        toggleBulkActions();
+    });
+
+    function toggleBulkActions() {
+        const selectedCount = $('.product-checkbox:checked').length;
+        if (selectedCount > 0) {
+            $('.bulk-actions-dropdown').show();
+            $('#selectedCount').text(selectedCount);
+        } else {
+            $('.bulk-actions-dropdown').hide();
+        }
+    }
+
+    // Bulk actions
+    $('[data-action]').on('click', function(e) {
+        e.preventDefault();
+        const action = $(this).data('action');
+        const selectedIds = $('.product-checkbox:checked').map(function() {
+            return $(this).val();
+        }).get();
+
+        if (selectedIds.length === 0) {
+            alert('Please select at least one product');
+            return;
+        }
+
+        if (action === 'delete' && !confirm('Are you sure you want to delete the selected products?')) {
+            return;
+        }
+
+        // Show loading state
+        const $btn = $(this);
+        const originalHtml = $btn.html();
+        $btn.html('<i class="fas fa-spinner fa-spin"></i> Processing...');
+        $btn.prop('disabled', true);
+
+        // Simulate API call
+        setTimeout(() => {
+            // In a real application, this would be an AJAX call
+            console.log(`Performing ${action} on:`, selectedIds);
+
+            // Reset button state
+            $btn.html(originalHtml);
+            $btn.prop('disabled', false);
+
+            // Show success message
+            alert(`${selectedIds.length} product(s) ${action}d successfully`);
+
+            // Reload the page to reflect changes
+            location.reload();
+        }, 1000);
+    });
+
+    // Quick stock adjustment
+    $('.quick-stock-btn').on('click', function(e) {
+        e.preventDefault(); // Prevent default link behavior
+        const productId = $(this).data('product-id');
+        const productName = $(this).data('product-name');
+
+        $('#quickProductId').val(productId);
+        $('#quickProductName').val(productName);
+        $('#adjustmentQuantity').val('');
+        $('#adjustmentReason').val('');
+        $('#adjustmentNotes').val('');
+        $('#reasonNoteContainer').hide();
+
+        // Load current stock levels
+        $.get(`/api/products/${productId}/stock/`, function(data) {
+            let stockInfo = 'Not available';
+            if (data.stock_levels && data.stock_levels.length > 0) {
+                stockInfo = data.stock_levels.map(s => `${s.store_name}: ${s.quantity}`).join(', ');
+            }
+            $('#currentStock').val(stockInfo);
+        }).fail(function() {
+            $('#currentStock').val('Failed to load');
+        });
+
+        $('#quickStockModal').modal('show');
+    });
+
+    // Show notes field when "Other" is selected
+    $('#adjustmentReason').on('change', function() {
+        if ($(this).val() === 'other') {
+            $('#reasonNoteContainer').show();
+        } else {
+            $('#reasonNoteContainer').hide();
+        }
+    });
+
+    // Handle quick stock form submission
+    $('#quickStockForm').on('submit', function(e) {
+        e.preventDefault();
+
+        const formData = {
+            product_id: $('#quickProductId').val(),
+            store_id: $('#quickStore').val(),
+            adjustment_type: $('input[name="adjustmentType"]:checked').val(),
+            quantity: $('#adjustmentQuantity').val(),
+            reason: $('#adjustmentReason').val(),
+            notes: $('#adjustmentNotes').val(),
+            csrfmiddlewaretoken: $('input[name=csrfmiddlewaretoken]').val()
+        };
+
+        // Validate form
+        if (!formData.store_id || !formData.quantity || !formData.reason) {
+            alert('Please fill all required fields');
+            return;
+        }
+
+        // Show loading state
+        const $submitBtn = $('#quickStockForm button[type="submit"]');
+        const originalBtnText = $submitBtn.html();
+        $submitBtn.html('<i class="fas fa-spinner fa-spin"></i> Processing...');
+        $submitBtn.prop('disabled', true);
+
+        // Simulate API call
+        setTimeout(() => {
+            console.log('Stock adjustment submitted:', formData);
+
+            // Reset form and button
+            $submitBtn.html(originalBtnText);
+            $submitBtn.prop('disabled', false);
+
+            // Close modal and show success message
+            $('#quickStockModal').modal('hide');
+            alert('Stock adjustment saved successfully');
+
+            // In a real app, you might want to update the UI or reload data
+            // For now, we'll just reload the page
+            location.reload();
+        }, 1500);
+    });
+
+    // Product quick view
+    $('.view-details-btn').on('click', function(e) {
+        e.preventDefault();
+        const productId = $(this).data('product-id');
+
+        // Show loading state
+        $('#productQuickViewContent').html(`
+            <div class="text-center py-4">
+                <i class="fas fa-spinner fa-spin fa-2x"></i>
+                <p>Loading product details...</p>
+            </div>
+        `);
+
+        $('#productQuickViewModal').modal('show');
+
+        // Load product details
+        $.get(`/api/products/${productId}/`, function(data) {
+            let content = `
+                <div class="product-detail-section">
+                    <div class="d-flex align-items-center mb-3">
+                        <div class="product-image me-3">
+                            ${data.image ? `<img src="${data.image}" alt="${data.name}" class="img-fluid rounded">` :
+                              `<div class="image-placeholder"><i class="fas fa-box"></i></div>`}
+                        </div>
+                        <div>
+                            <h4>${data.name}</h4>
+                            <div class="text-muted">SKU: ${data.sku || 'N/A'}</div>
+                        </div>
+                    </div>
+
+                    <div class="detail-row">
+                        <div class="detail-label">Category</div>
+                        <div class="detail-value">${data.category || 'Uncategorized'}</div>
+                    </div>
+                    <div class="detail-row">
+                        <div class="detail-label">Supplier</div>
+                        <div class="detail-value">${data.supplier || 'No supplier'}</div>
+                    </div>
+                    <div class="detail-row">
+                        <div class="detail-label">Barcode</div>
+                        <div class="detail-value">${data.barcode || 'N/A'}</div>
+                    </div>
+                </div>
+
+                <div class="product-detail-section">
+                    <h5 class="mb-3">Pricing Information</h5>
+                    <div class="detail-row">
+                        <div class="detail-label">Selling Price</div>
+                        <div class="detail-value">UGX ${parseFloat(data.selling_price).toLocaleString()}</div>
+                    </div>
+                    <div class="detail-row">
+                        <div class="detail-label">Cost Price</div>
+                        <div class="detail-value">UGX ${parseFloat(data.cost_price).toLocaleString()}</div>
+                    </div>
+                    <div class="detail-row">
+                        <div class="detail-label">Tax Rate</div>
+                        <div class="detail-value">${data.tax_rate || 'N/A'}</div>
+                    </div>
+                    <div class="detail-row">
+                        <div class="detail-label">Unit of Measure</div>
+                        <div class="detail-value">${data.unit_of_measure || 'N/A'}</div>
+                    </div>
+                </div>
+
+                <div class="product-detail-section">
+                    <h5 class="mb-3">Inventory Status</h5>
+                    <table class="stock-table">
+                        <thead>
+                            <tr>
+                                <th>Store</th>
+                                <th>Current Stock</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+            `;
+
+            if (data.stock_levels && data.stock_levels.length > 0) {
+                data.stock_levels.forEach(stock => {
+                    let statusBadge = '';
+                    if (stock.status === 'in_stock') {
+                        statusBadge = '<span class="badge bg-success">In Stock</span>';
+                    } else if (stock.status === 'low_stock') {
+                        statusBadge = '<span class="badge bg-warning">Low Stock</span>';
+                    } else {
+                        statusBadge = '<span class="badge bg-danger">Out of Stock</span>';
+                    }
+
+                    content += `
+                        <tr>
+                            <td>${stock.store_name}</td>
+                            <td>${stock.quantity} ${data.unit_of_measure || ''}</td>
+                            <td>${statusBadge}</td>
+                        </tr>
+                    `;
+                });
+            } else {
+                content += `
+                    <tr>
+                        <td colspan="3" class="text-center text-muted py-3">No stock records available</td>
+                    </tr>
+                `;
+            }
+
+            content += `
+                        </tbody>
+                    </table>
+                </div>
+            `;
+
+            $('#productQuickViewContent').html(content);
+            $('#editProductBtn').attr('href', `/inventory/products/${productId}/edit/`);
+        }).fail(function() {
+            $('#productQuickViewContent').html(`
+                <div class="alert alert-danger m-3">
+                    Failed to load product details. Please try again.
+                </div>
+            `);
+        });
+    });
+
+    // Export functionality
+    window.exportProducts = function() {
+        const selectedIds = $('.product-checkbox:checked').map(function() {
+            return $(this).val();
+        }).get();
+
+        let url = '/inventory/products/export/';
+        if (selectedIds.length > 0) {
+            url += '?ids=' + selectedIds.join(',');
+        }
+
+        // Show loading state
+        const $btn = $('.export-btn');
+        if ($btn.length) {
+            const originalHtml = $btn.html();
+            $btn.html('<i class="fas fa-spinner fa-spin"></i> Exporting...');
+            $btn.prop('disabled', true);
+
+            // Simulate export process
+            setTimeout(() => {
+                // In a real application, this would trigger a file download
+                console.log('Exporting products:', selectedIds);
+
+                // Reset button state
+                $btn.html(originalHtml);
+                $btn.prop('disabled', false);
+
+                // Show success message
+                alert(`Exported ${selectedIds.length > 0 ? selectedIds.length : 'all'} products successfully`);
+            }, 1500);
+        } else {
+            // Direct download if button not found
+            window.location.href = url;
+        }
+    };
+
+    // Auto-submit filter form on change with debounce (REMOVED to prevent conflicts with pagination)
+    // Comment this out if you want manual filter submission only
+    /*
+    let filterTimeout;
+    $('#filterForm select, #filterForm input').on('change keyup', function() {
+        clearTimeout(filterTimeout);
+        filterTimeout = setTimeout(function() {
+            $('#filterForm').submit();
+        }, 500);
+    });
+    */
+
+    // Initialize tooltips
+    if (typeof bootstrap !== 'undefined') {
+        const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+        tooltipTriggerList.map(function (tooltipTriggerEl) {
+            return new bootstrap.Tooltip(tooltipTriggerEl);
+        });
+    } else {
+        // Fallback for older Bootstrap versions
+        $('[data-bs-toggle="tooltip"]').tooltip({
+            trigger: 'hover',
+            placement: 'top'
+        });
+    }
+
+    // Preserve checkbox state after page reload (optional feature)
+    // Uncomment if you want checkboxes to remember selection
+    /*
+    $('.product-checkbox').each(function() {
+        const productId = $(this).val();
+        const isChecked = sessionStorage.getItem('product_' + productId) === 'true';
+        $(this).prop('checked', isChecked);
+    });
+
+    $('.product-checkbox').on('change', function() {
+        const productId = $(this).val();
+        sessionStorage.setItem('product_' + productId, $(this).is(':checked'));
+    });
+    */
 });
 </script>
 {% endblock %}
