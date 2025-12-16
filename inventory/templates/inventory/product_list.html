@@ -896,21 +896,19 @@
 {% block extra_js %}
 <script>
     $(document).ready(function() {
-    // Initialize DataTable with pagination DISABLED
+    // Initialize DataTable WITHOUT pagination - only for search and sort
     const productsTable = $('#productsTable').DataTable({
         responsive: true,
-        paging: false,          // Disable pagination
+        paging: false,          // Disable DataTables pagination
         info: false,            // Disable showing X of Y entries
         lengthChange: false,    // Disable "Show X entries" dropdown
         searching: true,        // Keep search functionality
         ordering: true,         // Keep sorting functionality
-        dom: '<"d-flex justify-content-between align-items-center mb-3"<"d-flex align-items-center"f><"d-flex align-items-center"B>>rt<"clear">',
+        dom: '<"d-flex justify-content-between align-items-center mb-3"<"d-flex align-items-center"f><"d-flex align-items-center"l>><"table-responsive"rt><"clear">',
         language: {
             search: "_INPUT_",
             searchPlaceholder: "Search products...",
-            // Remove pagination-related messages since pagination is disabled
-            infoEmpty: "No products found",
-            infoFiltered: "(filtered from _MAX_ total products)",
+            lengthMenu: "Show _MENU_ entries",
             zeroRecords: "No matching products found"
         },
         columnDefs: [
@@ -920,41 +918,25 @@
             { className: "dt-nowrap", targets: [4, 5, 6] } // Prevent wrapping in certain columns
         ],
         initComplete: function() {
-            // Add custom search input
+            // Style the search input
             $('.dataTables_filter input').addClass('form-control form-control-sm');
             $('.dataTables_filter label').contents().filter(function() {
                 return this.nodeType === 3;
             }).remove();
-
-            // Move the search box to a better position if needed
-            $('.dataTables_filter').addClass('me-3');
-
-            // Add a total count display
-            const totalCount = productsTable.data().count();
-            $('.dataTables_filter').after(
-                `<div class="total-count-display ms-3">
-                    <span class="badge bg-secondary">Total: ${totalCount} products</span>
-                </div>`
-            );
-        },
-        // Add custom search that works better with all data
-        search: {
-            return: true,
-            smart: false
         }
     });
 
-    // Checkbox selection functionality - fixed for DataTables
+    // Checkbox selection functionality
     $('#selectAll').on('change', function() {
         const isChecked = $(this).prop('checked');
-        productsTable.$('.product-checkbox').prop('checked', isChecked);
+        $('.product-checkbox').prop('checked', isChecked);
         toggleBulkActions();
     });
 
-    // Use event delegation for checkboxes (since rows are in DataTables)
-    $('#productsTable tbody').on('change', '.product-checkbox', function() {
-        const totalCheckboxes = productsTable.$('.product-checkbox').length;
-        const checkedCheckboxes = productsTable.$('.product-checkbox:checked').length;
+    // Handle individual checkbox changes
+    $('.product-checkbox').on('change', function() {
+        const totalCheckboxes = $('.product-checkbox').length;
+        const checkedCheckboxes = $('.product-checkbox:checked').length;
 
         if (totalCheckboxes > 0 && checkedCheckboxes === totalCheckboxes) {
             $('#selectAll').prop('checked', true);
@@ -971,7 +953,7 @@
     });
 
     function toggleBulkActions() {
-        const selectedCount = productsTable.$('.product-checkbox:checked').length;
+        const selectedCount = $('.product-checkbox:checked').length;
         if (selectedCount > 0) {
             $('.bulk-actions-dropdown').show();
             $('#selectedCount').text(selectedCount);
@@ -980,11 +962,11 @@
         }
     }
 
-    // Bulk actions - updated to work with DataTables
+    // Bulk actions
     $('[data-action]').on('click', function(e) {
         e.preventDefault();
         const action = $(this).data('action');
-        const selectedIds = productsTable.$('.product-checkbox:checked').map(function() {
+        const selectedIds = $('.product-checkbox:checked').map(function() {
             return $(this).val();
         }).get();
 
@@ -1003,24 +985,35 @@
         $btn.html('<i class="fas fa-spinner fa-spin"></i> Processing...');
         $btn.prop('disabled', true);
 
-        // Simulate API call
-        setTimeout(() => {
-            console.log(`Performing ${action} on:`, selectedIds);
-
-            // Reset button state
-            $btn.html(originalHtml);
-            $btn.prop('disabled', false);
-
-            // Show success message
-            alert(`${selectedIds.length} product(s) ${action}d successfully`);
-
-            // Reload the page to reflect changes
-            location.reload();
-        }, 1000);
+        // Make AJAX request for bulk actions
+        $.ajax({
+            url: '{% url "inventory:bulk_action" %}',
+            method: 'POST',
+            data: {
+                action: action,
+                product_ids: selectedIds,
+                csrfmiddlewaretoken: '{{ csrf_token }}'
+            },
+            success: function(response) {
+                if (response.success) {
+                    alert(`${selectedIds.length} product(s) ${action}d successfully`);
+                    location.reload();
+                } else {
+                    alert('Error: ' + response.message);
+                }
+            },
+            error: function() {
+                alert('An error occurred while processing your request');
+            },
+            complete: function() {
+                $btn.html(originalHtml);
+                $btn.prop('disabled', false);
+            }
+        });
     });
 
-    // Quick stock adjustment - use delegation for DataTables rows
-    $('#productsTable tbody').on('click', '.quick-stock-btn', function() {
+    // Quick stock adjustment
+    $('.quick-stock-btn').on('click', function() {
         const productId = $(this).data('product-id');
         const productName = $(this).data('product-name');
 
@@ -1031,13 +1024,20 @@
         $('#adjustmentNotes').val('');
         $('#reasonNoteContainer').hide();
 
-        // Load current stock levels
-        $.get(`/api/products/${productId}/stock/`, function(data) {
-            let stockInfo = 'Not available';
-            if (data.stock_levels && data.stock_levels.length > 0) {
-                stockInfo = data.stock_levels.map(s => `${s.store_name}: ${s.quantity}`).join(', ');
+        // Load current stock levels via AJAX
+        $.ajax({
+            url: `/inventory/api/products/${productId}/stock/`,
+            method: 'GET',
+            success: function(data) {
+                let stockInfo = 'Not available';
+                if (data.stock_levels && data.stock_levels.length > 0) {
+                    stockInfo = data.stock_levels.map(s => `${s.store_name}: ${s.quantity}`).join(', ');
+                }
+                $('#currentStock').val(stockInfo);
+            },
+            error: function() {
+                $('#currentStock').val('Error loading stock information');
             }
-            $('#currentStock').val(stockInfo);
         });
 
         $('#quickStockModal').modal('show');
@@ -1047,8 +1047,10 @@
     $('#adjustmentReason').on('change', function() {
         if ($(this).val() === 'other') {
             $('#reasonNoteContainer').show();
+            $('#adjustmentNotes').prop('required', true);
         } else {
             $('#reasonNoteContainer').hide();
+            $('#adjustmentNotes').prop('required', false);
         }
     });
 
@@ -1072,32 +1074,53 @@
             return;
         }
 
+        if (formData.reason === 'other' && !formData.notes.trim()) {
+            alert('Please provide notes for the "Other" reason');
+            return;
+        }
+
         // Show loading state
         const $submitBtn = $('#quickStockForm button[type="submit"]');
         const originalBtnText = $submitBtn.html();
         $submitBtn.html('<i class="fas fa-spinner fa-spin"></i> Processing...');
         $submitBtn.prop('disabled', true);
 
-        // Simulate API call
-        setTimeout(() => {
-            console.log('Stock adjustment submitted:', formData);
+        // Make AJAX request
+        $.ajax({
+            url: '{% url "inventory:quick_stock_adjustment" %}',
+            method: 'POST',
+            data: formData,
+            success: function(response) {
+                if (response.success) {
+                    $('#quickStockModal').modal('hide');
+                    showAlert('success', 'Stock adjustment saved successfully');
 
-            // Reset form and button
-            $submitBtn.html(originalBtnText);
-            $submitBtn.prop('disabled', false);
+                    // Update the stock display on the page
+                    const stockCell = $(`.quick-stock-btn[data-product-id="${formData.product_id}"]`)
+                        .closest('tr')
+                        .find('.stock-level .value');
 
-            // Close modal and show success message
-            $('#quickStockModal').modal('hide');
-            alert('Stock adjustment saved successfully');
-
-            // In a real app, you might want to update the UI or reload data
-            // For now, we'll just reload the page
-            location.reload();
-        }, 1500);
+                    // In a real app, you would update with actual data from response
+                    // For now, just reload after a short delay
+                    setTimeout(() => {
+                        location.reload();
+                    }, 1500);
+                } else {
+                    alert('Error: ' + response.message);
+                }
+            },
+            error: function(xhr, status, error) {
+                alert('An error occurred: ' + error);
+            },
+            complete: function() {
+                $submitBtn.html(originalBtnText);
+                $submitBtn.prop('disabled', false);
+            }
+        });
     });
 
-    // Product quick view - use delegation for DataTables rows
-    $('#productsTable tbody').on('click', '.view-details-btn', function(e) {
+    // Product quick view
+    $('.view-details-btn').on('click', function(e) {
         e.preventDefault();
         const productId = $(this).data('product-id');
 
@@ -1111,166 +1134,206 @@
 
         $('#productQuickViewModal').modal('show');
 
-        // Load product details
-        $.get(`/api/products/${productId}/`, function(data) {
-            let content = `
-                <div class="product-detail-section">
-                    <div class="d-flex align-items-center mb-3">
-                        <div class="product-image me-3">
-                            ${data.image ? `<img src="${data.image}" alt="${data.name}" class="img-fluid rounded">` :
-                              `<div class="image-placeholder"><i class="fas fa-box"></i></div>`}
+        // Load product details via AJAX
+        $.ajax({
+            url: `/inventory/api/products/${productId}/`,
+            method: 'GET',
+            success: function(data) {
+                let content = `
+                    <div class="product-detail-section">
+                        <div class="d-flex align-items-center mb-3">
+                            <div class="product-image me-3" style="width: 80px; height: 80px;">
+                                ${data.image ? `<img src="${data.image}" alt="${data.name}" class="img-fluid rounded" style="width: 100%; height: 100%; object-fit: cover;">` :
+                                  `<div class="image-placeholder d-flex align-items-center justify-content-center h-100" style="background: #f8f9fa; border-radius: 8px;">
+                                    <i class="fas fa-box fa-2x text-muted"></i>
+                                  </div>`}
+                            </div>
+                            <div>
+                                <h4>${data.name}</h4>
+                                <div class="text-muted">SKU: ${data.sku || 'N/A'}</div>
+                                ${data.barcode ? `<div class="text-muted">Barcode: ${data.barcode}</div>` : ''}
+                            </div>
                         </div>
-                        <div>
-                            <h4>${data.name}</h4>
-                            <div class="text-muted">SKU: ${data.sku || 'N/A'}</div>
+
+                        <div class="detail-row">
+                            <div class="detail-label">Category</div>
+                            <div class="detail-value">${data.category || 'Uncategorized'}</div>
+                        </div>
+                        <div class="detail-row">
+                            <div class="detail-label">Supplier</div>
+                            <div class="detail-value">${data.supplier || 'No supplier'}</div>
+                        </div>
+                        <div class="detail-row">
+                            <div class="detail-label">Status</div>
+                            <div class="detail-value">
+                                ${data.is_active ?
+                                    '<span class="badge bg-success">Active</span>' :
+                                    '<span class="badge bg-danger">Inactive</span>'}
+                            </div>
                         </div>
                     </div>
 
-                    <div class="detail-row">
-                        <div class="detail-label">Category</div>
-                        <div class="detail-value">${data.category || 'Uncategorized'}</div>
+                    <div class="product-detail-section">
+                        <h5 class="mb-3">Pricing Information</h5>
+                        <div class="detail-row">
+                            <div class="detail-label">Selling Price</div>
+                            <div class="detail-value">UGX ${parseFloat(data.selling_price || 0).toLocaleString()}</div>
+                        </div>
+                        <div class="detail-row">
+                            <div class="detail-label">Cost Price</div>
+                            <div class="detail-value">UGX ${parseFloat(data.cost_price || 0).toLocaleString()}</div>
+                        </div>
+                        ${data.discount_percentage > 0 ? `
+                        <div class="detail-row">
+                            <div class="detail-label">Discount</div>
+                            <div class="detail-value">${data.discount_percentage}% off</div>
+                        </div>
+                        ` : ''}
+                        <div class="detail-row">
+                            <div class="detail-label">Tax Rate</div>
+                            <div class="detail-value">${data.tax_rate || 'N/A'}</div>
+                        </div>
+                        <div class="detail-row">
+                            <div class="detail-label">Unit of Measure</div>
+                            <div class="detail-value">${data.unit_of_measure || 'N/A'}</div>
+                        </div>
                     </div>
-                    <div class="detail-row">
-                        <div class="detail-label">Supplier</div>
-                        <div class="detail-value">${data.supplier || 'No supplier'}</div>
-                    </div>
-                    <div class="detail-row">
-                        <div class="detail-label">Barcode</div>
-                        <div class="detail-value">${data.barcode || 'N/A'}</div>
-                    </div>
-                </div>
+                `;
 
-                <div class="product-detail-section">
-                    <h5 class="mb-3">Pricing Information</h5>
-                    <div class="detail-row">
-                        <div class="detail-label">Selling Price</div>
-                        <div class="detail-value">UGX ${data.selling_price || 'N/A'}</div>
-                    </div>
-                    <div class="detail-row">
-                        <div class="detail-label">Cost Price</div>
-                        <div class="detail-value">UGX ${data.cost_price || 'N/A'}</div>
-                    </div>
-                    <div class="detail-row">
-                        <div class="detail-label">Tax Rate</div>
-                        <div class="detail-value">${data.tax_rate || 'N/A'}</div>
-                    </div>
-                    <div class="detail-row">
-                        <div class="detail-label">Unit of Measure</div>
-                        <div class="detail-value">${data.unit_of_measure || 'N/A'}</div>
-                    </div>
-                </div>
+                // Add stock information if available
+                if (data.stock_levels && data.stock_levels.length > 0) {
+                    content += `
+                        <div class="product-detail-section">
+                            <h5 class="mb-3">Inventory Status</h5>
+                            <table class="stock-table">
+                                <thead>
+                                    <tr>
+                                        <th>Store</th>
+                                        <th>Current Stock</th>
+                                        <th>Min Stock Level</th>
+                                        <th>Status</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                    `;
 
-                <div class="product-detail-section">
-                    <h5 class="mb-3">Inventory Status</h5>
-                    <table class="stock-table">
-                        <thead>
+                    data.stock_levels.forEach(stock => {
+                        let statusBadge = '';
+                        if (stock.quantity > stock.min_stock_level) {
+                            statusBadge = '<span class="badge bg-success">In Stock</span>';
+                        } else if (stock.quantity > 0) {
+                            statusBadge = '<span class="badge bg-warning">Low Stock</span>';
+                        } else {
+                            statusBadge = '<span class="badge bg-danger">Out of Stock</span>';
+                        }
+
+                        content += `
                             <tr>
-                                <th>Store</th>
-                                <th>Current Stock</th>
-                                <th>Status</th>
+                                <td>${stock.store_name}</td>
+                                <td>${stock.quantity} ${data.unit_of_measure || 'units'}</td>
+                                <td>${stock.min_stock_level || 'N/A'}</td>
+                                <td>${statusBadge}</td>
                             </tr>
-                        </thead>
-                        <tbody>
-            `;
-
-            if (data.stock_levels && data.stock_levels.length > 0) {
-                data.stock_levels.forEach(stock => {
-                    let statusBadge = '';
-                    if (stock.status === 'in_stock') {
-                        statusBadge = '<span class="badge bg-success">In Stock</span>';
-                    } else if (stock.status === 'low_stock') {
-                        statusBadge = '<span class="badge bg-warning">Low Stock</span>';
-                    } else {
-                        statusBadge = '<span class="badge bg-danger">Out of Stock</span>';
-                    }
+                        `;
+                    });
 
                     content += `
-                        <tr>
-                            <td>${stock.store_name}</td>
-                            <td>${stock.quantity} ${data.unit_of_measure || 'units'}</td>
-                            <td>${statusBadge}</td>
-                        </tr>
+                                </tbody>
+                            </table>
+                        </div>
                     `;
-                });
-            } else {
-                content += `
-                    <tr>
-                        <td colspan="3" class="text-center text-muted py-3">No stock records available</td>
-                    </tr>
-                `;
+                }
+
+                $('#productQuickViewContent').html(content);
+                $('#editProductBtn').attr('href', `/inventory/products/${productId}/edit/`);
+            },
+            error: function() {
+                $('#productQuickViewContent').html(`
+                    <div class="alert alert-danger m-3">
+                        Failed to load product details. Please try again.
+                    </div>
+                `);
             }
-
-            content += `
-                        </tbody>
-                    </table>
-                </div>
-            `;
-
-            $('#productQuickViewContent').html(content);
-            $('#editProductBtn').attr('href', `/inventory/products/${productId}/edit/`);
-        }).fail(function() {
-            $('#productQuickViewContent').html(`
-                <div class="alert alert-danger m-3">
-                    Failed to load product details. Please try again.
-                </div>
-            `);
         });
     });
 
     // Export functionality
     window.exportProducts = function() {
-        const selectedIds = productsTable.$('.product-checkbox:checked').map(function() {
+        const selectedIds = $('.product-checkbox:checked').map(function() {
             return $(this).val();
         }).get();
 
-        let url = '/inventory/products/export/';
+        let url = '{% url "inventory:export_products" %}';
+        const params = new URLSearchParams();
+
         if (selectedIds.length > 0) {
-            url += '?ids=' + selectedIds.join(',');
+            selectedIds.forEach(id => params.append('ids', id));
         }
 
-        // Show loading state
-        const $btn = $('.export-btn');
-        const originalHtml = $btn.html();
-        $btn.html('<i class="fas fa-spinner fa-spin"></i> Exporting...');
-        $btn.prop('disabled', true);
+        // Add current filter parameters
+        const filterForm = $('#filterForm').serialize();
+        if (filterForm) {
+            params.append('filters', filterForm);
+        }
 
-        // Simulate export process
-        setTimeout(() => {
-            console.log('Exporting products:', selectedIds);
+        if (params.toString()) {
+            url += '?' + params.toString();
+        }
 
-            // Reset button state
-            $btn.html(originalHtml);
-            $btn.prop('disabled', false);
-
-            // Show success message
-            alert(`Exported ${selectedIds.length > 0 ? selectedIds.length : 'all'} products successfully`);
-
-            // Trigger download
-            window.location.href = url;
-        }, 1500);
+        // Trigger download
+        window.location.href = url;
     };
 
     // Auto-submit filter form on change with debounce
     let filterTimeout;
-    $('#filterForm select, #filterForm input').on('change keyup', function() {
+    $('#filterForm select, #filterForm input[type="text"], #filterForm input[type="number"]').on('change keyup', function() {
         clearTimeout(filterTimeout);
         filterTimeout = setTimeout(function() {
             $('#filterForm').submit();
         }, 500);
     });
 
-    // Initialize tooltips for static elements
+    // Clear filters
+    $('.clear-filters').on('click', function(e) {
+        e.preventDefault();
+        $('#filterForm')[0].reset();
+        $('#filterForm').submit();
+    });
+
+    // Initialize tooltips
     $('[data-bs-toggle="tooltip"]').tooltip({
         trigger: 'hover',
         placement: 'top'
     });
 
-    // Reinitialize tooltips after DataTable redraws
-    productsTable.on('draw', function() {
-        $('[data-bs-toggle="tooltip"]').tooltip('dispose').tooltip({
-            trigger: 'hover',
-            placement: 'top'
-        });
+    // Helper function to show alerts
+    function showAlert(type, message) {
+        const alertClass = type === 'success' ? 'alert-success' : 'alert-danger';
+        const alertHtml = `
+            <div class="alert ${alertClass} alert-dismissible fade show" role="alert"
+                 style="position: fixed; top: 20px; right: 20px; z-index: 9999; min-width: 300px;">
+                ${message}
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            </div>
+        `;
+
+        $('body').append(alertHtml);
+
+        // Auto remove after 5 seconds
+        setTimeout(() => {
+            $('.alert').alert('close');
+        }, 5000);
+    }
+
+    // Handle DataTable search - sync with filter form search
+    productsTable.on('search.dt', function() {
+        const searchValue = productsTable.search();
+        $('#id_search').val(searchValue);
+    });
+
+    // Sync filter form search with DataTable
+    $('#id_search').on('keyup', function() {
+        productsTable.search($(this).val()).draw();
     });
 });
 </script>
