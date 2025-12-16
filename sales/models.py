@@ -1241,12 +1241,35 @@ class SaleItem(models.Model):
         """
         Deduct stock for product items only.
         Services don't have stock to deduct.
+        INCLUDES IDEMPOTENCY CHECK to prevent duplicate deductions.
         """
         if self.item_type != 'PRODUCT' or not self.product:
             logger.info(f"Skipping stock deduction for service item: {self.item_name}")
             return  # Services don't have stock
 
         try:
+            # ✅ IDEMPOTENCY CHECK: Check if stock already deducted for this sale item
+            movement_reference = (
+                    self.sale.efris_invoice_number or
+                    self.sale.document_number or
+                    f"SALE-{self.sale.id}"
+            )
+
+            existing_movement = StockMovement.objects.filter(
+                product=self.product,
+                store=self.sale.store,
+                movement_type='SALE',
+                reference=movement_reference,
+                notes__icontains=f"Sale item: {self.product.name}"
+            ).exists()
+
+            if existing_movement:
+                logger.warning(
+                    f"⚠️ Stock already deducted for {self.product.name} "
+                    f"in sale {movement_reference}. Skipping duplicate deduction."
+                )
+                return  # Already deducted, skip
+
             logger.info(f"Deducting stock for product: {self.product.name}")
 
             store_stock = Stock.objects.select_for_update().filter(
@@ -1275,12 +1298,6 @@ class SaleItem(models.Model):
                 raise ValidationError("Stock update failed")
 
             # Create stock movement record
-            movement_reference = (
-                    self.sale.efris_invoice_number or
-                    self.sale.document_number or
-                    f"SALE-{self.sale.id}"
-            )
-
             StockMovement.objects.create(
                 product=self.product,
                 store=self.sale.store,
@@ -1633,8 +1650,9 @@ class Cart(models.Model):
         )
 
         # Move cart items to SaleItems
+        # Stock deduction happens automatically in SaleItem.save()
         for item in self.items.all():
-            sale_item = SaleItem.objects.create(
+            SaleItem.objects.create(
                 sale=sale,
                 product=item.product,
                 quantity=item.quantity,
@@ -1646,10 +1664,7 @@ class Cart(models.Model):
                 discount_amount=item.discount_amount,
                 description=item.description or item.product.name,
             )
-
-            # Manually deduct stock for receipts and invoices (not proforma/estimate)
-            if self.document_type in ['RECEIPT', 'INVOICE']:
-                sale_item.deduct_stock()
+            # ✅ REMOVED: Manual deduct_stock() call - already handled in SaleItem.save()
 
         # Update sale totals after all items are added
         sale.update_totals()

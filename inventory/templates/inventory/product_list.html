@@ -895,24 +895,29 @@
 
 {% block extra_js %}
 <script>
-$(document).ready(function() {
-    // Initialize DataTable
+    $(document).ready(function() {
+    // Initialize DataTable with pagination DISABLED
     const productsTable = $('#productsTable').DataTable({
         responsive: true,
-        dom: '<"top"f>{% trans "rt" %}<"bottom"lip><"clear">',
-        pageLength: 25,
+        paging: false,          // Disable pagination
+        info: false,            // Disable showing X of Y entries
+        lengthChange: false,    // Disable "Show X entries" dropdown
+        searching: true,        // Keep search functionality
+        ordering: true,         // Keep sorting functionality
+        dom: '<"d-flex justify-content-between align-items-center mb-3"<"d-flex align-items-center"f><"d-flex align-items-center"B>>rt<"clear">',
         language: {
             search: "_INPUT_",
             searchPlaceholder: "Search products...",
-            lengthMenu: "Show _MENU_ products",
-            info: "Showing _START_ to _END_ of _TOTAL_ products",
+            // Remove pagination-related messages since pagination is disabled
             infoEmpty: "No products found",
-            infoFiltered: "(filtered from _MAX_ total products)"
+            infoFiltered: "(filtered from _MAX_ total products)",
+            zeroRecords: "No matching products found"
         },
         columnDefs: [
             { orderable: false, targets: [0, 6] }, // Disable sorting for checkbox and actions columns
             { responsivePriority: 1, targets: 1 }, // Product details column
-            { responsivePriority: 2, targets: 3 }  // Pricing column
+            { responsivePriority: 2, targets: 3 }, // Pricing column
+            { className: "dt-nowrap", targets: [4, 5, 6] } // Prevent wrapping in certain columns
         ],
         initComplete: function() {
             // Add custom search input
@@ -920,26 +925,53 @@ $(document).ready(function() {
             $('.dataTables_filter label').contents().filter(function() {
                 return this.nodeType === 3;
             }).remove();
+
+            // Move the search box to a better position if needed
+            $('.dataTables_filter').addClass('me-3');
+
+            // Add a total count display
+            const totalCount = productsTable.data().count();
+            $('.dataTables_filter').after(
+                `<div class="total-count-display ms-3">
+                    <span class="badge bg-secondary">Total: ${totalCount} products</span>
+                </div>`
+            );
+        },
+        // Add custom search that works better with all data
+        search: {
+            return: true,
+            smart: false
         }
     });
 
-    // Checkbox selection functionality
+    // Checkbox selection functionality - fixed for DataTables
     $('#selectAll').on('change', function() {
-        $('.product-checkbox').prop('checked', this.checked);
+        const isChecked = $(this).prop('checked');
+        productsTable.$('.product-checkbox').prop('checked', isChecked);
         toggleBulkActions();
     });
 
-    $('.product-checkbox').on('change', function() {
-        if ($('.product-checkbox:checked').length === $('.product-checkbox').length) {
+    // Use event delegation for checkboxes (since rows are in DataTables)
+    $('#productsTable tbody').on('change', '.product-checkbox', function() {
+        const totalCheckboxes = productsTable.$('.product-checkbox').length;
+        const checkedCheckboxes = productsTable.$('.product-checkbox:checked').length;
+
+        if (totalCheckboxes > 0 && checkedCheckboxes === totalCheckboxes) {
             $('#selectAll').prop('checked', true);
+            $('#selectAll').prop('indeterminate', false);
+        } else if (checkedCheckboxes > 0) {
+            $('#selectAll').prop('checked', false);
+            $('#selectAll').prop('indeterminate', true);
         } else {
             $('#selectAll').prop('checked', false);
+            $('#selectAll').prop('indeterminate', false);
         }
+
         toggleBulkActions();
     });
 
     function toggleBulkActions() {
-        const selectedCount = $('.product-checkbox:checked').length;
+        const selectedCount = productsTable.$('.product-checkbox:checked').length;
         if (selectedCount > 0) {
             $('.bulk-actions-dropdown').show();
             $('#selectedCount').text(selectedCount);
@@ -948,11 +980,11 @@ $(document).ready(function() {
         }
     }
 
-    // Bulk actions
+    // Bulk actions - updated to work with DataTables
     $('[data-action]').on('click', function(e) {
         e.preventDefault();
         const action = $(this).data('action');
-        const selectedIds = $('.product-checkbox:checked').map(function() {
+        const selectedIds = productsTable.$('.product-checkbox:checked').map(function() {
             return $(this).val();
         }).get();
 
@@ -973,7 +1005,6 @@ $(document).ready(function() {
 
         // Simulate API call
         setTimeout(() => {
-            // In a real application, this would be an AJAX call
             console.log(`Performing ${action} on:`, selectedIds);
 
             // Reset button state
@@ -988,8 +1019,8 @@ $(document).ready(function() {
         }, 1000);
     });
 
-    // Quick stock adjustment
-    $('.quick-stock-btn').on('click', function() {
+    // Quick stock adjustment - use delegation for DataTables rows
+    $('#productsTable tbody').on('click', '.quick-stock-btn', function() {
         const productId = $(this).data('product-id');
         const productName = $(this).data('product-name');
 
@@ -1065,8 +1096,8 @@ $(document).ready(function() {
         }, 1500);
     });
 
-    // Product quick view
-    $('.view-details-btn').on('click', function(e) {
+    // Product quick view - use delegation for DataTables rows
+    $('#productsTable tbody').on('click', '.view-details-btn', function(e) {
         e.preventDefault();
         const productId = $(this).data('product-id');
 
@@ -1074,7 +1105,7 @@ $(document).ready(function() {
         $('#productQuickViewContent').html(`
             <div class="text-center py-4">
                 <i class="fas fa-spinner fa-spin fa-2x"></i>
-                <p>{% trans "Loading product details..." %}</p>
+                <p>Loading product details...</p>
             </div>
         `);
 
@@ -1090,53 +1121,53 @@ $(document).ready(function() {
                               `<div class="image-placeholder"><i class="fas fa-box"></i></div>`}
                         </div>
                         <div>
-                            <h4>{% trans "${data.name}" %}</h4>
-                            <div class="text-muted">{% trans "SKU: ${data.sku || 'N/A'}" %}</div>
+                            <h4>${data.name}</h4>
+                            <div class="text-muted">SKU: ${data.sku || 'N/A'}</div>
                         </div>
                     </div>
 
                     <div class="detail-row">
-                        <div class="detail-label">{% trans "Category" %}</div>
-                        <div class="detail-value">{% trans "${data.category || 'Uncategorized'}" %}</div>
+                        <div class="detail-label">Category</div>
+                        <div class="detail-value">${data.category || 'Uncategorized'}</div>
                     </div>
                     <div class="detail-row">
-                        <div class="detail-label">{% trans "Supplier" %}</div>
-                        <div class="detail-value">{% trans "${data.supplier || 'No supplier'}" %}</div>
+                        <div class="detail-label">Supplier</div>
+                        <div class="detail-value">${data.supplier || 'No supplier'}</div>
                     </div>
                     <div class="detail-row">
-                        <div class="detail-label">{% trans "Barcode" %}</div>
-                        <div class="detail-value">{% trans "${data.barcode || 'N/A'}" %}</div>
+                        <div class="detail-label">Barcode</div>
+                        <div class="detail-value">${data.barcode || 'N/A'}</div>
                     </div>
                 </div>
 
                 <div class="product-detail-section">
-                    <h5 class="mb-3">{% trans "Pricing Information" %}</h5>
+                    <h5 class="mb-3">Pricing Information</h5>
                     <div class="detail-row">
-                        <div class="detail-label">{% trans "Selling Price" %}</div>
-                        <div class="detail-value">{% trans "UGX ${data.selling_price|money}" %}</div>
+                        <div class="detail-label">Selling Price</div>
+                        <div class="detail-value">UGX ${data.selling_price || 'N/A'}</div>
                     </div>
                     <div class="detail-row">
-                        <div class="detail-label">{% trans "Cost Price" %}</div>
-                        <div class="detail-value">{% trans "UGX ${data.cost_price|money}" %}</div>
+                        <div class="detail-label">Cost Price</div>
+                        <div class="detail-value">UGX ${data.cost_price || 'N/A'}</div>
                     </div>
                     <div class="detail-row">
-                        <div class="detail-label">{% trans "Tax Rate" %}</div>
-                        <div class="detail-value">{% trans "${data.tax_rate || 'N/A'}" %}</div>
+                        <div class="detail-label">Tax Rate</div>
+                        <div class="detail-value">${data.tax_rate || 'N/A'}</div>
                     </div>
                     <div class="detail-row">
-                        <div class="detail-label">{% trans "Unit of Measure" %}</div>
-                        <div class="detail-value">{% trans "${data.unit_of_measure || 'N/A'}" %}</div>
+                        <div class="detail-label">Unit of Measure</div>
+                        <div class="detail-value">${data.unit_of_measure || 'N/A'}</div>
                     </div>
                 </div>
 
                 <div class="product-detail-section">
-                    <h5 class="mb-3">{% trans "Inventory Status" %}</h5>
+                    <h5 class="mb-3">Inventory Status</h5>
                     <table class="stock-table">
                         <thead>
                             <tr>
-                                <th>{% trans "Store" %}</th>
-                                <th>{% trans "Current Stock" %}</th>
-                                <th>{% trans "Status" %}</th>
+                                <th>Store</th>
+                                <th>Current Stock</th>
+                                <th>Status</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -1146,25 +1177,25 @@ $(document).ready(function() {
                 data.stock_levels.forEach(stock => {
                     let statusBadge = '';
                     if (stock.status === 'in_stock') {
-                        statusBadge = '<span class="badge bg-success">{% trans "In Stock" %}</span>';
+                        statusBadge = '<span class="badge bg-success">In Stock</span>';
                     } else if (stock.status === 'low_stock') {
-                        statusBadge = '<span class="badge bg-warning">{% trans "Low Stock" %}</span>';
+                        statusBadge = '<span class="badge bg-warning">Low Stock</span>';
                     } else {
-                        statusBadge = '<span class="badge bg-danger">{% trans "Out of Stock" %}</span>';
+                        statusBadge = '<span class="badge bg-danger">Out of Stock</span>';
                     }
 
                     content += `
                         <tr>
-                            <td>{% trans "${stock.store_name}" %}</td>
-                            <td>{% trans "${stock.quantity} ${data.unit_of_measure}" %}</td>
-                            <td>{% trans "${statusBadge}" %}</td>
+                            <td>${stock.store_name}</td>
+                            <td>${stock.quantity} ${data.unit_of_measure || 'units'}</td>
+                            <td>${statusBadge}</td>
                         </tr>
                     `;
                 });
             } else {
                 content += `
                     <tr>
-                        <td colspan="3" class="text-center text-muted py-3">{% trans "No stock records available" %}</td>
+                        <td colspan="3" class="text-center text-muted py-3">No stock records available</td>
                     </tr>
                 `;
             }
@@ -1188,7 +1219,7 @@ $(document).ready(function() {
 
     // Export functionality
     window.exportProducts = function() {
-        const selectedIds = $('.product-checkbox:checked').map(function() {
+        const selectedIds = productsTable.$('.product-checkbox:checked').map(function() {
             return $(this).val();
         }).get();
 
@@ -1205,7 +1236,6 @@ $(document).ready(function() {
 
         // Simulate export process
         setTimeout(() => {
-            // In a real application, this would trigger a file download
             console.log('Exporting products:', selectedIds);
 
             // Reset button state
@@ -1214,6 +1244,9 @@ $(document).ready(function() {
 
             // Show success message
             alert(`Exported ${selectedIds.length > 0 ? selectedIds.length : 'all'} products successfully`);
+
+            // Trigger download
+            window.location.href = url;
         }, 1500);
     };
 
@@ -1226,10 +1259,18 @@ $(document).ready(function() {
         }, 500);
     });
 
-    // Initialize tooltips
+    // Initialize tooltips for static elements
     $('[data-bs-toggle="tooltip"]').tooltip({
         trigger: 'hover',
         placement: 'top'
+    });
+
+    // Reinitialize tooltips after DataTable redraws
+    productsTable.on('draw', function() {
+        $('[data-bs-toggle="tooltip"]').tooltip('dispose').tooltip({
+            trigger: 'hover',
+            placement: 'top'
+        });
     });
 });
 </script>
