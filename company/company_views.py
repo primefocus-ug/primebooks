@@ -195,9 +195,9 @@ class CompanyStatusAPIView(LoginRequiredMixin, View):
 class BranchAnalyticsAPIView(LoginRequiredMixin, View):
     """API endpoint for branch analytics (WebSocket fallback)"""
 
-    def get(self, request, branch_id):
+    def get(self, request, store_id):
         try:
-            branch = Store.objects.select_related('company').get(id=branch_id)
+            branch = Store.objects.select_related('company').get(id=store_id)
 
             if not request.user.can_access_company(branch.company):
                 return JsonResponse({'error': 'Permission denied'}, status=403)

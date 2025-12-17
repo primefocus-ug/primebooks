@@ -52,7 +52,7 @@ company_patterns = [
     path('upgrade/', views.upgrade_plan_view, name='upgrade_plan'),
     path('api/company/<str:company_id>/metrics/', views.CompanyMetricsAPIView.as_view(), name='company_metrics_api'),
     path('api/company/<str:company_id>/status/', views.CompanyStatusAPIView.as_view(), name='company_status_api'),
-    path('branches/<int:branch_id>/analytics/', views.BranchAnalyticsAPIView.as_view(), name='branch_analytics_api'),
+    path('branches/<int:store_id>/analytics/', views.BranchAnalyticsAPIView.as_view(), name='branch_analytics_api'),
     path('<slug:company_id>/', views.CompanyDetailView.as_view(), name='company_detail'),
     path('<slug:company_id>/update/', views.CompanyUpdateView.as_view(), name='company_update'),
     path('<slug:company_id>/delete/', views.CompanyDeleteView.as_view(), name='company_delete'),
@@ -72,15 +72,15 @@ branch_patterns = [
     path('<int:pk>/delete/', BranchDeleteView.as_view(), name='branch_delete'),
 
     # Analytics and Stats endpoints
-    path('<int:branch_id>/analytics/', branch_analytics, name='branch_analytics'),
+    path('<int:store_id>/analytics/', branch_analytics, name='branch_analytics'),
     path('<int:store_id>/store-stats/', branch_store_stats, name='branch_store_stats'),
-    path('<int:branch_id>/performance/', branch_performance, name='branch_performance'),
-    path('<int:branch_id>/staff-overview/', branch_staff_overview, name='branch_staff_overview'),
-    path('<int:branch_id>/revenue-data/', branch_revenue_data, name='branch_revenue_data'),
+    path('<int:store_id>/performance/', branch_performance, name='branch_performance'),
+    path('<int:store_id>/staff-overview/', branch_staff_overview, name='branch_staff_overview'),
+    path('<int:store_id>/revenue-data/', branch_revenue_data, name='branch_revenue_data'),
 
     # Export and reporting endpoints
-    path('<int:branch_id>/export/', export_branch_data, name='export_branch_data'),
-    path('<int:branch_id>/generate-report/', generate_branch_report, name='generate_branch_report'),
+    path('<int:store_id>/export/', export_branch_data, name='export_branch_data'),
+    path('<int:store_id>/generate-report/', generate_branch_report, name='generate_branch_report'),
 
 ]
 employee_patterns = [

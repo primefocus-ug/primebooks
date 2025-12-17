@@ -53,7 +53,7 @@ class InvoiceListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
         with tenant_context(company):
             queryset = Invoice.objects.filter(
                 sale__store__company=company,
-                sale__document_type='INVOICE'
+                sale__document_type='INVOICE'  # Only show invoices
             ).select_related(
                 'sale', 'sale__customer', 'sale__store',
                 'created_by', 'fiscalized_by'
@@ -70,9 +70,13 @@ class InvoiceListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
                         Q(sale__customer__name__icontains=search)
                     )
 
+                # FIX: Use both status and payment_status
                 status = form.cleaned_data.get('status')
                 if status:
-                    queryset = queryset.filter(sale__status__in=status)
+                    # Map to sale status/payment_status
+                    queryset = queryset.filter(
+                        Q(sale__status__in=status) | Q(sale__payment_status__in=status)
+                    )
 
                 document_type = form.cleaned_data.get('document_type')
                 if document_type:
@@ -109,7 +113,6 @@ class InvoiceListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
         context = super().get_context_data(**kwargs)
         context['search_form'] = InvoiceSearchForm(self.request.GET)
         return context
-
 
 class InvoiceDetailView(LoginRequiredMixin, PermissionRequiredMixin, DetailView):
     model = Invoice
@@ -205,16 +208,21 @@ def efris_status_dashboard(request):
     # Base queryset - Use sale__created_at
     invoices = Invoice.objects.filter(
         sale__created_at__date__gte=date_from,
-        sale__created_at__date__lte=date_to
+        sale__created_at__date__lte=date_to,
+        sale__document_type='INVOICE'  # Only invoices
     ).select_related('sale__store__company')
 
     # EFRIS statistics
     total_invoices = invoices.count()
     fiscalized_invoices = invoices.filter(is_fiscalized=True).count()
+
+    # FIX: Use correct status fields
     pending_fiscalization = invoices.filter(
         fiscalization_status='pending',
-        sale__status__in=['PENDING_PAYMENT', 'PAID', 'PARTIALLY_PAID']
+        sale__status__in=['COMPLETED', 'PAID'],
+        sale__payment_status__in=['PENDING', 'PAID', 'PARTIALLY_PAID']
     ).count()
+
     failed_fiscalization = invoices.filter(fiscalization_status='failed').count()
 
     # Recent activity
@@ -234,7 +242,7 @@ def efris_status_dashboard(request):
 
     # Recent fiscalization activity
     recent_audits = FiscalizationAudit.objects.select_related(
-        'invoice', 'user'
+        'invoice__sale', 'user'
     ).filter(
         timestamp__gte=timezone.now() - timedelta(days=7)
     ).order_by('-timestamp')[:20]
@@ -875,7 +883,6 @@ class InvoiceTemplateCreateView(LoginRequiredMixin, PermissionRequiredMixin, Cre
 @permission_required('invoices.view_invoice')
 def invoice_analytics(request):
     """Enhanced analytics dashboard for invoices"""
-    # Get date range from request or use defaults
     try:
         start_date = request.GET.get('start_date')
         end_date = request.GET.get('end_date')
@@ -893,55 +900,77 @@ def invoice_analytics(request):
         start_date = timezone.now().date() - timedelta(days=30)
         end_date = timezone.now().date()
 
-    # Basic statistics - Use sale fields
-    total_invoices = Invoice.objects.count()
+    # Basic statistics - Use sale fields and document_type filter
+    total_invoices = Invoice.objects.filter(sale__document_type='INVOICE').count()
+
     total_revenue = Invoice.objects.filter(
-        sale__status='PAID'
+        sale__document_type='INVOICE',
+        sale__payment_status='PAID'  # FIX: Use payment_status
     ).aggregate(Sum('sale__total_amount'))['sale__total_amount__sum'] or 0
 
-    pending_amount = Invoice.objects.exclude(
-        sale__status__in=['PAID', 'CANCELLED']
+    pending_amount = Invoice.objects.filter(
+        sale__document_type='INVOICE'
+    ).exclude(
+        sale__payment_status='PAID'  # FIX: Use payment_status
     ).aggregate(Sum('sale__total_amount'))['sale__total_amount__sum'] or 0
 
+    # FIX: Overdue invoices - use payment_status
     overdue_invoices = Invoice.objects.filter(
+        sale__document_type='INVOICE',
         sale__due_date__lt=end_date,
-        sale__status__in=['PENDING_PAYMENT', 'PARTIALLY_PAID']
+        sale__payment_status__in=['PENDING', 'PARTIALLY_PAID', 'OVERDUE']
     ).count()
 
-    # Enhanced metrics - Use sale__created_at
+    # Enhanced metrics
     invoices_this_month = Invoice.objects.filter(
+        sale__document_type='INVOICE',
         sale__created_at__date__gte=timezone.now().date().replace(day=1)
     ).count()
 
-    fiscalized_invoices = Invoice.objects.filter(is_fiscalized=True).count()
-    pending_invoices = Invoice.objects.exclude(
-        sale__status__in=['PAID', 'CANCELLED']
+    fiscalized_invoices = Invoice.objects.filter(
+        sale__document_type='INVOICE',
+        is_fiscalized=True
+    ).count()
+
+    pending_invoices = Invoice.objects.filter(
+        sale__document_type='INVOICE',
+        sale__payment_status__in=['PENDING', 'PARTIALLY_PAID']
     ).count()
 
     # Calculate average invoice amount safely
-    avg_result = Invoice.objects.aggregate(avg_amount=Avg('sale__total_amount'))
+    avg_result = Invoice.objects.filter(
+        sale__document_type='INVOICE'
+    ).aggregate(avg_amount=Avg('sale__total_amount'))
     avg_invoice_amount = avg_result['avg_amount'] or 0
 
-    # Performance metrics with safe calculations
-    total_invoiced_amount = Invoice.objects.aggregate(
+    # Performance metrics
+    total_invoiced_amount = Invoice.objects.filter(
+        sale__document_type='INVOICE'
+    ).aggregate(
         Sum('sale__total_amount')
     )['sale__total_amount__sum'] or 0
     collection_rate = (total_revenue / total_invoiced_amount * 100) if total_invoiced_amount > 0 else 0
 
     # On-time payment rate
     on_time_payments = Invoice.objects.filter(
-        sale__status='PAID',
+        sale__document_type='INVOICE',
+        sale__payment_status='PAID',
         payments__payment_date__lte=F('sale__due_date')
     ).distinct().count()
-    total_paid_invoices = Invoice.objects.filter(sale__status='PAID').count()
+
+    total_paid_invoices = Invoice.objects.filter(
+        sale__document_type='INVOICE',
+        sale__payment_status='PAID'
+    ).count()
     on_time_rate = (on_time_payments / total_paid_invoices * 100) if total_paid_invoices > 0 else 0
 
     fiscalization_rate = (fiscalized_invoices / total_invoices * 100) if total_invoices > 0 else 0
 
-    # Average days to pay - safely handle None values
+    # Average days to pay
     try:
         paid_invoices_with_payments = Invoice.objects.filter(
-            sale__status='PAID',
+            sale__document_type='INVOICE',
+            sale__payment_status='PAID',
             payments__isnull=False
         ).annotate(
             days_to_pay=ExpressionWrapper(
@@ -961,17 +990,20 @@ def invoice_analytics(request):
     except (ValueError, TypeError):
         avg_days_to_pay = 0
 
-    # Monthly trends data - Use sale__created_at
+    # Monthly trends data
     monthly_data = []
     for i in range(12):
         month_start = (end_date.replace(day=1) - timedelta(days=i * 30)).replace(day=1)
         month_end = (month_start + timedelta(days=32)).replace(day=1) - timedelta(days=1)
 
         month_invoices = Invoice.objects.filter(
+            sale__document_type='INVOICE',
             sale__created_at__date__range=[month_start, month_end]
         )
 
-        revenue = month_invoices.filter(sale__status='PAID').aggregate(
+        revenue = month_invoices.filter(
+            sale__payment_status='PAID'
+        ).aggregate(
             Sum('sale__total_amount')
         )['sale__total_amount__sum'] or 0
 
@@ -984,11 +1016,13 @@ def invoice_analytics(request):
 
     monthly_data.reverse()
 
-    # Status distribution with safe calculations
-    status_distribution = Invoice.objects.values('sale__status').annotate(
+    # Status distribution - FIX: Use payment_status
+    status_distribution = Invoice.objects.filter(
+        sale__document_type='INVOICE'
+    ).values('sale__payment_status').annotate(
         count=Count('id'),
         total_amount=Sum('sale__total_amount')
-    ).order_by('sale__status')
+    ).order_by('sale__payment_status')
 
     status_data = []
     for item in status_distribution:
@@ -997,12 +1031,15 @@ def invoice_analytics(request):
         percentage = (count / total_invoices * 100) if total_invoices > 0 else 0
         avg_amount = (total_amount / count) if count > 0 else 0
 
-        # Get the status label from Sale model choices
+        # Get the status label from Sale model
         from sales.models import Sale
-        status_label = dict(Sale.STATUS_CHOICES).get(item['sale__status'], item['sale__status'])
+        status_label = dict(Sale.PAYMENT_STATUS_CHOICES).get(
+            item['sale__payment_status'],
+            item['sale__payment_status']
+        )
 
         status_data.append({
-            'status': item['sale__status'],
+            'status': item['sale__payment_status'],
             'label': status_label,
             'count': count,
             'total_amount': float(total_amount),
@@ -1010,47 +1047,49 @@ def invoice_analytics(request):
             'percentage': round(percentage, 1)
         })
 
-        # Payment methods distribution
-        payment_methods_data = InvoicePayment.objects.values('payment_method').annotate(
-            count=Count('id')
-        ).order_by('-count')
+    # Payment methods distribution
+    payment_methods_data = InvoicePayment.objects.values('payment_method').annotate(
+        count=Count('id'),
+        total=Sum('amount')
+    ).order_by('-count')
 
-        # Top customers
-        top_customers = Invoice.objects.filter(
-            sale__customer__isnull=False
-        ).values(
-            'sale__customer__name'
-        ).annotate(
-            invoice_count=Count('id'),
-            total_amount=Sum('sale__total_amount')
-        ).order_by('-total_amount')[:5]
+    # Top customers
+    top_customers = Invoice.objects.filter(
+        sale__document_type='INVOICE',
+        sale__customer__isnull=False
+    ).values(
+        'sale__customer__name'
+    ).annotate(
+        invoice_count=Count('id'),
+        total_amount=Sum('sale__total_amount')
+    ).order_by('-total_amount')[:5]
 
-        # EFRIS compliance
-        non_fiscalized_invoices = total_invoices - fiscalized_invoices
+    # EFRIS compliance
+    non_fiscalized_invoices = total_invoices - fiscalized_invoices
 
-        context = {
-            'total_invoices': total_invoices,
-            'total_revenue': total_revenue,
-            'pending_amount': pending_amount,
-            'overdue_invoices': overdue_invoices,
-            'invoices_this_month': invoices_this_month,
-            'fiscalized_invoices': fiscalized_invoices,
-            'pending_invoices': pending_invoices,
-            'avg_invoice_amount': avg_invoice_amount,
-            'collection_rate': round(collection_rate, 1),
-            'on_time_rate': round(on_time_rate, 1),
-            'fiscalization_rate': round(fiscalization_rate, 1),
-            'avg_days_to_pay': avg_days_to_pay,
-            'monthly_data': monthly_data,
-            'status_data': status_data,
-            'payment_methods_data': list(payment_methods_data),
-            'top_customers': list(top_customers),
-            'non_fiscalized_invoices': non_fiscalized_invoices,
-            'start_date': start_date,
-            'end_date': end_date,
-        }
+    context = {
+        'total_invoices': total_invoices,
+        'total_revenue': total_revenue,
+        'pending_amount': pending_amount,
+        'overdue_invoices': overdue_invoices,
+        'invoices_this_month': invoices_this_month,
+        'fiscalized_invoices': fiscalized_invoices,
+        'pending_invoices': pending_invoices,
+        'avg_invoice_amount': avg_invoice_amount,
+        'collection_rate': round(collection_rate, 1),
+        'on_time_rate': round(on_time_rate, 1),
+        'fiscalization_rate': round(fiscalization_rate, 1),
+        'avg_days_to_pay': avg_days_to_pay,
+        'monthly_data': monthly_data,
+        'status_data': status_data,
+        'payment_methods_data': list(payment_methods_data),
+        'top_customers': list(top_customers),
+        'non_fiscalized_invoices': non_fiscalized_invoices,
+        'start_date': start_date,
+        'end_date': end_date,
+    }
 
-        return render(request, 'invoices/analytics.html', context)
+    return render(request, 'invoices/analytics.html', context)
 
 @login_required
 @permission_required('invoices.view_invoice')
@@ -1189,9 +1228,10 @@ def invoice_dashboard(request):
         today = timezone.now().date()
         this_month = today.replace(day=1)
 
-        # Base queryset
+        # Base queryset - filter by document_type
         invoices = Invoice.objects.filter(
-            sale__store__company=company
+            sale__store__company=company,
+            sale__document_type='INVOICE'
         ).select_related('sale')
 
         # Metrics
@@ -1200,19 +1240,21 @@ def invoice_dashboard(request):
             created_at__gte=this_month
         ).count()
 
-        paid_invoices = invoices.filter(sale__status='PAID')
+        # FIX: Use payment_status
+        paid_invoices = invoices.filter(sale__payment_status='PAID')
         total_revenue = paid_invoices.aggregate(
             total=Sum('sale__total_amount')
         )['total'] or 0
 
-        pending_invoices = invoices.exclude(sale__status='PAID')
+        pending_invoices = invoices.exclude(sale__payment_status='PAID')
         pending_amount = pending_invoices.aggregate(
             total=Sum('sale__total_amount')
         )['total'] or 0
 
+        # FIX: Overdue calculation
         overdue_invoices = invoices.filter(
             sale__due_date__lt=today,
-            sale__status__in=['PENDING_PAYMENT', 'PARTIALLY_PAID']
+            sale__payment_status__in=['PENDING', 'PARTIALLY_PAID', 'OVERDUE']
         ).count()
 
         fiscalized_invoices = invoices.filter(is_fiscalized=True).count()
@@ -1236,7 +1278,7 @@ def invoice_dashboard(request):
         upcoming_due = today + timedelta(days=7)
         upcoming_invoices = invoices.filter(
             sale__due_date__range=[today, upcoming_due],
-            sale__status__in=['PENDING_PAYMENT', 'PARTIALLY_PAID']
+            sale__payment_status__in=['PENDING', 'PARTIALLY_PAID']
         ).select_related('sale__customer').order_by('sale__due_date')[:5]
 
         context = {
@@ -1328,42 +1370,57 @@ def dashboard_metrics(request):
     today = timezone.now().date()
     this_month = today.replace(day=1)
 
-    # Calculate metrics - Use sale fields
-    total_invoices = Invoice.objects.count()
+    # Calculate metrics - Use payment_status and filter by document_type
+    total_invoices = Invoice.objects.filter(sale__document_type='INVOICE').count()
     invoices_this_month = Invoice.objects.filter(
+        sale__document_type='INVOICE',
         sale__created_at__date__gte=this_month
     ).count()
 
-    paid_invoices = Invoice.objects.filter(sale__status='PAID')
+    paid_invoices = Invoice.objects.filter(
+        sale__document_type='INVOICE',
+        sale__payment_status='PAID'
+    )
     total_revenue = paid_invoices.aggregate(
         Sum('sale__total_amount')
     )['sale__total_amount__sum'] or 0
 
-    pending_invoices = Invoice.objects.exclude(
-        sale__status__in=['PAID', 'CANCELLED']
+    pending_invoices = Invoice.objects.filter(
+        sale__document_type='INVOICE'
+    ).exclude(
+        sale__payment_status='PAID'
     )
     pending_amount = pending_invoices.aggregate(
         Sum('sale__total_amount')
     )['sale__total_amount__sum'] or 0
 
     overdue_invoices = Invoice.objects.filter(
+        sale__document_type='INVOICE',
         sale__due_date__lt=today,
-        sale__status__in=['PENDING_PAYMENT', 'PARTIALLY_PAID']
+        sale__payment_status__in=['PENDING', 'PARTIALLY_PAID', 'OVERDUE']
     ).count()
 
-    fiscalized_invoices = Invoice.objects.filter(is_fiscalized=True).count()
+    fiscalized_invoices = Invoice.objects.filter(
+        sale__document_type='INVOICE',
+        is_fiscalized=True
+    ).count()
 
-    avg_invoice_amount = Invoice.objects.aggregate(
+    avg_invoice_amount = Invoice.objects.filter(
+        sale__document_type='INVOICE'
+    ).aggregate(
         avg_amount=Avg('sale__total_amount')
     )['avg_amount'] or 0
 
-    total_invoiced_amount = Invoice.objects.aggregate(
+    total_invoiced_amount = Invoice.objects.filter(
+        sale__document_type='INVOICE'
+    ).aggregate(
         Sum('sale__total_amount')
     )['sale__total_amount__sum'] or 0
     collection_rate = (total_revenue / total_invoiced_amount * 100) if total_invoiced_amount > 0 else 0
 
     on_time_payments = Invoice.objects.filter(
-        sale__status='PAID',
+        sale__document_type='INVOICE',
+        sale__payment_status='PAID',
         payments__payment_date__lte=F('sale__due_date')
     ).distinct().count()
     total_paid_invoices = paid_invoices.count()
@@ -1389,4 +1446,3 @@ def dashboard_metrics(request):
         'metrics': metrics,
         'success': True
     })
-

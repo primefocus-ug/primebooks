@@ -18,8 +18,7 @@ class StoreAnalyticsConsumer(AsyncWebsocketConsumer):
 
     async def connect(self):
         # Get store ID from URL route (can still use 'branch_id' in URL for compatibility)
-        self.store_id = self.scope['url_route']['kwargs'].get('store_id') or \
-                        self.scope['url_route']['kwargs'].get('branch_id')
+        self.store_id = self.scope['url_route']['kwargs'].get('store_id')
         self.store_group_name = f'store_analytics_{self.store_id}'
 
         # Check authentication and permissions

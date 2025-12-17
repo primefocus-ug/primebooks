@@ -1062,7 +1062,7 @@ class SaleItem(models.Model):
     discount = models.DecimalField(max_digits=5, decimal_places=2, default=0)
     discount_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     description = models.TextField(blank=True, null=True)
-
+    stock_deducted = models.BooleanField(default=False, verbose_name="Stock Deducted")
     class Meta:
         verbose_name = "Sale Item"
         verbose_name_plural = "Sale Items"
@@ -1128,9 +1128,6 @@ class SaleItem(models.Model):
             raise ValidationError("Item type cannot be determined - no product or service")
 
     def save(self, *args, **kwargs):
-        """
-        Enhanced save method that properly handles both products and services
-        """
         # Calculate totals with proper rounding
         self.total_price = (self.unit_price * self.quantity).quantize(
             Decimal('0.01'), rounding=ROUND_HALF_UP
@@ -1170,11 +1167,15 @@ class SaleItem(models.Model):
                 self.sale.transaction_type == 'SALE' and
                 self.item_type == 'PRODUCT' and
                 self.product_id is not None and
-                self.sale.document_type in ['RECEIPT', 'INVOICE']  # Don't deduct for proforma/estimate
+                self.sale.document_type in ['RECEIPT', 'INVOICE'] and
+                not self.stock_deducted  # <-- CRITICAL: Check if already deducted
         )
 
-        if should_deduct_stock:
+        # ========== FIX: Prevent duplicate calls ==========
+        skip_deduction = getattr(self, '_skip_deduction', False)
+        if should_deduct_stock and not skip_deduction:
             self.deduct_stock()
+        # ===================================================
 
         super().save(*args, **kwargs)
 
@@ -1240,36 +1241,18 @@ class SaleItem(models.Model):
     def deduct_stock(self):
         """
         Deduct stock for product items only.
-        Services don't have stock to deduct.
         INCLUDES IDEMPOTENCY CHECK to prevent duplicate deductions.
         """
+        # Check if already deducted
+        if self.stock_deducted:
+            logger.warning(f"⚠️ Stock already deducted for {self.product.name}. Skipping.")
+            return
+
         if self.item_type != 'PRODUCT' or not self.product:
             logger.info(f"Skipping stock deduction for service item: {self.item_name}")
-            return  # Services don't have stock
+            return
 
         try:
-            # ✅ IDEMPOTENCY CHECK: Check if stock already deducted for this sale item
-            movement_reference = (
-                    self.sale.efris_invoice_number or
-                    self.sale.document_number or
-                    f"SALE-{self.sale.id}"
-            )
-
-            existing_movement = StockMovement.objects.filter(
-                product=self.product,
-                store=self.sale.store,
-                movement_type='SALE',
-                reference=movement_reference,
-                notes__icontains=f"Sale item: {self.product.name}"
-            ).exists()
-
-            if existing_movement:
-                logger.warning(
-                    f"⚠️ Stock already deducted for {self.product.name} "
-                    f"in sale {movement_reference}. Skipping duplicate deduction."
-                )
-                return  # Already deducted, skip
-
             logger.info(f"Deducting stock for product: {self.product.name}")
 
             store_stock = Stock.objects.select_for_update().filter(
@@ -1298,6 +1281,12 @@ class SaleItem(models.Model):
                 raise ValidationError("Stock update failed")
 
             # Create stock movement record
+            movement_reference = (
+                    self.sale.efris_invoice_number or
+                    self.sale.document_number or
+                    f"SALE-{self.sale.id}"
+            )
+
             StockMovement.objects.create(
                 product=self.product,
                 store=self.sale.store,
@@ -1309,6 +1298,11 @@ class SaleItem(models.Model):
                 created_by=self.sale.created_by,
                 notes=f'Sale item: {self.product.name} - Qty: {self.quantity}',
             )
+
+            # ========== CRITICAL FIX: Mark as deducted but DON'T save yet ==========
+            self.stock_deducted = True
+            # DON'T call self.save() here - it will be saved by the main save() method
+            # =======================================================================
 
             logger.info(f"✅ Stock deducted successfully: {self.product.name} - Qty: {self.quantity}")
 

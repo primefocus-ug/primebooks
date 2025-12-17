@@ -23,15 +23,21 @@ from company.forms import SearchForm
 
 
 @login_required
-@permission_required('stores.view_store',raise_exception=True)
+@permission_required('stores.view_store', raise_exception=True)
 @require_http_methods(["GET"])
-def branch_analytics(request, store_id):
+def branch_analytics(request, **kwargs):
     """
-    Store analytics view (backward compatible with branch_id parameter).
+    Store analytics view with backward compatibility for branch_id parameter.
     """
-    store = get_object_or_404(Store, id=store_id)
+    # Handle both store_id and branch_id parameters
+    store_identifier = kwargs.get('store_id') or kwargs.get('branch_id')
 
-    # Updated permission check
+    if not store_identifier:
+        return JsonResponse({'error': 'Store ID is required'}, status=400)
+
+    store = get_object_or_404(Store, id=store_identifier)
+
+    # Permission check
     if not request.user.has_perm('stores.view_store'):
         return JsonResponse({'error': 'Permission denied'}, status=403)
 
@@ -159,14 +165,19 @@ def branch_analytics(request, store_id):
 
 
 @login_required
-@permission_required('stores.view_store',raise_exception=True)
+@permission_required('stores.view_store', raise_exception=True)
 @require_http_methods(["GET"])
-def branch_store_stats(request, store_id):
+def branch_store_stats(request, **kwargs):
     """
     Return basic statistics for stores.
     Parameter renamed to store_id but maintains backward compatibility.
     """
-    store = get_object_or_404(Store, id=store_id)
+    store_identifier = kwargs.get('store_id') or kwargs.get('branch_id')
+
+    if not store_identifier:
+        return JsonResponse({'error': 'Store ID is required'}, status=400)
+
+    store = get_object_or_404(Store, id=store_identifier)
 
     if not request.user.has_perm('stores.view_store'):
         return JsonResponse({'error': 'Permission denied'}, status=403)
@@ -203,11 +214,16 @@ def branch_store_stats(request, store_id):
 
 
 @login_required
-@permission_required('stores.view_store',raise_exception=True)
+@permission_required('stores.view_store', raise_exception=True)
 @require_http_methods(["GET"])
-def branch_performance(request, branch_id):
+def branch_performance(request, **kwargs):
     """Return performance data including top performers and stores needing attention."""
-    store = get_object_or_404(Store, id=branch_id)
+    store_identifier = kwargs.get('store_id') or kwargs.get('branch_id')
+
+    if not store_identifier:
+        return JsonResponse({'error': 'Store ID is required'}, status=400)
+
+    store = get_object_or_404(Store, id=store_identifier)
 
     if not request.user.has_perm('stores.view_store'):
         return JsonResponse({'error': 'Permission denied'}, status=403)
@@ -313,11 +329,17 @@ def branch_performance(request, branch_id):
 
 
 @login_required
-@permission_required('accounts.add_customuser',raise_exception=True)
+@permission_required('accounts.add_customuser', raise_exception=True)
 @require_http_methods(["GET"])
-def branch_staff_overview(request, branch_id):
+def branch_staff_overview(request, **kwargs):
     """Return staff overview data."""
-    store = get_object_or_404(Store, id=branch_id)
+    # Handle both store_id and branch_id parameters
+    store_identifier = kwargs.get('store_id') or kwargs.get('branch_id')
+
+    if not store_identifier:
+        return JsonResponse({'error': 'Store ID is required'}, status=400)
+
+    store = get_object_or_404(Store, id=store_identifier)
 
     if not request.user.has_perm('stores.view_store'):
         return JsonResponse({'error': 'Permission denied'}, status=403)
@@ -327,37 +349,40 @@ def branch_staff_overview(request, branch_id):
     stores = Store.objects.filter(company=company, is_active=True)
 
     # Get all staff members across all stores
-    staff_ids = []
+    staff_ids = set()
     for current_store in stores:
-        staff_ids.extend(current_store.staff.values_list('id', flat=True))
-
-    # Remove duplicates
-    unique_staff_ids = list(set(staff_ids))
+        staff_ids.update(current_store.staff.values_list('id', flat=True))
 
     # Get staff statistics
-    total_staff = len(unique_staff_ids)
+    total_staff = len(staff_ids)
 
-    if unique_staff_ids:
+    if staff_ids:
         staff_queryset = CustomUser.objects.filter(
-            id__in=unique_staff_ids,
+            id__in=staff_ids,
             is_hidden=False
         )
 
         active_staff = staff_queryset.filter(is_active=True).count()
+
+        # FIXED: Access role name through group relationship
+        # The Role model has a one-to-one relationship with Group
+        # So we need to access: primary_role -> group -> name
         managers = staff_queryset.filter(
-            primary_role__name__in=['Manager', 'Company Admin'],
+            primary_role__group__name__in=['Manager', 'Company Admin', 'Administrator', 'Store Manager'],
             is_active=True
         ).count()
 
+        # For cashiers
         cashiers = staff_queryset.filter(
-            primary_role__name='Cashier',
+            primary_role__group__name='Cashier',
             is_active=True
         ).count()
+
         # Get recent activities from device logs
         recent_activities = []
         try:
             logs = DeviceOperatorLog.objects.filter(
-                user_id__in=unique_staff_ids,
+                user_id__in=staff_ids,
                 store__in=stores
             ).select_related(
                 'user', 'store', 'device'
@@ -382,7 +407,8 @@ def branch_staff_overview(request, branch_id):
                     'avatar': log.user.avatar.url if log.user.avatar else None,
                 })
 
-        except Exception:
+        except Exception as e:
+            print(f"Error getting recent activities: {e}")
             recent_activities = []
     else:
         active_staff = 0
@@ -398,13 +424,12 @@ def branch_staff_overview(request, branch_id):
         'recent_activities': recent_activities,
     })
 
-
 @login_required
 @permission_required('stores.view_store',raise_exception=True)
 @require_http_methods(["GET"])
-def branch_revenue_data(request, branch_id):
+def branch_revenue_data(request, store_id):
     """Return revenue data for different time ranges."""
-    store = get_object_or_404(Store, id=branch_id)
+    store = get_object_or_404(Store, id=store_id)
 
     if not request.user.has_perm('stores.view_store'):
         return JsonResponse({'error': 'Permission denied'}, status=403)
@@ -592,15 +617,15 @@ def generate_performance_trend_data(stores):
 @login_required
 @permission_required('stores.view_store',raise_exception=True)
 @require_http_methods(["GET"])
-def export_branch_data(request, branch_id):
+def export_branch_data(request, store_id):
     """Export store data as CSV."""
-    store = get_object_or_404(Store, id=branch_id)
+    store = get_object_or_404(Store, id=store_id)
 
     if not request.user.has_perm('stores.view_store'):
         return JsonResponse({'error': 'Permission denied'}, status=403)
 
     response = HttpResponse(content_type='text/csv')
-    response['Content-Disposition'] = f'attachment; filename="store_{branch_id}_data.csv"'
+    response['Content-Disposition'] = f'attachment; filename="store_{store_id}_data.csv"'
 
     writer = csv.writer(response)
     writer.writerow(['Company', 'Store', 'Code', 'Revenue (30d)', 'Sales Count (30d)', 'Avg Sale', 'Active'])
@@ -649,9 +674,9 @@ def export_branch_data(request, branch_id):
 @login_required
 @permission_required('stores.add_store',raise_exception=True)
 @require_http_methods(["POST"])
-def generate_branch_report(request, branch_id):
+def generate_branch_report(request, store_id):
     """Generate comprehensive store report."""
-    store = get_object_or_404(Store, id=branch_id)
+    store = get_object_or_404(Store, id=store_id)
 
     if not request.user.has_perm('stores.view_store'):
         return JsonResponse({'error': 'Permission denied'}, status=403)
@@ -711,7 +736,6 @@ def generate_branch_report(request, branch_id):
     })
 
 
-# Class-based views
 
 class BranchListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
     """List all stores (backward compatible as branches)."""

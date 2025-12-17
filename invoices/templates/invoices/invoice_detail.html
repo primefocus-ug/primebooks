@@ -1,360 +1,821 @@
 {% extends 'base.html' %}
 {% load static %}
+{% load humanize %}
 
 {% block title %}Invoice {{ sale.document_number }}{% endblock %}
 
 {% block extra_css %}
 <style>
-    .invoice-header {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        color: white;
-        padding: 30px;
-        border-radius: 10px 10px 0 0;
+    * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
     }
-    .status-badge {
-        padding: 8px 16px;
-        border-radius: 20px;
+
+    .invoice-container {
+        max-width: 1000px;
+        margin: 0 auto;
+        background-color: white;
+        border-radius: 12px;
+        box-shadow: 0 5px 25px rgba(0, 0, 0, 0.1);
+        overflow: hidden;
+        padding: 40px;
+    }
+
+    .invoice-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        border-bottom: 2px solid #2c5aa0;
+        padding-bottom: 25px;
+        margin-bottom: 30px;
+    }
+
+    .company-info {
+        flex: 1;
+    }
+
+    .logo-container {
+        display: flex;
+        align-items: center;
+        margin-bottom: 15px;
+    }
+
+    .logo {
+        width: 50px;
+        height: 50px;
+        background: linear-gradient(135deg, #2c5aa0, #4a7bc8);
+        border-radius: 8px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: white;
+        font-size: 24px;
+        font-weight: bold;
+        margin-right: 15px;
+    }
+
+    .company-name {
+        font-size: 28px;
+        font-weight: 700;
+        color: #2c5aa0;
+    }
+
+    .company-details {
+        margin-top: 10px;
+        color: #666;
+        font-size: 15px;
+    }
+
+    .invoice-title-section {
+        text-align: right;
+    }
+
+    .invoice-title {
+        font-size: 42px;
+        font-weight: 800;
+        color: #333;
+        margin-bottom: 5px;
+    }
+
+    .invoice-meta {
+        color: #666;
+        font-size: 15px;
+    }
+
+    .invoice-meta strong {
+        color: #2c5aa0;
+    }
+
+    .invoice-details-section {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 40px;
+        margin-bottom: 40px;
+    }
+
+    .bill-to, .payment-info {
+        background-color: #f9fafc;
+        padding: 20px;
+        border-radius: 8px;
+        border-left: 4px solid #2c5aa0;
+    }
+
+    .section-title {
+        font-size: 18px;
+        font-weight: 600;
+        color: #2c5aa0;
+        margin-bottom: 15px;
+        padding-bottom: 8px;
+        border-bottom: 1px solid #eaeaea;
+    }
+
+    .client-info p, .payment-details p {
+        margin-bottom: 8px;
+    }
+
+    .items-table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-bottom: 30px;
+        box-shadow: 0 3px 10px rgba(0, 0, 0, 0.05);
+    }
+
+    .items-table thead {
+        background-color: #2c5aa0;
+        color: white;
+    }
+
+    .items-table th {
+        padding: 16px 15px;
+        text-align: left;
+        font-weight: 600;
+        font-size: 16px;
+    }
+
+    .items-table tbody tr {
+        border-bottom: 1px solid #eaeaea;
+    }
+
+    .items-table tbody tr:nth-child(even) {
+        background-color: #f9fafc;
+    }
+
+    .items-table td {
+        padding: 16px 15px;
+    }
+
+    .quantity, .rate, .amount, .tax, .discount {
+        text-align: center;
+    }
+
+    .description {
+        width: 40%;
+    }
+
+    .totals-section {
+        display: flex;
+        justify-content: flex-end;
+        margin-bottom: 40px;
+    }
+
+    .totals-table {
+        width: 300px;
+        border-collapse: collapse;
+    }
+
+    .totals-table td {
+        padding: 12px 15px;
+        border-bottom: 1px solid #eaeaea;
+    }
+
+    .totals-table tr:last-child td {
+        border-bottom: none;
+        font-weight: 700;
+        font-size: 18px;
+        color: #2c5aa0;
+    }
+
+    .amount-label {
+        text-align: right;
+        color: #666;
+    }
+
+    .amount-value {
+        text-align: right;
         font-weight: 600;
     }
+
+    .final-total {
+        background-color: #f0f7ff;
+    }
+
+    .payment-methods {
+        margin-bottom: 40px;
+    }
+
+    .payment-options {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 15px;
+        margin-top: 15px;
+    }
+
+    .payment-option {
+        display: flex;
+        align-items: center;
+        background-color: #f9fafc;
+        padding: 12px 20px;
+        border-radius: 8px;
+        border: 1px solid #eaeaea;
+        transition: all 0.3s ease;
+        flex: 1;
+        min-width: 200px;
+    }
+
+    .payment-option:hover {
+        border-color: #2c5aa0;
+        box-shadow: 0 3px 10px rgba(44, 90, 160, 0.1);
+    }
+
+    .payment-icon {
+        font-size: 24px;
+        margin-right: 12px;
+        color: #2c5aa0;
+    }
+
+    .payment-details-text {
+        font-size: 14px;
+    }
+
+    .notes-section {
+        background-color: #f9fafc;
+        padding: 20px;
+        border-radius: 8px;
+        margin-bottom: 30px;
+        border-left: 4px solid #2c5aa0;
+    }
+
+    .notes-title {
+        font-size: 16px;
+        font-weight: 600;
+        color: #2c5aa0;
+        margin-bottom: 10px;
+    }
+
+    .invoice-footer {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding-top: 25px;
+        border-top: 1px solid #eaeaea;
+        color: #666;
+        font-size: 14px;
+    }
+
+    .action-buttons {
+        display: flex;
+        gap: 15px;
+    }
+
+    .btn {
+        padding: 12px 25px;
+        border: none;
+        border-radius: 6px;
+        font-weight: 600;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        transition: all 0.3s ease;
+        text-decoration: none;
+    }
+
+    .btn-primary {
+        background-color: #2c5aa0;
+        color: white;
+    }
+
+    .btn-primary:hover {
+        background-color: #1e427a;
+        color: white;
+    }
+
+    .btn-secondary {
+        background-color: #f0f7ff;
+        color: #2c5aa0;
+        border: 1px solid #2c5aa0;
+    }
+
+    .btn-secondary:hover {
+        background-color: #e1edff;
+        color: #2c5aa0;
+    }
+
+    .btn-success {
+        background-color: #28a745;
+        color: white;
+    }
+
+    .btn-success:hover {
+        background-color: #218838;
+        color: white;
+    }
+
+    .btn-warning {
+        background-color: #ffc107;
+        color: #212529;
+    }
+
+    .btn-warning:hover {
+        background-color: #e0a800;
+        color: #212529;
+    }
+
+    .btn-danger {
+        background-color: #dc3545;
+        color: white;
+    }
+
+    .btn-danger:hover {
+        background-color: #c82333;
+        color: white;
+    }
+
+    .btn-info {
+        background-color: #17a2b8;
+        color: white;
+    }
+
+    .btn-info:hover {
+        background-color: #138496;
+        color: white;
+    }
+
+    .btn-outline-primary {
+        background-color: transparent;
+        color: #2c5aa0;
+        border: 1px solid #2c5aa0;
+    }
+
+    .btn-outline-primary:hover {
+        background-color: #2c5aa0;
+        color: white;
+    }
+
+    .status-badge {
+        display: inline-block;
+        padding: 6px 15px;
+        border-radius: 20px;
+        font-size: 14px;
+        font-weight: 600;
+        margin-left: 10px;
+    }
+
+    .status-paid {
+        background-color: #e7f7ef;
+        color: #2a8c5e;
+    }
+
+    .status-pending {
+        background-color: #fff4e6;
+        color: #e68a00;
+    }
+
+    .status-overdue {
+        background-color: #ffe6e6;
+        color: #d63031;
+    }
+
+    .status-draft {
+        background-color: #e9ecef;
+        color: #495057;
+    }
+
+    .status-cancelled {
+        background-color: #f8d7da;
+        color: #721c24;
+    }
+
     .stock-warning {
         background-color: #fff3cd;
         border-left: 4px solid #ffc107;
-        padding: 10px;
-        margin-bottom: 15px;
+        padding: 15px;
+        margin-bottom: 20px;
+        border-radius: 6px;
     }
+
     .stock-error {
         background-color: #f8d7da;
         border-left: 4px solid #dc3545;
-        padding: 10px;
-        margin-bottom: 15px;
+        padding: 15px;
+        margin-bottom: 20px;
+        border-radius: 6px;
     }
-    .action-buttons .btn {
-        margin: 5px;
+
+    .payment-history {
+        margin-top: 20px;
+    }
+
+    .payment-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 10px 15px;
+        background-color: #f9fafc;
+        border-radius: 6px;
+        margin-bottom: 10px;
+        border-left: 4px solid #28a745;
+    }
+
+    .efris-info {
+        background-color: #e7f7ef;
+        padding: 15px;
+        border-radius: 8px;
+        margin-bottom: 20px;
+        border-left: 4px solid #2a8c5e;
+    }
+
+    @media print {
+        body {
+            background-color: white;
+            padding: 0;
+        }
+
+        .invoice-container {
+            box-shadow: none;
+            padding: 20px;
+        }
+
+        .action-buttons {
+            display: none !important;
+        }
+
+        .payment-option {
+            break-inside: avoid;
+        }
+    }
+
+    @media (max-width: 768px) {
+        .invoice-details-section {
+            grid-template-columns: 1fr;
+            gap: 20px;
+        }
+
+        .invoice-header {
+            flex-direction: column;
+        }
+
+        .invoice-title-section {
+            text-align: left;
+            margin-top: 20px;
+        }
+
+        .action-buttons {
+            flex-direction: column;
+            width: 100%;
+        }
+
+        .btn {
+            width: 100%;
+            justify-content: center;
+        }
+
+        .items-table {
+            display: block;
+            overflow-x: auto;
+        }
     }
 </style>
 {% endblock %}
 
 {% block content %}
-<div class="container-fluid py-4">
-    <!-- Header -->
-    <div class="row mb-4">
-        <div class="col-md-6">
-            <h2 class="mb-0">Invoice Details</h2>
-            <p class="text-muted">{{ sale.document_number }}</p>
-        </div>
-        <div class="col-md-6 text-end">
-            <a href="{% url 'invoices:list' %}" class="btn btn-secondary">
-                <i class="fas fa-arrow-left me-2"></i>Back to Invoices
-            </a>
-        </div>
+<div class="invoice-container">
+    <!-- Header Navigation -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <a href="{% url 'invoices:list' %}" class="btn btn-secondary">
+            <i class="fas fa-arrow-left me-2"></i>Back to Invoices
+        </a>
+        <h2>Invoice Details</h2>
+        <div></div> <!-- Empty div for spacing -->
     </div>
 
     <!-- Messages -->
     {% if messages %}
-    <div class="row mb-3">
-        <div class="col-12">
-            {% for message in messages %}
-            <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
-                {{ message }}
-                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-            </div>
-            {% endfor %}
+    <div class="mb-4">
+        {% for message in messages %}
+        <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
+            {{ message }}
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
         </div>
+        {% endfor %}
     </div>
     {% endif %}
 
     <!-- Stock Warnings -->
     {% if not can_pay and sale.status != 'PAID' %}
-    <div class="row mb-3">
-        <div class="col-12">
-            <div class="stock-error">
-                <strong><i class="fas fa-exclamation-triangle"></i> Cannot Mark as Paid:</strong> {{ pay_message }}
-            </div>
-        </div>
+    <div class="stock-error mb-4">
+        <strong><i class="fas fa-exclamation-triangle me-2"></i> Cannot Mark as Paid:</strong> {{ pay_message }}
     </div>
     {% endif %}
 
     {% if stock_availability %}
-    <div class="row mb-3">
-        <div class="col-12">
-            {% for stock in stock_availability %}
-            {% if not stock.sufficient %}
-            <div class="stock-warning">
-                <strong><i class="fas fa-exclamation-triangle"></i> Stock Warning:</strong>
-                {{ stock.product.name }} - Required: {{ stock.required }}, Available: {{ stock.available }}
-            </div>
-            {% endif %}
-            {% endfor %}
+    <div class="mb-4">
+        {% for stock in stock_availability %}
+        {% if not stock.sufficient %}
+        <div class="stock-warning">
+            <strong><i class="fas fa-exclamation-triangle me-2"></i> Stock Warning:</strong>
+            {{ stock.product.name }} - Required: {{ stock.required }}, Available: {{ stock.available }}
         </div>
+        {% endif %}
+        {% endfor %}
     </div>
     {% endif %}
 
-    <div class="row">
-        <!-- Main Invoice Content -->
-        <div class="col-md-8">
-            <div class="card">
-                <div class="invoice-header">
-                    <div class="row">
-                        <div class="col-md-6">
-                            <h3 class="mb-3">INVOICE</h3>
-                            <p class="mb-1"><strong>Invoice #:</strong> {{ sale.document_number }}</p>
-                            <p class="mb-1"><strong>Date:</strong> {{ sale.created_at|date:"F d, Y" }}</p>
-                            <p class="mb-1"><strong>Due Date:</strong> {{ sale.due_date|date:"F d, Y" }}</p>
-                            {% if invoice.purchase_order %}
-                            <p class="mb-1"><strong>PO #:</strong> {{ invoice.purchase_order }}</p>
-                            {% endif %}
-                        </div>
-                        <div class="col-md-6 text-end">
-                            <h4>{{ store.company.name }}</h4>
-                            <p class="mb-0">{{ store.company.physical_address|default:"" }}</p>
-                            <p class="mb-0">{{ store.company.phone|default:"" }}</p>
-                            <p class="mb-0">{{ store.company.email|default:"" }}</p>
-                            {% if store.company.tin %}
-                            <p class="mb-0">TIN: {{ store.company.tin }}</p>
-                            {% endif %}
-                        </div>
-                    </div>
-                </div>
+    <!-- Invoice Header -->
+    <div class="invoice-header">
+        <div class="company-info">
+            <div class="logo-container">
+                <div class="logo">{{ store.company.name|first|upper }}</div>
+                <div class="company-name">{{ store.company.name }}</div>
+            </div>
+            <div class="company-details">
+                <p>{{ store.company.physical_address|default:"No address specified" }}</p>
+                {% if store.company.phone %}<p>Phone: {{ store.company.phone }}</p>{% endif %}
+                {% if store.company.email %}<p>Email: {{ store.company.email }}</p>{% endif %}
+                {% if store.company.tin %}<p>TIN: {{ store.company.tin }}</p>{% endif %}
+                {% if store.company.website %}<p>Website: {{ store.company.website }}</p>{% endif %}
+            </div>
+        </div>
 
-                <div class="card-body">
-                    <!-- Customer Information -->
-                    <div class="row mb-4">
-                        <div class="col-md-6">
-                            <h5>Bill To:</h5>
-                            <p class="mb-1"><strong>{{ sale.customer.name|default:"Walk-in Customer" }}</strong></p>
-                            {% if sale.customer %}
-                            {% if sale.customer.email %}
-                            <p class="mb-1">{{ sale.customer.email }}</p>
-                            {% endif %}
-                            {% if sale.customer.phone %}
-                            <p class="mb-1">{{ sale.customer.phone }}</p>
-                            {% endif %}
-                            {% if sale.customer.physical_address %}
-                            <p class="mb-1">{{ sale.customer.physical_address }}</p>
-                            {% endif %}
-                            {% if sale.customer.tin %}
-                            <p class="mb-1">TIN: {{ sale.customer.tin }}</p>
-                            {% endif %}
-                            {% endif %}
-                        </div>
-                        <div class="col-md-6 text-end">
-                            <div class="status-info">
-                                <p><strong>Status:</strong>
-                                    {% if sale.status == 'DRAFT' %}
-                                    <span class="badge bg-secondary">Draft</span>
-                                    {% elif sale.status == 'PENDING_PAYMENT' %}
-                                    <span class="badge bg-warning">Pending Payment</span>
-                                    {% elif sale.status == 'PAID' %}
-                                    <span class="badge bg-success">Paid</span>
-                                    {% elif sale.status == 'CANCELLED' %}
-                                    <span class="badge bg-danger">Cancelled</span>
-                                    {% endif %}
-                                </p>
-                                <p><strong>Payment Status:</strong>
-                                    {% if sale.payment_status == 'PENDING' %}
-                                    <span class="badge bg-warning">Unpaid</span>
-                                    {% elif sale.payment_status == 'PAID' %}
-                                    <span class="badge bg-success">Paid</span>
-                                    {% elif sale.payment_status == 'OVERDUE' %}
-                                    <span class="badge bg-danger">Overdue</span>
-                                    {% endif %}
-                                </p>
-                                {% if sale.days_overdue > 0 %}
-                                <p class="text-danger"><strong>{{ sale.days_overdue }} days overdue</strong></p>
-                                {% endif %}
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Items Table -->
-                    <div class="table-responsive mb-4">
-                        <table class="table table-bordered">
-                            <thead class="table-light">
-                                <tr>
-                                    <th>#</th>
-                                    <th>Item</th>
-                                    <th>Type</th>
-                                    <th class="text-end">Qty</th>
-                                    <th class="text-end">Unit Price</th>
-                                    <th class="text-end">Discount</th>
-                                    <th class="text-end">Tax</th>
-                                    <th class="text-end">Total</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {% for item in items %}
-                                <tr>
-                                    <td>{{ forloop.counter }}</td>
-                                    <td>
-                                        {{ item.item_name }}
-                                        {% if item.description and item.description != item.item_name %}
-                                        <br><small class="text-muted">{{ item.description }}</small>
-                                        {% endif %}
-                                    </td>
-                                    <td>
-                                        {% if item.item_type == 'PRODUCT' %}
-                                        <span class="badge bg-info">Product</span>
-                                        {% else %}
-                                        <span class="badge bg-success">Service</span>
-                                        {% endif %}
-                                    </td>
-                                    <td class="text-end">{{ item.quantity }}</td>
-                                    <td class="text-end">{{ item.unit_price|floatformat:2 }}</td>
-                                    <td class="text-end">
-                                        {% if item.discount_amount > 0 %}
-                                        {{ item.discount|floatformat:2 }}% ({{ item.discount_amount|floatformat:2 }})
-                                        {% else %}
-                                        -
-                                        {% endif %}
-                                    </td>
-                                    <td class="text-end">{{ item.tax_amount|floatformat:2 }}</td>
-                                    <td class="text-end"><strong>{{ item.line_total|floatformat:2 }}</strong></td>
-                                </tr>
-                                {% endfor %}
-                            </tbody>
-                            <tfoot>
-                                <tr>
-                                    <td colspan="7" class="text-end"><strong>Subtotal:</strong></td>
-                                    <td class="text-end"><strong>UGX {{ sale.subtotal|floatformat:2 }}</strong></td>
-                                </tr>
-                                {% if sale.discount_amount > 0 %}
-                                <tr>
-                                    <td colspan="7" class="text-end text-danger"><strong>Discount:</strong></td>
-                                    <td class="text-end text-danger"><strong>-UGX {{ sale.discount_amount|floatformat:2 }}</strong></td>
-                                </tr>
-                                {% endif %}
-                                <tr>
-                                    <td colspan="7" class="text-end"><strong>Tax (included):</strong></td>
-                                    <td class="text-end"><strong>UGX {{ sale.tax_amount|floatformat:2 }}</strong></td>
-                                </tr>
-                                <tr class="table-primary">
-                                    <td colspan="7" class="text-end"><strong>TOTAL:</strong></td>
-                                    <td class="text-end"><strong>UGX {{ sale.total_amount|floatformat:2 }}</strong></td>
-                                </tr>
-                                {% if sale.amount_paid > 0 %}
-                                <tr>
-                                    <td colspan="7" class="text-end"><strong>Amount Paid:</strong></td>
-                                    <td class="text-end text-success"><strong>UGX {{ sale.amount_paid|floatformat:2 }}</strong></td>
-                                </tr>
-                                <tr>
-                                    <td colspan="7" class="text-end"><strong>Amount Outstanding:</strong></td>
-                                    <td class="text-end text-danger"><strong>UGX {{ sale.amount_outstanding|floatformat:2 }}</strong></td>
-                                </tr>
-                                {% endif %}
-                            </tfoot>
-                        </table>
-                    </div>
-
-                    <!-- Terms and Notes -->
-                    {% if invoice.terms %}
-                    <div class="mb-3">
-                        <h6>Terms & Conditions:</h6>
-                        <p class="text-muted">{{ invoice.terms|linebreaks }}</p>
-                    </div>
+        <div class="invoice-title-section">
+            <h1 class="invoice-title">INVOICE</h1>
+            <div class="invoice-meta">
+                <p><strong>Invoice #:</strong> {{ sale.document_number }}</p>
+                <p><strong>Date Issued:</strong> {{ sale.created_at|date:"F d, Y" }}</p>
+                <p><strong>Due Date:</strong> {{ sale.due_date|date:"F d, Y" }}
+                    {% if sale.status == 'PAID' %}
+                    <span class="status-badge status-paid">PAID</span>
+                    {% elif sale.status == 'PENDING_PAYMENT' %}
+                    <span class="status-badge status-pending">PENDING</span>
+                    {% elif sale.status == 'DRAFT' %}
+                    <span class="status-badge status-draft">DRAFT</span>
+                    {% elif sale.status == 'CANCELLED' %}
+                    <span class="status-badge status-cancelled">CANCELLED</span>
                     {% endif %}
+                </p>
+                {% if invoice.purchase_order %}
+                <p><strong>PO #:</strong> {{ invoice.purchase_order }}</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
 
-                    {% if sale.notes %}
-                    <div class="mb-3">
-                        <h6>Notes:</h6>
-                        <p class="text-muted">{{ sale.notes|linebreaks }}</p>
-                    </div>
+    <!-- Invoice Details Section -->
+    <div class="invoice-details-section">
+        <div class="bill-to">
+            <h3 class="section-title">Bill To</h3>
+            <div class="client-info">
+                <p><strong>{{ sale.customer.name|default:"Walk-in Customer" }}</strong></p>
+                {% if sale.customer %}
+                    {% if sale.customer.email %}<p>{{ sale.customer.email }}</p>{% endif %}
+                    {% if sale.customer.phone %}<p>{{ sale.customer.phone }}</p>{% endif %}
+                    {% if sale.customer.physical_address %}<p>{{ sale.customer.physical_address }}</p>{% endif %}
+                    {% if sale.customer.tin %}<p>TIN: {{ sale.customer.tin }}</p>{% endif %}
+                {% endif %}
+            </div>
+        </div>
+
+        <div class="payment-info">
+            <h3 class="section-title">Payment Information</h3>
+            <div class="payment-details">
+                <p><strong>Payment Terms:</strong> Net {{ sale.payment_terms|default:"15" }}</p>
+                <p><strong>Payment Due:</strong> {{ sale.due_date|date:"F d, Y" }}</p>
+                <p><strong>Status:</strong>
+                    {% if sale.payment_status == 'PENDING' %}
+                    <span class="status-badge status-pending">Unpaid</span>
+                    {% elif sale.payment_status == 'PAID' %}
+                    <span class="status-badge status-paid">Paid</span>
+                    {% elif sale.payment_status == 'OVERDUE' %}
+                    <span class="status-badge status-overdue">Overdue</span>
                     {% endif %}
-
-                    <!-- EFRIS Information -->
-                    {% if invoice.is_fiscalized %}
-                    <div class="alert alert-success">
-                        <h6><i class="fas fa-check-circle"></i> EFRIS Fiscalized</h6>
-                        <p class="mb-1"><strong>Fiscal Document Number:</strong> {{ invoice.fiscal_document_number }}</p>
-                        {% if invoice.verification_code %}
-                        <p class="mb-1"><strong>Verification Code:</strong> {{invoice.verification_code }}</p>
-                        {% endif %}
-                        {% if invoice.fiscalization_time %}
-                        <p class="mb-0"><strong>Fiscalization Time:</strong> {{ invoice.fiscalization_time|date:"F d, Y H:i" }}</p>
-                        {% endif %}
-                    </div>
+                </p>
+                {% if sale.days_overdue > 0 %}
+                <p class="text-danger"><strong>{{ sale.days_overdue }} days overdue</strong></p>
                 {% endif %}
+                <p><strong>Late Fee:</strong> 1.5% per month on overdue balances</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Items Table -->
+    <table class="items-table">
+        <thead>
+            <tr>
+                <th class="quantity">Qty</th>
+                <th class="description">Description</th>
+                <th class="type">Type</th>
+                <th class="rate">Unit Price</th>
+                <th class="discount">Discount</th>
+                <th class="tax">Tax</th>
+                <th class="amount">Amount</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for item in items %}
+            <tr>
+                <td class="quantity">{{ item.quantity }}</td>
+                <td class="description">
+                    <strong>{{ item.item_name }}</strong>
+                    {% if item.description and item.description != item.item_name %}
+                    <br><span style="color: #666; font-size: 14px;">{{ item.description }}</span>
+                    {% endif %}
+                </td>
+                <td class="type">
+                    {% if item.item_type == 'PRODUCT' %}
+                    <span class="badge bg-info">Product</span>
+                    {% else %}
+                    <span class="badge bg-success">Service</span>
+                    {% endif %}
+                </td>
+                <td class="rate">UGX {{ item.unit_price|floatformat:2|intcomma }}</td>
+                <td class="discount">
+                    {% if item.discount_amount > 0 %}
+                    {{ item.discount|floatformat:2 }}%<br>
+                    <small>(UGX {{ item.discount_amount|floatformat:2|intcomma }})</small>
+                    {% else %}
+                    -
+                    {% endif %}
+                </td>
+                <td class="tax">UGX {{ item.tax_amount|floatformat:2|intcomma }}</td>
+                <td class="amount"><strong>UGX {{ item.line_total|floatformat:2|intcomma }}</strong></td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    <!-- Totals Section -->
+    <div class="totals-section">
+        <table class="totals-table">
+            <tr>
+                <td class="amount-label">Subtotal:</td>
+                <td class="amount-value">UGX {{ sale.subtotal|floatformat:2|intcomma }}</td>
+            </tr>
+            {% if sale.discount_amount > 0 %}
+            <tr>
+                <td class="amount-label">Discount:</td>
+                <td class="amount-value text-danger">-UGX {{ sale.discount_amount|floatformat:2|intcomma }}</td>
+            </tr>
+            {% endif %}
+            <tr>
+                <td class="amount-label">Tax (included):</td>
+                <td class="amount-value">UGX {{ sale.tax_amount|floatformat:2|intcomma }}</td>
+            </tr>
+            <tr class="final-total">
+                <td class="amount-label">Total Due:</td>
+                <td class="amount-value">UGX {{ sale.total_amount|floatformat:2|intcomma }}</td>
+            </tr>
+            {% if sale.amount_paid > 0 %}
+            <tr>
+                <td class="amount-label">Amount Paid:</td>
+                <td class="amount-value text-success">UGX {{ sale.amount_paid|floatformat:2|intcomma }}</td>
+            </tr>
+            <tr>
+                <td class="amount-label">Amount Outstanding:</td>
+                <td class="amount-value text-danger">UGX {{ sale.amount_outstanding|floatformat:2|intcomma }}</td>
+            </tr>
+            {% endif %}
+        </table>
+    </div>
+
+    <!-- Payment Methods -->
+    <div class="payment-methods">
+        <h3 class="section-title">Accepted Payment Methods</h3>
+        <div class="payment-options">
+            <div class="payment-option">
+                <div class="payment-icon">
+                    <i class="fas fa-university"></i>
+                </div>
+                <div class="payment-details-text">
+                    <strong>Bank Transfer</strong><br>
+                    Bank: {{ store.company.bank_name|default:"First National Bank" }}<br>
+                    Account: {{ store.company.account_number|default:"123456789" }}<br>
+                    Branch: {{ store.company.bank_branch|default:"Main Branch" }}
+                </div>
+            </div>
+
+            <div class="payment-option">
+                <div class="payment-icon">
+                    <i class="fab fa-paypal"></i>
+                </div>
+                <div class="payment-details-text">
+                    <strong>Mobile Money</strong><br>
+                    MTN: {{ store.company.mtn_number|default:"0700 000 000" }}<br>
+                    Airtel: {{ store.company.airtel_number|default:"0750 000 000" }}<br>
+                    Reference: {{ sale.document_number }}
+                </div>
+            </div>
+
+            <div class="payment-option">
+                <div class="payment-icon">
+                    <i class="fas fa-credit-card"></i>
+                </div>
+                <div class="payment-details-text">
+                    <strong>Cash/Card</strong><br>
+                    Accepted at our office<br>
+                    Visa, MasterCard, American Express<br>
+                    <small>3% processing fee for cards</small>
                 </div>
             </div>
         </div>
-        <!-- Sidebar Actions -->
-    <div class="col-md-4">
-        <!-- Actions Card -->
-        <div class="card mb-4">
-            <div class="card-header">
-                <h5 class="mb-0">Actions</h5>
-            </div>
-            <div class="card-body action-buttons">
-                <!-- Draft Actions -->
-                {% if sale.status == 'DRAFT' %}
-                <button type="button" class="btn btn-primary w-100" onclick="markAsSent()">
-                    <i class="fas fa-paper-plane"></i> Mark as Sent
-                </button>
-                {% if can_edit %}
-                <a href="{% url 'invoice:invoice_edit' invoice.pk %}" class="btn btn-warning w-100">
-                    <i class="fas fa-edit"></i> Edit Invoice
-                </a>
-                {% endif %}
-                <button type="button" class="btn btn-danger w-100" onclick="deleteInvoice()">
-                    <i class="fas fa-trash"></i> Delete Draft
-                </button>
-                {% endif %}
+    </div>
 
-                <!-- Pending Payment Actions -->
-                {% if sale.status == 'PENDING_PAYMENT' %}
-                <button type="button" class="btn btn-success w-100" onclick="showPaymentModal()" {% if not can_pay %}disabled{% endif %}>
-                    <i class="fas fa-money-bill-wave"></i> Mark as Paid
-                </button>
-                {% if can_cancel %}
-                <button type="button" class="btn btn-danger w-100" onclick="cancelInvoice()">
-                    <i class="fas fa-ban"></i> Cancel Invoice
-                </button>
-                {% endif %}
-                {% endif %}
+    <!-- EFRIS Information -->
+    {% if invoice.is_fiscalized %}
+    <div class="efris-info">
+        <h6><i class="fas fa-check-circle"></i> EFRIS Fiscalized</h6>
+        <p class="mb-1"><strong>Fiscal Document Number:</strong> {{ invoice.fiscal_document_number }}</p>
+        {% if invoice.verification_code %}
+        <p class="mb-1"><strong>Verification Code:</strong> {{ invoice.verification_code }}</p>
+        {% endif %}
+        {% if invoice.fiscalization_time %}
+        <p class="mb-0"><strong>Fiscalization Time:</strong> {{ invoice.fiscalization_time|date:"F d, Y H:i" }}</p>
+        {% endif %}
+    </div>
+    {% endif %}
 
-                <!-- Common Actions -->
-                <button type="button" class="btn btn-info w-100" onclick="printInvoice()">
-                    <i class="fas fa-print"></i> Print Invoice
-                </button>
-                <button type="button" class="btn btn-secondary w-100" onclick="downloadPDF()">
-                    <i class="fas fa-file-pdf"></i> Download PDF
-                </button>
-                {% if sale.customer and sale.customer.email %}
-                <button type="button" class="btn btn-outline-primary w-100" onclick="emailInvoice()">
-                    <i class="fas fa-envelope"></i> Email to Customer
-                </button>
-                {% endif %}
+    <!-- Terms and Notes -->
+    {% if invoice.terms %}
+    <div class="notes-section mb-3">
+        <div class="notes-title">Terms & Conditions</div>
+        <p>{{ invoice.terms|linebreaks }}</p>
+    </div>
+    {% endif %}
+
+    {% if sale.notes %}
+    <div class="notes-section mb-3">
+        <div class="notes-title">Notes</div>
+        <p>{{ sale.notes|linebreaks }}</p>
+    </div>
+    {% endif %}
+
+    <!-- Payment History -->
+    {% if payments %}
+    <div class="payment-history">
+        <h3 class="section-title">Payment History</h3>
+        {% for payment in payments %}
+        <div class="payment-item">
+            <div>
+                <strong>UGX {{ payment.amount|floatformat:2|intcomma }}</strong>
+                <br>
+                <small class="text-muted">
+                    {{ payment.created_at|date:"F d, Y H:i" }}
+                    {% if payment.transaction_reference %}
+                    • Ref: {{ payment.transaction_reference }}
+                    {% endif %}
+                </small>
             </div>
+            <span class="badge bg-success">{{ payment.payment_method }}</span>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    <!-- Invoice Footer -->
+    <div class="invoice-footer">
+        <div class="footer-text">
+            <p>{{ store.company.name }} | {% if store.company.phone %}Phone: {{ store.company.phone }}{% endif %} | {% if store.company.email %}Email: {{ store.company.email }}{% endif %}</p>
+            <p>Thank you for your business! Please make payments within the specified terms to avoid late fees.</p>
         </div>
 
-        <!-- Payment History -->
-        {% if payments %}
-        <div class="card">
-            <div class="card-header">
-                <h5 class="mb-0">Payment History</h5>
-            </div>
-            <div class="card-body">
-                <div class="list-group">
-                    {% for payment in payments %}
-                    <div class="list-group-item">
-                        <div class="d-flex justify-content-between">
-                            <strong>UGX {{ payment.amount|floatformat:2 }}</strong>
-                            <span class="badge bg-success">{{ payment.payment_method }}</span>
-                        </div>
-                        <small class="text-muted">
-                            {{ payment.created_at|date:"F d, Y H:i" }}
-                            {% if payment.transaction_reference %}
-                            <br>Ref: {{ payment.transaction_reference }}
-                            {% endif %}
-                        </small>
-                    </div>
-                    {% endfor %}
-                </div>
-            </div>
+        <div class="action-buttons">
+            <button class="btn btn-primary" onclick="printInvoice()">
+                <i class="fas fa-print"></i> Print
+            </button>
+            <button class="btn btn-secondary" onclick="downloadPDF()">
+                <i class="fas fa-download"></i> PDF
+            </button>
         </div>
+    </div>
+
+    <!-- Action Buttons Section -->
+    <div class="action-buttons mt-4">
+        <!-- Draft Actions -->
+        {% if sale.status == 'DRAFT' %}
+        <button type="button" class="btn btn-success" onclick="markAsSent()">
+            <i class="fas fa-paper-plane"></i> Mark as Sent
+        </button>
+        {% if can_edit %}
+        <a href="{% url 'invoice:invoice_edit' invoice.pk %}" class="btn btn-warning">
+            <i class="fas fa-edit"></i> Edit Invoice
+        </a>
+        {% endif %}
+        <button type="button" class="btn btn-danger" onclick="deleteInvoice()">
+            <i class="fas fa-trash"></i> Delete Draft
+        </button>
+        {% endif %}
+
+        <!-- Pending Payment Actions -->
+        {% if sale.status == 'PENDING_PAYMENT' %}
+        <button type="button" class="btn btn-success" onclick="showPaymentModal()" {% if not can_pay %}disabled{% endif %}>
+            <i class="fas fa-money-bill-wave"></i> Mark as Paid
+        </button>
+        {% if can_cancel %}
+        <button type="button" class="btn btn-danger" onclick="cancelInvoice()">
+            <i class="fas fa-ban"></i> Cancel
+        </button>
+        {% endif %}
+        {% endif %}
+
+        <!-- Additional Actions -->
+        {% if sale.customer and sale.customer.email %}
+        <button type="button" class="btn btn-outline-primary" onclick="emailInvoice()">
+            <i class="fas fa-envelope"></i> Email
+        </button>
         {% endif %}
     </div>
 </div>
-    </div>
+
 <!-- Payment Modal -->
 <div class="modal fade" id="paymentModal" tabindex="-1">
     <div class="modal-dialog">
@@ -382,7 +843,7 @@
                                placeholder="Enter reference number">
                     </div>
                     <div class="alert alert-info">
-                        <strong>Amount:</strong> UGX {{ sale.total_amount|floatformat:2 }}
+                        <strong>Amount to Pay:</strong> UGX {{ sale.total_amount|floatformat:2|intcomma }}
                     </div>
                     <div class="alert alert-warning">
                         <i class="fas fa-info-circle"></i> Stock will be deducted when marked as paid.
@@ -398,6 +859,7 @@
         </div>
     </div>
 </div>
+
 <!-- Cancel Modal -->
 <div class="modal fade" id="cancelModal" tabindex="-1">
     <div class="modal-dialog">
@@ -429,9 +891,10 @@
     </div>
 </div>
 {% endblock %}
+
 {% block extra_js %}
 <script>
-const invoiceId = {{ invoice.pk }};
+const invoiceId = {{ sale.id }};
 const csrfToken = '{{ csrf_token }}';
 
 function markAsSent() {
@@ -549,12 +1012,21 @@ function emailInvoice() {
     // Implement email functionality
 }
 </script>
+
 <style media="print">
     .btn, .action-buttons, nav, .sidebar {
         display: none !important;
     }
     .invoice-header {
-        background: #667eea !important;
+        border-color: #2c5aa0 !important;
+    }
+    .items-table thead {
+        background-color: #2c5aa0 !important;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+    }
+    .final-total {
+        background-color: #f0f7ff !important;
         -webkit-print-color-adjust: exact;
         print-color-adjust: exact;
     }

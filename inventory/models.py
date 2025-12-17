@@ -2172,9 +2172,17 @@ class StockMovement(models.Model):
 
         logger.info(f"💾 StockMovement.save() called - Type: {self.movement_type}, Qty: {self.quantity}")
 
+        # ========== CRITICAL FIX: Skip stock update for SALE movements ==========
+        # Stock is already deducted by SaleItem.deduct_stock()
+        if self.movement_type in ['SALE', 'TRANSFER_OUT']:
+            logger.info(f"⏭️ Skipping stock update for {self.movement_type} - already handled by SaleItem")
+            super().save(*args, **kwargs)
+            return
+        # ========================================================================
+
         super().save(*args, **kwargs)
 
-        # Get stock BEFORE update
+        # Only process stock update for non-sale movements
         stock_record, created = Stock.objects.get_or_create(
             product=self.product,
             store=self.store,
@@ -2185,11 +2193,9 @@ class StockMovement(models.Model):
         logger.info(f"📊 Stock BEFORE movement save update: {old_qty}")
 
         if self.movement_type in ['PURCHASE', 'RETURN', 'TRANSFER_IN', 'ADJUSTMENT']:
-            stock_record.quantity += self.quantity  # ADDS stock
+            stock_record.quantity += self.quantity
             logger.info(f"➕ ADDING {self.quantity} to stock")
-        elif self.movement_type in ['SALE', 'TRANSFER_OUT']:
-            stock_record.quantity -= self.quantity  # SUBTRACTS stock
-            logger.info(f"➖ SUBTRACTING {self.quantity} from stock")
+        # REMOVED: SALE and TRANSFER_OUT handling since they're skipped above
 
         stock_record.save()
         logger.info(f"📊 Stock AFTER movement save update: {stock_record.quantity} (was {old_qty})")

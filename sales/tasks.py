@@ -119,7 +119,7 @@ class TenantResolver:
 
 
 @shared_task(bind=True, max_retries=3, default_retry_delay=60)
-def fiscalize_sale_async(self, sale_id, user_id=None):
+def fiscalize_invoice_async(self, sale_id, user_id=None):
     """
     Fiscalize sale asynchronously - works for BOTH RECEIPTS and INVOICES
     """
@@ -468,14 +468,6 @@ def fiscalize_sale_async(self, sale_id, user_id=None):
                 logger.warning(f"Could not restore initial schema {initial_schema}: {restore_error}")
 
 
-@shared_task(bind=True, max_retries=3, default_retry_delay=60)
-def fiscalize_invoice_async(self, sale_id, user_id=None):
-    """
-    Legacy task name - redirects to fiscalize_sale_async
-    Kept for backward compatibility
-    """
-    logger.info(f"fiscalize_invoice_async called - redirecting to fiscalize_sale_async for sale {sale_id}")
-    return fiscalize_sale_async(sale_id, user_id)
 
 @shared_task
 def convert_proforma_to_invoice(sale_id, due_date=None, terms=None, user_id=None):
