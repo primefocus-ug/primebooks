@@ -244,8 +244,8 @@ def efris_status_dashboard(request):
     recent_audits = FiscalizationAudit.objects.select_related(
         'invoice__sale', 'user'
     ).filter(
-        timestamp__gte=timezone.now() - timedelta(days=7)
-    ).order_by('-timestamp')[:20]
+        completed_at__gte=timezone.now() - timedelta(days=7)
+    ).order_by('-completed_at')[:20]
 
     context = {
         'date_from': date_from,
@@ -729,8 +729,8 @@ def duplicate_invoice(request, pk):
 
         return redirect('invoices:detail', pk=new_invoice.pk)
 
+
 class FiscalizationAuditView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
-    """View fiscalization audit logs"""
     model = FiscalizationAudit
     template_name = 'invoices/fiscalization_audit.html'
     context_object_name = 'audits'
@@ -738,9 +738,49 @@ class FiscalizationAuditView(LoginRequiredMixin, PermissionRequiredMixin, ListVi
     paginate_by = 50
 
     def get_queryset(self):
-        return FiscalizationAudit.objects.select_related(
+        queryset = FiscalizationAudit.objects.select_related(
             'invoice', 'user'
-        ).order_by('-created_at')
+        ).order_by('-created_at')  # Changed from created_at to timestamp
+
+        # Filter by date range
+        date_from = self.request.GET.get('date_from')
+        date_to = self.request.GET.get('date_to')
+        if date_from:
+            queryset = queryset.filter(timestamp__gte=date_from)
+        if date_to:
+            queryset = queryset.filter(timestamp__lte=date_to)
+
+        # Filter by action type
+        action = self.request.GET.get('action')
+        if action:
+            queryset = queryset.filter(action=action)
+
+        # Filter by success status
+        success = self.request.GET.get('success')
+        if success in ['true', 'false']:
+            queryset = queryset.filter(success=(success == 'true'))
+
+        # Filter by invoice number
+        invoice_number = self.request.GET.get('invoice_number')
+        if invoice_number:
+            queryset = queryset.filter(
+                invoice__sale__document_number__icontains=invoice_number
+            )
+
+        return queryset
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context['action_choices'] = FiscalizationAudit.ACTION_CHOICES
+        # Add current filter values to context
+        context['current_filters'] = {
+            'date_from': self.request.GET.get('date_from', ''),
+            'date_to': self.request.GET.get('date_to', ''),
+            'action': self.request.GET.get('action', ''),
+            'success': self.request.GET.get('success', ''),
+            'invoice_number': self.request.GET.get('invoice_number', ''),
+        }
+        return context
 
 @login_required
 @permission_required('invoices.view_invoice')

@@ -514,6 +514,8 @@ class SalesListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
 
         return context
 
+
+
 class SaleDetailView(LoginRequiredMixin, PermissionRequiredMixin, DetailView):
     """Enhanced sale detail view with comprehensive information and EFRIS integration"""
     model = Sale
@@ -523,7 +525,7 @@ class SaleDetailView(LoginRequiredMixin, PermissionRequiredMixin, DetailView):
     login_url = 'login'
 
     def get_object(self):
-        # FIXED: Changed 'receipt' to 'receipt_detail' in prefetch_related
+        # Use 'items' as the relation name (from SaleItem.sale ForeignKey with related_name='items')
         sale = get_object_or_404(
             Sale.objects.select_related('store', 'customer', 'created_by')
             .prefetch_related('items__product', 'items__service', 'payments', 'receipt_detail'),
@@ -558,10 +560,31 @@ class SaleDetailView(LoginRequiredMixin, PermissionRequiredMixin, DetailView):
         # Get fiscalization data - works for all document types
         fiscal_data = self._get_fiscalization_data(sale)
 
-        # Calculate total paid
+        # Calculate total paid - ensure we only sum confirmed payments
         total_paid = sale.payments.filter(is_confirmed=True).aggregate(
             Sum('amount')
         )['amount__sum'] or Decimal('0')
+
+        # Debug: Print payment info
+        print(f"DEBUG: Total paid: {total_paid}")
+        print(f"DEBUG: Sale total: {sale.total_amount}")
+        print(f"DEBUG: Number of payments: {sale.payments.count()}")
+        for payment in sale.payments.all():
+            print(f"DEBUG: Payment - Amount: {payment.amount}, Confirmed: {payment.is_confirmed}")
+
+        # Calculate balance due properly with Decimal conversion
+        try:
+            # Convert to Decimal to avoid comparison issues
+            sale_total = Decimal(str(sale.total_amount))
+            total_paid_decimal = Decimal(str(total_paid))
+            balance_due = max(Decimal('0'), sale_total - total_paid_decimal)
+
+            # Check if paid in full (allow for small rounding differences)
+            is_paid_in_full = balance_due <= Decimal('0.01')  # Allow 1 cent difference
+        except (ValueError, TypeError) as e:
+            print(f"DEBUG: Error calculating balance: {e}")
+            balance_due = Decimal('0')
+            is_paid_in_full = True
 
         # Check refund and void permissions
         can_refund = (
@@ -594,11 +617,15 @@ class SaleDetailView(LoginRequiredMixin, PermissionRequiredMixin, DetailView):
             'efris_enabled': efris_enabled,
             'store_config': store_config,
             'total_paid': total_paid,
-            'balance_due': sale.total_amount - total_paid,
+            'balance_due': balance_due,
+            'is_paid_in_full': is_paid_in_full,
             'receipt': receipt,
             'invoice_detail': invoice_detail,
             **fiscal_data
         })
+
+        print(f"DEBUG: Context balance_due: {balance_due}")
+        print(f"DEBUG: Context is_paid_in_full: {is_paid_in_full}")
 
         return context
 
@@ -626,62 +653,6 @@ class SaleDetailView(LoginRequiredMixin, PermissionRequiredMixin, DetailView):
 
         return fiscal_data
 
-    def _get_invoice_fiscal_data(self, invoice):
-        """Extract fiscal data from Invoice model"""
-        data = {
-            'invoice': invoice,
-            'invoice_fiscalized': invoice.is_fiscalized,
-            'fiscal_document_number': invoice.fiscal_document_number,
-            'fiscal_qr_code': invoice.qr_code,
-            'fiscal_verification_url': self._get_verification_url(
-                invoice.fiscal_document_number,
-                invoice.verification_code
-            ),
-            'fiscalization_time': invoice.fiscalization_time,
-            'efris_invoice_no': invoice.fiscal_document_number,
-            'efris_invoice_id': getattr(invoice, 'efris_invoice_id', None),
-            'efris_antifake_code': invoice.verification_code,
-            'verification_code': invoice.verification_code,
-        }
-
-        # If we have QR code data from EFRIS response, use it
-        if hasattr(invoice, 'qr_code') and invoice.qr_code:
-            # Check if QR code contains a URL (from EFRIS response)
-            if invoice.qr_code.startswith('http'):
-                data['fiscal_verification_url'] = invoice.qr_code
-            # If QR code is just data, generate the URL
-            elif invoice.fiscal_document_number and invoice.verification_code:
-                data['fiscal_verification_url'] = self._get_verification_url(
-                    invoice.fiscal_document_number,
-                    invoice.verification_code
-                )
-
-        return data
-
-    def _get_sale_fiscal_data(self, sale):
-        """Extract fiscal data from Sale model (direct fiscalization)"""
-        data = {
-            'invoice_fiscalized': True,
-            'fiscal_document_number': getattr(sale, 'efris_invoice_number', None),
-            'fiscal_qr_code': getattr(sale, 'qr_code', None),
-            'fiscal_verification_url': self._get_verification_url(
-                getattr(sale, 'efris_invoice_number', None),
-                getattr(sale, 'verification_code', None)
-            ),
-            'fiscalization_time': getattr(sale, 'fiscalization_time', None),
-            'efris_invoice_no': getattr(sale, 'efris_invoice_number', None),
-            'efris_invoice_id': getattr(sale, 'efris_invoice_id', None),
-            'efris_antifake_code': getattr(sale, 'verification_code', None),
-            'verification_code': getattr(sale, 'verification_code', None),
-        }
-
-        # If sale has QR code URL from EFRIS, use it
-        qr_code = getattr(sale, 'qr_code', None)
-        if qr_code and qr_code.startswith('http'):
-            data['fiscal_verification_url'] = qr_code
-
-        return data
-
     def _get_verification_url(self, invoice_no, verification_code):
         """Generate EFRIS verification URL for both test and production environments"""
         if not invoice_no or not verification_code:
@@ -696,30 +667,13 @@ class SaleDetailView(LoginRequiredMixin, PermissionRequiredMixin, DetailView):
 
         if is_production:
             # Production EFRIS URL
-            base_url = "https://efris.ura.go.ug"
+            base_url = "https://efrisws.ura.go.ug/"
         else:
             # Test EFRIS URL (from your logs)
             base_url = "https://efristest.ura.go.ug"
 
         # URL format from your EFRIS response
         return f"{base_url}/site_new/#/invoiceValidation?invoiceNo={invoice_no}&antiFakeCode={verification_code}"
-
-    def _get_legacy_verification_url(self, invoice_no, verification_code):
-        """Alternative legacy URL format (if needed)"""
-        if not invoice_no or not verification_code:
-            return None
-
-        sale = self.object
-        store_config = sale.store.effective_efris_config
-        is_production = store_config.get('is_production', False)
-
-        if is_production:
-            base_url = "https://efris.ura.go.ug"
-        else:
-            base_url = "https://efristest.ura.go.ug"
-
-        # Legacy URL format
-        return f"{base_url}/return?invoiceNo={invoice_no}&code={verification_code}"
 
 def should_create_invoice(sale, user):
     """

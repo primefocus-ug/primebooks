@@ -570,7 +570,7 @@ NAVIGATION_ITEMS = [
             ),
             NavigationItem(
                 name="Create Invoice",
-                url_name="invoices:create",
+                url_name="sales:create_sale",
                 icon="bi bi-plus-circle",
                 permission="invoices.add_invoice"
             ),
@@ -585,12 +585,6 @@ NAVIGATION_ITEMS = [
                 url_name="invoices:payments",
                 icon="bi bi-credit-card",
                 permission="invoices.view_payment"
-            ),
-            NavigationItem(
-                name="Fiscalization Audit",
-                url_name="invoices:fiscalization_audit",
-                icon="bi bi-shield-check",
-                permission="invoices.view_invoice"
             ),
         ]
     ),
