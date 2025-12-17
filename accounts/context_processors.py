@@ -63,3 +63,11 @@ def user_role_context(request):
 
     # Fallback for other unexpected user types
     return {}
+
+from django.conf import settings
+
+def version_context(request):
+    return {
+        'APP_VERSION': settings.APP_VERSION,
+        'VERSION_FULL': settings.APP_VERSION,
+    }

@@ -365,7 +365,7 @@ class SecurityManager:
         """Create globalInfo section for EFRIS requests"""
         return {
             "appId": self.app_id,
-            "version": "1.1.20191201",
+            "version": settings.APP_VERSION  , #"1.1.20191201",
             "dataExchangeId": str(uuid.uuid4()).replace('-', '')[:32],
             "interfaceCode": interface_code,
             "requestCode": "TP",

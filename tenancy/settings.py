@@ -355,6 +355,7 @@ TEMPLATES = [
                 'stores.context_processors.current_store',
                 'accounts.context_processors.saas_admin_context',
                 'accounts.context_processors.user_role_context',
+                'accounts.context_processors.version_context',
                 'errors.context_processors.error_context_processor',
                 'messaging.context_processors.messaging_context',
                 'expenses.context_processors.expense_context',
@@ -540,7 +541,14 @@ SOCIALACCOUNT_PROVIDERS = {
         'REDIRECT_URI': 'http://localhost:8000/accounts/google/login/callback/' if DEBUG else 'https://primebooks.sale/accounts/google/login/callback',
     }
 }
+VERSION_MAJOR = 1
+VERSION_MINOR = 0
+DEPLOYMENT_YEAR = 2025
+DEPLOYMENT_MONTH = 12
+DEPLOYMENT_DAY = 1
 
+# Or create it dynamically from components:
+APP_VERSION = f"{VERSION_MAJOR}.{VERSION_MINOR}.{DEPLOYMENT_YEAR}{DEPLOYMENT_MONTH:02d}{DEPLOYMENT_DAY:02d}"
 # Django Tenants
 TENANT_MODEL = "company.Company"
 TENANT_DOMAIN_MODEL = "company.Domain"
