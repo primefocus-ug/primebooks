@@ -5,7 +5,7 @@ from django.contrib import messages
 from django.http import HttpResponse, JsonResponse
 from django.views.generic import ListView, DetailView, CreateView, UpdateView
 from django.urls import reverse_lazy, reverse
-from django.db.models import Q, Sum, Count,F,Avg,ExpressionWrapper,DurationField
+from django.db.models import Q, Sum, Count, F, Avg, ExpressionWrapper, DurationField
 from django.utils import timezone
 from django.db import transaction
 from django.views.decorators.csrf import csrf_exempt
@@ -13,8 +13,6 @@ import json
 import logging
 from django_tenants.utils import tenant_context
 import csv
-from django.http import JsonResponse
-import json
 from datetime import timedelta, datetime
 from io import BytesIO
 from reportlab.pdfgen import canvas
@@ -28,6 +26,7 @@ from .forms import (
 )
 
 logger = logging.getLogger(__name__)
+
 
 def get_current_tenant(request):
     """Get current tenant from request"""
@@ -54,7 +53,7 @@ class InvoiceListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
         with tenant_context(company):
             queryset = Invoice.objects.filter(
                 sale__store__company=company,
-                sale__document_type='INVOICE'  # Only show invoices
+                sale__document_type='INVOICE'
             ).select_related(
                 'sale', 'sale__customer', 'sale__store',
                 'created_by', 'fiscalized_by'
@@ -104,7 +103,7 @@ class InvoiceListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
                 if form.cleaned_data.get('is_fiscalized'):
                     queryset = queryset.filter(is_fiscalized=True)
 
-            return queryset.order_by('-sale__created_at')  # Use sale created_at
+            return queryset.order_by('-sale__created_at')
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
@@ -184,10 +183,11 @@ class InvoiceDetailView(LoginRequiredMixin, PermissionRequiredMixin, DetailView)
 
         return context
 
+
 @login_required
 @permission_required('invoices.view_invoice')
 def efris_status_dashboard(request):
-    """EFRIS status dashboard for invoices - FIXED VERSION"""
+    """EFRIS status dashboard for invoices"""
     # Get date range
     date_from = request.GET.get('date_from')
     date_to = request.GET.get('date_to')
@@ -202,7 +202,7 @@ def efris_status_dashboard(request):
     else:
         date_to = datetime.strptime(date_to, '%Y-%m-%d').date()
 
-    # Base queryset - FIX: Use sale__created_at instead of issue_date
+    # Base queryset - Use sale__created_at
     invoices = Invoice.objects.filter(
         sale__created_at__date__gte=date_from,
         sale__created_at__date__lte=date_to
@@ -236,8 +236,8 @@ def efris_status_dashboard(request):
     recent_audits = FiscalizationAudit.objects.select_related(
         'invoice', 'user'
     ).filter(
-        created_at__gte=timezone.now() - timedelta(days=7)
-    ).order_by('-created_at')[:20]
+        timestamp__gte=timezone.now() - timedelta(days=7)
+    ).order_by('-timestamp')[:20]
 
     context = {
         'date_from': date_from,
@@ -318,6 +318,7 @@ class InvoiceCreateView(LoginRequiredMixin, PermissionRequiredMixin, CreateView)
     def get_success_url(self):
         return reverse('invoices:detail', kwargs={'pk': self.object.pk})
 
+
 class InvoiceUpdateView(LoginRequiredMixin, PermissionRequiredMixin, UpdateView):
     """Update existing invoice"""
     model = Invoice
@@ -389,7 +390,7 @@ def add_payment(request, pk):
                     return JsonResponse({
                         'success': True,
                         'message': 'Payment recorded successfully',
-                        'new_status': invoice.sale.status,
+                        'new_status': invoice.status,
                         'amount_outstanding': float(invoice.amount_outstanding)
                     })
 
@@ -628,16 +629,18 @@ def bulk_actions(request):
             count = invoices.count()
 
             if action == 'mark_sent':
-                invoices.filter(
-                    sale__status='DRAFT'
-                ).update(sale__status='PENDING_PAYMENT')
+                # Update related sales
+                Sale.objects.filter(
+                    invoice_detail__in=invoices,
+                    status='DRAFT'
+                ).update(status='PENDING_PAYMENT')
                 messages.success(request, f'{count} invoices marked as sent.')
 
             elif action == 'mark_paid':
                 for invoice in invoices:
                     invoice.sale.status = 'PAID'
                     invoice.sale.payment_status = 'PAID'
-                    invoice.sale.save()
+                    invoice.sale.save(update_fields=['status', 'payment_status'])
                 messages.success(request, f'{count} invoices marked as paid.')
 
             elif action == 'export_pdf':
@@ -651,352 +654,37 @@ def bulk_actions(request):
 
     return redirect('invoices:list')
 
+class PaymentListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
+    """List all payments across invoices"""
+    model = InvoicePayment
+    template_name = 'invoices/payment_list.html'
+    context_object_name = 'payments'
+    paginate_by = 50
+    permission_required = 'invoices.view_invoicepayment'
 
-def export_invoices_pdf(request, invoice_ids):
-    """Export invoices to PDF"""
-    company = get_current_tenant(request)
-    if not company:
-        return HttpResponse('No company context', status=403)
+    def get_queryset(self):
+        return InvoicePayment.objects.select_related(
+            'invoice', 'processed_by'
+        ).order_by('-payment_date')
 
-    with tenant_context(company):
-        invoices = Invoice.objects.filter(
-            id__in=invoice_ids,
-            sale__store__company=company
-        )
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
 
-        response = HttpResponse(content_type='application/pdf')
-        response['Content-Disposition'] = 'attachment; filename="invoices_export.pdf"'
+        # Payment summary
+        payments = self.get_queryset()
+        context['total_payments'] = payments.count()
+        context['total_amount'] = payments.aggregate(
+            Sum('amount'))['amount__sum'] or 0
 
-        buffer = BytesIO()
-        p = canvas.Canvas(buffer, pagesize=letter)
-
-        y_position = 750
-        for invoice in invoices:
-            p.drawString(50, y_position, f"Invoice: {invoice.invoice_number}")
-            p.drawString(50, y_position - 20, f"Amount: {invoice.total_amount:,.2f}")
-            p.drawString(50, y_position - 40, f"Status: {invoice.sale.get_status_display()}")
-            y_position -= 80
-
-            if y_position < 100:
-                p.showPage()
-                y_position = 750
-
-        p.save()
-        pdf_data = buffer.getvalue()
-        buffer.close()
-        response.write(pdf_data)
-
-        return response
-
-
-class InvoiceTemplateListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
-    """List and manage invoice templates"""
-    model = InvoiceTemplate
-    template_name = 'invoices/template_list.html'
-    context_object_name = 'templates'
-    permission_required = 'invoices.view_invoicetemplate'
-
-
-class InvoiceTemplateCreateView(LoginRequiredMixin, PermissionRequiredMixin, CreateView):
-    """Create new invoice template"""
-    model = InvoiceTemplate
-    form_class = InvoiceTemplateForm
-    template_name = 'invoices/template_form.html'
-    success_url = reverse_lazy('invoices:templates')
-    permission_required = 'invoices.add_invoicetemplate'
-
-    def form_valid(self, form):
-        form.instance.created_by = self.request.user
-        return super().form_valid(form)
-
-
-@login_required
-@permission_required('invoices.view_invoice')
-def invoice_analytics(request):
-    """Enhanced analytics dashboard for invoices - FIXED VERSION"""
-    # Get date range from request or use defaults
-    try:
-        start_date = request.GET.get('start_date')
-        end_date = request.GET.get('end_date')
-
-        if start_date:
-            start_date = datetime.strptime(start_date, '%Y-%m-%d').date()
-        else:
-            start_date = timezone.now().date() - timedelta(days=30)
-
-        if end_date:
-            end_date = datetime.strptime(end_date, '%Y-%m-%d').date()
-        else:
-            end_date = timezone.now().date()
-    except (ValueError, TypeError):
-        start_date = timezone.now().date() - timedelta(days=30)
-        end_date = timezone.now().date()
-
-    # Basic statistics - FIX: Use sale__status and sale__total_amount
-    total_invoices = Invoice.objects.count()
-    total_revenue = Invoice.objects.filter(
-        sale__status='PAID'
-    ).aggregate(Sum('sale__total_amount'))['sale__total_amount__sum'] or 0
-
-    pending_amount = Invoice.objects.exclude(
-        sale__status__in=['PAID', 'CANCELLED']
-    ).aggregate(Sum('sale__total_amount'))['sale__total_amount__sum'] or 0
-
-    overdue_invoices = Invoice.objects.filter(
-        sale__due_date__lt=end_date,
-        sale__status__in=['PENDING_PAYMENT', 'PARTIALLY_PAID']
-    ).count()
-
-    # Enhanced metrics - FIX: Use sale__created_at instead of issue_date
-    invoices_this_month = Invoice.objects.filter(
-        sale__created_at__date__gte=timezone.now().date().replace(day=1)
-    ).count()
-
-    fiscalized_invoices = Invoice.objects.filter(is_fiscalized=True).count()
-    pending_invoices = Invoice.objects.exclude(
-        sale__status__in=['PAID', 'CANCELLED']
-    ).count()
-
-    # Calculate average invoice amount safely
-    avg_result = Invoice.objects.aggregate(avg_amount=Avg('sale__total_amount'))
-    avg_invoice_amount = avg_result['avg_amount'] or 0
-
-    # Performance metrics with safe calculations
-    total_invoiced_amount = Invoice.objects.aggregate(
-        Sum('sale__total_amount')
-    )['sale__total_amount__sum'] or 0
-    collection_rate = (total_revenue / total_invoiced_amount * 100) if total_invoiced_amount > 0 else 0
-
-    # On-time payment rate (simplified)
-    on_time_payments = Invoice.objects.filter(
-        sale__status='PAID',
-        payments__payment_date__lte=F('sale__due_date')
-    ).distinct().count()
-    total_paid_invoices = Invoice.objects.filter(sale__status='PAID').count()
-    on_time_rate = (on_time_payments / total_paid_invoices * 100) if total_paid_invoices > 0 else 0
-
-    fiscalization_rate = (fiscalized_invoices / total_invoices * 100) if total_invoices > 0 else 0
-
-    # Average days to pay - safely handle None values
-    try:
-        paid_invoices_with_payments = Invoice.objects.filter(
-            sale__status='PAID',
-            payments__isnull=False
+        # Payment methods breakdown
+        context['payment_methods'] = payments.values(
+            'payment_method'
         ).annotate(
-            days_to_pay=ExpressionWrapper(
-                F('payments__payment_date') - F('sale__created_at'),
-                output_field=DurationField()
-            )
-        )
+            count=Count('id'),
+            total=Sum('amount')
+        ).order_by('-total')
 
-        avg_days_result = paid_invoices_with_payments.aggregate(
-            avg_days=Avg('days_to_pay')
-        )
-        avg_days_to_pay = avg_days_result['avg_days']
-        if avg_days_to_pay:
-            avg_days_to_pay = avg_days_to_pay.days
-        else:
-            avg_days_to_pay = 0
-    except (ValueError, TypeError):
-        avg_days_to_pay = 0
-
-    # Monthly trends data - FIX: Use sale__created_at
-    monthly_data = []
-    for i in range(12):
-        month_start = (end_date.replace(day=1) - timedelta(days=i * 30)).replace(day=1)
-        month_end = (month_start + timedelta(days=32)).replace(day=1) - timedelta(days=1)
-
-        month_invoices = Invoice.objects.filter(
-            sale__created_at__date__range=[month_start, month_end]
-        )
-
-        revenue = month_invoices.filter(sale__status='PAID').aggregate(
-            Sum('sale__total_amount')
-        )['sale__total_amount__sum'] or 0
-
-        monthly_data.append({
-            'month': month_start.strftime('%Y-%m'),
-            'month_name': month_start.strftime('%b'),
-            'revenue': float(revenue),
-            'count': month_invoices.count(),
-        })
-
-    monthly_data.reverse()
-
-    # Status distribution with safe calculations
-    status_distribution = Invoice.objects.values('sale__status').annotate(
-        count=Count('id'),
-        total_amount=Sum('sale__total_amount')
-    ).order_by('sale__status')
-
-    status_data = []
-    for item in status_distribution:
-        count = item['count'] or 0
-        total_amount = item['total_amount'] or 0
-        percentage = (count / total_invoices * 100) if total_invoices > 0 else 0
-        avg_amount = (total_amount / count) if count > 0 else 0
-
-        # Get the status label from Sale model choices
-        from sales.models import Sale
-        status_label = dict(Sale.STATUS_CHOICES).get(item['sale__status'], item['sale__status'])
-
-        status_data.append({
-            'status': item['sale__status'],
-            'label': status_label,
-            'count': count,
-            'total_amount': float(total_amount),
-            'avg_amount': float(avg_amount),
-            'percentage': round(percentage, 1)
-        })
-
-    # Payment methods distribution
-    payment_methods_data = InvoicePayment.objects.values('payment_method').annotate(
-        count=Count('id')
-    ).order_by('-count')
-
-    # Top customers
-    top_customers = Invoice.objects.filter(
-        sale__customer__isnull=False
-    ).values(
-        'sale__customer__name'
-    ).annotate(
-        invoice_count=Count('id'),
-        total_amount=Sum('sale__total_amount')
-    ).order_by('-total_amount')[:5]
-
-    # EFRIS compliance
-    non_fiscalized_invoices = total_invoices - fiscalized_invoices
-
-    context = {
-        'total_invoices': total_invoices,
-        'total_revenue': total_revenue,
-        'pending_amount': pending_amount,
-        'overdue_invoices': overdue_invoices,
-        'invoices_this_month': invoices_this_month,
-        'fiscalized_invoices': fiscalized_invoices,
-        'pending_invoices': pending_invoices,
-        'avg_invoice_amount': avg_invoice_amount,
-        'collection_rate': round(collection_rate, 1),
-        'on_time_rate': round(on_time_rate, 1),
-        'fiscalization_rate': round(fiscalization_rate, 1),
-        'avg_days_to_pay': avg_days_to_pay,
-        'monthly_data': monthly_data,
-        'status_data': status_data,
-        'payment_methods_data': list(payment_methods_data),
-        'top_customers': list(top_customers),
-        'non_fiscalized_invoices': non_fiscalized_invoices,
-        'start_date': start_date,
-        'end_date': end_date,
-    }
-
-    return render(request, 'invoices/analytics.html', context)
-
-# Add API endpoint for analytics data
-@login_required
-@permission_required('invoices.view_invoice')
-def analytics_api(request):
-    """API endpoint for analytics data"""
-    try:
-        period = int(request.GET.get('period', 12))
-        start_date = request.GET.get('start_date')
-        end_date = request.GET.get('end_date')
-
-        # Use the same logic as the main analytics view but return JSON
-        # This is a simplified version - you can expand it as needed
-        data = {
-            'success': True,
-            'metrics': {
-                'total_invoices': Invoice.objects.count(),
-                'total_revenue': float(
-                    Invoice.objects.filter(status='PAID').aggregate(Sum('total_amount'))['total_amount__sum'] or 0),
-                # Add other metrics as needed
-            },
-            'monthly_data': [],
-            'status_data': [],
-            'payment_methods_data': []
-        }
-
-        return JsonResponse(data)
-
-    except Exception as e:
-        return JsonResponse({'success': False, 'error': str(e)})
-
-@login_required
-@permission_required('invoices.view_invoice')
-def invoice_print_view(request, pk):
-    """Generate printable invoice"""
-    company = get_current_tenant(request)
-    if not company:
-        return HttpResponse('No company context', status=403)
-
-    with tenant_context(company):
-        invoice = get_object_or_404(
-            Invoice.objects.filter(sale__store__company=company),
-            pk=pk
-        )
-
-        template = InvoiceTemplate.objects.filter(
-            is_default=True
-        ).first()
-
-        if not template:
-            template = InvoiceTemplate.objects.first()
-
-        context = {
-            'invoice': invoice,
-            'template': template,
-            'company_info': {
-                'name': company.name,
-                'address': company.physical_address,
-                'phone': company.phone,
-                'email': company.email,
-                'tin': company.tin,
-            }
-        }
-
-        return render(request, 'invoices/invoice_print.html', context)
-
-
-@csrf_exempt
-@login_required
-def ajax_invoice_status(request):
-    """AJAX endpoint for updating invoice status"""
-    if request.method == 'POST':
-        try:
-            data = json.loads(request.body)
-            invoice_id = data.get('invoice_id')
-            new_status = data.get('status')
-
-            invoice = Invoice.objects.get(pk=invoice_id)
-
-            # Validate status change
-            if invoice.is_fiscalized and new_status in ['DRAFT']:
-                return JsonResponse({
-                    'success': False,
-                    'error': 'Cannot change status of fiscalized invoice'
-                })
-
-            invoice.status = new_status
-            invoice.save(update_fields=['status'])
-
-            return JsonResponse({
-                'success': True,
-                'message': f'Invoice status updated to {invoice.get_status_display()}'
-            })
-
-        except Invoice.DoesNotExist:
-            return JsonResponse({
-                'success': False,
-                'error': 'Invoice not found'
-            })
-        except Exception as e:
-            return JsonResponse({
-                'success': False,
-                'error': str(e)
-            })
-
-    return JsonResponse({'success': False, 'error': 'Invalid request'})
-
+        return context
 
 @login_required
 @permission_required('invoices.view_invoice')
@@ -1033,39 +721,18 @@ def duplicate_invoice(request, pk):
 
         return redirect('invoices:detail', pk=new_invoice.pk)
 
-
-class PaymentListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
-    """List all payments across invoices"""
-    model = InvoicePayment
-    template_name = 'invoices/payment_list.html'
-    context_object_name = 'payments'
+class FiscalizationAuditView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
+    """View fiscalization audit logs"""
+    model = FiscalizationAudit
+    template_name = 'invoices/fiscalization_audit.html'
+    context_object_name = 'audits'
+    permission_required = 'efris.view_fiscalizationaudit'
     paginate_by = 50
-    permission_required = 'invoices.view_invoicepayment'
 
     def get_queryset(self):
-        return InvoicePayment.objects.select_related(
-            'invoice', 'processed_by'
-        ).order_by('-payment_date')
-
-    def get_context_data(self, **kwargs):
-        context = super().get_context_data(**kwargs)
-
-        # Payment summary
-        payments = self.get_queryset()
-        context['total_payments'] = payments.count()
-        context['total_amount'] = payments.aggregate(
-            Sum('amount'))['amount__sum'] or 0
-
-        # Payment methods breakdown
-        context['payment_methods'] = payments.values(
-            'payment_method'
-        ).annotate(
-            count=Count('id'),
-            total=Sum('amount')
-        ).order_by('-total')
-
-        return context
-
+        return FiscalizationAudit.objects.select_related(
+            'invoice', 'user'
+        ).order_by('-created_at')
 
 @login_required
 @permission_required('invoices.view_invoice')
@@ -1146,18 +813,367 @@ def export_invoices_csv_bulk(request, invoice_ids):
         return response
 
 
-class FiscalizationAuditView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
-    """View fiscalization audit logs"""
-    model = FiscalizationAudit
-    template_name = 'invoices/fiscalization_audit.html'
-    context_object_name = 'audits'
-    permission_required = 'efris.view_fiscalizationaudit'
-    paginate_by = 50
+def export_invoices_pdf(request, invoice_ids):
+    """Export invoices to PDF"""
+    company = get_current_tenant(request)
+    if not company:
+        return HttpResponse('No company context', status=403)
 
-    def get_queryset(self):
-        return FiscalizationAudit.objects.select_related(
-            'invoice', 'user'
-        ).order_by('-created_at')
+    with tenant_context(company):
+        invoices = Invoice.objects.filter(
+            id__in=invoice_ids,
+            sale__store__company=company
+        ).select_related('sale')
+
+        response = HttpResponse(content_type='application/pdf')
+        response['Content-Disposition'] = 'attachment; filename="invoices_export.pdf"'
+
+        buffer = BytesIO()
+        p = canvas.Canvas(buffer, pagesize=letter)
+
+        y_position = 750
+        for invoice in invoices:
+            p.drawString(50, y_position, f"Invoice: {invoice.invoice_number}")
+            p.drawString(50, y_position - 20, f"Amount: {invoice.total_amount:,.2f}")
+            p.drawString(50, y_position - 40, f"Status: {invoice.sale.get_status_display()}")
+            y_position -= 80
+
+            if y_position < 100:
+                p.showPage()
+                y_position = 750
+
+        p.save()
+        pdf_data = buffer.getvalue()
+        buffer.close()
+        response.write(pdf_data)
+
+        return response
+
+
+class InvoiceTemplateListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
+    """List and manage invoice templates"""
+    model = InvoiceTemplate
+    template_name = 'invoices/template_list.html'
+    context_object_name = 'templates'
+    permission_required = 'invoices.view_invoicetemplate'
+
+
+class InvoiceTemplateCreateView(LoginRequiredMixin, PermissionRequiredMixin, CreateView):
+    """Create new invoice template"""
+    model = InvoiceTemplate
+    form_class = InvoiceTemplateForm
+    template_name = 'invoices/template_form.html'
+    success_url = reverse_lazy('invoices:templates')
+    permission_required = 'invoices.add_invoicetemplate'
+
+    def form_valid(self, form):
+        form.instance.created_by = self.request.user
+        return super().form_valid(form)
+
+
+@login_required
+@permission_required('invoices.view_invoice')
+def invoice_analytics(request):
+    """Enhanced analytics dashboard for invoices"""
+    # Get date range from request or use defaults
+    try:
+        start_date = request.GET.get('start_date')
+        end_date = request.GET.get('end_date')
+
+        if start_date:
+            start_date = datetime.strptime(start_date, '%Y-%m-%d').date()
+        else:
+            start_date = timezone.now().date() - timedelta(days=30)
+
+        if end_date:
+            end_date = datetime.strptime(end_date, '%Y-%m-%d').date()
+        else:
+            end_date = timezone.now().date()
+    except (ValueError, TypeError):
+        start_date = timezone.now().date() - timedelta(days=30)
+        end_date = timezone.now().date()
+
+    # Basic statistics - Use sale fields
+    total_invoices = Invoice.objects.count()
+    total_revenue = Invoice.objects.filter(
+        sale__status='PAID'
+    ).aggregate(Sum('sale__total_amount'))['sale__total_amount__sum'] or 0
+
+    pending_amount = Invoice.objects.exclude(
+        sale__status__in=['PAID', 'CANCELLED']
+    ).aggregate(Sum('sale__total_amount'))['sale__total_amount__sum'] or 0
+
+    overdue_invoices = Invoice.objects.filter(
+        sale__due_date__lt=end_date,
+        sale__status__in=['PENDING_PAYMENT', 'PARTIALLY_PAID']
+    ).count()
+
+    # Enhanced metrics - Use sale__created_at
+    invoices_this_month = Invoice.objects.filter(
+        sale__created_at__date__gte=timezone.now().date().replace(day=1)
+    ).count()
+
+    fiscalized_invoices = Invoice.objects.filter(is_fiscalized=True).count()
+    pending_invoices = Invoice.objects.exclude(
+        sale__status__in=['PAID', 'CANCELLED']
+    ).count()
+
+    # Calculate average invoice amount safely
+    avg_result = Invoice.objects.aggregate(avg_amount=Avg('sale__total_amount'))
+    avg_invoice_amount = avg_result['avg_amount'] or 0
+
+    # Performance metrics with safe calculations
+    total_invoiced_amount = Invoice.objects.aggregate(
+        Sum('sale__total_amount')
+    )['sale__total_amount__sum'] or 0
+    collection_rate = (total_revenue / total_invoiced_amount * 100) if total_invoiced_amount > 0 else 0
+
+    # On-time payment rate
+    on_time_payments = Invoice.objects.filter(
+        sale__status='PAID',
+        payments__payment_date__lte=F('sale__due_date')
+    ).distinct().count()
+    total_paid_invoices = Invoice.objects.filter(sale__status='PAID').count()
+    on_time_rate = (on_time_payments / total_paid_invoices * 100) if total_paid_invoices > 0 else 0
+
+    fiscalization_rate = (fiscalized_invoices / total_invoices * 100) if total_invoices > 0 else 0
+
+    # Average days to pay - safely handle None values
+    try:
+        paid_invoices_with_payments = Invoice.objects.filter(
+            sale__status='PAID',
+            payments__isnull=False
+        ).annotate(
+            days_to_pay=ExpressionWrapper(
+                F('payments__payment_date') - F('sale__created_at'),
+                output_field=DurationField()
+            )
+        )
+
+        avg_days_result = paid_invoices_with_payments.aggregate(
+            avg_days=Avg('days_to_pay')
+        )
+        avg_days_to_pay = avg_days_result['avg_days']
+        if avg_days_to_pay:
+            avg_days_to_pay = avg_days_to_pay.days
+        else:
+            avg_days_to_pay = 0
+    except (ValueError, TypeError):
+        avg_days_to_pay = 0
+
+    # Monthly trends data - Use sale__created_at
+    monthly_data = []
+    for i in range(12):
+        month_start = (end_date.replace(day=1) - timedelta(days=i * 30)).replace(day=1)
+        month_end = (month_start + timedelta(days=32)).replace(day=1) - timedelta(days=1)
+
+        month_invoices = Invoice.objects.filter(
+            sale__created_at__date__range=[month_start, month_end]
+        )
+
+        revenue = month_invoices.filter(sale__status='PAID').aggregate(
+            Sum('sale__total_amount')
+        )['sale__total_amount__sum'] or 0
+
+        monthly_data.append({
+            'month': month_start.strftime('%Y-%m'),
+            'month_name': month_start.strftime('%b'),
+            'revenue': float(revenue),
+            'count': month_invoices.count(),
+        })
+
+    monthly_data.reverse()
+
+    # Status distribution with safe calculations
+    status_distribution = Invoice.objects.values('sale__status').annotate(
+        count=Count('id'),
+        total_amount=Sum('sale__total_amount')
+    ).order_by('sale__status')
+
+    status_data = []
+    for item in status_distribution:
+        count = item['count'] or 0
+        total_amount = item['total_amount'] or 0
+        percentage = (count / total_invoices * 100) if total_invoices > 0 else 0
+        avg_amount = (total_amount / count) if count > 0 else 0
+
+        # Get the status label from Sale model choices
+        from sales.models import Sale
+        status_label = dict(Sale.STATUS_CHOICES).get(item['sale__status'], item['sale__status'])
+
+        status_data.append({
+            'status': item['sale__status'],
+            'label': status_label,
+            'count': count,
+            'total_amount': float(total_amount),
+            'avg_amount': float(avg_amount),
+            'percentage': round(percentage, 1)
+        })
+
+        # Payment methods distribution
+        payment_methods_data = InvoicePayment.objects.values('payment_method').annotate(
+            count=Count('id')
+        ).order_by('-count')
+
+        # Top customers
+        top_customers = Invoice.objects.filter(
+            sale__customer__isnull=False
+        ).values(
+            'sale__customer__name'
+        ).annotate(
+            invoice_count=Count('id'),
+            total_amount=Sum('sale__total_amount')
+        ).order_by('-total_amount')[:5]
+
+        # EFRIS compliance
+        non_fiscalized_invoices = total_invoices - fiscalized_invoices
+
+        context = {
+            'total_invoices': total_invoices,
+            'total_revenue': total_revenue,
+            'pending_amount': pending_amount,
+            'overdue_invoices': overdue_invoices,
+            'invoices_this_month': invoices_this_month,
+            'fiscalized_invoices': fiscalized_invoices,
+            'pending_invoices': pending_invoices,
+            'avg_invoice_amount': avg_invoice_amount,
+            'collection_rate': round(collection_rate, 1),
+            'on_time_rate': round(on_time_rate, 1),
+            'fiscalization_rate': round(fiscalization_rate, 1),
+            'avg_days_to_pay': avg_days_to_pay,
+            'monthly_data': monthly_data,
+            'status_data': status_data,
+            'payment_methods_data': list(payment_methods_data),
+            'top_customers': list(top_customers),
+            'non_fiscalized_invoices': non_fiscalized_invoices,
+            'start_date': start_date,
+            'end_date': end_date,
+        }
+
+        return render(request, 'invoices/analytics.html', context)
+
+@login_required
+@permission_required('invoices.view_invoice')
+def analytics_api(request):
+    """API endpoint for analytics data"""
+    try:
+        period = int(request.GET.get('period', 12))
+        start_date = request.GET.get('start_date')
+        end_date = request.GET.get('end_date')
+        data = {
+            'success': True,
+            'metrics': {
+                'total_invoices': Invoice.objects.count(),
+                'total_revenue': float(
+                    Invoice.objects.filter(sale__status='PAID').aggregate(
+                        Sum('sale__total_amount')
+                    )['sale__total_amount__sum'] or 0
+                ),
+            },
+            'monthly_data': [],
+            'status_data': [],
+            'payment_methods_data': []
+        }
+
+        return JsonResponse(data)
+
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': str(e)})
+
+@login_required
+@permission_required('invoices.view_invoice')
+def invoice_print_view(request, pk):
+    """Generate printable invoice"""
+    company = get_current_tenant(request)
+    if not company:
+        return HttpResponse('No company context', status=403)
+    with tenant_context(company):
+        invoice = get_object_or_404(
+            Invoice.objects.filter(sale__store__company=company),
+            pk=pk
+        )
+
+        template = InvoiceTemplate.objects.filter(
+            is_default=True
+        ).first()
+
+        if not template:
+            template = InvoiceTemplate.objects.first()
+
+        context = {
+            'invoice': invoice,
+            'template': template,
+            'company_info': {
+                'name': company.name,
+                'address': company.physical_address,
+                'phone': company.phone,
+                'email': company.email,
+                'tin': company.tin,
+            }
+        }
+
+        return render(request, 'invoices/invoice_print.html', context)
+
+
+@csrf_exempt
+@login_required
+def ajax_invoice_status(request):
+    """AJAX endpoint for updating invoice status - FIXED VERSION"""
+
+    if request.method != 'POST':
+        return JsonResponse({
+            'success': False,
+            'error': 'Invalid request method'
+        })
+
+    try:
+        data = json.loads(request.body)
+        invoice_id = data.get('invoice_id')
+        new_status = data.get('status')
+
+        # Validate required fields
+        if not invoice_id or not new_status:
+            return JsonResponse({
+                'success': False,
+                'error': 'Missing invoice_id or status'
+            })
+
+        invoice = Invoice.objects.select_related('sale').get(pk=invoice_id)
+
+        # Validate status change
+        if invoice.is_fiscalized and new_status in ['DRAFT']:
+            return JsonResponse({
+                'success': False,
+                'error': 'Cannot change status of fiscalized invoice'
+            })
+
+        # Update the sale status instead of invoice status
+        invoice.sale.status = new_status
+        invoice.sale.save(update_fields=['status'])
+
+        return JsonResponse({
+            'success': True,
+            'message': f'Invoice status updated to {invoice.sale.get_status_display()}'
+        })
+
+    except Invoice.DoesNotExist:
+        return JsonResponse({
+            'success': False,
+            'error': 'Invoice not found'
+        })
+
+    except json.JSONDecodeError:
+        return JsonResponse({
+            'success': False,
+            'error': 'Invalid JSON data'
+        })
+
+    except Exception as e:
+        logger.error(f"Error updating invoice status: {str(e)}")
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        })
 
 
 @login_required
@@ -1176,7 +1192,7 @@ def invoice_dashboard(request):
         # Base queryset
         invoices = Invoice.objects.filter(
             sale__store__company=company
-        )
+        ).select_related('sale')
 
         # Metrics
         total_invoices = invoices.count()
@@ -1207,13 +1223,13 @@ def invoice_dashboard(request):
 
         # Recent activity
         recent_invoices = invoices.select_related(
-            'sale', 'sale__customer', 'created_by'
+            'sale__customer', 'created_by'
         ).order_by('-created_at')[:10]
 
         recent_payments = InvoicePayment.objects.filter(
             invoice__sale__store__company=company
         ).select_related(
-            'invoice', 'processed_by'
+            'invoice__sale', 'processed_by'
         ).order_by('-created_at')[:10]
 
         # Upcoming due dates
@@ -1222,9 +1238,6 @@ def invoice_dashboard(request):
             sale__due_date__range=[today, upcoming_due],
             sale__status__in=['PENDING_PAYMENT', 'PARTIALLY_PAID']
         ).select_related('sale__customer').order_by('sale__due_date')[:5]
-
-        for invoice in upcoming_invoices:
-            invoice.days_until_due = (invoice.due_date - today).days
 
         context = {
             'metrics': {
@@ -1245,14 +1258,11 @@ def invoice_dashboard(request):
         return render(request, 'invoices/dashboard.html', context)
 
 
-
 @login_required
 @permission_required('invoices.view_invoice')
 def dashboard_chart_data(request):
     """API endpoint for dashboard chart data"""
-    # Get period from request (default to 12 months)
     period = int(request.GET.get('period', 12))
-
     today = timezone.now().date()
     start_date = today - timedelta(days=period * 30)
 
@@ -1263,7 +1273,7 @@ def dashboard_chart_data(request):
     while current <= today:
         month_end = (current + timedelta(days=32)).replace(day=1) - timedelta(days=1)
 
-        # FIX: Use sale__created_at instead of issue_date
+        # Use sale__created_at
         month_invoices = Invoice.objects.filter(
             sale__created_at__date__range=[current, month_end]
         )
@@ -1293,10 +1303,11 @@ def dashboard_chart_data(request):
     ).order_by('sale__status')
 
     status_data = []
+    from sales.models import Sale
     for item in status_distribution:
         status_data.append({
             'status': item['sale__status'],
-            'label': dict(Invoice.sale.field.related_model.STATUS_CHOICES).get(
+            'label': dict(Sale.STATUS_CHOICES).get(
                 item['sale__status'],
                 item['sale__status']
             ),
@@ -1317,7 +1328,7 @@ def dashboard_metrics(request):
     today = timezone.now().date()
     this_month = today.replace(day=1)
 
-    # Calculate metrics - FIX: Use sale__created_at instead of issue_date
+    # Calculate metrics - Use sale fields
     total_invoices = Invoice.objects.count()
     invoices_this_month = Invoice.objects.filter(
         sale__created_at__date__gte=this_month
@@ -1378,3 +1389,4 @@ def dashboard_metrics(request):
         'metrics': metrics,
         'success': True
     })
+
