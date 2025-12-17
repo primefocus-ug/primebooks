@@ -464,7 +464,6 @@ class Store(models.Model):
             'pending_sales': sales.filter(payment_status='PENDING').count(),
         }
 
-
     def get_company_efris_config(self):
         """
         Fetch company EFRIS configuration with improved error handling.
@@ -476,11 +475,16 @@ class Store(models.Model):
         try:
             from django_tenants.utils import schema_context
             from company.models import Company
+            from efris.models import EFRISConfiguration  # Import the EFRISConfiguration model
 
+            config = {}
+
+            # Step 1: Get company info from public schema
             with schema_context('public'):
                 company = Company.objects.get(company_id=self.company_id)
 
-                config = {
+                # Get basic company info
+                config.update({
                     # Business Information
                     'tin': company.tin or '',
                     'nin': company.nin or '',
@@ -490,7 +494,7 @@ class Store(models.Model):
                     'business_name': company.trading_name or company.name or '',
                     'taxpayer_name': company.name or '',
 
-                    # EFRIS Configuration
+                    # Company-level EFRIS settings
                     'efris_enabled': company.efris_enabled,
                     'efris_is_active': company.efris_is_active,
                     'efris_device_number': company.efris_device_number or '',
@@ -500,19 +504,54 @@ class Store(models.Model):
                     'efris_integration_mode': company.efris_integration_mode,
                     'efris_auto_fiscalize_sales': company.efris_auto_fiscalize_sales,
                     'efris_auto_sync_products': company.efris_auto_sync_products,
-                }
+                })
 
-                # Handle certificate data from JSONField
-                if company.efris_certificate_data and isinstance(company.efris_certificate_data, dict):
-                    config.update({
-                        'efris_private_key': company.efris_certificate_data.get('private_key', ''),
-                        'efris_public_certificate': company.efris_certificate_data.get('public_certificate', ''),
-                        'efris_key_password': company.efris_certificate_data.get('key_password', ''),
-                        'efris_certificate_fingerprint': company.efris_certificate_data.get('certificate_fingerprint',
-                                                                                            ''),
-                    })
+            # Step 2: Get EFRIS configuration from tenant schema
+            # Switch to company's tenant schema to access EFRISConfiguration
+            with schema_context(self.company.schema_name):
+                try:
+                    # Get the EFRISConfiguration for this company
+                    efris_config = EFRISConfiguration.objects.filter(company=self.company).first()
 
-                return config
+                    if efris_config:
+                        # Add EFRIS configuration details
+                        config.update({
+                            'efris_private_key': efris_config.private_key or '',
+                            'efris_public_certificate': efris_config.public_certificate or '',
+                            'efris_key_password': efris_config.key_password or '',
+                            'efris_certificate_fingerprint': efris_config.certificate_fingerprint or '',
+                            'efris_certificate_expires_at': efris_config.certificate_expires_at,
+                            'efris_environment': efris_config.environment or 'sandbox',
+                            'efris_mode': efris_config.mode or 'online',
+                            'efris_device_mac': efris_config.device_mac or '',
+                            'efris_app_id': efris_config.app_id or '',
+                            'efris_version': efris_config.version or '',
+                            'efris_is_initialized': efris_config.is_initialized,
+                            'efris_timeout_seconds': efris_config.timeout_seconds or 30,
+                            'efris_max_retry_attempts': efris_config.max_retry_attempts or 3,
+                            'efris_auto_sync_enabled': efris_config.auto_sync_enabled,
+                            'efris_auto_fiscalize': efris_config.auto_fiscalize,
+                            'efris_sync_interval_minutes': efris_config.sync_interval_minutes or 60,
+                        })
+                except Exception as tenant_error:
+                    # Handle case where EFRISConfiguration might not exist or schema not accessible
+                    import logging
+                    logger = logging.getLogger(__name__)
+                    logger.warning(f"Could not fetch EFRIS configuration for company {self.company_id}: {tenant_error}")
+
+                    # Fallback to checking if certificate data exists in company JSONField
+                    # (if you still want to support the old way)
+                    if hasattr(company, 'efris_certificate_data') and company.efris_certificate_data and isinstance(
+                            company.efris_certificate_data, dict):
+                        config.update({
+                            'efris_private_key': company.efris_certificate_data.get('private_key', ''),
+                            'efris_public_certificate': company.efris_certificate_data.get('public_certificate', ''),
+                            'efris_key_password': company.efris_certificate_data.get('key_password', ''),
+                            'efris_certificate_fingerprint': company.efris_certificate_data.get(
+                                'certificate_fingerprint', ''),
+                        })
+
+            return config
 
         except Exception as e:
             import logging
