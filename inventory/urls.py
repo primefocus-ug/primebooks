@@ -114,6 +114,9 @@ urlpatterns = [
     # Bulk Operations
     path('products/bulk-actions/', views.bulk_product_actions, name='bulk_actions'),
     path('products/export/', views.export_products, name='export_products'),
+    path('export/', importt.export_products_selection, name='export_products_selection'),
+    path('export/csv/', importt.export_products_csv, name='export_products_csv'),
+    path('export/excel/', importt.export_products_excel, name='export_products_excel'),
     path('bulk-import/', views.bulk_import_products, name='bulk_import'),
     path('api/analyze-import-file/', views.analyze_import_file, name='analyze_import_file'),
     path('api/process-bulk-import/', views.process_bulk_import, name='process_bulk_import'),

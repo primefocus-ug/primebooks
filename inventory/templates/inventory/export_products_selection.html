@@ -1,0 +1,217 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Export Products{% endblock %}
+
+{% block content %}
+<div class="container mx-auto px-4 py-8">
+    <div class="max-w-4xl mx-auto">
+        <!-- Header -->
+        <div class="bg-white rounded-lg shadow-md p-6 mb-6">
+            <h1 class="text-3xl font-bold text-gray-900 mb-2">Export Products</h1>
+            <p class="text-gray-600">Export your products to CSV or Excel format for easy transfer between companies or backup.</p>
+        </div>
+
+        <!-- Export Form -->
+        <form id="exportForm" class="bg-white rounded-lg shadow-md p-6">
+            <!-- Export Mode -->
+            <div class="mb-6">
+                <label class="block text-sm font-medium text-gray-700 mb-3">Export Mode</label>
+                <div class="space-y-3">
+                    <label class="flex items-center p-4 border-2 border-gray-200 rounded-lg cursor-pointer hover:border-indigo-500 transition">
+                        <input type="radio" name="mode" value="products_only" class="h-4 w-4 text-indigo-600" checked>
+                        <div class="ml-3">
+                            <span class="block font-medium text-gray-900">Products Only</span>
+                            <span class="block text-sm text-gray-500">Export product information without stock quantities</span>
+                        </div>
+                    </label>
+
+                    <label class="flex items-center p-4 border-2 border-gray-200 rounded-lg cursor-pointer hover:border-indigo-500 transition">
+                        <input type="radio" name="mode" value="with_stock" class="h-4 w-4 text-indigo-600">
+                        <div class="ml-3">
+                            <span class="block font-medium text-gray-900">Products with Stock</span>
+                            <span class="block text-sm text-gray-500">Export products including current stock quantities per store</span>
+                        </div>
+                    </label>
+                </div>
+            </div>
+
+            <!-- Filters -->
+            <div class="mb-6">
+                <h3 class="text-lg font-medium text-gray-900 mb-4">Filters (Optional)</h3>
+
+                <!-- Categories -->
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Categories</label>
+                    <select name="categories" id="categories" multiple
+                            class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500"
+                            size="5">
+                        <option value="">All Categories</option>
+                        {% for category in categories %}
+                        <option value="{{ category.id }}">{{ category.name }}</option>
+                        {% endfor %}
+                    </select>
+                    <p class="text-xs text-gray-500 mt-1">Hold Ctrl (Cmd on Mac) to select multiple</p>
+                </div>
+
+                <!-- Suppliers -->
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Suppliers</label>
+                    <select name="suppliers" id="suppliers" multiple
+                            class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500"
+                            size="5">
+                        <option value="">All Suppliers</option>
+                        {% for supplier in suppliers %}
+                        <option value="{{ supplier.id }}">{{ supplier.name }}</option>
+                        {% endfor %}
+                    </select>
+                    <p class="text-xs text-gray-500 mt-1">Hold Ctrl (Cmd on Mac) to select multiple</p>
+                </div>
+
+                <!-- Stores (only shown when "with_stock" is selected) -->
+                <div class="mb-4" id="storesFilter" style="display: none;">
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Stores</label>
+                    <select name="stores" id="stores" multiple
+                            class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500"
+                            size="5">
+                        <option value="">All Stores</option>
+                        {% for store in stores %}
+                        <option value="{{ store.id }}">{{ store.name }}</option>
+                        {% endfor %}
+                    </select>
+                    <p class="text-xs text-gray-500 mt-1">Hold Ctrl (Cmd on Mac) to select multiple</p>
+                </div>
+
+                <!-- Include Inactive -->
+                <div class="mb-4">
+                    <label class="flex items-center">
+                        <input type="checkbox" name="include_inactive" value="true"
+                               class="h-4 w-4 text-indigo-600 border-gray-300 rounded">
+                        <span class="ml-2 text-sm text-gray-700">Include inactive products</span>
+                    </label>
+                </div>
+            </div>
+
+            <!-- Info Box -->
+            <div class="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
+                <div class="flex">
+                    <div class="flex-shrink-0">
+                        <svg class="h-5 w-5 text-blue-400" fill="currentColor" viewBox="0 0 20 20">
+                            <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd"/>
+                        </svg>
+                    </div>
+                    <div class="ml-3">
+                        <h3 class="text-sm font-medium text-blue-800">Export Information</h3>
+                        <div class="mt-2 text-sm text-blue-700">
+                            <ul class="list-disc pl-5 space-y-1">
+                                <li>Total Products: <strong>{{ total_products }}</strong></li>
+                                <li>Exported files are compatible with the import template</li>
+                                <li>You can import the exported file directly into another company</li>
+                                <li>All EFRIS and category information will be preserved</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Export Buttons -->
+            <div class="flex space-x-4">
+                <button type="button" onclick="exportFile('csv')"
+                        class="flex-1 bg-green-600 hover:bg-green-700 text-white font-medium py-3 px-4 rounded-lg transition duration-150 flex items-center justify-center">
+                    <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                    </svg>
+                    Export as CSV
+                </button>
+
+                <button type="button" onclick="exportFile('excel')"
+                        class="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-medium py-3 px-4 rounded-lg transition duration-150 flex items-center justify-center">
+                    <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                    </svg>
+                    Export as Excel
+                </button>
+            </div>
+        </form>
+
+        <!-- How to Use -->
+        <div class="bg-white rounded-lg shadow-md p-6 mt-6">
+            <h2 class="text-xl font-bold text-gray-900 mb-4">How to Transfer Products Between Companies</h2>
+            <ol class="list-decimal pl-5 space-y-2 text-gray-700">
+                <li>Select your export mode and filters above</li>
+                <li>Click "Export as CSV" or "Export as Excel" to download the file</li>
+                <li>Login to the target company account</li>
+                <li>Go to Import Products page</li>
+                <li>Upload the exported file</li>
+                <li>Select import mode:
+                    <ul class="list-disc pl-5 mt-1 text-sm">
+                        <li><strong>Combined Import:</strong> If you exported "Products with Stock"</li>
+                        <li><strong>Products Only:</strong> If you exported "Products Only"</li>
+                    </ul>
+                </li>
+                <li>Choose conflict resolution (Skip or Overwrite for existing SKUs)</li>
+                <li>Click Import and review the results</li>
+            </ol>
+        </div>
+    </div>
+</div>
+
+<script>
+function exportFile(format) {
+    const form = document.getElementById('exportForm');
+    const formData = new FormData(form);
+
+    // Build URL with query parameters
+    const params = new URLSearchParams();
+
+    // Add mode
+    const mode = formData.get('mode');
+    params.append('mode', mode);
+
+    // Add categories
+    const categories = Array.from(document.getElementById('categories').selectedOptions)
+        .map(option => option.value)
+        .filter(val => val !== '');
+    categories.forEach(cat => params.append('categories', cat));
+
+    // Add suppliers
+    const suppliers = Array.from(document.getElementById('suppliers').selectedOptions)
+        .map(option => option.value)
+        .filter(val => val !== '');
+    suppliers.forEach(sup => params.append('suppliers', sup));
+
+    // Add stores (if with_stock mode)
+    if (mode === 'with_stock') {
+        const stores = Array.from(document.getElementById('stores').selectedOptions)
+            .map(option => option.value)
+            .filter(val => val !== '');
+        stores.forEach(store => params.append('stores', store));
+    }
+
+    // Add include_inactive
+    const includeInactive = document.querySelector('input[name="include_inactive"]').checked;
+    if (includeInactive) {
+        params.append('include_inactive', 'true');
+    }
+
+    // Generate URL
+    const baseUrl = format === 'csv' ? '{% url "inventory:export_products_csv" %}' : '{% url "inventory:export_products_excel" %}';
+    const url = `${baseUrl}?${params.toString()}`;
+
+    // Trigger download
+    window.location.href = url;
+}
+
+// Show/hide stores filter based on mode selection
+document.querySelectorAll('input[name="mode"]').forEach(radio => {
+    radio.addEventListener('change', function() {
+        const storesFilter = document.getElementById('storesFilter');
+        if (this.value === 'with_stock') {
+            storesFilter.style.display = 'block';
+        } else {
+            storesFilter.style.display = 'none';
+        }
+    });
+});
+</script>
+{% endblock %}

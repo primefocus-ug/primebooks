@@ -1612,6 +1612,537 @@ def validate_import_data(request):
         return JsonResponse({'error': str(e)}, status=400)
 
 
+
+
+
+# ============================================================================
+# PRODUCT EXPORT VIEWS
+# ============================================================================
+
+@login_required
+@permission_required('inventory.view_product', raise_exception=True)
+def export_products_selection(request):
+    """View to select export options before generating file"""
+
+    if request.method == 'GET':
+        # Get filter options
+        categories = Category.objects.filter(is_active=True).order_by('name')
+        suppliers = Supplier.objects.filter(is_active=True).order_by('name')
+        stores = Store.objects.filter(is_active=True).order_by('name')
+
+        # Get product counts
+        total_products = Product.objects.filter(is_active=True).count()
+
+        context = {
+            'categories': categories,
+            'suppliers': suppliers,
+            'stores': stores,
+            'total_products': total_products,
+        }
+
+        return render(request, 'inventory/export_products_selection.html', context)
+
+
+@login_required
+@permission_required('inventory.view_product', raise_exception=True)
+def export_products_csv(request):
+    """Export products to CSV format compatible with import template"""
+
+    # Get filter parameters
+    export_mode = request.GET.get('mode', 'products_only')  # products_only, with_stock
+    category_ids = request.GET.getlist('categories')
+    supplier_ids = request.GET.getlist('suppliers')
+    store_ids = request.GET.getlist('stores')
+    include_inactive = request.GET.get('include_inactive', 'false') == 'true'
+
+    # Build queryset
+    products = Product.objects.select_related('category', 'supplier')
+
+    if not include_inactive:
+        products = products.filter(is_active=True)
+
+    if category_ids:
+        products = products.filter(category_id__in=category_ids)
+
+    if supplier_ids:
+        products = products.filter(supplier_id__in=supplier_ids)
+
+    products = products.order_by('sku')
+
+    # Create response
+    response = HttpResponse(content_type='text/csv')
+
+    if export_mode == 'with_stock':
+        response['Content-Disposition'] = 'attachment; filename="products_with_stock_export.csv"'
+        return _export_products_with_stock_csv(response, products, store_ids)
+    else:
+        response['Content-Disposition'] = 'attachment; filename="products_export.csv"'
+        return _export_products_only_csv(response, products)
+
+
+def _export_products_only_csv(response, products):
+    """Export products only (no stock) to CSV"""
+
+    writer = csv.writer(response)
+
+    # Headers matching import template
+    headers = [
+        'Product Name*', 'SKU*', 'Barcode', 'Category', 'Supplier',
+        'Selling Price*', 'Cost Price*', 'Discount %',
+        'Tax Rate*', 'Excise Duty Rate', 'Unit of Measure*',
+        'Min Stock Level', 'Description', 'Is Active',
+        'EFRIS Commodity Code', 'EFRIS Excise Duty Code', 'EFRIS Auto Sync',
+        'EFRIS Item Code', 'EFRIS Has Piece Unit', 'EFRIS Piece Measure Unit',
+        'EFRIS Piece Unit Price', 'EFRIS Goods Code'
+    ]
+    writer.writerow(headers)
+
+    # Write product data
+    for product in products:
+        row = [
+            product.name,
+            product.sku,
+            product.barcode or '',
+            product.category.name if product.category else '',
+            product.supplier.name if product.supplier else '',
+            str(product.selling_price),
+            str(product.cost_price),
+            str(product.discount_percentage),
+            product.tax_rate,
+            str(product.excise_duty_rate),
+            product.unit_of_measure,
+            str(product.min_stock_level),
+            product.description or '',
+            'Yes' if product.is_active else 'No',
+            # EFRIS fields
+            getattr(product.category, 'efris_commodity_category_code', '') if product.category else '',
+            product.efris_excise_duty_code or '',
+            'Yes' if product.efris_auto_sync_enabled else 'No',
+            product.efris_item_code or '',
+            'Yes' if product.efris_has_piece_unit else 'No',
+            product.efris_piece_measure_unit or '',
+            str(product.efris_piece_unit_price) if product.efris_piece_unit_price else '',
+            product.efris_goods_code_field or '',
+        ]
+        writer.writerow(row)
+
+    return response
+
+
+def _export_products_with_stock_csv(response, products, store_ids):
+    """Export products with stock information to CSV"""
+
+    writer = csv.writer(response)
+
+    # Headers matching combined import template
+    headers = [
+        # Product Basic Info
+        'Product Name*', 'SKU*', 'Barcode', 'Description',
+
+        # Category & Supplier
+        'Category Name*', 'Category Code', 'Category Description', 'Category Type*',
+        'EFRIS Commodity Category Code', 'EFRIS Auto Sync', 'Supplier',
+
+        # Pricing
+        'Selling Price*', 'Cost Price*', 'Discount %',
+
+        # Tax Information
+        'Tax Rate*', 'Excise Duty Rate', 'EFRIS Excise Duty Code',
+
+        # Unit and Stock
+        'Unit of Measure*', 'Min Stock Level', 'Is Active',
+
+        # Store Stock Information
+        'Store Name*', 'Quantity*', 'Low Stock Threshold', 'Reorder Quantity',
+
+        # Additional EFRIS Fields
+        'EFRIS Item Code', 'EFRIS Has Piece Unit', 'EFRIS Piece Measure Unit',
+        'EFRIS Piece Unit Price', 'EFRIS Goods Code'
+    ]
+    writer.writerow(headers)
+
+    # Get stores to export
+    if store_ids:
+        stores = Store.objects.filter(id__in=store_ids, is_active=True)
+    else:
+        stores = Store.objects.filter(is_active=True)
+
+    # Write product data with stock for each store
+    for product in products:
+        stocks = Stock.objects.filter(product=product, store__in=stores).select_related('store')
+
+        if stocks.exists():
+            # Create a row for each store where product has stock
+            for stock in stocks:
+                row = [
+                    # Product Basic Info
+                    product.name,
+                    product.sku,
+                    product.barcode or '',
+                    product.description or '',
+
+                    # Category & Supplier
+                    product.category.name if product.category else '',
+                    getattr(product.category, 'code', '') if product.category else '',
+                    getattr(product.category, 'description', '') if product.category else '',
+                    getattr(product.category, 'category_type', 'product') if product.category else 'product',
+                    getattr(product.category, 'efris_commodity_category_code', '') if product.category else '',
+                    'Yes' if getattr(product.category, 'efris_auto_sync_enabled', False) else 'No',
+                    product.supplier.name if product.supplier else '',
+
+                    # Pricing
+                    str(product.selling_price),
+                    str(product.cost_price),
+                    str(product.discount_percentage),
+
+                    # Tax Information
+                    product.tax_rate,
+                    str(product.excise_duty_rate),
+                    product.efris_excise_duty_code or '',
+
+                    # Unit and Stock
+                    product.unit_of_measure,
+                    str(product.min_stock_level),
+                    'Yes' if product.is_active else 'No',
+
+                    # Store Stock Information
+                    stock.store.name,
+                    str(stock.quantity),
+                    str(stock.low_stock_threshold),
+                    str(stock.reorder_quantity),
+
+                    # Additional EFRIS Fields
+                    product.efris_item_code or '',
+                    'Yes' if product.efris_has_piece_unit else 'No',
+                    product.efris_piece_measure_unit or '',
+                    str(product.efris_piece_unit_price) if product.efris_piece_unit_price else '',
+                    product.efris_goods_code_field or '',
+                ]
+                writer.writerow(row)
+        else:
+            # Product has no stock in any selected store - export with default store and 0 quantity
+            default_store = stores.first() if stores.exists() else None
+            if default_store:
+                row = [
+                    # Product Basic Info
+                    product.name,
+                    product.sku,
+                    product.barcode or '',
+                    product.description or '',
+
+                    # Category & Supplier
+                    product.category.name if product.category else '',
+                    getattr(product.category, 'code', '') if product.category else '',
+                    getattr(product.category, 'description', '') if product.category else '',
+                    getattr(product.category, 'category_type', 'product') if product.category else 'product',
+                    getattr(product.category, 'efris_commodity_category_code', '') if product.category else '',
+                    'Yes' if getattr(product.category, 'efris_auto_sync_enabled', False) else 'No',
+                    product.supplier.name if product.supplier else '',
+
+                    # Pricing
+                    str(product.selling_price),
+                    str(product.cost_price),
+                    str(product.discount_percentage),
+
+                    # Tax Information
+                    product.tax_rate,
+                    str(product.excise_duty_rate),
+                    product.efris_excise_duty_code or '',
+
+                    # Unit and Stock
+                    product.unit_of_measure,
+                    str(product.min_stock_level),
+                    'Yes' if product.is_active else 'No',
+
+                    # Store Stock Information
+                    default_store.name,
+                    '0',  # Zero quantity
+                    '5',  # Default threshold
+                    '10',  # Default reorder
+
+                    # Additional EFRIS Fields
+                    product.efris_item_code or '',
+                    'Yes' if product.efris_has_piece_unit else 'No',
+                    product.efris_piece_measure_unit or '',
+                    str(product.efris_piece_unit_price) if product.efris_piece_unit_price else '',
+                    product.efris_goods_code_field or '',
+                ]
+                writer.writerow(row)
+
+    return response
+
+
+@login_required
+@permission_required('inventory.view_product', raise_exception=True)
+def export_products_excel(request):
+    """Export products to Excel format compatible with import template"""
+
+    # Get filter parameters
+    export_mode = request.GET.get('mode', 'products_only')
+    category_ids = request.GET.getlist('categories')
+    supplier_ids = request.GET.getlist('suppliers')
+    store_ids = request.GET.getlist('stores')
+    include_inactive = request.GET.get('include_inactive', 'false') == 'true'
+
+    # Build queryset
+    products = Product.objects.select_related('category', 'supplier')
+
+    if not include_inactive:
+        products = products.filter(is_active=True)
+
+    if category_ids:
+        products = products.filter(category_id__in=category_ids)
+
+    if supplier_ids:
+        products = products.filter(supplier_id__in=supplier_ids)
+
+    products = products.order_by('sku')
+
+    if export_mode == 'with_stock':
+        return _export_products_with_stock_excel(products, store_ids)
+    else:
+        return _export_products_only_excel(products)
+
+
+def _export_products_only_excel(products):
+    """Export products only (no stock) to Excel"""
+
+    output = BytesIO()
+    workbook = xlsxwriter.Workbook(output)
+    worksheet = workbook.add_worksheet('Products')
+
+    # Define formats
+    header_format = workbook.add_format({
+        'bold': True,
+        'bg_color': '#10B981',
+        'font_color': 'white',
+        'border': 1,
+        'align': 'center',
+        'valign': 'vcenter',
+        'text_wrap': True
+    })
+
+    data_format = workbook.add_format({
+        'border': 1,
+        'align': 'left',
+        'valign': 'vcenter'
+    })
+
+    # Headers
+    headers = [
+        'Product Name*', 'SKU*', 'Barcode', 'Category', 'Supplier',
+        'Selling Price*', 'Cost Price*', 'Discount %',
+        'Tax Rate*', 'Excise Duty Rate', 'Unit of Measure*',
+        'Min Stock Level', 'Description', 'Is Active',
+        'EFRIS Commodity Code', 'EFRIS Excise Duty Code', 'EFRIS Auto Sync',
+        'EFRIS Item Code', 'EFRIS Has Piece Unit', 'EFRIS Piece Measure Unit',
+        'EFRIS Piece Unit Price', 'EFRIS Goods Code'
+    ]
+
+    # Write headers
+    for col, header in enumerate(headers):
+        worksheet.write(0, col, header, header_format)
+
+    # Write product data
+    for row_idx, product in enumerate(products, start=1):
+        data = [
+            product.name,
+            product.sku,
+            product.barcode or '',
+            product.category.name if product.category else '',
+            product.supplier.name if product.supplier else '',
+            float(product.selling_price),
+            float(product.cost_price),
+            float(product.discount_percentage),
+            product.tax_rate,
+            float(product.excise_duty_rate),
+            product.unit_of_measure,
+            product.min_stock_level,
+            product.description or '',
+            'Yes' if product.is_active else 'No',
+            # EFRIS fields
+            getattr(product.category, 'efris_commodity_category_code', '') if product.category else '',
+            product.efris_excise_duty_code or '',
+            'Yes' if product.efris_auto_sync_enabled else 'No',
+            product.efris_item_code or '',
+            'Yes' if product.efris_has_piece_unit else 'No',
+            product.efris_piece_measure_unit or '',
+            float(product.efris_piece_unit_price) if product.efris_piece_unit_price else '',
+            product.efris_goods_code_field or '',
+        ]
+
+        for col_idx, value in enumerate(data):
+            worksheet.write(row_idx, col_idx, value, data_format)
+
+    # Set column widths
+    column_widths = [20, 15, 15, 15, 15, 12, 12, 10, 10, 12, 15, 12, 30, 10, 20, 20, 15, 15, 15, 15, 15, 15]
+    for col, width in enumerate(column_widths):
+        worksheet.set_column(col, col, width)
+
+    # Freeze first row
+    worksheet.freeze_panes(1, 0)
+
+    workbook.close()
+    output.seek(0)
+
+    response = HttpResponse(
+        output.read(),
+        content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    )
+    response['Content-Disposition'] = 'attachment; filename="products_export.xlsx"'
+
+    return response
+
+
+def _export_products_with_stock_excel(products, store_ids):
+    """Export products with stock to Excel"""
+
+    output = BytesIO()
+    workbook = xlsxwriter.Workbook(output)
+    worksheet = workbook.add_worksheet('Products & Stock')
+
+    # Define formats
+    header_format = workbook.add_format({
+        'bold': True,
+        'bg_color': '#4F46E5',
+        'font_color': 'white',
+        'border': 1,
+        'align': 'center',
+        'valign': 'vcenter',
+        'text_wrap': True
+    })
+
+    data_format = workbook.add_format({
+        'border': 1,
+        'align': 'left',
+        'valign': 'vcenter'
+    })
+
+    # Headers
+    headers = [
+        'Product Name*', 'SKU*', 'Barcode', 'Description',
+        'Category Name*', 'Category Code', 'Category Description', 'Category Type*',
+        'EFRIS Commodity Category Code', 'EFRIS Auto Sync', 'Supplier',
+        'Selling Price*', 'Cost Price*', 'Discount %',
+        'Tax Rate*', 'Excise Duty Rate', 'EFRIS Excise Duty Code',
+        'Unit of Measure*', 'Min Stock Level', 'Is Active',
+        'Store Name*', 'Quantity*', 'Low Stock Threshold', 'Reorder Quantity',
+        'EFRIS Item Code', 'EFRIS Has Piece Unit', 'EFRIS Piece Measure Unit',
+        'EFRIS Piece Unit Price', 'EFRIS Goods Code'
+    ]
+
+    # Write headers
+    for col, header in enumerate(headers):
+        worksheet.write(0, col, header, header_format)
+
+    # Get stores
+    if store_ids:
+        stores = Store.objects.filter(id__in=store_ids, is_active=True)
+    else:
+        stores = Store.objects.filter(is_active=True)
+
+    # Write data
+    row_idx = 1
+    for product in products:
+        stocks = Stock.objects.filter(product=product, store__in=stores).select_related('store')
+
+        if stocks.exists():
+            for stock in stocks:
+                data = [
+                    product.name,
+                    product.sku,
+                    product.barcode or '',
+                    product.description or '',
+                    product.category.name if product.category else '',
+                    getattr(product.category, 'code', '') if product.category else '',
+                    getattr(product.category, 'description', '') if product.category else '',
+                    getattr(product.category, 'category_type', 'product') if product.category else 'product',
+                    getattr(product.category, 'efris_commodity_category_code', '') if product.category else '',
+                    'Yes' if getattr(product.category, 'efris_auto_sync_enabled', False) else 'No',
+                    product.supplier.name if product.supplier else '',
+                    float(product.selling_price),
+                    float(product.cost_price),
+                    float(product.discount_percentage),
+                    product.tax_rate,
+                    float(product.excise_duty_rate),
+                    product.efris_excise_duty_code or '',
+                    product.unit_of_measure,
+                    product.min_stock_level,
+                    'Yes' if product.is_active else 'No',
+                    stock.store.name,
+                    float(stock.quantity),
+                    stock.low_stock_threshold,
+                    stock.reorder_quantity,
+                    product.efris_item_code or '',
+                    'Yes' if product.efris_has_piece_unit else 'No',
+                    product.efris_piece_measure_unit or '',
+                    float(product.efris_piece_unit_price) if product.efris_piece_unit_price else '',
+                    product.efris_goods_code_field or '',
+                ]
+
+                for col_idx, value in enumerate(data):
+                    worksheet.write(row_idx, col_idx, value, data_format)
+                row_idx += 1
+        else:
+            # No stock - export with default store
+            default_store = stores.first() if stores.exists() else None
+            if default_store:
+                data = [
+                    product.name,
+                    product.sku,
+                    product.barcode or '',
+                    product.description or '',
+                    product.category.name if product.category else '',
+                    getattr(product.category, 'code', '') if product.category else '',
+                    getattr(product.category, 'description', '') if product.category else '',
+                    getattr(product.category, 'category_type', 'product') if product.category else 'product',
+                    getattr(product.category, 'efris_commodity_category_code', '') if product.category else '',
+                    'Yes' if getattr(product.category, 'efris_auto_sync_enabled', False) else 'No',
+                    product.supplier.name if product.supplier else '',
+                    float(product.selling_price),
+                    float(product.cost_price),
+                    float(product.discount_percentage),
+                    product.tax_rate,
+                    float(product.excise_duty_rate),
+                    product.efris_excise_duty_code or '',
+                    product.unit_of_measure,
+                    product.min_stock_level,
+                    'Yes' if product.is_active else 'No',
+                    default_store.name,
+                    0,
+                    5,
+                    10,
+                    product.efris_item_code or '',
+                    'Yes' if product.efris_has_piece_unit else 'No',
+                    product.efris_piece_measure_unit or '',
+                    float(product.efris_piece_unit_price) if product.efris_piece_unit_price else '',
+                    product.efris_goods_code_field or '',
+                ]
+
+                for col_idx, value in enumerate(data):
+                    worksheet.write(row_idx, col_idx, value, data_format)
+                row_idx += 1
+
+    # Set column widths
+    column_widths = [20, 15, 15, 25, 15, 15, 20, 15, 25, 15, 15, 12, 12, 10, 10, 12, 15, 12, 10, 15, 15, 10, 15, 15, 15,
+                     15, 15, 15, 15]
+    for col, width in enumerate(column_widths):
+        worksheet.set_column(col, col, width)
+
+    # Freeze first row
+    worksheet.freeze_panes(1, 0)
+
+    workbook.close()
+    output.seek(0)
+
+    response = HttpResponse(
+        output.read(),
+        content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    )
+    response['Content-Disposition'] = 'attachment; filename="products_with_stock_export.xlsx"'
+
+    return response
+
 @login_required
 def download_sample_products_only_csv(request):
     """Generate CSV sample file for product-only import (no stock)"""
