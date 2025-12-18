@@ -2,12 +2,159 @@
 {% load static %}
 {% load i18n %}
 
-
-{% block title %}EFRIS Configuration | {{ block.super }}{% endblock %}
+{% block title %}{% trans "EFRIS Configuration" %} | {{ block.super }}{% endblock %}
 
 {% block breadcrumb_items %}
-<li class="breadcrumb-item"><a href="{% url 'efris:dashboard' %}">EFRIS</a></li>
-<li class="breadcrumb-item active">Configuration</li>
+<li class="breadcrumb-item"><a href="{% url 'efris:dashboard' %}">{% trans "EFRIS" %}</a></li>
+<li class="breadcrumb-item active">{% trans "Configuration" %}</li>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+:root {
+    --efris-green: #198754;
+    --efris-red: #dc3545;
+    --efris-yellow: #ffc107;
+    --efris-blue: #0d6efd;
+}
+
+[data-bs-theme="dark"] {
+    --efris-green: #20c997;
+    --efris-red: #ff6b6b;
+    --efris-yellow: #ffd43b;
+    --efris-blue: #339af0;
+}
+
+.certificate-preview {
+    font-family: 'Courier New', monospace;
+    font-size: 0.85rem;
+    max-height: 200px;
+    overflow-y: auto;
+}
+
+.key-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.status-badge {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    display: inline-block;
+}
+
+.status-valid { background-color: var(--efris-green); }
+.status-warning { background-color: var(--efris-yellow); }
+.status-invalid { background-color: var(--efris-red); }
+.status-unknown { background-color: #6c757d; }
+
+.config-section {
+    border-left: 3px solid var(--efris-blue);
+    padding-left: 1rem;
+    margin-bottom: 2rem;
+}
+
+.danger-zone {
+    border-left: 3px solid var(--efris-red);
+    background-color: rgba(220, 53, 69, 0.05);
+}
+
+[data-bs-theme="dark"] .danger-zone {
+    background-color: rgba(255, 107, 107, 0.1);
+}
+
+.form-section-title {
+    border-bottom: 1px solid #dee2e6;
+    padding-bottom: 0.5rem;
+    margin-bottom: 1.5rem;
+}
+
+[data-bs-theme="dark"] .form-section-title {
+    border-bottom-color: #495057;
+}
+
+.code-block {
+    background-color: #f8f9fa;
+    border: 1px solid #dee2e6;
+    border-radius: 0.25rem;
+    padding: 0.75rem;
+    font-family: 'Courier New', monospace;
+    font-size: 0.875rem;
+    white-space: pre-wrap;
+    word-break: break-all;
+    max-height: 150px;
+    overflow-y: auto;
+}
+
+[data-bs-theme="dark"] .code-block {
+    background-color: #2d3338;
+    border-color: #495057;
+    color: #adb5bd;
+}
+
+.tab-pane {
+    padding: 1.5rem 0;
+}
+
+.nav-tabs .nav-link {
+    transition: all 0.2s ease;
+}
+
+.nav-tabs .nav-link:hover:not(.active) {
+    background-color: rgba(13, 110, 253, 0.05);
+}
+
+[data-bs-theme="dark"] .nav-tabs .nav-link:hover:not(.active) {
+    background-color: rgba(51, 154, 240, 0.1);
+}
+
+.list-group-item {
+    transition: background-color 0.2s ease;
+}
+
+.list-group-item:hover {
+    background-color: rgba(0, 0, 0, 0.03);
+}
+
+[data-bs-theme="dark"] .list-group-item:hover {
+    background-color: rgba(255, 255, 255, 0.05);
+}
+
+.upload-area {
+    border: 2px dashed #dee2e6;
+    border-radius: 0.5rem;
+    padding: 2rem;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.upload-area:hover {
+    border-color: var(--efris-blue);
+    background-color: rgba(13, 110, 253, 0.05);
+}
+
+.upload-area.dragover {
+    border-color: var(--efris-green);
+    background-color: rgba(25, 135, 84, 0.05);
+}
+
+[data-bs-theme="dark"] .upload-area {
+    border-color: #495057;
+}
+
+[data-bs-theme="dark"] .upload-area:hover {
+    border-color: var(--efris-blue);
+    background-color: rgba(51, 154, 240, 0.1);
+}
+
+[data-bs-theme="dark"] .upload-area.dragover {
+    border-color: var(--efris-green);
+    background-color: rgba(32, 201, 151, 0.1);
+}
+</style>
 {% endblock %}
 
 {% block content %}
@@ -15,81 +162,419 @@
     <!-- Page Header -->
     <div class="d-flex justify-content-between align-items-center mb-4">
         <div>
-            <h2 class="mb-1">EFRIS Configuration</h2>
-            <p class="text-muted mb-0">Manage your EFRIS integration settings</p>
+            <h2 class="mb-1">{% trans "EFRIS Configuration" %}</h2>
+            <p class="text-muted mb-0">{% trans "Manage your EFRIS integration settings and digital certificates" %}</p>
         </div>
         <div>
             <a href="{% url 'efris:dashboard' %}" class="btn btn-outline-primary">
-                <i class="bi bi-arrow-left me-2"></i>Back to Dashboard
+                <i class="bi bi-arrow-left me-2"></i>{% trans "Back to Dashboard" %}
             </a>
         </div>
     </div>
 
+    <!-- Configuration Status Alert -->
+    {% if config and config.is_configured %}
+    <div class="alert alert-success alert-dismissible fade show" role="alert">
+        <i class="bi bi-check-circle-fill me-2"></i>
+        <strong>{% trans "Configuration Complete" %}</strong> - {% trans "EFRIS is properly configured and ready to use." %}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+    {% elif config %}
+    <div class="alert alert-warning alert-dismissible fade show" role="alert">
+        <i class="bi bi-exclamation-triangle-fill me-2"></i>
+        <strong>{% trans "Incomplete Configuration" %}</strong> - {% trans "Please complete all required settings below." %}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    </div>
+    {% endif %}
+
     <div class="row">
-        <!-- Configuration Form -->
+        <!-- Configuration Tabs -->
         <div class="col-lg-8">
             <div class="card">
                 <div class="card-header">
-                    <h5 class="mb-0"><i class="bi bi-gear me-2"></i>Configuration Settings</h5>
+                    <ul class="nav nav-tabs card-header-tabs" id="configTabs" role="tablist">
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link active" id="basic-tab" data-bs-toggle="tab" data-bs-target="#basic" type="button" role="tab">
+                                <i class="bi bi-gear me-2"></i>{% trans "Basic Settings" %}
+                            </button>
+                        </li>
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link" id="certificates-tab" data-bs-toggle="tab" data-bs-target="#certificates" type="button" role="tab">
+                                <i class="bi bi-key me-2"></i>{% trans "Certificates & Keys" %}
+                            </button>
+                        </li>
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link" id="advanced-tab" data-bs-toggle="tab" data-bs-target="#advanced" type="button" role="tab">
+                                <i class="bi bi-sliders me-2"></i>{% trans "Advanced" %}
+                            </button>
+                        </li>
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link" id="status-tab" data-bs-toggle="tab" data-bs-target="#status" type="button" role="tab">
+                                <i class="bi bi-graph-up me-2"></i>{% trans "Status" %}
+                            </button>
+                        </li>
+                    </ul>
                 </div>
                 <div class="card-body">
-                    <form method="post" id="configForm">
+                    <form method="post" id="configForm" enctype="multipart/form-data">
                         {% csrf_token %}
                         <input type="hidden" name="action" value="save_config">
 
-                        <div class="mb-3">
-                            <label for="device_number" class="form-label">Device Number <span class="text-danger">*</span></label>
-                            <input type="text" class="form-control" id="device_number" name="device_number"
-                                   value="{{ config.device_number|default:'' }}" required>
-                            <small class="form-text text-muted">Your EFRIS assigned device number</small>
-                        </div>
+                        <div class="tab-content" id="configTabsContent">
+                            <!-- Basic Settings Tab -->
+                            <div class="tab-pane fade show active" id="basic" role="tabpanel">
+                                <div class="config-section">
+                                    <h5 class="form-section-title">{% trans "Environment Settings" %}</h5>
 
-                        <div class="mb-3">
-                            <label for="api_url" class="form-label">API URL <span class="text-danger">*</span></label>
-                            <input type="url" class="form-control" id="api_url" name="api_url"
-                                   value="{{ config.api_url|default:'https://efris-api.ura.go.ug' }}" required>
-                            <small class="form-text text-muted">EFRIS API endpoint URL</small>
-                        </div>
+                                    <div class="row mb-3">
+                                        <div class="col-md-6">
+                                            <label for="environment" class="form-label">{% trans "Environment" %} <span class="text-danger">*</span></label>
+                                            <select class="form-select" id="environment" name="environment" required>
+                                                {% for value, label in ENVIRONMENT_CHOICES %}
+                                                <option value="{{ value }}"
+                                                    {% if config.environment == value or not config and value == 'sandbox' %}selected{% endif %}>
+                                                    {{ label }}
+                                                </option>
+                                                {% endfor %}
+                                            </select>
+                                            <small class="form-text text-muted">{% trans "Select sandbox for testing or production for live environment" %}</small>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <label for="mode" class="form-label">{% trans "Integration Mode" %} <span class="text-danger">*</span></label>
+                                            <select class="form-select" id="mode" name="mode" required>
+                                                {% for value, label in MODE_CHOICES %}
+                                                <option value="{{ value }}"
+                                                    {% if config.mode == value or not config and value == 'online' %}selected{% endif %}>
+                                                    {{ label }}
+                                                </option>
+                                                {% endfor %}
+                                            </select>
+                                            <small class="form-text text-muted">{% trans "Online mode requires internet connection, offline mode works locally" %}</small>
+                                        </div>
+                                    </div>
 
-                        <div class="mb-3">
-                            <div class="form-check form-switch">
-                                <input class="form-check-input" type="checkbox" id="is_active" name="is_active"
-                                       {% if config.is_active or not config %}checked{% endif %}>
-                                <label class="form-check-label" for="is_active">
-                                    Enable EFRIS Integration
-                                </label>
+                                    <h5 class="form-section-title mt-4">{% trans "API Configuration" %}</h5>
+
+                                    <div class="mb-3">
+                                        <label for="api_base_url" class="form-label">{% trans "API Base URL" %}</label>
+                                        <input type="url" class="form-control" id="api_base_url" name="api_base_url"
+                                               value="{{ config.api_base_url|default:'' }}">
+                                        <small class="form-text text-muted">{% trans "Leave empty to use default URLs based on environment" %}</small>
+                                        <div class="form-text">
+                                            <strong>{% trans "Default URLs:" %}</strong><br>
+                                            {% trans "Sandbox:" %} https://efristest.ura.go.ug/efrisws/ws/taapp/getInformation<br>
+                                            {% trans "Production:" %} https://efrisws.ura.go.ug/ws/taapp/getInformation
+                                        </div>
+                                    </div>
+
+                                    <h5 class="form-section-title mt-4">{% trans "Device Information" %}</h5>
+
+                                    <div class="row mb-3">
+                                        <div class="col-md-6">
+                                            <label for="device_number" class="form-label">{% trans "Device Number" %} <span class="text-danger">*</span></label>
+                                            <input type="text" class="form-control" id="device_number" name="device_number"
+                                                   value="{{ config.device_number|default:'1026925503_01' }}" required>
+                                            <small class="form-text text-muted">{% trans "Your EFRIS assigned device number" %}</small>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <label for="device_mac" class="form-label">{% trans "Device MAC Address" %}</label>
+                                            <input type="text" class="form-control" id="device_mac" name="device_mac"
+                                                   value="{{ config.device_mac|default:'FFFFFFFFFFFF' }}">
+                                            <small class="form-text text-muted">{% trans "Default is FFFFFFFFFFFFF" %}</small>
+                                        </div>
+                                    </div>
+
+                                    <div class="row mb-3">
+                                        <div class="col-md-6">
+                                            <label for="app_id" class="form-label">{% trans "Application ID" %}</label>
+                                            <input type="text" class="form-control" id="app_id" name="app_id"
+                                                   value="{{ config.app_id|default:'AP04' }}">
+                                        </div>
+                                        <div class="col-md-6">
+                                            <label for="version" class="form-label">{% trans "Version" %}</label>
+                                            <input type="text" class="form-control" id="version" name="version"
+                                                   value="{{ config.version|default:'1.1.20191201' }}">
+                                        </div>
+                                    </div>
+
+                                    <div class="form-check form-switch mb-3">
+                                        <input class="form-check-input" type="checkbox" id="is_active" name="is_active"
+                                               {% if config.is_active or not config %}checked{% endif %}>
+                                        <label class="form-check-label" for="is_active">
+                                            {% trans "Enable EFRIS Integration" %}
+                                        </label>
+                                        <small class="form-text text-muted d-block">{% trans "Toggle to enable or disable EFRIS features" %}</small>
+                                    </div>
+                                </div>
                             </div>
-                            <small class="form-text text-muted">Toggle to enable or disable EFRIS features</small>
-                        </div>
 
-                        <div class="d-flex gap-2">
-                            <button type="submit" class="btn btn-primary">
-                                <i class="bi bi-save me-2"></i>Save Configuration
-                            </button>
-                            <button type="button" class="btn btn-outline-secondary" id="testConnectionBtn">
-                                <i class="bi bi-wifi me-2"></i>Test Connection
-                            </button>
+                            <!-- Certificates & Keys Tab -->
+                            <div class="tab-pane fade" id="certificates" role="tabpanel">
+                                <div class="config-section">
+                                    <h5 class="form-section-title">{% trans "Digital Certificates & Keys" %}</h5>
+
+                                    <!-- Certificate Upload Area -->
+                                    <div class="mb-4">
+                                        <div class="upload-area" id="uploadArea">
+                                            <i class="bi bi-cloud-arrow-up fs-1 text-muted mb-3"></i>
+                                            <h5>{% trans "Drag & Drop Certificate/Key Files Here" %}</h5>
+                                            <p class="text-muted mb-3">{% trans "or click to browse files" %}</p>
+                                            <input type="file" id="certificate_file" name="certificate_file" accept=".pem,.key,.crt,.cer,.pfx,.p12,.txt" style="display: none;">
+                                            <button type="button" class="btn btn-outline-primary" onclick="document.getElementById('certificate_file').click()">
+                                                <i class="bi bi-folder me-2"></i>{% trans "Browse Files" %}
+                                            </button>
+                                            <div id="fileInfo" class="mt-2"></div>
+                                        </div>
+                                    </div>
+
+                                    <!-- Private Key -->
+                                    <div class="mb-4">
+                                        <label for="private_key" class="form-label">{% trans "Private Key" %}</label>
+                                        <textarea class="form-control certificate-preview" id="private_key" name="private_key"
+                                                  rows="6" placeholder="-----BEGIN PRIVATE KEY-----&#10;Your private key here...&#10;-----END PRIVATE KEY-----">{{ config.private_key|default:'' }}</textarea>
+                                        <small class="form-text text-muted">{% trans "RSA Private Key in PEM format (PKCS#1 or PKCS#8)" %}</small>
+                                    </div>
+
+                                    <!-- Public Certificate -->
+                                    <div class="mb-4">
+                                        <label for="public_certificate" class="form-label">{% trans "Public Certificate" %}</label>
+                                        <textarea class="form-control certificate-preview" id="public_certificate" name="public_certificate"
+                                                  rows="6" placeholder="-----BEGIN CERTIFICATE-----&#10;Your certificate here...&#10;-----END CERTIFICATE-----">{{ config.public_certificate|default:'' }}</textarea>
+                                        <small class="form-text text-muted">{% trans "X.509 Public Certificate or Public Key in PEM format" %}</small>
+                                    </div>
+
+                                    <!-- Key Password -->
+                                    <div class="mb-4">
+                                        <label for="key_password" class="form-label">{% trans "Key Password (Optional)" %}</label>
+                                        <div class="input-group">
+                                            <input type="password" class="form-control" id="key_password" name="key_password"
+                                                   value="{{ config.key_password|default:'' }}">
+                                            <button class="btn btn-outline-secondary" type="button" id="togglePassword">
+                                                <i class="bi bi-eye"></i>
+                                            </button>
+                                        </div>
+                                        <small class="form-text text-muted">{% trans "Password for encrypted private key or PKCS#12 file" %}</small>
+                                    </div>
+
+                                    <!-- Key Validation Buttons -->
+                                    <div class="d-flex gap-2 mt-4">
+                                        <button type="button" class="btn btn-outline-success" onclick="validateKeys()">
+                                            <i class="bi bi-shield-check me-2"></i>{% trans "Validate Keys" %}
+                                        </button>
+                                        <button type="button" class="btn btn-outline-info" onclick="checkCompatibility()">
+                                            <i class="bi bi-link me-2"></i>{% trans "Check Compatibility" %}
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Advanced Tab -->
+                            <div class="tab-pane fade" id="advanced" role="tabpanel">
+                                <div class="config-section">
+                                    <h5 class="form-section-title">{% trans "Connection Settings" %}</h5>
+
+                                    <div class="row mb-4">
+                                        <div class="col-md-6">
+                                            <label for="timeout_seconds" class="form-label">{% trans "Timeout (seconds)" %}</label>
+                                            <input type="number" class="form-control" id="timeout_seconds" name="timeout_seconds"
+                                                   value="{{ config.timeout_seconds|default:'30' }}" min="10" max="120">
+                                            <small class="form-text text-muted">{% trans "API request timeout in seconds" %}</small>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <label for="max_retry_attempts" class="form-label">{% trans "Max Retry Attempts" %}</label>
+                                            <input type="number" class="form-control" id="max_retry_attempts" name="max_retry_attempts"
+                                                   value="{{ config.max_retry_attempts|default:'3' }}" min="1" max="10">
+                                            <small class="form-text text-muted">{% trans "Maximum number of retry attempts for failed requests" %}</small>
+                                        </div>
+                                    </div>
+
+                                    <h5 class="form-section-title">{% trans "Sync Settings" %}</h5>
+
+                                    <div class="row mb-3">
+                                        <div class="col-md-6">
+                                            <div class="form-check form-switch mb-3">
+                                                <input class="form-check-input" type="checkbox" id="auto_sync_enabled" name="auto_sync_enabled"
+                                                       {% if config.auto_sync_enabled or not config %}checked{% endif %}>
+                                                <label class="form-check-label" for="auto_sync_enabled">
+                                                    {% trans "Enable Auto Sync" %}
+                                                </label>
+                                            </div>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <div class="form-check form-switch mb-3">
+                                                <input class="form-check-input" type="checkbox" id="auto_fiscalize" name="auto_fiscalize"
+                                                       {% if config.auto_fiscalize or not config %}checked{% endif %}>
+                                                <label class="form-check-label" for="auto_fiscalize">
+                                                    {% trans "Auto Fiscalize" %}
+                                                </label>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div class="mb-4">
+                                        <label for="sync_interval_minutes" class="form-label">{% trans "Sync Interval (minutes)" %}</label>
+                                        <input type="number" class="form-control" id="sync_interval_minutes" name="sync_interval_minutes"
+                                               value="{{ config.sync_interval_minutes|default:'60' }}" min="5" max="1440">
+                                        <small class="form-text text-muted">{% trans "How often to sync with EFRIS (in minutes)" %}</small>
+                                    </div>
+
+                                    <!-- Danger Zone -->
+                                    <div class="danger-zone p-3 mt-5">
+                                        <h6 class="text-danger mb-3"><i class="bi bi-exclamation-triangle-fill me-2"></i>{% trans "Danger Zone" %}</h6>
+
+                                        <div class="d-flex gap-2">
+                                            <button type="button" class="btn btn-outline-danger" onclick="resetConfiguration()">
+                                                <i class="bi bi-arrow-clockwise me-2"></i>{% trans "Reset to Defaults" %}
+                                            </button>
+                                        </div>
+                                        <small class="form-text text-muted">{% trans "This will reset all settings to default values" %}</small>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Status Tab -->
+                            <div class="tab-pane fade" id="status" role="tabpanel">
+                                <div class="config-section">
+                                    <h5 class="form-section-title">{% trans "Configuration Status" %}</h5>
+
+                                    <div class="row mb-4">
+                                        <div class="col-md-6">
+                                            <div class="card bg-light h-100">
+                                                <div class="card-body">
+                                                    <h6 class="card-title">{% trans "Overall Status" %}</h6>
+                                                    <div class="d-flex align-items-center mb-3">
+                                                        <div class="status-badge {% if config_status.is_configured %}status-valid{% else %}status-invalid{% endif %} me-2"></div>
+                                                        <span class="fw-bold">
+                                                            {% if config_status.is_configured %}
+                                                            {% trans "Fully Configured" %}
+                                                            {% else %}
+                                                            {% trans "Not Configured" %}
+                                                            {% endif %}
+                                                        </span>
+                                                    </div>
+                                                    <p class="card-text small text-muted mb-0">
+                                                        {% if config_status.is_configured %}
+                                                        {% trans "All required settings are properly configured." %}
+                                                        {% else %}
+                                                        {% trans "Some required settings are missing or incomplete." %}
+                                                        {% endif %}
+                                                    </p>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <div class="card bg-light h-100">
+                                                <div class="card-body">
+                                                    <h6 class="card-title">{% trans "Certificate Status" %}</h6>
+                                                    <div class="d-flex align-items-center mb-3">
+                                                        <div class="status-badge {% if config_status.is_certificate_valid %}status-valid{% else %}status-invalid{% endif %} me-2"></div>
+                                                        <span class="fw-bold">
+                                                            {% if config_status.is_certificate_valid %}
+                                                            {% trans "Valid" %}
+                                                            {% else %}
+                                                            {% trans "Invalid/Expired" %}
+                                                            {% endif %}
+                                                        </span>
+                                                    </div>
+                                                    {% if config_status.days_until_expiry %}
+                                                    <p class="card-text small text-muted mb-0">
+                                                        {% trans "Expires in" %} {{ config_status.days_until_expiry }} {% trans "days" %}
+                                                    </p>
+                                                    {% else %}
+                                                    <p class="card-text small text-muted mb-0">
+                                                        {% trans "No expiration date set" %}
+                                                    </p>
+                                                    {% endif %}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <h5 class="form-section-title mt-4">{% trans "Key Information" %}</h5>
+
+                                    <div class="row">
+                                        <div class="col-md-6">
+                                            <div class="mb-3">
+                                                <label class="form-label">{% trans "Certificate Type" %}</label>
+                                                <div class="code-block">
+                                                    {{ config_status.certificate_type|default:"none"|upper }}
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <div class="mb-3">
+                                                <label class="form-label">{% trans "Private Key Type" %}</label>
+                                                <div class="code-block">
+                                                    {{ config_status.private_key_type|default:"none"|upper }}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <h5 class="form-section-title mt-4">{% trans "Last Connection Test" %}</h5>
+
+                                    <div class="row">
+                                        <div class="col-md-6">
+                                            <div class="mb-3">
+                                                <label class="form-label">{% trans "Last Test" %}</label>
+                                                <div class="form-control-plaintext">
+                                                    {% if config.last_test_connection %}
+                                                    {{ config.last_test_connection|date:"Y-m-d H:i:s" }}
+                                                    {% else %}
+                                                    <span class="text-muted">{% trans "Never" %}</span>
+                                                    {% endif %}
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <div class="mb-3">
+                                                <label class="form-label">{% trans "Status" %}</label>
+                                                <div>
+                                                    {% if config.test_connection_success %}
+                                                    <span class="badge bg-success">{% trans "Success" %}</span>
+                                                    {% elif config.last_test_connection %}
+                                                    <span class="badge bg-danger">{% trans "Failed" %}</span>
+                                                    {% else %}
+                                                    <span class="badge bg-secondary">{% trans "Never Tested" %}</span>
+                                                    {% endif %}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <!-- Test Connection Button -->
+                                    <div class="d-flex gap-2 mt-4">
+                                        <button type="button" class="btn btn-primary" id="testConnectionBtn">
+                                            <i class="bi bi-wifi me-2"></i>{% trans "Test Connection" %}
+                                        </button>
+                                        <button type="submit" class="btn btn-success">
+                                            <i class="bi bi-save me-2"></i>{% trans "Save Configuration" %}
+                                        </button>
+                                    </div>
+
+                                    <!-- Connection Test Results -->
+                                    <div class="card mt-4" id="testResultCard" style="display: none;">
+                                        <div class="card-header">
+                                            <h6 class="mb-0"><i class="bi bi-activity me-2"></i>{% trans "Connection Test Results" %}</h6>
+                                        </div>
+                                        <div class="card-body" id="testResultBody">
+                                            <!-- Results will be inserted here -->
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                     </form>
                 </div>
             </div>
-
-            <!-- Connection Test Results -->
-            <div class="card mt-4" id="testResultCard" style="display: none;">
-                <div class="card-header">
-                    <h5 class="mb-0"><i class="bi bi-activity me-2"></i>Connection Test Results</h5>
-                </div>
-                <div class="card-body" id="testResultBody">
-                    <!-- Results will be inserted here -->
-                </div>
-            </div>
         </div>
 
-        <!-- Setup Checklist -->
+        <!-- Sidebar - Setup Checklist & Quick Actions -->
         <div class="col-lg-4">
-            <div class="card">
+            <!-- Setup Checklist -->
+            <div class="card mb-4">
                 <div class="card-header">
-                    <h5 class="mb-0"><i class="bi bi-list-check me-2"></i>Setup Checklist</h5>
+                    <h5 class="mb-0"><i class="bi bi-list-check me-2"></i>{% trans "Setup Checklist" %}</h5>
                 </div>
                 <div class="card-body">
                     <div class="list-group list-group-flush">
@@ -114,28 +599,66 @@
                 </div>
             </div>
 
-            <!-- Quick Stats -->
-            {% if config %}
-            <div class="card mt-4">
+            <!-- Quick Actions -->
+            <div class="card mb-4">
                 <div class="card-header">
-                    <h5 class="mb-0"><i class="bi bi-info-circle me-2"></i>Configuration Info</h5>
+                    <h5 class="mb-0"><i class="bi bi-lightning-charge me-2"></i>{% trans "Quick Actions" %}</h5>
+                </div>
+                <div class="card-body">
+                    <div class="d-grid gap-2">
+                        <button type="button" class="btn btn-outline-primary" onclick="validateKeys()">
+                            <i class="bi bi-shield-check me-2"></i>{% trans "Validate Keys" %}
+                        </button>
+                        <button type="button" class="btn btn-outline-info" id="testConnectionBtn2">
+                            <i class="bi bi-wifi me-2"></i>{% trans "Test Connection" %}
+                        </button>
+                        <button type="button" class="btn btn-outline-warning" onclick="inspectKeys()">
+                            <i class="bi bi-search me-2"></i>{% trans "Inspect Keys" %}
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Configuration Info -->
+            {% if config %}
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="bi bi-info-circle me-2"></i>{% trans "Configuration Info" %}</h5>
                 </div>
                 <div class="card-body">
                     <dl class="row mb-0">
-                        <dt class="col-sm-6">Status:</dt>
+                        <dt class="col-sm-6">{% trans "Status:" %}</dt>
                         <dd class="col-sm-6">
                             {% if config.is_active %}
-                            <span class="badge bg-success">Active</span>
+                            <span class="badge bg-success">{% trans "Active" %}</span>
                             {% else %}
-                            <span class="badge bg-secondary">Inactive</span>
+                            <span class="badge bg-secondary">{% trans "Inactive" %}</span>
                             {% endif %}
                         </dd>
 
-                        <dt class="col-sm-6">Created:</dt>
+                        <dt class="col-sm-6">{% trans "Created:" %}</dt>
                         <dd class="col-sm-6">{{ config.created_at|date:"Y-m-d" }}</dd>
 
-                        <dt class="col-sm-6">Last Updated:</dt>
+                        <dt class="col-sm-6">{% trans "Last Updated:" %}</dt>
                         <dd class="col-sm-6">{{ config.updated_at|date:"Y-m-d H:i" }}</dd>
+
+                        <dt class="col-sm-6">{% trans "Initialized:" %}</dt>
+                        <dd class="col-sm-6">
+                            {% if config.is_initialized %}
+                            <span class="badge bg-success">{% trans "Yes" %}</span>
+                            {% else %}
+                            <span class="badge bg-warning">{% trans "No" %}</span>
+                            {% endif %}
+                        </dd>
+
+                        <dt class="col-sm-6">{% trans "Fingerprint:" %}</dt>
+                        <dd class="col-sm-6">
+                            {% if config.certificate_fingerprint %}
+                            <code class="small">{{ config.certificate_fingerprint|slice:":16" }}...</code>
+                            {% else %}
+                            <span class="text-muted">{% trans "Not set" %}</span>
+                            {% endif %}
+                        </dd>
                     </dl>
                 </div>
             </div>
@@ -143,70 +666,249 @@
         </div>
     </div>
 </div>
+{% endblock %}
 
-<style>
-.list-group-item {
-    transition: background-color 0.2s ease;
-}
-.list-group-item:hover {
-    background-color: var(--bg-secondary);
-}
-</style>
-
+{% block extra_js %}
 <script>
 document.addEventListener('DOMContentLoaded', function() {
-    const testBtn = document.getElementById('testConnectionBtn');
-    const testResultCard = document.getElementById('testResultCard');
-    const testResultBody = document.getElementById('testResultBody');
+    // Toggle password visibility
+    const togglePassword = document.getElementById('togglePassword');
+    const passwordField = document.getElementById('key_password');
 
-    testBtn.addEventListener('click', function() {
-        testBtn.disabled = true;
-        testBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Testing...';
+    if (togglePassword && passwordField) {
+        togglePassword.addEventListener('click', function() {
+            const type = passwordField.getAttribute('type') === 'password' ? 'text' : 'password';
+            passwordField.setAttribute('type', type);
+            this.querySelector('i').className = type === 'password' ? 'bi bi-eye' : 'bi bi-eye-slash';
+        });
+    }
 
-        fetch("{% url 'efris:ajax_test_connection' %}", {
+    // File upload handling
+    const uploadArea = document.getElementById('uploadArea');
+    const fileInput = document.getElementById('certificate_file');
+    const fileInfo = document.getElementById('fileInfo');
+
+    if (uploadArea && fileInput) {
+        // Click to upload
+        uploadArea.addEventListener('click', function(e) {
+            if (e.target !== fileInput) {
+                fileInput.click();
+            }
+        });
+
+        // Drag and drop
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+            uploadArea.addEventListener(eventName, preventDefaults, false);
+        });
+
+        function preventDefaults(e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+
+        ['dragenter', 'dragover'].forEach(eventName => {
+            uploadArea.addEventListener(eventName, highlight, false);
+        });
+
+        ['dragleave', 'drop'].forEach(eventName => {
+            uploadArea.addEventListener(eventName, unhighlight, false);
+        });
+
+        function highlight() {
+            uploadArea.classList.add('dragover');
+        }
+
+        function unhighlight() {
+            uploadArea.classList.remove('dragover');
+        }
+
+        // Handle dropped files
+        uploadArea.addEventListener('drop', handleDrop, false);
+
+        function handleDrop(e) {
+            const dt = e.dataTransfer;
+            const files = dt.files;
+            handleFiles(files);
+        }
+
+        // Handle selected files
+        fileInput.addEventListener('change', function() {
+            handleFiles(this.files);
+        });
+
+        function handleFiles(files) {
+            if (files.length > 0) {
+                const file = files[0];
+                fileInfo.innerHTML = `
+                    <div class="alert alert-info mb-0">
+                        <i class="bi bi-file-earmark-text me-2"></i>
+                        <strong>${file.name}</strong> (${(file.size / 1024).toFixed(2)} KB)
+                    </div>
+                `;
+
+                // Read file content
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    const content = e.target.result;
+                    // Try to determine if it's a certificate or key
+                    if (content.includes('-----BEGIN CERTIFICATE-----')) {
+                        document.getElementById('public_certificate').value = content;
+                    } else if (content.includes('-----BEGIN PRIVATE KEY-----') || content.includes('-----BEGIN RSA PRIVATE KEY-----')) {
+                        document.getElementById('private_key').value = content;
+                    } else if (content.includes('-----BEGIN PUBLIC KEY-----') || content.includes('-----BEGIN RSA PUBLIC KEY-----')) {
+                        document.getElementById('public_certificate').value = content;
+                    } else {
+                        // Try to auto-detect
+                        const lines = content.trim().split('\n');
+                        if (lines.length > 1 && !lines[0].includes('-----BEGIN')) {
+                            // Might be base64 encoded
+                            if (content.length < 2000) {
+                                document.getElementById('private_key').value = content;
+                            } else {
+                                document.getElementById('public_certificate').value = content;
+                            }
+                        }
+                    }
+                };
+                reader.readAsText(file);
+            }
+        }
+    }
+
+    // Test connection function
+    function setupTestConnection(buttonId) {
+        const testBtn = document.getElementById(buttonId);
+        const testResultCard = document.getElementById('testResultCard');
+        const testResultBody = document.getElementById('testResultBody');
+
+        if (testBtn) {
+            testBtn.addEventListener('click', function() {
+                testBtn.disabled = true;
+                testBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>{% trans "Testing..." %}';
+
+                // Create form data
+                const formData = new FormData(document.getElementById('configForm'));
+                formData.set('action', 'test_connection');
+
+                fetch(window.location.href, {
+                    method: 'POST',
+                    body: formData,
+                    headers: {
+                        'X-CSRFToken': window.csrfToken,
+                    }
+                })
+                .then(response => {
+                    if (response.redirected) {
+                        window.location.href = response.url;
+                    }
+                })
+                .catch(error => {
+                    testResultCard.style.display = 'block';
+                    testResultBody.innerHTML = `
+                        <div class="alert alert-danger mb-0">
+                            <i class="bi bi-exclamation-triangle me-2"></i>
+                            <strong>{% trans "Error" %}</strong>
+                            <p class="mb-0 mt-2">${error.message}</p>
+                        </div>
+                    `;
+                    testBtn.disabled = false;
+                    testBtn.innerHTML = '<i class="bi bi-wifi me-2"></i>{% trans "Test Connection" %}';
+                });
+            });
+        }
+    }
+
+    // Set up test connection buttons
+    setupTestConnection('testConnectionBtn');
+    setupTestConnection('testConnectionBtn2');
+
+    // Environment change handler
+    const environmentSelect = document.getElementById('environment');
+    const apiUrlField = document.getElementById('api_base_url');
+
+    if (environmentSelect && apiUrlField) {
+        environmentSelect.addEventListener('change', function() {
+            if (!apiUrlField.value) {
+                if (this.value === 'production') {
+                    apiUrlField.value = 'https://efrisws.ura.go.ug/ws/taapp/getInformation';
+                } else {
+                    apiUrlField.value = 'https://efristest.ura.go.ug/efrisws/ws/taapp/getInformation';
+                }
+            }
+        });
+    }
+});
+
+function validateKeys() {
+    const formData = new FormData(document.getElementById('configForm'));
+    formData.set('action', 'validate_keys');
+
+    fetch(window.location.href, {
+        method: 'POST',
+        body: formData,
+        headers: {
+            'X-CSRFToken': window.csrfToken,
+        }
+    })
+    .then(response => {
+        if (response.redirected) {
+            window.location.href = response.url;
+        }
+    });
+}
+
+function checkCompatibility() {
+    alert('{% trans "Checking key compatibility..." %}');
+    // This would typically make an AJAX call to check key compatibility
+}
+
+function inspectKeys() {
+    const formData = new FormData(document.getElementById('configForm'));
+    formData.set('action', 'inspect_keys');
+
+    fetch(window.location.href, {
+        method: 'POST',
+        body: formData,
+        headers: {
+            'X-CSRFToken': window.csrfToken,
+        }
+    })
+    .then(response => {
+        if (response.redirected) {
+            window.location.href = response.url;
+        }
+    });
+}
+
+function resetConfiguration() {
+    if (confirm('{% trans "Are you sure you want to reset all configuration to defaults? This cannot be undone." %}')) {
+        const formData = new FormData();
+        formData.set('action', 'reset_config');
+        formData.set('csrfmiddlewaretoken', window.csrfToken);
+
+        fetch(window.location.href, {
             method: 'POST',
+            body: formData,
             headers: {
                 'X-CSRFToken': window.csrfToken,
-                'Content-Type': 'application/json'
             }
         })
-        .then(response => response.json())
-        .then(data => {
-            testResultCard.style.display = 'block';
-
-            if (data.success) {
-                testResultBody.innerHTML = `
-                    <div class="alert alert-success mb-0">
-                        <i class="bi bi-check-circle me-2"></i>
-                        <strong>Connection Successful!</strong>
-                        <p class="mb-0 mt-2">${data.message || 'Successfully connected to EFRIS API'}</p>
-                    </div>
-                `;
-            } else {
-                testResultBody.innerHTML = `
-                    <div class="alert alert-danger mb-0">
-                        <i class="bi bi-x-circle me-2"></i>
-                        <strong>Connection Failed</strong>
-                        <p class="mb-0 mt-2">${data.error || 'Unable to connect to EFRIS API'}</p>
-                    </div>
-                `;
+        .then(response => {
+            if (response.redirected) {
+                window.location.href = response.url;
             }
-        })
-        .catch(error => {
-            testResultCard.style.display = 'block';
-            testResultBody.innerHTML = `
-                <div class="alert alert-danger mb-0">
-                    <i class="bi bi-exclamation-triangle me-2"></i>
-                    <strong>Error</strong>
-                    <p class="mb-0 mt-2">${error.message}</p>
-                </div>
-            `;
-        })
-        .finally(() => {
-            testBtn.disabled = false;
-            testBtn.innerHTML = '<i class="bi bi-wifi me-2"></i>Test Connection';
         });
-    });
+    }
+}
+
+// Handle form submission
+document.getElementById('configForm').addEventListener('submit', function(e) {
+    // Show loading state
+    const submitBtn = this.querySelector('button[type="submit"]');
+    if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>{% trans "Saving..." %}';
+    }
 });
 </script>
 {% endblock %}

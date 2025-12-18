@@ -272,7 +272,7 @@ NAVIGATION_ITEMS = [
                 name="Stock Dashboard",
                 url_name="efris:stock_management_dashboard",
                 icon="bi bi-speedometer2",
-                permission="inventory.view_product"
+                permission="inventory.view_stock"
             ),
             NavigationItem(
                 name="All Products",
@@ -483,28 +483,61 @@ NAVIGATION_ITEMS = [
     ),
     NavigationItem(
         name="EFRIS",
-        icon="bi bi-file-earmark-bar-graph",
+        icon="bi bi-receipt",  # Fiscal / invoicing system
         children=[
+            NavigationItem(
+                name="Connect EFRIS",
+                url_name="efris:configuration",
+                icon="bi bi-plug",  # Connection / integration
+                permission="efris.view_efrisconfiguration"
+            ),
+            NavigationItem(
+                name="System Dictionary",
+                url_name="efris:system_dictionary",
+                icon="bi bi-journal-text",  # Reference / dictionary data
+                permission="efris.view_efrissystemdictionary"
+            ),
             NavigationItem(
                 name="Dashboard",
                 url_name="efris:dashboard",
-                icon="bi bi-speedometer2",
-                permission="reports.view_report"
+                icon="bi bi-speedometer2",  # Overview / metrics
+                permission="company.view_company"
             ),
             NavigationItem(
-                name="Efris Products",
+                name="Commodity Categories",
+                url_name="efris:commodity_categories",
+                icon="bi bi-tags",  # Categories / classification
+                permission="company.view_efriscommoditycategory"
+            ),
+            NavigationItem(
+                name="Commodity Updates",
+                url_name="efris:commodity_category_updates",
+                icon="bi bi-arrow-repeat",  # Sync / updates
+                permission="company.view_efriscommoditycategory"
+            ),
+            NavigationItem(
+                name="EFRIS Products",
                 url_name="efris:product_list",
-                icon="bi bi-bookmark",
+                icon="bi bi-box-seam",  # Products / inventory items
+                permission="inventory.add_products"
             ),
             NavigationItem(
-                name="Efris Invoices",
+                name="EFRIS Invoices",
                 url_name="efris:invoice_list",
-                icon="bi bi-plus-circle",
+                icon="bi bi-receipt-cutoff",  # Invoices / receipts
+                permission="invoices.view_invoices"
             ),
             NavigationItem(
-                name="Goods Inquiry",
-                url_name="efris:goods_inquiry",
-                icon="bi bi-calendar-check",
+                name="Stock Management",
+                url_name="efris:stock_management_dashboard",
+                icon="bi bi-clipboard-data",  # Stock levels / management
+                permission="inventory.view_stock"
+            ),
+            NavigationItem(
+                name="ZReports",
+                url_name="efris:zreport_list",
+                icon="bi bi-bookmark",
+                permission="reports.view_savedreport"
             ),
         ]
     ),

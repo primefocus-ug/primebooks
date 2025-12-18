@@ -349,21 +349,6 @@ class EFRISConfiguration(models.Model):
 
     def _process_public_key(self, public_key):
         """Common processing for public keys"""
-        # Generate a fingerprint from the public key
-        # public_key_der = public_key.public_bytes(
-        #     encoding=serialization.Encoding.DER,
-        #     format=serialization.PublicFormat.SubjectPublicKeyInfo
-        # )
-        # fingerprint = hashlib.sha256(public_key_der).hexdigest().upper()
-        # self.certificate_fingerprint = fingerprint
-        #
-        # # Since this is just a public key (no certificate), we can't get expiration date
-        # self.certificate_expires_at = None
-        #
-        # print(f"Successfully loaded public key")
-        # print(f"Key type: {type(public_key).__name__}")
-        # print(f"Key size: {public_key.key_size} bits")
-        # print(f"Public key fingerprint: {fingerprint}")
 
         return True
 

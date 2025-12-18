@@ -1,3 +1,5 @@
+import base64
+from django.core.exceptions import ValidationError
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
@@ -242,38 +244,165 @@ def efris_configuration(request):
         action = request.POST.get('action')
 
         if action == 'save_config':
-            # Save configuration
-            if config:
-                config.device_number = request.POST.get('device_number')
-                config.api_url = request.POST.get('api_url')
-                config.is_active = request.POST.get('is_active') == 'on'
-                config.save()
-            else:
-                config = EFRISConfiguration.objects.create(
-                    company=company,
-                    device_number=request.POST.get('device_number'),
-                    api_url=request.POST.get('api_url'),
-                    is_active=request.POST.get('is_active') == 'on'
-                )
+            # Create config if it doesn't exist
+            if not config:
+                config = EFRISConfiguration.objects.create(company=company)
 
-            messages.success(request, 'Configuration saved successfully')
+            # Save basic configuration
+            config.device_number = request.POST.get('device_number')
+            config.api_base_url = request.POST.get('api_base_url', '').strip()
+            config.is_active = request.POST.get('is_active') == 'on'
+
+            # Environment and mode
+            config.environment = request.POST.get('environment', 'sandbox')
+            config.mode = request.POST.get('mode', 'online')
+
+            # Device information
+            config.device_mac = request.POST.get('device_mac', 'FFFFFFFFFFFF')
+            config.app_id = request.POST.get('app_id', 'AP04')
+            config.version = request.POST.get('version', '1.1.20191201')
+
+            # Connection settings
+            try:
+                config.timeout_seconds = int(request.POST.get('timeout_seconds', 30))
+                config.max_retry_attempts = int(request.POST.get('max_retry_attempts', 3))
+            except ValueError:
+                pass
+
+            # Sync settings
+            config.auto_sync_enabled = request.POST.get('auto_sync_enabled') == 'on'
+            config.auto_fiscalize = request.POST.get('auto_fiscalize') == 'on'
+            try:
+                config.sync_interval_minutes = int(request.POST.get('sync_interval_minutes', 60))
+            except ValueError:
+                pass
+
+            # Digital keys and certificates - only update if provided
+            if request.POST.get('private_key'):
+                config.private_key = request.POST.get('private_key')
+            if request.POST.get('public_certificate'):
+                config.public_certificate = request.POST.get('public_certificate')
+            if request.POST.get('key_password'):
+                config.key_password = request.POST.get('key_password')
+
+            # Validate and save
+            try:
+                config.clean()  # This will run the validation methods
+                config.save()
+                messages.success(request, 'Configuration saved successfully')
+            except ValidationError as e:
+                for field, error in e.message_dict.items():
+                    if field == '__all__':
+                        messages.error(request, f'Validation error: {error[0]}')
+                    else:
+                        messages.error(request, f'{field}: {error[0]}')
+            except Exception as e:
+                messages.error(request, f'Error saving configuration: {str(e)}')
+
             return redirect('efris:configuration')
 
         elif action == 'test_connection':
             result = test_efris_connection(company)
             if result['success']:
                 messages.success(request, 'Connection test successful!')
+                if config:
+                    config.last_test_connection = timezone.now()
+                    config.test_connection_success = True
+                    config.save(update_fields=['last_test_connection', 'test_connection_success'])
             else:
                 messages.error(request, f"Connection test failed: {result.get('error')}")
+                if config:
+                    config.last_test_connection = timezone.now()
+                    config.test_connection_success = False
+                    config.save(update_fields=['last_test_connection', 'test_connection_success'])
+            return redirect('efris:configuration')
+
+        elif action == 'validate_keys':
+            # Validate keys and certificates
+            if not config:
+                messages.error(request, 'No configuration found. Please save configuration first.')
+            else:
+                try:
+                    config.inspect_all_keys()  # This will print debug info
+                    messages.success(request, 'Keys validated successfully. Check console for details.')
+                except ValidationError as e:
+                    messages.error(request, f'Key validation failed: {str(e)}')
+                except Exception as e:
+                    messages.error(request, f'Error validating keys: {str(e)}')
+            return redirect('efris:configuration')
+
+        elif action == 'upload_certificate':
+            # Handle certificate upload via file
+            if request.FILES.get('certificate_file'):
+                certificate_file = request.FILES['certificate_file']
+                try:
+                    certificate_data = certificate_file.read().decode('utf-8')
+
+                    if not config:
+                        config = EFRISConfiguration.objects.create(company=company)
+
+                    # Determine if it's a certificate or key based on content
+                    content = certificate_data.strip()
+                    if '-----BEGIN CERTIFICATE-----' in content:
+                        config.public_certificate = content
+                    elif '-----BEGIN PRIVATE KEY-----' in content or '-----BEGIN RSA PRIVATE KEY-----' in content:
+                        config.private_key = content
+                    elif '-----BEGIN PUBLIC KEY-----' in content or '-----BEGIN RSA PUBLIC KEY-----' in content:
+                        config.public_certificate = content
+                    else:
+                        # Try to decode as base64
+                        try:
+                            # Clean and validate
+                            clean_data = ''.join(content.split())
+                            missing_padding = len(clean_data) % 4
+                            if missing_padding:
+                                clean_data += '=' * (4 - missing_padding)
+
+                            decoded = base64.b64decode(clean_data)
+                            # If we can decode it, store as-is
+                            config.public_certificate = content
+                        except:
+                            messages.error(request, 'Could not identify the certificate/key format.')
+                            return redirect('efris:configuration')
+
+                    config.save()
+                    messages.success(request, 'Certificate uploaded successfully')
+                except Exception as e:
+                    messages.error(request, f'Error uploading certificate: {str(e)}')
+            else:
+                messages.error(request, 'No certificate file provided')
+            return redirect('efris:configuration')
+
+        elif action == 'reset_config':
+            # Reset configuration to defaults
+            if config:
+                config.environment = 'sandbox'
+                config.mode = 'online'
+                config.is_active = False
+                config.is_initialized = False
+                config.save()
+                messages.success(request, 'Configuration reset to defaults')
             return redirect('efris:configuration')
 
     # Setup wizard
     wizard = EFRISConfigurationWizard(company)
     checklist = wizard.generate_setup_checklist()
 
+    # Get current configuration status
+    config_status = {
+        'is_configured': config.is_configured if config else False,
+        'is_certificate_valid': config.is_certificate_valid if config else False,
+        'certificate_type': config.certificate_type if config else 'none',
+        'private_key_type': config.private_key_type if config else 'none',
+        'days_until_expiry': config.days_until_certificate_expires if config else None,
+    }
+
     context = {
         'config': config,
         'checklist': checklist,
+        'config_status': config_status,
+        'ENVIRONMENT_CHOICES': EFRISConfiguration.ENVIRONMENT_CHOICES,
+        'MODE_CHOICES': EFRISConfiguration.MODE_CHOICES,
     }
 
     return render(request, 'efris/configuration.html', context)

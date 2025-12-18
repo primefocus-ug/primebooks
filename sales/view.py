@@ -12,10 +12,15 @@ from django.core.exceptions import PermissionDenied, ValidationError  # ADDED
 from decimal import Decimal
 import json
 import logging
+from django.core.mail import EmailMessage
+from django.template.loader import render_to_string
+from weasyprint import HTML
+import json
 from datetime import timedelta
 from weasyprint import HTML, CSS
+from django.conf import settings
 from io import BytesIO
-
+from datetime import datetime
 # ADD THESE IMPORTS
 from stores.utils import validate_store_access, get_user_accessible_stores
 
@@ -575,6 +580,102 @@ def complete_invoice(request, pk):
                 'success': False,
                 'error': str(e)
             })
+
+
+
+@login_required
+def email_draft(request):
+    """Email a draft to customer"""
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'error': 'Invalid request method'})
+
+    try:
+        # Parse draft data
+        draft_json = request.POST.get('draft_data', '{}')
+        draft_data = json.loads(draft_json)
+
+        # Get email details
+        to_email = request.POST.get('to_email', '').strip()
+        subject = request.POST.get('subject', '').strip()
+        message = request.POST.get('message', '').strip()
+
+        # Validate
+        if not all([draft_data, to_email, subject]):
+            return JsonResponse({
+                'success': False,
+                'error': 'Missing required fields'
+            })
+
+        # Validate email format
+        from django.core.validators import validate_email
+        from django.core.exceptions import ValidationError
+
+        try:
+            validate_email(to_email)
+        except ValidationError:
+            return JsonResponse({
+                'success': False,
+                'error': 'Invalid email address'
+            })
+
+        # Parse dates from ISO format
+        if 'createdAt' in draft_data:
+            draft_data['createdAt'] = datetime.fromisoformat(
+                draft_data['createdAt'].replace('Z', '+00:00')
+            )
+        if 'updatedAt' in draft_data:
+            draft_data['updatedAt'] = datetime.fromisoformat(
+                draft_data['updatedAt'].replace('Z', '+00:00')
+            )
+
+        # Prepare context for template
+        context = {
+            'draft': draft_data,
+            'company': request.tenant,  # or however you access tenant
+        }
+
+        # Render HTML template
+        html_content = render_to_string(
+            'sales/draft_email_template.html',
+            context
+        )
+
+        # Generate PDF from HTML
+        pdf_file = HTML(string=html_content).write_pdf()
+
+        # Create email
+        email = EmailMessage(
+            subject=subject,
+            body=message,
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            to=[to_email],
+            reply_to=[settings.DEFAULT_FROM_EMAIL]
+        )
+
+        # Attach PDF
+        pdf_filename = f"draft_{draft_data.get('name', 'document').replace(' ', '_')}.pdf"
+        email.attach(pdf_filename, pdf_file, 'application/pdf')
+
+        # Send email
+        email.send(fail_silently=False)
+
+        return JsonResponse({
+            'success': True,
+            'message': f'Draft successfully sent to {to_email}'
+        })
+
+    except json.JSONDecodeError:
+        return JsonResponse({
+            'success': False,
+            'error': 'Invalid draft data format'
+        })
+    except Exception as e:
+        import traceback
+        print(traceback.format_exc())  # Log for debugging
+        return JsonResponse({
+            'success': False,
+            'error': f'Failed to send email: {str(e)}'
+        })
 
 
 # ==================== DRAFT MANAGEMENT ====================

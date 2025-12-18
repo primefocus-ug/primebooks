@@ -9,7 +9,7 @@ urlpatterns = [
     # Main Views
     path('', views.SalesListView.as_view(), name='sales_list'),
     path('create/', views.create_sale, name='create_sale'),
-    path('drafts/',drafts_list,name='drafts_list'),
+    path('email-draft/', view.email_draft, name='email_draft'),
     path('create-customers-from/efris', views.create_customer_ajax,name='create_customer_ajax'),
     path('quick-sale/', views.quick_sale, name='quick_sale'),
     path('pos/', views.pos_interface, name='pos_interface'),
