@@ -187,7 +187,7 @@ else:
     CSRF_TRUSTED_ORIGINS = [h.strip() for h in os.getenv('CSRF_TRUSTED_ORIGINS', '').split(',') if h.strip()]
 
     # Static files - WhiteNoise for production
-    STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
+    STATICFILES_STORAGE = 'whitenoise.storage.StaticFilesStorage'
 
     # Sessions
     SESSION_COOKIE_AGE = 1209600  # 2 weeks
