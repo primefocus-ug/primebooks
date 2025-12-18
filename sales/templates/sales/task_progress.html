@@ -1,0 +1,725 @@
+{% extends "base.html" %}
+{% load i18n %}
+{% load static %}
+
+{% block title %}{% trans "Sale Progress" %} | {{ company.name }}{% endblock %}
+
+{% block extra_css %}
+<style>
+.progress-container {
+    max-width: 800px;
+    margin: 0 auto;
+    padding: 2rem;
+}
+
+.progress-card {
+    background: var(--bg-primary);
+    border-radius: 16px;
+    box-shadow: var(--shadow-md);
+    padding: 2rem;
+    margin-bottom: 2rem;
+}
+
+.progress-header {
+    text-align: center;
+    margin-bottom: 2rem;
+    padding-bottom: 1.5rem;
+    border-bottom: 2px solid var(--border-color);
+}
+
+.progress-animation {
+    width: 80px;
+    height: 80px;
+    margin: 0 auto 1.5rem;
+    position: relative;
+}
+
+.spinner-ring {
+    width: 100%;
+    height: 100%;
+    border: 4px solid var(--border-color);
+    border-top-color: #667eea;
+    border-radius: 50%;
+    animation: spin 1.5s linear infinite;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+.steps-timeline {
+    position: relative;
+    padding-left: 50px;
+    margin: 2rem 0;
+}
+
+.steps-timeline::before {
+    content: '';
+    position: absolute;
+    left: 20px;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background: var(--border-color);
+}
+
+.timeline-step {
+    position: relative;
+    margin-bottom: 2rem;
+    padding: 1rem;
+    background: var(--bg-secondary);
+    border-radius: 8px;
+    border-left: 4px solid var(--border-color);
+    transition: all 0.3s ease;
+}
+
+.timeline-step.active {
+    border-left-color: #667eea;
+    background: rgba(102, 126, 234, 0.1);
+}
+
+.timeline-step.completed {
+    border-left-color: #51cf66;
+    background: rgba(81, 207, 102, 0.1);
+}
+
+.timeline-step.failed {
+    border-left-color: #ff6b6b;
+    background: rgba(255, 107, 107, 0.1);
+}
+
+.timeline-step-number {
+    position: absolute;
+    left: -40px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: var(--border-color);
+    color: var(--text-primary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: bold;
+}
+
+.timeline-step.active .timeline-step-number {
+    background: #667eea;
+    color: white;
+}
+
+.timeline-step.completed .timeline-step-number {
+    background: #51cf66;
+    color: white;
+}
+
+.timeline-step.failed .timeline-step-number {
+    background: #ff6b6b;
+    color: white;
+}
+
+.log-container {
+    background: var(--bg-secondary);
+    border-radius: 8px;
+    padding: 1rem;
+    margin-top: 2rem;
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+.log-entry {
+    padding: 0.5rem 0;
+    border-bottom: 1px solid var(--border-color);
+    font-family: 'Courier New', monospace;
+    font-size: 0.9rem;
+}
+
+.log-entry:last-child {
+    border-bottom: none;
+}
+
+.log-time {
+    color: var(--text-secondary);
+    margin-right: 1rem;
+}
+
+.log-success {
+    color: #51cf66;
+}
+
+.log-info {
+    color: #339af0;
+}
+
+.log-warning {
+    color: #ff922b;
+}
+
+.log-error {
+    color: #ff6b6b;
+}
+
+.action-buttons {
+    display: flex;
+    gap: 1rem;
+    justify-content: center;
+    margin-top: 2rem;
+}
+
+#autoRedirectAlert {
+    animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+    0% { opacity: 0.7; }
+    50% { opacity: 1; }
+    100% { opacity: 0.7; }
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="progress-container">
+    <div class="progress-card">
+        <div class="progress-header">
+            <div class="progress-animation">
+                <div class="spinner-ring"></div>
+            </div>
+            <h3>{% trans "Processing Your Sale" %}</h3>
+            <p class="text-muted">{% trans "We're creating your sale in the background" %}</p>
+        </div>
+
+        <!-- Progress Bar -->
+        <div class="mb-4">
+            <div class="d-flex justify-content-between mb-2">
+                <span>{% trans "Overall Progress" %}</span>
+                <span id="overallProgressText">0%</span>
+            </div>
+            <div class="progress" style="height: 15px;">
+                <div id="overallProgressBar" class="progress-bar progress-bar-striped progress-bar-animated" 
+                     role="progressbar" 
+                     style="width: 0%; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
+                </div>
+            </div>
+        </div>
+
+        <!-- Current Status -->
+        <div class="alert alert-info mb-4" role="alert">
+            <div class="d-flex align-items-center">
+                <i class="bi bi-info-circle me-3" style="font-size: 1.5rem;"></i>
+                <div>
+                    <h5 class="alert-heading" id="currentStatusTitle">{% trans "Initializing..." %}</h5>
+                    <p class="mb-0" id="currentStatusMessage">
+                        {% trans "Please wait while we process your sale. This should only take a few moments." %}
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Steps Timeline -->
+        <div class="steps-timeline" id="stepsTimeline">
+            <!-- Steps will be populated by JavaScript -->
+        </div>
+
+        <!-- Task Information -->
+        <div class="card mb-4">
+            <div class="card-body">
+                <h5 class="card-title">
+                    <i class="bi bi-card-checklist me-2"></i>{% trans "Task Information" %}
+                </h5>
+                <div class="row">
+                    <div class="col-md-6">
+                        <dl class="row mb-0">
+                            <dt class="col-sm-5">{% trans "Task ID" %}:</dt>
+                            <dd class="col-sm-7">
+                                <code id="taskId">{{ task_id }}</code>
+                                <button class="btn btn-sm btn-outline-secondary ms-2" onclick="copyTaskId()">
+                                    <i class="bi bi-clipboard"></i>
+                                </button>
+                            </dd>
+                            
+                            <dt class="col-sm-5">{% trans "Started" %}:</dt>
+                            <dd class="col-sm-7" id="startedTime">{% trans "Just now" %}</dd>
+                            
+                            <dt class="col-sm-5">{% trans "Last Update" %}:</dt>
+                            <dd class="col-sm-7" id="lastUpdate">{% trans "Just now" %}</dd>
+                        </dl>
+                    </div>
+                    <div class="col-md-6">
+                        <dl class="row mb-0">
+                            <dt class="col-sm-5">{% trans "Document Type" %}:</dt>
+                            <dd class="col-sm-7" id="documentType">{% trans "Unknown" %}</dd>
+                            
+                            <dt class="col-sm-5">{% trans "Items Count" %}:</dt>
+                            <dd class="col-sm-7" id="itemsCount">0</dd>
+                            
+                            <dt class="col-sm-5">{% trans "Connection" %}:</dt>
+                            <dd class="col-sm-7">
+                                <span class="badge bg-success" id="connectionStatus">{% trans "Connected" %}</span>
+                            </dd>
+                        </dl>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Live Log -->
+        <div class="card">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h5 class="card-title mb-0">
+                        <i class="bi bi-list-check me-2"></i>{% trans "Live Log" %}
+                    </h5>
+                    <div>
+                        <button class="btn btn-sm btn-outline-secondary" onclick="clearLog()">
+                            <i class="bi bi-trash"></i> {% trans "Clear" %}
+                        </button>
+                        <button class="btn btn-sm btn-outline-secondary ms-2" onclick="toggleAutoScroll()">
+                            <i class="bi bi-arrow-down" id="autoScrollIcon"></i>
+                        </button>
+                    </div>
+                </div>
+                <div class="log-container" id="liveLog">
+                    <!-- Log entries will be added here -->
+                    <div class="log-entry text-center text-muted py-4">
+                        <i class="bi bi-arrow-repeat me-2"></i>
+                        {% trans "Waiting for updates..." %}
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Auto-redirect Alert -->
+        <div class="alert alert-success mt-4" id="autoRedirectAlert" style="display: none;">
+            <div class="d-flex align-items-center">
+                <i class="bi bi-check-circle me-3" style="font-size: 1.5rem;"></i>
+                <div class="flex-grow-1">
+                    <h5 class="alert-heading">{% trans "Sale Created Successfully!" %}</h5>
+                    <p class="mb-2" id="redirectMessage">
+                        {% trans "Redirecting to sale details in 5 seconds..." %}
+                    </p>
+                    <div class="d-flex align-items-center mt-2">
+                        <div class="progress flex-grow-1 me-3" style="height: 6px;">
+                            <div id="redirectProgress" class="progress-bar bg-success" style="width: 100%;"></div>
+                        </div>
+                        <button class="btn btn-sm btn-outline-success" onclick="cancelRedirect()">
+                            {% trans "Cancel Redirect" %}
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Action Buttons -->
+        <div class="action-buttons">
+            <button class="btn btn-outline-primary" onclick="returnToSales()">
+                <i class="bi bi-arrow-left me-2"></i>{% trans "Back to Sales" %}
+            </button>
+            <button class="btn btn-primary" id="viewSaleButton" style="display: none;" onclick="viewSale()">
+                <i class="bi bi-eye me-2"></i>{% trans "View Sale" %}
+            </button>
+            <button class="btn btn-outline-secondary" onclick="refreshPage()">
+                <i class="bi bi-arrow-clockwise me-2"></i>{% trans "Refresh" %}
+            </button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+// Global state
+const SaleProgress = {
+    taskId: '{{ task_id }}',
+    currentProgress: 0,
+    saleId: null,
+    autoScroll: true,
+    redirectCountdown: null,
+    wsConnection: null,
+    steps: [
+        { id: 'validate', title: '{% trans "Validating Data" %}', description: '{% trans "Checking form data and permissions" %}' },
+        { id: 'create_record', title: '{% trans "Creating Sale Record" %}', description: '{% trans "Creating sale in database" %}' },
+        { id: 'add_items', title: '{% trans "Adding Items" %}', description: '{% trans "Adding selected items to sale" %}' },
+        { id: 'calculate', title: '{% trans "Calculating Totals" %}', description: '{% trans "Calculating subtotal, tax, and total" %}' },
+        { id: 'payment', title: '{% trans "Processing Payment" %}', description: '{% trans "Recording payment information" %}' },
+        { id: 'background', title: '{% trans "Queueing Background Tasks" %}', description: '{% trans "Preparing background processing" %}' },
+        { id: 'complete', title: '{% trans "Finalizing" %}', description: '{% trans "Completing sale creation" %}' }
+    ]
+};
+
+// Initialize on page load
+document.addEventListener('DOMContentLoaded', function() {
+    initializeProgressPage();
+    setupWebSocket();
+    startProgressPolling();
+    updateStartedTime();
+});
+
+function initializeProgressPage() {
+    // Initialize steps timeline
+    renderStepsTimeline();
+    
+    // Set task ID display
+    document.getElementById('taskId').textContent = SaleProgress.taskId;
+    
+    // Add initial log entry
+    addLogEntry('info', '{% trans "Progress tracking initialized" %}');
+}
+
+function renderStepsTimeline() {
+    const timeline = document.getElementById('stepsTimeline');
+    timeline.innerHTML = '';
+    
+    SaleProgress.steps.forEach((step, index) => {
+        const stepElement = document.createElement('div');
+        stepElement.className = 'timeline-step';
+        stepElement.id = `step-${step.id}`;
+        stepElement.innerHTML = `
+            <div class="timeline-step-number">${index + 1}</div>
+            <div class="timeline-step-content">
+                <h6 class="mb-1">${step.title}</h6>
+                <p class="text-muted mb-0 small">${step.description}</p>
+                <div class="mt-2">
+                    <span class="badge bg-secondary step-status">{% trans "Pending" %}</span>
+                    <small class="text-muted ms-2 step-time"></small>
+                </div>
+            </div>
+        `;
+        timeline.appendChild(stepElement);
+    });
+}
+
+function setupWebSocket() {
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const wsUrl = `${protocol}//${window.location.host}/ws/sales/task-progress/${SaleProgress.taskId}/`;
+    
+    try {
+        SaleProgress.wsConnection = new WebSocket(wsUrl);
+        
+        SaleProgress.wsConnection.onopen = function() {
+            console.log('WebSocket connected');
+            updateConnectionStatus(true);
+            addLogEntry('info', '{% trans "WebSocket connection established" %}');
+        };
+        
+        SaleProgress.wsConnection.onmessage = function(event) {
+            const data = JSON.parse(event.data);
+            handleProgressUpdate(data);
+        };
+        
+        SaleProgress.wsConnection.onerror = function(error) {
+            console.error('WebSocket error:', error);
+            updateConnectionStatus(false);
+            addLogEntry('error', '{% trans "WebSocket connection error" %}');
+        };
+        
+        SaleProgress.wsConnection.onclose = function() {
+            console.log('WebSocket disconnected');
+            updateConnectionStatus(false);
+            addLogEntry('warning', '{% trans "WebSocket disconnected, switching to polling" %}');
+        };
+        
+    } catch (error) {
+        console.error('Failed to create WebSocket:', error);
+        addLogEntry('error', '{% trans "Failed to establish WebSocket connection" %}');
+    }
+}
+
+function startProgressPolling() {
+    // Poll for progress updates every 3 seconds
+    setInterval(async () => {
+        try {
+            const response = await fetch(`/sales/task-status/${SaleProgress.taskId}/`);
+            const data = await response.json();
+            
+            if (data.success) {
+                handleProgressUpdate(data);
+            }
+        } catch (error) {
+            console.error('Polling error:', error);
+        }
+    }, 3000);
+}
+
+function handleProgressUpdate(data) {
+    // Update overall progress
+    updateProgress(data.progress, data.message, data.status);
+    
+    // Update current status
+    document.getElementById('currentStatusTitle').textContent = getStatusTitle(data.status);
+    document.getElementById('currentStatusMessage').textContent = data.message;
+    
+    // Update steps based on progress
+    updateSteps(data.progress, data.status);
+    
+    // Add log entry
+    addLogEntry('info', data.message);
+    
+    // Update last update time
+    updateLastUpdateTime();
+    
+    // Handle completion
+    if (data.status === 'completed' && data.sale_id) {
+        handleCompletion(data.sale_id);
+    } else if (data.status === 'error') {
+        handleError(data.message);
+    }
+}
+
+function updateProgress(progress, message, status) {
+    // Update progress bar
+    const progressBar = document.getElementById('overallProgressBar');
+    const progressText = document.getElementById('overallProgressText');
+    
+    SaleProgress.currentProgress = progress;
+    progressBar.style.width = `${progress}%`;
+    progressText.textContent = `${progress}%`;
+    
+    // Update progress bar color based on status
+    if (status === 'completed') {
+        progressBar.classList.remove('progress-bar-animated');
+        progressBar.style.background = 'linear-gradient(135deg, #51cf66 0%, #2b8a3e 100%)';
+    } else if (status === 'error') {
+        progressBar.classList.remove('progress-bar-animated');
+        progressBar.style.background = 'linear-gradient(135deg, #ff6b6b 0%, #c92a2a 100%)';
+    }
+}
+
+function updateSteps(progress, status) {
+    // Determine active step based on progress
+    let activeStepIndex = Math.floor((progress / 100) * SaleProgress.steps.length) - 1;
+    if (activeStepIndex < 0) activeStepIndex = 0;
+    
+    // Update all steps
+    SaleProgress.steps.forEach((step, index) => {
+        const stepElement = document.getElementById(`step-${step.id}`);
+        const stepStatus = stepElement.querySelector('.step-status');
+        const stepTime = stepElement.querySelector('.step-time');
+        
+        if (status === 'completed' && index <= activeStepIndex) {
+            stepElement.className = 'timeline-step completed';
+            stepStatus.textContent = '{% trans "Completed" %}';
+            stepStatus.className = 'badge bg-success step-status';
+            stepTime.textContent = getFormattedTime();
+        } else if (status === 'error' && index <= activeStepIndex) {
+            stepElement.className = 'timeline-step failed';
+            stepStatus.textContent = '{% trans "Failed" %}';
+            stepStatus.className = 'badge bg-danger step-status';
+        } else if (index === activeStepIndex) {
+            stepElement.className = 'timeline-step active';
+            stepStatus.textContent = '{% trans "In Progress" %}';
+            stepStatus.className = 'badge bg-primary step-status';
+        } else if (index < activeStepIndex) {
+            stepElement.className = 'timeline-step completed';
+            stepStatus.textContent = '{% trans "Completed" %}';
+            stepStatus.className = 'badge bg-success step-status';
+        } else {
+            stepElement.className = 'timeline-step';
+            stepStatus.textContent = '{% trans "Pending" %}';
+            stepStatus.className = 'badge bg-secondary step-status';
+        }
+    });
+}
+
+function handleCompletion(saleId) {
+    SaleProgress.saleId = saleId;
+    
+    // Show success message
+    const alert = document.getElementById('autoRedirectAlert');
+    alert.style.display = 'block';
+    
+    // Show view sale button
+    const viewButton = document.getElementById('viewSaleButton');
+    viewButton.style.display = 'inline-block';
+    viewButton.onclick = function() {
+        window.location.href = `/sales/${saleId}/`;
+    };
+    
+    // Start redirect countdown
+    startRedirectCountdown(saleId);
+    
+    // Add completion log
+    addLogEntry('success', '{% trans "Sale created successfully!" %}');
+}
+
+function handleError(errorMessage) {
+    // Show error in steps
+    const steps = document.querySelectorAll('.timeline-step');
+    steps.forEach(step => {
+        step.classList.remove('active');
+    });
+    
+    // Add error log
+    addLogEntry('error', errorMessage);
+    
+    // Show retry button
+    const actionButtons = document.querySelector('.action-buttons');
+    const retryButton = document.createElement('button');
+    retryButton.className = 'btn btn-warning';
+    retryButton.innerHTML = '<i class="bi bi-arrow-clockwise me-2"></i>{% trans "Retry" %}';
+    retryButton.onclick = function() {
+        window.location.reload();
+    };
+    actionButtons.appendChild(retryButton);
+}
+
+function startRedirectCountdown(saleId) {
+    let countdown = 5;
+    const redirectProgress = document.getElementById('redirectProgress');
+    const redirectMessage = document.getElementById('redirectMessage');
+    
+    SaleProgress.redirectCountdown = setInterval(() => {
+        countdown--;
+        
+        // Update message and progress
+        redirectMessage.textContent = `{% trans "Redirecting to sale details in" %} ${countdown} {% trans "seconds..." %}`;
+        redirectProgress.style.width = `${(countdown / 5) * 100}%`;
+        
+        // Redirect when countdown reaches 0
+        if (countdown <= 0) {
+            clearInterval(SaleProgress.redirectCountdown);
+            window.location.href = `/sales/${saleId}/`;
+        }
+    }, 1000);
+}
+
+function cancelRedirect() {
+    if (SaleProgress.redirectCountdown) {
+        clearInterval(SaleProgress.redirectCountdown);
+        SaleProgress.redirectCountdown = null;
+    }
+    
+    const alert = document.getElementById('autoRedirectAlert');
+    alert.style.display = 'none';
+    
+    addLogEntry('info', '{% trans "Redirect cancelled by user" %}');
+}
+
+// Utility functions
+function addLogEntry(type, message) {
+    const logContainer = document.getElementById('liveLog');
+    const logEntry = document.createElement('div');
+    logEntry.className = 'log-entry';
+    
+    const time = new Date().toLocaleTimeString();
+    const icon = getLogIcon(type);
+    
+    logEntry.innerHTML = `
+        <span class="log-time">${time}</span>
+        <span class="log-${type}">${icon} ${message}</span>
+    `;
+    
+    logContainer.appendChild(logEntry);
+    
+    // Auto-scroll to bottom
+    if (SaleProgress.autoScroll) {
+        logContainer.scrollTop = logContainer.scrollHeight;
+    }
+    
+    // Limit log entries to 50
+    const entries = logContainer.querySelectorAll('.log-entry');
+    if (entries.length > 50) {
+        entries[0].remove();
+    }
+}
+
+function getLogIcon(type) {
+    const icons = {
+        'success': '✓',
+        'info': 'ℹ',
+        'warning': '⚠',
+        'error': '✗'
+    };
+    return icons[type] || '•';
+}
+
+function getStatusTitle(status) {
+    const titles = {
+        'processing': '{% trans "Processing..." %}',
+        'completed': '{% trans "Completed!" %}',
+        'error': '{% trans "Error" %}'
+    };
+    return titles[status] || '{% trans "Processing" %}';
+}
+
+function updateConnectionStatus(connected) {
+    const statusElement = document.getElementById('connectionStatus');
+    if (connected) {
+        statusElement.textContent = '{% trans "Connected" %}';
+        statusElement.className = 'badge bg-success';
+    } else {
+        statusElement.textContent = '{% trans "Disconnected" %}';
+        statusElement.className = 'badge bg-warning';
+    }
+}
+
+function updateStartedTime() {
+    const startedElement = document.getElementById('startedTime');
+    startedElement.textContent = new Date().toLocaleString();
+}
+
+function updateLastUpdateTime() {
+    const lastUpdateElement = document.getElementById('lastUpdate');
+    lastUpdateElement.textContent = new Date().toLocaleTimeString();
+}
+
+function getFormattedTime() {
+    return new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+
+// UI Control functions
+function copyTaskId() {
+    navigator.clipboard.writeText(SaleProgress.taskId).then(() => {
+        const button = event.target.closest('button');
+        const originalHTML = button.innerHTML;
+        button.innerHTML = '<i class="bi bi-check"></i>';
+        setTimeout(() => {
+            button.innerHTML = originalHTML;
+        }, 2000);
+    });
+}
+
+function clearLog() {
+    const logContainer = document.getElementById('liveLog');
+    logContainer.innerHTML = `
+        <div class="log-entry text-center text-muted py-4">
+            <i class="bi bi-arrow-repeat me-2"></i>
+            {% trans "Log cleared" %}
+        </div>
+    `;
+}
+
+function toggleAutoScroll() {
+    SaleProgress.autoScroll = !SaleProgress.autoScroll;
+    const icon = document.getElementById('autoScrollIcon');
+    if (SaleProgress.autoScroll) {
+        icon.className = 'bi bi-arrow-down';
+        addLogEntry('info', '{% trans "Auto-scroll enabled" %}');
+    } else {
+        icon.className = 'bi bi-arrow-down text-muted';
+        addLogEntry('info', '{% trans "Auto-scroll disabled" %}');
+    }
+}
+
+function returnToSales() {
+    window.location.href = '{% url "sales:sales_list" %}';
+}
+
+function viewSale() {
+    if (SaleProgress.saleId) {
+        window.location.href = `/sales/${SaleProgress.saleId}/`;
+    }
+}
+
+function refreshPage() {
+    window.location.reload();
+}
+
+// Expose functions to window for button onclick handlers
+window.cancelRedirect = cancelRedirect;
+window.returnToSales = returnToSales;
+window.viewSale = viewSale;
+window.refreshPage = refreshPage;
+</script>
+{% endblock %}

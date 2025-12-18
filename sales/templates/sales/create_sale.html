@@ -116,7 +116,38 @@ body {
     background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
     color: white;
 }
+/* Warning and info messages */
+.customer-required-warning,
+.tin-recommended-warning,
+.customer-required-general {
+    border-radius: 8px;
+    padding: 1rem;
+    margin-top: 1rem;
+    animation: fadeIn 0.3s ease;
+}
 
+.customer-required-warning {
+    background: #fff3cd;
+    border: 1px solid #ffeaa7;
+    color: #856404;
+}
+
+.tin-recommended-warning {
+    background: #d1ecf1;
+    border: 1px solid #bee5eb;
+    color: #0c5460;
+}
+
+.customer-required-general {
+    background: #e7f3ff;
+    border: 1px solid #b8daff;
+    color: #004085;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(-10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
 /* Customer dropdown */
 .customer-dropdown {
     position: absolute;
@@ -978,10 +1009,8 @@ body {
                     {% if company.efris_enabled %}
                     <div class="efris-requirements" id="efrisRequirements" style="display: none;">
                         <h6><i class="bi bi-shield-check me-2"></i>{% trans "EFRIS Requirements" %}</h6>
-                        <ul class="mb-0">
-                            <li>{% trans "Customer TIN is required for VAT invoices" %}</li>
-                            <li>{% trans "Valid invoice numbering required" %}</li>
-                            <li>{% trans "Tax calculations must follow URA guidelines" %}</li>
+                        <ul class="mb-0" id="efrisRequirementsList">
+                            <!-- Content will be populated by JavaScript -->
                         </ul>
                     </div>
                     {% endif %}
@@ -1134,14 +1163,27 @@ body {
                                 <input type="text" class="form-control" id="taxpayerTIN"
                                        placeholder="{% trans 'Enter 10-digit TIN' %}"
                                        pattern="\d{10}" maxlength="10">
-                                <small class="text-muted">{% trans "Enter 10-digit Uganda TIN" %}</small>
+                                <small class="text-muted">
+                                    {% trans "Enter 10-digit Uganda TIN. Required for businesses, optional for individuals." %}
+                                </small>
                             </div>
                             <button type="button" class="btn btn-primary w-100 mb-3"
                                     onclick="queryEFRISTaxpayer()" id="efrisQueryBtn">
                                 <i class="bi bi-shield-search me-2"></i>
                                 {% trans "Query EFRIS" %}
                             </button>
-                            <!-- In your EFRIS tab section, add this after the query button -->
+
+                            <!-- Information about TIN requirements -->
+                            <div class="alert alert-info">
+                                <h6><i class="bi bi-info-circle me-2"></i>{% trans "TIN Requirements" %}</h6>
+                                <ul class="mb-0" style="font-size: 0.875rem;">
+                                    <li><strong>Businesses:</strong> TIN is required for VAT invoices</li>
+                                    <li><strong>Individuals:</strong> TIN is optional for non-VAT invoices</li>
+                                    <li><strong>Walk-in customers:</strong> Not applicable - use receipts instead</li>
+                                    <li><strong>Receipts:</strong> TIN is never required</li>
+                                </ul>
+                            </div>
+
                             <div id="efrisError" class="efris-error" style="display: none;">
                                 <div class="efris-error-title">
                                     <i class="bi bi-exclamation-triangle me-2"></i>Error
@@ -2094,7 +2136,95 @@ function applyDiscount() {
     updateSummary();
     showToast(`Applied ${discountValue}${discountType === 'percentage' ? '%' : ' UGX'} discount`, 'success');
 }
+// In your template's JavaScript section
+async function createSaleWithProgress() {
+    const form = document.getElementById('createSaleForm');
+    const formData = new FormData(form);
 
+    // Show progress modal
+    const progressModal = new bootstrap.Modal(document.getElementById('progressModal'));
+    progressModal.show();
+
+    // Start sale creation
+    const response = await fetch('{% url "sales:create_sale_with_progress" %}', {
+        method: 'POST',
+        body: formData
+    });
+
+    const result = await response.json();
+
+    if (result.success) {
+        // Connect to WebSocket for progress updates
+        const taskId = result.task_id;
+        connectToProgressWebSocket(taskId);
+
+        // Poll for completion
+        pollTaskStatus(taskId);
+    } else {
+        showError(result.error);
+        progressModal.hide();
+    }
+}
+
+function connectToProgressWebSocket(taskId) {
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const wsUrl = `${protocol}//${window.location.host}/ws/sales/task-progress/${taskId}/`;
+
+    const socket = new WebSocket(wsUrl);
+
+    socket.onmessage = function(event) {
+        const data = JSON.parse(event.data);
+        updateProgressUI(data);
+
+        if (data.status === 'completed' && data.sale_id) {
+            // Redirect to sale detail
+            setTimeout(() => {
+                window.location.href = `/sales/${data.sale_id}/`;
+            }, 2000);
+        } else if (data.status === 'error') {
+            showError(data.message);
+        }
+    };
+
+    socket.onerror = function(error) {
+        console.error('WebSocket error:', error);
+    };
+}
+
+async function pollTaskStatus(taskId) {
+    const checkStatus = async () => {
+        const response = await fetch(`/en/sales/task-status/${taskId}/`);
+        const data = await response.json();
+
+        if (data.success) {
+            updateProgressUI(data);
+
+            if (data.status === 'completed' && data.redirect_url) {
+                window.location.href = data.redirect_url;
+                return true;
+            } else if (data.status === 'error') {
+                showError(data.message);
+                return true;
+            }
+        }
+
+        return false;
+    };
+
+    // Poll every 2 seconds
+    const interval = setInterval(async () => {
+        const done = await checkStatus();
+        if (done) {
+            clearInterval(interval);
+        }
+    }, 2000);
+}
+
+function updateProgressUI(data) {
+    document.getElementById('progressBar').style.width = `${data.progress}%`;
+    document.getElementById('progressText').textContent = `${data.progress}%`;
+    document.getElementById('progressMessage').textContent = data.message;
+}
 // Update quick stats
 function updateQuickStats() {
     if (SaleState.cart.length === 0) {
@@ -2449,10 +2579,6 @@ function displayRecentCustomers(customers) {
             <div class="text-center py-3">
                 <i class="bi bi-clock-history" style="font-size: 2rem; opacity: 0.3;"></i>
                 <p class="mt-2">No recent customers</p>
-                <button class="btn btn-sm btn-outline-primary mt-1"
-                        onclick="showNewCustomerModal()">
-                    <i class="bi bi-plus"></i> Create new customer
-                </button>
             </div>
         `;
         return;
@@ -2524,11 +2650,13 @@ function resetProductFilters() {
 }
 
 // Toggle due date section
+// Toggle due date section - UPDATED
 function toggleDueDateSection() {
     const dueDateSection = document.getElementById('dueDateSection');
     const efrisRequirements = document.getElementById('efrisRequirements');
     const docType = document.querySelector('input[name="document_type"]:checked').value;
     const dueDateField = document.getElementById('dueDate');
+    const paymentMethod = document.getElementById('paymentMethod');
 
     if (docType === 'INVOICE') {
         dueDateSection.style.display = 'block';
@@ -2544,20 +2672,57 @@ function toggleDueDateSection() {
         if (efrisRequirements) {
             efrisRequirements.style.display = 'block';
         }
-    } else {
+
+        // Update EFRIS requirements text based on document type
+        const efrisText = efrisRequirements.querySelector('ul');
+        if (efrisText) {
+            efrisText.innerHTML = `
+                <li>Customer name and contact information required</li>
+                <li>Customer TIN recommended for tax compliance</li>
+                <li>Valid invoice numbering required</li>
+                <li>Tax calculations must follow URA guidelines</li>
+            `;
+        }
+
+        // For invoices, require customer selection
+        if (!SaleState.selectedCustomer) {
+            showCustomerRequiredWarning();
+        }
+
+    } else if (docType === 'RECEIPT') {
         dueDateSection.style.display = 'none';
         dueDateField.value = '';
         dueDateField.required = false;
 
-        // Hide EFRIS requirements
+        // Hide EFRIS requirements or show receipt-specific ones
         if (efrisRequirements) {
-            efrisRequirements.style.display = 'none';
+            efrisRequirements.style.display = 'block';
+            const efrisText = efrisRequirements.querySelector('ul');
+            if (efrisText) {
+                efrisText.innerHTML = `
+                    <li>Customer is optional (Walk-in accepted)</li>
+                    <li>TIN is optional for receipts</li>
+                    <li>Receipts can be issued immediately</li>
+                    <li>Simplified tax calculations</li>
+                `;
+            }
         }
+
+        // Remove customer required warnings for receipts
+        const warning = document.querySelector('.customer-required-warning');
+        if (warning) {
+            warning.remove();
+        }
+    }
+
+    // Remove any TIN warnings
+    const tinWarning = document.querySelector('.tin-recommended-warning');
+    if (tinWarning) {
+        tinWarning.remove();
     }
 
     validateDocumentRequirements();
 }
-
 // Validate payment method
 function validatePaymentMethod() {
     const paymentMethod = document.getElementById('paymentMethod').value;
@@ -2575,23 +2740,103 @@ function validatePaymentMethod() {
 // Validate document requirements
 function validateDocumentRequirements() {
     const docType = document.querySelector('input[name="document_type"]:checked').value;
-    const dueDateField = document.getElementById('dueDate');
     const paymentMethod = document.getElementById('paymentMethod').value;
+    const customerRequired = docType !== 'RECEIPT';
 
-    // For invoices with credit payment, customer is required
-    if (docType === 'INVOICE' && paymentMethod === 'CREDIT' && !SaleState.selectedCustomer) {
-        showToast('Customer is required for credit invoices', 'warning');
+    // Show/hide customer required indicator
+    if (customerRequired && !SaleState.selectedCustomer) {
+        showCustomerRequiredWarning();
     }
 
-    // For EFRIS-enabled companies, check TIN requirement
+    // For invoices, always require a customer (not walk-in)
+    if (docType === 'INVOICE' && !SaleState.selectedCustomer) {
+        if (!document.querySelector('.customer-required-warning')) {
+            const warning = document.createElement('div');
+            warning.className = 'alert alert-warning customer-required-warning mt-2';
+            warning.innerHTML = `
+                <i class="bi bi-exclamation-triangle me-2"></i>
+                <strong>Customer required for invoices:</strong>
+                Invoices cannot be issued to "Walk-in Customer". Please select or create a customer.
+            `;
+
+            // Insert after customer section
+            const customerSection = document.querySelector('.customer-section');
+            if (customerSection && !customerSection.nextElementSibling?.classList.contains('customer-required-warning')) {
+                customerSection.parentNode.insertBefore(warning, customerSection.nextSibling);
+            }
+        }
+
+        // Disable complete sale button for invoices without customer
+        document.getElementById('completeSaleBtn').disabled = true;
+        document.getElementById('completeSaleBtn').title = 'Select a customer to proceed with invoice';
+    } else {
+        // Remove warning if present
+        const warning = document.querySelector('.customer-required-warning');
+        if (warning) {
+            warning.remove();
+        }
+
+        // Re-enable button if cart has items
+        document.getElementById('completeSaleBtn').disabled = SaleState.cart.length === 0;
+        document.getElementById('completeSaleBtn').title = '';
+    }
+
+    // For EFRIS-enabled invoices, TIN is recommended but not required for individuals
     {% if company.efris_enabled %}
-    if (docType === 'INVOICE' && !SaleState.selectedCustomer?.tin) {
-        showToast('Customer TIN is required for EFRIS invoices', 'warning');
+    if (docType === 'INVOICE' && SaleState.selectedCustomer) {
+        const customer = SaleState.selectedCustomer;
+        const isBusiness = customer.customer_type === 'BUSINESS';
+
+        if (isBusiness && !customer.tin) {
+            // Show TIN warning for businesses
+            if (!document.querySelector('.tin-recommended-warning')) {
+                const warning = document.createElement('div');
+                warning.className = 'alert alert-info tin-recommended-warning mt-2';
+                warning.innerHTML = `
+                    <i class="bi bi-info-circle me-2"></i>
+                    <strong>Business TIN recommended:</strong>
+                    For EFRIS compliance, business customers should have a TIN.
+                    Invoices without TIN may have limited tax compliance.
+                `;
+
+                // Insert after customer section
+                const customerSection = document.querySelector('.customer-section');
+                if (customerSection && !customerSection.nextElementSibling?.classList.contains('tin-recommended-warning')) {
+                    customerSection.parentNode.insertBefore(warning, customerSection.nextSibling);
+                }
+            }
+        }
+    } else {
+        // Remove TIN warning
+        const warning = document.querySelector('.tin-recommended-warning');
+        if (warning) {
+            warning.remove();
+        }
     }
     {% endif %}
 }
 
+// Show customer required warning
+function showCustomerRequiredWarning() {
+    if (!document.querySelector('.customer-required-general')) {
+        const warning = document.createElement('div');
+        warning.className = 'alert alert-info customer-required-general mt-2';
+        warning.innerHTML = `
+            <i class="bi bi-info-circle me-2"></i>
+            <strong>Customer selection recommended:</strong>
+            For better record keeping, please select or create a customer.
+        `;
+
+        // Insert after customer section
+        const customerSection = document.querySelector('.customer-section');
+        if (customerSection) {
+            customerSection.parentNode.insertBefore(warning, customerSection.nextSibling);
+        }
+    }
+}
+
 // Complete sale with validation
+// Complete sale with validation - UPDATED
 async function completeSale() {
     // Show loading
     showLoading(true);
@@ -2613,6 +2858,12 @@ async function completeSale() {
         const dueDateField = document.getElementById('dueDate');
 
         if (docType === 'INVOICE') {
+            // Customer is REQUIRED for invoices
+            if (!SaleState.selectedCustomer) {
+                throw new Error('Customer is required for invoices. Please select or create a customer.');
+            }
+
+            // Validate due date
             if (!dueDateField.value) {
                 throw new Error('Due date is required for invoices');
             }
@@ -2628,15 +2879,47 @@ async function completeSale() {
                     return;
                 }
             }
+
+            // For credit invoices, additional validation
+            const paymentMethod = document.getElementById('paymentMethod').value;
+            if (paymentMethod === 'CREDIT') {
+                if (!SaleState.selectedCustomer.tin) {
+                    if (!confirm('Credit invoice for customer without TIN. Continue anyway?')) {
+                        showLoading(false);
+                        return;
+                    }
+                }
+            }
+
+            // Check EFRIS requirements (TIN for businesses)
+            {% if company.efris_enabled %}
+            if (SaleState.selectedCustomer) {
+                const isBusiness = SaleState.selectedCustomer.customer_type === 'BUSINESS';
+                if (isBusiness && !SaleState.selectedCustomer.tin) {
+                    if (!confirm('Business customer without TIN may not be EFRIS compliant. Continue anyway?')) {
+                        showLoading(false);
+                        return;
+                    }
+                }
+            }
+            {% endif %}
+
+        } else if (docType === 'RECEIPT') {
+            // For receipts, customer is optional
+            if (!SaleState.selectedCustomer) {
+                // Set default walk-in customer
+                document.getElementById('customerId').value = '';
+                document.getElementById('customerTin').value = '';
+
+                if (!confirm('No customer selected. This will be recorded as a Walk-in sale. Continue?')) {
+                    showLoading(false);
+                    return;
+                }
+            }
         }
 
         // Validate payment method
         const paymentMethod = document.getElementById('paymentMethod').value;
-        if (docType === 'INVOICE' && paymentMethod === 'CREDIT') {
-            if (!SaleState.selectedCustomer) {
-                throw new Error('Customer is required for credit invoices');
-            }
-        }
 
         // Validate stock availability
         const stockErrors = [];
@@ -2662,18 +2945,6 @@ async function completeSale() {
                 return;
             }
         }
-
-        // Validate EFRIS requirements if enabled
-        {% if company.efris_enabled %}
-        if (docType === 'INVOICE') {
-            if (!SaleState.selectedCustomer?.tin) {
-                if (!confirm('Customer TIN is missing. This invoice may not be EFRIS compliant. Continue anyway?')) {
-                    showLoading(false);
-                    return;
-                }
-            }
-        }
-        {% endif %}
 
         // Submit the form
         document.getElementById('createSaleForm').submit();

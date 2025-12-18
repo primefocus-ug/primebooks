@@ -36,11 +36,12 @@ def track_sale_state(sender, instance, **kwargs):
             pass
 
 
+# Update in your signals.py or wherever post_save signals are defined
 
 @receiver(post_save, sender=Sale)
 def handle_sale_completion(sender, instance, created, **kwargs):
     """
-    Handle sale completion with document type specific logic
+    Handle sale completion with background processing
     """
     try:
         # Get tenant schema
@@ -55,9 +56,18 @@ def handle_sale_completion(sender, instance, created, **kwargs):
             document_type = instance.document_type
 
             if document_type == 'RECEIPT':
-                handle_receipt_completion(instance, created, old_state)
+                # For receipts, only handle minimal synchronous tasks
+                if instance.status == 'COMPLETED':
+                    # Send immediate WebSocket update for POS
+                    send_receipt_ws_update(instance)
+
+                    # Queue background processing
+                    from .tasks import process_receipt_async
+                    process_receipt_async.delay(instance.pk)
+
             elif document_type == 'INVOICE':
                 handle_invoice_completion(instance, created, old_state)
+
             elif document_type in ['PROFORMA', 'ESTIMATE']:
                 handle_proforma_completion(instance, created, old_state)
 
@@ -70,6 +80,26 @@ def handle_sale_completion(sender, instance, created, **kwargs):
             f"Error in handle_sale_completion for sale {instance.pk}: {e}",
             exc_info=True
         )
+
+
+def send_receipt_ws_update(sale):
+    """Send immediate WebSocket update for receipt completion"""
+    try:
+        channel_layer = get_channel_layer()
+        async_to_sync(channel_layer.group_send)(
+            f'receipt_updates_{sale.store.id}',
+            {
+                'type': 'receipt.update',
+                'data': {
+                    'receipt_number': sale.document_number,
+                    'total': float(sale.total_amount),
+                    'customer': sale.customer.name if sale.customer else 'Walk-in',
+                    'timestamp': timezone.now().isoformat()
+                }
+            }
+        )
+    except Exception as e:
+        logger.warning(f"Failed to send WebSocket update: {e}")
 
 def handle_receipt_completion(sale, created, old_state):
     """Handle receipt completion"""

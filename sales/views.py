@@ -1,3 +1,6 @@
+import uuid
+from channels.layers import get_channel_layer
+from django.urls import reverse
 from django.shortcuts import render, get_object_or_404, redirect
 from django.contrib.auth.decorators import login_required, permission_required
 from django.contrib.auth.mixins import LoginRequiredMixin, PermissionRequiredMixin
@@ -16,6 +19,7 @@ from django.core.exceptions import ValidationError, PermissionDenied
 from decimal import Decimal, InvalidOperation
 from django.core.paginator import Paginator
 import json
+from django.views.decorators.http import require_GET
 import csv
 from django.template.loader import render_to_string
 import xlsxwriter
@@ -837,6 +841,149 @@ def create_invoice_for_sale(sale, user):
         raise
 
 
+@login_required
+@require_GET
+def recent_customers_api(request):
+    """
+    API endpoint to fetch recent customers for a store
+    Used in POS interface and sales forms
+    """
+    try:
+        store_id = request.GET.get('store_id')
+        limit = int(request.GET.get('limit', 10))
+        search = request.GET.get('search', '').strip()
+
+        # If no store_id is provided, try to get it from session or user's default store
+        if not store_id:
+            # Try to get store_id from session (if coming from POS)
+            store_id = request.session.get('current_store_id')
+
+            # If still no store_id, get user's accessible stores
+            if not store_id:
+                accessible_stores = get_user_accessible_stores(request.user)
+                if accessible_stores.exists():
+                    store_id = accessible_stores.first().id
+                else:
+                    return JsonResponse({
+                        'success': False,
+                        'error': 'No store available. Please select a store first.',
+                        'customers': []
+                    })
+
+        # Validate store access
+        try:
+            store = Store.objects.get(id=store_id)
+            validate_store_access(request.user, store, action='view', raise_exception=True)
+        except (Store.DoesNotExist, PermissionDenied):
+            return JsonResponse({'error': 'Access denied to store'}, status=403)
+
+        # Base query for customers in this store
+        customers_query = Customer.objects.filter(
+            store_id=store_id,
+            is_active=True
+        )
+
+        # Apply search filter if provided
+        if search:
+            customers_query = customers_query.filter(
+                Q(name__icontains=search) |
+                Q(phone__icontains=search) |
+                Q(email__icontains=search)
+            )
+
+        # Get recent purchases data
+        from django.db.models import Subquery, OuterRef
+
+        # Subquery to get last purchase date for each customer
+        last_purchase_subquery = Sale.objects.filter(
+            customer_id=OuterRef('id'),
+            store_id=store_id
+        ).order_by('-created_at').values('created_at')[:1]
+
+        # Subquery to get purchase count for each customer
+        purchase_count_subquery = Sale.objects.filter(
+            customer_id=OuterRef('id'),
+            store_id=store_id
+        ).values('customer_id').annotate(
+            count=Count('id')
+        ).values('count')
+
+        # Subquery to get total spent for each customer
+        total_spent_subquery = Sale.objects.filter(
+            customer_id=OuterRef('id'),
+            store_id=store_id
+        ).values('customer_id').annotate(
+            total=Sum('total_amount')
+        ).values('total')
+
+        # Annotate customers with purchase data
+        customers = customers_query.annotate(
+            last_purchase_date=Subquery(last_purchase_subquery),
+            purchase_count=Subquery(purchase_count_subquery),
+            total_spent=Subquery(total_spent_subquery)
+        ).order_by(
+            '-last_purchase_date',  # Customers with recent purchases first
+            '-created_at'  # Then newly created customers
+        )[:limit]
+
+        # Prepare response data
+        customers_data = []
+        for customer in customers:
+            # Get EFRIS data if available
+            efris_data = {}
+            if hasattr(customer, 'get_efris_buyer_details'):
+                try:
+                    buyer_details = customer.get_efris_buyer_details()
+                    efris_data = {
+                        'buyer_type': buyer_details.get('buyerType', '1'),
+                        'buyer_type_display': 'Business' if buyer_details.get('buyerType') == '0' else 'Individual',
+                        'tin': buyer_details.get('buyerTin', ''),
+                        'nin_brn': buyer_details.get('buyerNinBrn', ''),
+                        'is_efris_ready': all([
+                            buyer_details.get('buyerLegalName'),
+                            buyer_details.get('buyerMobilePhone')
+                        ])
+                    }
+                except Exception as e:
+                    logger.debug(f"Error getting EFRIS data for customer {customer.id}: {e}")
+
+            customer_data = {
+                'id': customer.id,
+                'name': customer.name,
+                'phone': customer.phone or '',
+                'email': customer.email or '',
+                'address': customer.physical_address or '',
+                'customer_type': customer.customer_type or 'INDIVIDUAL',
+                'tin': customer.tin or '',
+                'nin': customer.nin or '',
+                'brn': customer.brn or '',
+                'last_purchase': customer.last_purchase_date.isoformat() if customer.last_purchase_date else None,
+                'purchase_count': customer.purchase_count or 0,
+                'total_spent': float(customer.total_spent or 0),
+                'efris': efris_data,
+                'created_at': customer.created_at.isoformat() if customer.created_at else None,
+            }
+            customers_data.append(customer_data)
+
+        return JsonResponse({
+            'success': True,
+            'customers': customers_data,
+            'count': len(customers_data),
+            'store': {
+                'id': store.id,
+                'name': store.name,
+            }
+        })
+
+    except Exception as e:
+        logger.error(f"Error in recent_customers_api: {e}", exc_info=True)
+        return JsonResponse({
+            'success': False,
+            'error': 'An error occurred while fetching customers',
+            'details': str(e) if settings.DEBUG else 'Internal server error',
+            'customers': []
+        }, status=500)
+
 def fiscalize_invoice_immediately(invoice, user):
     """
     Enhanced immediate fiscalization using the new EFRIS service structure.
@@ -935,9 +1082,10 @@ def render_sale_form(request):
 
         return render(request, 'sales/create_sale.html', context)
 
+
 @transaction.atomic
 def process_sale_creation(request):
-    """Process sale creation with comprehensive validation"""
+    """Process sale creation with background processing"""
     sale = None
     company = get_current_tenant(request)
 
@@ -982,28 +1130,41 @@ def process_sale_creation(request):
             if request.POST.get('payment_amount'):
                 handle_payment(sale, request.POST)
 
-            # Create stock movements
-            create_stock_movements(sale)
+            # ========== BACKGROUND PROCESSING ==========
+            if sale.document_type == 'RECEIPT':
+                # Queue background tasks for receipt
+                from .tasks import process_receipt_async
+                task_result = process_receipt_async.delay(sale.pk, request.user.pk)
 
-            # REMOVED: Old invoice creation logic
-            # Auto-fiscalization will happen in Sale.save() method based on store config
+                success_message = (
+                    f'Receipt #{sale.document_number} created successfully! '
+                    f'Total: {sale.currency} {sale.total_amount:,.2f}\n'
+                    f'Processing in background (Task ID: {task_result.id})'
+                )
 
-            success_message = (
-                f'{sale.get_document_type_display()} #{sale.document_number} created successfully! '
-                f'Total: {sale.currency} {sale.total_amount:,.2f}'
-            )
+            elif sale.document_type == 'INVOICE':
+                # Create stock movements synchronously for invoices
+                create_stock_movements(sale)
 
-            # EFRIS status
-            store_config = sale.store.effective_efris_config
-            if store_config.get('enabled', False):
-                if sale.is_fiscalized:
-                    success_message += ' Sale has been fiscalized.'
-                else:
+                success_message = (
+                    f'Invoice #{sale.document_number} created successfully! '
+                    f'Total: {sale.currency} {sale.total_amount:,.2f}'
+                )
+
+                # Auto-fiscalization will happen in Sale.save() method based on store config
+                store_config = sale.store.effective_efris_config
+                if store_config.get('enabled', False):
                     success_message += ' Ready for EFRIS fiscalization.'
+            else:
+                # Other document types
+                success_message = (
+                    f'{sale.get_document_type_display()} #{sale.document_number} created successfully! '
+                    f'Total: {sale.currency} {sale.total_amount:,.2f}'
+                )
 
             messages.success(request, success_message)
 
-            # Redirect
+            # Redirect immediately
             return redirect('sales:sale_detail', pk=sale.pk)
 
     except ValidationError as e:
@@ -1015,6 +1176,159 @@ def process_sale_creation(request):
         messages.error(request, 'An error occurred. Please try again.')
         return render_sale_form(request)
 
+
+def bulk_update_stock_async(items_data, store, sale_reference, user):
+    """Update stock for multiple items asynchronously"""
+    from inventory.models import Stock, StockMovement
+    from django.db.models import F
+
+    try:
+        with transaction.atomic():
+            stock_updates = []
+            movements = []
+
+            for item_data in items_data:
+                if item_data['item_type'] == 'PRODUCT' and item_data.get('product'):
+                    product = item_data['product']
+
+                    # Prepare stock update
+                    stock_updates.append(
+                        Stock(
+                            product=product,
+                            store=store,
+                            quantity=F('quantity') - item_data['quantity']
+                        )
+                    )
+
+                    # Prepare stock movement
+                    movements.append(
+                        StockMovement(
+                            product=product,
+                            store=store,
+                            movement_type='SALE',
+                            quantity=item_data['quantity'],
+                            reference=sale_reference,
+                            unit_price=item_data['unit_price'],
+                            total_value=item_data['total_price'],
+                            created_by=user
+                        )
+                    )
+
+            # Bulk update
+            if stock_updates:
+                Stock.objects.bulk_update(stock_updates, ['quantity'])
+
+            if movements:
+                StockMovement.objects.bulk_create(movements)
+
+            return True
+
+    except Exception as e:
+        logger.error(f"Bulk stock update failed: {e}")
+        return False
+
+
+
+@login_required
+@permission_required("sales.add_sale", raise_exception=True)
+def create_sale_with_progress(request):
+    """
+    Create sale with progress tracking - returns immediately with task ID
+    """
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'error': 'Method not allowed'}, status=405)
+
+    # Generate unique task ID
+    task_id = str(uuid.uuid4())
+
+    # Store initial task data in cache or database (simplified version using session)
+    request.session[f'sale_task_{task_id}'] = {
+        'status': 'processing',
+        'message': 'Creating sale...',
+        'progress': 10,
+        'sale_id': None,
+        'created_at': timezone.now().isoformat()
+    }
+    request.session.modified = True
+
+    # Extract form data
+    form_data = {
+        'store': request.POST.get('store'),
+        'customer': request.POST.get('customer'),
+        'document_type': request.POST.get('document_type', 'RECEIPT'),
+        'payment_method': request.POST.get('payment_method'),
+        'items_data': request.POST.get('items_data'),
+        'discount_amount': request.POST.get('discount_amount', '0'),
+        'notes': request.POST.get('notes', ''),
+        'due_date': request.POST.get('due_date'),
+        'payment_amount': request.POST.get('payment_amount'),
+        'payment_reference': request.POST.get('payment_reference', ''),
+    }
+
+    # Start background task
+    from .tasks import create_sale_background
+    task_result = create_sale_background.delay(
+        form_data=form_data,
+        user_id=request.user.id,
+        task_id=task_id
+    )
+
+    # Update task with celery task ID
+    request.session[f'sale_task_{task_id}']['celery_task_id'] = task_result.id
+    request.session.modified = True
+
+    return JsonResponse({
+        'success': True,
+        'task_id': task_id,
+        'celery_task_id': task_result.id,
+        'message': 'Sale creation started in background',
+        'redirect_url': reverse('sales:task_progress', kwargs={'task_id': task_id})
+    })
+
+
+@login_required
+def get_task_status(request, task_id):
+    """
+    Get status of a background task
+    """
+    task_data = request.session.get(f'sale_task_{task_id}')
+
+    if not task_data:
+        return JsonResponse({
+            'success': False,
+            'error': 'Task not found'
+        }, status=404)
+
+    # If task has a sale_id, include redirect URL
+    response_data = {
+        'success': True,
+        'task_id': task_id,
+        'status': task_data.get('status', 'unknown'),
+        'message': task_data.get('message', ''),
+        'progress': task_data.get('progress', 0),
+        'sale_id': task_data.get('sale_id')
+    }
+
+    if task_data.get('sale_id'):
+        response_data['redirect_url'] = reverse('sales:sale_detail', kwargs={'pk': task_data['sale_id']})
+
+    # Clean up completed tasks
+    if task_data.get('status') in ['completed', 'failed', 'error']:
+        # Keep for 5 minutes before cleanup
+        created_at = datetime.fromisoformat(task_data.get('created_at', '2000-01-01'))
+        if timezone.now() - created_at > timedelta(minutes=5):
+            del request.session[f'sale_task_{task_id}']
+            request.session.modified = True
+
+    return JsonResponse(response_data)
+
+
+@login_required
+def task_progress_page(request, task_id):
+    """
+    HTML page to display task progress
+    """
+    return render(request, 'sales/task_progress.html', {'task_id': task_id})
 
 def validate_sale_data(post_data, user, company):
     """Enhanced validation with tenant support"""
