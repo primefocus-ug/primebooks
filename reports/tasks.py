@@ -12,6 +12,7 @@ from django_tenants.utils import schema_context, tenant_context
 from django.db import connection
 import os
 import time
+from django.db.models import Q
 import logging
 
 logger = logging.getLogger(__name__)
@@ -290,14 +291,22 @@ def process_scheduled_reports():
         with tenant_context(tenant):
             from .models import ReportSchedule
 
-            # Get due schedules for this tenant
+            # Get due schedules AND schedules without next_scheduled
             due_schedules = ReportSchedule.objects.filter(
-                is_active=True,
-                next_scheduled__lte=now
+                is_active=True
+            ).filter(
+                Q(next_scheduled__lte=now) | Q(next_scheduled__isnull=True)
             ).select_related('report')
 
             for schedule in due_schedules:
                 try:
+                    # If no next_scheduled, calculate it
+                    if not schedule.next_scheduled:
+                        schedule.calculate_next_run()
+                        schedule.save()
+                        logger.info(f"Calculated next run for new schedule: {schedule.id}")
+                        continue  # Skip execution for this run
+
                     logger.info(f"Processing scheduled report: {schedule.report.name} for tenant {tenant.schema_name}")
 
                     # Get report creator
@@ -308,12 +317,18 @@ def process_scheduled_reports():
                     kwargs['format'] = schedule.format
                     kwargs['email_report'] = True
                     kwargs['email_recipients'] = schedule.recipients
+                    kwargs['cc_recipients'] = schedule.cc_recipients
+                    kwargs['include_efris'] = schedule.include_efris
+
+                    # Add schedule-specific parameters
+                    if schedule.efris_report_format:
+                        kwargs['efris_format'] = schedule.efris_report_format
 
                     # Start async generation with schema_name
                     generate_report_async.delay(
                         schedule.report.id,
                         user.id,
-                        tenant.schema_name,  # Pass schema name
+                        tenant.schema_name,
                         **kwargs
                     )
 
@@ -323,8 +338,10 @@ def process_scheduled_reports():
                     schedule.retry_count = 0
                     schedule.save()
 
+                    logger.info(f"Triggered scheduled report {schedule.report.name} (ID: {schedule.id})")
+
                 except Exception as e:
-                    logger.error(f"Error processing scheduled report {schedule.id}: {str(e)}")
+                    logger.error(f"Error processing scheduled report {schedule.id}: {str(e)}", exc_info=True)
 
                     schedule.retry_count += 1
                     if schedule.retry_count >= schedule.max_retries:

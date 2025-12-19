@@ -7,6 +7,7 @@ from django.utils import timezone
 from django.core.cache import cache
 import hashlib
 import json
+from django.db import connection
 from decimal import Decimal
 from datetime import date, datetime
 
@@ -138,7 +139,10 @@ class SavedReport(models.Model):
     def __str__(self):
         return f"{self.name} ({self.get_report_type_display()})"
 
+
     def get_cache_key(self, user_id, **kwargs):
+
+        schema_name = connection.schema_name  # Get current tenant
         serializable_kwargs = {}
         for key, value in kwargs.items():
             if isinstance(value, (date, datetime)):
@@ -152,8 +156,22 @@ class SavedReport(models.Model):
 
         filter_string = json.dumps(self.filters or {}, sort_keys=True, default=str)
         param_string = json.dumps(serializable_kwargs, sort_keys=True, default=str)
-        hash_input = f"{self.id}:{user_id}:{filter_string}:{param_string}"
+
+        # ADD SCHEMA to cache key
+        hash_input = f"{schema_name}:{self.id}:{user_id}:{filter_string}:{param_string}"
         return f"report:{hashlib.md5(hash_input.encode()).hexdigest()}"
+
+    def invalidate_cache(self, user_id=None):
+        """Invalidate cached report results with tenant isolation"""
+        if user_id:
+            cache_key = self.get_cache_key(user_id)
+            cache.delete(cache_key)
+        else:
+            # Clear all cache entries for this report in current tenant
+            if self.pk:
+                schema_name = connection.schema_name
+                # Use a more precise pattern
+                cache.delete_pattern(f"report:{schema_name}:{self.id}:*")
 
     def increment_execution_count(self):
         """Increment execution counter safely, even for new instances"""
@@ -291,6 +309,19 @@ class ReportSchedule(models.Model):
 
     def __str__(self):
         return f"{self.report.name} - {self.get_frequency_display()}"
+
+    def save(self, *args, **kwargs):
+        # If this is a new schedule or frequency changed, calculate next run
+        is_new = not self.pk
+
+        # Call parent save first to get an ID
+        super().save(*args, **kwargs)
+
+        # Calculate next scheduled run for new schedules
+        if is_new and not self.next_scheduled:
+            self.calculate_next_run()
+            # Save again with calculated next_scheduled
+            super().save(update_fields=['next_scheduled'])
 
     def calculate_next_run(self):
         """Calculate next scheduled run time"""

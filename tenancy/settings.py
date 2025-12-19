@@ -455,7 +455,22 @@ CELERY_BEAT_SCHEDULE = {
         'task': 'messaging.tasks.cleanup_old_statistics',
         'schedule': crontab(hour=2, minute=0, day_of_week=0),  # Weekly on Sunday at 2am
     },
+    'process-scheduled-reports': {
+        'task': 'reports.tasks.process_scheduled_reports',
+        'schedule': crontab(minute='*'),  # Every minute
+    },
 
+    # Clean up expired reports every day at 2 AM
+    'cleanup-expired-reports': {
+        'task': 'reports.tasks.cleanup_expired_reports',
+        'schedule': crontab(minute=0, hour=2),  # 2 AM daily
+    },
+
+    # Update dashboard cache every 5 minutes
+    'update-dashboard-cache': {
+        'task': 'reports.tasks.update_dashboard_cache',
+        'schedule': crontab(minute='*/5'),  # Every 5 minutes
+    },
     'send-admin-digest': {
         'task': 'messaging.tasks.send_admin_digest_email',
         'schedule': crontab(hour=8, minute=0),  # Daily at 8am
