@@ -16,6 +16,7 @@ import json
 import csv
 import os
 import mimetypes
+from django.db.models import OuterRef, Subquery
 import logging
 from .models import SavedReport, ReportSchedule, GeneratedReport, ReportAccessLog, ReportComparison
 from .forms import (SavedReportForm, ReportScheduleForm, ReportFilterForm,
@@ -1117,45 +1118,32 @@ def toggle_favorite_report(request, report_id):
     })
 
 
+
 @login_required
 @permission_required('reports.view_generatereport')
 def generated_reports_history(request):
-    """View history of generated reports with filtering"""
-    if user_can_access_all_stores(request.user):
-        reports = GeneratedReport.objects.all()
-    else:
-        reports = GeneratedReport.objects.filter(
-            Q(generated_by=request.user) | Q(report__created_by=request.user)
-        )
+    base_qs = GeneratedReport.objects.filter(
+        report=OuterRef('report'),
+        generated_by=OuterRef('generated_by')
+    ).order_by('-generated_at')
+
+    latest_ids = GeneratedReport.objects.values(
+        'report', 'generated_by'
+    ).annotate(
+        latest_id=Subquery(base_qs.values('id')[:1])
+    ).values('latest_id')
+
+    reports = GeneratedReport.objects.filter(id__in=latest_ids)
 
     reports = reports.select_related('report', 'generated_by').order_by('-generated_at')
 
-    # Filters
-    report_type = request.GET.get('type')
-    status = request.GET.get('status')
-    format_filter = request.GET.get('format')
-
-    if report_type:
-        reports = reports.filter(report__report_type=report_type)
-    if status:
-        reports = reports.filter(status=status)
-    if format_filter:
-        reports = reports.filter(file_format=format_filter)
-
-    # Pagination
     paginator = Paginator(reports, 25)
-    page_number = request.GET.get('page')
-    page_obj = paginator.get_page(page_number)
+    page_obj = paginator.get_page(request.GET.get('page'))
 
-    context = {
-        'page_obj': page_obj,
-        'report_types': SavedReport.REPORT_TYPES,
-        'selected_type': report_type,
-        'selected_status': status,
-        'selected_format': format_filter,
-    }
+    return render(request, 'reports/generated_reports_history.html', {
+        'page_obj': page_obj
+    })
 
-    return render(request, 'reports/generated_reports_history.html', context)
 
 
 @login_required
@@ -1406,45 +1394,603 @@ def z_report(request):
 @login_required
 @permission_required('reports.view_savedreport')
 def efris_compliance_report(request):
-    """EFRIS compliance status report."""
+    """EFRIS compliance status report with detailed breakdown"""
     from .forms import ReportFilterForm
 
     form = ReportFilterForm(request.GET or None, user=request.user)
 
-    if user_can_access_all_stores(request.user):
-        stores = Store.objects.filter(is_active=True)
-    else:
-        stores = request.user.stores.filter(is_active=True)
+    # Get user's accessible stores
+    stores = get_user_accessible_stores(request.user)
 
     compliance_data = {}
+    summary_stats = {}
+    store_breakdown = []
+    daily_breakdown = []
+    failed_sales = []
 
     if form.is_valid():
         start_date = form.cleaned_data.get('start_date')
         end_date = form.cleaned_data.get('end_date')
         store_filter = form.cleaned_data.get('store')
 
-        saved_report = SavedReport(
-            name='EFRIS Compliance',
-            report_type='EFRIS_COMPLIANCE',
-            created_by=request.user
+        # Check if user has access to selected store
+        if store_filter and store_filter not in stores:
+            messages.error(request, "You don't have access to the selected store.")
+            return redirect('reports:efris_compliance')
+
+        # Include schema in cache key
+        schema_name = connection.schema_name
+        cache_key = f'efris_compliance_{schema_name}_{request.user.id}_{start_date}_{end_date}_{store_filter}'
+        cached_result = cache.get(cache_key)
+
+        if cached_result and not request.GET.get('refresh'):
+            compliance_data = cached_result['compliance_data']
+            summary_stats = cached_result['summary_stats']
+            store_breakdown = cached_result['store_breakdown']
+            daily_breakdown = cached_result['daily_breakdown']
+            failed_sales = cached_result['failed_sales']
+        else:
+            saved_report = SavedReport(
+                name='EFRIS Compliance',
+                report_type='EFRIS_COMPLIANCE',
+                created_by=request.user
+            )
+            saved_report.save()
+
+            from .services.report_generator import ReportGeneratorService
+            generator = ReportGeneratorService(request.user, saved_report)
+
+            report_data = generator.generate(
+                start_date=start_date,
+                end_date=end_date,
+                store_id=store_filter.id if store_filter else None
+            )
+
+            compliance_data = report_data.get('compliance', {})
+            store_breakdown = report_data.get('store_breakdown', [])
+            daily_breakdown = report_data.get('daily_breakdown', [])
+            failed_sales = report_data.get('failed_sales', [])
+
+            # Calculate summary stats
+            summary_stats = {
+                'compliance_rate': compliance_data.get('compliance_rate', 0),
+                'total_sales': compliance_data.get('total_sales', 0),
+                'fiscalized': compliance_data.get('fiscalized', 0),
+                'pending': compliance_data.get('pending', 0),
+                'failed': compliance_data.get('failed', 0),
+            }
+
+            cache.set(cache_key, {
+                'compliance_data': compliance_data,
+                'summary_stats': summary_stats,
+                'store_breakdown': store_breakdown,
+                'daily_breakdown': daily_breakdown,
+                'failed_sales': failed_sales
+            }, 300)  # Cache for 5 minutes
+
+        # Log access
+        from .tasks import log_report_access
+        log_report_access.delay(
+            0,  # No saved report ID
+            request.user.id,
+            schema_name,
+            'VIEW',
+            form.cleaned_data,
+            get_client_ip(request),
+            request.META.get('HTTP_USER_AGENT', '')
         )
 
-        from .services.report_generator import ReportGeneratorService
-        generator = ReportGeneratorService(request.user, saved_report)
-
-        compliance_data = generator.generate(
-            start_date=start_date,
-            end_date=end_date,
-            store_id=store_filter.id if store_filter else None
-        )
+    # Prepare data for charts
+    chart_data = {
+        'labels': [store['store__name'] for store in store_breakdown[:10]],
+        'compliance_rates': [store.get('compliance_rate', 0) for store in store_breakdown[:10]],
+        'fiscalized_counts': [store.get('fiscalized', 0) for store in store_breakdown[:10]],
+        'pending_counts': [store.get('pending', 0) for store in store_breakdown[:10]],
+    }
 
     context = {
         'form': form,
         'compliance_data': compliance_data,
+        'summary_stats': summary_stats,
+        'store_breakdown': store_breakdown,
+        'daily_breakdown': daily_breakdown,
+        'failed_sales': failed_sales,
+        'chart_data': json.dumps(chart_data),
         'stores': stores,
     }
 
     return render(request, 'reports/efris_compliance.html', context)
+
+
+
+@login_required
+@permission_required('reports.view_savedreport')
+def cashier_performance_report(request):
+    """Cashier performance report with enhanced metrics"""
+    form = ReportFilterForm(request.GET or None, user=request.user)
+
+    # Get user's accessible stores
+    stores = get_user_accessible_stores(request.user)
+
+    performance_data = []
+    summary_stats = {}
+
+    if form.is_valid():
+        start_date = form.cleaned_data.get('start_date')
+        end_date = form.cleaned_data.get('end_date')
+        store_filter = form.cleaned_data.get('store')
+
+        # Check if user has access to selected store
+        if store_filter and store_filter not in stores:
+            messages.error(request, "You don't have access to the selected store.")
+            return redirect('reports:cashier_performance')
+
+        # Include schema in cache key
+        schema_name = connection.schema_name
+        cache_key = f'cashier_performance_{schema_name}_{request.user.id}_{start_date}_{end_date}_{store_filter}'
+        cached_result = cache.get(cache_key)
+
+        if cached_result and not request.GET.get('refresh'):
+            performance_data = cached_result['performance_data']
+            summary_stats = cached_result['summary_stats']
+        else:
+            saved_report = SavedReport(
+                name='Cashier Performance',
+                report_type='CASHIER_PERFORMANCE',
+                created_by=request.user
+            )
+            saved_report.save()
+
+            from .services.report_generator import ReportGeneratorService
+            generator = ReportGeneratorService(request.user, saved_report)
+
+            report_data = generator.generate(
+                start_date=start_date,
+                end_date=end_date,
+                store_id=store_filter.id if store_filter else None
+            )
+
+            performance_data = report_data.get('performance', [])
+            summary_stats = report_data.get('summary', {})
+
+            cache.set(cache_key, {
+                'performance_data': performance_data,
+                'summary_stats': summary_stats
+            }, 300)
+
+    # Calculate additional metrics
+    for cashier in performance_data:
+        cashier['name'] = f"{cashier.get('created_by__first_name', '')} {cashier.get('created_by__last_name', '')}".strip()
+        cashier['username'] = cashier.get('created_by__username', 'N/A')
+        cashier['store_name'] = cashier.get('store__name', 'N/A')
+
+    # Sort by total sales
+    performance_data = sorted(performance_data, key=lambda x: x.get('total_sales', 0), reverse=True)
+
+    context = {
+        'form': form,
+        'performance_data': performance_data,
+        'summary_stats': summary_stats,
+        'stores': stores,
+    }
+
+    return render(request, 'reports/cashier_performance.html', context)
+
+@login_required
+@permission_required('reports.view_savedreport')
+def profit_loss_report(request):
+    """Profit and Loss statement report"""
+    form = ReportFilterForm(request.GET or None, user=request.user)
+
+    # Get user's accessible stores
+    stores = get_user_accessible_stores(request.user)
+
+    profit_loss_data = {}
+    category_profit = []
+    summary = {}
+
+    if form.is_valid():
+        start_date = form.cleaned_data.get('start_date')
+        end_date = form.cleaned_data.get('end_date')
+        store_filter = form.cleaned_data.get('store')
+
+        # Check if user has access to selected store
+        if store_filter and store_filter not in stores:
+            messages.error(request, "You don't have access to the selected store.")
+            return redirect('reports:profit_loss')
+
+        # Include schema in cache key
+        schema_name = connection.schema_name
+        cache_key = f'profit_loss_{schema_name}_{request.user.id}_{start_date}_{end_date}_{store_filter}'
+        cached_result = cache.get(cache_key)
+
+        if cached_result and not request.GET.get('refresh'):
+            profit_loss_data = cached_result['profit_loss_data']
+            category_profit = cached_result['category_profit']
+            summary = cached_result['summary']
+        else:
+            saved_report = SavedReport(
+                name='Profit & Loss',
+                report_type='PROFIT_LOSS',
+                created_by=request.user
+            )
+            saved_report.save()
+
+            from .services.report_generator import ReportGeneratorService
+            generator = ReportGeneratorService(request.user, saved_report)
+
+            report_data = generator.generate(
+                start_date=start_date,
+                end_date=end_date,
+                store_id=store_filter.id if store_filter else None
+            )
+
+            profit_loss_data = report_data.get('profit_loss', {})
+            category_profit = report_data.get('category_profit', [])
+            summary = {
+                'total_revenue': profit_loss_data.get('revenue', {}).get('net_revenue', 0),
+                'total_profit': profit_loss_data.get('profit', {}).get('net_profit', 0),
+                'total_costs': profit_loss_data.get('costs', {}).get('total_costs', 0),
+                'gross_margin': profit_loss_data.get('profit', {}).get('gross_margin', 0),
+                'net_margin': profit_loss_data.get('profit', {}).get('net_margin', 0),
+            }
+
+            cache.set(cache_key, {
+                'profit_loss_data': profit_loss_data,
+                'category_profit': category_profit,
+                'summary': summary
+            }, 300)
+
+    # Prepare chart data
+    revenue_data = profit_loss_data.get('revenue', {})
+    cost_data = profit_loss_data.get('costs', {})
+    profit_data = profit_loss_data.get('profit', {})
+
+    context = {
+        'form': form,
+        'profit_loss_data': profit_loss_data,
+        'category_profit': category_profit,
+        'summary': summary,
+        'revenue_data': json.dumps(revenue_data),
+        'cost_data': json.dumps(cost_data),
+        'profit_data': json.dumps(profit_data),
+        'stores': stores,
+    }
+
+    return render(request, 'reports/profit_loss.html', context)
+
+
+@login_required
+@permission_required('reports.view_savedreport')
+def stock_movement_report(request):
+    """Stock movement tracking report"""
+    from .forms import ReportFilterForm
+
+    form = ReportFilterForm(request.GET or None, user=request.user)
+
+    # Get user's accessible stores
+    stores = get_user_accessible_stores(request.user)
+
+    movements = []
+    summary = []
+    filters = {}
+
+    if form.is_valid():
+        start_date = form.cleaned_data.get('start_date')
+        end_date = form.cleaned_data.get('end_date')
+        store_filter = form.cleaned_data.get('store')
+        movement_type = request.GET.get('movement_type')
+
+        # Check if user has access to selected store
+        if store_filter and store_filter not in stores:
+            messages.error(request, "You don't have access to the selected store.")
+            return redirect('reports:stock_movement')
+
+        # Include schema in cache key
+        schema_name = connection.schema_name
+        cache_key = f'stock_movement_{schema_name}_{request.user.id}_{start_date}_{end_date}_{store_filter}_{movement_type}'
+        cached_result = cache.get(cache_key)
+
+        if cached_result and not request.GET.get('refresh'):
+            movements = cached_result['movements']
+            summary = cached_result['summary']
+        else:
+            saved_report = SavedReport(
+                name='Stock Movement',
+                report_type='STOCK_MOVEMENT',
+                created_by=request.user
+            )
+            saved_report.save()
+
+            from .services.report_generator import ReportGeneratorService
+            generator = ReportGeneratorService(request.user, saved_report)
+
+            filters = {
+                'start_date': start_date,
+                'end_date': end_date,
+                'store_id': store_filter.id if store_filter else None,
+                'movement_type': movement_type
+            }
+
+            report_data = generator.generate(**filters)
+
+            movements = report_data.get('movements', [])
+            summary = report_data.get('summary', [])
+
+            cache.set(cache_key, {
+                'movements': movements,
+                'summary': summary
+            }, 300)
+
+    # Movement type choices (you might want to get these from your model)
+    movement_types = [
+        ('', 'All Types'),
+        ('PURCHASE', 'Purchase'),
+        ('SALE', 'Sale'),
+        ('TRANSFER_IN', 'Transfer In'),
+        ('TRANSFER_OUT', 'Transfer Out'),
+        ('ADJUSTMENT', 'Adjustment'),
+        ('RETURN', 'Return'),
+        ('WASTAGE', 'Wastage'),
+    ]
+
+    # Calculate totals
+    total_in = sum([m['quantity'] for m in movements if m['movement_type'] in ['PURCHASE', 'TRANSFER_IN', 'RETURN']])
+    total_out = sum(
+        [m['quantity'] for m in movements if m['movement_type'] in ['SALE', 'TRANSFER_OUT', 'ADJUSTMENT', 'WASTAGE']])
+    net_movement = total_in - total_out
+
+    context = {
+        'form': form,
+        'movements': movements,
+        'summary': summary,
+        'filters': filters,
+        'movement_types': movement_types,
+        'total_in': total_in,
+        'total_out': total_out,
+        'net_movement': net_movement,
+        'selected_type': request.GET.get('movement_type', ''),
+        'stores': stores,
+    }
+
+    return render(request, 'reports/stock_movement.html', context)
+
+
+@login_required
+@permission_required('reports.view_savedreport')
+def price_lookup_report(request):
+    """Price lookup report for products with enhanced filtering"""
+    from .forms import ReportFilterForm
+    from inventory.models import Category
+
+    form = ReportFilterForm(request.GET or None, user=request.user)
+
+    # Get user's accessible stores
+    stores = get_user_accessible_stores(request.user)
+
+    products_data = []
+    summary = {}
+
+    if form.is_valid():
+        search_query = request.GET.get('search', '')
+        category_id = request.GET.get('category')
+        store_filter = form.cleaned_data.get('store')
+
+        # Check if user has access to selected store
+        if store_filter and store_filter not in stores:
+            messages.error(request, "You don't have access to the selected store.")
+            return redirect('reports:price_lookup')
+
+        # Include schema in cache key
+        schema_name = connection.schema_name
+        cache_key = f'price_lookup_{schema_name}_{request.user.id}_{search_query}_{category_id}_{store_filter}'
+        cached_result = cache.get(cache_key)
+
+        if cached_result and not request.GET.get('refresh'):
+            products_data = cached_result['products_data']
+            summary = cached_result['summary']
+        else:
+            saved_report = SavedReport(
+                name='Price Lookup',
+                report_type='PRICE_LOOKUP',
+                created_by=request.user
+            )
+            saved_report.save()
+
+            from .services.report_generator import ReportGeneratorService
+            generator = ReportGeneratorService(request.user, saved_report)
+
+            filters = {
+                'search': search_query,
+                'category_id': category_id,
+                'store_id': store_filter.id if store_filter else None
+            }
+
+            report_data = generator.generate(**filters)
+
+            products_data = report_data.get('products', [])
+
+            # Calculate summary
+            if products_data:
+                summary = {
+                    'total_products': len(products_data),
+                    'total_stock_value': sum([p.get('total_stock', 0) * p.get('cost_price', 0) for p in products_data]),
+                    'total_retail_value': sum(
+                        [p.get('total_stock', 0) * p.get('selling_price', 0) for p in products_data]),
+                    'avg_margin': sum(
+                        [((p.get('selling_price', 0) - p.get('cost_price', 0)) / p.get('selling_price', 0) * 100)
+                         for p in products_data if p.get('selling_price', 0) > 0]) / len(
+                        products_data) if products_data else 0,
+                }
+
+            cache.set(cache_key, {
+                'products_data': products_data,
+                'summary': summary
+            }, 300)
+
+    # Get all categories for filter
+    categories = Category.objects.all()
+
+    context = {
+        'form': form,
+        'products_data': products_data,
+        'summary': summary,
+        'categories': categories,
+        'search_query': request.GET.get('search', ''),
+        'selected_category': request.GET.get('category', ''),
+        'stores': stores,
+    }
+
+    return render(request, 'reports/price_lookup.html', context)
+
+@login_required
+@permission_required('reports.view_savedreport')
+def customer_analytics_report(request):
+    """Customer analytics and segmentation report"""
+    form = ReportFilterForm(request.GET or None, user=request.user)
+
+    # Get user's accessible stores
+    stores = get_user_accessible_stores(request.user)
+
+    customers_data = []
+    summary = {}
+    top_products = []
+
+    if form.is_valid():
+        start_date = form.cleaned_data.get('start_date')
+        end_date = form.cleaned_data.get('end_date')
+        store_filter = form.cleaned_data.get('store')
+
+        # Check if user has access to selected store
+        if store_filter and store_filter not in stores:
+            messages.error(request, "You don't have access to the selected store.")
+            return redirect('reports:customer_analytics')
+
+        # Include schema in cache key
+        schema_name = connection.schema_name
+        cache_key = f'customer_analytics_{schema_name}_{request.user.id}_{start_date}_{end_date}_{store_filter}'
+        cached_result = cache.get(cache_key)
+
+        if cached_result and not request.GET.get('refresh'):
+            customers_data = cached_result['customers_data']
+            summary = cached_result['summary']
+            top_products = cached_result['top_products']
+        else:
+            saved_report = SavedReport(
+                name='Customer Analytics',
+                report_type='CUSTOMER_ANALYTICS',
+                created_by=request.user
+            )
+            saved_report.save()
+
+            from .services.report_generator import ReportGeneratorService
+            generator = ReportGeneratorService(request.user, saved_report)
+
+            report_data = generator.generate(
+                start_date=start_date,
+                end_date=end_date,
+                store_id=store_filter.id if store_filter else None
+            )
+
+            customers_data = report_data.get('customers', [])
+            summary = report_data.get('summary', {})
+            top_products = report_data.get('top_products', [])
+
+            cache.set(cache_key, {
+                'customers_data': customers_data,
+                'summary': summary,
+                'top_products': top_products
+            }, 300)
+
+    # Segment customers
+    segments = {
+        'high_value': [c for c in customers_data if c.get('total_spent', 0) > 1000000],
+        'medium_value': [c for c in customers_data if 500000 <= c.get('total_spent', 0) <= 1000000],
+        'low_value': [c for c in customers_data if c.get('total_spent', 0) < 500000],
+        'repeat_customers': [c for c in customers_data if c.get('total_purchases', 0) > 1],
+        'new_customers': [c for c in customers_data if c.get('total_purchases', 0) == 1],
+    }
+
+    # Calculate segment statistics
+    segment_stats = {
+        name: {
+            'count': len(customers),
+            'total_spent': sum([c.get('total_spent', 0) for c in customers]),
+            'avg_spent': sum([c.get('total_spent', 0) for c in customers]) / len(customers) if customers else 0
+        }
+        for name, customers in segments.items()
+    }
+
+    # Prepare chart data
+    customer_names = [c.get('customer__name', f"Customer {c.get('customer__id', '')}") for c in customers_data[:10]]
+    customer_spending = [float(c.get('total_spent', 0)) for c in customers_data[:10]]
+
+    context = {
+        'form': form,
+        'customers_data': customers_data[:50],  # Limit display to 50
+        'summary': summary,
+        'top_products': top_products,
+        'segments': segments,
+        'segment_stats': segment_stats,
+        'customer_names': json.dumps(customer_names),
+        'customer_spending': json.dumps(customer_spending),
+        'stores': stores,
+    }
+
+    return render(request, 'reports/customer_analytics.html', context)
+
+
+@login_required
+@permission_required('reports.view_savedreport')
+def custom_report(request, report_id=None):
+    """Custom report configuration and generation"""
+    if report_id:
+        # Load existing custom report
+        saved_report = get_object_or_404(SavedReport, id=report_id)
+
+        # Check permissions
+        if not (user_can_access_all_stores(request.user) or
+                saved_report.created_by == request.user or saved_report.is_shared):
+            raise PermissionDenied
+    else:
+        saved_report = None
+
+    if request.method == 'POST':
+        form = SavedReportForm(request.POST, instance=saved_report)
+        if form.is_valid():
+            custom_report = form.save(commit=False)
+            custom_report.report_type = 'CUSTOM'
+            custom_report.created_by = request.user
+
+            # Parse custom parameters from form
+            custom_params = {}
+            for key, value in request.POST.items():
+                if key.startswith('custom_'):
+                    param_key = key.replace('custom_', '')
+                    custom_params[param_key] = value
+
+            custom_report.parameters = custom_params
+            custom_report.save()
+
+            messages.success(request, 'Custom report saved successfully!')
+            return redirect('reports:run_saved_report', report_id=custom_report.id)
+    else:
+        form = SavedReportForm(instance=saved_report)
+
+    # Get available report templates
+    report_templates = SavedReport.objects.filter(
+        report_type__in=['SALES_SUMMARY', 'PRODUCT_PERFORMANCE', 'INVENTORY_STATUS'],
+        is_shared=True
+    ).values('id', 'name', 'report_type')
+
+    context = {
+        'form': form,
+        'saved_report': saved_report,
+        'report_templates': report_templates,
+        'title': 'Create Custom Report' if not saved_report else 'Edit Custom Report',
+    }
+
+    return render(request, 'reports/custom_report_form.html', context)
 
 
 @login_required

@@ -28,22 +28,25 @@ def get_tenant_from_schema(schema_name):
         return None
 
 
+from celery import shared_task
+from django.db import transaction
+from django.utils import timezone
+from asgiref.sync import async_to_sync
+import os
+import time
+import json
+from io import BytesIO
+from django.conf import settings
+
 @shared_task(bind=True, max_retries=3)
 def generate_report_async(self, report_id, user_id, schema_name, **kwargs):
-    """
-    Asynchronously generate report with progress tracking
-
-    Args:
-        report_id: ID of the SavedReport
-        user_id: ID of the user
-        schema_name: Tenant schema name to execute in
-    """
     tenant = get_tenant_from_schema(schema_name)
     if not tenant:
-        logger.error(f"Cannot generate report: tenant not found for schema {schema_name}")
-        return {'success': False, 'error': 'Tenant not found'}
+        return
 
     with tenant_context(tenant):
+        from django.db import transaction
+        from django.utils import timezone
         from .models import SavedReport, GeneratedReport
         from accounts.models import CustomUser
         from .services.report_generator import ReportGeneratorService
@@ -51,174 +54,128 @@ def generate_report_async(self, report_id, user_id, schema_name, **kwargs):
         from .services.excel_export import ExcelExportService
         from .consumers import send_report_progress, send_report_complete, send_report_failed
 
+        generated_report = None
+
         try:
-            # Get report and user
             report = SavedReport.objects.get(id=report_id)
             user = CustomUser.objects.get(id=user_id)
 
-            # Create GeneratedReport record
-            generated_report = GeneratedReport.objects.create(
-                report=report,
-                generated_by=user,
-                parameters=kwargs,
-                file_format=kwargs.get('format', 'PDF'),
-                status='PROCESSING',
-                task_id=self.request.id
-            )
+            # 🔒 ATOMIC LOCK
+            with transaction.atomic():
+                active_qs = (
+                    GeneratedReport.objects
+                    .select_for_update()
+                    .filter(
+                        report=report,
+                        generated_by=user,
+                        status__in=['PENDING', 'PROCESSING']
+                    )
+                    .order_by('-generated_at')
+                )
 
-            # Send progress: Starting
+                # Cancel ALL old active ones
+                active_qs.update(
+                    status='CANCELLED',
+                    error_message='Superseded by new run',
+                    completed_at=timezone.now()
+                )
+
+                # Always create a fresh row
+                generated_report = GeneratedReport.objects.create(
+                    report=report,
+                    generated_by=user,
+                    parameters=kwargs,
+                    file_format=kwargs.get('format', 'PDF'),
+                    status='PROCESSING',
+                    progress=10,
+                    task_id=self.request.id
+                )
+
+            # ✅ Persist processing state
+            generated_report.save(update_fields=['status', 'progress'])
+
             async_to_sync(send_report_progress)(
-                generated_report.id, 10, 'Initializing report generation...', 'processing'
+                generated_report.id, 10, 'Initializing...', 'processing'
             )
 
-            # Generate report data
-            logger.info(f"Starting report generation: {report.name} for user {user.id} in schema {schema_name}")
             start_time = time.time()
-
             generator = ReportGeneratorService(user, report)
 
-            # Send progress: Fetching data
+            generated_report.update_progress(30, 'Fetching data...')
             async_to_sync(send_report_progress)(
-                generated_report.id, 30, 'Fetching data from database...', 'processing'
+                generated_report.id, 30, 'Fetching data...', 'processing'
             )
 
             report_data = generator.generate(**kwargs)
 
-            # Send progress: Processing data
+            generated_report.update_progress(50, 'Processing data...')
             async_to_sync(send_report_progress)(
-                generated_report.id, 50, 'Processing report data...', 'processing'
+                generated_report.id, 50, 'Processing data...', 'processing'
             )
 
-            # Get company info for export
             company_info = {
                 'name': user.company.name if user.company else 'Company',
-                'address': user.company.physical_address if user.company else '',
-                'phone': user.company.phone if user.company else '',
-                'email': user.company.email if user.company else '',
-                'tin': user.company.tin if user.company else '',
                 'logo_path': user.company.logo.path if user.company and user.company.logo else None,
-                'watermark': kwargs.get('watermark', 'PRIME BOOKS UG') if kwargs.get('confidential') else '',
-                'confidential': kwargs.get('confidential', False),
             }
 
-            # Generate file based on format
             file_format = kwargs.get('format', 'PDF')
 
-            # Send progress: Generating file
+            generated_report.update_progress(70, f'Generating {file_format}...')
             async_to_sync(send_report_progress)(
-                generated_report.id, 70, f'Generating {file_format} file...', 'processing'
+                generated_report.id, 70, f'Generating {file_format}...', 'processing'
             )
 
             if file_format == 'PDF':
-                orientation = report.pdf_orientation if report.pdf_orientation != 'auto' else 'auto'
-                pdf_service = PDFExportService(report_data, report.name, company_info, orientation)
-                file_buffer = pdf_service.generate_pdf()
-                file_extension = 'pdf'
-
+                buffer = PDFExportService(report_data, report.name, company_info).generate_pdf()
+                ext = 'pdf'
             elif file_format == 'XLSX':
-                excel_service = ExcelExportService(report_data, report.name, company_info)
-                file_buffer = excel_service.generate_excel()
-                file_extension = 'xlsx'
-
-            elif file_format == 'CSV':
-                from .services.csv_export import CSVExportService
-                csv_service = CSVExportService(report_data, report.name)
-                file_buffer = csv_service.generate_csv()
-                file_extension = 'csv'
-
-            elif file_format == 'JSON':
-                import json
-                from io import BytesIO
-                file_buffer = BytesIO()
-                file_buffer.write(json.dumps(report_data, default=str, indent=2).encode('utf-8'))
-                file_buffer.seek(0)
-                file_extension = 'json'
-
+                buffer = ExcelExportService(report_data, report.name, company_info).generate_excel()
+                ext = 'xlsx'
             else:
-                raise ValueError(f"Unsupported format: {file_format}")
+                raise ValueError('Unsupported format')
 
-            # Save file
-            async_to_sync(send_report_progress)(
-                generated_report.id, 85, 'Saving file...', 'processing'
-            )
-
-            timestamp = timezone.now().strftime('%Y%m%d_%H%M%S')
-            filename = f"{report.name.replace(' ', '_')}_{timestamp}.{file_extension}"
-
-            # Create tenant-specific reports directory
             reports_dir = os.path.join(settings.MEDIA_ROOT, 'generated_reports', schema_name)
             os.makedirs(reports_dir, exist_ok=True)
 
+            filename = f"{report.name.replace(' ', '_')}_{timezone.now():%Y%m%d_%H%M%S}.{ext}"
             file_path = os.path.join(reports_dir, filename)
 
             with open(file_path, 'wb') as f:
-                f.write(file_buffer.getvalue())
+                f.write(buffer.getvalue())
 
             file_size = os.path.getsize(file_path)
             generation_time = time.time() - start_time
+            row_count = len(report_data.get('products', []))
 
-            # Count rows
-            row_count = 0
-            if 'grouped_data' in report_data:
-                row_count = len(report_data['grouped_data'])
-            elif 'products' in report_data:
-                row_count = len(report_data['products'])
-            elif 'inventory' in report_data:
-                row_count = len(report_data['inventory'])
-
-            # Update generated report
-            generated_report.mark_as_completed(file_path, file_size, row_count, generation_time)
-
-            # Send progress: Complete
-            async_to_sync(send_report_progress)(
-                generated_report.id, 100, 'Report generated successfully!', 'completed'
+            generated_report.mark_as_completed(
+                file_path, file_size, row_count, generation_time
             )
 
-            download_url = f'/reports/download/{generated_report.id}/'
+            async_to_sync(send_report_progress)(
+                generated_report.id, 100, 'Completed', 'completed'
+            )
 
             async_to_sync(send_report_complete)(
                 generated_report.id,
                 generated_report.id,
-                download_url,
+                f'/reports/download/{generated_report.id}/',
                 file_size,
                 row_count
             )
 
-            logger.info(f"Report generated successfully: {report.name} (ID: {generated_report.id})")
-
-            # Send email if requested
-            if kwargs.get('email_report'):
-                send_report_email.delay(generated_report.id, kwargs.get('email_recipients'), schema_name)
-
-            # Invalidate cache
-            cache.delete(f'dashboard_stats_{user.id}')
-
-            return {
-                'success': True,
-                'generated_report_id': generated_report.id,
-                'file_path': file_path,
-                'file_size': file_size,
-                'generation_time': generation_time
-            }
-
         except Exception as e:
-            logger.error(f"Error generating report in schema {schema_name}: {str(e)}", exc_info=True)
-
-            try:
+            if generated_report and generated_report.status != 'COMPLETED':
                 generated_report.mark_as_failed(str(e))
-
                 async_to_sync(send_report_failed)(
-                    generated_report.id,
-                    str(e)
+                    generated_report.id, str(e)
                 )
-            except:
-                pass
 
-            # Retry on certain errors
-            if 'database' in str(e).lower() or 'timeout' in str(e).lower():
+            if 'timeout' in str(e).lower() or 'database' in str(e).lower():
                 raise self.retry(exc=e, countdown=60)
 
             raise
+
+
 
 
 @shared_task

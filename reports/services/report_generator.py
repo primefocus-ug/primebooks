@@ -93,7 +93,7 @@ class ReportGeneratorService:
             'STOCK_MOVEMENT': self._generate_stock_movement,
             'PRICE_LOOKUP': self._generate_price_lookup,
             'CUSTOMER_ANALYTICS': self._generate_customer_analytics,
-            'CUSTOM': self._generate_custom,  # Fallback
+            'CUSTOM': self._generate_custom,
         }
 
         generator = generator_map.get(self.report.report_type)
@@ -834,6 +834,7 @@ class ReportGeneratorService:
 
         stores = self.get_accessible_stores()
 
+        # Base queryset for daily sales
         queryset = Sale.objects.filter(
             store__in=stores,
             status__in=['COMPLETED', 'PAID'],
@@ -843,39 +844,67 @@ class ReportGeneratorService:
         if store_id:
             queryset = queryset.filter(store_id=store_id)
 
-        # Main summary
+        # Main summary - FIXED: Aggregate directly on queryset
         summary = queryset.aggregate(
             total_sales=Sum('total_amount'),
             total_transactions=Count('id'),
             total_tax=Sum('tax_amount'),
             total_discount=Sum('discount_amount'),
-            avg_transaction=Avg('total_amount'),
         )
 
-        # Payment method breakdown
-        payment_breakdown = list(queryset.values('payment_method').annotate(
-            count=Count('id'),
-            amount=Sum('total_amount')
-        ).order_by('payment_method'))
+        # Calculate average transaction manually
+        if summary['total_transactions'] > 0:
+            summary['avg_transaction'] = summary['total_sales'] / summary['total_transactions']
+        else:
+            summary['avg_transaction'] = 0
+
+        # Payment method breakdown - FIXED: Use proper aggregation
+        payment_breakdown = list(
+            queryset.values('payment_method')
+            .annotate(
+                count=Count('id'),
+                amount=Sum('total_amount')
+            )
+            .order_by('payment_method')
+        )
 
         # Hourly breakdown
-        hourly_breakdown = list(queryset.extra(
-            select={'hour': "EXTRACT(hour FROM created_at)"}
-        ).values('hour').annotate(
-            count=Count('id'),
-            amount=Sum('total_amount')
-        ).order_by('hour'))
+        hourly_breakdown = list(
+            queryset.extra(
+                select={'hour': "EXTRACT(hour FROM created_at)"}
+            )
+            .values('hour')
+            .annotate(
+                count=Count('id'),
+                amount=Sum('total_amount')
+            )
+            .order_by('hour')
+        )
 
-        # Cashier performance
-        cashier_performance = list(queryset.values(
-            'created_by__first_name',
-            'created_by__last_name',
-            'created_by__username'
-        ).annotate(
-            transaction_count=Count('id'),
-            total_amount=Sum('total_amount'),
-            avg_transaction=Avg('total_amount')
-        ).order_by('-total_amount'))
+        # Cashier performance - FIXED: Calculate average in Python
+        cashier_performance_raw = list(
+            queryset.values(
+                'created_by__id',
+                'created_by__first_name',
+                'created_by__last_name',
+                'created_by__username'
+            )
+            .annotate(
+                transaction_count=Count('id'),
+                total_amount=Sum('total_amount')
+            )
+            .order_by('-total_amount')
+        )
+
+        # Calculate average transaction per cashier in Python
+        cashier_performance = []
+        for cashier in cashier_performance_raw:
+            cashier_data = dict(cashier)
+            if cashier['transaction_count'] > 0:
+                cashier_data['avg_transaction'] = cashier['total_amount'] / cashier['transaction_count']
+            else:
+                cashier_data['avg_transaction'] = 0
+            cashier_performance.append(cashier_data)
 
         # Refunds and voids
         refunds = queryset.filter(is_refunded=True).aggregate(
@@ -889,14 +918,34 @@ class ReportGeneratorService:
         )
 
         # Top products sold today
-        top_products = list(SaleItem.objects.filter(
-            sale__in=queryset
-        ).values(
-            'product__name', 'product__sku'
-        ).annotate(
-            quantity=Sum('quantity'),
-            revenue=Sum('total_price')
-        ).order_by('-revenue')[:10])
+        top_products = list(
+            SaleItem.objects.filter(
+                sale__in=queryset
+            )
+            .values(
+                'product__name',
+                'product__sku'
+            )
+            .annotate(
+                quantity=Sum('quantity'),
+                revenue=Sum('total_price')
+            )
+            .order_by('-revenue')[:10]
+        )
+
+        # Additional metrics for the template
+        first_sale = queryset.order_by('created_at').first()
+        last_sale = queryset.order_by('-created_at').first()
+
+        if first_sale and last_sale:
+            operating_hours = (last_sale.created_at - first_sale.created_at).seconds // 3600
+            if operating_hours == 0:
+                operating_hours = 1
+        else:
+            operating_hours = 0
+
+        # Calculate net sales
+        net_sales = (summary['total_sales'] or 0) - (summary['total_discount'] or 0) - (summary['total_tax'] or 0)
 
         return {
             'report_date': report_date.isoformat(),
@@ -908,6 +957,11 @@ class ReportGeneratorService:
             'voids': voids,
             'top_products': top_products,
             'filters': kwargs,
+            'first_sale_time': first_sale.created_at.time().strftime('%H:%M') if first_sale else '08:00',
+            'last_sale_time': last_sale.created_at.time().strftime('%H:%M') if last_sale else '20:00',
+            'operating_hours': operating_hours,
+            'net_sales': net_sales,
+            'max_hourly_amount': max([hour.get('amount', 0) for hour in hourly_breakdown], default=0),
         }
 
     def _generate_efris_compliance(self, **kwargs) -> Dict:

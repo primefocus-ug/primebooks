@@ -322,102 +322,66 @@ class BranchAnalyticsAPIView(LoginRequiredMixin, View):
 
 
 class DashboardView(LoginRequiredMixin, PermissionRequiredMixin, TemplateView):
-    """Enhanced dashboard for SaaS admin or single company view."""
+    """Dashboard view showing only the current user's company."""
     template_name = 'company/dashboard.html'
     permission_required = 'company.view_company'
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
+        user_company = getattr(self.request.user, 'company', None)
 
-        # Check if user is SaaS admin
-        if self.request.user.is_saas_admin:
-            # SaaS admin sees all companies
-            companies = Company.objects.all()
-
+        if not user_company:
+            # User has no company assigned
             context.update({
-                'total_companies': companies.count(),
-                'verified_companies': companies.filter(is_verified=True).count(),
-                'efris_enabled_companies': companies.filter(efris_enabled=True).count(),
-                'active_companies': companies.filter(status='ACTIVE').count(),
-                'trial_companies': companies.filter(status='TRIAL').count(),
-                'expired_companies': companies.filter(status='EXPIRED').count(),
-                'recent_companies': companies.order_by('-created_at')[:5],
-                'is_saas_admin': True,
+                'total_companies': 0,
+                'verified_companies': 0,
+                'efris_enabled_companies': 0,
+                'active_companies': 0,
+                'trial_companies': 0,
+                'expired_companies': 0,
+                'total_branches': 0,
+                'total_employees': 0,
+                'recent_companies': [],
+                'company': None,
+                'company_id': None,
+                'is_saas_admin': False,
+                'monthly_registrations': [],
+                'currency_distribution': [],
+                'plan_distribution': [],
+                'status_distribution': [],
             })
+            return context
 
-            # Calculate totals across all companies
-            total_branches = Store.objects.count()
-            total_employees = CustomUser.objects.filter(is_hidden=False).count()
+        company = user_company
+        context['company'] = company
+        context['company_id'] = company.company_id
+        context['is_saas_admin'] = False  # Even if user is SaaS admin, only current company is shown
 
-        else:
-            # Regular user sees only their company
-            user_company = getattr(self.request.user, 'company', None)
-            if not user_company:
-                context.update({
-                    'total_companies': 0,
-                    'verified_companies': 0,
-                    'efris_enabled_companies': 0,
-                    'active_companies': 0,
-                    'trial_companies': 0,
-                    'expired_companies': 0,
-                    'total_branches': 0,
-                    'total_employees': 0,
-                    'recent_companies': [],
-                    'company': None,
-                    'company_id': None,
-                    'is_saas_admin': False,
-                })
-                return context
-
-            company = user_company
-            context['company'] = company
-            context['company_id'] = company.company_id
-            context['is_saas_admin'] = False
-
-            # Stats for single company
-            try:
-                total_branches = Store.objects.filter(
-                    company=company,
-                    is_active=True
-                ).count()
-            except:
-                total_branches = 0
-
-            try:
-                total_employees = CustomUser.objects.filter(
-                    company=company,
-                    is_active=True,
-                    is_hidden=False
-                ).count()
-            except:
-                total_employees = 0
-
-            context.update({
-                'total_companies': 1,
-                'verified_companies': 1 if company.is_verified else 0,
-                'efris_enabled_companies': 1 if company.efris_enabled else 0,
-                'active_companies': 1 if company.status == 'ACTIVE' else 0,
-                'trial_companies': 1 if company.status == 'TRIAL' else 0,
-                'expired_companies': 1 if company.status == 'EXPIRED' else 0,
-                'recent_companies': [company],
-            })
-
-            # Company-specific charts data
-            context['monthly_registrations'] = self.get_monthly_registrations_single(company)
-            context['currency_distribution'] = [{'currency': company.preferred_currency, 'count': 1}]
-            context['plan_distribution'] = [
-                {'plan': company.plan.display_name if company.plan else 'No Plan', 'count': 1}]
-            context['status_distribution'] = [{'status': company.status, 'count': 1}]
+        # Company stats
+        total_branches = Store.objects.filter(company=company, is_active=True).count()
+        total_employees = CustomUser.objects.filter(company=company, is_active=True, is_hidden=False).count()
 
         context.update({
+            'total_companies': 1,
+            'verified_companies': 1 if company.is_verified else 0,
+            'efris_enabled_companies': 1 if company.efris_enabled else 0,
+            'active_companies': 1 if company.status == 'ACTIVE' else 0,
+            'trial_companies': 1 if company.status == 'TRIAL' else 0,
+            'expired_companies': 1 if company.status == 'EXPIRED' else 0,
+            'recent_companies': [company],
             'total_branches': total_branches,
             'total_employees': total_employees,
+            # Charts data
+            'monthly_registrations': self.get_monthly_registrations_single(company),
+            'currency_distribution': [{'currency': company.preferred_currency, 'count': 1}],
+            'plan_distribution': [{'plan': company.plan.display_name if company.plan else 'No Plan', 'count': 1}],
+            'status_distribution': [{'status': company.status, 'count': 1}],
         })
 
         return context
 
     def get_monthly_registrations_single(self, company):
-        """Get registration data for single company."""
+        """Get registration data for single company over the past 12 months."""
         data = []
         now = timezone.now()
 
@@ -434,6 +398,7 @@ class DashboardView(LoginRequiredMixin, PermissionRequiredMixin, TemplateView):
             })
 
         return list(reversed(data))
+
 
 
 class CompanyListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):

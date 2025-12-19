@@ -1177,56 +1177,6 @@ def process_sale_creation(request):
         return render_sale_form(request)
 
 
-def bulk_update_stock_async(items_data, store, sale_reference, user):
-    """Update stock for multiple items asynchronously"""
-    from inventory.models import Stock, StockMovement
-    from django.db.models import F
-
-    try:
-        with transaction.atomic():
-            stock_updates = []
-            movements = []
-
-            for item_data in items_data:
-                if item_data['item_type'] == 'PRODUCT' and item_data.get('product'):
-                    product = item_data['product']
-
-                    # Prepare stock update
-                    stock_updates.append(
-                        Stock(
-                            product=product,
-                            store=store,
-                            quantity=F('quantity') - item_data['quantity']
-                        )
-                    )
-
-                    # Prepare stock movement
-                    movements.append(
-                        StockMovement(
-                            product=product,
-                            store=store,
-                            movement_type='SALE',
-                            quantity=item_data['quantity'],
-                            reference=sale_reference,
-                            unit_price=item_data['unit_price'],
-                            total_value=item_data['total_price'],
-                            created_by=user
-                        )
-                    )
-
-            # Bulk update
-            if stock_updates:
-                Stock.objects.bulk_update(stock_updates, ['quantity'])
-
-            if movements:
-                StockMovement.objects.bulk_create(movements)
-
-            return True
-
-    except Exception as e:
-        logger.error(f"Bulk stock update failed: {e}")
-        return False
-
 
 
 @login_required

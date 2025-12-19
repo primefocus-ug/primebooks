@@ -485,21 +485,28 @@ class PDFExportService:
         table_data = [[Paragraph(f"<b>{h}</b>", self.styles['Normal']) for h in headers]]
 
         # Add product rows
-        for product in products[:50]:  # Limit to 50 products
-            profit_margin = product.get('profit_margin', 0)
+        for product in products[:50]:
+            product_name = product.get('product__name') or ''
+            sku = product.get('product__sku') or ''
+            quantity = product.get('total_quantity') or 0
+            revenue = product.get('total_revenue') or 0
+            profit = product.get('total_profit') or 0
+            profit_margin = product.get('profit_margin') or 0
 
-            # Color code based on margin
             margin_color = ColorScheme.get_status_color(profit_margin, 'percentage')
 
             row = [
-                Paragraph(product.get('product__name', '')[:30], self.styles['Normal']),
-                Paragraph(product.get('product__sku', ''), self.styles['Normal']),
-                Paragraph(f"{product.get('total_quantity', 0):,}", self.styles['Normal']),
-                Paragraph(f"UGX {product.get('total_revenue', 0):,.2f}", self.styles['Normal']),
-                Paragraph(f"UGX {product.get('total_profit', 0):,.2f}", self.styles['Normal']),
-                Paragraph(f"<font color='{margin_color}'><b>{profit_margin:.1f}%</b></font>",
-                          self.styles['Normal']),
+                Paragraph(product_name[:30], self.styles['Normal']),
+                Paragraph(sku, self.styles['Normal']),
+                Paragraph(f"{quantity:,}", self.styles['Normal']),
+                Paragraph(f"UGX {revenue:,.2f}", self.styles['Normal']),
+                Paragraph(f"UGX {profit:,.2f}", self.styles['Normal']),
+                Paragraph(
+                    f"<font color='{margin_color}'><b>{profit_margin:.1f}%</b></font>",
+                    self.styles['Normal']
+                ),
             ]
+
             table_data.append(row)
 
         # Create table

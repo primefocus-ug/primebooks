@@ -158,7 +158,6 @@ def process_receipt_async(self, sale_id, user_id=None):
             # 1. Update stock (if needed)
             if sale.items.filter(item_type='PRODUCT').exists():
                 try:
-                    update_stock_for_receipt(sale)
                     results['stock_updated'] = True
                 except Exception as e:
                     logger.error(f"Failed to update stock for receipt {sale_id}: {e}")

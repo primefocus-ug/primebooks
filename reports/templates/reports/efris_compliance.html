@@ -1,175 +1,553 @@
 {% extends 'base.html' %}
 {% load static %}
-{% load custom_filters %}
+{% load humanize %}
 
-{% block title %}EFRIS Compliance Report - Prime Book{% endblock %}
+{% block title %}EFRIS Compliance Report{% endblock %}
 
-{% block page_header %}
-<div class="d-flex justify-content-between align-items-center mb-4">
-    <div>
-        <h1 class="h3 mb-0">EFRIS Compliance Report</h1>
-        <p class="text-muted">Monitor Electronic Fiscal Receipts and Invoicing System compliance</p>
-    </div>
-    <div class="btn-group" role="group">
-        <a href="{% url 'reports:tax_report' %}" class="btn btn-outline-info">
-            <i class="bi bi-receipt me-2"></i>Tax Report
-        </a>
-        <a href="{% url 'reports:dashboard' %}" class="btn btn-outline-secondary">
-            <i class="bi bi-arrow-left me-2"></i>Back to Dashboard
-        </a>
-    </div>
-</div>
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'themes.css' %}">
+<style>
+    .compliance-card {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        border-radius: 12px;
+        padding: 25px;
+        margin-bottom: 20px;
+        border: none;
+        box-shadow: 0 10px 20px rgba(0,0,0,0.1);
+    }
+    [data-theme="dark"] .compliance-card {
+        box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+    }
+    .compliance-rate {
+        font-size: 3.5rem;
+        font-weight: 800;
+        line-height: 1;
+        text-shadow: 2px 2px 4px rgba(0,0,0,0.2);
+    }
+    .compliance-badge {
+        display: inline-block;
+        padding: 8px 20px;
+        border-radius: 50px;
+        font-weight: 600;
+        font-size: 0.9rem;
+    }
+    .compliance-high { background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%); }
+    .compliance-medium { background: linear-gradient(135deg, #fa709a 0%, #fee140 100%); }
+    .compliance-low { background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); }
+
+    .store-card {
+        background: #ffffff;
+        border-radius: 10px;
+        padding: 20px;
+        margin-bottom: 15px;
+        border-left: 4px solid #667eea;
+        transition: transform 0.2s;
+    }
+    [data-theme="dark"] .store-card {
+        background: #1f2937;
+        border-left-color: #764ba2;
+    }
+    .store-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+    }
+
+    .progress-container {
+        height: 10px;
+        background: #e5e7eb;
+        border-radius: 5px;
+        overflow: hidden;
+        margin-top: 10px;
+    }
+    [data-theme="dark"] .progress-container {
+        background: #374151;
+    }
+    .progress-bar {
+        height: 100%;
+        border-radius: 5px;
+    }
+    .progress-success { background: linear-gradient(90deg, #10b981, #34d399); }
+    .progress-warning { background: linear-gradient(90deg, #f59e0b, #fbbf24); }
+    .progress-danger { background: linear-gradient(90deg, #ef4444, #f87171); }
+
+    .timeline {
+        position: relative;
+        padding-left: 30px;
+    }
+    .timeline::before {
+        content: '';
+        position: absolute;
+        left: 10px;
+        top: 0;
+        bottom: 0;
+        width: 2px;
+        background: linear-gradient(to bottom, #667eea, #764ba2);
+    }
+    .timeline-item {
+        position: relative;
+        margin-bottom: 20px;
+    }
+    .timeline-item::before {
+        content: '';
+        position: absolute;
+        left: -30px;
+        top: 5px;
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        background: #667eea;
+        border: 3px solid white;
+    }
+    [data-theme="dark"] .timeline-item::before {
+        border-color: #1f2937;
+    }
+
+    .chart-container {
+        position: relative;
+        height: 400px;
+        margin: 20px 0;
+    }
+
+    .status-badge {
+        padding: 6px 12px;
+        border-radius: 20px;
+        font-size: 0.8rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+    .status-success { background: rgba(16, 185, 129, 0.2); color: #10b981; }
+    .status-warning { background: rgba(245, 158, 11, 0.2); color: #f59e0b; }
+    .status-danger { background: rgba(239, 68, 68, 0.2); color: #ef4444; }
+    .status-info { background: rgba(59, 130, 246, 0.2); color: #3b82f6; }
+</style>
 {% endblock %}
 
 {% block content %}
-<!-- Filter Form -->
-<div class="card mb-4">
-    <div class="card-header">
-        <h5 class="card-title mb-0">
-            <i class="bi bi-funnel me-2"></i>Compliance Period
-        </h5>
-    </div>
-    <div class="card-body">
-        <form method="get" class="row g-3">
-            <div class="col-md-3">
-                {{ form.start_date.label_tag }}
-                {{ form.start_date }}
-            </div>
-            <div class="col-md-3">
-                {{ form.end_date.label_tag }}
-                {{ form.end_date }}
-            </div>
-            <div class="col-md-3">
-                {{ form.store.label_tag }}
-                {{ form.store }}
-            </div>
-            <div class="col-md-3 d-flex align-items-end">
-                <button type="submit" class="btn btn-primary">
-                    <i class="bi bi-search me-2"></i>Check Compliance
+<div class="container-fluid py-4">
+    <!-- Header -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h2 class="mb-1">EFRIS Compliance Report</h2>
+            <p class="text-muted mb-0">URA Fiscal Device Compliance Monitoring</p>
+        </div>
+        <div>
+            <button class="btn btn-outline-secondary me-2" onclick="window.print()">
+                <i class="fas fa-print"></i> Print
+            </button>
+            <div class="btn-group">
+                <button type="button" class="btn btn-success dropdown-toggle" data-bs-toggle="dropdown">
+                    <i class="fas fa-download"></i> Export
                 </button>
+                <ul class="dropdown-menu">
+                    <li><a class="dropdown-item" href="#" onclick="exportReport('PDF')"><i class="far fa-file-pdf text-danger"></i> PDF</a></li>
+                    <li><a class="dropdown-item" href="#" onclick="exportReport('XLSX')"><i class="far fa-file-excel text-success"></i> Excel</a></li>
+                    <li><a class="dropdown-item" href="#" onclick="exportReport('CSV')"><i class="fas fa-file-csv text-info"></i> CSV</a></li>
+                </ul>
             </div>
-        </form>
+        </div>
     </div>
-</div>
 
-{% if compliance_data %}
-<!-- Compliance Overview -->
-<div class="row mb-4">
-    <div class="col-md-3">
-        <div class="card text-white {% if compliance_data.compliance_rate >= 95 %}bg-success{% elif compliance_data.compliance_rate >= 80 %}bg-warning{% else %}bg-danger{% endif %}">
-            <div class="card-body text-center">
-                <i class="bi bi-shield-check fs-1 mb-2"></i>
-                <h3>{{ compliance_data.compliance_rate|floatformat:1 }}%</h3>
-                <p class="mb-0">Compliance Rate</p>
-            </div>
+    <!-- Filters -->
+    <div class="card shadow-sm mb-4">
+        <div class="card-body">
+            <form method="get" id="filterForm">
+                <div class="row g-3">
+                    <div class="col-md-3">
+                        <label class="form-label">Start Date</label>
+                        <input type="date" name="start_date" class="form-control"
+                               value="{{ form.cleaned_data.start_date|date:'Y-m-d' }}">
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">End Date</label>
+                        <input type="date" name="end_date" class="form-control"
+                               value="{{ form.cleaned_data.end_date|date:'Y-m-d' }}">
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">Store</label>
+                        <select name="store" class="form-select">
+                            <option value="">All Stores</option>
+                            {% for store in stores %}
+                            <option value="{{ store.id }}"
+                                    {% if form.cleaned_data.store.id == store.id %}selected{% endif %}>
+                                {{ store.name }}
+                            </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">&nbsp;</label>
+                        <div class="d-flex gap-2">
+                            <button type="submit" class="btn btn-primary flex-grow-1">
+                                <i class="fas fa-search"></i> Generate
+                            </button>
+                            <a href="{% url 'reports:efris_compliance' %}" class="btn btn-outline-secondary">
+                                <i class="fas fa-redo"></i>
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </form>
         </div>
     </div>
-    <div class="col-md-3">
-        <div class="card text-white bg-primary">
-            <div class="card-body text-center">
-                <i class="bi bi-receipt-cutoff fs-1 mb-2"></i>
-                <h3>{{ compliance_data.total_sales }}</h3>
-                <p class="mb-0">Total Sales</p>
-            </div>
-        </div>
-    </div>
-    <div class="col-md-3">
-        <div class="card text-white bg-success">
-            <div class="card-body text-center">
-                <i class="bi bi-check-circle fs-1 mb-2"></i>
-                <h3>{{ compliance_data.fiscalized_sales }}</h3>
-                <p class="mb-0">Fiscalized</p>
-            </div>
-        </div>
-    </div>
-    <div class="col-md-3">
-        <div class="card text-white bg-warning">
-            <div class="card-body text-center">
-                <i class="bi bi-clock fs-1 mb-2"></i>
-                <h3>{{ compliance_data.pending_sales }}</h3>
-                <p class="mb-0">Pending</p>
-            </div>
-        </div>
-    </div>
-</div>
 
-<!-- Store Breakdown -->
-<div class="card mb-4">
-    <div class="card-header">
-        <h6 class="mb-0">Compliance by Store</h6>
-    </div>
-    <div class="card-body">
-        <div class="table-responsive">
-            <table class="table table-striped">
-                <thead>
-                    <tr>
-                        <th>Store</th>
-                        <th>Total Sales</th>
-                        <th>Fiscalized</th>
-                        <th>Pending</th>
-                        <th>Compliance Rate</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for store in compliance_data.store_breakdown %}
-                    <tr>
-                        <td>{{ store.store__name }}</td>
-                        <td>{{ store.total }}</td>
-                        <td>{{ store.fiscalized }}</td>
-                        <td>{{ store.pending }}</td>
-                        <td>
-                            {% with rate=store.fiscalized|div:store.total|mul:100 %}
-                            <span class="badge {% if rate >= 95 %}bg-success{% elif rate >= 80 %}bg-warning{% else %}bg-danger{% endif %}">
-                                {{ rate|floatformat:1 }}%
-                            </span>
-                            {% endwith %}
-                        </td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
+    {% if compliance_data %}
+    <!-- Overall Compliance Status -->
+    <div class="row g-4 mb-4">
+        <div class="col-md-4">
+            <div class="compliance-card">
+                <div class="d-flex justify-content-between align-items-start">
+                    <div>
+                        <h6 class="text-light mb-2">Overall Compliance Rate</h6>
+                        <div class="compliance-rate">{{ summary_stats.compliance_rate|floatformat:1 }}%</div>
+                        <p class="mb-0 mt-2 opacity-90">{{ compliance_data.total_sales|default:0 }} Total Sales</p>
+                    </div>
+                    <div class="compliance-badge {% if summary_stats.compliance_rate >= 90 %}compliance-high{% elif summary_stats.compliance_rate >= 70 %}compliance-medium{% else %}compliance-low{% endif %}">
+                        {% if summary_stats.compliance_rate >= 90 %}Excellent
+                        {% elif summary_stats.compliance_rate >= 70 %}Good
+                        {% else %}Needs Attention{% endif %}
+                    </div>
+                </div>
+            </div>
         </div>
-    </div>
-</div>
 
-<!-- Daily Trend -->
-<div class="card">
-    <div class="card-header">
-        <h6 class="mb-0">Daily Compliance Trend</h6>
-    </div>
-    <div class="card-body">
-        <div class="table-responsive">
-            <table class="table table-sm">
-                <thead>
-                    <tr>
-                        <th>Date</th>
-                        <th>Total</th>
-                        <th>Fiscalized</th>
-                        <th>Pending</th>
-                        <th>Rate</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for day in compliance_data.daily_breakdown %}
-                    <tr>
-                        <td>{{ day.date }}</td>
-                        <td>{{ day.total }}</td>
-                        <td>{{ day.fiscalized }}</td>
-                        <td>{{ day.pending }}</td>
-                        <td>
-                            {% with rate=day.fiscalized|div:day.total|mul:100 %}
-                            <div class="progress" style="height: 20px;">
-                                <div class="progress-bar {% if rate >= 95 %}bg-success{% elif rate >= 80 %}bg-warning{% else %}bg-danger{% endif %}"
-                                     style="width: {{ rate }}%">{{ rate|floatformat:1 }}%</div>
-                            </div>
-                            {% endwith %}
-                        </td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
+        <div class="col-md-8">
+            <div class="row g-3">
+                <div class="col-md-4">
+                    <div class="card h-100 border-success">
+                        <div class="card-body text-center">
+                            <h2 class="text-success mb-2">{{ compliance_data.fiscalized|default:0 }}</h2>
+                            <p class="text-muted mb-0">Fiscalized</p>
+                            <small class="text-success">
+                                {% widthratio compliance_data.fiscalized compliance_data.total_sales 100 as percentage %}
+                                {{ percentage|floatformat:1 }}%
+                            </small>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="card h-100 border-warning">
+                        <div class="card-body text-center">
+                            <h2 class="text-warning mb-2">{{ compliance_data.pending|default:0 }}</h2>
+                            <p class="text-muted mb-0">Pending</p>
+                            <small class="text-warning">
+                                {% widthratio compliance_data.pending compliance_data.total_sales 100 as percentage %}
+                                {{ percentage|floatformat:1 }}%
+                            </small>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="card h-100 border-danger">
+                        <div class="card-body text-center">
+                            <h2 class="text-danger mb-2">{{ compliance_data.failed|default:0 }}</h2>
+                            <p class="text-muted mb-0">Failed</p>
+                            <small class="text-danger">
+                                {% widthratio compliance_data.failed compliance_data.total_sales 100 as percentage %}
+                                {{ percentage|floatformat:1 }}%
+                            </small>
+                        </div>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
+
+    <!-- Charts -->
+    <div class="row g-4 mb-4">
+        <div class="col-lg-8">
+            <div class="card shadow-sm">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="fas fa-chart-line text-primary"></i> Compliance Trend</h5>
+                </div>
+                <div class="card-body">
+                    <div class="chart-container">
+                        <canvas id="complianceTrendChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-4">
+            <div class="card shadow-sm">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="fas fa-store text-success"></i> Store Performance</h5>
+                </div>
+                <div class="card-body">
+                    <div class="chart-container">
+                        <canvas id="storePerformanceChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Store-wise Breakdown -->
+    <div class="card shadow-sm mb-4">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <h5 class="mb-0"><i class="fas fa-building text-info"></i> Store Performance Breakdown</h5>
+            <span class="badge bg-primary">{{ store_breakdown|length }} Stores</span>
+        </div>
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-hover">
+                    <thead>
+                        <tr>
+                            <th>Store</th>
+                            <th>Device Number</th>
+                            <th>Total Sales</th>
+                            <th>Fiscalized</th>
+                            <th>Pending</th>
+                            <th>Compliance Rate</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for store in store_breakdown %}
+                        <tr>
+                            <td>
+                                <strong>{{ store.store__name|default:"Unknown" }}</strong><br>
+                                <small class="text-muted">{{ store.store__code|default:"N/A" }}</small>
+                            </td>
+                            <td>
+                                <code>{{ store.store__efris_device_number|default:"N/A" }}</code>
+                            </td>
+                            <td>{{ store.total|default:0 }}</td>
+                            <td class="text-success">{{ store.fiscalized|default:0 }}</td>
+                            <td class="text-warning">{{ store.pending|default:0 }}</td>
+                            <td>
+                                <div class="d-flex align-items-center">
+                                    <span class="me-2">{{ store.compliance_rate|floatformat:1 }}%</span>
+                                    <div class="progress-container flex-grow-1">
+                                        <div class="progress-bar {% if store.compliance_rate >= 90 %}progress-success{% elif store.compliance_rate >= 70 %}progress-warning{% else %}progress-danger{% endif %}"
+                                             style="width: {{ store.compliance_rate|default:0 }}%"></div>
+                                    </div>
+                                </div>
+                            </td>
+                            <td>
+                                <span class="status-badge {% if store.compliance_rate >= 90 %}status-success{% elif store.compliance_rate >= 70 %}status-warning{% else %}status-danger{% endif %}">
+                                    {% if store.compliance_rate >= 90 %}Compliant
+                                    {% elif store.compliance_rate >= 70 %}Warning
+                                    {% else %}Non-Compliant{% endif %}
+                                </span>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Daily Trend -->
+    <div class="card shadow-sm mb-4">
+        <div class="card-header">
+            <h5 class="mb-0"><i class="fas fa-calendar-alt text-primary"></i> Daily Compliance Trend</h5>
+        </div>
+        <div class="card-body">
+            <div class="timeline">
+                {% for day in daily_breakdown|slice:":10" %}
+                <div class="timeline-item">
+                    <div class="d-flex justify-content-between align-items-start">
+                        <div>
+                            <h6 class="mb-1">{{ day.date }}</h6>
+                            <p class="mb-0 text-muted">
+                                {{ day.fiscalized|default:0 }} fiscalized • {{ day.pending|default:0 }} pending • {{ day.total|default:0 }} total
+                            </p>
+                        </div>
+                        <div class="text-end">
+                            <div class="compliance-rate-sm">{{ day.compliance_rate|floatformat:1 }}%</div>
+                            <small class="text-muted">Compliance Rate</small>
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Failed Sales -->
+    {% if failed_sales %}
+    <div class="card shadow-sm">
+        <div class="card-header bg-danger text-white">
+            <h5 class="mb-0"><i class="fas fa-exclamation-triangle"></i> Failed Fiscalizations</h5>
+        </div>
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-hover">
+                    <thead>
+                        <tr>
+                            <th>Document #</th>
+                            <th>Store</th>
+                            <th>Amount</th>
+                            <th>Date</th>
+                            <th>Status</th>
+                            <th>Reason</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for sale in failed_sales %}
+                        <tr>
+                            <td>
+                                <strong>{{ sale.document_number|default:"N/A" }}</strong>
+                            </td>
+                            <td>{{ sale.store__name|default:"Unknown" }}</td>
+                            <td class="text-danger">UGX {{ sale.total_amount|floatformat:0|default:0 }}</td>
+                            <td>{{ sale.created_at|date:"M d, Y H:i" }}</td>
+                            <td>
+                                <span class="badge bg-danger">{{ sale.status|default:"FAILED" }}</span>
+                            </td>
+                            <td>
+                                <button class="btn btn-sm btn-outline-danger"
+                                        data-bs-toggle="tooltip"
+                                        title="Re-submit to EFRIS">
+                                    <i class="fas fa-sync-alt"></i> Retry
+                                </button>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    {% else %}
+    <!-- No Data State -->
+    <div class="card shadow-sm">
+        <div class="card-body text-center py-5">
+            <i class="fas fa-file-invoice-dollar fa-4x text-muted mb-3"></i>
+            <h4 class="text-muted">No Compliance Data</h4>
+            <p class="text-muted">Generate report to view EFRIS compliance statistics</p>
+        </div>
+    </div>
+    {% endif %}
 </div>
-{% endif %}
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        initializeEFRISCharts();
+        initializeTooltips();
+    });
+
+    function initializeEFRISCharts() {
+        // Compliance Trend Chart
+        const trendCtx = document.getElementById('complianceTrendChart');
+        if (trendCtx) {
+            const dailyData = {{ daily_breakdown|safe|default:"[]" }};
+            const labels = dailyData.slice(0, 10).map(d => d.date);
+            const rates = dailyData.slice(0, 10).map(d => parseFloat(d.compliance_rate) || 0);
+
+            new Chart(trendCtx, {
+                type: 'line',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Compliance Rate',
+                        data: rates,
+                        borderColor: '#667eea',
+                        backgroundColor: 'rgba(102, 126, 234, 0.1)',
+                        borderWidth: 3,
+                        tension: 0.4,
+                        fill: true
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    return context.dataset.label + ': ' + context.parsed.y.toFixed(1) + '%';
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            max: 100,
+                            ticks: {
+                                callback: function(value) {
+                                    return value + '%';
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        // Store Performance Chart
+        const storeCtx = document.getElementById('storePerformanceChart');
+        if (storeCtx) {
+            const storeData = {{ store_breakdown|safe|default:"[]" }};
+            const labels = storeData.slice(0, 8).map(s => s.store__name || 'Store');
+            const compliant = storeData.slice(0, 8).map(s => s.fiscalized || 0);
+            const pending = storeData.slice(0, 8).map(s => s.pending || 0);
+
+            new Chart(storeCtx, {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [
+                        {
+                            label: 'Fiscalized',
+                            data: compliant,
+                            backgroundColor: '#10b981'
+                        },
+                        {
+                            label: 'Pending',
+                            data: pending,
+                            backgroundColor: '#f59e0b'
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'top',
+                        }
+                    },
+                    scales: {
+                        x: {
+                            stacked: true,
+                        },
+                        y: {
+                            stacked: true,
+                            beginAtZero: true
+                        }
+                    }
+                }
+            });
+        }
+    }
+
+    function initializeTooltips() {
+        const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+        tooltipTriggerList.map(function (tooltipTriggerEl) {
+            return new bootstrap.Tooltip(tooltipTriggerEl);
+        });
+    }
+
+    function exportReport(format) {
+        const form = document.getElementById('filterForm');
+        const url = form.action || window.location.pathname;
+
+        const params = new URLSearchParams();
+        params.append('export', format);
+        params.append('start_date', form.querySelector('[name="start_date"]').value);
+        params.append('end_date', form.querySelector('[name="end_date"]').value);
+        params.append('store', form.querySelector('[name="store"]').value);
+
+        window.location.href = url + '?' + params.toString();
+    }
+</script>
 {% endblock %}

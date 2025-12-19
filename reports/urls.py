@@ -17,8 +17,13 @@ urlpatterns = [
     path('analytics/', views.analytics_dashboard, name='analytics'),
     path('z-report/', views.z_report, name='z_report'),
     path('efris-compliance/', views.efris_compliance_report, name='efris_compliance'),
-    path('price-lookup/', views.price_lookup_report, name='price_lookup'),
     path('cashier-performance/', views.cashier_performance_report, name='cashier_performance'),
+    path('profit-loss/', views.profit_loss_report, name='profit_loss'),
+    path('stock-movement/', views.stock_movement_report, name='stock_movement'),
+    path('price-lookup/', views.price_lookup_report, name='price_lookup'),
+    path('customer-analytics/', views.customer_analytics_report, name='customer_analytics'),
+    path('custom-report/', views.custom_report, name='custom_report'),
+    path('custom-report/<int:report_id>/', views.custom_report, name='edit_custom_report'),
 
     # Report Generation
     path('generate/<int:report_id>/', views.generate_report, name='generate_report'),

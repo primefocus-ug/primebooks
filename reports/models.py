@@ -7,6 +7,7 @@ from django.utils import timezone
 from django.core.cache import cache
 import hashlib
 import json
+from django.db.models import Q, UniqueConstraint
 from django.db import connection
 from decimal import Decimal
 from datetime import date, datetime
@@ -479,6 +480,13 @@ class GeneratedReport(models.Model):
         verbose_name = _("Generated Report")
         verbose_name_plural = _("Generated Reports")
         ordering = ['-generated_at']
+        constraints = [
+            UniqueConstraint(
+                fields=['report', 'generated_by'],
+                condition=Q(status__in=['PENDING', 'PROCESSING']),
+                name='one_active_report_per_user'
+            )
+        ]
         indexes = [
             models.Index(fields=['status', 'generated_at']),
             models.Index(fields=['generated_by', '-generated_at']),
