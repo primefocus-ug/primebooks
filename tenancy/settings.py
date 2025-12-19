@@ -17,6 +17,28 @@ load_dotenv(dotenv_path=env_path, override=True)
 # CRITICAL: Determine DEBUG mode first
 DEBUG_VALUE = os.getenv('DEBUG', 'True')  # Default to True if not set
 DEBUG = DEBUG_VALUE.strip().lower() in ('true', '1', 'yes', 'on')
+import os
+from datetime import datetime
+import pytz
+
+from dotenv import load_dotenv
+load_dotenv()
+
+# Django timezone
+TIME_ZONE = os.getenv("TIME_ZONE", "Africa/Nairobi")
+USE_TZ = True
+
+# Maintenance settings
+MAINTENANCE_ACTIVE = os.getenv("MAINTENANCE_ACTIVE", "False").lower() == "true"
+MAINTENANCE_MESSAGE = os.getenv("MAINTENANCE_MESSAGE", "System maintenance scheduled.")
+
+# Convert string to timezone-aware datetime
+maintenance_time_str = os.getenv("MAINTENANCE_START_TIME", None)
+if maintenance_time_str:
+    tz = pytz.timezone(TIME_ZONE)
+    MAINTENANCE_START_TIME = tz.localize(datetime.strptime(maintenance_time_str, "%Y-%m-%d %H:%M:%S"))
+else:
+    MAINTENANCE_START_TIME = None
 
 
 # =============================================================================
@@ -356,6 +378,7 @@ TEMPLATES = [
                 'accounts.context_processors.saas_admin_context',
                 'accounts.context_processors.user_role_context',
                 'accounts.context_processors.version_context',
+                'accounts.context_processors.maintenance_info',
                 'errors.context_processors.error_context_processor',
                 'messaging.context_processors.messaging_context',
                 'expenses.context_processors.expense_context',

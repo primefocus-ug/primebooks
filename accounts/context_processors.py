@@ -71,3 +71,20 @@ def version_context(request):
         'APP_VERSION': settings.APP_VERSION,
         'VERSION_FULL': settings.APP_VERSION,
     }
+
+
+def maintenance_info(request):
+    return {
+        "MAINTENANCE_ACTIVE": getattr(settings, "MAINTENANCE_ACTIVE", False),
+        "MAINTENANCE_START_TIME": (
+            settings.MAINTENANCE_START_TIME.isoformat()
+            if getattr(settings, "MAINTENANCE_START_TIME", None)
+            else None
+        ),
+        "MAINTENANCE_MESSAGE": getattr(
+            settings,
+            "MAINTENANCE_MESSAGE",
+            "System maintenance scheduled."
+        ),
+    }
+

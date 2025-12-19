@@ -1,0 +1,649 @@
+{% extends 'base.html' %}
+{% load static %}
+{% load humanize %}
+
+{% block title %}Expense Report{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'themes.css' %}">
+<style>
+    .expense-header {
+        background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+        color: white;
+        border-radius: 12px;
+        padding: 30px;
+        margin-bottom: 25px;
+        box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+    }
+
+    .expense-card {
+        background: white;
+        border-radius: 10px;
+        padding: 20px;
+        margin-bottom: 15px;
+        border-left: 4px solid #f093fb;
+        transition: all 0.3s;
+        box-shadow: 0 5px 15px rgba(0,0,0,0.05);
+    }
+    [data-theme="dark"] .expense-card {
+        background: #1f2937;
+        box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+    }
+
+    .status-badge {
+        padding: 6px 15px;
+        border-radius: 20px;
+        font-size: 0.8rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+    .status-draft { background: rgba(107, 114, 128, 0.2); color: #6b7280; }
+    .status-submitted { background: rgba(59, 130, 246, 0.2); color: #3b82f6; }
+    .status-approved { background: rgba(16, 185, 129, 0.2); color: #10b981; }
+    .status-rejected { background: rgba(239, 68, 68, 0.2); color: #ef4444; }
+    .status-paid { background: rgba(139, 92, 246, 0.2); color: #8b5cf6; }
+    .status-cancelled { background: rgba(156, 163, 175, 0.2); color: #9ca3af; }
+
+    .payment-badge {
+        padding: 4px 10px;
+        border-radius: 15px;
+        font-size: 0.75rem;
+        background: #f3f4f6;
+    }
+    [data-theme="dark"] .payment-badge {
+        background: #374151;
+    }
+
+    .category-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 12px;
+        border-radius: 20px;
+        font-size: 0.85rem;
+        background: #f3f4f6;
+    }
+    [data-theme="dark"] .category-chip {
+        background: #374151;
+    }
+    .category-color {
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+    }
+
+    .amount-badge {
+        padding: 8px 16px;
+        border-radius: 8px;
+        font-weight: 600;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+    }
+
+    .filter-tags {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-bottom: 15px;
+    }
+    .filter-tag {
+        padding: 6px 12px;
+        background: #f3f4f6;
+        border-radius: 20px;
+        cursor: pointer;
+        transition: all 0.3s;
+    }
+    [data-theme="dark"] .filter-tag {
+        background: #374151;
+    }
+    .filter-tag.active {
+        background: #f093fb;
+        color: white;
+    }
+
+    .chart-container {
+        position: relative;
+        height: 300px;
+        margin: 20px 0;
+    }
+
+    .expense-table tr:hover {
+        background: #f8fafc;
+    }
+    [data-theme="dark"] .expense-table tr:hover {
+        background: #374151;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <!-- Header -->
+    <div class="expense-header">
+        <div class="d-flex justify-content-between align-items-start">
+            <div>
+                <h1 class="display-6 mb-2">Expense Report</h1>
+                <p class="mb-0 opacity-90">Track and analyze company expenses</p>
+                <div class="mt-3">
+                    <span class="badge bg-light text-dark me-2">
+                        <i class="fas fa-receipt me-1"></i> {{ expense_data|length }} Expenses
+                    </span>
+                    {% if summary.total_amount %}
+                    <span class="badge bg-light text-dark">
+                        <i class="fas fa-money-bill-wave me-1"></i>
+                        UGX {{ summary.total_amount|floatformat:0|intcomma }}
+                    </span>
+                    {% endif %}
+                </div>
+            </div>
+            <div class="text-end">
+                <div class="btn-group">
+                    <button class="btn btn-light me-2" onclick="window.print()">
+                        <i class="fas fa-print"></i> Print
+                    </button>
+                    <button type="button" class="btn btn-light dropdown-toggle" data-bs-toggle="dropdown">
+                        <i class="fas fa-download"></i> Export
+                    </button>
+                    <ul class="dropdown-menu">
+                        <li><a class="dropdown-item" href="#" onclick="exportReport('PDF')">PDF</a></li>
+                        <li><a class="dropdown-item" href="#" onclick="exportReport('XLSX')">Excel</a></li>
+                        <li><a class="dropdown-item" href="#" onclick="exportReport('CSV')">CSV</a></li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Filters -->
+    <div class="card shadow-sm mb-4">
+        <div class="card-body">
+            <form method="get" id="filterForm">
+                <div class="row g-3">
+                    <div class="col-md-3">
+                        <label class="form-label">Start Date</label>
+                        <input type="date" name="start_date" class="form-control"
+                               value="{{ form.cleaned_data.start_date|date:'Y-m-d' }}">
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">End Date</label>
+                        <input type="date" name="end_date" class="form-control"
+                               value="{{ form.cleaned_data.end_date|date:'Y-m-d' }}">
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">Store</label>
+                        <select name="store" class="form-select">
+                            <option value="">All Stores</option>
+                            {% for store in stores %}
+                            <option value="{{ store.id }}"
+                                    {% if form.cleaned_data.store.id == store.id %}selected{% endif %}>
+                                {{ store.name }}
+                            </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">Status</label>
+                        <select name="status" class="form-select" onchange="this.form.submit()">
+                            <option value="">All Status</option>
+                            {% for code, name in status_choices %}
+                            <option value="{{ code }}" {% if selected_status == code %}selected{% endif %}>
+                                {{ name }}
+                            </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">Category</label>
+                        <select name="category" class="form-select" onchange="this.form.submit()">
+                            <option value="">All Categories</option>
+                            {% for category in categories %}
+                            <option value="{{ category.id }}" {% if selected_category == category.id|stringformat:"s" %}selected{% endif %}>
+                                {{ category.name }}
+                            </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">Payment Method</label>
+                        <select name="payment_method" class="form-select" onchange="this.form.submit()">
+                            <option value="">All Methods</option>
+                            {% for code, name in payment_method_choices %}
+                            <option value="{{ code }}" {% if selected_payment_method == code %}selected{% endif %}>
+                                {{ name }}
+                            </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">Vendor</label>
+                        <input type="text" name="vendor" class="form-control"
+                               placeholder="Search vendor..." value="{{ request.GET.vendor }}">
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">&nbsp;</label>
+                        <div class="d-flex gap-2">
+                            <button type="submit" class="btn btn-primary flex-grow-1">
+                                <i class="fas fa-search"></i> Apply Filters
+                            </button>
+                            <a href="{% url 'reports:expense_report' %}" class="btn btn-outline-secondary">
+                                <i class="fas fa-redo"></i>
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    {% if expense_data %}
+    <!-- Summary Cards -->
+    <div class="row g-4 mb-4">
+        <div class="col-md-3">
+            <div class="card bg-primary text-white">
+                <div class="card-body text-center">
+                    <h2 class="display-6 mb-2">{{ summary.total_expenses|default:"0" }}</h2>
+                    <p class="mb-0">Total Expenses</p>
+                    <small>All expenses</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card bg-success text-white">
+                <div class="card-body text-center">
+                    <h2 class="display-6 mb-2">UGX {{ summary.total_amount|floatformat:0|intcomma }}</h2>
+                    <p class="mb-0">Total Amount</p>
+                    <small>Excluding tax</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card bg-warning text-white">
+                <div class="card-body text-center">
+                    <h2 class="display-6 mb-2">{{ summary.pending_expenses|default:"0" }}</h2>
+                    <p class="mb-0">Pending Approval</p>
+                    <small>Awaiting review</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card bg-danger text-white">
+                <div class="card-body text-center">
+                    <h2 class="display-6 mb-2">{{ summary.overdue_expenses|default:"0" }}</h2>
+                    <p class="mb-0">Overdue Payments</p>
+                    <small>Past due date</small>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Charts Row -->
+    <div class="row g-4 mb-4">
+        <div class="col-lg-4">
+            <div class="card shadow-sm">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="fas fa-chart-pie text-primary"></i> Status Distribution</h5>
+                </div>
+                <div class="card-body">
+                    <div class="chart-container">
+                        <canvas id="statusChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-4">
+            <div class="card shadow-sm">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="fas fa-chart-bar text-success"></i> Category Breakdown</h5>
+                </div>
+                <div class="card-body">
+                    <div class="chart-container">
+                        <canvas id="categoryChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-4">
+            <div class="card shadow-sm">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="fas fa-chart-line text-info"></i> Monthly Trend</h5>
+                </div>
+                <div class="card-body">
+                    <div class="chart-container">
+                        <canvas id="monthlyChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Expense List -->
+    <div class="card shadow-sm">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <h5 class="mb-0"><i class="fas fa-list text-info"></i> Expense Details</h5>
+            <div class="input-group" style="width: 300px;">
+                <input type="text" class="form-control" id="searchExpenses" placeholder="Search expenses...">
+                <span class="input-group-text"><i class="fas fa-search"></i></span>
+            </div>
+        </div>
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-hover expense-table" id="expensesTable">
+                    <thead>
+                        <tr>
+                            <th>Expense #</th>
+                            <th>Title</th>
+                            <th>Category</th>
+                            <th>Store</th>
+                            <th>Amount</th>
+                            <th>Status</th>
+                            <th>Date</th>
+                            <th>Vendor</th>
+                            <th>Payment</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for expense in expense_data %}
+                        <tr>
+                            <td>
+                                <strong>{{ expense.expense_number|default:"N/A" }}</strong>
+                            </td>
+                            <td>
+                                <div>
+                                    <strong>{{ expense.title|truncatechars:30 }}</strong><br>
+                                    <small class="text-muted">{{ expense.description|truncatechars:50 }}</small>
+                                </div>
+                            </td>
+                            <td>
+                                <div class="category-chip">
+                                    <span class="category-color"
+                                          style="background: {{ expense.category__color_code|default:'#6c757d' }};"></span>
+                                    {{ expense.category__name|default:"Uncategorized" }}
+                                </div>
+                            </td>
+                            <td>
+                                <span class="badge bg-secondary">{{ expense.store__name|default:"N/A" }}</span>
+                            </td>
+                            <td>
+                                <div class="amount-badge">
+                                    UGX {{ expense.total_amount|floatformat:0|intcomma }}
+                                </div>
+                            </td>
+                            <td>
+                                <span class="status-badge status-{{ expense.status|lower }}">
+                                    {{ expense.status|title }}
+                                </span>
+                            </td>
+                            <td>
+                                <small>{{ expense.expense_date|date:"M d, Y" }}</small>
+                            </td>
+                            <td>
+                                {% if expense.vendor_name %}
+                                <small>{{ expense.vendor_name|truncatechars:20 }}</small>
+                                {% else %}
+                                <span class="text-muted">-</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if expense.payment_method %}
+                                <span class="payment-badge">{{ expense.payment_method|title }}</span>
+                                {% else %}
+                                <span class="text-muted">-</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <button class="btn btn-sm btn-outline-info"
+                                        onclick="showExpenseDetails('{{ expense.id }}')">
+                                    <i class="fas fa-eye"></i>
+                                </button>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Additional Breakdowns -->
+    <div class="row g-4 mt-4">
+        <div class="col-lg-6">
+            <div class="card shadow-sm">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="fas fa-store text-warning"></i> Store-wise Breakdown</h5>
+                </div>
+                <div class="card-body">
+                    <div class="list-group">
+                        {% for store in store_breakdown %}
+                        <div class="list-group-item border-0">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <span>{{ store.store__name|default:"Unknown" }}</span>
+                                <div class="text-end">
+                                    <span class="fw-bold">UGX {{ store.total_amount|floatformat:0|intcomma }}</span><br>
+                                    <small class="text-muted">{{ store.expense_count }} expenses</small>
+                                </div>
+                            </div>
+                            <div class="progress mt-2" style="height: 6px;">
+                                {% widthratio store.total_amount summary.total_amount 100 as percentage %}
+                                <div class="progress-bar bg-warning" style="width: {{ percentage }}%"></div>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="col-lg-6">
+            <div class="card shadow-sm">
+                <div class="card-header">
+                    <h5 class="mb-0"><i class="fas fa-credit-card text-success"></i> Payment Methods</h5>
+                </div>
+                <div class="card-body">
+                    <div class="list-group">
+                        {% for payment in payment_breakdown %}
+                        <div class="list-group-item border-0">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <span>{{ payment.payment_method|default:"Unknown" }}</span>
+                                <div class="text-end">
+                                    <span class="fw-bold">UGX {{ payment.total_amount|floatformat:0|intcomma }}</span><br>
+                                    <small class="text-muted">{{ payment.count }} transactions</small>
+                                </div>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {% else %}
+    <!-- No Data State -->
+    <div class="card shadow-sm">
+        <div class="card-body text-center py-5">
+            <i class="fas fa-receipt fa-4x text-muted mb-3"></i>
+            <h4 class="text-muted">No Expense Data</h4>
+            <p class="text-muted">No expenses found for the selected filters</p>
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+<!-- Expense Details Modal -->
+<div class="modal fade" id="expenseDetailsModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Expense Details</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="expenseDetailsContent">
+                <!-- Content loaded via JavaScript -->
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        initializeExpenseCharts();
+        initializeSearch();
+    });
+
+    function initializeExpenseCharts() {
+        // Status Distribution Chart
+        const statusCtx = document.getElementById('statusChart');
+        if (statusCtx) {
+            const statusData = {{ status_chart_data|safe }};
+
+            new Chart(statusCtx, {
+                type: 'doughnut',
+                data: {
+                    labels: statusData.labels,
+                    datasets: [{
+                        data: statusData.amounts,
+                        backgroundColor: [
+                            'rgba(107, 114, 128, 0.8)',    // Draft
+                            'rgba(59, 130, 246, 0.8)',     // Submitted
+                            'rgba(16, 185, 129, 0.8)',     // Approved
+                            'rgba(239, 68, 68, 0.8)',      // Rejected
+                            'rgba(139, 92, 246, 0.8)',     // Paid
+                            'rgba(156, 163, 175, 0.8)',    // Cancelled
+                        ]
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'bottom',
+                        }
+                    }
+                }
+            });
+        }
+
+        // Category Breakdown Chart
+        const categoryCtx = document.getElementById('categoryChart');
+        if (categoryCtx) {
+            const categoryData = {{ category_chart_data|safe }};
+
+            new Chart(categoryCtx, {
+                type: 'bar',
+                data: {
+                    labels: categoryData.labels,
+                    datasets: [{
+                        label: 'Amount (UGX)',
+                        data: categoryData.amounts,
+                        backgroundColor: categoryData.colors,
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            ticks: {
+                                callback: function(value) {
+                                    return 'UGX ' + value.toLocaleString();
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        // Monthly Trend Chart
+        const monthlyCtx = document.getElementById('monthlyChart');
+        if (monthlyCtx) {
+            const monthlyData = {{ monthly_chart_data|safe }};
+
+            new Chart(monthlyCtx, {
+                type: 'line',
+                data: {
+                    labels: monthlyData.labels,
+                    datasets: [{
+                        label: 'Expense Amount',
+                        data: monthlyData.amounts,
+                        borderColor: '#667eea',
+                        backgroundColor: 'rgba(102, 126, 234, 0.1)',
+                        borderWidth: 3,
+                        tension: 0.4,
+                        fill: true
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            ticks: {
+                                callback: function(value) {
+                                    return 'UGX ' + value.toLocaleString();
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+    }
+
+    function initializeSearch() {
+        const searchInput = document.getElementById('searchExpenses');
+        if (searchInput) {
+            searchInput.addEventListener('keyup', function() {
+                const value = this.value.toLowerCase();
+                const rows = document.querySelectorAll('#expensesTable tbody tr');
+
+                rows.forEach(row => {
+                    const text = row.textContent.toLowerCase();
+                    row.style.display = text.includes(value) ? '' : 'none';
+                });
+            });
+        }
+    }
+
+    function showExpenseDetails(expenseId) {
+        // In production, this would fetch expense details via AJAX
+        const modal = new bootstrap.Modal(document.getElementById('expenseDetailsModal'));
+        const content = document.getElementById('expenseDetailsContent');
+
+        content.innerHTML = `
+            <div class="text-center py-4">
+                <i class="fas fa-spinner fa-spin fa-2x"></i>
+                <p>Loading expense details...</p>
+            </div>
+        `;
+
+        modal.show();
+
+        // Simulate API call
+        setTimeout(() => {
+            content.innerHTML = `
+                <div class="alert alert-info">
+                    <i class="fas fa-info-circle"></i>
+                    Expense details would be loaded here in production
+                </div>
+            `;
+        }, 1000);
+    }
+
+    function exportReport(format) {
+        const form = document.getElementById('filterForm');
+        const params = new URLSearchParams(new FormData(form));
+        params.append('export', format);
+
+        window.location.href = window.location.pathname + '?' + params.toString();
+    }
+</script>
+{% endblock %}

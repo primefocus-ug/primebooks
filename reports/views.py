@@ -26,6 +26,7 @@ from .tasks import generate_report_async, log_report_access
 from sales.models import Sale, SaleItem
 from inventory.models import Product, Stock, StockMovement, Category
 from stores.models import Store
+from expenses.models import Expense, ExpenseCategory
 from stores.utils import get_user_accessible_stores, validate_store_access
 from django.core.exceptions import PermissionDenied
 from accounts.models import CustomUser
@@ -301,6 +302,220 @@ def sales_summary_report(request):
 
     return render(request, 'reports/sales_summary.html', context)
 
+
+
+@login_required
+@permission_required('expenses.view_expense')
+def expense_report(request):
+    """Comprehensive expense tracking report"""
+    from .forms import ReportFilterForm
+
+    form = ReportFilterForm(request.GET or None, user=request.user)
+
+    # Get user's accessible stores
+    stores = get_user_accessible_stores(request.user)
+
+    # Get all expense categories
+    categories = ExpenseCategory.objects.filter(is_active=True)
+
+    expense_data = []
+    summary = {}
+    status_counts = []
+    category_breakdown = []
+    store_breakdown = []
+    payment_breakdown = []
+    monthly_trend = []
+
+    if form.is_valid():
+        start_date = form.cleaned_data.get('start_date')
+        end_date = form.cleaned_data.get('end_date')
+        store_filter = form.cleaned_data.get('store')
+
+        # Additional expense-specific filters
+        status_filter = request.GET.get('status')
+        category_filter = request.GET.get('category')
+        payment_method_filter = request.GET.get('payment_method')
+        vendor_filter = request.GET.get('vendor')
+
+        # Check if user has access to selected store
+        if store_filter and store_filter not in stores:
+            messages.error(request, "You don't have access to the selected store.")
+            return redirect('reports:expense_report')
+
+        # Include schema in cache key
+        schema_name = connection.schema_name
+        cache_key = f'expense_report_{schema_name}_{request.user.id}_{start_date}_{end_date}_{store_filter}_{status_filter}_{category_filter}'
+        cached_result = cache.get(cache_key)
+
+        if cached_result and not request.GET.get('refresh'):
+            expense_data = cached_result['expense_data']
+            summary = cached_result['summary']
+            status_counts = cached_result['status_counts']
+            category_breakdown = cached_result['category_breakdown']
+            store_breakdown = cached_result['store_breakdown']
+            payment_breakdown = cached_result['payment_breakdown']
+            monthly_trend = cached_result['monthly_trend']
+        else:
+            saved_report = SavedReport(
+                name='Expense Report',
+                report_type='EXPENSE_REPORT',
+                created_by=request.user
+            )
+            saved_report.save()
+
+            from .services.report_generator import ReportGeneratorService
+            generator = ReportGeneratorService(request.user, saved_report)
+
+            filters = {
+                'start_date': start_date,
+                'end_date': end_date,
+                'store_id': store_filter.id if store_filter else None,
+                'category_id': category_filter,
+                'status': status_filter,
+                'payment_method': payment_method_filter,
+            }
+
+            report_data = generator.generate(**filters)
+
+            expense_data = report_data.get('expenses', [])
+            summary = report_data.get('summary', {})
+            status_counts = report_data.get('status_counts', [])
+            category_breakdown = report_data.get('category_breakdown', [])
+            store_breakdown = report_data.get('store_breakdown', [])
+            payment_breakdown = report_data.get('payment_breakdown', [])
+            monthly_trend = report_data.get('monthly_trend', [])
+
+            cache.set(cache_key, {
+                'expense_data': expense_data,
+                'summary': summary,
+                'status_counts': status_counts,
+                'category_breakdown': category_breakdown,
+                'store_breakdown': store_breakdown,
+                'payment_breakdown': payment_breakdown,
+                'monthly_trend': monthly_trend
+            }, 300)
+
+    # Prepare chart data
+    status_chart_data = {
+        'labels': [item['status'] for item in status_counts],
+        'counts': [item['count'] for item in status_counts],
+        'amounts': [float(item['total_amount'] or 0) for item in status_counts],
+    }
+
+    category_chart_data = {
+        'labels': [item['category__name'] for item in category_breakdown[:10]],
+        'amounts': [float(item['total_amount'] or 0) for item in category_breakdown[:10]],
+        'colors': [item.get('category__color_code', '#6c757d') for item in category_breakdown[:10]],
+    }
+
+    monthly_chart_data = {
+        'labels': [item['month'] for item in monthly_trend],
+        'amounts': [float(item['total'] or 0) for item in monthly_trend],
+        'counts': [item['count'] for item in monthly_trend],
+    }
+
+    context = {
+        'form': form,
+        'expense_data': expense_data,
+        'summary': summary,
+        'status_counts': status_counts,
+        'category_breakdown': category_breakdown,
+        'store_breakdown': store_breakdown,
+        'payment_breakdown': payment_breakdown,
+        'monthly_trend': monthly_trend,
+        'status_chart_data': json.dumps(status_chart_data),
+        'category_chart_data': json.dumps(category_chart_data),
+        'monthly_chart_data': json.dumps(monthly_chart_data),
+        'stores': stores,
+        'categories': categories,
+        'selected_status': request.GET.get('status', ''),
+        'selected_category': request.GET.get('category', ''),
+        'selected_payment_method': request.GET.get('payment_method', ''),
+        'status_choices': Expense.STATUS_CHOICES,
+        'payment_method_choices': Expense.PAYMENT_METHODS,
+    }
+
+    return render(request, 'reports/expense_report.html', context)
+
+
+@login_required
+@permission_required('expenses.view_expense')
+def expense_analytics(request):
+    """Expense analytics and insights report"""
+    from .forms import ReportFilterForm
+
+    form = ReportFilterForm(request.GET or None, user=request.user)
+
+    stores = get_user_accessible_stores(request.user)
+
+    analytics_data = {}
+
+    if form.is_valid():
+        start_date = form.cleaned_data.get('start_date')
+        end_date = form.cleaned_data.get('end_date')
+        store_filter = form.cleaned_data.get('store')
+
+        if store_filter and store_filter not in stores:
+            messages.error(request, "You don't have access to the selected store.")
+            return redirect('reports:expense_analytics')
+
+        # Include schema in cache key
+        schema_name = connection.schema_name
+        cache_key = f'expense_analytics_{schema_name}_{request.user.id}_{start_date}_{end_date}_{store_filter}'
+        cached_result = cache.get(cache_key)
+
+        if cached_result and not request.GET.get('refresh'):
+            analytics_data = cached_result['analytics_data']
+        else:
+            saved_report = SavedReport(
+                name='Expense Analytics',
+                report_type='EXPENSE_ANALYTICS',
+                created_by=request.user
+            )
+            saved_report.save()
+
+            from .services.report_generator import ReportGeneratorService
+            generator = ReportGeneratorService(request.user, saved_report)
+
+            report_data = generator.generate(
+                start_date=start_date,
+                end_date=end_date,
+                store_id=store_filter.id if store_filter else None
+            )
+
+            analytics_data = report_data
+
+            cache.set(cache_key, {
+                'analytics_data': analytics_data
+            }, 300)
+
+    # Prepare chart data
+    monthly_chart = {
+        'labels': [item['month'].strftime('%b %Y') for item in analytics_data.get('monthly_data', [])],
+        'amounts': [float(item['total'] or 0) for item in analytics_data.get('monthly_data', [])],
+    }
+
+    category_chart = {
+        'labels': [item['category__name'] for item in analytics_data.get('top_categories', [])],
+        'amounts': [float(item['total'] or 0) for item in analytics_data.get('top_categories', [])],
+        'colors': [item.get('category__color_code', '#6c757d') for item in analytics_data.get('top_categories', [])],
+    }
+
+    vendor_chart = {
+        'labels': [item['vendor_name'] for item in analytics_data.get('top_vendors', [])],
+        'amounts': [float(item['total'] or 0) for item in analytics_data.get('top_vendors', [])],
+    }
+
+    context = {
+        'form': form,
+        'analytics_data': analytics_data,
+        'monthly_chart': json.dumps(monthly_chart),
+        'category_chart': json.dumps(category_chart),
+        'vendor_chart': json.dumps(vendor_chart),
+        'stores': stores,
+    }
+
+    return render(request, 'reports/expense_analytics.html', context)
 
 @login_required
 @permission_required('inventory.view_product')

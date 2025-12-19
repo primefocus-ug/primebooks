@@ -1731,7 +1731,6 @@
     </div>
 </header>
 
-
     <!-- Sidebar -->
     {% if user.is_authenticated %}
     <nav class="sidebar" id="sidebar">
@@ -1756,6 +1755,226 @@
     <!-- Main Content Wrapper -->
     <div class="main-wrapper" id="mainWrapper">
         <main class="main-content">
+           {% if MAINTENANCE_ACTIVE %}
+            <style>
+              .maintenance-notification {
+                  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+                  margin: 20px auto;
+                  max-width: 1000px;
+                  animation: slideDown 0.4s ease-out;
+              }
+
+              @keyframes slideDown {
+                  from {
+                      opacity: 0;
+                      transform: translateY(-10px);
+                  }
+                  to {
+                      opacity: 1;
+                      transform: translateY(0);
+                  }
+              }
+
+              .maintenance-card {
+                  background: linear-gradient(135deg, #1b5e20 0%, #2e7d32 100%);
+                  border-radius: 12px;
+                  padding: 24px 32px;
+                  display: flex;
+                  align-items: center;
+                  justify-content: space-between;
+                  box-shadow: 0 8px 32px rgba(27, 94, 32, 0.2);
+                  border: 1px solid rgba(255, 255, 255, 0.1);
+                  position: relative;
+                  overflow: hidden;
+              }
+
+              .maintenance-card::before {
+                  content: '';
+                  position: absolute;
+                  top: 0;
+                  left: 0;
+                  right: 0;
+                  height: 4px;
+                  background: linear-gradient(90deg, #4caf50, #66bb6a);
+              }
+
+              .maintenance-content {
+                  flex: 1;
+              }
+
+              .maintenance-title {
+                  color: #ffffff;
+                  font-size: 18px;
+                  font-weight: 600;
+                  margin-bottom: 6px;
+                  display: flex;
+                  align-items: center;
+                  gap: 10px;
+              }
+
+              .maintenance-title::before {
+                  content: '🛠️';
+                  font-size: 20px;
+              }
+
+              .maintenance-message {
+                  color: rgba(255, 255, 255, 0.9);
+                  font-size: 14px;
+                  line-height: 1.5;
+                  max-width: 700px;
+              }
+
+              .countdown-container {
+                  display: flex;
+                  flex-direction: column;
+                  align-items: center;
+                  min-width: 140px;
+              }
+
+              .countdown-label {
+                  color: rgba(255, 255, 255, 0.8);
+                  font-size: 12px;
+                  font-weight: 500;
+                  text-transform: uppercase;
+                  letter-spacing: 0.5px;
+                  margin-bottom: 8px;
+              }
+
+              .countdown-timer {
+                  background: rgba(0, 0, 0, 0.2);
+                  border-radius: 8px;
+                  padding: 12px 20px;
+                  font-family: 'SF Mono', 'Monaco', 'Inconsolata', monospace;
+                  font-size: 24px;
+                  font-weight: 700;
+                  color: #ffffff;
+                  text-align: center;
+                  min-width: 120px;
+                  box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.15);
+                  border: 1px solid rgba(255, 255, 255, 0.15);
+                  transition: all 0.3s ease;
+              }
+
+              .countdown-timer.low-time {
+                  background: rgba(198, 40, 40, 0.3);
+                  animation: pulse 1s infinite;
+              }
+
+              @keyframes pulse {
+                  0%, 100% { opacity: 1; }
+                  50% { opacity: 0.9; }
+              }
+
+              .time-unit {
+                  font-size: 12px;
+                  font-weight: 500;
+                  color: rgba(255, 255, 255, 0.7);
+                  margin-left: 2px;
+              }
+
+              @media (max-width: 768px) {
+                  .maintenance-card {
+                      flex-direction: column;
+                      align-items: flex-start;
+                      padding: 20px;
+                  }
+
+                  .countdown-container {
+                      align-self: stretch;
+                      margin-top: 16px;
+                      align-items: flex-start;
+                  }
+
+                  .countdown-timer {
+                      align-self: stretch;
+                      text-align: left;
+                  }
+
+                  .maintenance-title {
+                      font-size: 16px;
+                  }
+
+                  .maintenance-message {
+                      font-size: 13px;
+                  }
+              }
+
+              @media (max-width: 480px) {
+                  .maintenance-notification {
+                      margin: 12px;
+                  }
+
+                  .countdown-timer {
+                      font-size: 20px;
+                      padding: 10px 16px;
+                  }
+              }
+            </style>
+
+            <div class="maintenance-notification">
+              <div class="maintenance-card">
+                <div class="maintenance-content">
+                  <div class="maintenance-title">
+                    Scheduled Maintenance
+                  </div>
+                  <div class="maintenance-message">
+                    {{ MAINTENANCE_MESSAGE }}
+                  </div>
+                </div>
+                <div class="countdown-container">
+                  <div class="countdown-label">Starts in</div>
+                  <div id="countdown-timer" class="countdown-timer">
+                    <span id="countdown-minutes">--</span><span class="time-unit">m</span>
+                    <span style="margin: 0 2px;">:</span>
+                    <span id="countdown-seconds">--</span><span class="time-unit">s</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <script>
+              (function() {
+                  const startTime = new Date("{{ MAINTENANCE_START_TIME }}").getTime();
+                  const countdownMinutes = document.getElementById('countdown-minutes');
+                  const countdownSeconds = document.getElementById('countdown-seconds');
+                  const countdownTimer = document.getElementById('countdown-timer');
+
+                  function updateCountdown() {
+                      const now = Date.now();
+                      const remaining = startTime - now;
+
+                      if (remaining <= 0) {
+                          countdownMinutes.textContent = '00';
+                          countdownSeconds.textContent = '00';
+                          countdownTimer.classList.add('low-time');
+                          countdownTimer.innerHTML = '<span style="font-size: 18px;">Maintenance Started</span>';
+                          return;
+                      }
+
+                      const minutes = Math.floor(remaining / 60000);
+                      const seconds = Math.floor((remaining % 60000) / 1000);
+
+                      countdownMinutes.textContent = minutes.toString().padStart(2, '0');
+                      countdownSeconds.textContent = seconds.toString().padStart(2, '0');
+
+                      // Add warning class when less than 5 minutes remain
+                      if (minutes < 5) {
+                          countdownTimer.classList.add('low-time');
+                      } else {
+                          countdownTimer.classList.remove('low-time');
+                      }
+
+                      requestAnimationFrame(updateCountdown);
+                  }
+
+                  // Initial update
+                  updateCountdown();
+
+                  // Update every second
+                  setInterval(updateCountdown, 1000);
+              })();
+            </script>
+            {% endif %}
             <!-- Messages -->
             {% if messages %}
                 <div class="mb-4">
@@ -1776,6 +1995,7 @@
                     {% endfor %}
                 </div>
             {% endif %}
+
             {% include 'includes/plan_limit_warnings.html' %}
             <!-- Page Header -->
             {% block page_header %}{% endblock %}

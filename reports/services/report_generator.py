@@ -9,6 +9,7 @@ from decimal import Decimal
 from sales.models import Sale, SaleItem
 from inventory.models import Stock, Product, StockMovement
 from stores.models import Store
+from expenses.models import Expense, ExpenseCategory
 from ..models import SavedReport, GeneratedReport, ReportAccessLog
 from django.db.models.functions import TruncDate
 logger = logging.getLogger(__name__)
@@ -93,6 +94,8 @@ class ReportGeneratorService:
             'STOCK_MOVEMENT': self._generate_stock_movement,
             'PRICE_LOOKUP': self._generate_price_lookup,
             'CUSTOMER_ANALYTICS': self._generate_customer_analytics,
+            'EXPENSE_REPORT': self._generate_expense_report,
+            'EXPENSE_ANALYTICS': self._generate_expense_analytics,
             'CUSTOM': self._generate_custom,
         }
 
@@ -240,6 +243,366 @@ class ReportGeneratorService:
         """Fallback for custom reports"""
         return {
             'message': 'Custom report type. Please configure specific parameters.',
+            'filters': kwargs,
+        }
+
+    def _generate_expense_report(self, **kwargs) -> Dict:
+        """Generate expense tracking report"""
+        from django.db.models import F, Sum, Count, Avg
+        from django.db import connection
+
+        start_date = kwargs.get('start_date')
+        end_date = kwargs.get('end_date')
+        store_id = kwargs.get('store_id')
+        category_id = kwargs.get('category_id')
+        status_filter = kwargs.get('status')
+        payment_method_filter = kwargs.get('payment_method')
+
+        stores = self.get_accessible_stores()
+
+        queryset = Expense.objects.select_related(
+            'category', 'store', 'created_by', 'approved_by', 'paid_by'
+        ).prefetch_related('attachments')
+
+        # Apply filters
+        if start_date:
+            queryset = queryset.filter(expense_date__gte=start_date)
+        if end_date:
+            queryset = queryset.filter(expense_date__lte=end_date)
+        if store_id:
+            queryset = queryset.filter(store_id=store_id)
+        if category_id:
+            queryset = queryset.filter(category_id=category_id)
+        if status_filter:
+            queryset = queryset.filter(status=status_filter)
+        if payment_method_filter:
+            queryset = queryset.filter(payment_method=payment_method_filter)
+
+        # Status counts - calculate total_amount in Python since it's a property
+        status_counts_data = {}
+        for expense in queryset:
+            status = expense.status
+            if status not in status_counts_data:
+                status_counts_data[status] = {'count': 0, 'total_amount': 0}
+            status_counts_data[status]['count'] += 1
+            status_counts_data[status]['total_amount'] += float(expense.total_amount)
+
+        status_counts = [{'status': status, 'count': data['count'], 'total_amount': data['total_amount']}
+                         for status, data in status_counts_data.items()]
+
+        # Category breakdown - also needs Python calculation
+        category_breakdown_data = {}
+        for expense in queryset:
+            category_name = expense.category.name if expense.category else 'Uncategorized'
+            color_code = expense.category.color_code if expense.category else '#6c757d'
+            icon = expense.category.icon if expense.category else ''
+
+            if category_name not in category_breakdown_data:
+                category_breakdown_data[category_name] = {
+                    'category__name': category_name,
+                    'category__color_code': color_code,
+                    'category__icon': icon,
+                    'expense_count': 0,
+                    'total_amount': 0,
+                    'avg_amount': 0
+                }
+
+            category_breakdown_data[category_name]['expense_count'] += 1
+            category_breakdown_data[category_name]['total_amount'] += float(expense.total_amount)
+
+        # Calculate average for each category
+        for data in category_breakdown_data.values():
+            if data['expense_count'] > 0:
+                data['avg_amount'] = data['total_amount'] / data['expense_count']
+
+        category_breakdown = list(category_breakdown_data.values())
+
+        # Store breakdown
+        store_breakdown_data = {}
+        for expense in queryset:
+            store_name = expense.store.name if expense.store else 'No Store'
+            if store_name not in store_breakdown_data:
+                store_breakdown_data[store_name] = {
+                    'store__name': store_name,
+                    'expense_count': 0,
+                    'total_amount': 0
+                }
+            store_breakdown_data[store_name]['expense_count'] += 1
+            store_breakdown_data[store_name]['total_amount'] += float(expense.total_amount)
+
+        store_breakdown = list(store_breakdown_data.values())
+
+        # Payment method breakdown
+        payment_breakdown_data = {}
+        for expense in queryset:
+            method = expense.payment_method or 'Unknown'
+            if method not in payment_breakdown_data:
+                payment_breakdown_data[method] = {
+                    'payment_method': method,
+                    'count': 0,
+                    'total_amount': 0
+                }
+            payment_breakdown_data[method]['count'] += 1
+            payment_breakdown_data[method]['total_amount'] += float(expense.total_amount)
+
+        payment_breakdown = list(payment_breakdown_data.values())
+
+        # Expense list with detailed data - calculate total_amount in Python
+        expenses = []
+        for expense in queryset.order_by('-expense_date')[:500]:  # Limit to 500
+            expenses.append({
+                'id': expense.id,
+                'expense_number': expense.expense_number,
+                'title': expense.title,
+                'description': expense.description,
+                'category__name': expense.category.name if expense.category else 'Uncategorized',
+                'category__color_code': expense.category.color_code if expense.category else '#6c757d',
+                'store__name': expense.store.name if expense.store else 'No Store',
+                'created_by__first_name': expense.created_by.first_name if expense.created_by else '',
+                'created_by__last_name': expense.created_by.last_name if expense.created_by else '',
+                'amount': float(expense.amount),
+                'currency': expense.currency,
+                'tax_amount': float(expense.tax_amount),
+                'total_amount': float(expense.total_amount),  # This is the property
+                'expense_date': expense.expense_date,
+                'status': expense.status,
+                'payment_method': expense.payment_method,
+                'vendor_name': expense.vendor_name,
+                'reference_number': expense.reference_number,
+                'approved_by__first_name': expense.approved_by.first_name if expense.approved_by else '',
+                'approved_by__last_name': expense.approved_by.last_name if expense.approved_by else '',
+                'paid_by__first_name': expense.paid_by.first_name if expense.paid_by else '',
+                'paid_by__last_name': expense.paid_by.last_name if expense.paid_by else '',
+                'is_reimbursable': expense.is_reimbursable,
+                'is_recurring': expense.is_recurring,
+                'due_date': expense.due_date,
+                'rejection_reason': expense.rejection_reason,
+                'notes': expense.notes,
+            })
+
+        # Calculate summaries
+        total_amount = sum(float(expense.total_amount) for expense in queryset)
+        total_expenses = queryset.count()
+        total_tax = sum(float(expense.tax_amount) for expense in queryset)
+
+        summary = {
+            'total_expenses': total_expenses,
+            'total_amount': total_amount,
+            'total_tax': total_tax,
+            'avg_expense': total_amount / total_expenses if total_expenses > 0 else 0,
+            'pending_expenses': queryset.filter(status='SUBMITTED').count(),
+            'overdue_expenses': queryset.filter(
+                status='APPROVED',
+                due_date__lt=timezone.now().date()
+            ).count(),
+        }
+
+        # Monthly trend - use PostgreSQL-compatible date extraction
+        # Check database backend
+        vendor = connection.vendor
+
+        if vendor == 'postgresql':
+            # PostgreSQL: Use TO_CHAR or EXTRACT
+            monthly_trend = list(queryset.extra(
+                select={'month': "TO_CHAR(expense_date, 'YYYY-MM')"}
+            ).values('month').annotate(
+                count=Count('id'),
+                total=Sum(F('amount') + F('tax_amount'))
+            ).order_by('month')[:12])
+        elif vendor == 'mysql':
+            # MySQL: Use DATE_FORMAT
+            monthly_trend = list(queryset.extra(
+                select={'month': "DATE_FORMAT(expense_date, '%%Y-%%m')"}
+            ).values('month').annotate(
+                count=Count('id'),
+                total=Sum(F('amount') + F('tax_amount'))
+            ).order_by('month')[:12])
+        else:
+            # Fallback: Use Django's TruncMonth
+            from django.db.models.functions import TruncMonth
+            monthly_trend = list(queryset.annotate(
+                month=TruncMonth('expense_date')
+            ).values('month').annotate(
+                count=Count('id'),
+                total=Sum(F('amount') + F('tax_amount'))
+            ).order_by('month')[:12])
+            # Format the month string
+            for item in monthly_trend:
+                if isinstance(item['month'], (datetime, date)):
+                    item['month'] = item['month'].strftime('%Y-%m')
+
+        return {
+            'expenses': expenses,
+            'summary': summary,
+            'status_counts': status_counts,
+            'category_breakdown': category_breakdown,
+            'store_breakdown': store_breakdown,
+            'payment_breakdown': payment_breakdown,
+            'monthly_trend': monthly_trend,
+            'filters': kwargs,
+        }
+
+    def _generate_expense_analytics(self, **kwargs) -> Dict:
+        """Generate expense analytics and insights report"""
+        from django.db.models.functions import TruncMonth, TruncWeek
+        from django.db.models import F, Sum, Count, Avg
+        from django.db import connection
+
+        start_date = kwargs.get('start_date')
+        end_date = kwargs.get('end_date')
+        store_id = kwargs.get('store_id')
+
+        stores = self.get_accessible_stores()
+
+        queryset = Expense.objects.filter(status='PAID').select_related('category', 'store')
+
+        if start_date:
+            queryset = queryset.filter(expense_date__gte=start_date)
+        if end_date:
+            queryset = queryset.filter(expense_date__lte=end_date)
+        if store_id:
+            queryset = queryset.filter(store_id=store_id)
+
+        # Monthly trend with comparison - calculate total as amount + tax_amount
+        monthly_data = list(queryset.annotate(
+            month=TruncMonth('expense_date')
+        ).values('month').annotate(
+            total=Sum(F('amount') + F('tax_amount')),  # Calculate total here
+            count=Count('id'),
+            avg=Avg('amount')
+        ).order_by('month')[:12])
+
+        # Format month strings
+        for item in monthly_data:
+            if isinstance(item['month'], (datetime, date)):
+                item['month'] = item['month'].strftime('%Y-%m')
+
+        # Weekly pattern
+        weekly_data = list(queryset.annotate(
+            week=TruncWeek('expense_date')
+        ).values('week').annotate(
+            total=Sum(F('amount') + F('tax_amount'))
+        ).order_by('week')[:8])
+
+        # Format week strings
+        for item in weekly_data:
+            if isinstance(item['week'], (datetime, date)):
+                item['week'] = item['week'].strftime('%Y-%m-%d')
+
+        # Top categories - calculate in Python
+        category_data = {}
+        for expense in queryset:
+            category_name = expense.category.name if expense.category else 'Uncategorized'
+            color_code = expense.category.color_code if expense.category else '#6c757d'
+            total_amount = float(expense.amount) + float(expense.tax_amount)
+
+            if category_name not in category_data:
+                category_data[category_name] = {
+                    'category__name': category_name,
+                    'category__color_code': color_code,
+                    'total': 0,
+                    'count': 0,
+                    'avg': 0
+                }
+
+            category_data[category_name]['total'] += total_amount
+            category_data[category_name]['count'] += 1
+
+        # Calculate averages
+        for data in category_data.values():
+            if data['count'] > 0:
+                data['avg'] = data['total'] / data['count']
+
+        top_categories = sorted(category_data.values(), key=lambda x: x['total'], reverse=True)[:10]
+
+        # Vendor analysis
+        vendor_data = {}
+        for expense in queryset:
+            if expense.vendor_name:
+                vendor = expense.vendor_name
+                total_amount = float(expense.amount) + float(expense.tax_amount)
+
+                if vendor not in vendor_data:
+                    vendor_data[vendor] = {
+                        'vendor_name': vendor,
+                        'total': 0,
+                        'count': 0
+                    }
+
+                vendor_data[vendor]['total'] += total_amount
+                vendor_data[vendor]['count'] += 1
+
+        top_vendors = sorted(vendor_data.values(), key=lambda x: x['total'], reverse=True)[:10]
+
+        # Payment method analysis
+        payment_data = {}
+        for expense in queryset:
+            if expense.payment_method:
+                method = expense.payment_method
+                total_amount = float(expense.amount) + float(expense.tax_amount)
+
+                if method not in payment_data:
+                    payment_data[method] = {
+                        'payment_method': method,
+                        'total': 0,
+                        'count': 0
+                    }
+
+                payment_data[method]['total'] += total_amount
+                payment_data[method]['count'] += 1
+
+        payment_methods = sorted(payment_data.values(), key=lambda x: x['total'], reverse=True)
+
+        # Recurring expenses analysis
+        recurring_total = 0
+        recurring_count = 0
+        for expense in queryset.filter(is_recurring=True):
+            recurring_total += float(expense.amount) + float(expense.tax_amount)
+            recurring_count += 1
+
+        recurring_expenses = {
+            'total': recurring_total,
+            'count': recurring_count
+        }
+
+        # Budget vs actual by category
+        budget_analysis = []
+        categories = ExpenseCategory.objects.filter(is_active=True)
+
+        for category in categories:
+            category_expenses = queryset.filter(category=category)
+            total_spent = sum(float(expense.amount) + float(expense.tax_amount)
+                              for expense in category_expenses)
+            budget_analysis.append({
+                'category': category.name,
+                'monthly_budget': float(category.monthly_budget) if category.monthly_budget else None,
+                'total_spent': total_spent,
+                'budget_utilization': (total_spent / float(category.monthly_budget) * 100)
+                if category.monthly_budget and float(category.monthly_budget) > 0 else None,
+            })
+
+        # Summary insights
+        total_spent = sum(float(expense.amount) + float(expense.tax_amount) for expense in queryset)
+        expense_count = queryset.count()
+
+        summary_insights = {
+            'total_spent': total_spent,
+            'avg_monthly_spending': total_spent / len(monthly_data) if monthly_data else 0,
+            'most_expensive_category': top_categories[0]['category__name'] if top_categories else None,
+            'top_vendor': top_vendors[0]['vendor_name'] if top_vendors else None,
+            'recurring_expenses_percentage': (recurring_count / expense_count * 100)
+            if expense_count > 0 else 0,
+        }
+
+        return {
+            'monthly_data': monthly_data,
+            'weekly_data': weekly_data,
+            'top_categories': top_categories,
+            'top_vendors': top_vendors,
+            'payment_methods': payment_methods,
+            'recurring_expenses': recurring_expenses,
+            'budget_analysis': budget_analysis,
+            'summary_insights': summary_insights,
             'filters': kwargs,
         }
 
