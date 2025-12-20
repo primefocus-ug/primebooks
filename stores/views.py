@@ -2931,14 +2931,19 @@ def _validate_report_request(report_data, user):
             return {'valid': False, 'error': f'{field.replace("_", " ").title()} is required'}
 
     try:
-        start_date = datetime.strptime(report_data['start_date'], '%Y-%m-%d').date()
-        end_date = datetime.strptime(report_data['end_date'], '%Y-%m-%d').date()
+        # ✅ FIXED: The dates are already date objects from form cleaning
+        # No need to parse them with strptime
+        start_date = report_data['start_date']
+        end_date = report_data['end_date']
+
         if start_date > end_date:
             return {'valid': False, 'error': 'Start date must be before end date'}
         if (end_date - start_date).days > 365:
             return {'valid': False, 'error': 'Date range cannot exceed 1 year'}
-    except ValueError:
-        return {'valid': False, 'error': 'Invalid date format'}
+    except (ValueError, TypeError) as e:
+        # Handle cases where dates might not be valid date objects
+        logger.error(f"Date validation error: {str(e)}")
+        return {'valid': False, 'error': 'Invalid date'}
 
     # Validate store access
     accessible_stores = get_user_accessible_stores(user)
@@ -2951,7 +2956,6 @@ def _validate_report_request(report_data, user):
             return {'valid': False, 'error': 'Invalid store selection'}
 
     return {'valid': True}
-
 
 def _get_report_statistics(user):
     """Get statistics for the report dashboard."""

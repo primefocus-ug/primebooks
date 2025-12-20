@@ -3277,7 +3277,7 @@ def switch_tenant_view(request):
     if tenant_id:
         try:
             from company.models import Company
-            company = get_object_or_404(Company, id=tenant_id)
+            company = get_object_or_404(Company, company_id=tenant_id)
 
             # Store the target company in session for the middleware to handle
             request.session['saas_admin_target_company'] = company.company_id
@@ -3299,7 +3299,7 @@ def switch_tenant_view(request):
     accessible_companies = get_accessible_companies(request.user)
     companies_data = [
         {
-            'id': company.company_id,
+            'company_id': company.company_id,
             'name': company.name,
             'schema_name': getattr(company, 'schema_name', ''),
             'user_count': get_company_user_count(company),
