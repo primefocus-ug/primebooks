@@ -21,6 +21,7 @@ urlpatterns = [
     # Dashboard
     path('', views.inventory_dashboard, name='dashboard'),
     path('category/create/ajax/', views.category_create_ajax, name='category_create_ajax'),
+    path('api/categories/<int:pk>/toggle-status/', views.toggle_category_status, name='category_toggle_status'),
     path('supplier/create/ajax/', views.supplier_create_ajax, name='supplier_create_ajax'),
     path('stock/<int:pk>/update/', views.StockUpdateView.as_view(), name='stock_update'),
 
@@ -110,6 +111,7 @@ urlpatterns = [
     path('movements/', views.StockMovementListView.as_view(), name='movement_list'),
     path('movements/add/', views.StockMovementCreateView.as_view(), name='movement_create'),
     path('movements/<int:pk>/edit/', views.StockMovementUpdateView.as_view(), name='movement_update'),
+    path('api/movements/<int:pk>/', views.movement_detail_api, name='movement_detail_api'),
 
     # Bulk Operations
     path('products/bulk-actions/', views.bulk_product_actions, name='bulk_actions'),

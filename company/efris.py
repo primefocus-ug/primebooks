@@ -13,7 +13,8 @@ class EFRISCompanyMixin:
         if not self.efris_enabled:
             return False, "EFRIS is not enabled for this company"
 
-        if not self.has_active_access:
+        # Check if company is active (this is the key fix)
+        if not self.is_active or self.status in ['SUSPENDED', 'EXPIRED']:
             return False, "Company access is suspended or expired"
 
         # Check required business fields
@@ -22,6 +23,24 @@ class EFRISCompanyMixin:
             return False, f"Configuration errors: {'; '.join(validation_errors[:3])}"
 
         return True, "Company can use EFRIS"
+
+    def get_efris_readiness_status(self) -> Dict[str, Any]:
+        """Get detailed EFRIS readiness status for debugging"""
+        return {
+            'company_active': self.is_active,
+            'company_status': self.status,
+            'efris_enabled': self.efris_enabled,
+            'efris_active': self.efris_is_active,
+            'has_active_access': self.has_active_access,
+            'can_use_efris_result': self.can_use_efris(),
+            'configuration_errors': self.get_efris_configuration_errors(),
+            'validation_result': self.validate_efris_configuration(),
+        }
+
+    def log_efris_status(self, action: str = "check"):
+        """Log EFRIS status for debugging"""
+        status = self.get_efris_readiness_status()
+        logger.info(f"EFRIS Status for {self.company_id} ({action}): {status}")
 
     def get_efris_seller_details(self) -> Dict[str, Any]:
         """Get seller details for EFRIS using business data"""

@@ -242,7 +242,6 @@ class StoreAdmin(admin.ModelAdmin):
         (_('Store-Specific EFRIS Configuration'), {
             'fields': (
                 'use_company_efris',
-                ('store_efris_client_id', 'store_efris_api_key'),
                 'store_efris_private_key',
                 'store_efris_public_certificate',
                 'store_efris_key_password',

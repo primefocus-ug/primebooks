@@ -1343,7 +1343,7 @@ class EFRISDebugView(TemplateView):
                 'tin', 'brn', 'nin', 'name', 'trading_name',
                 'email', 'phone', 'physical_address',
                 'efris_enabled', 'efris_is_production', 'efris_integration_mode',
-                'efris_client_id', 'efris_api_key', 'efris_device_number'
+                 'efris_device_number'
             ]
 
             for field in efris_field_names:

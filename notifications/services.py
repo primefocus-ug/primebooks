@@ -76,28 +76,7 @@ class NotificationService:
             channels=None,
             tenant_schema=None
     ):
-        """
-        Create a notification with tenant context
-
-        Args:
-            recipient: User to receive notification
-            title: Notification title
-            message: Notification message
-            notification_type: Type of notification (INFO, SUCCESS, WARNING, ERROR, ALERT)
-            category: NotificationCategory instance
-            template: NotificationTemplate instance
-            related_object: Related model instance
-            action_text: Text for action button
-            action_url: URL for action button
-            priority: Priority level (LOW, MEDIUM, HIGH, URGENT)
-            metadata: Additional data dictionary
-            expires_at: DateTime when notification expires
-            channels: List of channels to send through ['in_app', 'email', 'sms', 'push']
-            tenant_schema: Explicit tenant schema name
-
-        Returns:
-            Notification instance or None
-        """
+        """Create a notification with tenant context"""
 
         if channels is None:
             channels = ['in_app']
@@ -124,7 +103,7 @@ class NotificationService:
                     }
                 )
 
-                # Create notification
+                # Create notification FIRST
                 notification = Notification.objects.create(
                     recipient=recipient,
                     category=category,
@@ -137,14 +116,25 @@ class NotificationService:
                     priority=priority,
                     metadata=metadata or {},
                     expires_at=expires_at,
-                    tenant_id=schema_name,  # FIXED: Set tenant_id
+                    tenant_id=schema_name,
                 )
 
-                # Link related object
+                # Link related object - FIX FOR CHARFIELD PRIMARY KEYS
                 if related_object:
-                    notification.content_type = ContentType.objects.get_for_model(related_object)
-                    notification.object_id = related_object.pk
-                    notification.save(update_fields=['content_type', 'object_id'])
+                    from django.contrib.contenttypes.models import ContentType
+
+                    # Get content type
+                    content_type = ContentType.objects.get_for_model(related_object)
+
+                    # Get object ID - ensure it's a string for CharField primary keys
+                    object_id = str(related_object.pk)
+
+                    # Update the notification with content type and object_id
+                    notification.content_type = content_type
+                    notification.object_id = object_id
+
+                    # Use save() instead of update_fields to ensure proper saving
+                    notification.save()
 
                 # Send through channels
                 for channel in channels:

@@ -228,8 +228,31 @@ def notify_product_events(sender, instance, created, **kwargs):
         logger.error(f"Error in notify_product_events: {e}", exc_info=True)
 
 
-# ============= COMPANY/SUBSCRIPTION NOTIFICATIONS =============
+def create_company_notification(company, recipient, title, message,
+                                notification_type='ALERT', priority='NORMAL',
+                                channels=['in_app'], tenant_schema=None):
+    """Create notification for company with proper content type handling"""
+    from django.contrib.contenttypes.models import ContentType
+    from .services import NotificationService
 
+    # Get content type for Company model
+    company_content_type = ContentType.objects.get_for_model(company)
+
+    # Ensure object_id is string (for CharField primary keys)
+    object_id = str(company.pk)
+
+    return NotificationService.create_notification(
+        recipient=recipient,
+        title=title,
+        message=message,
+        notification_type=notification_type,
+        priority=priority,
+        content_type=company_content_type,
+        object_id=object_id,
+        channels=channels,
+        tenant_schema=tenant_schema or company.schema_name
+    )
+# ============= COMPANY/SUBSCRIPTION NOTIFICATIONS =============
 @receiver(post_save, sender='company.Company')
 def notify_company_events(sender, instance, created, **kwargs):
     """Notify on company/subscription events - special handling for public schema"""
@@ -241,39 +264,66 @@ def notify_company_events(sender, instance, created, **kwargs):
         state_key = f'company_{instance.pk}'
         old_state = _pre_save_state.get(state_key, {})
 
-        # Use schema context for tenant-specific operations
-        with schema_context(schema_name):
-            # Check subscription expiry
-            if instance.subscription_ends_at:
-                days_remaining = (instance.subscription_ends_at - timezone.now().date()).days
+        # Check suspension (only if status just changed to SUSPENDED)
+        if instance.status == 'SUSPENDED' and old_state.get('status') != 'SUSPENDED':
+            try:
+                with schema_context(schema_name):
+                    from django.contrib.auth import get_user_model
+                    User = get_user_model()
 
-                if days_remaining in [30, 14, 7, 3, 1]:
-                    CompanyNotifications.notify_subscription_expiring(instance, days_remaining)
+                    # Get staff/admin users
+                    admins = User.objects.filter(
+                        is_staff=True,
+                        is_active=True
+                    ).only('id', 'email', 'first_name', 'last_name')
 
-            # Check trial expiry
-            if instance.is_trial and instance.trial_ends_at:
-                days_remaining = (instance.trial_ends_at - timezone.now().date()).days
+                    for admin in admins:
+                        # PASS THE INSTANCE AS related_object, NOT content_type and object_id
+                        NotificationService.create_notification(
+                            recipient=admin,
+                            title='Company Account Suspended',
+                            message=f'{instance.name} has been suspended. Contact support for details.',
+                            notification_type='ALERT',
+                            priority='URGENT',
+                            related_object=instance,  # Pass the instance directly
+                            channels=['in_app', 'email'],
+                            tenant_schema=schema_name
+                        )
 
-                if days_remaining in [7, 3, 1]:
-                    CompanyNotifications.notify_trial_ending(instance, days_remaining)
+                    logger.info(f"Sent suspension notifications to {admins.count()} admins for {instance.name}")
 
-            # Check suspension (only if status just changed to SUSPENDED)
-            if instance.status == 'SUSPENDED' and old_state.get('status') != 'SUSPENDED':
-                admins = instance.staff.filter(is_staff=True).only(
-                    'id', 'email', 'first_name', 'last_name'
-                )
+            except Exception as tenant_error:
+                logger.error(f"Could not access tenant schema {schema_name} for notifications: {tenant_error}")
 
-                for admin in admins:
-                    NotificationService.create_notification(
-                        recipient=admin,
-                        title='Company Account Suspended',
-                        message=f'{instance.name} has been suspended. Contact support for details.',
-                        notification_type='ALERT',
-                        priority='URGENT',
-                        related_object=instance,
-                        channels=['in_app', 'email'],
-                        tenant_schema=schema_name
-                    )
+        # Check reactivation
+        elif instance.is_active and old_state.get('is_active') is False:
+            try:
+                with schema_context(schema_name):
+                    from django.contrib.auth import get_user_model
+                    User = get_user_model()
+
+                    # Get staff/admin users
+                    admins = User.objects.filter(
+                        is_staff=True,
+                        is_active=True
+                    ).only('id', 'email', 'first_name', 'last_name')
+
+                    for admin in admins:
+                        NotificationService.create_notification(
+                            recipient=admin,
+                            title='Company Account Reactivated',
+                            message=f'{instance.name} has been reactivated.',
+                            notification_type='SUCCESS',
+                            priority='NORMAL',
+                            related_object=instance,  # Pass the instance directly
+                            channels=['in_app', 'email'],
+                            tenant_schema=schema_name
+                        )
+
+                    logger.info(f"Sent reactivation notifications to {admins.count()} admins for {instance.name}")
+
+            except Exception as tenant_error:
+                logger.error(f"Could not access tenant schema {schema_name} for notifications: {tenant_error}")
 
         # Clean up tracked state
         if state_key in _pre_save_state:
@@ -281,6 +331,35 @@ def notify_company_events(sender, instance, created, **kwargs):
 
     except Exception as e:
         logger.error(f"Error in notify_company_events: {e}", exc_info=True)
+
+def _notify_public_admin_on_suspension(company_instance):
+    """Fallback: Notify public admin when tenant schema is inaccessible"""
+    try:
+        from public_accounts.models import PublicUser
+
+        # Get public admins
+        public_admins = PublicUser.objects.filter(
+            is_staff=True,
+            is_active=True
+        )
+
+        for admin in public_admins:
+            # Create a simplified notification in public schema
+            NotificationService.create_notification(
+                recipient=admin,
+                title=f'Company Suspended: {company_instance.name}',
+                message=f'Company {company_instance.name} ({company_instance.company_id}) has been suspended. Note: Could not notify company staff.',
+                notification_type='ALERT',
+                priority='HIGH',
+                related_object=company_instance,
+                channels=['in_app'],
+                tenant_schema='public'
+            )
+
+        logger.info(f"Sent public admin notification for {company_instance.name} suspension")
+
+    except Exception as e:
+        logger.error(f"Could not notify public admin about suspension: {e}")
 
 
 # ============= SECURITY NOTIFICATIONS =============

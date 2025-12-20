@@ -518,9 +518,7 @@ class Company(TenantMixin,EFRISCompanyMixin):
     tin = models.CharField(max_length=20, blank=True, null=True, verbose_name=_("TIN"))
     brn = models.CharField(max_length=20, blank=True, null=True, verbose_name=_("BRN"))
     nin = models.CharField(max_length=20, blank=True, null=True, verbose_name=_("NIN"))
-    vat_registration_number = models.CharField(max_length=50, blank=True, null=True)
     is_vat_enabled=models.BooleanField(default=False,verbose_name='On VAT',help_text=_("Confirm wether company is on VAT"))
-    vat_registration_date = models.DateField(blank=True, null=True)
     preferred_currency = models.CharField(max_length=3, choices=CURRENCY_CHOICES, default='UGX')
 
     # EFRIS Core Settings
@@ -542,8 +540,6 @@ class Company(TenantMixin,EFRISCompanyMixin):
     )
 
     # EFRIS API Credentials (EFRIS-specific fields with no business equivalent)
-    efris_client_id = models.CharField(max_length=100, blank=True, null=True, verbose_name=_("EFRIS Client ID"))
-    efris_api_key = models.CharField(max_length=200, blank=True, null=True, verbose_name=_("EFRIS API Key"))
     efris_device_number = models.CharField(max_length=50, blank=True, null=True, verbose_name=_("EFRIS Device Number"))
     efris_certificate_data = models.JSONField(
         default=dict,blank=True,
@@ -651,6 +647,11 @@ class Company(TenantMixin,EFRISCompanyMixin):
         return self.display_name
 
     def save(self, *args, **kwargs):
+        """Save company with optional skip_status_update parameter"""
+
+        # Extract custom parameters
+        skip_status_update = kwargs.pop('skip_status_update', False)
+
         # Generate slug from name if not provided
         if not self.slug:
             from django.utils.text import slugify
@@ -687,14 +688,15 @@ class Company(TenantMixin,EFRISCompanyMixin):
             from datetime import timedelta
             self.grace_period_ends_at = self.subscription_ends_at + timedelta(days=7)
 
-        # Update status based on subscription
-        if not kwargs.get('skip_status_update'):
+        # Update status based on subscription (SKIP if requested)
+        if not skip_status_update:
             self.check_and_update_access_status()
 
-        super().save(*args, **kwargs)
-
+        result = super().save(*args, **kwargs)
         # Clear cache when company is updated
         self._clear_cache()
+
+        return result
 
     def _clear_cache(self):
         """Clear cached data for this company."""
@@ -775,6 +777,11 @@ class Company(TenantMixin,EFRISCompanyMixin):
     @property
     def has_active_access(self):
         """Check if company has active access (trial or subscription)."""
+        # First check if manually deactivated
+        if not self.is_active:
+            return False
+
+        # Then check status
         return self.status in ['ACTIVE', 'TRIAL']
 
     @property
@@ -1092,19 +1099,49 @@ class Company(TenantMixin,EFRISCompanyMixin):
 
     def deactivate_company(self, reason="Subscription expired"):
         """Manually deactivate company and all users"""
+        from django_tenants.utils import schema_context
+        from django.contrib.auth import get_user_model
+
+        # Update company status in public schema
         self.is_active = False
         self.status = 'SUSPENDED'
 
         timestamp = timezone.now().strftime("%Y-%m-%d %H:%M:%S")
-        self.notes = f"{self.notes}\n[{timestamp}] Deactivated: {reason}" if self.notes else f"[{timestamp}] Deactivated: {reason}"
+        if self.notes:
+            self.notes = f"{self.notes}\n[{timestamp}] Deactivated: {reason}"
+        else:
+            self.notes = f"[{timestamp}] Deactivated: {reason}"
 
-        self.save()
-        self.deactivate_all_users()
+
+        # Save with skip_status_update=True to prevent auto-reactivation
+        try:
+            self.save(skip_status_update=True)
+
+            # Verify save worked
+            self.refresh_from_db()
+
+        except Exception as e:
+            print(f"🔴 DEBUG: Save failed - {e}")
+            # Try saving without the skip parameter as fallback
+            self.save()
+
+        # Deactivate users in TENANT schema
+        try:
+            with schema_context(self.schema_name):
+                User = get_user_model()
+                updated_count = User.objects.filter(is_active=True).update(is_active=False)
+        except Exception as e:
+            updated_count = 0
 
         logger.warning(f"Company {self.company_id} deactivated: {reason}")
+        return self
 
     def reactivate_company(self, reason="Subscription renewed"):
         """Reactivate company and users"""
+        from django_tenants.utils import schema_context
+        from django.contrib.auth import get_user_model
+
+
         self.is_active = True
 
         if self.is_trial and self.is_trial_active:
@@ -1113,21 +1150,27 @@ class Company(TenantMixin,EFRISCompanyMixin):
             self.status = 'ACTIVE'
 
         timestamp = timezone.now().strftime("%Y-%m-%d %H:%M:%S")
-        self.notes = f"{self.notes}\n[{timestamp}] Reactivated: {reason}" if self.notes else f"[{timestamp}] Reactivated: {reason}"
+        if self.notes:
+            self.notes = f"{self.notes}\n[{timestamp}] Reactivated: {reason}"
+        else:
+            self.notes = f"[{timestamp}] Reactivated: {reason}"
 
+        # Save
         self.save()
-        self.reactivate_all_users()
 
-        # Clear all relevant caches
+        # Reactivate users
+        try:
+            with schema_context(self.schema_name):
+                User = get_user_model()
+                updated_count = User.objects.filter(is_active=False).update(is_active=True)
+        except Exception as e:
+            print(f"🟢 DEBUG: Error reactivating users: {e}")
+
+        # Clear caches
         self._clear_all_caches()
 
-        # Clear Django cache for this company
-        from django.core.cache import cache
-        cache.delete(f'company_status_{self.company_id}')
-        cache.delete(f'company_access_{self.company_id}')
-        cache.delete(f'tenant_{self.schema_name}_status')
-
         logger.info(f"Company {self.company_id} reactivated: {reason}")
+        return self
 
     def reallow_company(self, reason="Subscription renewed", days=30, grace_days=7):
         """Reactivate company and users"""

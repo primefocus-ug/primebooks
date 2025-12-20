@@ -2189,11 +2189,67 @@ class CategoryListView(LoginRequiredMixin,PermissionRequiredMixin, ListView):
         context['search_query'] = self.request.GET.get('search', '')
         return context
 
-class CategoryDetailView(LoginRequiredMixin,PermissionRequiredMixin, DetailView):
+
+class CategoryDetailView(LoginRequiredMixin, PermissionRequiredMixin, DetailView):
     model = Category
     template_name = 'inventory/category_detail.html'
     context_object_name = 'category'
     permission_required = 'inventory.view_category'
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+
+        # Add EFRIS-specific context
+        context['efris_configuration_complete'] = self.object.efris_configuration_complete
+        context['efris_errors'] = self.object.get_efris_errors()
+
+        # Add EFRIS category details
+        if self.object.efris_commodity_category:
+            context['efris_category'] = self.object.efris_commodity_category
+            context['efris_tax_rate'] = self.object.efris_rate
+            context['efris_is_exempt'] = self.object.efris_is_exempt
+            context['efris_is_zero_rate'] = self.object.efris_is_zero_rate
+            context['efris_is_excisable'] = self.object.efris_is_excisable
+
+        # Get EFRIS API data
+        context['efris_api_data'] = self.object.get_efris_data() if hasattr(self.object, 'get_efris_data') else {}
+
+        return context
+
+
+@login_required
+@permission_required('inventory.change_category', raise_exception=True)
+@csrf_exempt
+def toggle_category_status(request, pk):
+    """Toggle category active status"""
+    if request.method == 'POST':
+        try:
+            category = Category.objects.get(pk=pk)
+            data = json.loads(request.body)
+            new_status = data.get('is_active', not category.is_active)
+
+            category.is_active = new_status
+            category.save()
+
+            return JsonResponse({
+                'success': True,
+                'message': f'Category {"activated" if new_status else "deactivated"} successfully',
+                'is_active': category.is_active
+            })
+        except Category.DoesNotExist:
+            return JsonResponse({
+                'success': False,
+                'error': 'Category not found'
+            }, status=404)
+        except Exception as e:
+            return JsonResponse({
+                'success': False,
+                'error': str(e)
+            }, status=500)
+    return JsonResponse({
+        'success': False,
+        'error': 'Method not allowed'
+    }, status=405)
 
 
 class CategoryCreateView(EFRISConditionalMixin, LoginRequiredMixin, PermissionRequiredMixin, CreateView):
@@ -2331,6 +2387,131 @@ def category_detail_api(request, pk):
     except Category.DoesNotExist:
         return JsonResponse({'error': 'Category not found'}, status=404)
 
+
+@login_required
+@require_GET
+def movement_detail_api(request, pk):
+    """API endpoint to get detailed movement information"""
+    try:
+        movement = StockMovement.objects.select_related(
+            'product', 'store', 'created_by', 'product__category'
+        ).get(pk=pk)
+
+        # Check if the user has permission to view this movement
+        if not request.user.has_perm('inventory.view_stockmovement'):
+            return JsonResponse({'error': 'Permission denied'}, status=403)
+
+        # Calculate current stock for this product in this store
+        from django.db.models import Sum, Case, When, F, Value, IntegerField
+        from django.db.models.functions import Coalesce
+
+        # Get all movements for this product in this store
+        movements = StockMovement.objects.filter(
+            product=movement.product,
+            store=movement.store
+        )
+
+        # Calculate total quantity
+        stock_movements = movements.annotate(
+            signed_quantity=Case(
+                When(movement_type__in=['PURCHASE', 'RETURN', 'TRANSFER_IN'], then=F('quantity')),
+                When(movement_type__in=['SALE', 'TRANSFER_OUT'], then=-F('quantity')),
+                When(movement_type='ADJUSTMENT', then=F('quantity')),
+                default=Value(0),
+                output_field=IntegerField()
+            )
+        ).aggregate(total=Coalesce(Sum('signed_quantity'), Value(0)))
+
+        current_stock = stock_movements['total']
+
+        # Get stock record if exists
+        stock_record = Stock.objects.filter(
+            product=movement.product,
+            store=movement.store
+        ).first()
+
+        # Get recent movements for the same product/store (for timeline)
+        recent_movements = StockMovement.objects.filter(
+            product=movement.product,
+            store=movement.store
+        ).exclude(pk=movement.pk).order_by('-created_at')[:5]
+
+        data = {
+            'id': movement.pk,
+            'movement_type': movement.movement_type,
+            'movement_type_display': movement.get_movement_type_display(),
+            'quantity': str(movement.quantity),
+            'reference': movement.reference or '',
+            'notes': movement.notes or '',
+            'created_at': movement.created_at.isoformat() if movement.created_at else None,
+            'current_stock': float(current_stock),
+            'product': {
+                'id': movement.product.pk,
+                'name': movement.product.name,
+                'sku': movement.product.sku,
+                'barcode': movement.product.barcode or '',
+                'unit_of_measure': movement.product.unit_of_measure,
+                'cost_price': str(movement.product.cost_price) if movement.product.cost_price else '0.00',
+                'selling_price': str(movement.product.selling_price) if movement.product.selling_price else '0.00',
+                'reorder_level': str(movement.product.min_stock_level) if movement.product.min_stock_level else '0',
+                'category': {
+                    'id': movement.product.category.pk if movement.product.category else None,
+                    'name': movement.product.category.name if movement.product.category else None,
+                } if movement.product.category else None,
+                'supplier': {
+                    'id': movement.product.supplier.pk if movement.product.supplier else None,
+                    'name': movement.product.supplier.name if movement.product.supplier else None,
+                } if movement.product.supplier else None,
+            },
+            'store': {
+                'id': movement.store.pk,
+                'name': movement.store.name,
+                'address': movement.store.address if hasattr(movement.store, 'address') else '',
+            },
+            'created_by': {
+                'id': movement.created_by.pk,
+                'username': movement.created_by.username,
+                'email': movement.created_by.email if hasattr(movement.created_by, 'email') else '',
+                'full_name': movement.created_by.get_full_name() or movement.created_by.username,
+            },
+            'stock_record': {
+                'id': stock_record.pk if stock_record else None,
+                'quantity': float(stock_record.quantity) if stock_record else 0,
+                'low_stock_threshold': float(stock_record.low_stock_threshold) if stock_record else 0,
+                'last_updated': stock_record.last_updated.isoformat() if stock_record and stock_record.last_updated else None,
+            } if stock_record else None,
+            'recent_movements': [
+                {
+                    'id': rm.pk,
+                    'movement_type': rm.movement_type,
+                    'movement_type_display': rm.get_movement_type_display(),
+                    'quantity': str(rm.quantity),
+                    'created_at': rm.created_at.isoformat() if rm.created_at else None,
+                    'reference': rm.reference or '',
+                }
+                for rm in recent_movements
+            ],
+            # Stock impact calculations
+            'stock_impact': {
+                'previous_stock': float(current_stock) - float(movement.quantity) * (
+                    1 if movement.movement_type in ['PURCHASE', 'RETURN',
+                                                    'TRANSFER_IN'] else -1 if movement.movement_type in ['SALE',
+                                                                                                         'TRANSFER_OUT'] else 0),
+                'change_amount': float(movement.quantity),
+                'new_stock': float(current_stock),
+                'change_direction': 'positive' if movement.movement_type in ['PURCHASE', 'RETURN',
+                                                                             'TRANSFER_IN'] else 'negative' if movement.movement_type in [
+                    'SALE', 'TRANSFER_OUT'] else 'neutral',
+            }
+        }
+
+        return JsonResponse(data)
+
+    except StockMovement.DoesNotExist:
+        return JsonResponse({'error': 'Movement not found'}, status=404)
+    except Exception as e:
+        logger.error(f"Error in movement_detail_api: {str(e)}", exc_info=True)
+        return JsonResponse({'error': str(e)}, status=500)
 
 class SupplierListView(LoginRequiredMixin,PermissionRequiredMixin, ListView):
     model = Supplier
@@ -2684,6 +2865,7 @@ class ProductUpdateView(EFRISConditionalMixin, LoginRequiredMixin, PermissionReq
         messages.success(self.request, 'Product updated successfully!')
         return super().form_valid(form)
 
+
 class ProductDetailView(LoginRequiredMixin, PermissionRequiredMixin, DetailView):
     model = Product
     template_name = 'inventory/product_detail.html'
@@ -2723,7 +2905,47 @@ class ProductDetailView(LoginRequiredMixin, PermissionRequiredMixin, DetailView)
         context['store_stock_percentages'] = self.object.store_stock_percentages
         context['efris_errors'] = self.object.get_efris_errors()
 
-        # Additional useful context
+        # EFRIS Fields - Add all EFRIS-related fields to context
+        context['efris_fields'] = {
+            # Core EFRIS Information
+            'efris_goods_code': self.object.efris_goods_code,
+            'efris_item_code': self.object.efris_item_code,
+            'efris_goods_id': self.object.efris_goods_id,
+            'efris_goods_name': self.object.efris_goods_name,
+            'efris_goods_description': self.object.efris_goods_description,
+
+            # EFRIS Status
+            'efris_is_uploaded': self.object.efris_is_uploaded,
+            'efris_upload_date': self.object.efris_upload_date,
+            'efris_auto_sync_enabled': self.object.efris_auto_sync_enabled,
+            'efris_created_by': self.object.efris_created_by,
+
+            # Tax Information
+            'efris_tax_category_id': self.object.efris_tax_category_id,
+            'efris_tax_category_display': self.object.get_efris_tax_category_display() if hasattr(self.object,
+                                                                                                  'get_efris_tax_category_display') else '',
+            'efris_tax_rate': self.object.efris_tax_rate,
+            'efris_excise_duty_code': self.object.efris_excise_duty_code,
+            'efris_excise_duty_rate': self.object.efris_excise_duty_rate,
+
+            # Commodity Information
+            'efris_commodity_category_id': self.object.efris_commodity_category_id,
+            'efris_commodity_category_name': self.object.efris_commodity_category_name,
+
+            # Unit Information
+            'efris_unit_of_measure_code': self.object.efris_unit_of_measure_code,
+            'unit_of_measure_display': self.object.get_unit_of_measure_display(),
+
+            # Piece Unit Information (for has_piece_unit products)
+            'efris_has_piece_unit': self.object.efris_has_piece_unit,
+            'efris_piece_measure_unit': self.object.efris_piece_measure_unit,
+            'efris_piece_unit_price': self.object.efris_piece_unit_price,
+
+            # Configuration Status
+            'efris_configuration_complete': self.object.efris_configuration_complete,
+        }
+
+        # Add EFRIS data as separate context variables for easy access in template
         context['efris_status'] = self.object.efris_status_display
         context['efris_configuration_complete'] = self.object.efris_configuration_complete
         context['tax_details'] = self.object.tax_details
@@ -2731,14 +2953,31 @@ class ProductDetailView(LoginRequiredMixin, PermissionRequiredMixin, DetailView)
         context['min_stock_level'] = self.object.min_stock_level
         context['stock_percentage'] = self.object.stock_percentage
 
+        # Get EFRIS data in API format
+        context['efris_api_data'] = self.object.get_efris_data() if hasattr(self.object, 'get_efris_data') else {}
+
+        # Get tax rate display for UI
+        context['tax_rate_display'] = self.object.get_tax_rate_display()
+
+        # Additional category and supplier info
         if self.object.category:
             context['category'] = self.object.category
+            # Add EFRIS info from category
+            if hasattr(self.object.category, 'efris_commodity_category'):
+                context['efris_category'] = self.object.category.efris_commodity_category
 
         if self.object.supplier:
             context['supplier'] = self.object.supplier
 
-        return context
+        # Add EFRIS unit choices for reference
+        context['efris_unit_choices'] = Product.EFRIS_UNIT_MEASURES if hasattr(Product, 'EFRIS_UNIT_MEASURES') else []
+        context['unit_choices'] = Product.UNIT_CHOICES
 
+        # Add EFRIS tax categories for reference
+        context['efris_tax_categories'] = Product.EFRIS_TAX_CATEGORIES if hasattr(Product,
+                                                                                  'EFRIS_TAX_CATEGORIES') else []
+
+        return context
 
 
 class ProductDeleteView(LoginRequiredMixin,PermissionRequiredMixin, DeleteView):

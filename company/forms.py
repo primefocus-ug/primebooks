@@ -41,7 +41,6 @@ class CompanyForm(forms.ModelForm):
             'brn',
             'nin',
             'is_vat_enabled',
-            'vat_registration_date',
             'preferred_currency',
 
             # Subscription & Status
@@ -135,10 +134,6 @@ class CompanyForm(forms.ModelForm):
             }),
             'is_vat_enabled': forms.CheckboxInput(attrs={
                 'class': 'form-check-input',
-            }),
-            'vat_registration_date': forms.DateInput(attrs={
-                'class': 'form-control',
-                'type': 'date'
             }),
             'preferred_currency': forms.Select(attrs={
                 'class': 'form-select'
@@ -235,7 +230,6 @@ class CompanyForm(forms.ModelForm):
             'brn': _('BRN'),
             'nin': _('NIN'),
             'is_vat_enabled': _('Are you VAT'),
-            'vat_registration_date': _('VAT Registration Date'),
             'preferred_currency': _('Preferred Currency'),
             'plan': _('Subscription Plan'),
             'status': _('Status'),

@@ -897,7 +897,159 @@
             </div>
         </div>
     </div>
+    {% if app_label == 'company' and model_name_lower == 'company' and object %}
+    <div style="background: #fef3c7; border: 1px solid #f59e0b; padding: 10px; margin-bottom: 20px; border-radius: 8px;">
+        <strong>DEBUG VALUES:</strong><br>
+        object.is_active: {{ object.is_active }}<br>
+        object.status: {{ object.status }}<br>
+        Status check: {% if object.status in "SUSPENDED,EXPIRED" %}TRUE{% else %}FALSE{% endif %}<br>
+        Combined condition: {% if not object.is_active or object.status in "SUSPENDED,EXPIRED" %}SHOW REACTIVATE{% else %}SHOW SUSPEND{% endif %}
+    </div>
+    <div class="company-actions-modern" style="background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%); padding: 0 40px; border-bottom: 1px solid #e2e8f0;">
+        <div class="quick-actions-modern" style="padding: 25px 0;">
+            <!-- Status Indicators -->
+            <div class="status-indicators-modern" style="display: flex; gap: 10px; margin-bottom: 20px; flex-wrap: wrap;">
+                <span class="status-badge" style="background: {% if object.is_active %}rgba(16, 185, 129, 0.15){% else %}rgba(239, 68, 68, 0.15){% endif %}; color: {% if object.is_active %}#10b981{% else %}#ef4444{% endif %}; border: 1px solid {% if object.is_active %}rgba(16, 185, 129, 0.3){% else %}rgba(239, 68, 68, 0.3){% endif %}; padding: 6px 12px; border-radius: 20px; font-size: 12px; font-weight: 600; display: inline-flex; align-items: center; gap: 5px;">
+                    <i class="bi bi-{% if object.is_active %}check-circle{% else %}x-circle{% endif %}"></i>
+                    {% if object.is_active %}Active{% else %}Inactive{% endif %}
+                </span>
 
+                <span class="status-badge" style="background: rgba(59, 130, 246, 0.15); color: #3b82f6; border: 1px solid rgba(59, 130, 246, 0.3); padding: 6px 12px; border-radius: 20px; font-size: 12px; font-weight: 600; display: inline-flex; align-items: center; gap: 5px;">
+                    <i class="bi bi-calendar-event"></i>
+                    {{ object.status|title }}
+                </span>
+
+                {% if object.efris_enabled %}
+                <span class="status-badge" style="background: {% if object.efris_is_active %}rgba(16, 185, 129, 0.15){% else %}rgba(239, 68, 68, 0.15){% endif %}; color: {% if object.efris_is_active %}#10b981{% else %}#ef4444{% endif %}; border: 1px solid {% if object.efris_is_active %}rgba(16, 185, 129, 0.3){% else %}rgba(239, 68, 68, 0.3){% endif %}; padding: 6px 12px; border-radius: 20px; font-size: 12px; font-weight: 600; display: inline-flex; align-items: center; gap: 5px;">
+                    <i class="bi bi-{% if object.efris_is_active %}lightning-charge{% else %}lightning{% endif %}"></i>
+                    EFRIS {% if object.efris_is_active %}Active{% else %}Inactive{% endif %}
+                </span>
+                {% endif %}
+
+                <span class="status-badge" style="background: {% if object.is_trial %}rgba(245, 158, 11, 0.15){% else %}rgba(59, 130, 246, 0.15){% endif %}; color: {% if object.is_trial %}#f59e0b{% else %}#3b82f6{% endif %}; border: 1px solid {% if object.is_trial %}rgba(245, 158, 11, 0.3){% else %}rgba(59, 130, 246, 0.3){% endif %}; padding: 6px 12px; border-radius: 20px; font-size: 12px; font-weight: 600; display: inline-flex; align-items: center; gap: 5px;">
+                    <i class="bi bi-{% if object.is_trial %}clock{% else %}credit-card{% endif %}"></i>
+                    {% if object.is_trial %}Trial{% else %}Paid{% endif %}
+                </span>
+            </div>
+
+            <!-- Quick Action Buttons -->
+            <div class="action-buttons-modern" style="display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 20px;">
+                <!-- Reactivate/Suspend Company -->
+                {% if not object.is_active or object.status in "SUSPENDED,EXPIRED" %}
+                <!-- OPTION 2: WITH 'public_admin_' prefix -->
+                <form method="post" action="{% url 'public_admin:public_admin_company_company_reactivate' object.pk %}" style="display: inline;">
+                    {% csrf_token %}
+                    <button type="submit" class="btn-modern" style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: white; padding: 10px 20px; border: none; border-radius: 8px; cursor: pointer; display: inline-flex; align-items: center; gap: 8px; font-weight: 600; transition: all 0.2s ease;"
+                            onclick="return confirm('Are you sure you want to reactivate this company?')"
+                            onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='0 4px 12px rgba(16, 185, 129, 0.3)';"
+                            onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='none';">
+                        <i class="bi bi-play-circle-fill"></i>
+                        <span>Reactivate Company</span>
+                    </button>
+                </form>
+
+                {% else %}
+                <form method="post" action="{% url 'public_admin:public_admin_company_company_suspend' object.pk %}" style="display: inline;">
+                    {% csrf_token %}
+                    <button type="submit" class="btn-modern" style="background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); color: white; padding: 10px 20px; border: none; border-radius: 8px; cursor: pointer; display: inline-flex; align-items: center; gap: 8px; font-weight: 600; transition: all 0.2s ease;"
+                            onclick="return confirm('Are you sure you want to suspend this company?')"
+                            onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='0 4px 12px rgba(245, 158, 11, 0.3)';"
+                            onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='none';">
+                        <i class="bi bi-pause-circle-fill"></i>
+                        <span>Suspend Company</span>
+                    </button>
+                </form>
+                {% endif %}
+                <form method="post" action="{% url 'public_admin:public_admin_company_company_reactivate_users' object.pk %}" style="display: inline;">
+                    {% csrf_token %}
+                    <button type="submit" class="btn-modern" style="background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%); color: white; padding: 10px 20px; border: none; border-radius: 8px; cursor: pointer; display: inline-flex; align-items: center; gap: 8px; font-weight: 600; transition: all 0.2s ease;"
+                            onclick="return confirm('Reactivate all users for this company?')"
+                            onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='0 4px 12px rgba(59, 130, 246, 0.3)';"
+                            onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='none';">
+                        <i class="bi bi-people-fill"></i>
+                        <span>Reactivate All Users</span>
+                    </button>
+                </form>
+
+                <!-- EFRIS Actions -->
+                {% if object.efris_enabled %}
+                    {% if not object.efris_is_active %}
+                    <form method="post" action="{% url 'public_admin:public_admin_company_company_enable_efris' object.pk %}" style="display: inline;">
+                        {% csrf_token %}
+                        <button type="submit" class="btn-modern" style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: white; padding: 10px 20px; border: none; border-radius: 8px; cursor: pointer; display: inline-flex; align-items: center; gap: 8px; font-weight: 600; transition: all 0.2s ease;"
+                                onclick="return confirm('Enable EFRIS integration?')"
+                                onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='0 4px 12px rgba(16, 185, 129, 0.3)';"
+                                onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='none';">
+                            <i class="bi bi-plug-fill"></i>
+                            <span>Enable EFRIS</span>
+                        </button>
+                    </form>
+                    {% else %}
+                    <form method="post" action="{% url 'public_admin:public_admin_company_company_disable_efris' object.pk %}" style="display: inline;">
+                        {% csrf_token %}
+                        <button type="submit" class="btn-modern" style="background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); color: white; padding: 10px 20px; border: none; border-radius: 8px; cursor: pointer; display: inline-flex; align-items: center; gap: 8px; font-weight: 600; transition: all 0.2s ease;"
+                                onclick="return confirm('Are you sure you want to disable EFRIS?')"
+                                onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='0 4px 12px rgba(245, 158, 11, 0.3)';"
+                                onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='none';">
+                            <i class="bi bi-power"></i>
+                            <span>Disable EFRIS</span>
+                        </button>
+                    </form>
+                    {% endif %}
+                {% endif %}
+
+                <!-- Trial and Status Actions -->
+                {% if object.is_trial %}
+                <form method="post" action="{% url 'public_admin:public_admin_company_company_extend_trial' object.pk %}" style="display: inline;">
+                    {% csrf_token %}
+                    <button type="submit" class="btn-modern" style="background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%); color: white; padding: 10px 20px; border: none; border-radius: 8px; cursor: pointer; display: inline-flex; align-items: center; gap: 8px; font-weight: 600; transition: all 0.2s ease;"
+                            onclick="return confirm('Extend trial by 30 days?')"
+                            onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='0 4px 12px rgba(59, 130, 246, 0.3)';"
+                            onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='none';">
+                        <i class="bi bi-calendar-plus-fill"></i>
+                        <span>Extend Trial</span>
+                    </button>
+                </form>
+                {% endif %}
+
+                <form method="post" action="{% url 'public_admin:public_admin_company_company_force_status_refresh' object.pk %}" style="display: inline;">
+                    {% csrf_token %}
+                    <button type="submit" class="btn-modern" style="background: #6b7280; color: white; padding: 10px 20px; border: none; border-radius: 8px; cursor: pointer; display: inline-flex; align-items: center; gap: 8px; font-weight: 600; transition: all 0.2s ease;"
+                            onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='0 4px 12px rgba(107, 114, 128, 0.3)';"
+                            onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='none';">
+                        <i class="bi bi-arrow-clockwise"></i>
+                        <span>Refresh Status</span>
+                    </button>
+                </form>
+            </div>
+
+            <!-- Company Stats -->
+            <div class="company-stats-modern" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 15px; margin-bottom: 20px;">
+
+                <div class="stat-item" style="text-align: center; padding: 15px; background: white; border-radius: 10px; border: 1px solid #e2e8f0;">
+                    <div class="stat-value" style="font-size: 24px; font-weight: 800; color: #667eea; margin-bottom: 5px;">{{ object.days_until_expiry }}</div>
+                    <div class="stat-label" style="font-size: 12px; color: #64748b; font-weight: 600; text-transform: uppercase;">Days Until Expiry</div>
+                </div>
+
+                <div class="stat-item" style="text-align: center; padding: 15px; background: white; border-radius: 10px; border: 1px solid #e2e8f0;">
+                    <div class="stat-value" style="font-size: 24px; font-weight: 800; color: #667eea; margin-bottom: 5px;">{{ object.storage_usage_percentage|floatformat:0 }}%</div>
+                    <div class="stat-label" style="font-size: 12px; color: #64748b; font-weight: 600; text-transform: uppercase;">Storage Used</div>
+                </div>
+
+                <div class="stat-item" style="text-align: center; padding: 15px; background: white; border-radius: 10px; border: 1px solid #e2e8f0;">
+                    <div class="stat-value" style="font-size: 24px; font-weight: 800; color: #667eea; margin-bottom: 5px;">
+                        {% if object.has_active_access %}
+                        <i class="bi bi-check-circle" style="color: #10b981;"></i>
+                        {% else %}
+                        <i class="bi bi-x-circle" style="color: #ef4444;"></i>
+                        {% endif %}
+                    </div>
+                    <div class="stat-label" style="font-size: 12px; color: #64748b; font-weight: 600; text-transform: uppercase;">Access Status</div>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
     <form method="post" enctype="multipart/form-data" id="adminForm" novalidate>
         {% csrf_token %}
 

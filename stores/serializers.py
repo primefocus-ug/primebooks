@@ -54,7 +54,7 @@ class StoreSerializer(serializers.ModelSerializer):
             'efris_enabled', 'efris_device_number', 'efris_last_sync',
             'is_active', 'created_at', 'updated_at',
             # Store EFRIS override fields
-            'use_company_efris', 'store_efris_client_id', 'store_efris_api_key',
+            'use_company_efris',
             'store_efris_private_key', 'store_efris_public_certificate',
             'store_efris_key_password', 'store_efris_is_production',
             'store_efris_integration_mode', 'store_auto_fiscalize_sales',
@@ -92,8 +92,7 @@ class StoreSerializer(serializers.ModelSerializer):
         # If using store-specific EFRIS, validate required fields
         if not use_company_efris:
             required_fields = [
-                'store_efris_client_id',
-                'store_efris_api_key',
+                'tin',
                 'store_efris_private_key',
                 'store_efris_public_certificate'
             ]

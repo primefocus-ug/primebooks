@@ -382,7 +382,7 @@ class Notification(models.Model):
         null=True,
         blank=True
     )
-    object_id = models.PositiveIntegerField(null=True, blank=True)
+    object_id = models.CharField(max_length=255,blank=True,null=True)
     related_object = GenericForeignKey('content_type', 'object_id')
 
     # Action

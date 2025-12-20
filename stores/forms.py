@@ -360,8 +360,6 @@ class StoreForm(forms.ModelForm):
             # Store-specific EFRIS fields
             'tin',
             'efris_device_number',
-            'store_efris_client_id',
-            'store_efris_api_key',
             'store_efris_private_key',
             'store_efris_public_certificate',
             'store_efris_key_password',
@@ -435,14 +433,6 @@ class StoreForm(forms.ModelForm):
                 'class': 'form-check-input',
                 'id': 'id_use_company_efris',
                 'onchange': 'toggleEFRISFields(this.checked)'
-            }),
-            'store_efris_client_id': forms.TextInput(attrs={
-                'class': 'form-control',
-                'placeholder': 'Store-specific Client ID'
-            }),
-            'store_efris_api_key': forms.TextInput(attrs={
-                'class': 'form-control',
-                'placeholder': 'Store-specific API Key'
             }),
             'store_efris_private_key': forms.Textarea(attrs={
                 'class': 'form-control',
@@ -518,8 +508,8 @@ class StoreForm(forms.ModelForm):
             'contact': ['phone', 'secondary_phone', 'email'],
             'efris_toggle': ['use_company_efris', 'copy_from_company'],
             'efris_store': [
-                'tin', 'efris_device_number', 'store_efris_client_id',
-                'store_efris_api_key', 'store_efris_private_key',
+                'tin', 'efris_device_number',
+                 'store_efris_private_key',
                 'store_efris_public_certificate', 'store_efris_key_password',
                 'store_efris_certificate_fingerprint', 'store_efris_is_production',
                 'store_efris_integration_mode', 'store_auto_fiscalize_sales',
@@ -550,8 +540,7 @@ class StoreForm(forms.ModelForm):
         # Validate store-specific EFRIS config if not using company config
         if not use_company_efris:
             required_store_fields = {
-                'store_efris_client_id': 'Client ID',
-                'store_efris_api_key': 'API Key',
+                'tin': 'TIN number',
                 'store_efris_private_key': 'Private Key',
                 'store_efris_public_certificate': 'Public Certificate',
             }
@@ -662,8 +651,6 @@ class StoreEFRISOverrideForm(forms.ModelForm):
         model = Store
         fields = [
             'use_company_efris',
-            'store_efris_client_id',
-            'store_efris_api_key',
             'store_efris_private_key',
             'store_efris_public_certificate',
             'store_efris_key_password',
@@ -700,10 +687,7 @@ class StoreEFRISOverrideForm(forms.ModelForm):
             Fieldset(
                 'Store-Specific EFRIS Configuration',
                 Field('use_company_efris'),
-                Row(
-                    Column('store_efris_client_id', css_class='col-md-6'),
-                    Column('store_efris_api_key', css_class='col-md-6'),
-                ),
+
                 Field('store_efris_private_key'),
                 Field('store_efris_public_certificate'),
                 Field('store_efris_key_password'),

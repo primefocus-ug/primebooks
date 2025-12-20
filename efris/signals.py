@@ -285,41 +285,75 @@ def handle_stock_changes_for_efris(sender, instance, created, **kwargs):
 @receiver(post_save, sender='company.Company')
 def setup_efris_configuration(sender, instance, created, **kwargs):
     """Set up EFRIS configuration when company enables EFRIS"""
+
+    # Skip if EFRIS not enabled
     if not getattr(instance, 'efris_enabled', False):
         return
 
-    try:
-        config, config_created = EFRISConfiguration.objects.get_or_create(
-            company=instance,
-            defaults={
-                'environment': 'sandbox',  # Start with sandbox
-                'mode': 'online',
-                'app_id': 'AP04',
-                'version': '1.1.20191201',
-                'device_mac': 'FFFFFFFFFFFF',  # Will be updated with actual MAC
-                'api_url': 'https://efristest.ura.go.ug/efrisws/ws/taapp/getInformation',
-                'timeout_seconds': 30,
-                'max_retry_attempts': 3,
-                'auto_sync_enabled': True,
-                'auto_fiscalize': True,
-                'is_active': True
-            }
-        )
+    # Skip if company is not active (e.g., during suspension/reactivation)
+    if hasattr(instance, 'is_active') and not instance.is_active:
+        return
 
-        if config_created:
-            logger.info(f"Created EFRIS configuration for company {instance.display_name}")
+    # Skip if we're in public schema (this signal runs in public schema)
+    from django.db import connection
+    if hasattr(connection, 'schema_name') and connection.schema_name == 'public':
+        # We need to run this in tenant schema context
+        from django_tenants.utils import schema_context
 
-            # Create welcome notification
-            create_efris_notification(
-                instance,
-                'EFRIS Integration Enabled',
-                'EFRIS has been enabled for your company. Please configure your certificates and settings.',
-                'info',
-                'high'
-            )
+        try:
+            with schema_context(instance.schema_name):
+                from efris.models import EFRISConfiguration
 
-    except Exception as e:
-        logger.error(f"Failed to create EFRIS configuration for {instance.display_name}: {e}")
+                # Check if EFRIS table exists in this tenant
+                with connection.cursor() as cursor:
+                    cursor.execute("""
+                                   SELECT EXISTS (SELECT 1
+                                                  FROM information_schema.tables
+                                                  WHERE table_schema = %s
+                                                    AND table_name = 'efris_efrisconfiguration')
+                                   """, [instance.schema_name])
+
+                    if not cursor.fetchone()[0]:
+                        logger.warning(f"EFRIS table doesn't exist in schema {instance.schema_name}")
+                        return
+
+                config, config_created = EFRISConfiguration.objects.get_or_create(
+                    company=instance,
+                    defaults={
+                        'environment': 'sandbox',
+                        'mode': 'online',
+                        'app_id': 'AP04',
+                        'version': '1.1.20191201',
+                        'device_mac': 'FFFFFFFFFFFF',
+                        'api_url': 'https://efristest.ura.go.ug/efrisws/ws/taapp/getInformation',
+                        'timeout_seconds': 30,
+                        'max_retry_attempts': 3,
+                        'auto_sync_enabled': True,
+                        'auto_fiscalize': True,
+                        'is_active': True
+                    }
+                )
+
+                if config_created:
+                    logger.info(f"Created EFRIS configuration for company {instance.display_name}")
+
+                    # Create welcome notification in tenant schema
+                    create_efris_notification(
+                        instance,
+                        'EFRIS Integration Enabled',
+                        'EFRIS has been enabled for your company. Please configure your certificates and settings.',
+                        'info',
+                        'high'
+                    )
+
+        except Exception as e:
+            logger.error(f"Failed to create EFRIS configuration for {instance.display_name}: {e}")
+            return
+
+    else:
+        # We're already in tenant schema (shouldn't happen for company.Company)
+        logger.warning(
+            f"setup_efris_configuration called in non-public schema: {getattr(connection, 'schema_name', 'unknown')}")
 
 
 @receiver(pre_save, sender=EFRISConfiguration)

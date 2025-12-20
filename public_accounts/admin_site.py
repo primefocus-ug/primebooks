@@ -63,7 +63,7 @@ class PublicAdminSite:
     def get_urls(self):
         """Generate URL patterns for the admin site"""
         from django.urls import path
-        from django.db import models as django_models  # Import with alias to avoid conflict
+        from django.db import models as django_models
         from . import api_views
 
         urlpatterns = [
@@ -98,6 +98,19 @@ class PublicAdminSite:
                     pk_pattern = '<str:pk>'
                 else:
                     pk_pattern = '<int:pk>'
+
+                # Get custom URLs from model admin if it has them
+                custom_urls = []
+                if hasattr(model_admin, 'get_urls'):
+                    try:
+                        custom_urls = model_admin.get_urls()
+                    except Exception as e:
+                        import logging
+                        logger = logging.getLogger(__name__)
+                        logger.error(f"Error getting custom URLs for {app_label}.{model_name}: {e}")
+
+                # Add custom URLs first, then standard URLs
+                urlpatterns += custom_urls  # Add custom URLs first
 
                 urlpatterns += [
                     path(f'{app_label}/{model_name}/',
@@ -170,6 +183,19 @@ class PublicAdminSite:
         }
 
         return render(request, 'public_admin/index.html', context)
+
+    def admin_view(self, view):
+        """
+        Decorator to create an admin view with permission checking.
+        Similar to Django's admin.site.admin_view()
+        """
+
+        def inner(request, *args, **kwargs):
+            if not self.has_permission(request):
+                return HttpResponseForbidden("You don't have permission to access this area.")
+            return view(request, *args, **kwargs)
+
+        return inner
 
     def login_view(self, request):
         """Login view"""

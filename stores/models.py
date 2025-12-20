@@ -85,21 +85,6 @@ class Store(models.Model):
         help_text=_("When checked, uses company-level EFRIS settings. Uncheck to use store-specific settings.")
     )
 
-    # Store-specific EFRIS credentials
-    store_efris_client_id = models.CharField(
-        max_length=100,
-        blank=True,
-        null=True,
-        verbose_name=_("Store EFRIS Client ID")
-    )
-
-    store_efris_api_key = models.CharField(
-        max_length=200,
-        blank=True,
-        null=True,
-        verbose_name=_("Store EFRIS API Key")
-    )
-
     store_efris_private_key = models.TextField(
         blank=True,
         null=True,
@@ -498,8 +483,6 @@ class Store(models.Model):
                     'efris_enabled': company.efris_enabled,
                     'efris_is_active': company.efris_is_active,
                     'efris_device_number': company.efris_device_number or '',
-                    'efris_client_id': company.efris_client_id or '',
-                    'efris_api_key': company.efris_api_key or '',
                     'efris_is_production': company.efris_is_production,
                     'efris_integration_mode': company.efris_integration_mode,
                     'efris_auto_fiscalize_sales': company.efris_auto_fiscalize_sales,
@@ -609,10 +592,6 @@ class Store(models.Model):
             'tin': self.get_efris_value('tin', company_config.get('tin')),
             'nin': self.get_efris_value('nin', company_config.get('nin')),
             'device_number': self.get_efris_value('efris_device_number', company_config.get('efris_device_number')),
-
-            # API Configuration
-            'client_id': self.get_efris_value('efris_client_id', company_config.get('efris_client_id')),
-            'api_key': self.get_efris_value('efris_api_key', company_config.get('efris_api_key')),
 
             # Certificate Configuration
             'private_key': self.get_efris_value('efris_private_key', company_config.get('efris_private_key')),

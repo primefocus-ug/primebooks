@@ -1,926 +1,950 @@
 {% extends 'base.html' %}
 {% load static %}
-{% load custom_filters %}
+{% load i18n %}
+{% load crispy_forms_tags %}
 
+{% block title %}{% trans "Create New Customer" %} | {{ company.trading_name|default:company.name }}{% endblock %}
 
-{% block title %}Import Customers{% endblock %}
+{% block page_title %}
+<div class="d-flex justify-content-between align-items-center">
+    <h1 class="mb-0">{% trans "Create New Customer" %}</h1>
+    <div class="d-flex gap-2">
+        <a href="{% url 'customers:customer_list' %}" class="btn btn-outline-secondary btn-sm">
+            <i class="fas fa-arrow-left me-1"></i> {% trans "Back to List" %}
+        </a>
+        {% if perms.customers.add_customer %}
+        <a href="{% url 'customers:customer_import' %}" class="btn btn-outline-info btn-sm">
+            <i class="fas fa-file-import me-1"></i> {% trans "Import" %}
+        </a>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
 
 {% block extra_css %}
-<link rel="stylesheet" href="{% static 'themes.css' %}">
+<link rel="stylesheet" href="{% static 'css/select2.min.css' %}">
 <style>
-    
-    .download-section {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-        gap: 1rem;
-        margin-bottom: 1.25rem;
-        align-items: start;
-    }
-
-    .download-card {
-        border: 1px solid #E5E7EB;
+    .form-section {
+        background: var(--bg-card);
+        border: 1px solid var(--border-color);
         border-radius: 8px;
-        padding: 0.9rem;
-        transition: transform .15s ease, box-shadow .15s ease, border-color .15s ease;
-        cursor: pointer;
-        min-height: 110px;
-        display: flex;
-        gap: 0.75rem;
-        align-items: center;
-        background: transparent;
+        padding: 1.5rem;
+        margin-bottom: 1.5rem;
     }
 
-    .download-card .download-icon {
-        width: 15px;
-        height: 15px;
-        background: #EEF2FF;
-        border-radius: 6px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        flex-shrink: 0;
-    }
-
-    .download-card h3 {
-        font-size: 0.95rem;
-        margin: 0 0 0.25rem 0;
-        line-height: 1.1;
-    }
-
-    .download-card p {
-        font-size: 0.78rem;
-        margin: 0;
-        color: #6B7280;
-    }
-
-    .download-card span {
-        font-size: 0.78rem;
-        color: #4F46E5;
+    .section-title {
+        font-size: 1.1rem;
         font-weight: 600;
+        margin-bottom: 1rem;
+        padding-bottom: 0.5rem;
+        border-bottom: 2px solid var(--primary-color);
+        color: var(--text-primary);
+    }
+
+    .required-field::after {
+        content: " *";
+        color: #dc3545;
+    }
+
+    .hint-text {
+        font-size: 0.875rem;
+        color: var(--text-muted);
         margin-top: 0.25rem;
-        display: inline-block;
-    }
-
-    .download-card:hover {
-        transform: translateY(-4px);
-        box-shadow: 0 6px 18px rgba(79,70,229,0.08);
-        border-color: #4F46E5;
-    }
-
-    /* Make overall content appear smaller / tighter */
-    .import-card {
-        max-width: 960px;
-        margin-left: auto;
-        margin-right: auto;
-        padding: 1.25rem; /* reduced from 2rem */
-    }
-
-    .import-header h1 {
-        font-size: 1.5rem; /* smaller title */
-    }
-
-    .step-title {
-        font-size: 0.78rem;
-    }
-
-    .btn-primary, .btn-secondary {
-        padding: 0.5rem 0.75rem;
-        font-size: 0.9rem;
-    }
-
-    /* Improve spacing on small screens */
-    @media (max-width: 768px) {
-        .download-section {
-            gap: 0.75rem;
-        }
-        .download-card {
-            padding: 0.75rem;
-            min-height: 90px;
-        }
-        .download-card .download-icon {
-            width: 36px;
-            height: 36px;
-        }
-        .import-card {
-            padding: 1rem;
-        }
-        .step-indicator {
-            gap: 0.75rem;
-            flex-wrap: wrap;
-        }
-    }
-
-    @media (max-width: 420px) {
-        .download-section {
-            grid-template-columns: 1fr;
-        }
-        .download-card .download-icon {
-            width: 32px;
-            height: 32px;
-        }
-        .download-card h3 {
-            font-size: 0.9rem;
-        }
-        .import-card {
-            padding: 0.75rem;
-        }
-        .btn-primary, .btn-secondary {
-            width: 100%;
-            box-sizing: border-box;
-        }
-    }
-
-
-    .import-card {
-        background: white;
-        border-radius: 12px;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-        padding: 2rem;
-        margin-bottom: 2rem;
-    }
-    [data-theme="dark"] .import-card {
-        background: #212529;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.5);
-    }
-
-    .import-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        margin-bottom: 2rem;
-        padding-bottom: 1rem;
-        border-bottom: 2px solid #E5E7EB;
-    }
-    [data-theme="dark"] .import-header {
-        border-color: #495057;
-    }
-    .step-indicator {
-        display: flex;
-        gap: 2rem;
-        margin-bottom: 2rem;
-    }
-
-    .step {
-        flex: 1;
-        text-align: center;
-        position: relative;
-    }
-
-    .step-number {
-        width: 40px;
-        height: 40px;
-        border-radius: 50%;
-        background: #E5E7EB;
-        color: #6B7280;
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        font-weight: bold;
-        margin-bottom: 0.5rem;
-    }
-
-    .step.active .step-number {
-        background: #4F46E5;
-        color: white;
-    }
-
-    .step.completed .step-number {
-        background: #10B981;
-        color: white;
-    }
-
-    .step-title {
-        font-size: 0.875rem;
-        color: #6B7280;
-    }
-
-    .step.active .step-title {
-        color: #1F2937;
-        font-weight: 600;
-    }
-
-   
-    [data-theme="dark"] .download-card {
-        border-color: #495057;
-    }
-
-   
-    [data-theme="dark"] .download-card {
-        background: #343a40;
-    }
-
-    .download-card:hover {
-        border-color: #4F46E5;
-        box-shadow: 0 4px 12px rgba(79, 70, 229, 0.1);
-        transform: translateY(-2px);
-    }
-
-    .download-icon {
-        width: 10px;
-        height: 10px;
-        background: #EEF2FF;
-        border-radius: 8px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        margin-bottom: 1rem;
-    }
-
-    .dre {
-        border: 2px dashed #D1D5DB;
-        border-radius: 8px;
-        padding: 3rem 2rem;
-        text-align: center;
-        transition: all 0.3s;
-        background: #F9FAFB;
-        cursor: pointer;
-    }
-    [data-theme="dark"].upload-zone{
-        background:black;
-
-    }
-    
-
-    .upload-zone:hover, .upload-zone.drag-over {
-        border-color: #4F46E5;
-        background: #EEF2FF;
-    }
-[data-theme="dark"] .dre{
-    background: black;
-}
-    .upload-icon {
-        width: 2px;
-        height: 2px;
-        margin: 0 auto 1rem;
-        background: #E0E7FF;
-        border-radius: 50%;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-    }
-
-    .file-selected {
-        background: #EEF2FF;
-        border: 2px solid #4F46E5;
-        padding: 1rem;
-        border-radius: 8px;
-        margin-top: 1rem;
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-    }
-    [data-theme="dark"].file-selected{
-        background:black;
-        color:white;
-    }
-
-    .import-options {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 1.5rem;
-        margin: 2rem 0;
-    }
-     [data-theme="dark"].import-options{
-        background:black;
-        color:white;
-    }
-
-    .option-group {
-        padding: 1.5rem;
-        border: 1px solid #E5E7EB;
-        border-radius: 8px;
-        background: #F9FAFB;
-    }
-    [data-theme="dark"].option-group{
-        background:black;
-        color:white;
-    }
-
-    .option-group label {
         display: block;
-        margin-bottom: 0.5rem;
-        font-weight: 600;
-        color: #374151;
     }
 
-    .radio-group {
-        display: flex;
-        flex-direction: column;
-        gap: 0.75rem;
+    .efris-section {
+        border-left: 4px solid #17a2b8;
     }
 
-    .radio-option {
-        display: flex;
-        align-items: start;
-        gap: 0.75rem;
-        padding: 0.75rem;
+    .tax-info-badge {
+        font-size: 0.75rem;
+        padding: 0.25rem 0.5rem;
+        margin-left: 0.5rem;
+    }
+
+    .identification-group {
+        background-color: var(--bg-secondary);
         border-radius: 6px;
-        transition: background 0.2s;
-    }
-
-    .radio-option:hover {
-        background: white;
-    }
-
-    .checkbox-option {
-        display: flex;
-        align-items: center;
-        gap: 0.75rem;
-        padding: 0.75rem;
-        border-radius: 6px;
-        background: white;
-    }
-
-    .alert-box {
         padding: 1rem;
-        border-radius: 8px;
         margin-bottom: 1rem;
-        display: flex;
-        gap: 0.75rem;
     }
 
-    .alert-warning {
-        background: #FEF3C7;
-        border-left: 4px solid #F59E0B;
-        color: #92400E;
+    /* Dark theme adjustments */
+    [data-bs-theme="dark"] .form-section {
+        background-color: var(--bg-card);
+        border-color: var(--border-color);
     }
 
-    .alert-info {
-        background: #DBEAFE;
-        border-left: 4px solid #3B82F6;
-        color: #1E3A8A;
+    [data-bs-theme="dark"] .section-title {
+        color: var(--text-primary);
+        border-bottom-color: var(--primary-color);
     }
 
-    .alert-success {
-        background: #D1FAE5;
-        border-left: 4px solid #10B981;
-        color: #065F46;
-    }
-
-    .btn-primary {
-        background: #4F46E5;
-        color: white;
-        padding: 0.75rem 1.5rem;
-        border-radius: 8px;
-        border: none;
-        font-weight: 600;
-        cursor: pointer;
-        transition: all 0.3s;
-    }
-
-    .btn-primary:hover:not(:disabled) {
-        background: #4338CA;
-        transform: translateY(-1px);
-        box-shadow: 0 4px 12px rgba(79, 70, 229, 0.3);
-    }
-
-    .btn-primary:disabled {
-        opacity: 0.5;
-        cursor: not-allowed;
-    }
-
-    .btn-secondary {
-        background: white;
-        color: #4F46E5;
-        border: 2px solid #4F46E5;
-        padding: 0.75rem 1.5rem;
-        border-radius: 8px;
-        font-weight: 600;
-        cursor: pointer;
-        transition: all 0.3s;
-    }
-
-    .btn-secondary:hover {
-        background: #EEF2FF;
-    }
-    [data-theme="dark"]..btn-secondary{
-        background:black;
-        color:white;
-    }
-
-    .loading-spinner {
-        display: inline-block;
-        width: 20px;
-        height: 20px;
-        border: 3px solid rgba(255,255,255,0.3);
-        border-radius: 50%;
-        border-top-color: white;
-        animation: spin 1s linear infinite;
-    }
-
-    @keyframes spin {
-        to { transform: rotate(360deg); }
-    }
-
-    .validation-summary {
-        display: grid;
-        grid-template-columns: repeat(3, 1fr);
-        gap: 1rem;
-        margin: 1.5rem 0;
-    }
-
-    .stat-box {
-        padding: 1.5rem;
-        border-radius: 8px;
-        border: 2px solid #E5E7EB;
-    }
-
-    .stat-value {
-        font-size: 2rem;
-        font-weight: bold;
-        margin-bottom: 0.5rem;
-    }
-
-    .stat-label {
-        color: #6B7280;
-        font-size: 0.875rem;
-    }
-    [data-theme="dark"].import-card{
-        background:black;
-        color:white;
-    }
-    [data-theme="dark"] .import-header{
-        background:black;
-        color:white;
-    }
-    .alert-box alert-info" {
-        background:black;
-        color:white;
+    [data-bs-theme="dark"] .identification-group {
+        background-color: var(--bg-secondary);
     }
 </style>
 {% endblock %}
 
 {% block content %}
-<div class="container mx-auto px-4 py-6">
-    {% if messages %}
-    <div class="mb-4">
-        {% for message in messages %}
-        <div class="alert-box {% if message.tags == 'success' %}alert-success{% elif message.tags == 'error' %}alert-warning{% elif message.tags == 'info' %}alert-info{% else %}alert-warning{% endif %}">
-            <div>{{ message }}</div>
-        </div>
-        {% endfor %}
-    </div>
-    {% endif %}
-    <div class="import-card">
-        <div class="import-header">
-            <div>
-                <h1 class="text-3xl font-bold text-gray-900">Import Customers</h1>
-                <p class="text-gray-600 mt-1">Upload CSV or Excel files to import customer data with EFRIS integration</p>
-            </div>
-        </div>
+<div class="row">
+    <div class="col-lg-8">
+        <div class="card">
+            <div class="card-body">
+                <form method="post" id="customerForm" novalidate>
+                    {% csrf_token %}
 
-        <!-- Step Indicator -->
-        <div class="step-indicator">
-            <div class="step active" id="step-1">
-                <div class="step-number">1</div>
-                <div class="step-title totall">Download Template</div>
-            </div>
-            <div class="step" id="step-2">
-                <div class="step-number">2</div>
-                <div class="step-title">Upload File</div>
-            </div>
-            <div class="step" id="step-3">
-                <div class="step-number">3</div>
-                <div class="step-title">Configure Import</div>
-            </div>
-            <div class="step" id="step-4">
-                <div class="step-number">4</div>
-                <div class="step-title">Process & Review</div>
-            </div>
-        </div>
+                    <!-- Basic Information Section -->
+                    <div class="form-section">
+                        <h3 class="section-title">
+                            <i class="fas fa-user me-2"></i>{% trans "Basic Information" %}
+                        </h3>
 
-        <!-- Download Templates Section -->
-        <div id="download-section">
-            <h2 class="text-xl font-bold text-gray-900 mb-4">Step 1: Download Sample Template</h2>
+                        <div class="row">
+                            <!-- Customer Type -->
+                            <div class="col-md-6 mb-3">
+                                <label for="{{ form.customer_type.id_for_label }}" class="form-label required-field">
+                                    {{ form.customer_type.label }}
+                                </label>
+                                {{ form.customer_type }}
+                                {% if form.customer_type.help_text %}
+                                    <small class="hint-text">{{ form.customer_type.help_text }}</small>
+                                {% endif %}
+                                {% if form.customer_type.errors %}
+                                    <div class="invalid-feedback d-block">
+                                        {{ form.customer_type.errors }}
+                                    </div>
+                                {% endif %}
+                            </div>
 
-            <div class="alert-box alert-info">
-                <svg class="w-5 h-5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
-                    <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd"/>
-                </svg>
-                
-            </div>
-            <div>
-                <strong>Import customer data:</strong> Download the template, fill in customer information, and upload to create or update customer records.
-            </div>
-
-            <div class="download-section">
-                <div class="download-card" onclick="window.location.href='{% url "customers:download_sample_csv" %}'">
-                    <div class="download-icon">
-                        <svg class="w-6 h-6 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
-                        </svg>
-                    </div>
-                    <h3 class="font-bold text-gray-900 mb-2">Customer Import - CSV</h3>
-                    <p class="text-sm text-gray-600 mb-3">Lightweight format with sample customer data</p>
-                    <span class="text-indigo-600 text-sm font-semibold">Download CSV →</span>
-                </div>
-
-                <div class="download-card" onclick="window.location.href='{% url "customers:download_sample_excel" %}'">
-                    <div class="download-icon">
-                        <svg class="w-6 h-6 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
-                        </svg>
-                    </div>
-                    <h3 class="font-bold text-gray-900 mb-2">Customer Import - Excel</h3>
-                    <p class="text-sm text-gray-600 mb-3">Includes instructions, reference data & EFRIS fields (Recommended)</p>
-                    <span class="text-indigo-600 text-sm font-semibold">Download Excel →</span>
-                </div>
-            </div>
-        </div>
-
-        <!-- Upload Section -->
-        <form id="import-form" method="post" enctype="multipart/form-data" action="{% url 'customers:customer_import' %}">
-            {% csrf_token %}
-
-            <div id="upload-section" class="mt-8">
-                <h2 class="text-xl font-bold text-gray-900 mb-4">Step 2: Upload Your File</h2>
-
-                <div class="dre" id="upload-zone">
-                    <input type="file" name="import_file" id="import_file" accept=".csv,.xlsx,.xls" class="hidden">
-                    <div class="upload-icon">
-                        <svg class="w-8 h-8 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/>
-                        </svg>
-                    </div>
-                    <h3 class="text-lg font-semibold text-gray-900 mb-2">Drop your file here or click to browse</h3>
-                    <p class="text-sm text-gray-600">Supports CSV, XLSX, XLS files (Max 10MB)</p>
-                </div>
-
-                <div id="file-selected" class="file-selected" style="display: none;">
-                    <div class="flex items-center gap-3">
-                        <svg class="w-8 h-8 text-green-600" fill="currentColor" viewBox="0 0 20 20">
-                            <path fill-rule="evenodd" d="M6 2a2 2 0 00-2 2v12a2 2 0 002 2h8a2 2 0 002-2V7.414A2 2 0 0015.414 6L12 2.586A2 2 0 0010.586 2H6zm5 6a1 1 0 10-2 0v3.586l-1.293-1.293a1 1 0 10-1.414 1.414l3 3a1 1 0 001.414 0l3-3a1 1 0 00-1.414-1.414L11 11.586V8z" clip-rule="evenodd"/>
-                        </svg>
-                        <div>
-                            <p class="font-semibold text-gray-900" id="file-name"></p>
-                            <p class="text-sm text-gray-600" id="file-size"></p>
-                        </div>
-                    </div>
-                    <button type="button" class="text-red-600 hover:text-red-700" onclick="clearFile()">
-                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
-                        </svg>
-                    </button>
-                </div>
-            </div>
-
-            <!-- Import Options -->
-            <div id="options-section" style="display: none;">
-                <h2 class="text-xl font-bold text-gray-900 mb-4 mt-8">Step 3: Configure Import Options</h2>
-
-                <div class="import-options">
-                    <div class="option-group">
-                        <label>Conflict Resolution</label>
-                        <div class="radio-group">
-                            <label class="radio-option">
-                                <input type="radio" name="conflict_resolution" value="overwrite" checked>
-                                <div>
-                                    <div class="font-semibold text-gray-900">Update Existing</div>
-                                    <div class="text-sm text-gray-600">Update customers that already exist (matched by phone)</div>
-                                </div>
-                            </label>
-                            <label class="radio-option">
-                                <input type="radio" name="conflict_resolution" value="skip">
-                                <div>
-                                    <div class="font-semibold text-gray-900">Skip Existing</div>
-                                    <div class="text-sm text-gray-600">Keep existing data, only import new customers</div>
-                                </div>
-                            </label>
-                        </div>
-                    </div>
-
-                    <div class="option-group">
-                        <label>EFRIS Integration</label>
-                        <div class="checkbox-option">
-                            <input type="checkbox" name="auto_sync_efris" id="auto_sync_efris">
-                            <div>
-                                <div class="font-semibold text-gray-900">Auto-sync to EFRIS</div>
-                                <div class="text-sm text-gray-600">Automatically register eligible customers in EFRIS after import</div>
+                            <!-- Customer Name -->
+                            <div class="col-md-6 mb-3">
+                                <label for="{{ form.name.id_for_label }}" class="form-label">
+                                    {{ form.name.label }}
+                                </label>
+                                {{ form.name }}
+                                {% if form.name.help_text %}
+                                    <small class="hint-text">{{ form.name.help_text }}</small>
+                                {% endif %}
+                                {% if form.name.errors %}
+                                    <div class="invalid-feedback d-block">
+                                        {{ form.name.errors }}
+                                    </div>
+                                {% endif %}
                             </div>
                         </div>
 
-                        <div class="mt-3 p-3 bg-blue-50 rounded text-sm text-blue-800">
-                            <strong>Note:</strong> Only customers with valid TIN/NIN/BRN will be synced to EFRIS.
+                        <div class="row">
+                            <!-- Phone Number -->
+                            <div class="col-md-6 mb-3">
+                                <label for="{{ form.phone.id_for_label }}" class="form-label required-field">
+                                    {{ form.phone.label }}
+                                </label>
+                                {{ form.phone }}
+                                {% if form.phone.help_text %}
+                                    <small class="hint-text">{{ form.phone.help_text }}</small>
+                                {% endif %}
+                                {% if form.phone.errors %}
+                                    <div class="invalid-feedback d-block">
+                                        {{ form.phone.errors }}
+                                    </div>
+                                {% endif %}
+                            </div>
+
+                            <!-- Email -->
+                            <div class="col-md-6 mb-3">
+                                <label for="{{ form.email.id_for_label }}" class="form-label">
+                                    {{ form.email.label }}
+                                </label>
+                                {{ form.email }}
+                                {% if form.email.help_text %}
+                                    <small class="hint-text">{{ form.email.help_text }}</small>
+                                {% endif %}
+                                {% if form.email.errors %}
+                                    <div class="invalid-feedback d-block">
+                                        {{ form.email.errors }}
+                                    </div>
+                                {% endif %}
+                            </div>
+                        </div>
+
+                        <!-- Store Selection -->
+                        <div class="mb-3">
+                            <label for="{{ form.store.id_for_label }}" class="form-label required-field">
+                                {{ form.store.label }}
+                            </label>
+                            {{ form.store }}
+                            {% if form.store.help_text %}
+                                <small class="hint-text">{{ form.store.help_text }}</small>
+                            {% endif %}
+                            {% if form.store.errors %}
+                                <div class="invalid-feedback d-block">
+                                    {{ form.store.errors }}
+                                </div>
+                            {% endif %}
+                        </div>
+                    </div>
+
+                    <!-- Tax Information Section -->
+                    <div class="form-section">
+                        <h3 class="section-title">
+                            <i class="fas fa-file-invoice-dollar me-2"></i>{% trans "Tax Information" %}
+                        </h3>
+
+                        <div class="row">
+                            <!-- TIN -->
+                            <div class="col-md-6 mb-3">
+                                <label for="{{ form.tin.id_for_label }}" class="form-label">
+                                    {{ form.tin.label }}
+                                </label>
+                                {{ form.tin }}
+                                {% if form.tin.help_text %}
+                                    <small class="hint-text">{{ form.tin.help_text }}</small>
+                                {% endif %}
+                                {% if form.tin.errors %}
+                                    <div class="invalid-feedback d-block">
+                                        {{ form.tin.errors }}
+                                    </div>
+                                {% endif %}
+                            </div>
+
+                            <!-- VAT Registered -->
+                            <div class="col-md-6 mb-3">
+                                <div class="form-check form-switch mt-4">
+                                    {{ form.is_vat_registered }}
+                                    <label class="form-check-label" for="{{ form.is_vat_registered.id_for_label }}">
+                                        {{ form.is_vat_registered.label }}
+                                    </label>
+                                </div>
+                                {% if form.is_vat_registered.help_text %}
+                                    <small class="hint-text">{{ form.is_vat_registered.help_text }}</small>
+                                {% endif %}
+                                {% if form.is_vat_registered.errors %}
+                                    <div class="invalid-feedback d-block">
+                                        {{ form.is_vat_registered.errors }}
+                                    </div>
+                                {% endif %}
+                            </div>
+                        </div>
+
+                        <!-- Business Registration Number (BRN) -->
+                        <div class="mb-3">
+                            <label for="{{ form.brn.id_for_label }}" class="form-label">
+                                {{ form.brn.label }}
+                            </label>
+                            {{ form.brn }}
+                            {% if form.brn.help_text %}
+                                <small class="hint-text">{{ form.brn.help_text }}</small>
+                            {% endif %}
+                            {% if form.brn.errors %}
+                                <div class="invalid-feedback d-block">
+                                    {{ form.brn.errors }}
+                                </div>
+                            {% endif %}
+                        </div>
+                    </div>
+
+                    <!-- Identification Section -->
+                    <div class="form-section">
+                        <h3 class="section-title">
+                            <i class="fas fa-id-card me-2"></i>{% trans "Identification Details" %}
+                        </h3>
+
+                        <div class="identification-group">
+                            <h6 class="text-muted mb-3">{% trans "Government Issued IDs" %}</h6>
+                            <div class="row">
+                                <!-- NIN -->
+                                <div class="col-md-6 mb-3">
+                                    <label for="{{ form.nin.id_for_label }}" class="form-label">
+                                        {{ form.nin.label }}
+                                    </label>
+                                    {{ form.nin }}
+                                    {% if form.nin.help_text %}
+                                        <small class="hint-text">{{ form.nin.help_text }}</small>
+                                    {% endif %}
+                                    {% if form.nin.errors %}
+                                        <div class="invalid-feedback d-block">
+                                            {{ form.nin.errors }}
+                                        </div>
+                                    {% endif %}
+                                </div>
+
+                                <!-- Passport -->
+                                <div class="col-md-6 mb-3">
+                                    <label for="{{ form.passport_number.id_for_label }}" class="form-label">
+                                        {{ form.passport_number.label }}
+                                    </label>
+                                    {{ form.passport_number }}
+                                    {% if form.passport_number.help_text %}
+                                        <small class="hint-text">{{ form.passport_number.help_text }}</small>
+                                    {% endif %}
+                                    {% if form.passport_number.errors %}
+                                        <div class="invalid-feedback d-block">
+                                            {{ form.passport_number.errors }}
+                                        </div>
+                                    {% endif %}
+                                </div>
+                            </div>
+
+                            <div class="row">
+                                <!-- Driving License -->
+                                <div class="col-md-6 mb-3">
+                                    <label for="{{ form.driving_license.id_for_label }}" class="form-label">
+                                        {{ form.driving_license.label }}
+                                    </label>
+                                    {{ form.driving_license }}
+                                    {% if form.driving_license.help_text %}
+                                        <small class="hint-text">{{ form.driving_license.help_text }}</small>
+                                    {% endif %}
+                                    {% if form.driving_license.errors %}
+                                        <div class="invalid-feedback d-block">
+                                            {{ form.driving_license.errors }}
+                                        </div>
+                                    {% endif %}
+                                </div>
+
+                                <!-- Voter ID -->
+                                <div class="col-md-6 mb-3">
+                                    <label for="{{ form.voter_id.id_for_label }}" class="form-label">
+                                        {{ form.voter_id.label }}
+                                    </label>
+                                    {{ form.voter_id }}
+                                    {% if form.voter_id.help_text %}
+                                        <small class="hint-text">{{ form.voter_id.help_text }}</small>
+                                    {% endif %}
+                                    {% if form.voter_id.errors %}
+                                        <div class="invalid-feedback d-block">
+                                            {{ form.voter_id.errors }}
+                                        </div>
+                                    {% endif %}
+                                </div>
+                            </div>
+
+                            <!-- Alien ID -->
+                            <div class="mb-3">
+                                <label for="{{ form.alien_id.id_for_label }}" class="form-label">
+                                    {{ form.alien_id.label }}
+                                </label>
+                                {{ form.alien_id }}
+                                {% if form.alien_id.help_text %}
+                                    <small class="hint-text">{{ form.alien_id.help_text }}</small>
+                                {% endif %}
+                                {% if form.alien_id.errors %}
+                                    <div class="invalid-feedback d-block">
+                                        {{ form.alien_id.errors }}
+                                    </div>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Address Information Section -->
+                    <div class="form-section">
+                        <h3 class="section-title">
+                            <i class="fas fa-map-marker-alt me-2"></i>{% trans "Address Information" %}
+                        </h3>
+
+                        <div class="row">
+                            <!-- Physical Address -->
+                            <div class="col-md-12 mb-3">
+                                <label for="{{ form.physical_address.id_for_label }}" class="form-label">
+                                    {{ form.physical_address.label }}
+                                </label>
+                                {{ form.physical_address }}
+                                {% if form.physical_address.help_text %}
+                                    <small class="hint-text">{{ form.physical_address.help_text }}</small>
+                                {% endif %}
+                                {% if form.physical_address.errors %}
+                                    <div class="invalid-feedback d-block">
+                                        {{ form.physical_address.errors }}
+                                    </div>
+                                {% endif %}
+                            </div>
+                        </div>
+
+                        <div class="row">
+                            <!-- Postal Address -->
+                            <div class="col-md-6 mb-3">
+                                <label for="{{ form.postal_address.id_for_label }}" class="form-label">
+                                    {{ form.postal_address.label }}
+                                </label>
+                                {{ form.postal_address }}
+                                {% if form.postal_address.help_text %}
+                                    <small class="hint-text">{{ form.postal_address.help_text }}</small>
+                                {% endif %}
+                                {% if form.postal_address.errors %}
+                                    <div class="invalid-feedback d-block">
+                                        {{ form.postal_address.errors }}
+                                    </div>
+                                {% endif %}
+                            </div>
+
+                            <!-- District -->
+                            <div class="col-md-6 mb-3">
+                                <label for="{{ form.district.id_for_label }}" class="form-label">
+                                    {{ form.district.label }}
+                                </label>
+                                {{ form.district }}
+                                {% if form.district.help_text %}
+                                    <small class="hint-text">{{ form.district.help_text }}</small>
+                                {% endif %}
+                                {% if form.district.errors %}
+                                    <div class="invalid-feedback d-block">
+                                        {{ form.district.errors }}
+                                    </div>
+                                {% endif %}
+                            </div>
+                        </div>
+
+                        <!-- Country -->
+                        <div class="mb-3">
+                            <label for="{{ form.country.id_for_label }}" class="form-label">
+                                {{ form.country.label }}
+                            </label>
+                            {{ form.country }}
+                            {% if form.country.help_text %}
+                                <small class="hint-text">{{ form.country.help_text }}</small>
+                            {% endif %}
+                            {% if form.country.errors %}
+                                <div class="invalid-feedback d-block">
+                                    {{ form.country.errors }}
+                                </div>
+                            {% endif %}
+                        </div>
+                    </div>
+
+                    <!-- Financial Information Section -->
+                    <div class="form-section">
+                        <h3 class="section-title">
+                            <i class="fas fa-credit-card me-2"></i>{% trans "Financial Information" %}
+                        </h3>
+
+                        <div class="row">
+                            <!-- Credit Limit -->
+                            <div class="col-md-6 mb-3">
+                                <label for="{{ form.credit_limit.id_for_label }}" class="form-label">
+                                    {{ form.credit_limit.label }}
+                                </label>
+                                <div class="input-group">
+                                    <span class="input-group-text">UGX</span>
+                                    {{ form.credit_limit }}
+                                </div>
+                                {% if form.credit_limit.help_text %}
+                                    <small class="hint-text">{{ form.credit_limit.help_text }}</small>
+                                {% endif %}
+                                {% if form.credit_limit.errors %}
+                                    <div class="invalid-feedback d-block">
+                                        {{ form.credit_limit.errors }}
+                                    </div>
+                                {% endif %}
+                            </div>
+
+                            <!-- Is Active -->
+                            <div class="col-md-6 mb-3">
+                                <div class="form-check form-switch mt-4">
+                                    {{ form.is_active }}
+                                    <label class="form-check-label" for="{{ form.is_active.id_for_label }}">
+                                        {{ form.is_active.label }}
+                                    </label>
+                                </div>
+                                {% if form.is_active.help_text %}
+                                    <small class="hint-text">{{ form.is_active.help_text }}</small>
+                                {% endif %}
+                                {% if form.is_active.errors %}
+                                    <div class="invalid-feedback d-block">
+                                        {{ form.is_active.errors }}
+                                    </div>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- eFRIS Integration Section -->
+                    <div class="form-section efris-section">
+                        <h3 class="section-title">
+                            <i class="fas fa-sync me-2"></i>{% trans "eFRIS Integration" %}
+                        </h3>
+
+                        <div class="alert alert-info">
+                            <i class="fas fa-info-circle me-2"></i>
+                            {% trans "eFRIS integration allows automatic registration of customers with the Uganda Revenue Authority system for tax compliance." %}
+                        </div>
+
+                        <!-- Auto Sync eFRIS Field -->
+                        {% if form.auto_sync_efris %}
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <div class="form-check form-switch">
+                                    {{ form.auto_sync_efris }}
+                                    <label class="form-check-label fw-bold" for="{{ form.auto_sync_efris.id_for_label }}">
+                                        {{ form.auto_sync_efris.label }}
+                                    </label>
+                                </div>
+                                {% if form.auto_sync_efris.help_text %}
+                                    <small class="hint-text">{{ form.auto_sync_efris.help_text }}</small>
+                                {% endif %}
+                                {% if form.auto_sync_efris.errors %}
+                                    <div class="invalid-feedback d-block">
+                                        {{ form.auto_sync_efris.errors }}
+                                    </div>
+                                {% endif %}
+                            </div>
+
+                            <!-- eFRIS Customer Type -->
+                            <div class="col-md-6 mb-3">
+                                <label for="{{ form.efris_customer_type.id_for_label }}" class="form-label">
+                                    {{ form.efris_customer_type.label }}
+                                </label>
+                                {{ form.efris_customer_type }}
+                                {% if form.efris_customer_type.help_text %}
+                                    <small class="hint-text">{{ form.efris_customer_type.help_text }}</small>
+                                {% endif %}
+                                {% if form.efris_customer_type.errors %}
+                                    <div class="invalid-feedback d-block">
+                                        {{ form.efris_customer_type.errors }}
+                                    </div>
+                                {% endif %}
+                            </div>
+                        </div>
+                        {% endif %}
+
+                        <!-- eFRIS Requirements Info -->
+                        <div class="efris-requirements" id="efrisRequirements">
+                            <div class="alert alert-warning">
+                                <h6 class="alert-heading">{% trans "eFRIS Requirements by Customer Type" %}</h6>
+                                <ul class="mb-0">
+                                    <li><strong>{% trans "Individual" %}:</strong> {% trans "NIN, Passport, or Driving License" %}</li>
+                                    <li><strong>{% trans "Business" %}:</strong> {% trans "TIN or Business Registration Number (BRN)" %}</li>
+                                    <li><strong>{% trans "Government" %}:</strong> {% trans "Government ID or Registration Number" %}</li>
+                                    <li><strong>{% trans "NGO" %}:</strong> {% trans "Registration Certificate Number" %}</li>
+                                </ul>
+                            </div>
+
+                            <!-- Show current customer type requirements -->
+                            <div class="alert alert-light mb-3">
+                                <h6 class="alert-heading">{% trans "Current Selection Requirements" %}</h6>
+                                <div id="efrisRequirementsDetail">
+                                    <p class="mb-0">{% trans "Select a customer type to see specific requirements" %}</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Form Actions -->
+                    <div class="d-flex justify-content-between mt-4">
+                        <a href="{% url 'customers:customer_list' %}" class="btn btn-outline-secondary">
+                            <i class="fas fa-times me-2"></i>{% trans "Cancel" %}
+                        </a>
+                        <div class="d-flex gap-2">
+                            <button type="submit" name="save_and_add_another" class="btn btn-outline-primary">
+                                <i class="fas fa-plus me-2"></i>{% trans "Save & Add Another" %}
+                            </button>
+                            <button type="submit" name="save_and_view" class="btn btn-outline-info">
+                                <i class="fas fa-eye me-2"></i>{% trans "Save & View" %}
+                            </button>
+                            <button type="submit" class="btn btn-primary">
+                                <i class="fas fa-save me-2"></i>{% trans "Save Customer" %}
+                            </button>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Sidebar with Help & Guidelines -->
+    <div class="col-lg-4">
+        <!-- Customer Creation Guidelines -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-lightbulb me-2"></i>{% trans "Guidelines" %}
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="alert alert-light mb-3">
+                    <h6 class="alert-heading">{% trans "Required Fields" %}</h6>
+                    <ul class="mb-0">
+                        <li>{% trans "Customer Type" %}</li>
+                        <li>{% trans "Phone Number" %}</li>
+                        <li>{% trans "Store" %}</li>
+                    </ul>
+                </div>
+
+                <div class="alert alert-light mb-3">
+                    <h6 class="alert-heading">{% trans "eFRIS Integration" %}</h6>
+                    <ul class="mb-0">
+                        <li>{% trans "Enable auto-sync to automatically register with URA" %}</li>
+                        <li>{% trans "TIN/BRN required for Business customers" %}</li>
+                        <li>{% trans "NIN/Passport required for Individual customers" %}</li>
+                        <li>{% trans "Physical address improves registration success" %}</li>
+                    </ul>
+                </div>
+
+                <div class="alert alert-light">
+                    <h6 class="alert-heading">{% trans "Best Practices" %}</h6>
+                    <ul class="mb-0">
+                        <li>{% trans "Collect at least one identification number" %}</li>
+                        <li>{% trans "Set appropriate credit limits for credit customers" %}</li>
+                        <li>{% trans "Always verify phone numbers for communication" %}</li>
+                        <li>{% trans "Include email for digital receipts and notifications" %}</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <!-- Customer Type Info -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-users me-2"></i>{% trans "Customer Types" %}
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="customer-type-info">
+                    <div class="d-flex align-items-center mb-2">
+                        <i class="fas fa-user text-primary me-2"></i>
+                        <div>
+                            <strong>{% trans "Individual" %}</strong>
+                            <small class="d-block text-muted">{% trans "Regular consumer customers" %}</small>
+                        </div>
+                    </div>
+                    <div class="d-flex align-items-center mb-2">
+                        <i class="fas fa-building text-success me-2"></i>
+                        <div>
+                            <strong>{% trans "Business" %}</strong>
+                            <small class="d-block text-muted">{% trans "Companies, partnerships, enterprises" %}</small>
+                        </div>
+                    </div>
+                    <div class="d-flex align-items-center mb-2">
+                        <i class="fas fa-landmark text-warning me-2"></i>
+                        <div>
+                            <strong>{% trans "Government" %}</strong>
+                            <small class="d-block text-muted">{% trans "Government agencies, departments" %}</small>
+                        </div>
+                    </div>
+                    <div class="d-flex align-items-center">
+                        <i class="fas fa-hands-helping text-info me-2"></i>
+                        <div>
+                            <strong>{% trans "NGO" %}</strong>
+                            <small class="d-block text-muted">{% trans "Non-profit organizations" %}</small>
                         </div>
                     </div>
                 </div>
+            </div>
+        </div>
 
-                <div class="alert-box alert-warning" id="overwrite-warning" style="display: none;">
-                    <svg class="w-5 h-5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
-                        <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"/>
-                    </svg>
-                    <div>
-                        <strong>Warning:</strong> Existing customers will be updated with new data. Customer information including contact details, addresses, and tax information will be overwritten.
-                    </div>
-                </div>
-
-                <div class="mt-6">
-                    <button type="button" class="btn-secondary mr-3" onclick="validateImport()">
-                        <svg class="w-5 h-5 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/>
-                        </svg>
-                        Validate Data
-                    </button>
-                    <button type="submit" class="btn-primary" id="import-btn">
-                        <svg class="w-5 h-5 inline mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
-                        </svg>
-                        <span id="import-btn-text">Import Customers</span>
-                    </button>
+        <!-- Quick Actions -->
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-bolt me-2"></i>{% trans "Quick Actions" %}
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="d-grid gap-2">
+                    <a href="{% url 'customers:customer_import' %}" class="btn btn-outline-info">
+                        <i class="fas fa-file-import me-2"></i>{% trans "Import Customers" %}
+                    </a>
+                    <a href="{% url 'customers:customer_list' %}" class="btn btn-outline-primary">
+                        <i class="fas fa-list me-2"></i>{% trans "View All Customers" %}
+                    </a>
+                    <a href="{% url 'customers:efris_dashboard' %}" class="btn btn-outline-warning">
+                        <i class="fas fa-sync me-2"></i>{% trans "eFRIS Dashboard" %}
+                    </a>
                 </div>
             </div>
-        </form>
-
-        <!-- Validation Results -->
-        <div id="validation-results" style="display: none;" class="mt-8">
-            <h2 class="text-xl font-bold text-gray-900 mb-4">Validation Results</h2>
-            <div id="validation-content"></div>
         </div>
     </div>
-
-    <!-- Import Errors (if any from session) -->
-    {% if request.session.import_errors %}
-    <div class="import-card">
-        <h2 class="text-2xl font-bold text-gray-900 mb-4">Import Errors</h2>
-        <div class="space-y-2">
-            {% for error in request.session.import_errors %}
-            <div class="p-3 bg-red-50 border-l-4 border-red-500 rounded">
-                <p class="font-semibold text-red-800">Row {{ error.row }}</p>
-                <ul class="list-disc list-inside text-red-700 text-sm">
-                    {% for err in error.errors %}
-                    <li>{{ err }}</li>
-                    {% endfor %}
-                </ul>
-            </div>
-            {% endfor %}
-        </div>
-    </div>
-    {% endif %}
 </div>
+{% endblock %}
 
+{% block extra_js %}
+<script src="{% static 'js/select2.min.js' %}"></script>
 <script>
-// File Upload Handling
-const uploadZone = document.getElementById('upload-zone');
-const fileInput = document.getElementById('import_file');
-const fileSelected = document.getElementById('file-selected');
-const optionsSection = document.getElementById('options-section');
-const importBtn = document.getElementById('import-btn');
+$(document).ready(function() {
+    // Initialize Select2 for select fields
+    $('select').select2({
+        theme: 'bootstrap-5',
+        placeholder: '{% trans "Select an option" %}',
+        allowClear: true
+    });
 
-// Click to browse
-uploadZone.addEventListener('click', () => fileInput.click());
+    // Store validation messages
+    const efrisRequirements = {
+        'INDIVIDUAL': "{% trans 'For Individual customers, please provide at least one of: NIN, Passport Number, Driving License, or Voter ID for eFRIS registration.' %}",
+        'BUSINESS': "{% trans 'For Business customers, TIN or Business Registration Number (BRN) is required for eFRIS registration.' %}",
+        'GOVERNMENT': "{% trans 'For Government customers, please provide official identification or registration number for eFRIS registration.' %}",
+        'NGO': "{% trans 'For NGO customers, please provide registration certificate number for eFRIS registration.' %}",
+    };
 
-// Drag and drop
-uploadZone.addEventListener('dragover', (e) => {
-    e.preventDefault();
-    uploadZone.classList.add('drag-over');
-});
+    // Show/hide eFRIS requirements based on customer type
+    $('#{{ form.customer_type.id_for_label }}').change(function() {
+        const customerType = $(this).val();
+        const requirements = efrisRequirements[customerType] || "{% trans 'Select a customer type to see specific requirements' %}";
 
-uploadZone.addEventListener('dragleave', () => {
-    uploadZone.classList.remove('drag-over');
-});
+        $('#efrisRequirementsDetail').html(`<p class="mb-0">${requirements}</p>`);
 
-uploadZone.addEventListener('drop', (e) => {
-    e.preventDefault();
-    uploadZone.classList.remove('drag-over');
-
-    const files = e.dataTransfer.files;
-    if (files.length > 0) {
-        fileInput.files = files;
-        handleFileSelect();
-    }
-});
-
-// File selection
-fileInput.addEventListener('change', handleFileSelect);
-
-function handleFileSelect() {
-    const file = fileInput.files[0];
-
-    if (!file) return;
-
-    // Validate file type
-    const validTypes = ['.csv', '.xlsx', '.xls'];
-    const fileExt = '.' + file.name.split('.').pop().toLowerCase();
-
-    if (!validTypes.includes(fileExt)) {
-        alert('Please upload a CSV or Excel file (.csv, .xlsx, .xls)');
-        clearFile();
-        return;
-    }
-
-    // Validate file size (10MB max)
-    if (file.size > 10 * 1024 * 1024) {
-        alert('File size must be less than 10MB');
-        clearFile();
-        return;
-    }
-
-    // Show file info
-    document.getElementById('file-name').textContent = file.name;
-    document.getElementById('file-size').textContent = formatFileSize(file.size);
-
-    uploadZone.style.display = 'none';
-    fileSelected.style.display = 'flex';
-    optionsSection.style.display = 'block';
-
-    // Update steps
-    updateStep(2);
-}
-
-function clearFile() {
-    fileInput.value = '';
-    uploadZone.style.display = 'block';
-    fileSelected.style.display = 'none';
-    optionsSection.style.display = 'none';
-    document.getElementById('validation-results').style.display = 'none';
-    updateStep(1);
-}
-
-function formatFileSize(bytes) {
-    if (bytes < 1024) return bytes + ' B';
-    else if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
-    else return (bytes / 1048576).toFixed(1) + ' MB';
-}
-
-// Step Management
-function updateStep(stepNumber) {
-    for (let i = 1; i <= 4; i++) {
-        const step = document.getElementById(`step-${i}`);
-        step.classList.remove('active', 'completed');
-
-        if (i < stepNumber) {
-            step.classList.add('completed');
-        } else if (i === stepNumber) {
-            step.classList.add('active');
-        }
-    }
-}
-
-// Conflict Resolution Warning
-document.querySelectorAll('input[name="conflict_resolution"]').forEach(radio => {
-    radio.addEventListener('change', (e) => {
-        const warning = document.getElementById('overwrite-warning');
-        if (e.target.value === 'overwrite') {
-            warning.style.display = 'flex';
+        // Show/hide identification fields based on customer type
+        if (customerType === 'BUSINESS') {
+            $('.identification-group').hide();
+            $('#{{ form.brn.id_for_label }}').closest('.mb-3').show();
         } else {
-            warning.style.display = 'none';
+            $('.identification-group').show();
+            $('#{{ form.brn.id_for_label }}').closest('.mb-3').hide();
+        }
+
+        // Highlight required fields for eFRIS
+        updateEfrisRequiredFields(customerType);
+    });
+
+    // Update eFRIS required fields based on customer type
+    function updateEfrisRequiredFields(customerType) {
+        // Remove all eFRIS required markings first
+        $('.efris-required').removeClass('efris-required');
+        $('.efris-required-text').remove();
+
+        // Add eFRIS required markings based on customer type
+        if (customerType === 'BUSINESS') {
+            $('#{{ form.tin.id_for_label }}').closest('.mb-3').addClass('efris-required');
+            $('#{{ form.brn.id_for_label }}').closest('.mb-3').addClass('efris-required');
+            $('<small class="efris-required-text text-warning d-block">{% trans "Required for eFRIS" %}</small>')
+                .insertAfter('#{{ form.tin.id_for_label }}');
+        } else if (customerType === 'INDIVIDUAL') {
+            $('.identification-group').addClass('efris-required');
+        }
+
+        // Always require physical address for eFRIS
+        $('#{{ form.physical_address.id_for_label }}').closest('.mb-3').addClass('efris-required');
+        $('<small class="efris-required-text text-warning d-block">{% trans "Required for eFRIS" %}</small>')
+            .insertAfter('#{{ form.physical_address.id_for_label }}');
+    }
+
+    // Trigger change on page load
+    $('#{{ form.customer_type.id_for_label }}').trigger('change');
+
+    // TIN validation for eFRIS
+    $('#{{ form.tin.id_for_label }}').on('blur', function() {
+        const tin = $(this).val();
+        if (tin && tin.length > 0) {
+            // Uganda TIN validation (typically starts with 'TIN' or numbers)
+            if (!/^(TIN)?[0-9]{9,12}$/i.test(tin)) {
+                $(this).addClass('is-invalid');
+                $('<div class="invalid-feedback">{% trans "Please enter a valid TIN number (9-12 digits, optionally prefixed with TIN)" %}</div>').insertAfter($(this));
+                return false;
+            }
+        }
+        $(this).removeClass('is-invalid');
+        return true;
+    });
+
+    // Phone number validation (Uganda format)
+    $('#{{ form.phone.id_for_label }}').on('blur', function() {
+        const mobile = $(this).val();
+        // Uganda phone formats: 07XXXXXXXX, 2567XXXXXXXX, +2567XXXXXXXX
+        const ugandaRegex = /^(07[0-9]{8}|2567[0-9]{8}|\+2567[0-9]{8})$/;
+
+        if (mobile && !ugandaRegex.test(mobile)) {
+            $(this).addClass('is-invalid');
+            $('<div class="invalid-feedback">{% trans "Please enter a valid Uganda phone number (e.g., 07XXXXXXXX, 2567XXXXXXXX, or +2567XXXXXXXX)" %}</div>').insertAfter($(this));
+            return false;
+        }
+        $(this).removeClass('is-invalid');
+        return true;
+    });
+
+    // Email validation
+    $('#{{ form.email.id_for_label }}').on('blur', function() {
+        const email = $(this).val();
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+        if (email && !emailRegex.test(email)) {
+            $(this).addClass('is-invalid');
+            $('<div class="invalid-feedback">{% trans "Please enter a valid email address" %}</div>').insertAfter($(this));
+            return false;
+        }
+        $(this).removeClass('is-invalid');
+        return true;
+    });
+
+    // Form submission handling
+    $('#customerForm').on('submit', function(e) {
+        // Clear previous validation errors
+        $('.is-invalid').removeClass('is-invalid');
+        $('.invalid-feedback').remove();
+
+        // Validate required fields
+        let isValid = true;
+
+        // Check customer type
+        if (!$('#{{ form.customer_type.id_for_label }}').val()) {
+            $('#{{ form.customer_type.id_for_label }}').addClass('is-invalid');
+            $('<div class="invalid-feedback">{% trans "Customer type is required" %}</div>').insertAfter($('#{{ form.customer_type.id_for_label }}'));
+            isValid = false;
+        }
+
+        // Check phone
+        if (!$('#{{ form.phone.id_for_label }}').val().trim()) {
+            $('#{{ form.phone.id_for_label }}').addClass('is-invalid');
+            $('<div class="invalid-feedback">{% trans "Phone number is required" %}</div>').insertAfter($('#{{ form.phone.id_for_label }}'));
+            isValid = false;
+        }
+
+        // Check store
+        if (!$('#{{ form.store.id_for_label }}').val()) {
+            $('#{{ form.store.id_for_label }}').addClass('is-invalid');
+            $('<div class="invalid-feedback">{% trans "Store selection is required" %}</div>').insertAfter($('#{{ form.store.id_for_label }}'));
+            isValid = false;
+        }
+
+        // Validate specific fields
+        if (!validateTIN()) isValid = false;
+        if (!validatePhone()) isValid = false;
+        if (!validateEmail()) isValid = false;
+
+        // If eFRIS auto sync is enabled, validate eFRIS requirements
+        const autoSyncEfris = $('#{{ form.auto_sync_efris.id_for_label }}').is(':checked');
+        const customerType = $('#{{ form.customer_type.id_for_label }}').val();
+
+        if (autoSyncEfris) {
+            // Validate eFRIS requirements
+            if (customerType === 'BUSINESS') {
+                const hasTIN = $('#{{ form.tin.id_for_label }}').val().trim();
+                const hasBRN = $('#{{ form.brn.id_for_label }}').val().trim();
+
+                if (!hasTIN && !hasBRN) {
+                    $('#{{ form.tin.id_for_label }}').addClass('is-invalid');
+                    $('<div class="invalid-feedback">{% trans "TIN or BRN is required for eFRIS registration of Business customers" %}</div>').insertAfter($('#{{ form.tin.id_for_label }}'));
+                    isValid = false;
+                }
+            } else if (customerType === 'INDIVIDUAL') {
+                const hasNIN = $('#{{ form.nin.id_for_label }}').val().trim();
+                const hasPassport = $('#{{ form.passport_number.id_for_label }}').val().trim();
+                const hasDrivingLicense = $('#{{ form.driving_license.id_for_label }}').val().trim();
+                const hasVoterID = $('#{{ form.voter_id.id_for_label }}').val().trim();
+
+                if (!hasNIN && !hasPassport && !hasDrivingLicense && !hasVoterID) {
+                    $('.identification-group').addClass('is-invalid');
+                    $('<div class="invalid-feedback">{% trans "At least one identification document is required for eFRIS registration of Individual customers" %}</div>').insertAfter($('#{{ form.alien_id.id_for_label }}'));
+                    isValid = false;
+                }
+            }
+
+            // Validate physical address for eFRIS
+            if (!$('#{{ form.physical_address.id_for_label }}').val().trim()) {
+                $('#{{ form.physical_address.id_for_label }}').addClass('is-invalid');
+                $('<div class="invalid-feedback">{% trans "Physical address is required for eFRIS registration" %}</div>').insertAfter($('#{{ form.physical_address.id_for_label }}'));
+                isValid = false;
+            }
+        }
+
+        if (!isValid) {
+            e.preventDefault();
+
+            // Scroll to first error
+            $('html, body').animate({
+                scrollTop: $('.is-invalid').first().offset().top - 100
+            }, 500);
+
+            // Show error message
+            showNotification('{% trans "Please correct the errors in the form" %}', 'error');
+        } else {
+            // Show loading indicator
+            $('button[type="submit"]').prop('disabled', true).html('<i class="fas fa-spinner fa-spin me-2"></i>{% trans "Saving..." %}');
+        }
+    });
+
+    // Helper validation functions
+    function validateTIN() {
+        const tin = $('#{{ form.tin.id_for_label }}').val();
+        if (tin && tin.length > 0) {
+            if (!/^(TIN)?[0-9]{9,12}$/i.test(tin)) {
+                $('#{{ form.tin.id_for_label }}').addClass('is-invalid');
+                $('<div class="invalid-feedback">{% trans "Please enter a valid TIN number" %}</div>').insertAfter($('#{{ form.tin.id_for_label }}'));
+                return false;
+            }
+        }
+        return true;
+    }
+
+    function validatePhone() {
+        const mobile = $('#{{ form.phone.id_for_label }}').val();
+        if (mobile) {
+            const ugandaRegex = /^(07[0-9]{8}|2567[0-9]{8}|\+2567[0-9]{8})$/;
+            if (!ugandaRegex.test(mobile)) {
+                $('#{{ form.phone.id_for_label }}').addClass('is-invalid');
+                $('<div class="invalid-feedback">{% trans "Please enter a valid Uganda phone number" %}</div>').insertAfter($('#{{ form.phone.id_for_label }}'));
+                return false;
+            }
+        }
+        return true;
+    }
+
+    function validateEmail() {
+        const email = $('#{{ form.email.id_for_label }}').val();
+        if (email) {
+            const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+            if (!emailRegex.test(email)) {
+                $('#{{ form.email.id_for_label }}').addClass('is-invalid');
+                $('<div class="invalid-feedback">{% trans "Please enter a valid email address" %}</div>').insertAfter($('#{{ form.email.id_for_label }}'));
+                return false;
+            }
+        }
+        return true;
+    }
+
+    // Auto-format TIN input to uppercase
+    $('#{{ form.tin.id_for_label }}').on('input', function() {
+        let value = $(this).val().toUpperCase().replace(/[^A-Z0-9]/g, '');
+
+        // If starts with numbers, prepend 'TIN'
+        if (/^[0-9]/.test(value) && value.length <= 12) {
+            value = 'TIN' + value;
+        }
+
+        $(this).val(value);
+    });
+
+    // Auto-format other identification fields to uppercase
+    $('#{{ form.nin.id_for_label }}, #{{ form.brn.id_for_label }}, #{{ form.passport_number.id_for_label }}, #{{ form.driving_license.id_for_label }}, #{{ form.voter_id.id_for_label }}, #{{ form.alien_id.id_for_label }}')
+        .on('input', function() {
+            $(this).val($(this).val().toUpperCase());
+        });
+
+    // Show notification when saving with eFRIS
+    $('button[type="submit"]').on('click', function() {
+        const autoSyncEfris = $('#{{ form.auto_sync_efris.id_for_label }}').is(':checked');
+        if (autoSyncEfris) {
+            console.log('Customer will be synced with eFRIS after creation');
         }
     });
 });
 
-// Show overwrite warning by default
-document.getElementById('overwrite-warning').style.display = 'flex';
-
-// Validate Import
-async function validateImport() {
-    const file = fileInput.files[0];
-    if (!file) {
-        alert('Please select a file first');
-        return;
-    }
-
-    const formData = new FormData();
-    formData.append('validate_file', file);
-
-    try {
-        const response = await fetch('{% url "customers:validate_import" %}', {
-            method: 'POST',
-            headers: {
-                'X-CSRFToken': '{{ csrf_token }}'
-            },
-            body: formData
-        });
-
-        const data = await response.json();
-
-        if (data.success) {
-            showValidationResults(data.validation);
-        } else {
-            alert('Validation failed: ' + data.error);
+// Helper function to get CSRF token
+function getCookie(name) {
+    let cookieValue = null;
+    if (document.cookie && document.cookie !== '') {
+        const cookies = document.cookie.split(';');
+        for (let i = 0; i < cookies.length; i++) {
+            const cookie = cookies[i].trim();
+            if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                break;
+            }
         }
-    } catch (error) {
-        console.error('Validation error:', error);
-        alert('Failed to validate file. Please try again.');
     }
+    return cookieValue;
 }
 
-function showValidationResults(validation) {
-    const resultsDiv = document.getElementById('validation-results');
-    const contentDiv = document.getElementById('validation-content');
-
-    let html = `
-        <div class="validation-summary">
-            <div class="stat-box" style="border-color: #3B82F6;">
-                <div class="stat-value" style="color: #3B82F6;">${validation.total_rows}</div>
-                <div class="stat-label">Total Rows</div>
-            </div>
-            <div class="stat-box" style="border-color: #10B981;">
-                <div class="stat-value" style="color: #10B981;">${validation.valid_rows}</div>
-                <div class="stat-label">Valid Rows</div>
-            </div>
-            <div class="stat-box" style="border-color: #EF4444;">
-                <div class="stat-value" style="color: #EF4444;">${validation.invalid_rows}</div>
-                <div class="stat-label">Invalid Rows</div>
-            </div>
-        </div>
-    `;
-
-    if (validation.warnings && validation.warnings.length > 0) {
-        html += '<div class="alert-box alert-warning mb-4"><div>';
-        html += '<strong>Warnings:</strong><br>';
-        html += '<ul class="mt-2 ml-4 list-disc">';
-        validation.warnings.slice(0, 10).forEach(warning => {
-            html += `<li class="text-sm">Row ${warning.row}: ${warning.warning}</li>`;
-        });
-        if (validation.warnings.length > 10) {
-            html += `<li class="text-sm font-semibold">...and ${validation.warnings.length - 10} more warnings</li>`;
-        }
-        html += '</ul></div></div>';
+// Notification function
+function showNotification(message, type) {
+    // Use toastr if available, otherwise use alert
+    if (typeof toastr !== 'undefined') {
+        toastr[type](message);
+    } else {
+        alert(`${type.toUpperCase()}: ${message}`);
     }
-
-    if (validation.errors.length > 0) {
-        html += '<div class="alert-box alert-warning mb-4"><div>';
-        html += '<strong>Validation Errors Found:</strong><br>';
-        html += '<ul class="mt-2 ml-4 list-disc">';
-        validation.errors.slice(0, 10).forEach(error => {
-            html += `<li class="text-sm">Row ${error.row}: ${error.errors.join(', ')}</li>`;
-        });
-        if (validation.errors.length > 10) {
-            html += `<li class="text-sm font-semibold">...and ${validation.errors.length - 10} more errors</li>`;
-        }
-        html += '</ul></div></div>';
-    }
-
-    if (validation.valid_rows === validation.total_rows) {
-        html += '<div class="alert-box alert-success"><div>';
-        html += '<strong>✓ All rows are valid!</strong> You can proceed with the import.';
-        html += '</div></div>';
-    }
-
-    contentDiv.innerHTML = html;
-    resultsDiv.style.display = 'block';
-    updateStep(3);
 }
-
-// Form Submission
-document.getElementById('import-form').addEventListener('submit', async function(e) {
-    e.preventDefault(); // Prevent default form submission
-
-    const btn = document.getElementById('import-btn');
-    const btnText = document.getElementById('import-btn-text');
-
-    btn.disabled = true;
-    btnText.innerHTML = '<span class="loading-spinner mr-2"></span> Processing...';
-    updateStep(4);
-
-    try {
-        const formData = new FormData(this);
-        const response = await fetch('{% url "customers:customer_import" %}', {
-            method: 'POST',
-            headers: {
-                'X-CSRFToken': '{{ csrf_token }}',
-                'Accept': 'application/json' // Explicitly request JSON
-            },
-            body: formData
-        });
-
-        // Log response details for debugging
-        console.log('Response status:', response.status);
-        console.log('Response headers:', [...response.headers]);
-
-        if (response.redirected) {
-            console.warn('Request redirected to:', response.url);
-            window.location.href = response.url;
-            return;
-        }
-
-        // Check if response is JSON
-        const contentType = response.headers.get('content-type');
-        if (!contentType || !contentType.includes('application/json')) {
-            const text = await response.text();
-            console.error('Non-JSON response received:', text.slice(0, 500)); // Log first 500 chars
-            throw new Error(`Expected JSON, got ${contentType || 'unknown content type'}`);
-        }
-
-        const data = await response.json();
-        if (data.success) {
-            showValidationResults(data.results);
-            const message = `Import successful! Created: ${data.results.created_count}, Updated: ${data.results.updated_count}, Skipped: ${data.results.skipped_count}, Errors: ${data.results.error_count}`;
-            console.log(message);
-            alert(message);
-            window.location.reload(); // Reload to show session errors
-        } else {
-            console.error('Server error:', data.error);
-            alert(`Import failed: ${data.error}`);
-        }
-    } catch (error) {
-        console.error('Client-side error during import:', error);
-        console.error('Response body (if available):', error.responseText || 'Not available');
-        alert(`Import error: ${error.message}. Check the console for details.`);
-    } finally {
-        btn.disabled = false;
-        btnText.innerHTML = 'Import Customers';
-    }
-});
 </script>
 {% endblock %}
