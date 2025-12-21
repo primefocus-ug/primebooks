@@ -9,6 +9,7 @@ from decimal import Decimal
 from sales.models import Sale, SaleItem
 from inventory.models import Stock, Product, StockMovement
 from stores.models import Store
+from django.db import models
 from expenses.models import Expense, ExpenseCategory
 from ..models import SavedReport, GeneratedReport, ReportAccessLog
 from django.db.models.functions import TruncDate
@@ -26,7 +27,7 @@ class ReportGeneratorService:
     def get_accessible_stores(self):
         """Get stores accessible to the user"""
         from stores.models import Store
-        if self.user.is_superuser or self.user.primary_role and user.primary_role.priority >= 90:
+        if self.user.is_superuser or self.user.primary_role and self.user.primary_role.priority >= 90:
             return Store.objects.filter(is_active=True)
         return self.user.stores.filter(is_active=True)
 
@@ -244,6 +245,309 @@ class ReportGeneratorService:
         return {
             'message': 'Custom report type. Please configure specific parameters.',
             'filters': kwargs,
+        }
+
+    def generate_combined_report(self, report_types, **kwargs) -> Dict:
+        """Generate a combined report with multiple report types"""
+        combined_data = {}
+
+        # Define which reports to generate
+        generator_map = {
+            'SALES_SUMMARY': self._generate_sales_summary,
+            'PRODUCT_PERFORMANCE': self._generate_product_performance,
+            'INVENTORY_STATUS': self._generate_inventory_status,
+            'PROFIT_LOSS': self._generate_profit_loss,
+            'EXPENSE_REPORT': self._generate_expense_report,
+            'EXPENSE_ANALYTICS': self._generate_expense_analytics,
+            'Z_REPORT': self._generate_z_report,
+            'EFRIS_COMPLIANCE': self._generate_efris_compliance,
+            'CASHIER_PERFORMANCE': self._generate_cashier_performance,
+            'STOCK_MOVEMENT': self._generate_stock_movement,
+            'CUSTOMER_ANALYTICS': self._generate_customer_analytics,
+        }
+
+        # Generate each requested report
+        for report_type in report_types:
+            if report_type in generator_map:
+                try:
+                    report_data = generator_map[report_type](**kwargs)
+                    combined_data[report_type] = report_data
+                except Exception as e:
+                    logger.error(f"Error generating {report_type}: {e}")
+                    combined_data[report_type] = {'error': str(e)}
+
+        # Add custom combined analytics
+        combined_data['custom_analytics'] = self._generate_custom_analytics(combined_data, **kwargs)
+
+        # Calculate overall business health score
+        combined_data['business_health'] = self._calculate_business_health(combined_data)
+
+        return combined_data
+
+    def _generate_custom_analytics(self, combined_data, **kwargs) -> Dict:
+        """Generate custom analytics across multiple reports"""
+        analytics = {
+            'cross_report_insights': [],
+            'key_metrics': {},
+            'recommendations': []
+        }
+
+        # Extract data from different reports
+        sales_data = combined_data.get('SALES_SUMMARY', {})
+        profit_loss_data = combined_data.get('PROFIT_LOSS', {})
+        expense_data = combined_data.get('EXPENSE_REPORT', {})
+        inventory_data = combined_data.get('INVENTORY_STATUS', {})
+
+        # Calculate cash flow (Sales - Expenses)
+        if sales_data and expense_data:
+            total_sales = sales_data.get('summary', {}).get('total_sales', 0) or 0
+            total_expenses = expense_data.get('summary', {}).get('total_amount', 0) or 0
+            cash_flow = float(total_sales) - float(total_expenses)
+
+            analytics['key_metrics']['cash_flow'] = cash_flow
+            analytics['key_metrics']['cash_flow_margin'] = (
+                        cash_flow / float(total_sales) * 100) if total_sales > 0 else 0
+
+            if cash_flow < 0:
+                analytics['recommendations'].append("⚠️ Negative cash flow: Expenses exceed sales")
+            else:
+                analytics['recommendations'].append("✅ Positive cash flow maintained")
+
+        # Calculate inventory turnover
+        if sales_data and inventory_data:
+            # This is a simplified calculation
+            analytics['key_metrics']['inventory_turnover_ratio'] = "N/A"  # Would need more data
+
+        # Profitability analysis
+        if profit_loss_data:
+            profit_data = profit_loss_data.get('profit_loss', {}).get('profit', {})
+            net_profit = profit_data.get('net_profit', 0)
+            net_margin = profit_data.get('net_margin', 0)
+
+            analytics['key_metrics']['profitability'] = {
+                'net_profit': net_profit,
+                'net_margin': net_margin,
+                'status': 'Profitable' if net_profit > 0 else 'Loss'
+            }
+
+        # Expense efficiency ratio
+        if sales_data and expense_data:
+            total_sales = sales_data.get('summary', {}).get('total_sales', 0) or 0
+            total_expenses = expense_data.get('summary', {}).get('total_amount', 0) or 0
+
+            if total_sales > 0:
+                expense_ratio = (float(total_expenses) / float(total_sales)) * 100
+                analytics['key_metrics']['expense_to_sales_ratio'] = expense_ratio
+
+                if expense_ratio > 50:
+                    analytics['recommendations'].append("🔴 High expense ratio: Consider cost reduction")
+                elif expense_ratio > 30:
+                    analytics['recommendations'].append("🟡 Moderate expense ratio: Monitor closely")
+                else:
+                    analytics['recommendations'].append("🟢 Healthy expense ratio")
+
+        # Sales on credit analysis - FIXED CALL
+        analytics['key_metrics']['credit_sales'] = self._calculate_credit_sales(**kwargs)
+
+        return analytics
+
+    def _calculate_business_health(self, combined_data) -> Dict:
+        """Calculate overall business health score"""
+        health_score = 0
+        factors = []
+        max_score = 100
+
+        # Profitability factor (0-30 points)
+        if 'PROFIT_LOSS' in combined_data:
+            profit_data = combined_data['PROFIT_LOSS'].get('profit_loss', {}).get('profit', {})
+            net_margin = profit_data.get('net_margin', 0)
+
+            if net_margin > 20:
+                health_score += 30
+                factors.append(('✅ High profitability', 30))
+            elif net_margin > 10:
+                health_score += 20
+                factors.append(('🟡 Moderate profitability', 20))
+            elif net_margin > 0:
+                health_score += 10
+                factors.append(('⚪ Low profitability', 10))
+            else:
+                factors.append(('🔴 Loss making', 0))
+
+        # Cash flow factor (0-25 points)
+        # Would need actual cash flow calculation
+
+        # Inventory health factor (0-20 points)
+        if 'INVENTORY_STATUS' in combined_data:
+            inventory_data = combined_data['INVENTORY_STATUS']
+            out_of_stock = inventory_data.get('summary', {}).get('out_of_stock_count', 0)
+
+            if out_of_stock == 0:
+                health_score += 20
+                factors.append(('✅ No out-of-stock items', 20))
+            elif out_of_stock <= 5:
+                health_score += 15
+                factors.append(('🟡 Few out-of-stock items', 15))
+            else:
+                health_score += 5
+                factors.append(('🔴 Many out-of-stock items', 5))
+
+        # Expense control factor (0-15 points)
+        if 'EXPENSE_REPORT' in combined_data:
+            expense_data = combined_data['EXPENSE_REPORT']
+            pending_expenses = expense_data.get('summary', {}).get('pending_expenses', 0)
+
+            if pending_expenses == 0:
+                health_score += 15
+                factors.append(('✅ All expenses processed', 15))
+            elif pending_expenses <= 10:
+                health_score += 10
+                factors.append(('🟡 Some pending expenses', 10))
+            else:
+                health_score += 5
+                factors.append(('🔴 Many pending expenses', 5))
+
+        # Sales trend factor (0-10 points)
+        if 'SALES_SUMMARY' in combined_data:
+            health_score += 10  # Simplified
+            factors.append(('✅ Sales data available', 10))
+
+        return {
+            'score': health_score,
+            'percentage': (health_score / max_score) * 100,
+            'grade': self._get_health_grade(health_score),
+            'factors': factors,
+            'max_score': max_score
+        }
+
+    def _get_health_grade(self, score):
+        """Convert health score to letter grade"""
+        if score >= 90:
+            return 'A+'
+        elif score >= 80:
+            return 'A'
+        elif score >= 70:
+            return 'B'
+        elif score >= 60:
+            return 'C'
+        elif score >= 50:
+            return 'D'
+        else:
+            return 'F'
+
+    def _calculate_credit_sales(self, **kwargs):
+        """Calculate sales on credit and money not paid"""
+        from sales.models import Sale
+        from django.db.models import Sum
+        from decimal import Decimal
+
+        stores = self.get_accessible_stores()
+
+        # Get sales - focus on INVOICES (credit sales) and RECEIPTS
+        queryset = Sale.objects.filter(
+            store__in=stores,
+            document_type__in=['INVOICE', 'RECEIPT']  # Only invoices and receipts for sales
+        ).exclude(
+            status__in=['VOIDED', 'REFUNDED', 'CANCELLED']  # Exclude voided/refunded/cancelled sales
+        )
+
+        # Apply filters
+        start_date = kwargs.get('start_date')
+        end_date = kwargs.get('end_date')
+        store_id = kwargs.get('store_id')
+
+        if start_date:
+            queryset = queryset.filter(created_at__date__gte=start_date)
+        if end_date:
+            queryset = queryset.filter(created_at__date__lte=end_date)
+        if store_id:
+            queryset = queryset.filter(store_id=store_id)
+
+        # Calculate totals - convert to float immediately
+        total_sales = float(queryset.aggregate(total=Sum('total_amount'))['total'] or Decimal('0'))
+
+        # Paid sales: invoices with PAID payment_status OR receipts (which are always paid)
+        paid_sales = float(queryset.filter(
+            models.Q(payment_status='PAID') |
+            models.Q(document_type='RECEIPT', status='COMPLETED')
+        ).aggregate(total=Sum('total_amount'))['total'] or Decimal('0'))
+
+        # Credit sales: INVOICES that are COMPLETED but may not be fully paid
+        credit_sales = float(
+            queryset.filter(
+                document_type='INVOICE',
+                status='COMPLETED'
+            ).aggregate(total=Sum('total_amount'))['total'] or Decimal('0')
+        )
+
+        # Pending sales: invoices with PENDING_PAYMENT status
+        pending_sales = float(
+            queryset.filter(
+                document_type='INVOICE',
+                status='PENDING_PAYMENT'
+            ).aggregate(total=Sum('total_amount'))['total'] or Decimal('0')
+        )
+
+        # Partially paid sales: invoices with PARTIALLY_PAID payment status
+        partial_sales = float(
+            queryset.filter(
+                document_type='INVOICE',
+                payment_status='PARTIALLY_PAID'
+            ).aggregate(total=Sum('total_amount'))['total'] or Decimal('0')
+        )
+
+        # Calculate overdue sales
+        overdue_sales = float(
+            queryset.filter(
+                document_type='INVOICE',
+                payment_status='OVERDUE'
+            ).aggregate(total=Sum('total_amount'))['total'] or Decimal('0')
+        )
+
+        # Calculate outstanding amount based on payment_status
+        # Pending + Overdue + (Partially paid * outstanding portion)
+        # For partially paid, we need to calculate the actual outstanding amount
+        outstanding = Decimal('0')
+
+        # Add full amounts for pending and overdue invoices
+        pending_invoices = queryset.filter(
+            document_type='INVOICE',
+            payment_status__in=['PENDING', 'OVERDUE']
+        )
+        for invoice in pending_invoices:
+            outstanding += invoice.total_amount
+
+        # For partially paid, calculate remaining amount
+        partial_invoices = queryset.filter(
+            document_type='INVOICE',
+            payment_status='PARTIALLY_PAID'
+        )
+        for invoice in partial_invoices:
+            amount_paid = invoice.amount_paid or Decimal('0')
+            outstanding += (invoice.total_amount - amount_paid)
+
+        # Convert to float for the return value
+        outstanding_float = float(outstanding)
+
+        # Calculate collection rate
+        collection_rate = (float(paid_sales) / float(total_sales) * 100) if total_sales > 0 else 0
+
+        return {
+            'total_sales': total_sales,
+            'paid_sales': paid_sales,
+            'credit_sales': credit_sales,  # All invoices (COMPLETED status)
+            'pending_sales': pending_sales,  # PENDING_PAYMENT status
+            'partial_sales': partial_sales,  # PARTIALLY_PAID payment_status
+            'overdue_sales': overdue_sales,  # OVERDUE payment_status
+            'outstanding_amount': outstanding_float,
+            'collection_rate': collection_rate,
+            'details': {
+                'total_invoices': queryset.filter(document_type='INVOICE').count(),
+                'total_receipts': queryset.filter(document_type='RECEIPT').count(),
+                'total_pending': queryset.filter(document_type='INVOICE', payment_status='PENDING').count(),
+                'total_partial': queryset.filter(document_type='INVOICE', payment_status='PARTIALLY_PAID').count(),
+                'total_overdue': queryset.filter(document_type='INVOICE', payment_status='OVERDUE').count(),
+            }
         }
 
     def _generate_expense_report(self, **kwargs) -> Dict:
@@ -714,7 +1018,6 @@ class ReportGeneratorService:
                 'store_name': movement.store.name,
                 'movement_type': movement.movement_type,
                 'quantity': movement.quantity,
-                'reference_number': movement.reference_number,
                 'created_at': movement.created_at.isoformat(),
                 'created_by': movement.created_by.get_full_name() if movement.created_by else None,
                 'notes': movement.notes
@@ -799,8 +1102,9 @@ class ReportGeneratorService:
         }
 
     def _generate_profit_loss(self, **kwargs) -> Dict:
-        """Generate profit and loss statement - ALREADY PROVIDED"""
-        from sales.models import SaleItem
+        """Generate profit and loss statement"""
+        from decimal import Decimal
+        from django.db.models import F, Sum, Count
 
         start_date = kwargs.get('start_date')
         end_date = kwargs.get('end_date')
@@ -808,46 +1112,45 @@ class ReportGeneratorService:
 
         stores = self.get_accessible_stores()
 
-        # Revenue from sales
-        sales_queryset = SaleItem.objects.filter(
-            sale__store__in=stores,
-            sale__status__in=['COMPLETED', 'PAID']
-        ).select_related('sale', 'product')
-
-        if start_date:
-            sales_queryset = sales_queryset.filter(sale__created_at__date__gte=start_date)
-        if end_date:
-            sales_queryset = sales_queryset.filter(sale__created_at__date__lte=end_date)
-        if store_id:
-            sales_queryset = sales_queryset.filter(sale__store_id=store_id)
-
-        # Calculate revenue and costs
-        financial_summary = sales_queryset.aggregate(
-            gross_revenue=Sum('total_price'),
-            cost_of_goods_sold=Sum(F('product__cost_price') * F('quantity')),
-            total_tax=Sum('tax_amount'),
-        )
-
-        # Get discount from sales
-        from sales.models import Sale
-        discount_sum = Sale.objects.filter(
+        # Get completed sales
+        sales_queryset = Sale.objects.filter(
             store__in=stores,
             status__in=['COMPLETED', 'PAID']
         )
+
         if start_date:
-            discount_sum = discount_sum.filter(created_at__date__gte=start_date)
+            sales_queryset = sales_queryset.filter(created_at__date__gte=start_date)
         if end_date:
-            discount_sum = discount_sum.filter(created_at__date__lte=end_date)
+            sales_queryset = sales_queryset.filter(created_at__date__lte=end_date)
         if store_id:
-            discount_sum = discount_sum.filter(store_id=store_id)
+            sales_queryset = sales_queryset.filter(store_id=store_id)
 
-        total_discount = discount_sum.aggregate(Sum('discount_amount'))['discount_amount__sum'] or 0
+        # Get sale items for detailed calculation
+        sale_items = SaleItem.objects.filter(
+            sale__in=sales_queryset,
+            product__isnull=False
+        ).select_related('product', 'sale')
 
-        # Calculate profit metrics
-        gross_revenue = financial_summary['gross_revenue'] or 0
-        cogs = financial_summary['cost_of_goods_sold'] or 0
-        tax = financial_summary['total_tax'] or 0
-        discount = total_discount
+        # Calculate revenue and COGS from sale items
+        financial_data = sale_items.aggregate(
+            total_revenue=Sum('total_price'),
+            total_cost=Sum(F('product__cost_price') * F('quantity'),
+                           output_field=models.DecimalField(max_digits=20, decimal_places=2)),
+            total_tax=Sum('tax_amount'),
+            total_discount=Sum('discount_amount'),
+            total_items=Count('id')
+        )
+
+        # Get discounts from sales
+        discount_data = sales_queryset.aggregate(
+            total_discount=Sum('discount_amount')
+        )
+
+        # Calculate values
+        gross_revenue = financial_data['total_revenue'] or Decimal('0')
+        cogs = financial_data['total_cost'] or Decimal('0')
+        tax = financial_data['total_tax'] or Decimal('0')
+        discount = discount_data['total_discount'] or Decimal('0')
 
         gross_profit = gross_revenue - cogs
         net_revenue = gross_revenue - discount
@@ -866,31 +1169,62 @@ class ReportGeneratorService:
             },
             'profit': {
                 'gross_profit': float(gross_profit),
-                'gross_margin': (gross_profit / gross_revenue * 100) if gross_revenue > 0 else 0,
+                'gross_margin': float((gross_profit / gross_revenue * 100) if gross_revenue > 0 else 0),
                 'net_profit': float(net_profit),
-                'net_margin': (net_profit / gross_revenue * 100) if gross_revenue > 0 else 0,
+                'net_margin': float((net_profit / gross_revenue * 100) if gross_revenue > 0 else 0),
             }
         }
 
         # Category-wise profit
-        category_profit = list(sales_queryset.values(
+        category_profit_raw = sale_items.values(
             'product__category__name'
         ).annotate(
             revenue=Sum('total_price'),
-            cost=Sum(F('product__cost_price') * F('quantity')),
+            cost=Sum(F('product__cost_price') * F('quantity'),
+                     output_field=models.DecimalField(max_digits=20, decimal_places=2)),
             quantity=Sum('quantity')
+        ).order_by('-revenue')
+
+        category_profit = []
+        for cat in category_profit_raw:
+            revenue = cat['revenue'] or Decimal('0')
+            cost = cat['cost'] or Decimal('0')
+            category_profit.append({
+                'category': cat['product__category__name'],
+                'revenue': float(revenue),
+                'cost': float(cost),
+                'profit': float(revenue - cost),
+                'margin': float(((revenue - cost) / revenue * 100) if revenue > Decimal('0') else Decimal('0')),
+                'quantity': float(cat['quantity'] or Decimal('0'))
+            })
+
+        # Store-wise breakdown
+        store_profit = list(sales_queryset.values(
+            'store__name'
+        ).annotate(
+            revenue=Sum('total_amount'),
+            discount=Sum('discount_amount'),
+            tax=Sum('tax_amount')
         ).order_by('-revenue'))
 
-        for cat in category_profit:
-            revenue = cat['revenue'] or 0
-            cost = cat['cost'] or 0
-            cat['profit'] = float(revenue - cost)
-            cat['margin'] = ((revenue - cost) / revenue * 100) if revenue > 0 else 0
+        for store in store_profit:
+            revenue = store['revenue'] or Decimal('0')
+            discount = store['discount'] or Decimal('0')
+            tax = store['tax'] or Decimal('0')
+            # Simplified: net profit = revenue - discount - tax
+            store['net_profit'] = float(revenue - discount - tax)
+            store['net_margin'] = float(
+                ((revenue - discount - tax) / revenue * 100) if revenue > Decimal('0') else Decimal('0'))
 
         return {
             'profit_loss': profit_loss,
             'category_profit': category_profit,
+            'store_profit': store_profit,
             'filters': kwargs,
+            'date_range': {
+                'start_date': start_date,
+                'end_date': end_date
+            }
         }
 
 
@@ -968,7 +1302,7 @@ class ReportGeneratorService:
         if category_id:
             queryset = queryset.filter(product__category_id=category_id)
 
-        # Product performance with profit calculation
+        # FIXED: Use F('product__cost_price') instead of F('product__cost_price')
         products = list(queryset.values(
             'product__id',
             'product__name',
@@ -979,28 +1313,37 @@ class ReportGeneratorService:
         ).annotate(
             total_quantity=Sum('quantity'),
             total_revenue=Sum('total_price'),
-            total_cost=Sum(F('product__cost_price') * F('quantity')),
+            total_cost=Sum(F('product__cost_price') * F('quantity'),
+                           output_field=models.DecimalField(max_digits=20, decimal_places=2)),
             avg_price=Avg('unit_price'),
             transaction_count=Count('sale', distinct=True),
             total_tax=Sum('tax_amount')
         ).order_by('-total_revenue')[:limit])
 
-        # Calculate profit and margin
+        # Calculate profit and margin in Python for better accuracy
         for product in products:
-            cost = product['total_cost'] or 0
-            revenue = product['total_revenue'] or 0
-            product['total_profit'] = revenue - cost
-            product['profit_margin'] = ((revenue - cost) / revenue * 100) if revenue > 0 else 0
+            cost = product['total_cost'] or Decimal('0')
+            revenue = product['total_revenue'] or Decimal('0')
+            product['total_profit'] = float(revenue - cost)
+            product['profit_margin'] = float(
+                ((revenue - cost) / revenue * 100) if revenue > Decimal('0') else Decimal('0'))
 
         # Summary statistics
+        summary_aggregates = queryset.aggregate(
+            total_quantity_sold=Sum('quantity'),
+            total_revenue=Sum('total_price'),
+            total_cost=Sum(F('product__cost_price') * F('quantity'),
+                           output_field=models.DecimalField(max_digits=20, decimal_places=2)),
+            unique_products=Count('product', distinct=True)
+        )
+
         summary = {
-            'total_products': queryset.values('product').distinct().count(),
-            'total_quantity_sold': queryset.aggregate(Sum('quantity'))['quantity__sum'] or 0,
-            'total_revenue': queryset.aggregate(Sum('total_price'))['total_price__sum'] or 0,
-            'total_cost': queryset.aggregate(
-                total_cost=Sum(F('product__cost_price') * F('quantity'))
-            )['total_cost'] or 0,
+            'total_products': summary_aggregates['unique_products'] or 0,
+            'total_quantity_sold': float(summary_aggregates['total_quantity_sold'] or Decimal('0')),
+            'total_revenue': float(summary_aggregates['total_revenue'] or Decimal('0')),
+            'total_cost': float(summary_aggregates['total_cost'] or Decimal('0')),
         }
+
         summary['total_profit'] = summary['total_revenue'] - summary['total_cost']
         summary['avg_profit_margin'] = (
             (summary['total_profit'] / summary['total_revenue'] * 100)
@@ -1015,6 +1358,11 @@ class ReportGeneratorService:
             revenue=Sum('total_price'),
             product_count=Count('product', distinct=True)
         ).order_by('-revenue'))
+
+        # Convert Decimal to float for JSON serialization
+        for cat in category_performance:
+            cat['quantity'] = float(cat['quantity'] or Decimal('0'))
+            cat['revenue'] = float(cat['revenue'] or Decimal('0'))
 
         return {
             'products': products,
@@ -1048,10 +1396,18 @@ class ReportGeneratorService:
         elif status_filter == 'in_stock':
             queryset = queryset.filter(quantity__gt=F('low_stock_threshold'))
 
-        # Annotate with status and value
+        # FIXED: Use ExpressionWrapper for calculations
+        from django.db.models import ExpressionWrapper
+
         inventory = list(queryset.annotate(
-            stock_value=F('quantity') * F('product__cost_price'),
-            retail_value=F('quantity') * F('product__selling_price'),
+            stock_value=ExpressionWrapper(
+                F('quantity') * F('product__cost_price'),
+                output_field=models.DecimalField(max_digits=20, decimal_places=2)
+            ),
+            retail_value=ExpressionWrapper(
+                F('quantity') * F('product__selling_price'),
+                output_field=models.DecimalField(max_digits=20, decimal_places=2)
+            ),
             status=Case(
                 When(quantity=0, then=Value('out_of_stock')),
                 When(quantity__lte=F('low_stock_threshold'), then=Value('low_stock')),
@@ -1064,12 +1420,22 @@ class ReportGeneratorService:
             'retail_value', 'status', 'last_import_update'
         ).order_by('product__name'))
 
-        # Summary statistics
+        # FIXED: Summary calculations with proper aggregates
         summary = queryset.aggregate(
             total_products=Count('id'),
             total_quantity=Sum('quantity'),
-            total_stock_value=Sum(F('quantity') * F('product__cost_price')),
-            total_retail_value=Sum(F('quantity') * F('product__selling_price')),
+            total_stock_value=Sum(
+                ExpressionWrapper(
+                    F('quantity') * F('product__cost_price'),
+                    output_field=models.DecimalField(max_digits=20, decimal_places=2)
+                )
+            ),
+            total_retail_value=Sum(
+                ExpressionWrapper(
+                    F('quantity') * F('product__selling_price'),
+                    output_field=models.DecimalField(max_digits=20, decimal_places=2)
+                )
+            ),
             low_stock_count=Count('id', filter=Q(
                 quantity__lte=F('low_stock_threshold'),
                 quantity__gt=0
@@ -1092,8 +1458,27 @@ class ReportGeneratorService:
         ).annotate(
             product_count=Count('id'),
             total_quantity=Sum('quantity'),
-            stock_value=Sum(F('quantity') * F('product__cost_price'))
+            stock_value=Sum(
+                ExpressionWrapper(
+                    F('quantity') * F('product__cost_price'),
+                    output_field=models.DecimalField(max_digits=20, decimal_places=2)
+                )
+            )
         ).order_by('-stock_value'))
+
+        # Convert Decimal to float for JSON serialization
+        for item in inventory:
+            item['stock_value'] = float(item['stock_value'] or Decimal('0'))
+            item['retail_value'] = float(item['retail_value'] or Decimal('0'))
+            item['quantity'] = float(item['quantity'] or Decimal('0'))
+
+        for key in ['total_stock_value', 'total_retail_value']:
+            summary[key] = float(summary[key] or Decimal('0'))
+        summary['total_quantity'] = float(summary['total_quantity'] or Decimal('0'))
+
+        for cat in category_summary:
+            cat['stock_value'] = float(cat['stock_value'] or Decimal('0'))
+            cat['total_quantity'] = float(cat['total_quantity'] or Decimal('0'))
 
         return {
             'inventory': inventory,
@@ -1105,66 +1490,69 @@ class ReportGeneratorService:
 
     def _generate_tax_report(self, **kwargs) -> Dict:
         """Generate tax report for EFRIS compliance"""
+        from decimal import Decimal
+
         start_date = kwargs.get('start_date')
         end_date = kwargs.get('end_date')
         store_id = kwargs.get('store_id')
 
         stores = self.get_accessible_stores()
 
-        queryset = SaleItem.objects.filter(
-            sale__store__in=stores,
-            sale__status__in=['COMPLETED', 'PAID']
-        ).select_related('sale', 'sale__store', 'product')
+        # FIXED: Use Sale instead of SaleItem for better aggregation
+        queryset = Sale.objects.filter(
+            store__in=stores,
+            status__in=['COMPLETED', 'PAID']
+        ).select_related('store')
 
         if start_date:
-            queryset = queryset.filter(sale__created_at__date__gte=start_date)
+            queryset = queryset.filter(created_at__date__gte=start_date)
         if end_date:
-            queryset = queryset.filter(sale__created_at__date__lte=end_date)
+            queryset = queryset.filter(created_at__date__lte=end_date)
         if store_id:
-            queryset = queryset.filter(sale__store_id=store_id)
+            queryset = queryset.filter(store_id=store_id)
 
-        # Tax breakdown by rate
-        tax_breakdown = list(queryset.values('tax_rate').annotate(
-            tax_rate_display=Case(
-                When(tax_rate='A', then=Value('Standard (18%)')),
-                When(tax_rate='B', then=Value('Zero Rate (0%)')),
-                When(tax_rate='C', then=Value('Exempt')),
-                When(tax_rate='D', then=Value('Deemed (18%)')),
-                When(tax_rate='E', then=Value('Excise Duty')),
-                default=Value('Unknown'),
-            ),
+        # Summary from sales
+        summary = queryset.aggregate(
+            total_sales_amount=Sum('total_amount'),
+            total_tax_collected=Sum('tax_amount'),
+            total_transactions=Count('id'),
+            total_discount=Sum('discount_amount')
+        )
+
+        # Tax breakdown by analyzing sale items
+        sale_items = SaleItem.objects.filter(
+            sale__in=queryset
+        )
+
+        tax_breakdown_raw = sale_items.values('tax_rate').annotate(
             total_sales=Sum('total_price'),
             total_tax=Sum('tax_amount'),
             transaction_count=Count('sale', distinct=True),
             item_count=Count('id')
-        ).order_by('tax_rate'))
+        ).order_by('tax_rate')
 
-        # Summary
-        summary = queryset.aggregate(
-            total_sales_amount=Sum('total_price'),
-            total_tax_collected=Sum('tax_amount'),
-            total_items=Count('id'),
-            total_transactions=Count('sale', distinct=True)
-        )
+        tax_breakdown = []
+        for tax in tax_breakdown_raw:
+            tax_rate_display = dict(Product.TAX_RATE_CHOICES).get(tax['tax_rate'], 'Unknown')
+            tax_breakdown.append({
+                'tax_rate': tax['tax_rate'],
+                'tax_rate_display': tax_rate_display,
+                'total_sales': float(tax['total_sales'] or Decimal('0')),
+                'total_tax': float(tax['total_tax'] or Decimal('0')),
+                'transaction_count': tax['transaction_count'],
+                'item_count': tax['item_count'],
+                'effective_rate': float(
+                    (tax['total_tax'] / tax['total_sales'] * 100) if tax['total_sales'] > Decimal('0') else Decimal(
+                        '0'))
+            })
 
         # EFRIS compliance check
-        sales_queryset = Sale.objects.filter(
-            store__in=stores,
-            status__in=['COMPLETED', 'PAID']
-        )
-        if start_date:
-            sales_queryset = sales_queryset.filter(created_at__date__gte=start_date)
-        if end_date:
-            sales_queryset = sales_queryset.filter(created_at__date__lte=end_date)
-        if store_id:
-            sales_queryset = sales_queryset.filter(store_id=store_id)
-
-        efris_stats = sales_queryset.aggregate(
+        efris_stats = queryset.aggregate(
             total_sales=Count('id'),
             fiscalized=Count('id', filter=Q(is_fiscalized=True)),
             pending=Count('id', filter=Q(is_fiscalized=False)),
         )
-        efris_stats['compliance_rate'] = (
+        efris_stats['compliance_rate'] = float(
             (efris_stats['fiscalized'] / efris_stats['total_sales'] * 100)
             if efris_stats['total_sales'] > 0 else 0
         )
@@ -1172,15 +1560,23 @@ class ReportGeneratorService:
         # Daily tax summary
         daily_tax = list(
             queryset
-            .annotate(date=TruncDate('sale__created_at'))
+            .annotate(date=TruncDate('created_at'))
             .values('date')
             .annotate(
-                total_sales=Sum('total_price'),
+                total_sales=Sum('total_amount'),
                 total_tax=Sum('tax_amount'),
-                transaction_count=Count('sale', distinct=True)
+                transaction_count=Count('id')
             )
             .order_by('date')
         )
+
+        # Convert Decimal to float
+        for key in ['total_sales_amount', 'total_tax_collected', 'total_discount']:
+            summary[key] = float(summary[key] or Decimal('0'))
+
+        for day in daily_tax:
+            day['total_sales'] = float(day['total_sales'] or Decimal('0'))
+            day['total_tax'] = float(day['total_tax'] or Decimal('0'))
 
         return {
             'tax_breakdown': tax_breakdown,

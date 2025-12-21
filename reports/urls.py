@@ -22,6 +22,7 @@ urlpatterns = [
     path('stock-movement/', views.stock_movement_report, name='stock_movement'),
     path('expense-report/', views.expense_report, name='expense_report'),
     path('expense-analytics/', views.expense_analytics, name='expense_analytics'),
+    path('combined-business-report/', views.combined_business_report, name='combined_business'),
     path('price-lookup/', views.price_lookup_report, name='price_lookup'),
     path('customer-analytics/', views.customer_analytics_report, name='customer_analytics'),
     path('custom-report/', views.custom_report, name='custom_report'),

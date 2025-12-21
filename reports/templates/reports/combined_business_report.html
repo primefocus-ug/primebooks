@@ -1,0 +1,795 @@
+{% extends 'base.html' %}
+{% load static %}
+{% load humanize %}
+
+{% block title %}Combined Business Report{% endblock %}
+
+{% block extra_css %}
+<link rel="stylesheet" href="{% static 'themes.css' %}">
+<style>
+    .combined-header {
+        background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+        color: white;
+        border-radius: 12px;
+        padding: 30px;
+        margin-bottom: 25px;
+        box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+    }
+/* Print-specific styles for main template */
+@media print {
+    .no-print, .report-nav, .btn-group, .combined-header .btn-group,
+    .card.shadow-sm, #filterForm, .dropdown-menu {
+        display: none !important;
+    }
+
+    body {
+        background: white !important;
+        color: black !important;
+    }
+
+    .report-section {
+        break-inside: avoid;
+        border: 1px solid #ddd !important;
+        box-shadow: none !important;
+    }
+
+    a[href]::after {
+        content: " (" attr(href) ")";
+    }
+
+    .health-score {
+        color: black !important;
+    }
+}
+    .report-section {
+        background: white;
+        border-radius: 10px;
+        padding: 25px;
+        margin-bottom: 25px;
+        box-shadow: 0 5px 15px rgba(0,0,0,0.05);
+        border-left: 4px solid #667eea;
+    }
+    [data-theme="dark"] .report-section {
+        background: #1f2937;
+        box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+    }
+
+    .section-header {
+        border-bottom: 2px solid #e5e7eb;
+        padding-bottom: 15px;
+        margin-bottom: 20px;
+    }
+    [data-theme="dark"] .section-header {
+        border-color: #374151;
+    }
+
+    .health-score {
+        font-size: 3.5rem;
+        font-weight: 800;
+        text-align: center;
+        line-height: 1;
+        margin-bottom: 10px;
+    }
+
+    .grade-badge {
+        font-size: 1.5rem;
+        font-weight: 700;
+        padding: 10px 20px;
+        border-radius: 10px;
+        text-align: center;
+    }
+    .grade-a { background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%); color: white; }
+    .grade-b { background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); color: white; }
+    .grade-c { background: linear-gradient(135deg, #fa709a 0%, #fee140 100%); color: white; }
+    .grade-d { background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); color: white; }
+    .grade-f { background: linear-gradient(135deg, #8B0000 0%, #FF0000 100%); color: white; }
+
+    .metric-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+        gap: 15px;
+        margin: 20px 0;
+    }
+
+    .metric-card {
+        background: #f8fafc;
+        border-radius: 8px;
+        padding: 15px;
+        border: 1px solid #e5e7eb;
+        transition: all 0.3s;
+    }
+    [data-theme="dark"] .metric-card {
+        background: #374151;
+        border-color: #4b5563;
+    }
+    .metric-card:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+    }
+
+    .insight-card {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        border-radius: 8px;
+        padding: 20px;
+        margin-bottom: 15px;
+    }
+
+    .report-nav {
+        position: sticky;
+        top: 20px;
+        background: white;
+        border-radius: 10px;
+        padding: 20px;
+        box-shadow: 0 5px 15px rgba(0,0,0,0.05);
+        margin-bottom: 20px;
+    }
+    [data-theme="dark"] .report-nav {
+        background: #1f2937;
+        box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+    }
+
+    .nav-item {
+        padding: 10px 15px;
+        border-radius: 6px;
+        cursor: pointer;
+        transition: all 0.3s;
+        margin-bottom: 5px;
+    }
+    .nav-item:hover {
+        background: #f3f4f6;
+    }
+    [data-theme="dark"] .nav-item:hover {
+        background: #374151;
+    }
+    .nav-item.active {
+        background: #667eea;
+        color: white;
+    }
+
+    .chart-container {
+        position: relative;
+        height: 300px;
+        margin: 20px 0;
+    }
+
+    .comparison-table {
+        border-collapse: separate;
+        border-spacing: 0 10px;
+        width: 100%;
+    }
+    .comparison-table tr {
+        background: #f8fafc;
+        border-radius: 8px;
+    }
+
+    [data-theme="dark"] .comparison-table tr {
+        background: #374151;
+    }
+    .comparison-table td {
+        padding: 15px;
+        border: none;
+    }
+    .comparison-table td:first-child {
+        border-top-left-radius: 8px;
+        border-bottom-left-radius: 8px;
+    }
+    .comparison-table td:last-child {
+        border-top-right-radius: 8px;
+        border-bottom-right-radius: 8px;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-4">
+    <!-- Header -->
+    <div class="combined-header">
+        <div class="d-flex justify-content-between align-items-start">
+            <div>
+                <h1 class="display-6 mb-2">Combined Business Report</h1>
+                <p class="mb-0 opacity-90">Comprehensive business analysis across all departments</p>
+                <div class="mt-3">
+                    <span class="badge bg-light text-dark me-2">
+                        <i class="fas fa-chart-pie me-1"></i> {{ selected_reports|length }} Reports Combined
+                    </span>
+                    <span class="badge bg-light text-dark">
+                        <i class="fas fa-calendar me-1"></i>
+                        {% if form.cleaned_data.start_date %}
+                            {{ form.cleaned_data.start_date|date:"M d, Y" }} - {{ form.cleaned_data.end_date|date:"M d, Y" }}
+                        {% else %}
+                            All Time
+                        {% endif %}
+                    </span>
+                </div>
+            </div>
+            <div class="text-end">
+                <div class="btn-group">
+                    <button class="btn btn-light me-2" onclick="window.print()">
+                        <i class="fas fa-print"></i> Print
+                    </button>
+                    <button type="button" class="btn btn-light dropdown-toggle" data-bs-toggle="dropdown">
+                        <i class="fas fa-download"></i> Export
+                    </button>
+                    <ul class="dropdown-menu">
+                        <li><a class="dropdown-item" href="#" onclick="exportReport('PDF')">PDF (Full Report)</a></li>
+                        <li><a class="dropdown-item" href="#" onclick="exportReport('XLSX')">Excel (Data Only)</a></li>
+                        <li><a class="dropdown-item" href="#" onclick="exportReport('HTML')">HTML (Interactive)</a></li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Filters -->
+    <div class="card shadow-sm mb-4">
+        <div class="card-body">
+            <form method="get" id="filterForm">
+                <div class="row g-3">
+                    <div class="col-md-3">
+                        <label class="form-label">Start Date</label>
+                        <input type="date" name="start_date" class="form-control"
+                               value="{{ form.cleaned_data.start_date|date:'Y-m-d' }}">
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">End Date</label>
+                        <input type="date" name="end_date" class="form-control"
+                               value="{{ form.cleaned_data.end_date|date:'Y-m-d' }}">
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">Store</label>
+                        <select name="store" class="form-select">
+                            <option value="">All Stores</option>
+                            {% for store in stores %}
+                            <option value="{{ store.id }}"
+                                    {% if form.cleaned_data.store.id == store.id %}selected{% endif %}>
+                                {{ store.name }}
+                            </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">&nbsp;</label>
+                        <button type="submit" class="btn btn-primary w-100">
+                            <i class="fas fa-sync-alt"></i> Generate Report
+                        </button>
+                    </div>
+
+                    <!-- Report Type Selection -->
+                    <div class="col-md-12">
+                        <label class="form-label mb-3">Select Reports to Include:</label>
+                        <div class="row">
+                            {% for value, label in form.fields.report_types.choices %}
+                            <div class="col-md-3 mb-2">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox"
+                                           name="report_types" value="{{ value }}"
+                                           id="report_{{ value }}"
+                                           {% if value in selected_reports %}checked{% endif %}>
+                                    <label class="form-check-label" for="report_{{ value }}">
+                                        {{ label }}
+                                    </label>
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    {% if combined_data %}
+    <!-- Two-Column Layout -->
+    <div class="row">
+        <!-- Left Column - Navigation & Summary -->
+        <div class="col-lg-3">
+            <div class="report-nav">
+                <h5 class="mb-3"><i class="fas fa-list"></i> Report Sections</h5>
+                <div id="reportNav">
+                    <div class="nav-item active" onclick="scrollToSection('business-health')">
+                        <i class="fas fa-heartbeat me-2"></i> Business Health
+                    </div>
+                    <div class="nav-item" onclick="scrollToSection('executive-summary')">
+                        <i class="fas fa-chart-line me-2"></i> Executive Summary
+                    </div>
+
+                    {% if 'SALES_SUMMARY' in selected_reports %}
+                    <div class="nav-item" onclick="scrollToSection('sales-summary')">
+                        <i class="fas fa-shopping-cart me-2"></i> Sales Summary
+                    </div>
+                    {% endif %}
+
+                    {% if 'PROFIT_LOSS' in selected_reports %}
+                    <div class="nav-item" onclick="scrollToSection('profit-loss')">
+                        <i class="fas fa-money-bill-wave me-2"></i> Profit & Loss
+                    </div>
+                    {% endif %}
+
+                    {% if 'EXPENSE_REPORT' in selected_reports %}
+                    <div class="nav-item" onclick="scrollToSection('expenses')">
+                        <i class="fas fa-receipt me-2"></i> Expenses
+                    </div>
+                    {% endif %}
+
+                    {% if 'INVENTORY_STATUS' in selected_reports %}
+                    <div class="nav-item" onclick="scrollToSection('inventory')">
+                        <i class="fas fa-boxes me-2"></i> Inventory
+                    </div>
+                    {% endif %}
+
+                    {% if 'CASHIER_PERFORMANCE' in selected_reports %}
+                    <div class="nav-item" onclick="scrollToSection('cashiers')">
+                        <i class="fas fa-user-tie me-2"></i> Cashier Performance
+                    </div>
+                    {% endif %}
+
+                    {% if 'CUSTOMER_ANALYTICS' in selected_reports %}
+                    <div class="nav-item" onclick="scrollToSection('customers')">
+                        <i class="fas fa-users me-2"></i> Customer Analytics
+                    </div>
+                    {% endif %}
+
+                    <div class="nav-item" onclick="scrollToSection('recommendations')">
+                        <i class="fas fa-lightbulb me-2"></i> Recommendations
+                    </div>
+                </div>
+
+                <!-- Quick Stats -->
+                <div class="mt-4 pt-4 border-top">
+                    <h6 class="mb-3">Quick Stats</h6>
+
+                    {% if combined_data.custom_analytics.key_metrics.cash_flow %}
+                    <div class="mb-2">
+                        <small class="text-muted">Cash Flow</small>
+                        <div class="fw-bold {% if combined_data.custom_analytics.key_metrics.cash_flow >= 0 %}text-success{% else %}text-danger{% endif %}">
+                            UGX {{ combined_data.custom_analytics.key_metrics.cash_flow|floatformat:0|intcomma }}
+                        </div>
+                    </div>
+                    {% endif %}
+
+                    {% if combined_data.business_health %}
+                    <div class="mb-2">
+                        <small class="text-muted">Business Health</small>
+                        <div class="fw-bold">
+                            {{ combined_data.business_health.percentage|floatformat:1 }}%
+                        </div>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Right Column - Report Content -->
+        <div class="col-lg-9">
+            <!-- Business Health Score -->
+            <div class="report-section" id="business-health">
+                <div class="section-header">
+                    <h3 class="mb-0"><i class="fas fa-heartbeat text-danger"></i> Business Health Score</h3>
+                </div>
+
+                <div class="row text-center">
+                    <div class="col-md-4">
+                        <div class="health-score {% if combined_data.business_health.percentage >= 80 %}text-success{% elif combined_data.business_health.percentage >= 60 %}text-warning{% else %}text-danger{% endif %}">
+                            {{ combined_data.business_health.percentage|floatformat:1 }}%
+                        </div>
+                        <p class="text-muted">Overall Score</p>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="grade-badge grade-{{ combined_data.business_health.grade|lower }}">
+                            {{ combined_data.business_health.grade }}
+                        </div>
+                        <p class="text-muted mt-2">Grade</p>
+                    </div>
+                    <div class="col-md-4">
+                        <h3>{{ combined_data.business_health.score }}/{{ combined_data.business_health.max_score }}</h3>
+                        <p class="text-muted">Points</p>
+                    </div>
+                </div>
+
+                <div class="mt-4">
+                    <h5>Health Factors</h5>
+                    <div class="row">
+                        {% for factor, score in combined_data.business_health.factors %}
+                        <div class="col-md-6 mb-2">
+                            <div class="d-flex justify-content-between">
+                                <span>{{ factor|safe }}</span>
+                                <span class="fw-bold">{{ score }} pts</span>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+
+            <!-- Executive Summary -->
+            <div class="report-section" id="executive-summary">
+                <div class="section-header">
+                    <h3 class="mb-0"><i class="fas fa-chart-line text-primary"></i> Executive Summary</h3>
+                </div>
+
+                <div class="metric-grid">
+                    {% if 'SALES_SUMMARY' in combined_data %}
+                    <div class="metric-card">
+                        <div class="d-flex justify-content-between">
+                            <div>
+                                <h5 class="text-primary mb-1">
+                                    UGX {{ combined_data.SALES_SUMMARY.summary.total_sales|floatformat:0|intcomma|default:"0" }}
+                                </h5>
+                                <small class="text-muted">Total Sales</small>
+                            </div>
+                            <div class="text-end">
+                                <small>{{ combined_data.SALES_SUMMARY.summary.total_transactions|default:"0" }} transactions</small>
+                            </div>
+                        </div>
+                    </div>
+                    {% endif %}
+
+                    {% if 'PROFIT_LOSS' in combined_data %}
+                    <div class="metric-card">
+                        <div class="d-flex justify-content-between">
+                            <div>
+                                <h5 class="text-success mb-1">
+                                    UGX {{ combined_data.PROFIT_LOSS.profit_loss.profit.net_profit|floatformat:0|intcomma|default:"0" }}
+                                </h5>
+                                <small class="text-muted">Net Profit</small>
+                            </div>
+                            <div class="text-end">
+                                <small>{{ combined_data.PROFIT_LOSS.profit_loss.profit.net_margin|floatformat:1|default:"0" }}% margin</small>
+                            </div>
+                        </div>
+                    </div>
+                    {% endif %}
+
+                    {% if 'EXPENSE_REPORT' in combined_data %}
+                    <div class="metric-card">
+                        <div class="d-flex justify-content-between">
+                            <div>
+                                <h5 class="text-danger mb-1">
+                                    UGX {{ combined_data.EXPENSE_REPORT.summary.total_amount|floatformat:0|intcomma|default:"0" }}
+                                </h5>
+                                <small class="text-muted">Total Expenses</small>
+                            </div>
+                            <div class="text-end">
+                                <small>{{ combined_data.EXPENSE_REPORT.summary.total_expenses|default:"0" }} expenses</small>
+                            </div>
+                        </div>
+                    </div>
+                    {% endif %}
+
+                    {% if 'INVENTORY_STATUS' in combined_data %}
+                    <div class="metric-card">
+                        <div class="d-flex justify-content-between">
+                            <div>
+                                <h5 class="text-warning mb-1">
+                                    UGX {{ combined_data.INVENTORY_STATUS.summary.total_stock_value|floatformat:0|intcomma|default:"0" }}
+                                </h5>
+                                <small class="text-muted">Inventory Value</small>
+                            </div>
+                            <div class="text-end">
+                                <small>{{ combined_data.INVENTORY_STATUS.summary.low_stock_count|default:"0" }} low stock</small>
+                            </div>
+                        </div>
+                    </div>
+                    {% endif %}
+                </div>
+
+                <!-- Credit Sales Analysis -->
+                {% if combined_data.custom_analytics.key_metrics.credit_sales %}
+                <div class="mt-4">
+                    <h5>Credit Sales Analysis</h5>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="alert alert-info">
+                                <h6><i class="fas fa-credit-card"></i> Outstanding Amount</h6>
+                                <h3 class="mb-0">
+                                    UGX {{ combined_data.custom_analytics.key_metrics.credit_sales.outstanding_amount|floatformat:0|intcomma }}
+                                </h3>
+                                <small>Money not yet collected</small>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="alert alert-success">
+                                <h6><i class="fas fa-percentage"></i> Collection Rate</h6>
+                                <h3 class="mb-0">
+                                    {{ combined_data.custom_analytics.key_metrics.credit_sales.collection_rate|floatformat:1 }}%
+                                </h3>
+                                <small>Of total sales collected</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+
+            <!-- Sales Summary Section -->
+            {% if 'SALES_SUMMARY' in selected_reports and 'SALES_SUMMARY' in combined_data %}
+            <div class="report-section" id="sales-summary">
+                <div class="section-header">
+                    <h3 class="mb-0"><i class="fas fa-shopping-cart text-success"></i> Sales Summary</h3>
+                </div>
+
+                <div class="row">
+                    <div class="col-md-6">
+                        <h5>Top Selling Products</h5>
+                        <div class="list-group">
+                            {% for product in combined_data.SALES_SUMMARY.top_products|slice:":5" %}
+                            <div class="list-group-item border-0">
+                                <div class="d-flex justify-content-between">
+                                    <span>{{ product.product__name|default:"Unknown" }}</span>
+                                    <span class="fw-bold">UGX {{ product.revenue|floatformat:0|intcomma }}</span>
+                                </div>
+                                <small class="text-muted">{{ product.quantity }} units sold</small>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <h5>Payment Methods</h5>
+                        <div class="list-group">
+                            {% for payment in combined_data.SALES_SUMMARY.payment_methods|slice:":5" %}
+                            <div class="list-group-item border-0">
+                                <div class="d-flex justify-content-between">
+                                    <span>{{ payment.payment_method|default:"Unknown" }}</span>
+                                    <span class="fw-bold">UGX {{ payment.amount|floatformat:0|intcomma }}</span>
+                                </div>
+                                <small class="text-muted">{{ payment.count }} transactions</small>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+
+            <!-- Profit & Loss Section -->
+            {% if 'PROFIT_LOSS' in selected_reports and 'PROFIT_LOSS' in combined_data %}
+            <div class="report-section" id="profit-loss">
+                <div class="section-header">
+                    <h3 class="mb-0"><i class="fas fa-money-bill-wave text-success"></i> Profit & Loss Statement</h3>
+                </div>
+
+                <div class="row">
+                    <div class="col-md-8">
+                        <table class="table">
+                            <tbody>
+                                <tr class="table-primary">
+                                    <td><strong>Revenue</strong></td>
+                                    <td class="text-end">UGX {{ combined_data.PROFIT_LOSS.profit_loss.revenue.net_revenue|floatformat:0|intcomma }}</td>
+                                </tr>
+                                <tr>
+                                    <td class="ps-4">Cost of Goods Sold</td>
+                                    <td class="text-end text-danger">(UGX {{ combined_data.PROFIT_LOSS.profit_loss.costs.cost_of_goods_sold|floatformat:0|intcomma }})</td>
+                                </tr>
+                                <tr>
+                                    <td class="ps-4">Taxes</td>
+                                    <td class="text-end text-danger">(UGX {{ combined_data.PROFIT_LOSS.profit_loss.costs.tax|floatformat:0|intcomma }})</td>
+                                </tr>
+                                <tr class="table-success">
+                                    <td><strong>Net Profit</strong></td>
+                                    <td class="text-end fw-bold">UGX {{ combined_data.PROFIT_LOSS.profit_loss.profit.net_profit|floatformat:0|intcomma }}</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="text-center">
+                            <div class="display-6 text-success">
+                                {{ combined_data.PROFIT_LOSS.profit_loss.profit.net_margin|floatformat:1 }}%
+                            </div>
+                            <p class="text-muted">Net Profit Margin</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+
+            <!-- Expenses Section -->
+            {% if 'EXPENSE_REPORT' in selected_reports and 'EXPENSE_REPORT' in combined_data %}
+            <div class="report-section" id="expenses">
+                <div class="section-header">
+                    <h3 class="mb-0"><i class="fas fa-receipt text-danger"></i> Expense Analysis</h3>
+                </div>
+
+                <div class="row">
+                    <div class="col-md-6">
+                        <h5>Top Expense Categories</h5>
+                        <div class="list-group">
+                            {% for category in combined_data.EXPENSE_REPORT.category_breakdown|slice:":5" %}
+                            <div class="list-group-item border-0">
+                                <div class="d-flex justify-content-between">
+                                    <span>{{ category.category__name|default:"Unknown" }}</span>
+                                    <span class="fw-bold text-danger">UGX {{ category.total_amount|floatformat:0|intcomma }}</span>
+                                </div>
+                                <small class="text-muted">{{ category.expense_count }} expenses</small>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <h5>Expense Status</h5>
+                        <div class="list-group">
+                            {% for status in combined_data.EXPENSE_REPORT.status_counts %}
+                            <div class="list-group-item border-0">
+                                <div class="d-flex justify-content-between">
+                                    <span>{{ status.status|title }}</span>
+                                    <span>{{ status.count }}</span>
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+
+            <!-- Inventory Section -->
+            {% if 'INVENTORY_STATUS' in selected_reports and 'INVENTORY_STATUS' in combined_data %}
+            <div class="report-section" id="inventory">
+                <div class="section-header">
+                    <h3 class="mb-0"><i class="fas fa-boxes text-warning"></i> Inventory Status</h3>
+                </div>
+
+                <div class="row">
+                    <div class="col-md-6">
+                        <div class="alert alert-warning">
+                            <h5><i class="fas fa-exclamation-triangle"></i> Low Stock Alerts</h5>
+                            <p>{{ combined_data.INVENTORY_STATUS.summary.low_stock_count|default:"0" }} items need restocking</p>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="alert alert-danger">
+                            <h5><i class="fas fa-times-circle"></i> Out of Stock</h5>
+                            <p>{{ combined_data.INVENTORY_STATUS.summary.out_of_stock_count|default:"0" }} items out of stock</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+
+            <!-- Recommendations -->
+            <div class="report-section" id="recommendations">
+                <div class="section-header">
+                    <h3 class="mb-0"><i class="fas fa-lightbulb text-warning"></i> Recommendations</h3>
+                </div>
+
+                <div class="row">
+                    <div class="col-md-12">
+                        <div class="insight-card">
+                            <h5><i class="fas fa-chart-bar me-2"></i> Key Recommendations</h5>
+                            <ul class="mb-0">
+                                {% for recommendation in combined_data.custom_analytics.recommendations %}
+                                <li>{{ recommendation|safe }}</li>
+                                {% empty %}
+                                <li>No specific recommendations at this time</li>
+                                {% endfor %}
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    {% else %}
+    <!-- No Data State -->
+    <div class="card shadow-sm">
+        <div class="card-body text-center py-5">
+            <i class="fas fa-chart-network fa-4x text-muted mb-3"></i>
+            <h4 class="text-muted">Custom Business Report</h4>
+            <p class="text-muted">Select report types and filters above to generate a comprehensive business report</p>
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        initializeCombinedReport();
+    });
+
+    function initializeCombinedReport() {
+        // Navigation scrolling
+        const navItems = document.querySelectorAll('.nav-item');
+        navItems.forEach(item => {
+            item.addEventListener('click', function() {
+                navItems.forEach(i => i.classList.remove('active'));
+                this.classList.add('active');
+            });
+        });
+
+        // Handle print button
+        document.querySelector('button[onclick="window.print()"]').addEventListener('click', function(e) {
+            e.preventDefault();
+            printReport();
+        });
+    }
+
+    function scrollToSection(sectionId) {
+        const element = document.getElementById(sectionId);
+        if (element) {
+            element.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+            // Update active nav
+            const navItems = document.querySelectorAll('.nav-item');
+            navItems.forEach(item => item.classList.remove('active'));
+
+            // Find and activate corresponding nav item
+            const activeNav = document.querySelector(`[onclick*="${sectionId}"]`);
+            if (activeNav) {
+                activeNav.classList.add('active');
+            }
+        }
+    }
+
+    function printReport() {
+        // Get current filter parameters
+        const form = document.getElementById('filterForm');
+        const params = new URLSearchParams(new FormData(form));
+        params.append('print', 'true');
+
+        // Open print view in new window
+        const printUrl = window.location.pathname + '?' + params.toString();
+        window.open(printUrl, '_blank', 'width=800,height=600');
+    }
+
+    function exportReport(format) {
+        const form = document.getElementById('filterForm');
+        const params = new URLSearchParams(new FormData(form));
+        params.append('export', format);
+        params.append('combined', 'true');
+
+        // Show loading indicator
+        showLoading();
+
+        // Submit form with export parameters
+        const exportUrl = window.location.pathname + '?' + params.toString();
+        window.location.href = exportUrl;
+
+        // Hide loading indicator after delay
+        setTimeout(() => {
+            hideLoading();
+        }, 2000);
+    }
+
+    function showLoading() {
+        // Create loading overlay
+        const overlay = document.createElement('div');
+        overlay.id = 'export-loading';
+        overlay.style.cssText = `
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 9999;
+        `;
+
+        const spinner = document.createElement('div');
+        spinner.innerHTML = `
+            <div class="spinner-border text-light" style="width: 3rem; height: 3rem;" role="status">
+                <span class="visually-hidden">Exporting...</span>
+            </div>
+            <div class="mt-3 text-white">Preparing ${format} export...</div>
+        `;
+        spinner.style.cssText = 'text-align: center;';
+
+        overlay.appendChild(spinner);
+        document.body.appendChild(overlay);
+    }
+
+    function hideLoading() {
+        const overlay = document.getElementById('export-loading');
+        if (overlay) {
+            overlay.remove();
+        }
+    }
+</script>
+{% endblock %}

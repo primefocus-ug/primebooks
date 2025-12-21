@@ -768,8 +768,6 @@ class Store(models.Model):
         # Copy relevant fields
         self.tin = company_config.get('tin')
         self.efris_device_number = company_config.get('efris_device_number')
-        self.store_efris_client_id = company_config.get('efris_client_id')
-        self.store_efris_api_key = company_config.get('efris_api_key')
         self.store_efris_private_key = company_config.get('efris_private_key')
         self.store_efris_public_certificate = company_config.get('efris_public_certificate')
         self.store_efris_key_password = company_config.get('efris_key_password')

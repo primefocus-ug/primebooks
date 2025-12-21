@@ -1,1034 +1,788 @@
 {% extends 'base.html' %}
 {% load static %}
-{% load humanize %}
+{% load i18n %}
+{% load custom_filters %}
+{% load efris_tags %}
 
-{% block title %}Invoice {{ sale.document_number }}{% endblock %}
+{% block title %}{% trans "Invoice" %} {{ invoice.invoice_number }} | {{ block.super }}{% endblock %}
+
+{% block breadcrumb_items %}
+    <li class="breadcrumb-item"><a href="{% url 'user_dashboard' %}">{% trans "Dashboard" %}</a></li>
+    <li class="breadcrumb-item"><a href="{% url 'invoices:list' %}">{% trans "Invoices" %}</a></li>
+    <li class="breadcrumb-item active">{{ invoice.invoice_number }}</li>
+{% endblock %}
 
 {% block extra_css %}
 <style>
-    * {
-        margin: 0;
-        padding: 0;
-        box-sizing: border-box;
-    }
-
-    .invoice-container {
-        max-width: 1000px;
-        margin: 0 auto;
-        background-color: white;
-        border-radius: 12px;
-        box-shadow: 0 5px 25px rgba(0, 0, 0, 0.1);
-        overflow: hidden;
-        padding: 40px;
-    }
-
+    /* Invoice Detail Styles */
     .invoice-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: flex-start;
-        border-bottom: 2px solid #2c5aa0;
-        padding-bottom: 25px;
-        margin-bottom: 30px;
-    }
-
-    .company-info {
-        flex: 1;
-    }
-
-    .logo-container {
-        display: flex;
-        align-items: center;
-        margin-bottom: 15px;
-    }
-
-    .logo {
-        width: 50px;
-        height: 50px;
-        background: linear-gradient(135deg, #2c5aa0, #4a7bc8);
-        border-radius: 8px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
+        background: linear-gradient(135deg, var(--primary-600), var(--primary-700));
         color: white;
-        font-size: 24px;
-        font-weight: bold;
-        margin-right: 15px;
+        padding: 2rem;
+        border-radius: var(--border-radius);
+        margin-bottom: 2rem;
+        box-shadow: var(--shadow-lg);
     }
 
-    .company-name {
-        font-size: 28px;
+    .invoice-status-badge {
+        padding: 0.5rem 1rem;
+        border-radius: 50px;
+        font-weight: 600;
+        font-size: 0.875rem;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
+    .status-PAID { background: var(--green-500); color: white; }
+    .status-PENDING_PAYMENT { background: var(--amber-500); color: white; }
+    .status-PARTIALLY_PAID { background: var(--primary-500); color: white; }
+    .status-OVERDUE { background: var(--red-500); color: white; }
+    .status-DRAFT { background: var(--gray-400); color: white; }
+    .status-CANCELLED { background: var(--gray-600); color: white; }
+
+    .invoice-info-card {
+        background: var(--bg-primary);
+        border: 1px solid var(--border-color);
+        border-radius: var(--border-radius);
+        padding: 1.5rem;
+        margin-bottom: 1.5rem;
+        box-shadow: var(--shadow-sm);
+        transition: all 0.3s ease;
+    }
+
+    .invoice-info-card:hover {
+        box-shadow: var(--shadow-md);
+        transform: translateY(-2px);
+    }
+
+    .info-label {
+        font-size: 0.875rem;
+        color: var(--text-muted);
+        margin-bottom: 0.25rem;
+        font-weight: 500;
+    }
+
+    .info-value {
+        font-size: 1.125rem;
+        color: var(--text-primary);
+        font-weight: 600;
+    }
+
+    .invoice-amount {
+        font-size: 2.5rem;
         font-weight: 700;
-        color: #2c5aa0;
-    }
-
-    .company-details {
-        margin-top: 10px;
-        color: #666;
-        font-size: 15px;
-    }
-
-    .invoice-title-section {
-        text-align: right;
-    }
-
-    .invoice-title {
-        font-size: 42px;
-        font-weight: 800;
-        color: #333;
-        margin-bottom: 5px;
-    }
-
-    .invoice-meta {
-        color: #666;
-        font-size: 15px;
-    }
-
-    .invoice-meta strong {
-        color: #2c5aa0;
-    }
-
-    .invoice-details-section {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 40px;
-        margin-bottom: 40px;
-    }
-
-    .bill-to, .payment-info {
-        background-color: #f9fafc;
-        padding: 20px;
-        border-radius: 8px;
-        border-left: 4px solid #2c5aa0;
-    }
-
-    .section-title {
-        font-size: 18px;
-        font-weight: 600;
-        color: #2c5aa0;
-        margin-bottom: 15px;
-        padding-bottom: 8px;
-        border-bottom: 1px solid #eaeaea;
-    }
-
-    .client-info p, .payment-details p {
-        margin-bottom: 8px;
-    }
-
-    .items-table {
-        width: 100%;
-        border-collapse: collapse;
-        margin-bottom: 30px;
-        box-shadow: 0 3px 10px rgba(0, 0, 0, 0.05);
-    }
-
-    .items-table thead {
-        background-color: #2c5aa0;
         color: white;
     }
 
-    .items-table th {
-        padding: 16px 15px;
-        text-align: left;
+    .invoice-items-table {
+        background: var(--bg-primary);
+        border-radius: var(--border-radius);
+        overflow: hidden;
+        box-shadow: var(--shadow-sm);
+    }
+
+    .invoice-items-table thead {
+        background: var(--bg-tertiary);
+        color: var(--text-primary);
+    }
+
+    .invoice-items-table th {
         font-weight: 600;
-        font-size: 16px;
+        font-size: 0.875rem;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        padding: 1rem;
+        border-bottom: 2px solid var(--border-color);
     }
 
-    .items-table tbody tr {
-        border-bottom: 1px solid #eaeaea;
+    .invoice-items-table td {
+        padding: 1rem;
+        vertical-align: middle;
+        border-bottom: 1px solid var(--border-color-light);
     }
 
-    .items-table tbody tr:nth-child(even) {
-        background-color: #f9fafc;
+    .invoice-items-table tbody tr:last-child td {
+        border-bottom: none;
     }
 
-    .items-table td {
-        padding: 16px 15px;
-    }
-
-    .quantity, .rate, .amount, .tax, .discount {
-        text-align: center;
-    }
-
-    .description {
-        width: 40%;
+    .invoice-items-table tbody tr:hover {
+        background: var(--bg-secondary);
     }
 
     .totals-section {
-        display: flex;
-        justify-content: flex-end;
-        margin-bottom: 40px;
+        background: var(--bg-tertiary);
+        padding: 1.5rem;
+        border-radius: var(--border-radius);
+        margin-top: 1rem;
     }
 
-    .totals-table {
-        width: 300px;
-        border-collapse: collapse;
-    }
-
-    .totals-table td {
-        padding: 12px 15px;
-        border-bottom: 1px solid #eaeaea;
-    }
-
-    .totals-table tr:last-child td {
-        border-bottom: none;
-        font-weight: 700;
-        font-size: 18px;
-        color: #2c5aa0;
-    }
-
-    .amount-label {
-        text-align: right;
-        color: #666;
-    }
-
-    .amount-value {
-        text-align: right;
-        font-weight: 600;
-    }
-
-    .final-total {
-        background-color: #f0f7ff;
-    }
-
-    .payment-methods {
-        margin-bottom: 40px;
-    }
-
-    .payment-options {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 15px;
-        margin-top: 15px;
-    }
-
-    .payment-option {
-        display: flex;
-        align-items: center;
-        background-color: #f9fafc;
-        padding: 12px 20px;
-        border-radius: 8px;
-        border: 1px solid #eaeaea;
-        transition: all 0.3s ease;
-        flex: 1;
-        min-width: 200px;
-    }
-
-    .payment-option:hover {
-        border-color: #2c5aa0;
-        box-shadow: 0 3px 10px rgba(44, 90, 160, 0.1);
-    }
-
-    .payment-icon {
-        font-size: 24px;
-        margin-right: 12px;
-        color: #2c5aa0;
-    }
-
-    .payment-details-text {
-        font-size: 14px;
-    }
-
-    .notes-section {
-        background-color: #f9fafc;
-        padding: 20px;
-        border-radius: 8px;
-        margin-bottom: 30px;
-        border-left: 4px solid #2c5aa0;
-    }
-
-    .notes-title {
-        font-size: 16px;
-        font-weight: 600;
-        color: #2c5aa0;
-        margin-bottom: 10px;
-    }
-
-    .invoice-footer {
+    .total-row {
         display: flex;
         justify-content: space-between;
-        align-items: center;
-        padding-top: 25px;
-        border-top: 1px solid #eaeaea;
-        color: #666;
-        font-size: 14px;
+        padding: 0.75rem 0;
+        border-bottom: 1px solid var(--border-color-light);
+    }
+
+    .total-row:last-child {
+        border-bottom: none;
+        font-size: 1.25rem;
+        font-weight: 700;
+        color: var(--primary-600);
+        padding-top: 1rem;
+        margin-top: 0.5rem;
+        border-top: 2px solid var(--border-color);
     }
 
     .action-buttons {
         display: flex;
-        gap: 15px;
+        gap: 0.75rem;
+        flex-wrap: wrap;
     }
 
-    .btn {
-        padding: 12px 25px;
-        border: none;
-        border-radius: 6px;
-        font-weight: 600;
-        cursor: pointer;
-        display: flex;
+    .efris-badge {
+        display: inline-flex;
         align-items: center;
-        gap: 8px;
+        gap: 0.5rem;
+        padding: 0.5rem 1rem;
+        border-radius: var(--border-radius-sm);
+        font-size: 0.875rem;
+        font-weight: 600;
+    }
+
+    .efris-fiscalized {
+        background: var(--green-50);
+        color: var(--green-600);
+        border: 1px solid var(--green-500);
+    }
+
+    .efris-pending {
+        background: var(--amber-50);
+        color: var(--amber-600);
+        border: 1px solid var(--amber-500);
+    }
+
+    .efris-failed {
+        background: var(--red-50);
+        color: var(--red-600);
+        border: 1px solid var(--red-500);
+    }
+
+    .payment-history-card {
+        background: var(--bg-primary);
+        border: 1px solid var(--border-color);
+        border-radius: var(--border-radius);
+        padding: 1rem;
+        margin-bottom: 1rem;
         transition: all 0.3s ease;
-        text-decoration: none;
     }
 
-    .btn-primary {
-        background-color: #2c5aa0;
-        color: white;
+    .payment-history-card:hover {
+        box-shadow: var(--shadow-md);
+        transform: translateX(4px);
     }
 
-    .btn-primary:hover {
-        background-color: #1e427a;
-        color: white;
+    .qr-code-container {
+        text-align: center;
+        padding: 1.5rem;
+        background: white;
+        border-radius: var(--border-radius);
+        box-shadow: var(--shadow-sm);
     }
 
-    .btn-secondary {
-        background-color: #f0f7ff;
-        color: #2c5aa0;
-        border: 1px solid #2c5aa0;
-    }
-
-    .btn-secondary:hover {
-        background-color: #e1edff;
-        color: #2c5aa0;
-    }
-
-    .btn-success {
-        background-color: #28a745;
-        color: white;
-    }
-
-    .btn-success:hover {
-        background-color: #218838;
-        color: white;
-    }
-
-    .btn-warning {
-        background-color: #ffc107;
-        color: #212529;
-    }
-
-    .btn-warning:hover {
-        background-color: #e0a800;
-        color: #212529;
-    }
-
-    .btn-danger {
-        background-color: #dc3545;
-        color: white;
-    }
-
-    .btn-danger:hover {
-        background-color: #c82333;
-        color: white;
-    }
-
-    .btn-info {
-        background-color: #17a2b8;
-        color: white;
-    }
-
-    .btn-info:hover {
-        background-color: #138496;
-        color: white;
-    }
-
-    .btn-outline-primary {
-        background-color: transparent;
-        color: #2c5aa0;
-        border: 1px solid #2c5aa0;
-    }
-
-    .btn-outline-primary:hover {
-        background-color: #2c5aa0;
-        color: white;
-    }
-
-    .status-badge {
-        display: inline-block;
-        padding: 6px 15px;
-        border-radius: 20px;
-        font-size: 14px;
+    .verification-code {
+        font-family: 'Courier New', monospace;
+        font-size: 1.25rem;
         font-weight: 600;
-        margin-left: 10px;
-    }
-
-    .status-paid {
-        background-color: #e7f7ef;
-        color: #2a8c5e;
-    }
-
-    .status-pending {
-        background-color: #fff4e6;
-        color: #e68a00;
-    }
-
-    .status-overdue {
-        background-color: #ffe6e6;
-        color: #d63031;
-    }
-
-    .status-draft {
-        background-color: #e9ecef;
-        color: #495057;
-    }
-
-    .status-cancelled {
-        background-color: #f8d7da;
-        color: #721c24;
-    }
-
-    .stock-warning {
-        background-color: #fff3cd;
-        border-left: 4px solid #ffc107;
-        padding: 15px;
-        margin-bottom: 20px;
-        border-radius: 6px;
-    }
-
-    .stock-error {
-        background-color: #f8d7da;
-        border-left: 4px solid #dc3545;
-        padding: 15px;
-        margin-bottom: 20px;
-        border-radius: 6px;
-    }
-
-    .payment-history {
-        margin-top: 20px;
-    }
-
-    .payment-item {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        padding: 10px 15px;
-        background-color: #f9fafc;
-        border-radius: 6px;
-        margin-bottom: 10px;
-        border-left: 4px solid #28a745;
-    }
-
-    .efris-info {
-        background-color: #e7f7ef;
-        padding: 15px;
-        border-radius: 8px;
-        margin-bottom: 20px;
-        border-left: 4px solid #2a8c5e;
-    }
-
-    @media print {
-        body {
-            background-color: white;
-            padding: 0;
-        }
-
-        .invoice-container {
-            box-shadow: none;
-            padding: 20px;
-        }
-
-        .action-buttons {
-            display: none !important;
-        }
-
-        .payment-option {
-            break-inside: avoid;
-        }
+        color: var(--primary-600);
+        background: var(--primary-50);
+        padding: 0.75rem 1.5rem;
+        border-radius: var(--border-radius-sm);
+        display: inline-block;
+        letter-spacing: 2px;
     }
 
     @media (max-width: 768px) {
-        .invoice-details-section {
-            grid-template-columns: 1fr;
-            gap: 20px;
-        }
-
         .invoice-header {
-            flex-direction: column;
+            padding: 1.5rem;
         }
 
-        .invoice-title-section {
-            text-align: left;
-            margin-top: 20px;
+        .invoice-amount {
+            font-size: 2rem;
         }
 
         .action-buttons {
             flex-direction: column;
+        }
+
+        .action-buttons .btn {
             width: 100%;
         }
 
-        .btn {
-            width: 100%;
-            justify-content: center;
+        .invoice-items-table {
+            font-size: 0.875rem;
         }
 
-        .items-table {
-            display: block;
-            overflow-x: auto;
+        .invoice-items-table th,
+        .invoice-items-table td {
+            padding: 0.75rem 0.5rem;
         }
     }
 </style>
 {% endblock %}
 
 {% block content %}
-<div class="invoice-container">
-    <!-- Header Navigation -->
-    <div class="d-flex justify-content-between align-items-center mb-4">
-        <a href="{% url 'invoices:list' %}" class="btn btn-secondary">
-            <i class="fas fa-arrow-left me-2"></i>Back to Invoices
-        </a>
-        <h2>Invoice Details</h2>
-        <div></div> <!-- Empty div for spacing -->
-    </div>
-
-    <!-- Messages -->
-    {% if messages %}
-    <div class="mb-4">
-        {% for message in messages %}
-        <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
-            {{ message }}
-            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-        </div>
-        {% endfor %}
-    </div>
-    {% endif %}
-
-    <!-- Stock Warnings -->
-    {% if not can_pay and sale.status != 'PAID' %}
-    <div class="stock-error mb-4">
-        <strong><i class="fas fa-exclamation-triangle me-2"></i> Cannot Mark as Paid:</strong> {{ pay_message }}
-    </div>
-    {% endif %}
-
-    {% if stock_availability %}
-    <div class="mb-4">
-        {% for stock in stock_availability %}
-        {% if not stock.sufficient %}
-        <div class="stock-warning">
-            <strong><i class="fas fa-exclamation-triangle me-2"></i> Stock Warning:</strong>
-            {{ stock.product.name }} - Required: {{ stock.required }}, Available: {{ stock.available }}
-        </div>
-        {% endif %}
-        {% endfor %}
-    </div>
-    {% endif %}
-
+<div class="container-fluid">
     <!-- Invoice Header -->
     <div class="invoice-header">
-        <div class="company-info">
-            <div class="logo-container">
-                <div class="logo">{{ store.company.name|first|upper }}</div>
-                <div class="company-name">{{ store.company.name }}</div>
-            </div>
-            <div class="company-details">
-                <p>{{ store.company.physical_address|default:"No address specified" }}</p>
-                {% if store.company.phone %}<p>Phone: {{ store.company.phone }}</p>{% endif %}
-                {% if store.company.email %}<p>Email: {{ store.company.email }}</p>{% endif %}
-                {% if store.company.tin %}<p>TIN: {{ store.company.tin }}</p>{% endif %}
-                {% if store.company.website %}<p>Website: {{ store.company.website }}</p>{% endif %}
-            </div>
-        </div>
+        <div class="row align-items-center">
+            <div class="col-md-8">
+                <h1 class="mb-2">
+                    <i class="bi bi-file-earmark-text me-2"></i>
+                    {% trans "Invoice" %} #{{ invoice.invoice_number }}
+                </h1>
+                <div class="d-flex flex-wrap gap-2 align-items-center">
+                    <span class="invoice-status-badge status-{{ sale.payment_status }}">
+                        <i class="bi bi-circle-fill"></i>
+                        {{ sale.get_payment_status_display }}
+                    </span>
 
-        <div class="invoice-title-section">
-            <h1 class="invoice-title">INVOICE</h1>
-            <div class="invoice-meta">
-                <p><strong>Invoice #:</strong> {{ sale.document_number }}</p>
-                <p><strong>Date Issued:</strong> {{ sale.created_at|date:"F d, Y" }}</p>
-                <p><strong>Due Date:</strong> {{ sale.due_date|date:"F d, Y" }}
-                    {% if sale.status == 'PAID' %}
-                    <span class="status-badge status-paid">PAID</span>
-                    {% elif sale.status == 'PENDING_PAYMENT' %}
-                    <span class="status-badge status-pending">PENDING</span>
-                    {% elif sale.status == 'DRAFT' %}
-                    <span class="status-badge status-draft">DRAFT</span>
-                    {% elif sale.status == 'CANCELLED' %}
-                    <span class="status-badge status-cancelled">CANCELLED</span>
+                    {% if invoice.is_fiscalized %}
+                        <span class="efris-badge efris-fiscalized">
+                            <i class="bi bi-check-circle-fill"></i>
+                            {% trans "Fiscalized" %}
+                        </span>
+                    {% elif invoice.fiscalization_status == 'pending' %}
+                        <span class="efris-badge efris-pending">
+                            <i class="bi bi-clock"></i>
+                            {% trans "Pending Fiscalization" %}
+                        </span>
+                    {% elif invoice.fiscalization_status == 'failed' %}
+                        <span class="efris-badge efris-failed">
+                            <i class="bi bi-x-circle-fill"></i>
+                            {% trans "Fiscalization Failed" %}
+                        </span>
                     {% endif %}
-                </p>
-                {% if invoice.purchase_order %}
-                <p><strong>PO #:</strong> {{ invoice.purchase_order }}</p>
-                {% endif %}
+                </div>
             </div>
-        </div>
-    </div>
-
-    <!-- Invoice Details Section -->
-    <div class="invoice-details-section">
-        <div class="bill-to">
-            <h3 class="section-title">Bill To</h3>
-            <div class="client-info">
-                <p><strong>{{ sale.customer.name|default:"Walk-in Customer" }}</strong></p>
-                {% if sale.customer %}
-                    {% if sale.customer.email %}<p>{{ sale.customer.email }}</p>{% endif %}
-                    {% if sale.customer.phone %}<p>{{ sale.customer.phone }}</p>{% endif %}
-                    {% if sale.customer.physical_address %}<p>{{ sale.customer.physical_address }}</p>{% endif %}
-                    {% if sale.customer.tin %}<p>TIN: {{ sale.customer.tin }}</p>{% endif %}
-                {% endif %}
-            </div>
-        </div>
-
-        <div class="payment-info">
-            <h3 class="section-title">Payment Information</h3>
-            <div class="payment-details">
-                <p><strong>Payment Terms:</strong> Net {{ sale.payment_terms|default:"15" }}</p>
-                <p><strong>Payment Due:</strong> {{ sale.due_date|date:"F d, Y" }}</p>
-                <p><strong>Status:</strong>
-                    {% if sale.payment_status == 'PENDING' %}
-                    <span class="status-badge status-pending">Unpaid</span>
-                    {% elif sale.payment_status == 'PAID' %}
-                    <span class="status-badge status-paid">Paid</span>
-                    {% elif sale.payment_status == 'OVERDUE' %}
-                    <span class="status-badge status-overdue">Overdue</span>
-                    {% endif %}
-                </p>
-                {% if sale.days_overdue > 0 %}
-                <p class="text-danger"><strong>{{ sale.days_overdue }} days overdue</strong></p>
-                {% endif %}
-                <p><strong>Late Fee:</strong> 1.5% per month on overdue balances</p>
+            <div class="col-md-4 text-md-end mt-3 mt-md-0">
+                <div class="info-label">{% trans "Total Amount" %}</div>
+                <div class="invoice-amount">
+                    {{ sale.currency }} {{ sale.total_amount|money }}
+                </div>
             </div>
         </div>
     </div>
 
-    <!-- Items Table -->
-    <table class="items-table">
-        <thead>
-            <tr>
-                <th class="quantity">Qty</th>
-                <th class="description">Description</th>
-                <th class="type">Type</th>
-                <th class="rate">Unit Price</th>
-                <th class="discount">Discount</th>
-                <th class="tax">Tax</th>
-                <th class="amount">Amount</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for item in items %}
-            <tr>
-                <td class="quantity">{{ item.quantity }}</td>
-                <td class="description">
-                    <strong>{{ item.item_name }}</strong>
-                    {% if item.description and item.description != item.item_name %}
-                    <br><span style="color: #666; font-size: 14px;">{{ item.description }}</span>
-                    {% endif %}
-                </td>
-                <td class="type">
-                    {% if item.item_type == 'PRODUCT' %}
-                    <span class="badge bg-info">Product</span>
-                    {% else %}
-                    <span class="badge bg-success">Service</span>
-                    {% endif %}
-                </td>
-                <td class="rate">UGX {{ item.unit_price|floatformat:2|intcomma }}</td>
-                <td class="discount">
-                    {% if item.discount_amount > 0 %}
-                    {{ item.discount|floatformat:2 }}%<br>
-                    <small>(UGX {{ item.discount_amount|floatformat:2|intcomma }})</small>
-                    {% else %}
-                    -
-                    {% endif %}
-                </td>
-                <td class="tax">UGX {{ item.tax_amount|floatformat:2|intcomma }}</td>
-                <td class="amount"><strong>UGX {{ item.line_total|floatformat:2|intcomma }}</strong></td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
+    <div class="row">
+        <!-- Main Invoice Details -->
+        <div class="col-lg-8">
+            <!-- Invoice Information -->
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5 class="mb-0">
+                        <i class="bi bi-info-circle me-2"></i>
+                        {% trans "Invoice Information" %}
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <div class="invoice-info-card">
+                                <div class="info-label">{% trans "Issue Date" %}</div>
+                                <div class="info-value">
+                                    <i class="bi bi-calendar-event me-2"></i>
+                                    {{ invoice.issue_date|date:"M d, Y" }}
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <div class="invoice-info-card">
+                                <div class="info-label">{% trans "Due Date" %}</div>
+                                <div class="info-value">
+                                    <i class="bi bi-calendar-check me-2"></i>
+                                    {{ invoice.due_date|date:"M d, Y" }}
+                                    {% if invoice.is_overdue %}
+                                        <span class="badge bg-danger ms-2">
+                                            {{ invoice.days_overdue }} {% trans "days overdue" %}
+                                        </span>
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <div class="invoice-info-card">
+                                <div class="info-label">{% trans "Customer" %}</div>
+                                <div class="info-value">
+                                    <i class="bi bi-person me-2"></i>
+                                    {% if sale.customer %}
+                                        <a href="{% url 'customers:detail' sale.customer.id %}">
+                                            {{ sale.customer.name }}
+                                        </a>
+                                    {% else %}
+                                        {% trans "Walk-in Customer" %}
+                                    {% endif %}
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <div class="invoice-info-card">
+                                <div class="info-label">{% trans "Business Type" %}</div>
+                                <div class="info-value">
+                                    <i class="bi bi-building me-2"></i>
+                                    {{ invoice.get_business_type_display }}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
 
-    <!-- Totals Section -->
-    <div class="totals-section">
-        <table class="totals-table">
-            <tr>
-                <td class="amount-label">Subtotal:</td>
-                <td class="amount-value">UGX {{ sale.subtotal|floatformat:2|intcomma }}</td>
-            </tr>
-            {% if sale.discount_amount > 0 %}
-            <tr>
-                <td class="amount-label">Discount:</td>
-                <td class="amount-value text-danger">-UGX {{ sale.discount_amount|floatformat:2|intcomma }}</td>
-            </tr>
+            <!-- Invoice Items -->
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5 class="mb-0">
+                        <i class="bi bi-list-ul me-2"></i>
+                        {% trans "Invoice Items" %}
+                    </h5>
+                </div>
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table invoice-items-table mb-0">
+                            <thead>
+                                <tr>
+                                    <th>#</th>
+                                    <th>{% trans "Item" %}</th>
+                                    <th class="text-end">{% trans "Qty" %}</th>
+                                    <th class="text-end">{% trans "Unit Price" %}</th>
+                                    <th class="text-end">{% trans "Discount" %}</th>
+                                    <th class="text-end">{% trans "Tax" %}</th>
+                                    <th class="text-end">{% trans "Total" %}</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for item in sale.items.all %}
+                                <tr>
+                                    <td>{{ forloop.counter }}</td>
+                                    <td>
+                                        <div class="fw-semibold">{{ item.item_name }}</div>
+                                        {% if item.description %}
+                                            <small class="text-muted">{{ item.description }}</small>
+                                        {% endif %}
+                                    </td>
+                                    <td class="text-end">{{ item.quantity }}</td>
+                                    <td class="text-end">{{ sale.currency }} {{ item.unit_price|money }}</td>
+                                    <td class="text-end">
+                                        {% if item.discount_amount > 0 %}
+                                            {{ sale.currency }} {{ item.discount_amount|money }}
+                                        {% else %}
+                                            -
+                                        {% endif %}
+                                    </td>
+                                    <td class="text-end">{{ sale.currency }} {{ item.tax_amount|money }}</td>
+                                    <td class="text-end fw-semibold">
+                                        {{ sale.currency }} {{ item.total_price|money }}
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- Totals Section -->
+                    <div class="totals-section">
+                        <div class="total-row">
+                            <span>{% trans "Subtotal" %}:</span>
+                            <span class="fw-semibold">{{ sale.currency }} {{ sale.subtotal|money }}</span>
+                        </div>
+                        {% if sale.discount_amount > 0 %}
+                        <div class="total-row">
+                            <span>{% trans "Discount" %}:</span>
+                            <span class="text-danger">- {{ sale.currency }} {{ sale.discount_amount|money }}</span>
+                        </div>
+                        {% endif %}
+                        <div class="total-row">
+                            <span>{% trans "Tax" %}:</span>
+                            <span>{{ sale.currency }} {{ sale.tax_amount|money }}</span>
+                        </div>
+                        <div class="total-row">
+                            <span>{% trans "Total Amount" %}:</span>
+                            <span>{{ sale.currency }} {{ sale.total_amount|money }}</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Payment History -->
+            {% if invoice.payments.exists %}
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5 class="mb-0">
+                        <i class="bi bi-credit-card me-2"></i>
+                        {% trans "Payment History" %}
+                    </h5>
+                </div>
+                <div class="card-body">
+                    {% for payment in invoice.payments.all %}
+                    <div class="payment-history-card">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div>
+                                <div class="fw-semibold">
+                                    {{ sale.currency }} {{ payment.amount|money }}
+                                </div>
+                                <small class="text-muted">
+                                    <i class="bi bi-calendar me-1"></i>
+                                    {{ payment.payment_date|date:"M d, Y" }}
+                                    <span class="mx-2">|</span>
+                                    <i class="bi bi-wallet2 me-1"></i>
+                                    {{ payment.get_payment_method_display }}
+                                </small>
+                            </div>
+                            <div class="text-end">
+                                <span class="badge bg-success">
+                                    <i class="bi bi-check-circle me-1"></i>
+                                    {% trans "Paid" %}
+                                </span>
+                                {% if payment.transaction_reference %}
+                                <div class="small text-muted mt-1">
+                                    Ref: {{ payment.transaction_reference }}
+                                </div>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+
+                    <!-- Payment Summary -->
+                    <div class="mt-3 p-3 bg-light rounded">
+                        <div class="d-flex justify-content-between mb-2">
+                            <span>{% trans "Total Paid" %}:</span>
+                            <span class="fw-semibold text-success">
+                                {{ sale.currency }} {{ invoice.amount_paid|money }}
+                            </span>
+                        </div>
+                        <div class="d-flex justify-content-between">
+                            <span>{% trans "Outstanding" %}:</span>
+                            <span class="fw-semibold {% if invoice.amount_outstanding > 0 %}text-danger{% else %}text-success{% endif %}">
+                                {{ sale.currency }} {{ invoice.amount_outstanding|money }}
+                            </span>
+                        </div>
+                    </div>
+                </div>
+            </div>
             {% endif %}
-            <tr>
-                <td class="amount-label">Tax (included):</td>
-                <td class="amount-value">UGX {{ sale.tax_amount|floatformat:2|intcomma }}</td>
-            </tr>
-            <tr class="final-total">
-                <td class="amount-label">Total Due:</td>
-                <td class="amount-value">UGX {{ sale.total_amount|floatformat:2|intcomma }}</td>
-            </tr>
-            {% if sale.amount_paid > 0 %}
-            <tr>
-                <td class="amount-label">Amount Paid:</td>
-                <td class="amount-value text-success">UGX {{ sale.amount_paid|floatformat:2|intcomma }}</td>
-            </tr>
-            <tr>
-                <td class="amount-label">Amount Outstanding:</td>
-                <td class="amount-value text-danger">UGX {{ sale.amount_outstanding|floatformat:2|intcomma }}</td>
-            </tr>
-            {% endif %}
-        </table>
-    </div>
-
-    <!-- Payment Methods -->
-    <div class="payment-methods">
-        <h3 class="section-title">Accepted Payment Methods</h3>
-        <div class="payment-options">
-            <div class="payment-option">
-                <div class="payment-icon">
-                    <i class="fas fa-university"></i>
-                </div>
-                <div class="payment-details-text">
-                    <strong>Bank Transfer</strong><br>
-                    Bank: {{ store.company.bank_name|default:"First National Bank" }}<br>
-                    Account: {{ store.company.account_number|default:"123456789" }}<br>
-                    Branch: {{ store.company.bank_branch|default:"Main Branch" }}
-                </div>
-            </div>
-
-            <div class="payment-option">
-                <div class="payment-icon">
-                    <i class="fab fa-paypal"></i>
-                </div>
-                <div class="payment-details-text">
-                    <strong>Mobile Money</strong><br>
-                    MTN: {{ store.company.mtn_number|default:"0700 000 000" }}<br>
-                    Airtel: {{ store.company.airtel_number|default:"0750 000 000" }}<br>
-                    Reference: {{ sale.document_number }}
-                </div>
-            </div>
-
-            <div class="payment-option">
-                <div class="payment-icon">
-                    <i class="fas fa-credit-card"></i>
-                </div>
-                <div class="payment-details-text">
-                    <strong>Cash/Card</strong><br>
-                    Accepted at our office<br>
-                    Visa, MasterCard, American Express<br>
-                    <small>3% processing fee for cards</small>
-                </div>
-            </div>
         </div>
-    </div>
 
-    <!-- EFRIS Information -->
-    {% if invoice.is_fiscalized %}
-    <div class="efris-info">
-        <h6><i class="fas fa-check-circle"></i> EFRIS Fiscalized</h6>
-        <p class="mb-1"><strong>Fiscal Document Number:</strong> {{ invoice.fiscal_document_number }}</p>
-        {% if invoice.verification_code %}
-        <p class="mb-1"><strong>Verification Code:</strong> {{ invoice.verification_code }}</p>
-        {% endif %}
-        {% if invoice.fiscalization_time %}
-        <p class="mb-0"><strong>Fiscalization Time:</strong> {{ invoice.fiscalization_time|date:"F d, Y H:i" }}</p>
-        {% endif %}
-    </div>
-    {% endif %}
+        <!-- Sidebar -->
+        <div class="col-lg-4">
+            <!-- Actions Card -->
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5 class="mb-0">
+                        <i class="bi bi-gear me-2"></i>
+                        {% trans "Actions" %}
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div class="action-buttons">
+                        <!-- Print Invoice -->
+                        <a href="{% url 'invoices:print' invoice.pk %}"
+                           class="btn btn-primary w-100"
+                           target="_blank">
+                            <i class="bi bi-printer me-2"></i>
+                            {% trans "Print Invoice" %}
+                        </a>
 
-    <!-- Terms and Notes -->
-    {% if invoice.terms %}
-    <div class="notes-section mb-3">
-        <div class="notes-title">Terms & Conditions</div>
-        <p>{{ invoice.terms|linebreaks }}</p>
-    </div>
-    {% endif %}
+                        <!-- Download PDF -->
+                        <a href="{% url 'invoices:print' invoice.pk %}"
+                           class="btn btn-outline-primary w-100">
+                            <i class="bi bi-download me-2"></i>
+                            {% trans "Download PDF" %}
+                        </a>
 
-    {% if sale.notes %}
-    <div class="notes-section mb-3">
-        <div class="notes-title">Notes</div>
-        <p>{{ sale.notes|linebreaks }}</p>
-    </div>
-    {% endif %}
+                        <!-- Edit Invoice -->
+                        {% if not invoice.is_fiscalized and sale.payment_status != 'PAID' %}
+                        <a href="{% url 'invoices:update' invoice.pk %}"
+                           class="btn btn-outline-secondary w-100">
+                            <i class="bi bi-pencil me-2"></i>
+                            {% trans "Edit Invoice" %}
+                        </a>
+                        {% endif %}
 
-    <!-- Payment History -->
-    {% if payments %}
-    <div class="payment-history">
-        <h3 class="section-title">Payment History</h3>
-        {% for payment in payments %}
-        <div class="payment-item">
-            <div>
-                <strong>UGX {{ payment.amount|floatformat:2|intcomma }}</strong>
-                <br>
-                <small class="text-muted">
-                    {{ payment.created_at|date:"F d, Y H:i" }}
-                    {% if payment.transaction_reference %}
-                    • Ref: {{ payment.transaction_reference }}
+                        <!-- Add Payment -->
+                        {% if sale.payment_status != 'PAID' %}
+                        <button type="button"
+                                class="btn btn-success w-100"
+                                data-bs-toggle="modal"
+                                data-bs-target="#addPaymentModal">
+                            <i class="bi bi-cash-coin me-2"></i>
+                            {% trans "Add Payment" %}
+                        </button>
+                        {% endif %}
+
+                        <!-- Fiscalize Invoice -->
+                        {% if can_fiscalize and efris_status.enabled %}
+                        <button type="button"
+                                class="btn btn-warning w-100"
+                                data-bs-toggle="modal"
+                                data-bs-target="#fiscalizeModal">
+                            <i class="bi bi-shield-check me-2"></i>
+                            {% trans "Fiscalize with EFRIS" %}
+                        </button>
+                        {% endif %}
+
+                        <!-- Cancel Invoice -->
+                        {% if not invoice.is_fiscalized and sale.payment_status != 'PAID' %}
+                        <button type="button"
+                                class="btn btn-outline-danger w-100"
+                                onclick="confirmCancelInvoice()">
+                            <i class="bi bi-x-circle me-2"></i>
+                            {% trans "Cancel Invoice" %}
+                        </button>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+
+            <!-- EFRIS Information -->
+            {% if invoice.is_fiscalized %}
+            <div class="card mb-4">
+                <div class="card-header bg-success text-white">
+                    <h5 class="mb-0">
+                        <i class="bi bi-shield-check me-2"></i>
+                        {% trans "EFRIS Information" %}
+                    </h5>
+                </div>
+                <div class="card-body">
+                    {% if invoice.fiscal_document_number %}
+                    <div class="mb-3">
+                        <div class="info-label">{% trans "Fiscal Document Number" %}</div>
+                        <div class="info-value">{{ invoice.fiscal_document_number }}</div>
+                    </div>
                     {% endif %}
-                </small>
+
+                    {% if invoice.verification_code %}
+                    <div class="mb-3">
+                        <div class="info-label">{% trans "Verification Code" %}</div>
+                        <div class="verification-code">{{ invoice.verification_code }}</div>
+                    </div>
+                    {% endif %}
+
+                    {% if sale.qr_code %}
+                    <div class="qr-code-container">
+                        <img src="data:image/png;base64,{{ sale.qr_code }}"
+                             alt="QR Code"
+                             style="max-width: 200px;">
+                        <div class="small text-muted mt-2">
+                            {% trans "Scan to verify" %}
+                        </div>
+                    </div>
+                    {% endif %}
+
+                    {% if invoice.fiscalization_time %}
+                    <div class="mt-3">
+                        <small class="text-muted">
+                            <i class="bi bi-clock me-1"></i>
+                            {% trans "Fiscalized on" %} {{ invoice.fiscalization_time|date:"M d, Y H:i" }}
+                        </small>
+                    </div>
+                    {% endif %}
+                </div>
             </div>
-            <span class="badge bg-success">{{ payment.payment_method }}</span>
+            {% endif %}
+
+            <!-- Additional Information -->
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5 class="mb-0">
+                        <i class="bi bi-info-square me-2"></i>
+                        {% trans "Additional Information" %}
+                    </h5>
+                </div>
+                <div class="card-body">
+                    {% if invoice.terms %}
+                    <div class="mb-3">
+                        <div class="info-label">{% trans "Terms & Conditions" %}</div>
+                        <div class="small">{{ invoice.terms|linebreaks }}</div>
+                    </div>
+                    {% endif %}
+
+                    {% if invoice.purchase_order %}
+                    <div class="mb-3">
+                        <div class="info-label">{% trans "Purchase Order" %}</div>
+                        <div class="info-value">{{ invoice.purchase_order }}</div>
+                    </div>
+                    {% endif %}
+
+                    {% if invoice.operator_name %}
+                    <div class="mb-3">
+                        <div class="info-label">{% trans "Operator" %}</div>
+                        <div class="info-value">{{ invoice.operator_name }}</div>
+                    </div>
+                    {% endif %}
+
+                    <div class="mb-0">
+                        <div class="info-label">{% trans "Created By" %}</div>
+                        <div class="info-value">
+                            {{ invoice.created_by.get_full_name|default:invoice.created_by.username }}
+                        </div>
+                        <small class="text-muted">
+                            {{ invoice.created_at|date:"M d, Y H:i" }}
+                        </small>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Fiscalization History -->
+            {% if fiscalization_history %}
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5 class="mb-0">
+                        <i class="bi bi-clock-history me-2"></i>
+                        {% trans "Fiscalization History" %}
+                    </h5>
+                </div>
+                <div class="card-body">
+                    {% for audit in fiscalization_history %}
+                    <div class="mb-3 pb-3 {% if not forloop.last %}border-bottom{% endif %}">
+                        <div class="d-flex justify-content-between align-items-start">
+                            <div>
+                                <span class="badge {% if audit.success %}bg-success{% else %}bg-danger{% endif %} mb-1">
+                                    {{ audit.get_action_display }}
+                                </span>
+                                <div class="small text-muted">
+                                    {{ audit.timestamp|date:"M d, Y H:i" }}
+                                </div>
+                                {% if audit.user %}
+                                <div class="small text-muted">
+                                    by {{ audit.user.get_full_name }}
+                                </div>
+                                {% endif %}
+                            </div>
+                            <i class="bi {% if audit.success %}bi-check-circle text-success{% else %}bi-x-circle text-danger{% endif %}"></i>
+                        </div>
+                        {% if audit.error_message %}
+                        <div class="small text-danger mt-2">
+                            {{ audit.error_message }}
+                        </div>
+                        {% endif %}
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+            {% endif %}
         </div>
-        {% endfor %}
-    </div>
-    {% endif %}
-
-    <!-- Invoice Footer -->
-    <div class="invoice-footer">
-        <div class="footer-text">
-            <p>{{ store.company.name }} | {% if store.company.phone %}Phone: {{ store.company.phone }}{% endif %} | {% if store.company.email %}Email: {{ store.company.email }}{% endif %}</p>
-            <p>Thank you for your business! Please make payments within the specified terms to avoid late fees.</p>
-        </div>
-
-        <div class="action-buttons">
-            <button class="btn btn-primary" onclick="printInvoice()">
-                <i class="fas fa-print"></i> Print
-            </button>
-            <button class="btn btn-secondary" onclick="downloadPDF()">
-                <i class="fas fa-download"></i> PDF
-            </button>
-        </div>
-    </div>
-
-    <!-- Action Buttons Section -->
-    <div class="action-buttons mt-4">
-        <!-- Draft Actions -->
-        {% if sale.status == 'DRAFT' %}
-        <button type="button" class="btn btn-success" onclick="markAsSent()">
-            <i class="fas fa-paper-plane"></i> Mark as Sent
-        </button>
-        {% if can_edit %}
-        <a href="{% url 'invoice:invoice_edit' invoice.pk %}" class="btn btn-warning">
-            <i class="fas fa-edit"></i> Edit Invoice
-        </a>
-        {% endif %}
-        <button type="button" class="btn btn-danger" onclick="deleteInvoice()">
-            <i class="fas fa-trash"></i> Delete Draft
-        </button>
-        {% endif %}
-
-        <!-- Pending Payment Actions -->
-        {% if sale.status == 'PENDING_PAYMENT' %}
-        <button type="button" class="btn btn-success" onclick="showPaymentModal()" {% if not can_pay %}disabled{% endif %}>
-            <i class="fas fa-money-bill-wave"></i> Mark as Paid
-        </button>
-        {% if can_cancel %}
-        <button type="button" class="btn btn-danger" onclick="cancelInvoice()">
-            <i class="fas fa-ban"></i> Cancel
-        </button>
-        {% endif %}
-        {% endif %}
-
-        <!-- Additional Actions -->
-        {% if sale.customer and sale.customer.email %}
-        <button type="button" class="btn btn-outline-primary" onclick="emailInvoice()">
-            <i class="fas fa-envelope"></i> Email
-        </button>
-        {% endif %}
     </div>
 </div>
 
-<!-- Payment Modal -->
-<div class="modal fade" id="paymentModal" tabindex="-1">
+<!-- Add Payment Modal -->
+<div class="modal fade" id="addPaymentModal" tabindex="-1">
     <div class="modal-dialog">
         <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title">Record Payment</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-            </div>
-            <div class="modal-body">
-                <form id="paymentForm">
-                    {% csrf_token %}
-                    <div class="mb-3">
-                        <label class="form-label">Payment Method</label>
-                        <select name="payment_method" class="form-select" required>
-                            <option value="CASH">Cash</option>
-                            <option value="MOBILE_MONEY">Mobile Money</option>
-                            <option value="BANK_TRANSFER">Bank Transfer</option>
-                            <option value="CARD">Card</option>
-                            <option value="VOUCHER">Voucher</option>
-                        </select>
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label">Transaction Reference (Optional)</label>
-                        <input type="text" name="transaction_reference" class="form-control"
-                               placeholder="Enter reference number">
-                    </div>
+            <form method="post" action="{% url 'invoices:add_payment' invoice.pk %}">
+                {% csrf_token %}
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        <i class="bi bi-cash-coin me-2"></i>
+                        {% trans "Add Payment" %}
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    {{ payment_form.as_p }}
+
                     <div class="alert alert-info">
-                        <strong>Amount to Pay:</strong> UGX {{ sale.total_amount|floatformat:2|intcomma }}
+                        <strong>{% trans "Outstanding Amount" %}:</strong>
+                        {{ sale.currency }} {{ invoice.amount_outstanding|money }}
                     </div>
-                    <div class="alert alert-warning">
-                        <i class="fas fa-info-circle"></i> Stock will be deducted when marked as paid.
-                    </div>
-                </form>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                <button type="button" class="btn btn-success" onclick="submitPayment()">
-                    <i class="fas fa-check"></i> Confirm Payment
-                </button>
-            </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                        {% trans "Cancel" %}
+                    </button>
+                    <button type="submit" class="btn btn-success">
+                        <i class="bi bi-check-circle me-2"></i>
+                        {% trans "Add Payment" %}
+                    </button>
+                </div>
+            </form>
         </div>
     </div>
 </div>
 
-<!-- Cancel Modal -->
-<div class="modal fade" id="cancelModal" tabindex="-1">
+<!-- Fiscalize Modal -->
+{% if can_fiscalize %}
+<div class="modal fade" id="fiscalizeModal" tabindex="-1">
     <div class="modal-dialog">
         <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title">Cancel Invoice</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-            </div>
-            <div class="modal-body">
-                <form id="cancelForm">
-                    {% csrf_token %}
-                    <div class="mb-3">
-                        <label class="form-label">Reason for Cancellation</label>
-                        <textarea name="reason" class="form-control" rows="3" required
-                                  placeholder="Enter reason for cancelling this invoice"></textarea>
-                    </div>
+            <form method="post" action="{% url 'invoices:fiscalize' invoice.pk %}">
+                {% csrf_token %}
+                <div class="modal-header bg-warning">
+                    <h5 class="modal-title">
+                        <i class="bi bi-shield-check me-2"></i>
+                        {% trans "Fiscalize Invoice with EFRIS" %}
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
                     <div class="alert alert-warning">
-                        <i class="fas fa-exclamation-triangle"></i> This action cannot be undone.
+                        <i class="bi bi-exclamation-triangle me-2"></i>
+                        {% trans "This action will submit the invoice to EFRIS. Once fiscalized, the invoice cannot be modified." %}
                     </div>
-                </form>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-                <button type="button" class="btn btn-danger" onclick="submitCancel()">
-                    <i class="fas fa-ban"></i> Cancel Invoice
-                </button>
-            </div>
+
+                    {{ fiscalization_form.as_p }}
+
+                    <div class="mt-3">
+                        <h6>{% trans "Invoice Summary" %}:</h6>
+                        <ul class="list-unstyled">
+                            <li><strong>{% trans "Invoice Number" %}:</strong> {{ invoice.invoice_number }}</li>
+                            <li><strong>{% trans "Customer" %}:</strong> {{ sale.customer.name|default:"Walk-in Customer" }}</li>
+                            <li><strong>{% trans "Total Amount" %}:</strong> {{ sale.currency }} {{ sale.total_amount|money }}</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                        {% trans "Cancel" %}
+                    </button>
+                    <button type="submit" class="btn btn-warning">
+                        <i class="bi bi-shield-check me-2"></i>
+                        {% trans "Fiscalize Now" %}
+                    </button>
+                </div>
+            </form>
         </div>
     </div>
 </div>
+{% endif %}
+
 {% endblock %}
 
 {% block extra_js %}
 <script>
-const invoiceId = {{ sale.id }};
-const csrfToken = '{{ csrf_token }}';
-
-function markAsSent() {
-    if (confirm('Mark this invoice as sent to customer?')) {
-        fetch(`/invoices/${invoiceId}/mark-sent/`, {
-            method: 'POST',
-            headers: {
-                'X-CSRFToken': csrfToken,
-                'Content-Type': 'application/json'
-            }
-        })
-        .then(response => response.json())
-        .then(data => {
-            if (data.success) {
-                location.reload();
-            } else {
-                alert('Error: ' + data.error);
-            }
-        })
-        .catch(error => {
-            alert('Error marking invoice as sent');
-            console.error(error);
-        });
-    }
-}
-
-function showPaymentModal() {
-    const modal = new bootstrap.Modal(document.getElementById('paymentModal'));
-    modal.show();
-}
-
-function submitPayment() {
-    const form = document.getElementById('paymentForm');
-    const formData = new FormData(form);
-
-    fetch(`/invoices/${invoiceId}/mark-paid/`, {
-        method: 'POST',
-        headers: {
-            'X-CSRFToken': csrfToken
-        },
-        body: formData
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.success) {
-            window.location.href = data.redirect_url;
-        } else {
-            alert('Error: ' + data.error);
-        }
-    })
-    .catch(error => {
-        alert('Error recording payment');
-        console.error(error);
-    });
-}
-
-function cancelInvoice() {
-    const modal = new bootstrap.Modal(document.getElementById('cancelModal'));
-    modal.show();
-}
-
-function submitCancel() {
-    const form = document.getElementById('cancelForm');
-    const formData = new FormData(form);
-
-    fetch(`/invoices/${invoiceId}/cancel/`, {
-        method: 'POST',
-        headers: {
-            'X-CSRFToken': csrfToken
-        },
-        body: formData
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.success) {
-            window.location.href = data.redirect_url;
-        } else {
-            alert('Error: ' + data.error);
-        }
-    })
-    .catch(error => {
-        alert('Error cancelling invoice');
-        console.error(error);
-    });
-}
-
-function deleteInvoice() {
-    if (confirm('Are you sure you want to delete this draft invoice? This action cannot be undone.')) {
+function confirmCancelInvoice() {
+    if (confirm('{% trans "Are you sure you want to cancel this invoice? This action cannot be undone." %}')) {
         const form = document.createElement('form');
         form.method = 'POST';
-        form.action = `/invoices/${invoiceId}/delete/`;
+        form.action = '';
 
         const csrfInput = document.createElement('input');
         csrfInput.type = 'hidden';
         csrfInput.name = 'csrfmiddlewaretoken';
-        csrfInput.value = csrfToken;
+        csrfInput.value = '{{ csrf_token }}';
 
         form.appendChild(csrfInput);
-        document.body.appendChild(form);
-        form.submit();
-    }
+document.body.appendChild(form);
+form.submit();
 }
-
-function printInvoice() {
-    window.print();
 }
-
-function downloadPDF() {
-    alert('PDF download feature coming soon!');
-    // Implement PDF generation
-}
-
-function emailInvoice() {
-    alert('Email feature coming soon!');
-    // Implement email functionality
-}
+// Auto-hide success messages
+document.addEventListener('DOMContentLoaded', function() {
+// Bootstrap tooltips
+const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+tooltipTriggerList.map(function (tooltipTriggerEl) {
+return new bootstrap.Tooltip(tooltipTriggerEl);
+});
+});
 </script>
-
-<style media="print">
-    .btn, .action-buttons, nav, .sidebar {
-        display: none !important;
-    }
-    .invoice-header {
-        border-color: #2c5aa0 !important;
-    }
-    .items-table thead {
-        background-color: #2c5aa0 !important;
-        -webkit-print-color-adjust: exact;
-        print-color-adjust: exact;
-    }
-    .final-total {
-        background-color: #f0f7ff !important;
-        -webkit-print-color-adjust: exact;
-        print-color-adjust: exact;
-    }
-</style>
 {% endblock %}

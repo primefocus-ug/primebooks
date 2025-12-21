@@ -208,6 +208,60 @@ class ReportFilterForm(forms.Form):
         return cleaned_data
 
 
+class CombinedReportForm(forms.Form):
+    """Form for combined business reports"""
+
+    REPORT_TYPE_CHOICES = [
+        ('SALES_SUMMARY', _('Sales Summary')),
+        ('PRODUCT_PERFORMANCE', _('Product Performance')),
+        ('INVENTORY_STATUS', _('Inventory Status')),
+        ('PROFIT_LOSS', _('Profit & Loss Statement')),
+        ('EXPENSE_REPORT', _('Expense Report')),
+        ('EXPENSE_ANALYTICS', _('Expense Analytics')),
+        ('Z_REPORT', _('Z-Report (Daily Summary)')),
+        ('EFRIS_COMPLIANCE', _('EFRIS Compliance')),
+        ('CASHIER_PERFORMANCE', _('Cashier Performance')),
+        ('STOCK_MOVEMENT', _('Stock Movement')),
+        ('PRICE_LOOKUP', _('Price Lookup')),
+        ('CUSTOMER_ANALYTICS', _('Customer Analytics')),
+    ]
+
+    start_date = forms.DateField(
+        label=_("Start Date"),
+        widget=forms.DateInput(attrs={'type': 'date'}),
+        required=False
+    )
+
+    end_date = forms.DateField(
+        label=_("End Date"),
+        widget=forms.DateInput(attrs={'type': 'date'}),
+        required=False
+    )
+
+    store = forms.ModelChoiceField(
+        queryset=Store.objects.none(),
+        label=_("Store"),
+        required=False,
+        empty_label=_("All Stores")
+    )
+
+    report_types = forms.MultipleChoiceField(
+        choices=REPORT_TYPE_CHOICES,
+        label=_("Select Reports to Include"),
+        widget=forms.CheckboxSelectMultiple,
+        required=True,
+        initial=['SALES_SUMMARY', 'PROFIT_LOSS', 'INVENTORY_STATUS', 'EXPENSE_REPORT']
+    )
+
+    def __init__(self, *args, **kwargs):
+        user = kwargs.pop('user', None)
+        super().__init__(*args, **kwargs)
+
+        if user:
+            from stores.utils import get_user_accessible_stores
+            stores = get_user_accessible_stores(user)
+            self.fields['store'].queryset = stores
+
 class SalesReportForm(ReportFilterForm):
     """Extended form for sales reports with additional filters."""
     GROUP_BY_CHOICES = [

@@ -300,19 +300,46 @@ class InvoiceCreateView(LoginRequiredMixin, PermissionRequiredMixin, CreateView)
             return redirect('invoices:list')
 
         with tenant_context(company):
+            sale = form.cleaned_data['sale']
+
             # Check if sale is already an invoice
-            if form.cleaned_data['sale'].document_type == 'INVOICE':
-                messages.error(
-                    self.request,
-                    'This sale is already an invoice'
-                )
+            if sale.document_type == 'INVOICE':
+                messages.error(self.request, 'This sale is already an invoice')
                 return self.form_invalid(form)
 
-            # Update sale document type
-            sale = form.cleaned_data['sale']
-            sale.document_type = 'INVOICE'
-            sale.save()
+            # Use the proper conversion method if it's a proforma/estimate
+            if sale.document_type in ['PROFORMA', 'ESTIMATE']:
+                try:
+                    # Convert using sale's method
+                    converted_sale = sale.convert_to_invoice(
+                        due_date=form.cleaned_data.get('due_date'),
+                        terms=form.cleaned_data.get('terms')
+                    )
+                    sale = converted_sale  # Use the new sale
+                except ValidationError as e:
+                    messages.error(self.request, f'Conversion failed: {e}')
+                    return self.form_invalid(form)
+            else:
+                # For receipts, create a new invoice sale
+                from sales.models import Sale as SaleModel
+                sale = SaleModel.objects.create(
+                    store=sale.store,
+                    created_by=self.request.user,
+                    customer=sale.customer,
+                    document_type='INVOICE',
+                    payment_method='CREDIT',
+                    due_date=form.cleaned_data.get('due_date'),
+                    subtotal=sale.subtotal,
+                    tax_amount=sale.tax_amount,
+                    discount_amount=sale.discount_amount,
+                    total_amount=sale.total_amount,
+                    currency=sale.currency,
+                    notes=f"Created from {sale.document_type.lower()} #{sale.document_number}",
+                    duplicated_from=sale
+                )
 
+            # Now create invoice detail
+            form.instance.sale = sale
             form.instance.created_by = self.request.user
             response = super().form_valid(form)
 
@@ -1274,10 +1301,12 @@ def invoice_dashboard(request):
             sale__document_type='INVOICE'
         ).select_related('sale')
 
-        # Metrics
+        # Debug: Check if we're finding invoices
         total_invoices = invoices.count()
+        logger.info(f"DEBUG: Found {total_invoices} invoices for company {company.name}")
+
         invoices_this_month = invoices.filter(
-            created_at__gte=this_month
+            sale__created_at__gte=this_month  # FIXED: Use sale__created_at
         ).count()
 
         # FIX: Use payment_status
@@ -1303,10 +1332,28 @@ def invoice_dashboard(request):
             avg=Avg('sale__total_amount')
         )['avg'] or 0
 
-        # Recent activity
+        # Calculate performance metrics
+        total_invoiced_amount = invoices.aggregate(
+            total=Sum('sale__total_amount')
+        )['total'] or 0
+        collection_rate = (total_revenue / total_invoiced_amount * 100) if total_invoiced_amount > 0 else 0
+
+        # Calculate on-time payment rate
+        from django.db.models import F
+        on_time_payments = InvoicePayment.objects.filter(
+            invoice__in=invoices,
+            invoice__sale__payment_status='PAID',
+            payment_date__lte=F('invoice__sale__due_date')
+        ).count()
+        total_paid_invoices = paid_invoices.count()
+        on_time_rate = (on_time_payments / total_paid_invoices * 100) if total_paid_invoices > 0 else 0
+
+        fiscalization_rate = (fiscalized_invoices / total_invoices * 100) if total_invoices > 0 else 0
+
+        # Recent activity - FIXED: Use proper ordering
         recent_invoices = invoices.select_related(
-            'sale__customer', 'created_by'
-        ).order_by('-created_at')[:10]
+            'sale__customer', 'sale__created_by'
+        ).order_by('-sale__created_at')[:10]  # Use sale__created_at
 
         recent_payments = InvoicePayment.objects.filter(
             invoice__sale__store__company=company
@@ -1314,12 +1361,21 @@ def invoice_dashboard(request):
             'invoice__sale', 'processed_by'
         ).order_by('-created_at')[:10]
 
-        # Upcoming due dates
+        # Upcoming due dates - add days_until_due
         upcoming_due = today + timedelta(days=7)
-        upcoming_invoices = invoices.filter(
+        upcoming_invoices_qs = invoices.filter(
             sale__due_date__range=[today, upcoming_due],
             sale__payment_status__in=['PENDING', 'PARTIALLY_PAID']
         ).select_related('sale__customer').order_by('sale__due_date')[:5]
+
+        # Convert to list and add days_until_due
+        upcoming_invoices = []
+        for invoice in upcoming_invoices_qs:
+            if invoice.due_date:
+                invoice.days_until_due = (invoice.due_date - today).days
+            else:
+                invoice.days_until_due = 0
+            upcoming_invoices.append(invoice)
 
         context = {
             'metrics': {
@@ -1331,10 +1387,14 @@ def invoice_dashboard(request):
                 'overdue_invoices': overdue_invoices,
                 'fiscalized_invoices': fiscalized_invoices,
                 'avg_invoice_amount': avg_invoice_amount,
+                'collection_rate': round(collection_rate, 1),
+                'on_time_rate': round(on_time_rate, 1),
+                'fiscalization_rate': round(fiscalization_rate, 1),
             },
             'recent_invoices': recent_invoices,
             'recent_payments': recent_payments,
             'upcoming_invoices': upcoming_invoices,
+            'EFRIS_ENABLED': getattr(company, 'efris_enabled', False),
         }
 
         return render(request, 'invoices/dashboard.html', context)

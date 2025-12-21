@@ -267,6 +267,15 @@
     box-shadow: 0 0 0 0.25rem rgba(var(--primary-rgb, 0, 123, 255), 0.15);
 }
 
+.form-control:read-only {
+    background-color: #f8f9fa;
+    cursor: not-allowed;
+}
+
+[data-theme="dark"] .form-control:read-only {
+    background-color: #2d3748;
+}
+
 /* Enhanced File Upload */
 .file-upload-area {
     border: 2px dashed #e1e5e9;
@@ -403,6 +412,40 @@
 
 [data-theme="dark"] .field-group {
     background: rgba(30, 41, 59, 0.5);
+}
+
+/* Phone validation feedback */
+.phone-valid {
+    border-color: #28a745 !important;
+}
+
+.phone-invalid {
+    border-color: #dc3545 !important;
+}
+
+/* Certificate fields */
+.certificate-field {
+    font-family: 'Courier New', monospace;
+    font-size: 12px;
+}
+
+/* Spinning animation */
+.spinning {
+    animation: spin 1s linear infinite;
+}
+
+/* Cursor pointer for clickable elements */
+.cursor-pointer {
+    cursor: pointer;
+}
+
+/* Field error styling */
+.field-error {
+    border-color: #dc3545 !important;
+}
+
+.field-error:focus {
+    box-shadow: 0 0 0 0.25rem rgba(220, 53, 69, 0.25) !important;
 }
 </style>
 {% endblock %}
@@ -557,28 +600,28 @@
             <!-- Location Setting Options -->
             <div class="location-options-grid">
                 <!-- Option 1: Use My Current Location -->
-                <div class="location-option-card" id="useCurrentLocation">
+                <div class="location-option-card" id="useCurrentLocation" role="button" aria-label="{% trans 'Use my current location' %}" tabindex="0">
                     <i class="bi bi-crosshair"></i>
                     <h6>{% trans "Use My Location" %}</h6>
                     <p>{% trans "Get GPS from your device" %}</p>
                 </div>
 
                 <!-- Option 2: Search Address -->
-                <div class="location-option-card" id="searchAddress">
+                <div class="location-option-card" id="searchAddress" role="button" aria-label="{% trans 'Search by address' %}" tabindex="0">
                     <i class="bi bi-search"></i>
                     <h6>{% trans "Search Address" %}</h6>
                     <p>{% trans "Find location by address" %}</p>
                 </div>
 
                 <!-- Option 3: Click on Map -->
-                <div class="location-option-card" id="clickOnMap">
+                <div class="location-option-card" id="clickOnMap" role="button" aria-label="{% trans 'Click on map' %}" tabindex="0">
                     <i class="bi bi-map"></i>
                     <h6>{% trans "Click on Map" %}</h6>
                     <p>{% trans "Point and click location" %}</p>
                 </div>
 
                 <!-- Option 4: Enter Manually -->
-                <div class="location-option-card" id="enterManually">
+                <div class="location-option-card" id="enterManually" role="button" aria-label="{% trans 'Enter coordinates manually' %}" tabindex="0">
                     <i class="bi bi-keyboard"></i>
                     <h6>{% trans "Enter Manually" %}</h6>
                     <p>{% trans "Type coordinates directly" %}</p>
@@ -644,6 +687,7 @@
                     {% if form.latitude.errors %}
                         <div class="text-danger small mt-1">{{ form.latitude.errors.0 }}</div>
                     {% endif %}
+                    <small class="form-text text-muted">{% trans "Uganda range: -2.0° to 5.0°" %}</small>
                 </div>
 
                 <div class="col-md-4 mb-3">
@@ -654,6 +698,7 @@
                     {% if form.longitude.errors %}
                         <div class="text-danger small mt-1">{{ form.longitude.errors.0 }}</div>
                     {% endif %}
+                    <small class="form-text text-muted">{% trans "Uganda range: 29.0° to 36.0°" %}</small>
                 </div>
 
                 <div class="col-md-4 mb-3">
@@ -669,6 +714,11 @@
                         <option value="Kampala">
                         <option value="Wakiso">
                         <option value="Mukono">
+                        <option value="Jinja">
+                        <option value="Mbarara">
+                        <option value="Gulu">
+                        <option value="Lira">
+                        <option value="Mbale">
                     </datalist>
                     {% if form.region.errors %}
                         <div class="text-danger small mt-1">{{ form.region.errors.0 }}</div>
@@ -706,10 +756,13 @@
             <div class="row">
                 <div class="col-md-6 mb-3">
                     <label for="{{ form.phone.id_for_label }}" class="form-label">
-                        {% trans "Primary Phone" %}
+                        {% trans "Primary Phone" %} *
                     </label>
                     {{ form.phone }}
-                    <small class="form-text text-muted">{% trans "Include country code (e.g., +256XXXXXXXXX)" %}</small>
+                    <div class="form-text">
+                        <small class="text-muted">{% trans "Include country code (e.g., +256XXXXXXXXX)" %}</small>
+                        <small class="phone-validation-feedback d-none text-danger"></small>
+                    </div>
                     {% if form.phone.errors %}
                         <div class="text-danger small mt-1">{{ form.phone.errors.0 }}</div>
                     {% endif %}
@@ -720,7 +773,10 @@
                         {% trans "Secondary Phone" %}
                     </label>
                     {{ form.secondary_phone }}
-                    <small class="form-text text-muted">{% trans "Optional additional contact number" %}</small>
+                    <div class="form-text">
+                        <small class="text-muted">{% trans "Optional additional contact number" %}</small>
+                        <small class="phone-validation-feedback d-none text-danger"></small>
+                    </div>
                     {% if form.secondary_phone.errors %}
                         <div class="text-danger small mt-1">{{ form.secondary_phone.errors.0 }}</div>
                     {% endif %}
@@ -779,212 +835,268 @@
 
     <!-- EFRIS Configuration Section -->
     <div class="form-section">
-        <h5 class="section-header">
-            <i class="bi bi-receipt me-2"></i>{% trans "EFRIS Configuration" %}
-        </h5>
-        <div class="form-content">
-            <div class="help-box">
-                <i class="bi bi-info-circle me-2"></i>
-                <strong>{% trans "EFRIS Setup:" %}</strong> {% trans "Configure tax compliance settings for this store." %}
-            </div>
+    <h5 class="section-header">
+        <i class="bi bi-receipt me-2"></i>{% trans "EFRIS Configuration" %}
+    </h5>
+    <div class="form-content">
+        <div class="help-box">
+            <i class="bi bi-info-circle me-2"></i>
+            <strong>{% trans "EFRIS Setup:" %}</strong> {% trans "Configure tax compliance settings for this store." %}
+        </div>
 
-            <!-- Configuration Status -->
-            {% if form.instance.pk %}
-            <div class="efris-config-card mb-4">
-                <div class="d-flex justify-content-between align-items-center">
-                    <div>
-                        <h6 class="mb-1"><i class="bi bi-gear me-2"></i>{% trans "Configuration Status" %}</h6>
-                        {% with status=form.instance.efris_config_status %}
-                            <p class="mb-1"><strong>{% trans "Source:" %}</strong>
-                                <span class="badge bg-primary badge-enhanced">{{ status.config_source|title }}</span>
-                            </p>
-                            <p class="mb-1"><strong>{% trans "Configured:" %}</strong>
-                                {% if status.configured %}
-                                    <span class="badge bg-success badge-enhanced">{% trans "Yes" %}</span>
-                                {% else %}
-                                    <span class="badge bg-warning badge-enhanced">{% trans "No" %}</span>
-                                {% endif %}
-                            </p>
-                            {% if status.missing_fields %}
-                                <p class="mb-0"><strong>{% trans "Missing:" %}</strong>
-                                    <span class="text-warning">{{ status.missing_fields|join:", " }}</span>
-                                </p>
+        <!-- Configuration Status -->
+        {% if form.instance.pk %}
+        <div class="efris-config-card mb-4">
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <h6 class="mb-1"><i class="bi bi-gear me-2"></i>{% trans "Configuration Status" %}</h6>
+                    {% with status=form.instance.efris_config_status %}
+                        <p class="mb-1"><strong>{% trans "Source:" %}</strong>
+                            <span class="badge bg-primary badge-enhanced">{{ status.config_source|title }}</span>
+                        </p>
+                        <p class="mb-1"><strong>{% trans "Configured:" %}</strong>
+                            {% if status.configured %}
+                                <span class="badge bg-success badge-enhanced">{% trans "Yes" %}</span>
+                            {% else %}
+                                <span class="badge bg-warning badge-enhanced">{% trans "No" %}</span>
                             {% endif %}
-                        {% endwith %}
-                    </div>
-                    <div>
-                        <span class="efris-status-badge {% if object.efris_enabled %}bg-success{% else %}bg-secondary{% endif %} text-white">
-                            {% if object.efris_enabled %}{% trans "Enabled" %}{% else %}{% trans "Disabled" %}{% endif %}
-                        </span>
-                    </div>
+                        </p>
+                        {% if status.missing_fields %}
+                            <p class="mb-0"><strong>{% trans "Missing:" %}</strong>
+                                <span class="text-warning">{{ status.missing_fields|join:", " }}</span>
+                            </p>
+                        {% endif %}
+                    {% endwith %}
+                </div>
+                <div>
+                    <span class="efris-status-badge {% if object.efris_enabled %}bg-success{% else %}bg-secondary{% endif %} text-white">
+                        {% if object.efris_enabled %}{% trans "Enabled" %}{% else %}{% trans "Disabled" %}{% endif %}
+                    </span>
                 </div>
             </div>
-            {% endif %}
+        </div>
+        {% endif %}
 
-            <!-- EFRIS Toggle Row -->
-            <div class="efris-toggle-wrapper">
-                <div class="row align-items-center">
-                    <div class="col-md-6">
-                        <div class="form-check form-switch">
-                            {{ form.use_company_efris }}
-                            <label class="form-check-label" for="{{ form.use_company_efris.id_for_label }}">
-                                <strong>{% trans "Use Company-Wide EFRIS Settings" %}</strong>
-                            </label>
-                        </div>
-                        <small class="form-text text-muted">
-                            {{ form.use_company_efris.help_text }}
-                        </small>
+        <!-- EFRIS Toggle Row -->
+        <div class="efris-toggle-wrapper">
+            <div class="row align-items-center">
+                <div class="col-md-6">
+                    <div class="form-check form-switch">
+                        {{ form.use_company_efris }}
+                        <label class="form-check-label" for="{{ form.use_company_efris.id_for_label }}">
+                            <strong>{% trans "Use Company EFRIS Configuration" %}</strong>
+                        </label>
                     </div>
+                    <small class="form-text text-muted">
+                        {{ form.use_company_efris.help_text }}
+                    </small>
+                </div>
 
-                    <div class="col-md-6">
-                        <div class="form-check">
-                            {{ form.copy_from_company }}
-                            <label class="form-check-label" for="{{ form.copy_from_company.id_for_label }}">
-                                <strong>{% trans "Copy from Company Configuration" %}</strong>
-                            </label>
-                        </div>
-                        <small class="form-text text-muted">
-                            {{ form.copy_from_company.help_text }}
-                        </small>
+                <div class="col-md-6">
+                    <div class="form-check">
+                        {{ form.copy_from_company }}
+                        <label class="form-check-label" for="{{ form.copy_from_company.id_for_label }}">
+                            <strong>{% trans "Copy from Company Configuration" %}</strong>
+                        </label>
                     </div>
+                    <small class="form-text text-muted">
+                        {{ form.copy_from_company.help_text }}
+                    </small>
                 </div>
             </div>
+        </div>
 
-            <!-- EFRIS Basic Fields -->
+        <!-- Global EFRIS Settings (Always Visible) -->
+        <div class="mb-4">
+            <h6 class="mb-3"><i class="bi bi-gear-wide-connected me-2"></i>{% trans "Global EFRIS Settings" %}</h6>
+
             <div class="row">
+                <div class="col-md-6 mb-3">
+                    <div class="form-check form-switch">
+                        {{ form.efris_enabled }}
+                        <label class="form-check-label" for="{{ form.efris_enabled.id_for_label }}">
+                            <strong>{% trans "EFRIS Enabled" %}</strong>
+                        </label>
+                    </div>
+                    <small class="form-text text-muted d-block">
+                        {% trans "Enable EFRIS integration for this store" %}
+                    </small>
+                    {% if form.efris_enabled.errors %}
+                        <div class="text-danger small mt-1">{{ form.efris_enabled.errors.0 }}</div>
+                    {% endif %}
+                </div>
+
                 <div class="col-md-6 mb-3">
                     <label for="{{ form.efris_device_number.id_for_label }}" class="form-label">
                         {% trans "EFRIS Device Number" %}
                     </label>
                     {{ form.efris_device_number }}
+                    <small class="form-text text-muted">{% trans "Device number assigned by URA" %}</small>
                     {% if form.efris_device_number.errors %}
                         <div class="text-danger small mt-1">{{ form.efris_device_number.errors.0 }}</div>
                     {% endif %}
                 </div>
+            </div>
+        </div>
 
-                <div class="col-md-6 mb-3">
-                    <label class="form-label d-block">{% trans "EFRIS Status" %}</label>
-                    <div class="form-check form-switch">
-                        {{ form.efris_enabled }}
-                        <label class="form-check-label" for="{{ form.efris_enabled.id_for_label }}">
-                            {% trans "Enable EFRIS" %}
+        <!-- Store-Specific EFRIS Fields (Conditional) -->
+        <div id="storeEfrisFields" style="display: none;">
+            <div class="advanced-settings">
+                <h6 class="mb-3"><i class="bi bi-building me-2"></i>{% trans "Store-Specific EFRIS Settings" %}</h6>
+                <p class="text-muted mb-3">
+                    <i class="bi bi-info-circle me-1"></i>
+                    {% trans "These settings will override company-level EFRIS configuration for this store only." %}
+                </p>
+
+                <!-- TIN and Certificate Fingerprint -->
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label for="{{ form.tin.id_for_label }}" class="form-label">
+                            {% trans "Store TIN Number" %} *
                         </label>
+                        {{ form.tin }}
+                        <small class="form-text text-muted">{% trans "Tax Identification Number for this store" %}</small>
+                        {% if form.tin.errors %}
+                            <div class="text-danger small mt-1">{{ form.tin.errors.0 }}</div>
+                        {% endif %}
+                    </div>
+
+                    <div class="col-md-6 mb-3">
+                        <label for="{{ form.store_efris_certificate_fingerprint.id_for_label }}" class="form-label">
+                            {% trans "Certificate Fingerprint" %}
+                        </label>
+                        {{ form.store_efris_certificate_fingerprint }}
+                        <small class="form-text text-muted">{% trans "Auto-generated when certificate is uploaded" %}</small>
+                        {% if form.store_efris_certificate_fingerprint.errors %}
+                            <div class="text-danger small mt-1">{{ form.store_efris_certificate_fingerprint.errors.0 }}</div>
+                        {% endif %}
                     </div>
                 </div>
-            </div>
 
-            <!-- Store-Specific EFRIS Fields (Conditional) -->
-            <div id="storeEfrisFields" style="display: none;">
-                <div class="advanced-settings">
-                    <h6 class="mb-3"><i class="bi bi-building me-2"></i>{% trans "Store-Specific EFRIS Configuration" %}</h6>
+                <!-- Certificate Files -->
+                <div class="mb-3">
+                    <label for="{{ form.store_efris_private_key.id_for_label }}" class="form-label">
+                        {% trans "Store Private Key (PEM)" %} *
+                    </label>
+                    {{ form.store_efris_private_key }}
+                    <small class="form-text text-muted">{% trans "RSA private key in PEM format" %}</small>
+                    {% if form.store_efris_private_key.errors %}
+                        <div class="text-danger small mt-1">{{ form.store_efris_private_key.errors.0 }}</div>
+                    {% endif %}
+                </div>
 
-                    <!-- TIN and Certificate Fingerprint -->
-                    <div class="row">
-                        <div class="col-md-6 mb-3">
-                            <label for="{{ form.tin.id_for_label }}" class="form-label">
-                                {% trans "TIN Number" %} *
-                            </label>
-                            {{ form.tin }}
-                            {% if form.tin.errors %}
-                                <div class="text-danger small mt-1">{{ form.tin.errors.0 }}</div>
-                            {% endif %}
-                        </div>
+                <div class="mb-3">
+                    <label for="{{ form.store_efris_public_certificate.id_for_label }}" class="form-label">
+                        {% trans "Store Public Certificate (PEM)" %} *
+                    </label>
+                    {{ form.store_efris_public_certificate }}
+                    <small class="form-text text-muted">{% trans "X.509 certificate in PEM format" %}</small>
+                    {% if form.store_efris_public_certificate.errors %}
+                        <div class="text-danger small mt-1">{{ form.store_efris_public_certificate.errors.0 }}</div>
+                    {% endif %}
+                </div>
 
-                        <div class="col-md-6 mb-3">
-                            <label for="{{ form.store_efris_certificate_fingerprint.id_for_label }}" class="form-label">
-                                {% trans "Certificate Fingerprint" %}
-                            </label>
-                            {{ form.store_efris_certificate_fingerprint }}
-                            <small class="form-text text-muted">{% trans "Auto-generated when certificate is uploaded" %}</small>
-                        </div>
-                    </div>
-
-
-
-                    <!-- Certificate Files -->
-                    <div class="mb-3">
-                        <label for="{{ form.store_efris_private_key.id_for_label }}" class="form-label">
-                            {% trans "Private Key (PEM)" %} *
+                <!-- Advanced Settings -->
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label for="{{ form.store_efris_key_password.id_for_label }}" class="form-label">
+                            {% trans "Key Password" %}
                         </label>
-                        {{ form.store_efris_private_key }}
-                        <small class="form-text text-muted">{% trans "RSA private key in PEM format" %}</small>
-                        {% if form.store_efris_private_key.errors %}
-                            <div class="text-danger small mt-1">{{ form.store_efris_private_key.errors.0 }}</div>
+                        {{ form.store_efris_key_password }}
+                        <small class="form-text text-muted">{% trans "Password for encrypted private key" %}</small>
+                        {% if form.store_efris_key_password.errors %}
+                            <div class="text-danger small mt-1">{{ form.store_efris_key_password.errors.0 }}</div>
                         {% endif %}
                     </div>
 
-                    <div class="mb-3">
-                        <label for="{{ form.store_efris_public_certificate.id_for_label }}" class="form-label">
-                            {% trans "Public Certificate (PEM)" %} *
+                    <div class="col-md-6 mb-3">
+                        <label for="{{ form.store_efris_integration_mode.id_for_label }}" class="form-label">
+                            {% trans "Integration Mode" %}
                         </label>
-                        {{ form.store_efris_public_certificate }}
-                        <small class="form-text text-muted">{% trans "X.509 certificate in PEM format" %}</small>
-                        {% if form.store_efris_public_certificate.errors %}
-                            <div class="text-danger small mt-1">{{ form.store_efris_public_certificate.errors.0 }}</div>
+                        {{ form.store_efris_integration_mode }}
+                        <small class="form-text text-muted">{% trans "Online or offline integration mode" %}</small>
+                        {% if form.store_efris_integration_mode.errors %}
+                            <div class="text-danger small mt-1">{{ form.store_efris_integration_mode.errors.0 }}</div>
                         {% endif %}
                     </div>
+                </div>
 
-                    <!-- Advanced Settings -->
-                    <div class="row">
-                        <div class="col-md-6 mb-3">
-                            <label for="{{ form.store_efris_key_password.id_for_label }}" class="form-label">
-                                {% trans "Key Password" %}
-                            </label>
-                            {{ form.store_efris_key_password }}
-                            <small class="form-text text-muted">{% trans "Password for encrypted private key" %}</small>
-                        </div>
-
-                        <div class="col-md-6 mb-3">
-                            <label for="{{ form.store_efris_integration_mode.id_for_label }}" class="form-label">
-                                {% trans "Integration Mode" %}
-                            </label>
-                            {{ form.store_efris_integration_mode }}
-                        </div>
-                    </div>
-
-                    <!-- Checkbox Options -->
-                    <div class="row">
-                        <div class="col-md-4 mb-3">
-                            <div class="form-check form-switch">
-                                {{ form.store_efris_is_production }}
-                                <label class="form-check-label" for="{{ form.store_efris_is_production.id_for_label }}">
-                                    {% trans "Production Environment" %}
-                                </label>
-                            </div>
-                        </div>
-
-                        <div class="col-md-4 mb-3">
-                            <div class="form-check">
-                                {{ form.store_auto_fiscalize_sales }}
-                                <label class="form-check-label" for="{{ form.store_auto_fiscalize_sales.id_for_label }}">
-                                    {% trans "Auto-Fiscalize Sales" %}
-                                </label>
-                            </div>
-                        </div>
-
-                        <div class="col-md-4 mb-3">
-                            <div class="form-check">
-                                {{ form.store_auto_sync_products }}
-                                <label class="form-check-label" for="{{ form.store_auto_sync_products.id_for_label }}">
-                                    {% trans "Auto-Sync Products" %}
-                                </label>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Activation Status -->
-                    <div class="mb-3">
+                <!-- Checkbox Options -->
+                <div class="row">
+                    <div class="col-md-4 mb-3">
                         <div class="form-check form-switch">
-                            {{ form.store_efris_is_active }}
-                            <label class="form-check-label" for="{{ form.store_efris_is_active.id_for_label }}">
-                                {% trans "Store EFRIS Active" %}
+                            {{ form.store_efris_is_production }}
+                            <label class="form-check-label" for="{{ form.store_efris_is_production.id_for_label }}">
+                                {% trans "Production Environment" %}
                             </label>
                         </div>
+                        {% if form.store_efris_is_production.errors %}
+                            <div class="text-danger small mt-1">{{ form.store_efris_is_production.errors.0 }}</div>
+                        {% endif %}
                     </div>
+
+                    <div class="col-md-4 mb-3">
+                        <div class="form-check">
+                            {{ form.store_auto_fiscalize_sales }}
+                            <label class="form-check-label" for="{{ form.store_auto_fiscalize_sales.id_for_label }}">
+                                {% trans "Auto-Fiscalize Sales" %}
+                            </label>
+                        </div>
+                        {% if form.store_auto_fiscalize_sales.errors %}
+                            <div class="text-danger small mt-1">{{ form.store_auto_fiscalize_sales.errors.0 }}</div>
+                        {% endif %}
+                    </div>
+
+                    <div class="col-md-4 mb-3">
+                        <div class="form-check">
+                            {{ form.store_auto_sync_products }}
+                            <label class="form-check-label" for="{{ form.store_auto_sync_products.id_for_label }}">
+                                {% trans "Auto-Sync Products" %}
+                            </label>
+                        </div>
+                        {% if form.store_auto_sync_products.errors %}
+                            <div class="text-danger small mt-1">{{ form.store_auto_sync_products.errors.0 }}</div>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <!-- Activation Status -->
+                <div class="mb-3">
+                    <div class="form-check form-switch">
+                        {{ form.store_efris_is_active }}
+                        <label class="form-check-label" for="{{ form.store_efris_is_active.id_for_label }}">
+                            <strong>{% trans "Store EFRIS Active" %}</strong>
+                        </label>
+                    </div>
+                    <small class="form-text text-muted">{% trans "Activate store-specific EFRIS configuration" %}</small>
+                    {% if form.store_efris_is_active.errors %}
+                        <div class="text-danger small mt-1">{{ form.store_efris_is_active.errors.0 }}</div>
+                    {% endif %}
                 </div>
             </div>
         </div>
+
+        <!-- Error Display Area -->
+        {% if form.errors %}
+        <div class="alert alert-danger alert-enhanced mt-3" id="efrisErrors">
+            <i class="bi bi-exclamation-triangle me-2"></i>
+            <strong>{% trans "Please correct the errors below:" %}</strong>
+            <ul class="mb-0 mt-2">
+                {% for field in form %}
+                    {% if field.name|slice:"0:5" == "store" or field.name|slice:"0:5" == "efris" %}
+                        {% for error in field.errors %}
+                            <li><strong>{{ field.label }}:</strong> {{ error }}</li>
+                        {% endfor %}
+                    {% endif %}
+                {% endfor %}
+                {% for error in form.non_field_errors %}
+                    <li>{{ error }}</li>
+                {% endfor %}
+            </ul>
+        </div>
+        {% endif %}
     </div>
+</div>
 
     <!-- Logo Upload Section -->
     <div class="form-section">
@@ -1035,7 +1147,7 @@
         <a href="{% url 'stores:store_list' %}" class="btn btn-outline-secondary btn-action">
             <i class="bi bi-x-circle me-1"></i>{% trans "Cancel" %}
         </a>
-        <button type="submit" class="btn btn-primary btn-action">
+        <button type="submit" class="btn btn-primary btn-action" id="submitBtn">
             <i class="bi bi-check-circle me-1"></i>
             {% if object %}{% trans "Update Store" %}{% else %}{% trans "Create Store" %}{% endif %}
         </button>
@@ -1058,6 +1170,11 @@ document.addEventListener('DOMContentLoaded', function() {
     const useCompanyEfrisCheckbox = document.getElementById('{{ form.use_company_efris.id_for_label }}');
     const storeEfrisFields = document.getElementById('storeEfrisFields');
     const logoField = document.getElementById('{{ form.logo.id_for_label }}');
+    const phoneField = document.getElementById('{{ form.phone.id_for_label }}');
+    const secondaryPhoneField = document.getElementById('{{ form.secondary_phone.id_for_label }}');
+    const tinField = document.getElementById('{{ form.tin.id_for_label }}');
+    const submitBtn = document.getElementById('submitBtn');
+    const storeForm = document.getElementById('storeForm');
 
     let map, marker;
     let currentPanel = null;
@@ -1068,14 +1185,19 @@ document.addEventListener('DOMContentLoaded', function() {
     // EFRIS Configuration Toggle
     if (useCompanyEfrisCheckbox) {
         function toggleEfrisFields() {
-            const isChecked = !useCompanyEfrisCheckbox.checked;
-            storeEfrisFields.style.display = isChecked ? 'block' : 'none';
+            const isStoreSpecific = !useCompanyEfrisCheckbox.checked;
+            storeEfrisFields.style.display = isStoreSpecific ? 'block' : 'none';
+
+            // Visual feedback
+            if (isStoreSpecific) {
+                storeEfrisFields.classList.add('active');
+            } else {
+                storeEfrisFields.classList.remove('active');
+            }
 
             // Toggle required attributes
             const requiredFields = [
                 'tin',
-
-                'store_efris_api_key',
                 'store_efris_private_key',
                 'store_efris_public_certificate'
             ];
@@ -1083,13 +1205,20 @@ document.addEventListener('DOMContentLoaded', function() {
             requiredFields.forEach(fieldId => {
                 const field = document.getElementById(`id_${fieldId}`);
                 if (field) {
-                    field.required = isChecked;
+                    field.required = isStoreSpecific;
+                    if (isStoreSpecific) {
+                        field.classList.add('required-field');
+                    } else {
+                        field.classList.remove('required-field');
+                        field.removeAttribute('required');
+                    }
                 }
             });
         }
 
+        // Initialize and set up event listener
+        toggleEfrisFields(); // Set initial state
         useCompanyEfrisCheckbox.addEventListener('change', toggleEfrisFields);
-        toggleEfrisFields(); // Initialize
     }
 
     // Logo upload preview
@@ -1125,6 +1254,57 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
+    // Phone number validation
+    function validatePhoneNumber(phone) {
+        if (!phone) return true; // Empty is valid (optional field)
+        return /^\+[0-9]{10,15}$/.test(phone);
+    }
+
+    function setupPhoneValidation(field) {
+        if (!field) return;
+
+        const feedback = field.parentElement.querySelector('.phone-validation-feedback');
+
+        field.addEventListener('blur', function() {
+            const phone = this.value.trim();
+
+            if (!phone) {
+                field.classList.remove('phone-valid', 'phone-invalid');
+                if (feedback) {
+                    feedback.classList.add('d-none');
+                }
+                return;
+            }
+
+            if (validatePhoneNumber(phone)) {
+                field.classList.remove('phone-invalid');
+                field.classList.add('phone-valid');
+                if (feedback) {
+                    feedback.textContent = '{% trans "Valid phone number" %}';
+                    feedback.classList.remove('d-none', 'text-danger');
+                    feedback.classList.add('text-success');
+                }
+            } else {
+                field.classList.remove('phone-valid');
+                field.classList.add('phone-invalid');
+                if (feedback) {
+                    feedback.textContent = '{% trans "Invalid format. Use + followed by 10-15 digits" %}';
+                    feedback.classList.remove('d-none', 'text-success');
+                    feedback.classList.add('text-danger');
+                }
+            }
+        });
+
+        // Validate on initial load if there's a value
+        if (field.value.trim()) {
+            field.dispatchEvent(new Event('blur'));
+        }
+    }
+
+    // Setup phone validation
+    setupPhoneValidation(phoneField);
+    setupPhoneValidation(secondaryPhoneField);
+
     // Location functionality
     function updateCoordinateDisplay() {
         const lat = latField.value;
@@ -1140,9 +1320,31 @@ document.addEventListener('DOMContentLoaded', function() {
 
             // Reverse geocode for location name
             reverseGeocode(lat, lng);
+
+            // Validate coordinates
+            validateCoordinates(lat, lng);
         } else {
             display.style.display = 'none';
         }
+    }
+
+    function validateCoordinates(lat, lng) {
+        const latNum = parseFloat(lat);
+        const lngNum = parseFloat(lng);
+
+        // Uganda bounds validation
+        const isInUganda = (-2.0 <= latNum && latNum <= 5.0) && (29.0 <= lngNum && lngNum <= 36.0);
+
+        if (isInUganda) {
+            latField.classList.remove('field-error');
+            lngField.classList.remove('field-error');
+        } else {
+            latField.classList.add('field-error');
+            lngField.classList.add('field-error');
+            showNotification('warning', '{% trans "Coordinates appear to be outside Uganda" %}');
+        }
+
+        return isInUganda;
     }
 
     function updateGPSString() {
@@ -1195,7 +1397,44 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
-    // Location options
+    // Location options with keyboard support
+    function setupLocationOption(cardId, panelId) {
+        const card = document.getElementById(cardId);
+        if (!card) return;
+
+        card.addEventListener('click', () => activateLocationOption(cardId, panelId));
+        card.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                activateLocationOption(cardId, panelId);
+            }
+        });
+    }
+
+    function activateLocationOption(cardId, panelId) {
+        showPanel(panelId);
+
+        // Reset all cards
+        document.querySelectorAll('.location-option-card').forEach(card => {
+            card.style.borderColor = '';
+            card.style.boxShadow = '';
+        });
+
+        // Highlight active card
+        const activeCard = document.getElementById(cardId);
+        if (activeCard) {
+            activeCard.style.borderColor = 'var(--primary-color)';
+            activeCard.style.boxShadow = '0 5px 15px rgba(var(--primary-rgb, 0, 123, 255), 0.2)';
+        }
+    }
+
+    // Setup location options
+    setupLocationOption('useCurrentLocation', null);
+    setupLocationOption('searchAddress', 'searchAddressPanel');
+    setupLocationOption('clickOnMap', 'mapPanel');
+    setupLocationOption('enterManually', 'manualEntryPanel');
+
+    // Use current location
     document.getElementById('useCurrentLocation').addEventListener('click', function() {
         if ("geolocation" in navigator) {
             const card = this;
@@ -1222,31 +1461,12 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     });
 
-    document.getElementById('searchAddress').addEventListener('click', function() {
-        showPanel('searchAddressPanel');
-        if (!geocodeAddressField.value && addressField.value) {
-            geocodeAddressField.value = addressField.value;
-        }
-        geocodeAddressField.focus();
-    });
-
-    document.getElementById('clickOnMap').addEventListener('click', function() {
-        showPanel('mapPanel');
-        if (!map) initializeMap();
-    });
-
-    document.getElementById('enterManually').addEventListener('click', function() {
-        showPanel('manualEntryPanel');
-        latField.removeAttribute('readonly');
-        lngField.removeAttribute('readonly');
-        latField.focus();
-    });
-
-    // Geocode functionality
+    // Search address functionality
     document.getElementById('geocodeBtn').addEventListener('click', function() {
         const address = geocodeAddressField.value.trim();
         if (!address) {
             showNotification('warning', '{% trans "Please enter an address" %}');
+            geocodeAddressField.focus();
             return;
         }
 
@@ -1254,26 +1474,42 @@ document.addEventListener('DOMContentLoaded', function() {
         const btn = this;
         spinner.style.display = 'inline-block';
         btn.disabled = true;
+        btn.innerHTML = '<i class="bi bi-search me-2"></i>{% trans "Searching..." %}';
 
-        fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(address + ', Uganda')}&format=json&limit=5`, {
-            headers: { 'User-Agent': 'PrimeBook/1.0' }
+        // Use a proper User-Agent for Nominatim
+        const userAgent = 'PrimeBookStoreManagement/1.0 ({{ request.user.email|default:"anonymous" }})';
+
+        fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(address + ', Uganda')}&format=json&limit=5&addressdetails=1`, {
+            headers: {
+                'User-Agent': userAgent,
+                'Accept': 'application/json'
+            }
         })
-        .then(response => response.json())
+        .then(response => {
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}`);
+            }
+            return response.json();
+        })
         .then(data => {
             spinner.style.display = 'none';
             btn.disabled = false;
+            btn.innerHTML = '<i class="bi bi-search me-2"></i>{% trans "Find Coordinates" %}';
 
             if (data.length) {
                 displayGeocodeResults(data);
             } else {
-                showNotification('warning', '{% trans "No results found" %}');
+                showNotification('warning', '{% trans "No results found. Try a more specific address." %}');
+                document.getElementById('geocodeResults').innerHTML = '';
             }
         })
         .catch(error => {
             console.error('Geocoding error:', error);
             spinner.style.display = 'none';
             btn.disabled = false;
-            showNotification('error', '{% trans "Search failed" %}');
+            btn.innerHTML = '<i class="bi bi-search me-2"></i>{% trans "Find Coordinates" %}';
+            showNotification('error', '{% trans "Search failed. Please try again." %}');
+            document.getElementById('geocodeResults').innerHTML = '';
         });
     });
 
@@ -1284,6 +1520,8 @@ document.addEventListener('DOMContentLoaded', function() {
         results.forEach(result => {
             const card = document.createElement('div');
             card.className = 'card mb-2 cursor-pointer';
+            card.tabIndex = 0;
+            card.setAttribute('role', 'button');
             card.innerHTML = `
                 <div class="card-body">
                     <h6 class="card-title mb-1">
@@ -1295,121 +1533,296 @@ document.addEventListener('DOMContentLoaded', function() {
                 </div>
             `;
 
-            card.addEventListener('click', () => {
-                setCoordinates(result.lat, result.lon, '{% trans "from search" %}');
-                if (result.address && result.address.state && !regionField.value) {
-                    regionField.value = result.address.state;
+            card.addEventListener('click', () => selectGeocodeResult(result));
+            card.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    selectGeocodeResult(result);
                 }
-                container.innerHTML = '';
-                showPanel(null);
             });
 
             container.appendChild(card);
         });
     }
 
-    // Map initialization
-    function initializeMap() {
-        const defaultLat = latField.value || 0.3476;
-        const defaultLng = lngField.value || 32.5825;
+    function selectGeocodeResult(result) {
+        setCoordinates(result.lat, result.lon, '{% trans "from search" %}');
 
-        map = L.map('locationMap').setView([defaultLat, defaultLng], 13);
-
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-            attribution: '© OpenStreetMap',
-            maxZoom: 19
-        }).addTo(map);
-
-        if (latField.value && lngField.value) {
-            marker = L.marker([latField.value, lngField.value], {
-                draggable: true
-            }).addTo(map);
-
-            marker.on('dragend', e => {
-                const pos = marker.getLatLng();
-                setCoordinates(pos.lat, pos.lng, '{% trans "from marker" %}');
-            });
+        // Try to auto-fill region
+        if (result.address) {
+            if (result.address.state && !regionField.value) {
+                regionField.value = result.address.state;
+            } else if (result.address.county && !regionField.value) {
+                regionField.value = result.address.county;
+            } else if (result.address.city && !regionField.value) {
+                regionField.value = result.address.city;
+            }
         }
 
-        map.on('click', e => {
-            const lat = e.latlng.lat;
-            const lng = e.latlng.lng;
+        document.getElementById('geocodeResults').innerHTML = '';
+        showPanel(null);
+    }
 
-            if (marker) {
-                marker.setLatLng([lat, lng]);
-            } else {
-                marker = L.marker([lat, lng], { draggable: true }).addTo(map);
+    // Map initialization
+    function initializeMap() {
+        try {
+            const defaultLat = latField.value || 0.3476;
+            const defaultLng = lngField.value || 32.5825;
+
+            map = L.map('locationMap').setView([defaultLat, defaultLng], 13);
+
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '© OpenStreetMap',
+                maxZoom: 19
+            }).addTo(map);
+
+            if (latField.value && lngField.value) {
+                marker = L.marker([latField.value, lngField.value], {
+                    draggable: true
+                }).addTo(map);
+
                 marker.on('dragend', e => {
                     const pos = marker.getLatLng();
                     setCoordinates(pos.lat, pos.lng, '{% trans "from marker" %}');
                 });
             }
 
-            setCoordinates(lat, lng, '{% trans "from map click" %}');
-        });
+            map.on('click', e => {
+                const lat = e.latlng.lat;
+                const lng = e.latlng.lng;
+
+                if (marker) {
+                    marker.setLatLng([lat, lng]);
+                } else {
+                    marker = L.marker([lat, lng], { draggable: true }).addTo(map);
+                    marker.on('dragend', e => {
+                        const pos = marker.getLatLng();
+                        setCoordinates(pos.lat, pos.lng, '{% trans "from marker" %}');
+                    });
+                }
+
+                setCoordinates(lat, lng, '{% trans "from map click" %}');
+            });
+
+            // Add map error handler
+            map.on('error', function(e) {
+                console.error('Map error:', e);
+                showNotification('error', '{% trans "Map initialization failed. Please refresh the page." %}');
+            });
+
+        } catch (error) {
+            console.error('Failed to initialize map:', error);
+            showNotification('error', '{% trans "Failed to load map. Please check your internet connection." %}');
+            document.getElementById('locationMap').innerHTML = `
+                <div class="alert alert-danger m-3">
+                    <i class="bi bi-exclamation-triangle me-2"></i>
+                    {% trans "Map could not be loaded. You can still enter coordinates manually." %}
+                </div>
+            `;
+        }
     }
 
     // Reverse geocode
     function reverseGeocode(lat, lng) {
-        fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json`, {
-            headers: { 'User-Agent': 'PrimeBook/1.0' }
+        const userAgent = 'PrimeBookStoreManagement/1.0 ({{ request.user.email|default:"anonymous" }})';
+
+        fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&addressdetails=1`, {
+            headers: {
+                'User-Agent': userAgent,
+                'Accept': 'application/json'
+            }
         })
-        .then(response => response.json())
+        .then(response => {
+            if (!response.ok) throw new Error('Reverse geocoding failed');
+            return response.json();
+        })
         .then(data => {
             if (data.display_name) {
                 document.getElementById('displayLocation').textContent = data.display_name;
-                if (data.address && data.address.state && !regionField.value) {
-                    regionField.value = data.address.state;
+                if (data.address) {
+                    if (data.address.state && !regionField.value) {
+                        regionField.value = data.address.state;
+                    } else if (data.address.county && !regionField.value) {
+                        regionField.value = data.address.county;
+                    } else if (data.address.city && !regionField.value) {
+                        regionField.value = data.address.city;
+                    }
                 }
             }
         })
-        .catch(console.error);
+        .catch(error => {
+            console.error('Reverse geocoding error:', error);
+            document.getElementById('displayLocation').textContent = '{% trans "Location details unavailable" %}';
+        });
     }
 
-    // Event listeners
+    // Event listeners for coordinate fields
     latField.addEventListener('change', updateCoordinateDisplay);
     lngField.addEventListener('change', updateCoordinateDisplay);
 
+    latField.addEventListener('input', function() {
+        if (this.value) {
+            this.classList.remove('field-error');
+        }
+    });
+
+    lngField.addEventListener('input', function() {
+        if (this.value) {
+            this.classList.remove('field-error');
+        }
+    });
+
+    // Auto-fill geocode address from physical address
     addressField.addEventListener('blur', function() {
         if (!geocodeAddressField.value && this.value) {
             geocodeAddressField.value = this.value;
         }
     });
 
-    // Auto-fill certificate fingerprint on file change
+    // Auto-fill certificate fingerprint on certificate change
     const certField = document.getElementById('{{ form.store_efris_public_certificate.id_for_label }}');
     if (certField) {
         certField.addEventListener('change', function() {
-            // In a real implementation, you would calculate the fingerprint here
-            // For now, we'll just show a message
             if (this.value.trim()) {
                 showNotification('info', '{% trans "Certificate uploaded. Fingerprint will be calculated on save." %}');
             }
         });
     }
 
-    // Form validation
-    document.getElementById('storeForm').addEventListener('submit', function(e) {
-        if (useCompanyEfrisCheckbox && !useCompanyEfrisCheckbox.checked) {
-            const requiredFields = ['tin', ];
-            let missingFields = [];
+    // SINGLE Form validation handler - removed duplicate
+    if (storeForm) {
+        storeForm.addEventListener('submit', function(e) {
+            let hasErrors = false;
+            const errors = [];
 
-            requiredFields.forEach(fieldId => {
-                const field = document.getElementById(`id_${fieldId}`);
-                if (field && !field.value.trim()) {
-                    missingFields.push(field.labels[0]?.textContent || fieldId);
-                }
+            // Clear previous error highlights
+            document.querySelectorAll('.field-error').forEach(el => {
+                el.classList.remove('field-error');
             });
 
-            if (missingFields.length > 0) {
+            // Check if using store-specific EFRIS
+            if (useCompanyEfrisCheckbox && !useCompanyEfrisCheckbox.checked) {
+                const requiredFields = [
+                    { id: 'tin', name: '{% trans "Store TIN Number" %}' },
+                    { id: 'store_efris_private_key', name: '{% trans "Store Private Key" %}' },
+                    { id: 'store_efris_public_certificate', name: '{% trans "Store Public Certificate" %}' }
+                ];
+
+                requiredFields.forEach(field => {
+                    const fieldEl = document.getElementById(`id_${field.id}`);
+                    if (fieldEl && !fieldEl.value.trim()) {
+                        hasErrors = true;
+                        errors.push(field.name);
+                        fieldEl.classList.add('field-error');
+
+                        // Add error message below field
+                        let errorDiv = fieldEl.parentElement.querySelector('.field-error-message');
+                        if (!errorDiv) {
+                            errorDiv = document.createElement('div');
+                            errorDiv.className = 'text-danger small mt-1 field-error-message';
+                            fieldEl.parentElement.appendChild(errorDiv);
+                        }
+                        errorDiv.textContent = '{% trans "This field is required when using store-specific EFRIS." %}';
+                    } else if (fieldEl) {
+                        // Remove any existing error messages
+                        const errorDiv = fieldEl.parentElement.querySelector('.field-error-message');
+                        if (errorDiv) {
+                            errorDiv.remove();
+                        }
+                    }
+                });
+            }
+
+            // Validate phone numbers only if they are provided
+            if (phoneField && phoneField.value.trim() && !validatePhoneNumber(phoneField.value.trim())) {
+                hasErrors = true;
+                errors.push('{% trans "Primary Phone" %}');
+                phoneField.classList.add('field-error');
+            }
+
+            if (secondaryPhoneField && secondaryPhoneField.value.trim() && !validatePhoneNumber(secondaryPhoneField.value.trim())) {
+                hasErrors = true;
+                errors.push('{% trans "Secondary Phone" %}');
+                secondaryPhoneField.classList.add('field-error');
+            }
+
+            // Validate coordinates if provided
+            if (latField.value || lngField.value) {
+                if (!latField.value || !lngField.value) {
+                    hasErrors = true;
+                    errors.push('{% trans "Both latitude and longitude must be provided together" %}');
+                    latField.classList.add('field-error');
+                    lngField.classList.add('field-error');
+                } else if (!validateCoordinates(latField.value, lngField.value)) {
+                    hasErrors = true;
+                    errors.push('{% trans "Coordinates appear to be outside Uganda" %}');
+                }
+            }
+
+            if (hasErrors) {
                 e.preventDefault();
-                showNotification('error',
-                    `{% trans "Required fields missing:" %} ${missingFields.join(', ')}`);
+
+                // Scroll to error section
+                const errorSection = document.querySelector('.form-section:has(.field-error)') ||
+                                     document.querySelector('.form-section:has(#storeEfrisFields)');
+                if (errorSection) {
+                    errorSection.scrollIntoView({
+                        behavior: 'smooth',
+                        block: 'center'
+                    });
+                }
+
+                // Show error notification
+                const errorMsg = `<strong>{% trans "Please correct the following errors:" %}</strong><br>${errors.map(err => `• ${err}`).join('<br>')}`;
+                showNotification('error', errorMsg);
+
                 return false;
             }
+
+            // Disable submit button to prevent double submission
+            if (submitBtn) {
+                submitBtn.disabled = true;
+                submitBtn.innerHTML = '<i class="bi bi-arrow-clockwise spinning me-1"></i>{% trans "Processing..." %}';
+            }
+
+            return true;
+        });
+    }
+
+    // Prevent form resubmission on page refresh
+    if (window.history.replaceState) {
+        window.history.replaceState(null, null, window.location.href);
+    }
+
+    // Initialize form state based on existing data
+    function initializeFormState() {
+        // Initialize EFRIS fields based on current checkbox state
+        if (useCompanyEfrisCheckbox) {
+            // Re-run toggle to ensure proper state
+            const isStoreSpecific = !useCompanyEfrisCheckbox.checked;
+            storeEfrisFields.style.display = isStoreSpecific ? 'block' : 'none';
+
+            if (isStoreSpecific) {
+                storeEfrisFields.classList.add('active');
+            }
         }
-        return true;
-    });
+
+        // Initialize coordinate display if coordinates exist
+        if (latField.value && lngField.value) {
+            updateCoordinateDisplay();
+        }
+
+        // Initialize phone validation
+        if (phoneField && phoneField.value.trim()) {
+            phoneField.dispatchEvent(new Event('blur'));
+        }
+        if (secondaryPhoneField && secondaryPhoneField.value.trim()) {
+            secondaryPhoneField.dispatchEvent(new Event('blur'));
+        }
+    }
+
+    // Call initialization
+    initializeFormState();
 });
 
 // Notification system
@@ -1423,21 +1836,53 @@ function showNotification(type, message) {
 
     const config = types[type] || types.info;
 
+    // Remove existing notifications
+    document.querySelectorAll('.alert.position-fixed').forEach(alert => {
+        alert.remove();
+    });
+
     const notification = document.createElement('div');
     notification.className = `alert ${config.class} alert-dismissible fade show position-fixed`;
     notification.style.cssText = 'top: 20px; right: 20px; z-index: 9999; min-width: 300px; max-width: 400px;';
     notification.innerHTML = `
         <i class="bi ${config.icon} me-2"></i>${message}
-        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="{% trans 'Close' %}"></button>
     `;
 
     document.body.appendChild(notification);
 
+    // Auto-remove after 5 seconds for success/info, 10 seconds for errors/warnings
+    const timeout = type === 'error' || type === 'warning' ? 10000 : 5000;
     setTimeout(() => {
         if (notification.parentNode) {
-            notification.remove();
+            const bsAlert = new bootstrap.Alert(notification);
+            bsAlert.close();
         }
-    }, 5000);
+    }, timeout);
 }
+
+// Handle dark theme adjustments for Leaflet map
+function adjustMapForTheme() {
+    const isDarkTheme = document.documentElement.getAttribute('data-theme') === 'dark';
+
+    if (window.map && isDarkTheme) {
+        // You could switch to a dark tile layer here if needed
+        // Example: L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {...})
+    }
+}
+
+// Listen for theme changes
+const observer = new MutationObserver(function(mutations) {
+    mutations.forEach(function(mutation) {
+        if (mutation.attributeName === 'data-theme') {
+            adjustMapForTheme();
+        }
+    });
+});
+
+observer.observe(document.documentElement, {
+    attributes: true,
+    attributeFilter: ['data-theme']
+});
 </script>
 {% endblock %}

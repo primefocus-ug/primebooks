@@ -4,6 +4,7 @@
 {% load crispy_forms_tags %}
 {% load i18n %}
 {% load custom_filters %}
+
 {% block extra_css %}
     <link rel="stylesheet" href="{% static 'themes.css' %}">
 {% endblock %}
@@ -11,123 +12,414 @@
 {% block title %}Manage Staff - {{ store.name }} | Prime Book{% endblock %}
 
 {% block page_header %}
-<div class="d-flex justify-content-between align-items-center mb-4">
-    <div>
-        <h1 class="h3 mb-1">
-            <i class="bi bi-people me-2"></i>Manage Staff - {{ store.name }}
-        </h1>
-        <p class="text-muted mb-0">Assign and manage staff members for this store</p>
-    </div>
-    <div>
-        <a href="{% url 'stores:store_detail' store.pk %}" class="btn btn-outline-secondary">
-            <i class="bi bi-arrow-left me-1"></i>Back to Store
-        </a>
+<div class="container-fluid">
+    <div class="row align-items-center mb-4">
+        <div class="col">
+            <nav aria-label="breadcrumb">
+                <ol class="breadcrumb mb-2">
+                    <li class="breadcrumb-item"><a href="{% url 'stores:store_list' %}">Stores</a></li>
+                    <li class="breadcrumb-item"><a href="{% url 'stores:store_detail' store.pk %}">{{ store.name }}</a></li>
+                    <li class="breadcrumb-item active" aria-current="page">Manage Staff</li>
+                </ol>
+            </nav>
+            <div class="d-flex justify-content-between align-items-center">
+                <div>
+                    <h1 class="h3 mb-1">
+                        <i class="bi bi-people-fill me-2"></i>Manage Staff
+                    </h1>
+                    <p class="text-muted mb-0">{{ store.name }}</p>
+                </div>
+                <div>
+                    <a href="{% url 'stores:store_detail' store.pk %}" class="btn btn-outline-secondary">
+                        <i class="bi bi-arrow-left me-1"></i>Back to Store
+                    </a>
+                </div>
+            </div>
+        </div>
     </div>
 </div>
 {% endblock %}
 
 {% block content %}
-<div class="row">
-    <!-- Current Staff -->
-    <div class="col-md-6">
-        <div class="card mb-4">
-            <div class="card-header">
-                <h5 class="mb-0">Current Staff Members</h5>
+<div class="container-fluid">
+    {% if messages %}
+    <div class="row mb-4">
+        <div class="col-12">
+            {% for message in messages %}
+            <div class="alert alert-{{ message.tags }} alert-dismissible fade show" role="alert">
+                <i class="bi
+                    {% if message.tags == 'success' %}bi-check-circle-fill
+                    {% elif message.tags == 'error' %}bi-exclamation-circle-fill
+                    {% elif message.tags == 'warning' %}bi-exclamation-triangle-fill
+                    {% else %}bi-info-circle-fill{% endif %}
+                    me-2"></i>
+                {{ message }}
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
             </div>
-            <div class="card-body">
-                {% if current_staff %}
-                <div class="list-group list-group-flush">
-                    {% for staff_member in current_staff %}
-                    <div class="list-group-item d-flex justify-content-between align-items-center">
-                        <div>
-                            <h6 class="mb-1">{{ staff_member.get_full_name|default:staff_member.username }}</h6>
-                            <p class="text-muted mb-0 small">{{ staff_member.email }}</p>
-                        </div>
-                        <span class="badge bg-success">Assigned</span>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    <div class="row">
+        <!-- Current Staff -->
+        <div class="col-lg-6 mb-4">
+            <div class="card shadow-sm border-0 h-100">
+                <div class="card-header bg-primary text-white border-0">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0">
+                            <i class="bi bi-person-check me-2"></i>Current Staff Members
+                        </h5>
+                        <span class="badge bg-light text-dark">{{ current_staff.count }}</span>
                     </div>
-                    {% endfor %}
                 </div>
-                {% else %}
-                <div class="text-center py-4 totall">
-                    <i class="bi bi-person-x display-1 text-muted totall"></i>
-                    <p class="text-muted mt-3 totall">No staff members assigned</p>
+                <div class="card-body">
+                    {% if current_staff %}
+                    <div class="list-group list-group-flush">
+                        {% for staff_member in current_staff %}
+                        <div class="list-group-item list-group-item-action d-flex justify-content-between align-items-center py-3
+                            {% if staff_member in store.store_managers.all %}border-start border-3 border-warning{% endif %}">
+                            <div class="d-flex align-items-center">
+                                <div class="avatar-sm me-3">
+                                    <div class="avatar-title bg-light text-dark rounded-circle d-flex align-items-center justify-content-center">
+                                        {{ staff_member.get_full_name|default:staff_member.username|slice:":1"|upper }}
+                                    </div>
+                                </div>
+                                <div>
+                                    <h6 class="mb-1">
+                                        {{ staff_member.get_full_name|default:staff_member.username }}
+                                        {% if staff_member in store.store_managers.all %}
+                                        <i class="bi bi-star-fill text-warning ms-1" title="Store Manager"></i>
+                                        {% endif %}
+                                    </h6>
+                                    <p class="text-muted mb-0 small">
+                                        <i class="bi bi-envelope me-1"></i>{{ staff_member.email }}
+                                    </p>
+                                    <p class="text-muted mb-0 small">
+                                        <i class="bi bi-person-badge me-1"></i>{{ staff_member.get_role_display }}
+                                    </p>
+                                </div>
+                            </div>
+                            <div class="d-flex flex-column align-items-end">
+                                <span class="badge {% if staff_member in store.store_managers.all %}bg-warning text-dark{% else %}bg-success{% endif %} mb-2">
+                                    {% if staff_member in store.store_managers.all %}Manager{% else %}Staff{% endif %}
+                                </span>
+                                <small class="text-muted">
+                                    Since {{ staff_member.date_joined|date:"M d, Y" }}
+                                </small>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    {% else %}
+                    <div class="text-center py-5">
+                        <div class="avatar-lg mx-auto mb-3">
+                            <div class="avatar-title bg-light text-muted rounded-circle">
+                                <i class="bi bi-person-x display-4"></i>
+                            </div>
+                        </div>
+                        <h5 class="text-muted">No Staff Members</h5>
+                        <p class="text-muted">Add staff members using the form on the right</p>
+                    </div>
+                    {% endif %}
+                </div>
+                {% if store_managers %}
+                <div class="card-footer bg-light">
+                    <small class="text-muted">
+                        <i class="bi bi-info-circle me-1"></i>
+                        Store Managers (marked with <i class="bi bi-star-fill text-warning"></i>) have additional permissions
+                    </small>
                 </div>
                 {% endif %}
             </div>
         </div>
-    </div>
 
-    <!-- Staff Assignment Form -->
-    <div class="col-md-6">
-        <div class="card totall">
-            <div class="card-header totall">
-                <h5 class="mb-0">Staff Assignment</h5>
-            </div>
-            <div class="card-body totall">
-                <form method="post totall">
-                    {% csrf_token %}
-
-                    {% if form.add_staff %}
-                    <div class="mb- totall4">
-                        <h6 class="text-primary totall">Add Staff Members</h6>
-                        <div class="form-text mb-2 totall">Select staff members to add to this store</div>
-                        {{ form.add_staff }}
-                        {% if form.add_staff.errors %}
-                            <div class="text-danger small mt-1 totall">{{ form.add_staff.errors.0 }}</div>
-                        {% endif %}
-                    </div>
-                    {% endif %}
-
-                    {% if form.remove_staff %}
-                    <div class="mb-4">
-                        <h6 class="text-danger totall">Remove Staff Members</h6>
-                        <div class="form-text mb-2 totall">Select staff members to remove from this store</div>
-                        {{ form.remove_staff }}
-                        {% if form.remove_staff.errors %}
-                            <div class="text-danger small mt-1">{{ form.remove_staff.errors.0 }}</div>
-                        {% endif %}
-                    </div>
-                    {% endif %}
-
-                    {% if not form.add_staff and not form.remove_staff %}
-                    <div class="alert alert-info">
-                        <i class="bi bi-info-circle me-2"></i>
-                        No staff members available for assignment changes.
-                    </div>
-                    {% endif %}
-
-                    <div class="mt-4">
-                        <button type="submit" class="btn btn-primary" {% if not form.add_staff and not form.remove_staff %}disabled{% endif %}>
-                            <i class="bi bi-check-circle me-1"></i>Update Staff Assignments
-                        </button>
-                        <a href="{% url 'stores:store_detail' store.pk %}" class="btn btn-outline-secondary ms-2">
-                            <i class="bi bi-x-circle me-1"></i>Cancel
-                        </a>
-                    </div>
-                </form>
-            </div>
-        </div>
-
-        <!-- Staff Statistics -->
-        <div class="card mt-4">
-            <div class="card-header">
-                <h5 class="mb-0">Statistics</h5>
-            </div>
-            <div class="card-body totall">
-                <div class="d-flex justify-content-between mb-2">
-                    <span>Total Staff</span>
-                    <strong>{{ current_staff.count }}</strong>
+        <!-- Staff Assignment Form -->
+        <div class="col-lg-6">
+            <div class="card shadow-sm border-0 mb-4">
+                <div class="card-header bg-dark text-white border-0">
+                    <h5 class="mb-0">
+                        <i class="bi bi-person-plus me-2"></i>Staff Assignment
+                    </h5>
                 </div>
-                <div class="d-flex justify-content-between mb-2">
-                    <span>Available Staff</span>
-                    <strong>{{ available_staff_count }}</strong>
+                <div class="card-body">
+                    <form method="post" id="staffAssignmentForm">
+                        {% csrf_token %}
+
+                        <!-- Add Staff Section -->
+                        {% if form.add_staff %}
+                        <div class="mb-4">
+                            <div class="d-flex align-items-center mb-3">
+                                <div class="bg-primary text-white p-2 rounded me-2">
+                                    <i class="bi bi-person-add"></i>
+                                </div>
+                                <div>
+                                    <h6 class="mb-0 text-primary">Add Staff Members</h6>
+                                    <p class="text-muted small mb-0">Select users to add as staff to this store</p>
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                {{ form.add_staff|as_crispy_field }}
+                            </div>
+                            <div class="form-text">
+                                <i class="bi bi-info-circle me-1"></i>
+                                Selected users will gain access to this store with staff permissions
+                            </div>
+                        </div>
+                        <hr>
+                        {% endif %}
+
+                        <!-- Remove Staff Section -->
+                        {% if form.remove_staff %}
+                        <div class="mb-4">
+                            <div class="d-flex align-items-center mb-3">
+                                <div class="bg-danger text-white p-2 rounded me-2">
+                                    <i class="bi bi-person-dash"></i>
+                                </div>
+                                <div>
+                                    <h6 class="mb-0 text-danger">Remove Staff Members</h6>
+                                    <p class="text-muted small mb-0">Select staff members to remove from this store</p>
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                {{ form.remove_staff|as_crispy_field }}
+                            </div>
+                            <div class="form-text">
+                                <i class="bi bi-exclamation-triangle me-1"></i>
+                                Removed users will lose access to this store
+                            </div>
+                        </div>
+                        {% endif %}
+
+                        {% if not form.add_staff and not form.remove_staff %}
+                        <div class="alert alert-info">
+                            <i class="bi bi-info-circle me-2"></i>
+                            No staff members available for assignment changes.
+                        </div>
+                        {% endif %}
+
+                        <div class="mt-4 pt-3 border-top">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" id="confirmChanges" required>
+                                    <label class="form-check-label" for="confirmChanges">
+                                        I confirm these changes
+                                    </label>
+                                </div>
+                                <div>
+                                    <button type="submit" class="btn btn-primary"
+                                            id="submitBtn"
+                                            {% if not form.add_staff and not form.remove_staff %}disabled{% endif %}>
+                                        <i class="bi bi-check-circle me-1"></i>Update Staff Assignments
+                                    </button>
+                                    <a href="{% url 'stores:store_detail' store.pk %}" class="btn btn-outline-secondary ms-2">
+                                        <i class="bi bi-x-circle me-1"></i>Cancel
+                                    </a>
+                                </div>
+                            </div>
+                        </div>
+                    </form>
                 </div>
-                <div class="d-flex justify-content-between">
-                    <span>Last Updated</span>
-                    <strong>{% now "M d, Y" %}</strong>
+            </div>
+
+            <!-- Statistics Card -->
+            <div class="card shadow-sm border-0">
+                <div class="card-header bg-secondary text-white border-0">
+                    <h5 class="mb-0">
+                        <i class="bi bi-graph-up me-2"></i>Statistics
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-6 mb-3">
+                            <div class="d-flex align-items-center">
+                                <div class="bg-primary bg-opacity-10 p-2 rounded me-3">
+                                    <i class="bi bi-people text-primary"></i>
+                                </div>
+                                <div>
+                                    <small class="text-muted d-block">Total Staff</small>
+                                    <h4 class="mb-0">{{ current_staff.count }}</h4>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-6 mb-3">
+                            <div class="d-flex align-items-center">
+                                <div class="bg-success bg-opacity-10 p-2 rounded me-3">
+                                    <i class="bi bi-person-plus text-success"></i>
+                                </div>
+                                <div>
+                                    <small class="text-muted d-block">Available</small>
+                                    <h4 class="mb-0">{{ available_staff_count|default:"0" }}</h4>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-6">
+                            <div class="d-flex align-items-center">
+                                <div class="bg-warning bg-opacity-10 p-2 rounded me-3">
+                                    <i class="bi bi-star text-warning"></i>
+                                </div>
+                                <div>
+                                    <small class="text-muted d-block">Managers</small>
+                                    <h4 class="mb-0">{{ store_managers.count }}</h4>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-6">
+                            <div class="d-flex align-items-center">
+                                <div class="bg-info bg-opacity-10 p-2 rounded me-3">
+                                    <i class="bi bi-calendar-check text-info"></i>
+                                </div>
+                                <div>
+                                    <small class="text-muted d-block">Last Updated</small>
+                                    <h4 class="mb-0">{% now "M d" %}</h4>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="card-footer bg-light">
+                    <small class="text-muted">
+                        <i class="bi bi-shield-check me-1"></i>
+                        Your permission level:
+                        <span class="badge {% if request.user.is_company_owner %}bg-danger
+                                          {% elif request.user.company_admin %}bg-warning text-dark
+                                          {% elif is_store_manager %}bg-success
+                                          {% else %}bg-secondary{% endif %}">
+                            {% if request.user.is_company_owner %}Owner
+                            {% elif request.user.company_admin %}Admin
+                            {% elif is_store_manager %}Manager
+                            {% else %}Staff{% endif %}
+                        </span>
+                    </small>
                 </div>
             </div>
         </div>
     </div>
 </div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const form = document.getElementById('staffAssignmentForm');
+        const confirmCheckbox = document.getElementById('confirmChanges');
+        const submitBtn = document.getElementById('submitBtn');
+
+        // Update button state based on confirmation checkbox
+        if (confirmCheckbox && submitBtn) {
+            confirmCheckbox.addEventListener('change', function() {
+                submitBtn.disabled = !this.checked;
+            });
+
+            // Initial check
+            submitBtn.disabled = !confirmCheckbox.checked;
+        }
+
+        // Form submission confirmation
+        if (form) {
+            form.addEventListener('submit', function(e) {
+                const addStaff = document.querySelector('select[name="add_staff"]');
+                const removeStaff = document.querySelector('select[name="remove_staff"]');
+
+                let addCount = 0;
+                let removeCount = 0;
+
+                if (addStaff) {
+                    addCount = Array.from(addStaff.selectedOptions).length;
+                }
+                if (removeStaff) {
+                    removeCount = Array.from(removeStaff.selectedOptions).length;
+                }
+
+                if (addCount > 0 || removeCount > 0) {
+                    const message =
+                        (addCount > 0 ? `Add ${addCount} staff member(s)\n` : '') +
+                        (removeCount > 0 ? `Remove ${removeCount} staff member(s)\n` : '') +
+                        '\nAre you sure you want to proceed?';
+
+                    if (!confirm(message)) {
+                        e.preventDefault();
+                    }
+                }
+            });
+        }
+
+        // Enhance select elements
+        const selects = document.querySelectorAll('select[multiple]');
+        selects.forEach(select => {
+            select.classList.add('form-select-lg');
+        });
+    });
+</script>
+
+<style>
+    .avatar-sm {
+        width: 40px;
+        height: 40px;
+    }
+
+    .avatar-lg {
+        width: 80px;
+        height: 80px;
+    }
+
+    .avatar-title {
+        width: 100%;
+        height: 100%;
+        font-size: 1.2rem;
+        font-weight: 600;
+    }
+
+    /* Dark theme overrides */
+    [data-bs-theme="dark"] .card {
+        background-color: var(--bs-dark);
+        border-color: var(--bs-gray-700);
+    }
+
+    [data-bs-theme="dark"] .card-header {
+        border-color: var(--bs-gray-700);
+    }
+
+    [data-bs-theme="dark"] .list-group-item {
+        background-color: var(--bs-dark);
+        border-color: var(--bs-gray-700);
+        color: var(--bs-light);
+    }
+
+    [data-bs-theme="dark"] .text-muted {
+        color: var(--bs-gray-500) !important;
+    }
+
+    [data-bs-theme="dark"] .bg-light {
+        background-color: var(--bs-gray-800) !important;
+    }
+
+    [data-bs-theme="dark"] .border-top {
+        border-color: var(--bs-gray-700) !important;
+    }
+
+    [data-bs-theme="dark"] .form-check-input:checked {
+        background-color: var(--bs-primary);
+        border-color: var(--bs-primary);
+    }
+
+    [data-bs-theme="dark"] .form-select {
+        background-color: var(--bs-gray-800);
+        border-color: var(--bs-gray-700);
+        color: var(--bs-light);
+    }
+
+    [data-bs-theme="dark"] .form-select option {
+        background-color: var(--bs-gray-800);
+        color: var(--bs-light);
+    }
+
+    [data-bs-theme="dark"] .alert-info {
+        background-color: rgba(var(--bs-info-rgb), 0.1);
+        border-color: rgba(var(--bs-info-rgb), 0.2);
+        color: var(--bs-info);
+    }
+</style>
 {% endblock %}

@@ -303,6 +303,179 @@ def sales_summary_report(request):
     return render(request, 'reports/sales_summary.html', context)
 
 
+@login_required
+@permission_required('reports.view_savedreport')
+def combined_business_report(request):
+    """Combined business report with multiple report types"""
+    from .forms import CombinedReportForm
+
+    # Check for export parameter
+    export_format = request.GET.get('export')
+    is_combined = request.GET.get('combined') == 'true'
+
+    form = CombinedReportForm(request.GET or None, user=request.user)
+
+    # Get user's accessible stores
+    stores = get_user_accessible_stores(request.user)
+
+    combined_data = {}
+    selected_reports = []
+
+    if form.is_valid():
+        start_date = form.cleaned_data.get('start_date')
+        end_date = form.cleaned_data.get('end_date')
+        store_filter = form.cleaned_data.get('store')
+        selected_reports = form.cleaned_data.get('report_types', [])
+
+        # Check if user has access to selected store
+        if store_filter and store_filter not in stores:
+            messages.error(request, "You don't have access to the selected store.")
+            return redirect('reports:combined_business')
+
+        # Handle export
+        if export_format and is_combined:
+            return export_combined_report(request, selected_reports, {
+                'start_date': start_date,
+                'end_date': end_date,
+                'store_id': store_filter.id if store_filter else None,
+                'format': export_format,
+                'report_name': 'Combined Business Report'
+            })
+
+        # Include schema in cache key
+        schema_name = connection.schema_name
+        cache_key = f'combined_report_{schema_name}_{request.user.id}_{start_date}_{end_date}_{store_filter}_{hash(str(sorted(selected_reports)))}'
+        cached_result = cache.get(cache_key)
+
+        if cached_result and not request.GET.get('refresh'):
+            combined_data = cached_result['combined_data']
+        else:
+            saved_report = SavedReport(
+                name='Combined Business Report',
+                report_type='CUSTOM',
+                created_by=request.user
+            )
+            saved_report.save()
+
+            from .services.report_generator import ReportGeneratorService
+            generator = ReportGeneratorService(request.user, saved_report)
+
+            filters = {
+                'start_date': start_date,
+                'end_date': end_date,
+                'store_id': store_filter.id if store_filter else None,
+            }
+
+            # Generate combined report
+            combined_data = generator.generate_combined_report(
+                report_types=selected_reports,
+                **filters
+            )
+
+            cache.set(cache_key, {
+                'combined_data': combined_data
+            }, 300)  # Cache for 5 minutes
+
+    # Prepare data for templates
+    context = {
+        'form': form,
+        'combined_data': combined_data,
+        'selected_reports': selected_reports,
+        'stores': stores,
+        'report_types': [
+            ('SALES_SUMMARY', 'Sales Summary'),
+            ('PRODUCT_PERFORMANCE', 'Product Performance'),
+            ('INVENTORY_STATUS', 'Inventory Status'),
+            ('PROFIT_LOSS', 'Profit & Loss'),
+            ('EXPENSE_REPORT', 'Expense Report'),
+            ('Z_REPORT', 'Z-Report'),
+            ('CASHIER_PERFORMANCE', 'Cashier Performance'),
+            ('STOCK_MOVEMENT', 'Stock Movement'),
+            ('CUSTOMER_ANALYTICS', 'Customer Analytics'),
+        ]
+    }
+
+    # Handle print request
+    if request.GET.get('print') == 'true':
+        return render(request, 'reports/print/combined_business_report.html', context)
+
+    return render(request, 'reports/combined_business_report.html', context)
+
+
+def export_combined_report(request, report_types, filters):
+    """Export combined report to various formats"""
+    from .services.export_service import ReportExportService
+    from django.http import HttpResponse
+    import json
+
+    try:
+        # Create a temporary saved report for generation
+        saved_report = SavedReport(
+            name=filters.get('report_name', 'Combined Report'),
+            report_type='CUSTOM',
+            created_by=request.user
+        )
+        saved_report.save()
+
+        # Generate the report data
+        from .services.report_generator import ReportGeneratorService
+        generator = ReportGeneratorService(request.user, saved_report)
+        combined_data = generator.generate_combined_report(
+            report_types=report_types,
+            start_date=filters.get('start_date'),
+            end_date=filters.get('end_date'),
+            store_id=filters.get('store_id')
+        )
+
+        # Create export service
+        export_service = ReportExportService(combined_data, filters)
+
+        # Export based on format
+        format_type = filters.get('format', 'PDF')
+
+        if format_type == 'PDF':
+            response = export_service.export_to_pdf()
+            filename = f"combined_report_{timezone.now().strftime('%Y%m%d_%H%M%S')}.pdf"
+            response['Content-Disposition'] = f'attachment; filename="{filename}"'
+            return response
+
+        elif format_type == 'XLSX':
+            response = export_service.export_to_excel()
+            filename = f"combined_report_{timezone.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+            response['Content-Disposition'] = f'attachment; filename="{filename}"'
+            return response
+
+        elif format_type == 'CSV':
+            response = export_service.export_to_csv()
+            filename = f"combined_report_{timezone.now().strftime('%Y%m%d_%H%M%S')}.csv"
+            response['Content-Disposition'] = f'attachment; filename="{filename}"'
+            return response
+
+        elif format_type == 'JSON':
+            response = HttpResponse(
+                json.dumps(combined_data, indent=2, default=str),
+                content_type='application/json'
+            )
+            filename = f"combined_report_{timezone.now().strftime('%Y%m%d_%H%M%S')}.json"
+            response['Content-Disposition'] = f'attachment; filename="{filename}"'
+            return response
+
+        elif format_type == 'HTML':
+            # Return HTML with special print styling
+            context = {
+                'combined_data': combined_data,
+                'selected_reports': report_types,
+                'filters': filters,
+                'for_print': True
+            }
+            return render(request, 'reports/export/combined_report.html', context)
+
+        else:
+            return HttpResponse("Unsupported export format", status=400)
+
+    except Exception as e:
+        logger.error(f"Error exporting combined report: {e}", exc_info=True)
+        return HttpResponse(f"Error exporting report: {str(e)}", status=500)
 
 @login_required
 @permission_required('expenses.view_expense')
@@ -1165,7 +1338,30 @@ def run_saved_report(request, report_id):
             saved_report.created_by == request.user or saved_report.is_shared):
         raise PermissionDenied
 
-    # Redirect to appropriate report view based on report type
+    # For CUSTOM report type that is a Combined Report, handle specially
+    if saved_report.report_type == 'CUSTOM':
+        # Check if this is a combined report based on name or parameters
+        if 'combined' in saved_report.name.lower() or 'business' in saved_report.name.lower():
+            # Redirect to combined business report with saved filters
+            url = 'reports:combined_business_report'
+
+            # Get saved filters and parameters
+            filters = saved_report.filters or {}
+            parameters = saved_report.parameters or {}
+
+            # Merge parameters into filters for the combined report
+            for key, value in parameters.items():
+                filters[key] = value
+
+            # Build query string
+            query_string = '&'.join([f"{k}={v}" for k, v in filters.items() if v])
+
+            if query_string:
+                return redirect(f"{reverse(url)}?{query_string}")
+            else:
+                return redirect(url)
+
+    # For other report types, use the existing mapping
     report_urls = {
         'SALES_SUMMARY': 'reports:sales_summary',
         'PRODUCT_PERFORMANCE': 'reports:product_performance',
@@ -1174,13 +1370,19 @@ def run_saved_report(request, report_id):
         'Z_REPORT': 'reports:z_report',
         'EFRIS_COMPLIANCE': 'reports:efris_compliance',
         'PRICE_LOOKUP': 'reports:price_lookup',
+        'CASHIER_PERFORMANCE': 'reports:cashier_performance',
+        'PROFIT_LOSS': 'reports:profit_loss',
+        'STOCK_MOVEMENT': 'reports:stock_movement',
+        'CUSTOMER_ANALYTICS': 'reports:customer_analytics',
+        'EXPENSE_REPORT': 'reports:expense_report',
+        'EXPENSE_ANALYTICS': 'reports:expense_analytics',
     }
 
     url = report_urls.get(saved_report.report_type, 'reports:dashboard')
 
     # Add saved report filters as URL parameters
-    query_params = saved_report.filters or {}
-    query_string = '&'.join([f"{k}={v}" for k, v in query_params.items()])
+    filters = saved_report.filters or {}
+    query_string = '&'.join([f"{k}={v}" for k, v in filters.items() if v])
 
     if query_string:
         return redirect(f"{reverse(url)}?{query_string}")

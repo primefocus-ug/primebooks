@@ -351,7 +351,7 @@ class StoreForm(forms.ModelForm):
         fields = [
             'company', 'name', 'code', 'physical_address', 'location_gps',
             'latitude', 'longitude', 'region', 'phone', 'secondary_phone',
-            'email', 'logo', 'efris_device_number', 'efris_enabled',
+            'email', 'logo', 'efris_enabled',
             'is_active', 'store_type', 'is_main_branch', 'accessible_by_all',
 
             # EFRIS Configuration Toggle
@@ -377,6 +377,10 @@ class StoreForm(forms.ModelForm):
                 'placeholder': 'Enter full physical address...',
                 'class': 'form-control',
                 'id': 'physical_address_field'
+            }),
+            'tin': forms.TextInput(attrs={
+                'class': 'form-control',
+                'placeholder': 'Tax Identification Number'
             }),
             'location_gps': forms.TextInput(attrs={
                 'placeholder': 'e.g., 0.347596, 32.582520',

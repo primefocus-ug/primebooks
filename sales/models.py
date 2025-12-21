@@ -582,12 +582,10 @@ class Sale(models.Model, EFRISSaleMixin):
         # Set appropriate status and payment status based on document type
         self.set_auto_statuses()
 
-        # Calculate total if not set - FIX: Ensure Decimal types
+        # Calculate total if not set
         if not self.total_amount or self.total_amount == 0:
-            # Convert to Decimal explicitly
             subtotal = Decimal(str(self.subtotal or 0))
             discount = Decimal(str(self.discount_amount or 0))
-
             calculated_total = subtotal - discount
             self.total_amount = calculated_total.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
 
@@ -598,6 +596,65 @@ class Sale(models.Model, EFRISSaleMixin):
 
         super().save(*args, **kwargs)
 
+        # ========== FIXED: Auto-create Invoice record for INVOICE document type ==========
+        if self.document_type == 'INVOICE':
+            # Only create if Invoice doesn't exist
+            if not hasattr(self, 'invoice_detail') or self.invoice_detail is None:
+                try:
+                    # Import here to avoid circular imports
+                    from invoices.models import Invoice as InvoiceModel
+
+                    # Determine business type
+                    business_type = 'B2C'  # Default
+                    if self.customer:
+                        if hasattr(self.customer, 'customer_type'):
+                            if self.customer.customer_type == 'BUSINESS':
+                                business_type = 'B2B'
+                            elif self.customer.customer_type in ['GOVERNMENT', 'PUBLIC']:
+                                business_type = 'B2G'
+                        elif hasattr(self.customer, 'tin') and self.customer.tin:
+                            business_type = 'B2B'
+
+                    # Create Invoice record
+                    InvoiceModel.objects.create(
+                        sale=self,
+                        store=self.store,
+                        terms='',
+                        purchase_order='',
+                        created_by=self.created_by,
+                        business_type=business_type,
+                        operator_name=self.created_by.get_full_name() if self.created_by else 'System',
+                        fiscalization_status='pending',
+                        efris_document_type='1',  # Normal Invoice
+                        auto_fiscalize=True
+                    )
+                    logger.info(f"✅ Auto-created Invoice record for sale {self.document_number}")
+                except Exception as e:
+                    logger.error(f"❌ Failed to auto-create Invoice record for sale {self.id}: {e}", exc_info=True)
+        # ===============================================================
+
+        # Auto-create Receipt record for RECEIPT document type
+        if self.document_type == 'RECEIPT' and is_new:
+            try:
+                from sales.models import Receipt as ReceiptModel
+                if not hasattr(self, 'receipt_detail') or self.receipt_detail is None:
+                    ReceiptModel.objects.create(
+                        sale=self,
+                        printed_by=self.created_by,
+                        receipt_data={
+                            'items': [],
+                            'totals': {
+                                'subtotal': str(self.subtotal),
+                                'tax': str(self.tax_amount),
+                                'discount': str(self.discount_amount),
+                                'total': str(self.total_amount),
+                            }
+                        }
+                    )
+                    logger.info(f"✅ Auto-created Receipt record for sale {self.document_number}")
+            except Exception as e:
+                logger.error(f"❌ Failed to auto-create Receipt record: {e}", exc_info=True)
+
         # Send WebSocket update
         if self.status in ['COMPLETED', 'PAID']:
             try:
@@ -605,18 +662,15 @@ class Sale(models.Model, EFRISSaleMixin):
             except Exception as e:
                 logger.error(f"WebSocket update failed for sale {self.id}: {e}")
 
-        # ========== CRITICAL FIX: Auto-fiscalize ALL completed sales ==========
+        # Auto-fiscalize if needed
         if is_new and self.status in ['COMPLETED', 'PAID']:
             try:
-                # Check company policy for auto-fiscalization
                 store_config = self.store.effective_efris_config
                 if store_config.get('enabled', False) and store_config.get('is_active', False):
                     auto_fiscalize = store_config.get('auto_fiscalize_sales', True)
                     if auto_fiscalize:
-                        # Schedule fiscalization
                         from django.db import transaction
                         if not transaction.get_autocommit():
-                            # We're inside a transaction, schedule for later
                             transaction.on_commit(lambda: self._auto_fiscalize_sale())
                         else:
                             self._auto_fiscalize_sale()
@@ -1613,18 +1667,18 @@ class Cart(models.Model):
 
         # Don't validate stock for proforma/estimate
         if self.document_type in ['RECEIPT', 'INVOICE']:
-            # Validate stock availability with locking
             for item in self.items.select_related('product').select_for_update():
-                store_stock = Stock.objects.select_for_update().filter(
-                    product=item.product,
-                    store=self.store
-                ).first()
+                if item.product:  # Only check products, not services
+                    store_stock = Stock.objects.select_for_update().filter(
+                        product=item.product,
+                        store=self.store
+                    ).first()
 
-                if not store_stock or store_stock.quantity < item.quantity:
-                    raise ValidationError(
-                        f"Insufficient stock for {item.product.name} in store {self.store.name}. "
-                        f"Available: {store_stock.quantity if store_stock else 0}, Required: {item.quantity}"
-                    )
+                    if not store_stock or store_stock.quantity < item.quantity:
+                        raise ValidationError(
+                            f"Insufficient stock for {item.product.name} in store {self.store.name}. "
+                            f"Available: {store_stock.quantity if store_stock else 0}, Required: {item.quantity}"
+                        )
 
         # Create sale with document type
         sale = Sale.objects.create(
@@ -1643,8 +1697,10 @@ class Cart(models.Model):
             transaction_type='SALE',
         )
 
+        # The Sale.save() method will automatically create Invoice/Receipt records
+        # based on document_type, so we don't need to create them here
+
         # Move cart items to SaleItems
-        # Stock deduction happens automatically in SaleItem.save()
         for item in self.items.all():
             SaleItem.objects.create(
                 sale=sale,
@@ -1656,36 +1712,11 @@ class Cart(models.Model):
                 tax_amount=item.tax_amount,
                 discount=item.discount,
                 discount_amount=item.discount_amount,
-                description=item.description or item.product.name,
+                description=item.description or (item.product.name if item.product else ''),
             )
-            # ✅ REMOVED: Manual deduct_stock() call - already handled in SaleItem.save()
 
-        # Update sale totals after all items are added
+        # Update sale totals
         sale.update_totals()
-
-        # Create document-specific records
-        if self.document_type == 'RECEIPT':
-            Receipt.objects.create(
-                sale=sale,
-                printed_by=created_by,
-                receipt_data={
-                    'items': [item.item_name for item in sale.items.all()],
-                    'totals': {
-                        'subtotal': str(sale.subtotal),
-                        'tax': str(sale.tax_amount),
-                        'discount': str(sale.discount_amount),
-                        'total': str(sale.total_amount),
-                    }
-                }
-            )
-        elif self.document_type == 'INVOICE':
-            from invoices.models import Invoice
-            Invoice.objects.create(
-                sale=sale,
-                terms=self.terms or '',
-                purchase_order=self.purchase_order or '',
-                due_date=sale.due_date
-            )
 
         self.status = 'CONFIRMED'
         self.save(update_fields=['status'])

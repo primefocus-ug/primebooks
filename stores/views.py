@@ -154,13 +154,13 @@ def terminate_all_sessions_view(request):
 
 @login_required
 @require_http_methods(["POST"])
-def trust_device_view(request, fingerprint_id):
+def trust_device_view(request, pk):  # Changed from fingerprint_id to pk
     """
     Mark a device as trusted
     """
     device = get_object_or_404(
         DeviceFingerprint,
-        id=fingerprint_id,
+        id=pk,  # Changed from fingerprint_id to pk
         user=request.user
     )
 
@@ -169,18 +169,18 @@ def trust_device_view(request, fingerprint_id):
     device.save(update_fields=['is_trusted', 'trust_score'])
 
     messages.success(request, f'Device "{device.device_name}" marked as trusted.')
-    return redirect('stores:user_sessions')
+    return redirect('stores:device_fingerprints')  # Redirect to device fingerprints page
 
 
 @login_required
 @require_http_methods(["POST"])
-def remove_device_view(request, fingerprint_id):
+def remove_device_view(request, pk):  # Changed from fingerprint_id to pk
     """
     Remove/deactivate a device
     """
     device = get_object_or_404(
         DeviceFingerprint,
-        id=fingerprint_id,
+        id=pk,  # Changed from fingerprint_id to pk
         user=request.user
     )
 
@@ -195,7 +195,7 @@ def remove_device_view(request, fingerprint_id):
     ).update(is_active=False, status='FORCE_CLOSED')
 
     messages.success(request, f'Device "{device.device_name}" removed.')
-    return redirect('stores:user_sessions')
+    return redirect('stores:device_fingerprints')  # Redirect to device fingerprints page
 
 
 # API Endpoints for AJAX requests

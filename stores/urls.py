@@ -91,8 +91,8 @@ urlpatterns = [
     path('my-sessions/', views.user_sessions_view, name='user_sessions'),
     path('sessions/<int:session_id>/terminate/', views.terminate_session_view, name='terminate_session'),
     path('sessions/terminate-all/', views.terminate_all_sessions_view, name='terminate_all_sessions'),
-    path('devices/<int:fingerprint_id>/trust/', views.trust_device_view, name='trust_device'),
-    path('devices/<int:fingerprint_id>/remove/', views.remove_device_view, name='remove_device'),
+    path('ddevices/<int:pk>/trust/', views.trust_device_view, name='trust_device'),
+    path('ddevices/<int:pk>/remove/', views.remove_device_view, name='remove_device'),
 
     # API endpoints for AJAX
     path('api/sessions/active/', views.api_active_sessions, name='api_active_sessions'),
