@@ -84,6 +84,18 @@ NAVIGATION_ITEMS = [
         icon="bi bi-speedometer2"
     ),
     NavigationItem(
+        name="Create Sale",
+        url_name="sales:create_sale",
+        icon="bi bi-plus-circle",
+        permission="sales.add_sale"
+    ),
+    NavigationItem(
+        name="Create Expense",
+        url_name="expenses:expense_create",
+        icon="bi bi-plus-circle",
+        permission="expenses.add_expense"
+    ),
+    NavigationItem(
         name="Profile & Settings",
         icon="bi bi-speedometer2",
         children=[
@@ -422,6 +434,11 @@ NAVIGATION_ITEMS = [
                 icon="bi bi-speedometer2",
             ),
             NavigationItem(
+                name="Create Expense",
+                url_name="expenses:expense_create",
+                icon="bi bi-coin",
+            ),
+            NavigationItem(
                 name="Expense List",
                 url_name="expenses:expense_list",
                 icon="bi bi-coin",
@@ -430,6 +447,11 @@ NAVIGATION_ITEMS = [
                 name="Reports",
                 url_name="expenses:reports",
                 icon="bi bi-file-earmark-bar-graph",
+            ),
+            NavigationItem(
+                name="Expense Category",
+                url_name="expenses:category_create",
+                icon="bi bi-coin",
             ),
             NavigationItem(
                 name="Category List",

@@ -6,6 +6,7 @@ from reports.routing import websocket_urlpatterns as reports_patterns
 from messaging.routing import websocket_urlpatterns as messaging_patterns
 from branches.routing import websocket_urlpatterns as branches_patterns
 from notifications.routing import websocket_urlpatterns as notifications_patterns
+from expenses.routing import websocket_urlpatterns as expenses_patterns
 
 # Combine all app websocket patterns
 websocket_urlpatterns = [
@@ -17,4 +18,5 @@ websocket_urlpatterns = [
     *reports_patterns,
     *messaging_patterns,
     *notifications_patterns,
+    *expenses_patterns,
 ]

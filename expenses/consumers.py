@@ -17,6 +17,7 @@ class ExpenseConsumer(AsyncWebsocketConsumer):
     async def connect(self):
         """Handle WebSocket connection"""
         self.user = self.scope['user']
+        self.expense_id = self.scope['url_route']['kwargs'].get('expense_id')
 
         if not self.user.is_authenticated:
             await self.close()
@@ -28,6 +29,14 @@ class ExpenseConsumer(AsyncWebsocketConsumer):
             self.user_group_name,
             self.channel_name
         )
+
+        # Join expense-specific room if expense_id is provided
+        if self.expense_id:
+            self.expense_group_name = f'expense_{self.expense_id}'
+            await self.channel_layer.group_add(
+                self.expense_group_name,
+                self.channel_name
+            )
 
         # Join company-wide expense group if user can approve
         if await self.can_approve_expenses():
@@ -42,7 +51,8 @@ class ExpenseConsumer(AsyncWebsocketConsumer):
         # Send connection confirmation
         await self.send(text_data=json.dumps({
             'type': 'connection_established',
-            'message': 'Connected to expense updates'
+            'message': 'Connected to expense updates',
+            'expense_id': self.expense_id
         }))
 
     async def disconnect(self, close_code):
@@ -52,6 +62,13 @@ class ExpenseConsumer(AsyncWebsocketConsumer):
             self.user_group_name,
             self.channel_name
         )
+
+        # Leave expense group if applicable
+        if hasattr(self, 'expense_group_name'):
+            await self.channel_layer.group_discard(
+                self.expense_group_name,
+                self.channel_name
+            )
 
         # Leave approvers group if applicable
         if hasattr(self, 'company_group_name'):

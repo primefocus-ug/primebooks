@@ -21,10 +21,18 @@ User = get_user_model()
 @receiver(post_save, sender=ExpenseCategory)
 def handle_category_change(sender, instance, created, **kwargs):
     """Handle category changes and update related expenses if needed"""
-    if not created and instance.tracker.has_changed('is_active'):
-        # Notify users if category is deactivated
-        if not instance.is_active:
-            send_category_deactivation_notification(instance)
+    if not created:
+        try:
+            # Get the original instance from database
+            original = sender.objects.get(pk=instance.pk)
+            # Check if is_active changed
+            if original.is_active != instance.is_active:
+                # Notify users if category is deactivated
+                if not instance.is_active:
+                    send_category_deactivation_notification(instance)
+        except sender.DoesNotExist:
+            # Instance was deleted or doesn't exist
+            pass
 
 def send_category_deactivation_notification(category):
     """Send notification when category is deactivated"""
