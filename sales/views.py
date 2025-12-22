@@ -2338,10 +2338,10 @@ def quick_sale(request):
 @permission_required("sales.add_sale", raise_exception=True)
 @require_http_methods(["GET", "POST"])
 def process_refund(request, sale_id):
-    """Enhanced refund processing with dedicated template and comprehensive validation"""
+    """Enhanced refund processing with support for both Products and Services"""
     sale = get_object_or_404(
         Sale.objects.select_related('store', 'customer', 'created_by')
-        .prefetch_related('items__product', 'payments'),
+        .prefetch_related('items__product', 'items__service', 'payments'),
         pk=sale_id
     )
 
@@ -2380,7 +2380,11 @@ def process_refund(request, sale_id):
         for refund in existing_refunds:
             total_refunded += abs(refund.total_amount)
             for refund_item in refund.items.all():
-                item_key = refund_item.product.id
+                # Handle both products and services
+                item_key = (
+                    f"product_{refund_item.product.id}" if refund_item.product
+                    else f"service_{refund_item.service.id}"
+                )
                 if item_key not in refunded_items:
                     refunded_items[item_key] = Decimal('0')
                 refunded_items[item_key] += abs(refund_item.quantity)
@@ -2388,19 +2392,28 @@ def process_refund(request, sale_id):
         # Prepare items data for template
         items_data = []
         for item in sale.items.all():
-            refunded_qty = refunded_items.get(item.product.id, Decimal('0'))
+            # Determine if this is a product or service
+            item_type = 'product' if item.product else 'service'
+            item_obj = item.product if item.product else item.service
+            item_key = f"{item_type}_{item_obj.id}"
+
+            refunded_qty = refunded_items.get(item_key, Decimal('0'))
             available_qty = item.quantity - refunded_qty
 
             if available_qty > 0:
                 items_data.append({
                     'id': item.id,
-                    'product': item.product,
+                    'item_type': item_type,
+                    'item': item_obj,
+                    'product': item.product,  # For backward compatibility
+                    'service': item.service,
                     'original_quantity': item.quantity,
                     'refunded_quantity': refunded_qty,
                     'available_quantity': available_qty,
                     'unit_price': item.unit_price,
                     'line_total': getattr(item, 'line_total', item.quantity * item.unit_price),
                     'available_refund_amount': available_qty * item.unit_price,
+                    'has_stock': item_type == 'product',  # Flag to indicate if stock management needed
                 })
 
         context = {
@@ -2415,8 +2428,145 @@ def process_refund(request, sale_id):
 
         return render(request, 'sales/process_refund.html', context)
 
-    # POST request processing would go here
-    return JsonResponse({'success': False, 'error': 'POST refund processing not implemented in this snippet'})
+    # POST request - process refund
+    try:
+        with transaction.atomic():
+            refund_items = request.POST.getlist('refund_items[]')
+            refund_quantities = request.POST.getlist('refund_quantities[]')
+            refund_reason = request.POST.get('refund_reason', '').strip()
+            refund_notes = request.POST.get('refund_notes', '').strip()
+            refund_method = request.POST.get('refund_method', 'CASH')
+
+            if not refund_items or not refund_reason:
+                messages.error(request, 'Please select items to refund and provide a reason.')
+                return redirect('sales:process_refund', sale_id=sale_id)
+
+            # Create refund sale record
+            refund_sale = Sale.objects.create(
+                store=sale.store,
+                customer=sale.customer,
+                transaction_type='REFUND',
+                related_sale=sale,
+                payment_method=refund_method,
+                payment_status='COMPLETED',
+                created_by=request.user,
+                notes=f"Refund for sale #{sale.document_number}. Reason: {refund_reason}. {refund_notes}"
+            )
+
+            refund_total = Decimal('0')
+
+            # Process each refunded item
+            for item_id, qty in zip(refund_items, refund_quantities):
+                qty = Decimal(qty)
+                if qty <= 0:
+                    continue
+
+                original_item = sale.items.get(id=item_id)
+
+                # Determine if this is a product or service
+                is_product = original_item.product is not None
+                item_obj = original_item.product if is_product else original_item.service
+
+                # Create refund item
+                refund_item = SaleItem.objects.create(
+                    sale=refund_sale,
+                    product=original_item.product if is_product else None,
+                    service=original_item.service if not is_product else None,
+                    quantity=-qty,  # Negative for refund
+                    unit_price=original_item.unit_price,
+                    discount_percentage=original_item.discount_percentage,
+                    tax_rate=original_item.tax_rate
+                )
+
+                item_total = abs(refund_item.line_total)
+                refund_total += item_total
+
+                # Only handle stock for products, not services
+                if is_product:
+                    try:
+                        stock = Stock.objects.select_for_update().get(
+                            product=original_item.product,
+                            store=sale.store
+                        )
+                        stock.quantity += qty  # Add back to inventory
+                        stock.save()
+
+                        # Create stock movement record
+                        StockMovement.objects.create(
+                            product=original_item.product,
+                            store=sale.store,
+                            movement_type='REFUND',
+                            quantity=qty,
+                            reference=f"REFUND-{refund_sale.document_number or refund_sale.id}",
+                            unit_price=original_item.unit_price,
+                            total_value=item_total,
+                            created_by=request.user,
+                            notes=f'Refund from sale: {sale.document_number}, Reason: {refund_reason}'
+                        )
+
+                    except Stock.DoesNotExist:
+                        logger.warning(
+                            f"No stock record found for {original_item.product.name} "
+                            f"at {sale.store.name}. Creating new record."
+                        )
+                        Stock.objects.create(
+                            product=original_item.product,
+                            store=sale.store,
+                            quantity=qty,
+                            last_updated=timezone.now()
+                        )
+                else:
+                    # For services, just log the refund without stock movement
+                    logger.info(
+                        f"Service refund: {item_obj.name}, "
+                        f"Quantity: {qty}, Amount: {item_total}, "
+                        f"Sale: {sale.document_number}"
+                    )
+
+            # Update refund sale totals
+            refund_sale.subtotal = -refund_total
+            refund_sale.total_amount = -refund_total
+            refund_sale.save()
+
+            # Create refund payment record
+            Payment.objects.create(
+                sale=refund_sale,
+                amount=-refund_total,
+                payment_method=refund_method,
+                is_confirmed=True,
+                confirmed_by=request.user,
+                notes=f'Refund payment for sale #{sale.document_number}'
+            )
+
+            # Check if sale is fully refunded
+            total_refunded = Sale.objects.filter(
+                related_sale=sale,
+                transaction_type='REFUND'
+            ).aggregate(Sum('total_amount'))['total_amount__sum'] or Decimal('0')
+
+            if abs(total_refunded) >= sale.total_amount:
+                sale.is_refunded = True
+                sale.save()
+
+            # Audit log
+            logger.info(
+                f"Refund processed: Sale={sale.id}, Refund={refund_sale.id}, "
+                f"Amount={refund_total}, Reason={refund_reason}, User={request.user.id}"
+            )
+
+            messages.success(
+                request,
+                f'Refund of {refund_total:,.2f} UGX processed successfully. '
+                f'Refund reference: #{refund_sale.document_number}'
+            )
+
+            return redirect('sales:sale_detail', pk=sale.pk)
+
+    except Exception as e:
+        logger.error(f"Error processing refund for sale {sale_id}: {e}", exc_info=True)
+        messages.error(request, 'An error occurred while processing the refund. Please try again.')
+        return redirect('sales:process_refund', sale_id=sale_id)
+
 
 
 def export_sales(request, sales, format_type):
@@ -3400,14 +3550,15 @@ def analytics_day_details(request):
         return JsonResponse({'success': False, 'error': str(e)})
 
 
+
 @login_required
 @permission_required('sales.change_sale', raise_exception=True)
 @require_http_methods(["GET", "POST"])
 def void_sale(request, sale_id):
-    """Enhanced void sale functionality with dedicated template"""
+    """Enhanced void sale functionality with support for both Products and Services"""
     sale = get_object_or_404(
         Sale.objects.select_related('store', 'customer', 'created_by')
-        .prefetch_related('items__product', 'payments'),
+        .prefetch_related('items__product', 'items__service', 'payments'),
         pk=sale_id
     )
 
@@ -3438,7 +3589,7 @@ def void_sale(request, sale_id):
         return redirect('sales:sale_detail', pk=sale_id)
 
     # Check if sale is too old (configurable business rule)
-    max_void_days = getattr(settings, 'MAX_SALE_VOID_DAYS', 7)  # Default 7 days
+    max_void_days = getattr(settings, 'MAX_SALE_VOID_DAYS', 7)
     if (timezone.now().date() - sale.created_at.date()).days > max_void_days:
         messages.error(request, f'Sales older than {max_void_days} days cannot be voided.')
         return redirect('sales:sale_detail', pk=sale_id)
@@ -3450,10 +3601,16 @@ def void_sale(request, sale_id):
             Sum('amount')
         )['amount__sum'] or Decimal('0')
 
+        # Count products and services separately
+        product_count = sale.items.filter(product__isnull=False).count()
+        service_count = sale.items.filter(service__isnull=False).count()
+
         context = {
             'sale': sale,
             'total_payments': total_payments,
             'items_count': sale.items.count(),
+            'product_count': product_count,
+            'service_count': service_count,
             'void_reasons': [
                 ('CUSTOMER_REQUEST', 'Customer Request'),
                 ('PRICING_ERROR', 'Pricing Error'),
@@ -3483,40 +3640,62 @@ def void_sale(request, sale_id):
 
             # Store original values for logging
             original_total = sale.total_amount
-            original_invoice = sale.document_number  # Updated from invoice_number
+            original_invoice = sale.document_number
 
-            # Restore stock for all items
+            product_items_restored = 0
+            service_items_voided = 0
+
+            # Restore stock for products and log services separately
             for item in sale.items.all():
-                try:
-                    stock = Stock.objects.select_for_update().get(
-                        product=item.product,
-                        store=sale.store
-                    )
-                    stock.quantity += item.quantity  # Add back to inventory
-                    stock.save()
+                is_product = item.product is not None
+                item_obj = item.product if is_product else item.service
 
-                    # Create stock movement record
-                    StockMovement.objects.create(
-                        product=item.product,
-                        store=sale.store,
-                        movement_type='VOID',
-                        quantity=item.quantity,  # Positive for incoming
-                        reference=f"VOID-{sale.document_number or sale.id}",
-                        unit_price=item.unit_price,
-                        total_value=item.line_total,
-                        created_by=request.user,
-                        notes=f'Void sale: {original_invoice}, Reason: {void_reason}'
-                    )
+                if is_product:
+                    # Handle product - restore stock
+                    try:
+                        stock = Stock.objects.select_for_update().get(
+                            product=item.product,
+                            store=sale.store
+                        )
+                        stock.quantity += item.quantity  # Add back to inventory
+                        stock.save()
 
-                except Stock.DoesNotExist:
-                    logger.warning(f"No stock record found for {item.product.name} at {sale.store.name}")
-                    # Create stock record if it doesn't exist
-                    Stock.objects.create(
-                        product=item.product,
-                        store=sale.store,
-                        quantity=item.quantity,
-                        last_updated=timezone.now()
+                        # Create stock movement record
+                        StockMovement.objects.create(
+                            product=item.product,
+                            store=sale.store,
+                            movement_type='VOID',
+                            quantity=item.quantity,
+                            reference=f"VOID-{sale.document_number or sale.id}",
+                            unit_price=item.unit_price,
+                            total_value=item.line_total,
+                            created_by=request.user,
+                            notes=f'Void sale: {original_invoice}, Reason: {void_reason}'
+                        )
+
+                        product_items_restored += 1
+
+                    except Stock.DoesNotExist:
+                        logger.warning(
+                            f"No stock record found for {item.product.name} "
+                            f"at {sale.store.name}. Creating new record."
+                        )
+                        Stock.objects.create(
+                            product=item.product,
+                            store=sale.store,
+                            quantity=item.quantity,
+                            last_updated=timezone.now()
+                        )
+                        product_items_restored += 1
+
+                else:
+                    # Handle service - just log, no stock to restore
+                    logger.info(
+                        f"Service voided: {item_obj.name}, "
+                        f"Quantity: {item.quantity}, Amount: {item.line_total}, "
+                        f"Sale: {original_invoice}, Reason: {void_reason}"
                     )
+                    service_items_voided += 1
 
             # Mark payments as voided
             voided_payments_count = sale.payments.filter(is_confirmed=True).update(
@@ -3534,19 +3713,28 @@ def void_sale(request, sale_id):
             sale.voided_by = request.user
             sale.save()
 
-            # Create audit log entry
+            # Create comprehensive audit log entry
             logger.info(
                 f"Sale voided: ID={sale.id}, Document={original_invoice}, "
                 f"Amount={original_total}, Reason={void_reason}, "
-                f"User={request.user.id}, Items={sale.items.count()}, "
+                f"User={request.user.id}, "
+                f"Products_Restored={product_items_restored}, "
+                f"Services_Voided={service_items_voided}, "
                 f"Payments={voided_payments_count}"
             )
 
-            messages.success(
-                request,
-                f'Sale #{original_invoice} has been voided successfully. '
-                f'Stock has been restored and payments have been marked as voided.'
-            )
+            # Build success message based on what was voided
+            success_parts = [f'Sale #{original_invoice} has been voided successfully.']
+
+            if product_items_restored > 0:
+                success_parts.append(f'{product_items_restored} product(s) stock restored.')
+
+            if service_items_voided > 0:
+                success_parts.append(f'{service_items_voided} service(s) voided.')
+
+            success_parts.append('Payments have been marked as voided.')
+
+            messages.success(request, ' '.join(success_parts))
 
             return redirect('sales:sale_detail', pk=sale.pk)
 
