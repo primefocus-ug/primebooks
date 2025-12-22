@@ -7,221 +7,502 @@
 {% block title %}{% trans "Invoice Dashboard" %} | {{ company.trading_name|default:company.name }}{% endblock %}
 
 {% block breadcrumb_items %}
+<li class="breadcrumb-item"><a href="{% url 'user_dashboard' %}">{% trans "Dashboard" %}</a></li>
 <li class="breadcrumb-item"><a href="{% url 'invoices:dashboard' %}">{% trans "Invoices" %}</a></li>
 <li class="breadcrumb-item active">{% trans "Dashboard" %}</li>
 {% endblock %}
 
 {% block extra_css %}
-<link href="{% static 'themes.css' %}" rel="stylesheet">
 <style>
-.metric-card {
-    transition: transform 0.2s ease, box-shadow 0.2s ease;
-}
+    /* Enhanced Metric Cards */
+    .metric-card {
+        background: var(--bg-primary);
+        border: 1px solid var(--border-color);
+        border-radius: var(--border-radius);
+        transition: all 0.3s ease;
+        cursor: pointer;
+        height: 100%;
+    }
 
-.metric-card:hover {
-    transform: translateY(-5px);
-    box-shadow: 0 8px 25px rgba(0,0,0,0.15) !important;
-}
+    .metric-card:hover {
+        transform: translateY(-5px);
+        box-shadow: var(--shadow-lg);
+        border-color: var(--primary-500);
+    }
 
-.metric-icon {
-    width: 60px;
-    height: 60px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-}
+    .metric-icon {
+        width: 60px;
+        height: 60px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 50%;
+        margin: 0 auto;
+        transition: transform 0.3s ease;
+    }
 
-.status-badge {
-    font-size: 0.75em;
-    padding: 0.35em 0.65em;
-}
+    .metric-card:hover .metric-icon {
+        transform: scale(1.1);
+    }
 
-.status-paid { background-color: #10B981; color: white; }
-.status-sent { background-color: #3B82F6; color: white; }
-.status-draft { background-color: #6B7280; color: white; }
-.status-pending_payment { background-color: #F59E0B; color: white; }
-.status-overdue { background-color: #EF4444; color: white; }
-.status-partially_paid { background-color: #F59E0B; color: white; }
-.status-cancelled { background-color: #374151; color: white; }
-.status-completed { background-color: #10B981; color: white; }
+    .metric-value {
+        font-size: 2rem;
+        font-weight: 700;
+        line-height: 1.2;
+        margin: 0.5rem 0;
+    }
 
-.avatar-sm {
-    width: 24px;
-    height: 24px;
-    font-size: 0.75rem;
-}
+    .metric-label {
+        font-size: 0.875rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        color: var(--text-muted);
+    }
 
-.table > :not(caption) > * > * {
-    padding: 0.75rem 0.5rem;
-}
+    .metric-change {
+        font-size: 0.875rem;
+        margin-top: 0.5rem;
+    }
 
-.chart-container {
-    position: relative;
-}
+    /* Status Badges */
+    .status-badge {
+        padding: 0.375rem 0.75rem;
+        border-radius: 50px;
+        font-weight: 600;
+        font-size: 0.75rem;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.375rem;
+        white-space: nowrap;
+    }
 
-[data-theme="dark"] .metric-card {
-    background: var(--bg-primary);
-}
+    .status-PAID, .status-COMPLETED {
+        background: var(--green-100);
+        color: var(--green-700);
+    }
 
-[data-theme="dark"] .table-light {
-    background-color: var(--bg-secondary) !important;
-    color: var(--text-primary);
-}
+    .status-PENDING_PAYMENT {
+        background: var(--amber-100);
+        color: var(--amber-700);
+    }
 
-[data-theme="dark"] .progress {
-    background-color: var(--bg-tertiary);
-}
+    .status-PARTIALLY_PAID {
+        background: var(--primary-100);
+        color: var(--primary-700);
+    }
 
-.loading {
-    opacity: 0.7;
-    pointer-events: none;
-}
+    .status-OVERDUE {
+        background: var(--red-100);
+        color: var(--red-700);
+    }
 
-.refreshing::after {
-    content: '';
-    animation: spin 1s linear infinite;
-}
+    .status-DRAFT {
+        background: var(--gray-200);
+        color: var(--gray-700);
+    }
 
-@keyframes spin {
-    0% { transform: rotate(0deg); }
-    100% { transform: rotate(360deg); }
-}
+    /* Chart Container */
+    .chart-container {
+        position: relative;
+        height: 300px;
+    }
+
+    /* Table Styles */
+    .invoice-table {
+        background: var(--bg-primary);
+    }
+
+    .invoice-table thead {
+        background: var(--bg-tertiary);
+    }
+
+    .invoice-table th {
+        font-weight: 600;
+        font-size: 0.875rem;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        padding: 1rem 0.75rem;
+        border-bottom: 2px solid var(--border-color);
+    }
+
+    .invoice-table td {
+        padding: 1rem 0.75rem;
+        vertical-align: middle;
+        border-bottom: 1px solid var(--border-color-light);
+    }
+
+    .invoice-table tbody tr:hover {
+        background: var(--bg-secondary);
+        cursor: pointer;
+    }
+
+    .overdue-row {
+        background: var(--red-50);
+    }
+
+    [data-theme="dark"] .overdue-row {
+        background: rgba(239, 68, 68, 0.1);
+    }
+
+    /* Performance Progress Bars */
+    .performance-item {
+        margin-bottom: 1.5rem;
+    }
+
+    .performance-item:last-child {
+        margin-bottom: 0;
+    }
+
+    .performance-label {
+        display: flex;
+        justify-content: space-between;
+        margin-bottom: 0.5rem;
+        font-size: 0.875rem;
+    }
+
+    .performance-label-text {
+        color: var(--text-secondary);
+        font-weight: 500;
+    }
+
+    .performance-value {
+        font-weight: 700;
+        color: var(--text-primary);
+    }
+
+    .progress {
+        height: 8px;
+        background: var(--bg-tertiary);
+        border-radius: 10px;
+        overflow: hidden;
+    }
+
+    .progress-bar {
+        border-radius: 10px;
+        transition: width 0.6s ease;
+    }
+
+    /* Upcoming Due Dates List */
+    .due-date-item {
+        padding: 1rem;
+        border-bottom: 1px solid var(--border-color-light);
+        transition: background 0.2s ease;
+    }
+
+    .due-date-item:last-child {
+        border-bottom: none;
+    }
+
+    .due-date-item:hover {
+        background: var(--bg-secondary);
+        cursor: pointer;
+    }
+
+    .due-date-urgent {
+        border-left: 3px solid var(--red-500);
+    }
+
+    .due-date-warning {
+        border-left: 3px solid var(--amber-500);
+    }
+
+    /* Avatar */
+    .avatar-sm {
+        width: 32px;
+        height: 32px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 0.75rem;
+        font-weight: 600;
+    }
+
+    /* Quick Action Buttons */
+    .quick-action-btn {
+        transition: all 0.3s ease;
+        border: 2px solid transparent;
+    }
+
+    .quick-action-btn:hover {
+        transform: translateY(-2px);
+        box-shadow: var(--shadow-md);
+    }
+
+    .quick-action-btn.btn-primary:hover {
+        border-color: var(--primary-700);
+    }
+
+    /* Empty State */
+    .empty-state {
+        text-align: center;
+        padding: 3rem 2rem;
+        color: var(--text-muted);
+    }
+
+    .empty-state-icon {
+        font-size: 4rem;
+        opacity: 0.3;
+        margin-bottom: 1rem;
+    }
+
+    /* Loading State */
+    .loading-overlay {
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(255, 255, 255, 0.8);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 10;
+        border-radius: var(--border-radius);
+    }
+
+    [data-theme="dark"] .loading-overlay {
+        background: rgba(0, 0, 0, 0.8);
+    }
+
+    .spinner {
+        width: 40px;
+        height: 40px;
+        border: 4px solid var(--border-color);
+        border-top-color: var(--primary-500);
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+    }
+
+    @keyframes spin {
+        to { transform: rotate(360deg); }
+    }
+
+    /* Responsive Design */
+    @media (max-width: 768px) {
+        .metric-value {
+            font-size: 1.5rem;
+        }
+
+        .metric-icon {
+            width: 50px;
+            height: 50px;
+        }
+
+        .chart-container {
+            height: 250px;
+        }
+
+        .invoice-table {
+            font-size: 0.875rem;
+        }
+
+        .invoice-table th,
+        .invoice-table td {
+            padding: 0.75rem 0.5rem;
+        }
+    }
 </style>
 {% endblock %}
 
 {% block content %}
 <div class="container-fluid">
-    <!-- Key Metrics with Enhanced Design -->
-    <div class="row mb-4">
-        <div class="col-xl-2 col-md-4 col-6 mb-4">
-            <div class="card metric-card border-0 shadow-sm">
+    <!-- Page Header -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h1 class="h2 mb-1">
+                <i class="bi bi-speedometer2 me-2"></i>
+                {% trans "Invoice Dashboard" %}
+            </h1>
+            <p class="text-muted mb-0">
+                {% trans "Overview of your invoicing performance" %}
+            </p>
+        </div>
+        <div class="d-flex gap-2">
+            <button class="btn btn-outline-secondary" onclick="refreshDashboard()">
+                <i class="bi bi-arrow-clockwise me-2"></i>
+                {% trans "Refresh" %}
+            </button>
+            <a href="{% url 'sales:create_sale' %}?type=invoice" class="btn btn-primary">
+                <i class="bi bi-plus-circle me-2"></i>
+                {% trans "New Invoice" %}
+            </a>
+        </div>
+    </div>
+
+    <!-- Key Metrics Row -->
+    <div class="row g-3 mb-4">
+        <div class="col-xl-2 col-md-4 col-6">
+            <div class="card metric-card" onclick="window.location.href='{% url 'invoices:list' %}'">
                 <div class="card-body text-center">
-                    <div class="metric-icon bg-primary bg-opacity-10 rounded-circle mx-auto mb-3">
+                    <div class="metric-icon bg-primary bg-opacity-10">
                         <i class="bi bi-receipt text-primary fs-4"></i>
                     </div>
-                    <div class="text-muted small fw-semibold">{% trans "Total Invoices" %}</div>
-                    <div class="h3 mb-1 fw-bold text-primary" data-metric="total_invoices">{{ metrics.total_invoices|intcomma }}</div>
-                    <div class="small text-success" data-metric="invoices_this_month">
+                    <div class="metric-label">{% trans "Total Invoices" %}</div>
+                    <div class="metric-value text-primary" data-metric="total_invoices">
+                        {{ metrics.total_invoices|intcomma }}
+                    </div>
+                    <div class="metric-change text-success">
                         <i class="bi bi-arrow-up-short"></i>
-                        {{ metrics.invoices_this_month }} {% trans "this month" %}
+                        <span data-metric="invoices_this_month">{{ metrics.invoices_this_month }}</span>
+                        {% trans "this month" %}
                     </div>
                 </div>
             </div>
         </div>
 
-        <div class="col-xl-2 col-md-4 col-6 mb-4">
-            <div class="card metric-card border-0 shadow-sm">
+        <div class="col-xl-2 col-md-4 col-6">
+            <div class="card metric-card" onclick="filterByStatus('PAID')">
                 <div class="card-body text-center">
-                    <div class="metric-icon bg-success bg-opacity-10 rounded-circle mx-auto mb-3">
+                    <div class="metric-icon bg-success bg-opacity-10">
                         <i class="bi bi-currency-dollar text-success fs-4"></i>
                     </div>
-                    <div class="text-muted small fw-semibold">{% trans "Total Revenue" %}</div>
-                    <div class="h3 mb-1 fw-bold text-success" data-metric="total_revenue">UGX {{ metrics.total_revenue|intcomma }}</div>
-                    <div class="small text-muted">{% trans "Paid invoices" %}</div>
+                    <div class="metric-label">{% trans "Total Revenue" %}</div>
+                    <div class="metric-value text-success" data-metric="total_revenue">
+                        UGX {{ metrics.total_revenue|floatformat:0|intcomma }}
+                    </div>
+                    <div class="metric-change text-muted">
+                        {% trans "Paid invoices" %}
+                    </div>
                 </div>
             </div>
         </div>
 
-        <div class="col-xl-2 col-md-4 col-6 mb-4">
-            <div class="card metric-card border-0 shadow-sm">
+        <div class="col-xl-2 col-md-4 col-6">
+            <div class="card metric-card" onclick="filterByStatus('PENDING')">
                 <div class="card-body text-center">
-                    <div class="metric-icon bg-warning bg-opacity-10 rounded-circle mx-auto mb-3">
+                    <div class="metric-icon bg-warning bg-opacity-10">
                         <i class="bi bi-clock text-warning fs-4"></i>
                     </div>
-                    <div class="text-muted small fw-semibold">{% trans "Pending Amount" %}</div>
-                    <div class="h3 mb-1 fw-bold text-warning" data-metric="pending_amount">UGX {{ metrics.pending_amount|intcomma }}</div>
-                    <div class="small text-muted" data-metric="pending_invoices">{{ metrics.pending_invoices }} {% trans "pending" %}</div>
+                    <div class="metric-label">{% trans "Pending Amount" %}</div>
+                    <div class="metric-value text-warning" data-metric="pending_amount">
+                        UGX {{ metrics.pending_amount|floatformat:0|intcomma }}
+                    </div>
+                    <div class="metric-change text-muted">
+                        <span data-metric="pending_invoices">{{ metrics.pending_invoices }}</span>
+                        {% trans "pending" %}
+                    </div>
                 </div>
             </div>
         </div>
 
-        <div class="col-xl-2 col-md-4 col-6 mb-4">
-            <div class="card metric-card border-0 shadow-sm">
+        <div class="col-xl-2 col-md-4 col-6">
+            <div class="card metric-card" onclick="filterByStatus('OVERDUE')">
                 <div class="card-body text-center">
-                    <div class="metric-icon bg-danger bg-opacity-10 rounded-circle mx-auto mb-3">
+                    <div class="metric-icon bg-danger bg-opacity-10">
                         <i class="bi bi-exclamation-triangle text-danger fs-4"></i>
                     </div>
-                    <div class="text-muted small fw-semibold">{% trans "Overdue" %}</div>
-                    <div class="h3 mb-1 fw-bold text-danger" data-metric="overdue_invoices">{{ metrics.overdue_invoices|intcomma }}</div>
-                    <div class="small text-muted">{% trans "Requires attention" %}</div>
+                    <div class="metric-label">{% trans "Overdue" %}</div>
+                    <div class="metric-value text-danger" data-metric="overdue_invoices">
+                        {{ metrics.overdue_invoices|intcomma }}
+                    </div>
+                    <div class="metric-change text-danger">
+                        {% trans "Requires attention" %}
+                    </div>
                 </div>
             </div>
         </div>
 
-        <div class="col-xl-2 col-md-4 col-6 mb-4">
-            <div class="card metric-card border-0 shadow-sm">
+        <div class="col-xl-2 col-md-4 col-6">
+            <div class="card metric-card" onclick="filterByFiscalized(true)">
                 <div class="card-body text-center">
-                    <div class="metric-icon bg-info bg-opacity-10 rounded-circle mx-auto mb-3">
+                    <div class="metric-icon bg-info bg-opacity-10">
                         <i class="bi bi-shield-check text-info fs-4"></i>
                     </div>
-                    <div class="text-muted small fw-semibold">{% trans "Fiscalized" %}</div>
-                    <div class="h3 mb-1 fw-bold text-info" data-metric="fiscalized_invoices">{{ metrics.fiscalized_invoices|intcomma }}</div>
-                    <div class="small text-muted">{% trans "EFRIS compliant" %}</div>
+                    <div class="metric-label">{% trans "Fiscalized" %}</div>
+                    <div class="metric-value text-info" data-metric="fiscalized_invoices">
+                        {{ metrics.fiscalized_invoices|intcomma }}
+                    </div>
+                    <div class="metric-change text-muted">
+                        {% trans "EFRIS compliant" %}
+                    </div>
                 </div>
             </div>
         </div>
 
-        <div class="col-xl-2 col-md-4 col-6 mb-4">
-            <div class="card metric-card border-0 shadow-sm">
+        <div class="col-xl-2 col-md-4 col-6">
+            <div class="card metric-card">
                 <div class="card-body text-center">
-                    <div class="metric-icon bg-secondary bg-opacity-10 rounded-circle mx-auto mb-3">
+                    <div class="metric-icon bg-secondary bg-opacity-10">
                         <i class="bi bi-cash-coin text-secondary fs-4"></i>
                     </div>
-                    <div class="text-muted small fw-semibold">{% trans "Avg. Invoice" %}</div>
-                    <div class="h3 mb-1 fw-bold text-secondary" data-metric="avg_invoice_amount">
-                        {% if metrics.total_invoices > 0 %}
-                            UGX {{ metrics.avg_invoice_amount|floatformat:0|intcomma }}
-                        {% else %}
-                            UGX 0
-                        {% endif %}
+                    <div class="metric-label">{% trans "Avg. Invoice" %}</div>
+                    <div class="metric-value text-secondary" data-metric="avg_invoice_amount">
+                        UGX {{ metrics.avg_invoice_amount|floatformat:0|intcomma }}
                     </div>
-                    <div class="small text-muted">{% trans "Average value" %}</div>
+                    <div class="metric-change text-muted">
+                        {% trans "Average value" %}
+                    </div>
                 </div>
             </div>
         </div>
     </div>
 
     <!-- Charts Row -->
-    <div class="row mb-4">
+    <div class="row g-3 mb-4">
         <!-- Revenue Trend Chart -->
-        <div class="col-lg-8 mb-4">
+        <div class="col-lg-8">
             <div class="card h-100">
                 <div class="card-header d-flex justify-content-between align-items-center">
-                    <h5 class="card-title mb-0">
-                        <i class="bi bi-graph-up me-2"></i>{% trans "Revenue Trend (Last 12 Months)" %}
+                    <h5 class="mb-0">
+                        <i class="bi bi-graph-up me-2"></i>
+                        {% trans "Revenue Trend" %}
                     </h5>
                     <div class="dropdown">
-                        <button class="btn btn-sm btn-outline-secondary dropdown-toggle" type="button" data-bs-toggle="dropdown">
-                            <i class="bi bi-calendar me-1"></i>{% trans "12 Months" %}
+                        <button class="btn btn-sm btn-outline-secondary dropdown-toggle"
+                                type="button"
+                                data-bs-toggle="dropdown">
+                            <i class="bi bi-calendar me-1"></i>
+                            <span id="periodLabel">{% trans "12 Months" %}</span>
                         </button>
-                        <ul class="dropdown-menu">
-                            <li><a class="dropdown-item" href="#" data-period="12">{% trans "12 Months" %}</a></li>
-                            <li><a class="dropdown-item" href="#" data-period="6">{% trans "6 Months" %}</a></li>
-                            <li><a class="dropdown-item" href="#" data-period="3">{% trans "3 Months" %}</a></li>
+                        <ul class="dropdown-menu dropdown-menu-end">
+                            <li>
+                                <a class="dropdown-item" href="#" data-period="3">
+                                    {% trans "3 Months" %}
+                                </a>
+                            </li>
+                            <li>
+                                <a class="dropdown-item" href="#" data-period="6">
+                                    {% trans "6 Months" %}
+                                </a>
+                            </li>
+                            <li>
+                                <a class="dropdown-item active" href="#" data-period="12">
+                                    {% trans "12 Months" %}
+                                </a>
+                            </li>
                         </ul>
                     </div>
                 </div>
-                <div class="card-body">
-                    <div class="chart-container" style="height: 300px;">
+                <div class="card-body position-relative">
+                    <div class="chart-container">
                         <canvas id="revenueTrendChart"></canvas>
+                    </div>
+                    <div class="loading-overlay d-none" id="chartLoader">
+                        <div class="spinner"></div>
                     </div>
                 </div>
             </div>
         </div>
 
         <!-- Status Distribution Chart -->
-        <div class="col-lg-4 mb-4">
+        <div class="col-lg-4">
             <div class="card h-100">
                 <div class="card-header d-flex justify-content-between align-items-center">
-                    <h5 class="card-title mb-0">
-                        <i class="bi bi-pie-chart me-2"></i>{% trans "Status Distribution" %}
+                    <h5 class="mb-0">
+                        <i class="bi bi-pie-chart me-2"></i>
+                        {% trans "Status Distribution" %}
                     </h5>
-                    <button class="btn btn-sm btn-outline-secondary" id="refreshStatusChart">
+                    <button class="btn btn-sm btn-outline-secondary"
+                            onclick="refreshCharts()"
+                            title="{% trans 'Refresh' %}"
+                            data-bs-toggle="tooltip">
                         <i class="bi bi-arrow-clockwise"></i>
                     </button>
                 </div>
-                <div class="card-body">
-                    <div class="chart-container" style="height: 300px;">
+                <div class="card-body position-relative">
+                    <div class="chart-container">
                         <canvas id="statusDistributionChart"></canvas>
                     </div>
                 </div>
@@ -229,31 +510,35 @@
         </div>
     </div>
 
-    <div class="row">
-        <!-- Recent Invoices with Enhanced Table -->
-        <div class="col-lg-8 mb-4">
+    <!-- Main Content Row -->
+    <div class="row g-3">
+        <!-- Recent Invoices -->
+        <div class="col-lg-8">
             <div class="card">
                 <div class="card-header d-flex justify-content-between align-items-center">
-                    <h5 class="card-title mb-0">
-                        <i class="bi bi-clock-history me-2"></i>{% trans "Recent Invoices" %}
+                    <h5 class="mb-0">
+                        <i class="bi bi-clock-history me-2"></i>
+                        {% trans "Recent Invoices" %}
                     </h5>
                     <div class="btn-group">
                         <a href="{% url 'invoices:list' %}" class="btn btn-sm btn-outline-primary">
+                            <i class="bi bi-list-ul me-1"></i>
                             {% trans "View All" %}
                         </a>
-                        <a href="{% url 'sales:create_sale' %}" class="btn btn-sm btn-primary">
-                            <i class="bi bi-plus-lg me-1"></i>{% trans "New Invoice" %}
+                        <a href="{% url 'sales:create_sale' %}?type=invoice" class="btn btn-sm btn-primary">
+                            <i class="bi bi-plus-lg me-1"></i>
+                            {% trans "New" %}
                         </a>
                     </div>
                 </div>
                 <div class="card-body p-0">
                     <div class="table-responsive">
-                        <table class="table table-hover mb-0" id="recentInvoicesTable">
-                            <thead class="table-light">
+                        <table class="table invoice-table mb-0">
+                            <thead>
                                 <tr>
-                                    <th width="15%">{% trans "Invoice #" %}</th>
-                                    <th width="25%">{% trans "Customer" %}</th>
-                                    <th width="15%">{% trans "Amount" %}</th>
+                                    <th width="18%">{% trans "Invoice #" %}</th>
+                                    <th width="22%">{% trans "Customer" %}</th>
+                                    <th width="15%" class="text-end">{% trans "Amount" %}</th>
                                     <th width="15%">{% trans "Status" %}</th>
                                     <th width="15%">{% trans "Due Date" %}</th>
                                     <th width="15%" class="text-center">{% trans "Actions" %}</th>
@@ -261,46 +546,57 @@
                             </thead>
                             <tbody>
                                 {% for invoice in recent_invoices %}
-                                <tr class="{% if invoice.is_overdue %}table-warning{% endif %}">
+                                <tr class="{% if invoice.is_overdue %}overdue-row{% endif %}"
+                                    onclick="window.location.href='{% url 'invoices:detail' invoice.pk %}'">
                                     <td>
                                         <div class="d-flex align-items-center">
                                             <strong>{{ invoice.invoice_number }}</strong>
                                             {% if invoice.is_fiscalized %}
-                                            <i class="bi bi-shield-check text-success ms-1"
+                                            <i class="bi bi-shield-check text-success ms-2"
                                                title="{% trans 'Fiscalized' %}"
                                                data-bs-toggle="tooltip"></i>
                                             {% endif %}
                                         </div>
-                                        <small class="text-muted">{{ invoice.issue_date|date:"M d, Y" }}</small>
+                                        <small class="text-muted">
+                                            {{ invoice.issue_date|date:"M d, Y" }}
+                                        </small>
                                     </td>
                                     <td>
-                                        {% if invoice.sale and invoice.sale.customer %}
-                                            <div class="fw-semibold">{{ invoice.sale.customer.name }}</div>
-                                            {% if invoice.sale.customer.email %}
-                                            <small class="text-muted">{{ invoice.sale.customer.email }}</small>
+                                        {% if invoice.customer %}
+                                            <div class="fw-semibold">
+                                                {{ invoice.customer.name|truncatechars:25 }}
+                                            </div>
+                                            {% if invoice.customer.email %}
+                                            <small class="text-muted">
+                                                {{ invoice.customer.email|truncatechars:25 }}
+                                            </small>
                                             {% endif %}
                                         {% else %}
-                                            <span class="text-muted">{% trans "No customer" %}</span>
+                                            <span class="text-muted fst-italic">
+                                                {% trans "Walk-in Customer" %}
+                                            </span>
                                         {% endif %}
                                     </td>
-                                    <td>
-                                        <div class="fw-bold">UGX {{ invoice.total_amount|intcomma }}</div>
+                                    <td class="text-end">
+                                        <div class="fw-bold text-primary">
+                                            UGX {{ invoice.total_amount|floatformat:0|intcomma }}
+                                        </div>
                                         {% if invoice.amount_outstanding > 0 %}
                                         <small class="text-danger">
-                                            {% trans "Outstanding:" %} UGX {{ invoice.amount_outstanding|intcomma }}
+                                            {% trans "Due:" %} UGX {{ invoice.amount_outstanding|floatformat:0|intcomma }}
                                         </small>
                                         {% endif %}
                                     </td>
                                     <td>
-                                        <span class="badge status-badge status-{{ invoice.sale.status|lower }}">
+                                        <span class="status-badge status-{{ invoice.sale.payment_status }}">
                                             <i class="bi
-                                                {% if invoice.sale.status == 'PAID' or invoice.sale.status == 'COMPLETED' %}bi-check-circle
-                                                {% elif invoice.sale.status == 'PENDING_PAYMENT' %}bi-send
-                                                {% elif invoice.sale.status == 'DRAFT' %}bi-file-earmark
-                                                {% elif invoice.sale.status == 'OVERDUE' %}bi-exclamation-triangle
-                                                {% else %}bi-clock{% endif %} me-1">
+                                                {% if invoice.sale.payment_status == 'PAID' or invoice.sale.payment_status == 'COMPLETED' %}bi-check-circle-fill
+                                                {% elif invoice.sale.payment_status == 'PENDING_PAYMENT' %}bi-clock
+                                                {% elif invoice.sale.payment_status == 'PARTIALLY_PAID' %}bi-hourglass-split
+                                                {% elif invoice.sale.payment_status == 'OVERDUE' %}bi-exclamation-triangle-fill
+                                                {% else %}bi-file-earmark{% endif %}">
                                             </i>
-                                            {{ invoice.sale.get_status_display }}
+                                            {{ invoice.sale.get_payment_status_display }}
                                         </span>
                                     </td>
                                     <td>
@@ -308,43 +604,48 @@
                                             {{ invoice.due_date|date:"M d, Y" }}
                                         </div>
                                         {% if invoice.is_overdue %}
-                                        <small class="text-danger">{% trans "Overdue" %}</small>
+                                        <small class="text-danger">
+                                            <i class="bi bi-exclamation-circle me-1"></i>
+                                            {{ invoice.days_overdue }} {% trans "days overdue" %}
+                                        </small>
+                                        {% elif invoice.days_until_due <= 3 and not invoice.is_paid %}
+                                        <small class="text-warning">
+                                            <i class="bi bi-clock me-1"></i>
+                                            {% trans "Due soon" %}
+                                        </small>
                                         {% endif %}
                                     </td>
-                                    <td class="text-center">
+                                    <td class="text-center" onclick="event.stopPropagation()">
                                         <div class="btn-group btn-group-sm">
-                                            <a href="{% url 'invoices:detail' pk=invoice.pk %}"
-                                               class="btn btn-outline-primary btn-sm"
-                                               title="{% trans 'View Details' %}"
+                                            <a href="{% url 'invoices:detail' invoice.pk %}"
+                                               class="btn btn-sm btn-outline-primary"
+                                               title="{% trans 'View' %}"
                                                data-bs-toggle="tooltip">
                                                 <i class="bi bi-eye"></i>
                                             </a>
-                                            <a href="{% url 'invoices:print' pk=invoice.pk %}"
-                                               class="btn btn-outline-secondary btn-sm"
+                                            <a href="{% url 'invoices:print' invoice.pk %}"
+                                               class="btn btn-sm btn-outline-secondary"
                                                title="{% trans 'Print' %}"
-                                               data-bs-toggle="tooltip">
+                                               data-bs-toggle="tooltip"
+                                               target="_blank">
                                                 <i class="bi bi-printer"></i>
                                             </a>
-                                            {% if not invoice.is_fiscalized and invoice.sale.status != 'PAID' and invoice.sale.status != 'COMPLETED' %}
-                                            <a href="{% url 'invoices:edit' pk=invoice.pk %}"
-                                               class="btn btn-outline-info btn-sm"
-                                               title="{% trans 'Edit' %}"
-                                               data-bs-toggle="tooltip">
-                                                <i class="bi bi-pencil"></i>
-                                            </a>
-                                            {% endif %}
                                         </div>
                                     </td>
                                 </tr>
                                 {% empty %}
                                 <tr>
-                                    <td colspan="6" class="text-center py-5 text-muted">
-                                        <i class="bi bi-receipt fs-1 mb-3 d-block opacity-50"></i>
-                                        {% trans "No invoices found" %}
-                                        <br>
-                                        <a href="{% url 'invoices:create' %}" class="btn btn-primary mt-2">
-                                            <i class="bi bi-plus-circle me-1"></i>{% trans "Create Your First Invoice" %}
-                                        </a>
+                                    <td colspan="6" class="text-center">
+                                        <div class="empty-state">
+                                            <i class="bi bi-inbox empty-state-icon"></i>
+                                            <h5>{% trans "No invoices found" %}</h5>
+                                            <p>{% trans "Create your first invoice to get started" %}</p>
+                                            <a href="{% url 'sales:create_sale' %}?type=invoice"
+                                               class="btn btn-primary">
+                                                <i class="bi bi-plus-circle me-2"></i>
+                                                {% trans "Create Invoice" %}
+                                            </a>
+                                        </div>
                                     </td>
                                 </tr>
                                 {% endfor %}
@@ -355,29 +656,38 @@
             </div>
         </div>
 
-        <!-- Quick Actions & Performance Widgets -->
+        <!-- Sidebar -->
         <div class="col-lg-4">
             <!-- Quick Actions -->
-            <div class="card mb-4">
+            <div class="card mb-3">
                 <div class="card-header">
-                    <h5 class="card-title mb-0">
-                        <i class="bi bi-lightning me-2"></i>{% trans "Quick Actions" %}
+                    <h5 class="mb-0">
+                        <i class="bi bi-lightning me-2"></i>
+                        {% trans "Quick Actions" %}
                     </h5>
                 </div>
                 <div class="card-body">
                     <div class="d-grid gap-2">
-                        <a href="{% url 'sales:create_sale' %}" class="btn btn-primary btn-lg">
-                            <i class="bi bi-plus-circle me-2"></i>{% trans "Create Invoice" %}
+                        <a href="{% url 'sales:create_sale' %}?type=invoice"
+                           class="btn btn-primary quick-action-btn">
+                            <i class="bi bi-plus-circle me-2"></i>
+                            {% trans "Create Invoice" %}
                         </a>
-                        <a href="{% url 'invoices:list' %}" class="btn btn-outline-primary">
-                            <i class="bi bi-list-ul me-2"></i>{% trans "View All Invoices" %}
+                        <a href="{% url 'invoices:list' %}"
+                           class="btn btn-outline-primary quick-action-btn">
+                            <i class="bi bi-list-ul me-2"></i>
+                            {% trans "View All Invoices" %}
                         </a>
-                        <a href="{% url 'invoices:analytics' %}" class="btn btn-outline-info">
-                            <i class="bi bi-graph-up me-2"></i>{% trans "View Analytics" %}
+                        <a href="{% url 'invoices:analytics' %}"
+                           class="btn btn-outline-info quick-action-btn">
+                            <i class="bi bi-graph-up me-2"></i>
+                            {% trans "View Analytics" %}
                         </a>
-                        {% if company.efris_enabled %}
-                        <a href="{% url 'invoices:efris_dashboard' %}" class="btn btn-outline-warning">
-                            <i class="bi bi-shield-check me-2"></i>{% trans "EFRIS Status" %}
+                        {% if EFRIS_ENABLED %}
+                        <a href="{% url 'invoices:efris_dashboard' %}"
+                           class="btn btn-outline-warning quick-action-btn">
+                            <i class="bi bi-shield-check me-2"></i>
+                            {% trans "EFRIS Status" %}
                         </a>
                         {% endif %}
                     </div>
@@ -385,40 +695,62 @@
             </div>
 
             <!-- Performance Metrics -->
-            <div class="card mb-4">
+            <div class="card mb-3">
                 <div class="card-header">
-                    <h5 class="card-title mb-0">
-                        <i class="bi bi-speedometer2 me-2"></i>{% trans "Performance Metrics" %}
+                    <h5 class="mb-0">
+                        <i class="bi bi-speedometer2 me-2"></i>
+                        {% trans "Performance Metrics" %}
                     </h5>
                 </div>
                 <div class="card-body">
-                    <div class="mb-3">
-                        <div class="d-flex justify-content-between mb-1">
-                            <span class="small text-muted">{% trans "Collection Rate" %}</span>
-                            <span class="small fw-bold">{{ metrics.collection_rate|floatformat:1|default:"0" }}%</span>
+                    <div class="performance-item">
+                        <div class="performance-label">
+                            <span class="performance-label-text">
+                                {% trans "Collection Rate" %}
+                            </span>
+                            <span class="performance-value">
+                                {{ metrics.collection_rate|floatformat:1 }}%
+                            </span>
                         </div>
-                        <div class="progress" style="height: 6px;">
-                            <div class="progress-bar bg-success" data-progress="collection_rate" style="width: {{ metrics.collection_rate|default:0 }}%"></div>
-                        </div>
-                    </div>
-
-                    <div class="mb-3">
-                        <div class="d-flex justify-content-between mb-1">
-                            <span class="small text-muted">{% trans "On-Time Payment" %}</span>
-                            <span class="small fw-bold">{{ metrics.on_time_rate|floatformat:1|default:"0" }}%</span>
-                        </div>
-                        <div class="progress" style="height: 6px;">
-                            <div class="progress-bar bg-info" data-progress="on_time_rate" style="width: {{ metrics.on_time_rate|default:0 }}%"></div>
+                        <div class="progress">
+                            <div class="progress-bar bg-success"
+                                 data-progress="collection_rate"
+                                 style="width: {{ metrics.collection_rate }}%">
+                            </div>
                         </div>
                     </div>
 
-                    <div class="mb-3">
-                        <div class="d-flex justify-content-between mb-1">
-                            <span class="small text-muted">{% trans "Fiscalization Rate" %}</span>
-                            <span class="small fw-bold">{{ metrics.fiscalization_rate|floatformat:1|default:"0" }}%</span>
+                    <div class="performance-item">
+                        <div class="performance-label">
+                            <span class="performance-label-text">
+                                {% trans "On-Time Payment" %}
+                            </span>
+                            <span class="performance-value">
+                                {{ metrics.on_time_rate|floatformat:1 }}%
+                            </span>
                         </div>
-                        <div class="progress" style="height: 6px;">
-                            <div class="progress-bar bg-warning" data-progress="fiscalization_rate" style="width: {{ metrics.fiscalization_rate|default:0 }}%"></div>
+                        <div class="progress">
+                            <div class="progress-bar bg-info"
+                                 data-progress="on_time_rate"
+                                 style="width: {{ metrics.on_time_rate }}%">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="performance-item">
+                        <div class="performance-label">
+                            <span class="performance-label-text">
+                                {% trans "Fiscalization Rate" %}
+                            </span>
+                            <span class="performance-value">
+                                {{ metrics.fiscalization_rate|floatformat:1 }}%
+                            </span>
+                        </div>
+                        <div class="progress">
+                            <div class="progress-bar bg-warning"
+                                 data-progress="fiscalization_rate"
+                                 style="width: {{ metrics.fiscalization_rate }}%">
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -427,232 +759,220 @@
             <!-- Upcoming Due Dates -->
             <div class="card">
                 <div class="card-header">
-                    <h5 class="card-title mb-0">
-                        <i class="bi bi-calendar-check me-2"></i>{% trans "Upcoming Due Dates" %}
+                    <h5 class="mb-0">
+                        <i class="bi bi-calendar-check me-2"></i>
+                        {% trans "Upcoming Due Dates" %}
                     </h5>
                 </div>
                 <div class="card-body p-0">
-                    <div class="list-group list-group-flush">
-                        {% for invoice in upcoming_invoices|slice:":5" %}
-                        <div class="list-group-item">
-                            <div class="d-flex w-100 justify-content-between">
-                                <h6 class="mb-1">{{ invoice.invoice_number }}</h6>
-                                <small class="text-{% if invoice.days_until_due <= 3 %}danger{% else %}warning{% endif %}">
-                                    {{ invoice.days_until_due }} {% trans "days" %}
-                                </small>
+                    {% for invoice in upcoming_invoices %}
+                    <div class="due-date-item {% if invoice.days_until_due <= 3 %}due-date-urgent{% else %}due-date-warning{% endif %}"
+                         onclick="window.location.href='{% url 'invoices:detail' invoice.pk %}'">
+                        <div class="d-flex justify-content-between align-items-start">
+                            <div class="flex-grow-1">
+                                <div class="fw-semibold">{{ invoice.invoice_number }}</div>
+                                <div class="small text-muted">
+                                    {{ invoice.customer.name|default:"Walk-in Customer"|truncatechars:30 }}
+                                </div>
+                                <div class="small mt-1">
+                                    UGX {{ invoice.total_amount|floatformat:0|intcomma }}
+                                </div>
                             </div>
-                            <p class="mb-1 small">UGX {{ invoice.total_amount|intcomma }}</p>
-                            <small class="text-muted">{{ invoice.sale.customer.name|default:"No customer" }}</small>
+                            <div class="text-end">
+                                <span class="badge bg-{% if invoice.days_until_due <= 3 %}danger{% else %}warning{% endif %}">
+                                    {{ invoice.days_until_due }} {% trans "days" %}
+                                </span>
+                                <div class="small text-muted mt-1">
+                                    {{ invoice.due_date|date:"M d" }}
+                                </div>
+                            </div>
                         </div>
-                        {% empty %}
-                        <div class="list-group-item text-center text-muted py-4">
-                            <i class="bi bi-check-circle fs-1 mb-2 d-block opacity-50"></i>
-                            {% trans "No upcoming due dates" %}
-                        </div>
-                        {% endfor %}
                     </div>
+                    {% empty %}
+                    <div class="empty-state py-4">
+                        <i class="bi bi-check-circle empty-state-icon" style="font-size: 3rem;"></i>
+                        <div>{% trans "No upcoming due dates" %}</div>
+                    </div>
+                    {% endfor %}
                 </div>
             </div>
         </div>
     </div>
-
     <!-- Recent Payments -->
-    <div class="row mt-4">
-        <div class="col-12">
-            <div class="card">
-                <div class="card-header d-flex justify-content-between align-items-center">
-                    <h5 class="card-title mb-0">
-                        <i class="bi bi-cash-coin me-2"></i>{% trans "Recent Payments" %}
-                    </h5>
-                    <a href="{% url 'invoices:payments' %}" class="btn btn-sm btn-outline-primary">
-                        {% trans "View All Payments" %}
-                    </a>
-                </div>
-                <div class="card-body p-0">
-                    <div class="table-responsive">
-                        <table class="table table-hover mb-0">
-                            <thead class="table-light">
-                                <tr>
-                                    <th>{% trans "Invoice" %}</th>
-                                    <th>{% trans "Customer" %}</th>
-                                    <th>{% trans "Amount" %}</th>
-                                    <th>{% trans "Method" %}</th>
-                                    <th>{% trans "Date" %}</th>
-                                    <th>{% trans "Processed By" %}</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {% for payment in recent_payments %}
-                                <tr>
-                                    <td>
-                                        <a href="{% url 'invoices:detail' pk=payment.invoice.pk %}">
-                                            {{ payment.invoice.invoice_number }}
-                                        </a>
-                                    </td>
-                                    <td>
-                                        {% if payment.invoice.sale and payment.invoice.sale.customer %}
-                                            {{ payment.invoice.sale.customer.name }}
-                                        {% else %}
-                                            <span class="text-muted">{% trans "No customer" %}</span>
-                                        {% endif %}
-                                    </td>
-                                    <td class="text-success fw-bold">UGX {{ payment.amount|intcomma }}</td>
-                                    <td>
-                                        <span class="badge bg-primary">{{ payment.get_payment_method_display }}</span>
-                                    </td>
-                                    <td>{{ payment.payment_date|date:"M d, Y" }}</td>
-                                    <td>
-                                        {% if payment.processed_by %}
-                                            <div class="d-flex align-items-center">
-                                                <div class="avatar-sm bg-primary bg-opacity-10 rounded-circle me-2 d-flex align-items-center justify-content-center">
-                                                    <i class="bi bi-person text-primary small"></i>
-                                                </div>
-                                                <span>{{ payment.processed_by.get_full_name|default:payment.processed_by.username }}</span>
-                                            </div>
-                                        {% else %}
-                                            <span class="text-muted">{% trans "System" %}</span>
-                                        {% endif %}
-                                    </td>
-                                </tr>
-                                {% empty %}
-                                <tr>
-                                    <td colspan="6" class="text-center py-4 text-muted">
-                                        <i class="bi bi-cash fs-1 mb-2 d-block opacity-50"></i>
-                                        {% trans "No recent payments" %}
-                                    </td>
-                                </tr>
-                                {% endfor %}
-                            </tbody>
-                        </table>
-                    </div>
+{% if recent_payments %}
+<div class="row g-3 mt-3">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">
+                    <i class="bi bi-cash-coin me-2"></i>
+                    {% trans "Recent Payments" %}
+                </h5>
+                <a href="{% url 'invoices:payments' %}" class="btn btn-sm btn-outline-primary">
+                    {% trans "View All" %}
+                </a>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>{% trans "Invoice" %}</th>
+                                <th>{% trans "Customer" %}</th>
+                                <th class="text-end">{% trans "Amount" %}</th>
+                                <th>{% trans "Method" %}</th>
+                                <th>{% trans "Date" %}</th>
+                                <th>{% trans "Processed By" %}</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for payment in recent_payments %}
+                            <tr>
+                                <td>
+                                    <a href="{% url 'invoices:detail' payment.invoice.pk %}">
+                                        {{ payment.invoice.invoice_number }}
+                                    </a>
+                                </td>
+                                <td>
+                                    {{ payment.invoice.customer.name|default:"Walk-in Customer"|truncatechars:30 }}
+                                </td>
+                                <td class="text-end fw-bold text-success">
+                                    UGX {{ payment.amount|floatformat:0|intcomma }}
+                                </td>
+                                <td>
+                                    <span class="badge bg-primary">
+                                        {{ payment.get_payment_method_display }}
+                                    </span>
+                                </td>
+                                <td>
+                                    {{ payment.payment_date|date:"M d, Y" }}
+                                </td>
+                                <td>
+                                    <div class="d-flex align-items-center">
+                                        <div class="avatar-sm bg-primary bg-opacity-10 me-2">
+                                            <i class="bi bi-person text-primary"></i>
+                                        </div>
+                                        <span>
+                                            {{ payment.processed_by.get_full_name|default:payment.processed_by.username|truncatechars:20 }}
+                                        </span>
+                                    </div>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
                 </div>
             </div>
         </div>
     </div>
 </div>
+{% endif %}
+    </div>
 {% endblock %}
-
 {% block extra_js %}
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script>
-document.addEventListener('DOMContentLoaded', function() {
-    // Initialize tooltips
-    const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
-    const tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
-        return new bootstrap.Tooltip(tooltipTriggerEl);
-    });
+// Dashboard Manager
+class InvoiceDashboard {
+    constructor() {
+        this.charts = {
+            revenue: null,
+            status: null
+        };
+        this.currentPeriod = 12;
+        this.initialize();
+    }
 
-    let revenueChart, statusChart;
-    let currentPeriod = 12;
+    initialize() {
+        this.initializeTooltips();
+        this.loadCharts();
+        this.attachEventListeners();
+        this.startAutoRefresh();
+    }
 
-    // Function to fetch chart data from API
-    async function fetchChartData(period = 12) {
+    initializeTooltips() {
+        const tooltips = document.querySelectorAll('[data-bs-toggle="tooltip"]');
+        tooltips.forEach(el => new bootstrap.Tooltip(el));
+    }
+
+    async loadCharts(period = 12) {
+        this.showLoader(true);
         try {
-            const response = await fetch(`{% url 'invoices:dashboard_chart_data' %}?period=${period}`);
-            const data = await response.json();
-
-            if (data.success) {
-                return data;
-            } else {
-                console.error('API returned error:', data);
-                return null;
+            const data = await this.fetchChartData(period);
+            if (data) {
+                this.renderRevenueChart(data.monthly_data);
+                this.renderStatusChart(data.status_data);
             }
         } catch (error) {
-            console.error('Error fetching chart data:', error);
-            return null;
+            console.error('Failed to load charts:', error);
+        } finally {
+            this.showLoader(false);
         }
     }
 
-    // Function to fetch metrics data from API
-    async function fetchMetricsData() {
-        try {
-            const response = await fetch('{% url 'invoices:dashboard_metrics' %}');
-            const data = await response.json();
-
-            if (data.success) {
-                return data.metrics;
-            } else {
-                console.error('API returned error:', data);
-                return null;
-            }
-        } catch (error) {
-            console.error('Error fetching metrics data:', error);
-            return null;
-        }
+    async fetchChartData(period) {
+        const response = await fetch(`{% url 'invoices:dashboard_chart_data' %}?period=${period}`);
+        const data = await response.json();
+        return data.success ? data : null;
     }
 
-    // Function to update metrics cards with real data
-    async function updateMetricsCards() {
-        const metrics = await fetchMetricsData();
+    async fetchMetrics() {
+        const response = await fetch('{% url 'invoices:dashboard_metrics' %}');
+        const data = await response.json();
+        return data.success ? data.metrics : null;
+    }
 
+    async updateMetrics() {
+        const metrics = await this.fetchMetrics();
         if (metrics) {
-            updateMetricElement('[data-metric="total_invoices"]', metrics.total_invoices);
-            updateMetricElement('[data-metric="invoices_this_month"]', `${metrics.invoices_this_month} {% trans "this month" %}`);
-            updateMetricElement('[data-metric="total_revenue"]', `UGX ${formatCurrency(metrics.total_revenue)}`);
-            updateMetricElement('[data-metric="pending_amount"]', `UGX ${formatCurrency(metrics.pending_amount)}`);
-            updateMetricElement('[data-metric="pending_invoices"]', `${metrics.pending_invoices} {% trans "pending" %}`);
-            updateMetricElement('[data-metric="overdue_invoices"]', metrics.overdue_invoices);
-            updateMetricElement('[data-metric="fiscalized_invoices"]', metrics.fiscalized_invoices);
-            updateMetricElement('[data-metric="avg_invoice_amount"]', `UGX ${formatCurrency(metrics.avg_invoice_amount)}`);
+            this.updateMetricElement('[data-metric="total_invoices"]', metrics.total_invoices);
+            this.updateMetricElement('[data-metric="invoices_this_month"]', metrics.invoices_this_month);
+            this.updateMetricElement('[data-metric="total_revenue"]', `UGX ${this.formatNumber(metrics.total_revenue)}`);
+            this.updateMetricElement('[data-metric="pending_amount"]', `UGX ${this.formatNumber(metrics.pending_amount)}`);
+            this.updateMetricElement('[data-metric="pending_invoices"]', metrics.pending_invoices);
+            this.updateMetricElement('[data-metric="overdue_invoices"]', metrics.overdue_invoices);
+            this.updateMetricElement('[data-metric="fiscalized_invoices"]', metrics.fiscalized_invoices);
+            this.updateMetricElement('[data-metric="avg_invoice_amount"]', `UGX ${this.formatNumber(metrics.avg_invoice_amount)}`);
 
-            updateProgressBar('collection_rate', metrics.collection_rate);
-            updateProgressBar('on_time_rate', metrics.on_time_rate);
-            updateProgressBar('fiscalization_rate', metrics.fiscalization_rate);
+            // Update progress bars
+            this.updateProgressBar('collection_rate', metrics.collection_rate);
+            this.updateProgressBar('on_time_rate', metrics.on_time_rate);
+            this.updateProgressBar('fiscalization_rate', metrics.fiscalization_rate);
         }
     }
 
-    function updateMetricElement(selector, value) {
-        const element = document.querySelector(selector);
-        if (element) {
-            if (typeof value === 'number') {
-                element.textContent = value.toLocaleString();
-            } else {
-                element.innerHTML = value;
-            }
+    updateMetricElement(selector, value) {
+        const el = document.querySelector(selector);
+        if (el) {
+            el.textContent = typeof value === 'number' ? value.toLocaleString() : value;
         }
     }
 
-    function formatCurrency(value) {
-        return Math.round(value).toLocaleString();
+    updateProgressBar(metric, value) {
+        const bar = document.querySelector(`[data-progress="${metric}"]`);
+        const label = bar?.closest('.performance-item')?.querySelector('.performance-value');
+
+        if (bar) bar.style.width = `${value}%`;
+        if (label) label.textContent = `${value.toFixed(1)}%`;
     }
 
-    function updateProgressBar(metric, value) {
-        const progressBar = document.querySelector(`[data-progress="${metric}"]`);
-        const parentDiv = progressBar ? progressBar.closest('.mb-3') : null;
-        const valueElement = parentDiv ? parentDiv.querySelector('.fw-bold') : null;
-
-        if (progressBar) {
-            progressBar.style.width = `${value}%`;
-        }
-        if (valueElement) {
-            valueElement.textContent = `${value.toFixed(1)}%`;
-        }
+    formatNumber(num) {
+        return Math.round(num).toLocaleString();
     }
 
-    async function initializeCharts(period = 12) {
-        const chartData = await fetchChartData(period);
+    renderRevenueChart(data) {
+        const ctx = document.getElementById('revenueTrendChart')?.getContext('2d');
+        if (!ctx) return;
 
-        if (!chartData) {
-            console.warn('Using fallback - API might be unavailable');
-            initializeFallbackCharts();
-            return;
-        }
+        if (this.charts.revenue) this.charts.revenue.destroy();
 
-        const monthlyData = chartData.monthly_data || [];
-        const statusData = chartData.status_data || [];
-
-        if (revenueChart) revenueChart.destroy();
-        if (statusChart) statusChart.destroy();
-
-        // Revenue Trend Chart
-        const revenueCtx = document.getElementById('revenueTrendChart').getContext('2d');
-        revenueChart = new Chart(revenueCtx, {
+        this.charts.revenue = new Chart(ctx, {
             type: 'line',
             data: {
-                labels: monthlyData.map(item => item.month_name),
+                labels: data.map(d => d.month_name),
                 datasets: [{
                     label: '{% trans "Revenue" %}',
-                    data: monthlyData.map(item => item.revenue),
+                    data: data.map(d => d.revenue),
                     borderColor: '#3B82F6',
                     backgroundColor: 'rgba(59, 130, 246, 0.1)',
                     borderWidth: 3,
@@ -660,7 +980,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     tension: 0.4
                 }, {
                     label: '{% trans "Invoices" %}',
-                    data: monthlyData.map(item => item.invoice_count),
+                    data: data.map(d => d.invoice_count),
                     borderColor: '#10B981',
                     backgroundColor: 'rgba(16, 185, 129, 0.1)',
                     borderWidth: 2,
@@ -674,7 +994,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 maintainAspectRatio: false,
                 interaction: {
                     mode: 'index',
-                    intersect: false,
+                    intersect: false
                 },
                 scales: {
                     y: {
@@ -684,13 +1004,10 @@ document.addEventListener('DOMContentLoaded', function() {
                             text: '{% trans "Revenue (UGX)" %}'
                         },
                         ticks: {
-                            callback: function(value) {
-                                if (value >= 1000000) {
-                                    return 'UGX ' + (value / 1000000).toFixed(1) + 'M';
-                                } else if (value >= 1000) {
-                                    return 'UGX ' + (value / 1000).toFixed(0) + 'K';
-                                }
-                                return 'UGX ' + value;
+                            callback: value => {
+                                if (value >= 1000000) return `UGX ${(value/1000000).toFixed(1)}M`;
+                                if (value >= 1000) return `UGX ${(value/1000).toFixed(0)}K`;
+                                return `UGX ${value}`;
                             }
                         }
                     },
@@ -699,45 +1016,30 @@ document.addEventListener('DOMContentLoaded', function() {
                         position: 'right',
                         title: {
                             display: true,
-                            text: '{% trans "Number of Invoices" %}'
+                            text: '{% trans "Invoices" %}'
                         },
                         grid: {
                             drawOnChartArea: false
                         }
                     }
-                },
-                plugins: {
-                    legend: {
-                        position: 'top',
-                    },
-                    tooltip: {
-                        callbacks: {
-                            label: function(context) {
-                                let label = context.dataset.label || '';
-                                if (context.dataset.yAxisID === 'y1') {
-                                    label += ': ' + context.parsed.y + ' {% trans "invoices" %}';
-                                } else {
-                                    label += ': UGX ' + context.parsed.y.toLocaleString();
-                                }
-                                return label;
-                            }
-                        }
-                    }
                 }
             }
         });
+    }
 
-        // Status Distribution Chart
-        const statusCtx = document.getElementById('statusDistributionChart').getContext('2d');
-        statusChart = new Chart(statusCtx, {
+    renderStatusChart(data) {
+        const ctx = document.getElementById('statusDistributionChart')?.getContext('2d');
+        if (!ctx) return;
+
+        if (this.charts.status) this.charts.status.destroy();
+
+        this.charts.status = new Chart(ctx, {
             type: 'doughnut',
             data: {
-                labels: statusData.map(item => item.label),
+                labels: data.map(d => d.label),
                 datasets: [{
-                    data: statusData.map(item => item.count),
-                    backgroundColor: [
-                        '#10B981', '#3B82F6', '#6B7280', '#EF4444', '#F59E0B', '#8B5CF6'
-                    ],
+                    data: data.map(d => d.count),
+                    backgroundColor: ['#10B981', '#3B82F6', '#6B7280', '#EF4444', '#F59E0B', '#8B5CF6'],
                     borderWidth: 2,
                     borderColor: '#fff'
                 }]
@@ -750,21 +1052,16 @@ document.addEventListener('DOMContentLoaded', function() {
                     legend: {
                         position: 'bottom',
                         labels: {
-                            padding: 20,
-                            usePointStyle: true,
-                            font: {
-                                size: 11
-                            }
+                            padding: 15,
+                            usePointStyle: true
                         }
                     },
                     tooltip: {
                         callbacks: {
-                            label: function(context) {
-                                const label = context.label || '';
-                                const value = context.parsed || 0;
-                                const total = context.dataset.data.reduce((a, b) => a + b, 0);
-                                const percentage = total > 0 ? Math.round((value / total) * 100) : 0;
-                                return `${label}: ${value} (${percentage}%)`;
+                            label: ctx => {
+                                const total = ctx.dataset.data.reduce((a, b) => a + b, 0);
+                                const pct = ((ctx.parsed / total) * 100).toFixed(1);
+                                return `${ctx.label}: ${ctx.parsed} (${pct}%)`;
                             }
                         }
                     }
@@ -773,109 +1070,59 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
-    function initializeFallbackCharts() {
-        const fallbackMonthly = [
-            { month_name: 'Jan', revenue: 0, invoice_count: 0 },
-            { month_name: 'Feb', revenue: 0, invoice_count: 0 },
-            { month_name: 'Mar', revenue: 0, invoice_count: 0 },
-            { month_name: 'Apr', revenue: 0, invoice_count: 0 },
-            { month_name: 'May', revenue: 0, invoice_count: 0 },
-            { month_name: 'Jun', revenue: 0, invoice_count: 0 },
-            { month_name: 'Jul', revenue: 0, invoice_count: 0 },
-            { month_name: 'Aug', revenue: 0, invoice_count: 0 },
-            { month_name: 'Sep', revenue: 0, invoice_count: 0 },
-            { month_name: 'Oct', revenue: 0, invoice_count: 0 },
-            { month_name: 'Nov', revenue: 0, invoice_count: 0 },
-            { month_name: 'Dec', revenue: 0, invoice_count: 0 }
-        ];
+    attachEventListeners() {
+        // Period selection
+        document.querySelectorAll('[data-period]').forEach(btn => {
+            btn.addEventListener('click', e => {
+                e.preventDefault();
+                this.currentPeriod = parseInt(btn.dataset.period);
+                this.loadCharts(this.currentPeriod);
+                document.getElementById('periodLabel').textContent = btn.textContent.trim();
 
-        const fallbackStatus = [
-            { label: '{% trans "No Data" %}', count: 1 }
-        ];
-
-        const revenueCtx = document.getElementById('revenueTrendChart').getContext('2d');
-        revenueChart = new Chart(revenueCtx, {
-            type: 'line',
-            data: {
-                labels: fallbackMonthly.map(item => item.month_name),
-                datasets: [{
-                    label: '{% trans "Revenue" %}',
-                    data: fallbackMonthly.map(item => item.revenue),
-                    borderColor: '#3B82F6',
-                    backgroundColor: 'rgba(59, 130, 246, 0.1)',
-                    borderWidth: 3,
-                    fill: true,
-                    tension: 0.4
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                scales: {
-                    y: {
-                        beginAtZero: true,
-                        title: {
-                            display: true,
-                            text: '{% trans "Revenue (UGX)" %}'
-                        }
-                    }
-                }
-            }
-        });
-
-        const statusCtx = document.getElementById('statusDistributionChart').getContext('2d');
-        statusChart = new Chart(statusCtx, {
-            type: 'doughnut',
-            data: {
-                labels: fallbackStatus.map(item => item.label),
-                datasets: [{
-                    data: fallbackStatus.map(item => item.count),
-                    backgroundColor: ['#6B7280'],
-                    borderWidth: 2,
-                    borderColor: '#fff'
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                cutout: '70%',
-                plugins: {
-                    legend: {
-                        position: 'bottom'
-                    }
-                }
-            }
+                // Update active state
+                document.querySelectorAll('[data-period]').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+            });
         });
     }
 
-    // Event handlers
-    document.getElementById('refreshStatusChart')?.addEventListener('click', function() {
-        initializeCharts(currentPeriod);
-        updateMetricsCards();
-    });
+    showLoader(show) {
+        const loader = document.getElementById('chartLoader');
+        if (loader) {
+            loader.classList.toggle('d-none', !show);
+        }
+    }
 
-    document.querySelectorAll('.dropdown-item[data-period]').forEach(item => {
-        item.addEventListener('click', function(e) {
-            e.preventDefault();
-            currentPeriod = parseInt(this.getAttribute('data-period'));
-            initializeCharts(currentPeriod);
+    startAutoRefresh() {
+        setInterval(() => {
+            this.loadCharts(this.currentPeriod);
+            this.updateMetrics();
+        }, 60000); // Refresh every minute
+    }
+}
 
-            const dropdownBtn = this.closest('.dropdown').querySelector('.dropdown-toggle');
-            if (dropdownBtn) {
-                dropdownBtn.innerHTML = `<i class="bi bi-calendar me-1"></i>${this.textContent}`;
-            }
-        });
-    });
+// Global functions
+function refreshDashboard() {
+    window.location.reload();
+}
 
-    // Auto-refresh every 30 seconds
-    setInterval(() => {
-        initializeCharts(currentPeriod);
-        updateMetricsCards();
-    }, 30000);
+function refreshCharts() {
+    dashboard.loadCharts(dashboard.currentPeriod);
+    dashboard.updateMetrics();
+}
 
-    // Initial load
-    initializeCharts(currentPeriod);
-    updateMetricsCards();
+function filterByStatus(status) {
+    window.location.href = `{% url 'invoices:list' %}?status=${status}`;
+}
+
+function filterByFiscalized(fiscalized) {
+    window.location.href = `{% url 'invoices:list' %}?is_fiscalized=${fiscalized}`;
+}
+
+// Initialize dashboard
+let dashboard;
+document.addEventListener('DOMContentLoaded', () => {
+    dashboard = new InvoiceDashboard();
 });
 </script>
 {% endblock %}

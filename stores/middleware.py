@@ -7,21 +7,6 @@ from .utils import (
     detect_suspicious_activity,
     get_client_ip
 )
-
-from django_tenants.utils import get_tenant
-from django.utils.deprecation import MiddlewareMixin
-from django.shortcuts import redirect
-from django.contrib import messages
-
-from django.utils import timezone
-from django.shortcuts import redirect
-from django.contrib import messages
-from django.utils.deprecation import MiddlewareMixin
-from .utils import (
-    get_device_session_from_request,
-    detect_suspicious_activity,
-    get_client_ip
-)
 from django_tenants.utils import get_tenant
 from django.urls import reverse
 

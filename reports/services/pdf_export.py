@@ -7,7 +7,7 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import inch
 from reportlab.platypus import (
     SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer,
-    PageBreak, Image, Frame, PageTemplate
+    PageBreak, Image, Frame, PageTemplate, HRFlowable
 )
 from reportlab.lib.enums import TA_CENTER, TA_RIGHT, TA_LEFT
 from reportlab.pdfgen import canvas
@@ -670,243 +670,532 @@ class PDFExportService:
         return any(key in self.report_data for key in combined_keys)
 
     def _build_combined_report(self) -> List:
-        """Build combined business report"""
+        """Build comprehensive combined business report with improved structure"""
         elements = []
 
-        elements.append(Paragraph("Combined Business Report", self.styles['CustomTitle']))
+        # Report Header
+        elements.append(Paragraph("COMPREHENSIVE BUSINESS REPORT", self.styles['CustomTitle']))
+        elements.append(Spacer(1, 15))
+
+        # Report Metadata
+        report_date = timezone.now().strftime("%B %d, %Y %I:%M %p")
+        elements.append(Paragraph(f"Generated: {report_date}", self.styles['Normal']))
+
+        if self.filters.get('start_date') and self.filters.get('end_date'):
+            period = f"{self.filters['start_date']} to {self.filters['end_date']}"
+        elif self.filters.get('start_date'):
+            period = f"Since {self.filters['start_date']}"
+        elif self.filters.get('end_date'):
+            period = f"Up to {self.filters['end_date']}"
+        else:
+            period = "All Time"
+
+        elements.append(Paragraph(f"Period: {period}", self.styles['Normal']))
+
+        if self.filters.get('store'):
+            elements.append(Paragraph(f"Store: {self.filters['store']}", self.styles['Normal']))
+        else:
+            elements.append(Paragraph("Store: All Stores", self.styles['Normal']))
+
+        elements.append(Spacer(1, 25))
+
+        # Table of Contents
+        elements.append(Paragraph("TABLE OF CONTENTS", self.styles['SectionHeader']))
+        toc_items = []
+
+        if 'business_health' in self.report_data:
+            toc_items.append("1. Business Health Score")
+        if 'custom_analytics' in self.report_data:
+            toc_items.append("2. Executive Summary & Key Metrics")
+        if 'SALES_SUMMARY' in self.report_data:
+            toc_items.append("3. Sales Performance Analysis")
+        if 'PROFIT_LOSS' in self.report_data:
+            toc_items.append("4. Financial Performance (P&L)")
+        if 'EXPENSE_REPORT' in self.report_data:
+            toc_items.append("5. Expense Analysis")
+        if 'INVENTORY_STATUS' in self.report_data:
+            toc_items.append("6. Inventory Management")
+        if 'Z_REPORT' in self.report_data:
+            toc_items.append("7. Daily Operations (Z-Report)")
+        if 'CASHIER_PERFORMANCE' in self.report_data:
+            toc_items.append("8. Staff Performance")
+        if 'PRODUCT_PERFORMANCE' in self.report_data:
+            toc_items.append("9. Product Performance")
+        if 'STOCK_MOVEMENT' in self.report_data:
+            toc_items.append("10. Stock Movement Analysis")
+        if 'CUSTOMER_ANALYTICS' in self.report_data:
+            toc_items.append("11. Customer Insights")
+        if 'EFRIS_COMPLIANCE' in self.report_data:
+            toc_items.append("12. EFRIS Compliance")
+
+        for item in toc_items:
+            elements.append(Paragraph(item, self.styles['TOCItem']))
+
+        elements.append(Spacer(1, 30))
+        elements.append(HRFlowable(width="100%", thickness=1, color=colors.black))
         elements.append(Spacer(1, 20))
 
-        # Business Health Score
+        # 1. Business Health Score (If Available)
         if 'business_health' in self.report_data:
+            elements.append(Paragraph("1. BUSINESS HEALTH SCORE", self.styles['SectionHeader']))
+            elements.append(Spacer(1, 10))
             elements.extend(self._build_business_health_section())
             elements.append(Spacer(1, 20))
+            elements.append(HRFlowable(width="100%", thickness=0.5, color=colors.grey))
+            elements.append(Spacer(1, 20))
 
-        # Custom Analytics
+        # 2. Executive Summary & Custom Analytics
         if 'custom_analytics' in self.report_data:
+            elements.append(Paragraph("2. EXECUTIVE SUMMARY", self.styles['SectionHeader']))
+            elements.append(Spacer(1, 10))
             elements.extend(self._build_custom_analytics_section())
             elements.append(Spacer(1, 20))
+            elements.append(HRFlowable(width="100%", thickness=0.5, color=colors.grey))
+            elements.append(Spacer(1, 20))
 
-        # Sales Summary Section
+        # 3. Sales Performance Analysis
         if 'SALES_SUMMARY' in self.report_data:
-            elements.append(Paragraph("Sales Summary", self.styles['SectionHeader']))
-            sales_data = self.report_data['SALES_SUMMARY']
-            if 'summary' in sales_data:
-                elements.extend(self._build_summary_section(sales_data['summary']))
-            elements.append(Spacer(1, 20))
-
-        # Profit & Loss Section
-        if 'PROFIT_LOSS' in self.report_data:
-            elements.append(Paragraph("Profit & Loss", self.styles['SectionHeader']))
-            elements.extend(self._build_profit_loss_section(self.report_data['PROFIT_LOSS']))
-            elements.append(Spacer(1, 20))
-
-        # Expense Section
-        if 'EXPENSE_REPORT' in self.report_data:
-            elements.append(Paragraph("Expenses", self.styles['SectionHeader']))
-            expense_data = self.report_data['EXPENSE_REPORT']
-            if 'summary' in expense_data:
-                elements.extend(self._build_summary_section(expense_data['summary']))
-            if 'category_breakdown' in expense_data and expense_data['category_breakdown']:
-                elements.append(Spacer(1, 10))
-                elements.append(Paragraph("Expense by Category", self.styles['SubSection']))
-                elements.extend(self._build_expense_category_table(expense_data['category_breakdown']))
-            elements.append(Spacer(1, 20))
-
-        # Inventory Section
-        if 'INVENTORY_STATUS' in self.report_data:
-            elements.append(Paragraph("Inventory Status", self.styles['SectionHeader']))
-            inventory_data = self.report_data['INVENTORY_STATUS']
-            if 'summary' in inventory_data:
-                elements.extend(self._build_summary_section(inventory_data['summary']))
-            elements.append(Spacer(1, 20))
-
-        # Z-Report Section
-        if 'Z_REPORT' in self.report_data:
-            elements.append(Paragraph("Daily Z-Report", self.styles['SectionHeader']))
-            z_data = self.report_data['Z_REPORT']
-            if 'summary' in z_data:
-                elements.extend(self._build_summary_section(z_data['summary']))
-            elements.append(Spacer(1, 20))
-
-        # Cashier Performance Section
-        if 'CASHIER_PERFORMANCE' in self.report_data:
-            elements.append(Paragraph("Cashier Performance", self.styles['SectionHeader']))
-            cashier_data = self.report_data['CASHIER_PERFORMANCE']
-            if 'summary' in cashier_data:
-                elements.extend(self._build_summary_section(cashier_data['summary']))
-            elements.append(Spacer(1, 20))
-
-        return elements
-
-    def _build_business_health_section(self) -> List:
-        """Build business health score section"""
-        elements = []
-        health = self.report_data['business_health']
-
-        # Determine health color
-        percentage = health['percentage']
-        if percentage >= 80:
-            health_color = ColorScheme.SUCCESS
-        elif percentage >= 60:
-            health_color = ColorScheme.WARNING
-        else:
-            health_color = ColorScheme.DANGER
-
-        # Create health score display
-        health_data = [
-            [
-                Paragraph("<b>Business Health Score</b>", self.styles['Normal']),
-                Paragraph(f"<font size=18 color='{health_color}'><b>{percentage:.1f}%</b></font>",
-                          self.styles['SummaryText'])
-            ],
-            [
-                Paragraph("<b>Grade</b>", self.styles['Normal']),
-                Paragraph(f"<font size=16 color='{health_color}'><b>{health['grade']}</b></font>",
-                          self.styles['SummaryText'])
-            ],
-            [
-                Paragraph("<b>Score Points</b>", self.styles['Normal']),
-                Paragraph(f"{health['score']}/{health['max_score']}", self.styles['SummaryText'])
-            ],
-        ]
-
-        col_width = self.doc_width / 3
-        table = Table(health_data, colWidths=[col_width, col_width * 2])
-        table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, -1), ColorScheme.BG_LIGHT),
-            ('GRID', (0, 0), (-1, -1), 1, ColorScheme.SECONDARY),
-            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-            ('ALIGN', (0, 0), (0, -1), 'LEFT'),
-            ('ALIGN', (1, 0), (1, -1), 'CENTER'),
-            ('TOPPADDING', (0, 0), (-1, -1), 12),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 12),
-        ]))
-
-        elements.append(table)
-
-        # Add health factors if available
-        if 'factors' in health and health['factors']:
+            elements.append(Paragraph("3. SALES PERFORMANCE ANALYSIS", self.styles['SectionHeader']))
             elements.append(Spacer(1, 10))
-            elements.append(Paragraph("<b>Health Factors:</b>", self.styles['SubSection']))
+            sales_data = self.report_data['SALES_SUMMARY']
 
-            factors_data = []
-            for factor_name, factor_score in health['factors']:
-                factors_data.append([
-                    Paragraph(factor_name, self.styles['Normal']),
-                    Paragraph(f"{factor_score} pts", self.styles['Normal'])
+            if 'summary' in sales_data:
+                # Enhanced sales summary
+                summary_table_data = [
+                    ['Metric', 'Value', 'Details']
+                ]
+
+                summary = sales_data['summary']
+                summary_table_data.append([
+                    'Total Sales',
+                    f"UGX {float(summary.get('total_sales', 0)):,.0f}",
+                    f"{summary.get('total_transactions', 0)} transactions"
+                ])
+                summary_table_data.append([
+                    'Average Transaction',
+                    f"UGX {float(summary.get('avg_transaction', 0)):,.0f}",
+                    f"Per transaction"
+                ])
+                summary_table_data.append([
+                    'Tax Collected',
+                    f"UGX {float(summary.get('total_tax', 0)):,.0f}",
+                    f"EFRIS compliance"
+                ])
+                summary_table_data.append([
+                    'Total Discounts',
+                    f"UGX {float(summary.get('total_discount', 0)):,.0f}",
+                    f"Given to customers"
                 ])
 
-            if factors_data:
-                factors_table = Table(factors_data, colWidths=[self.doc_width * 0.7, self.doc_width * 0.3])
-                factors_table.setStyle(TableStyle([
-                    ('BACKGROUND', (0, 0), (-1, -1), colors.white),
-                    ('GRID', (0, 0), (-1, -1), 0.5, ColorScheme.NEUTRAL),
+                sales_table = Table(summary_table_data, colWidths=[150, 120, 150])
+                sales_table.setStyle(TableStyle([
+                    ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#4A6572')),
+                    ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+                    ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+                    ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                    ('FONTSIZE', (0, 0), (-1, 0), 10),
+                    ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+                    ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#F5F7FA')),
+                    ('GRID', (0, 0), (-1, -1), 1, colors.grey),
                     ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-                    ('TOPPADDING', (0, 0), (-1, -1), 6),
-                    ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
                 ]))
-                elements.append(factors_table)
+                elements.append(sales_table)
+                elements.append(Spacer(1, 15))
+
+            # Payment Method Breakdown
+            if 'payment_methods' in sales_data and sales_data['payment_methods']:
+                elements.append(Paragraph("Payment Method Distribution", self.styles['SubSection']))
+                payment_data = []
+                for payment in sales_data['payment_methods'][:6]:  # Top 6 methods
+                    percentage = (float(payment.get('amount', 0)) / float(
+                        sales_data['summary'].get('total_sales', 1)) * 100) if sales_data['summary'].get('total_sales',
+                                                                                                         0) > 0 else 0
+                    payment_data.append([
+                        payment.get('payment_method', 'Unknown'),
+                        f"UGX {float(payment.get('amount', 0)):,.0f}",
+                        f"{payment.get('count', 0)} transactions",
+                        f"{percentage:.1f}%"
+                    ])
+
+                if payment_data:
+                    payment_table = Table([['Method', 'Amount', 'Transactions', '%']] + payment_data)
+                    payment_table.setStyle(TableStyle([
+                        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#34495E')),
+                        ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+                        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+                        ('GRID', (0, 0), (-1, -1), 1, colors.grey),
+                    ]))
+                    elements.append(payment_table)
+                    elements.append(Spacer(1, 15))
+
+            elements.append(Spacer(1, 20))
+            elements.append(HRFlowable(width="100%", thickness=0.5, color=colors.grey))
+            elements.append(Spacer(1, 20))
+
+        # 4. Financial Performance (Profit & Loss)
+        if 'PROFIT_LOSS' in self.report_data:
+            elements.append(Paragraph("4. FINANCIAL PERFORMANCE (PROFIT & LOSS)", self.styles['SectionHeader']))
+            elements.append(Spacer(1, 10))
+            elements.extend(self._build_profit_loss_section(self.report_data['PROFIT_LOSS']))
+            elements.append(Spacer(1, 20))
+            elements.append(HRFlowable(width="100%", thickness=0.5, color=colors.grey))
+            elements.append(Spacer(1, 20))
+
+        # 5. Expense Analysis
+        if 'EXPENSE_REPORT' in self.report_data:
+            elements.append(Paragraph("5. EXPENSE ANALYSIS", self.styles['SectionHeader']))
+            elements.append(Spacer(1, 10))
+            expense_data = self.report_data['EXPENSE_REPORT']
+
+            if 'summary' in expense_data:
+                # Expense Summary
+                summary = expense_data['summary']
+                expense_summary_data = [
+                    ['Total Expenses', f"UGX {float(summary.get('total_amount', 0)):,.0f}"],
+                    ['Number of Expenses', str(summary.get('total_expenses', 0))],
+                    ['Average Expense', f"UGX {float(summary.get('avg_expense', 0)):,.0f}"],
+                    ['Tax Paid', f"UGX {float(summary.get('total_tax', 0)):,.0f}"],
+                    ['Pending Approval', str(summary.get('pending_expenses', 0))],
+                    ['Overdue Payments', str(summary.get('overdue_expenses', 0))],
+                ]
+
+                expense_table = Table(expense_summary_data, colWidths=[200, 150])
+                expense_table.setStyle(TableStyle([
+                    ('BACKGROUND', (0, 0), (0, -1), colors.HexColor('#F8F9FA')),
+                    ('BACKGROUND', (1, 0), (1, -1), colors.HexColor('#E9ECEF')),
+                    ('GRID', (0, 0), (-1, -1), 1, colors.grey),
+                    ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+                    ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
+                    ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                    ('PADDING', (0, 0), (-1, -1), 8),
+                ]))
+                elements.append(expense_table)
+                elements.append(Spacer(1, 15))
+
+            # Expense by Category
+            if 'category_breakdown' in expense_data and expense_data['category_breakdown']:
+                elements.append(Paragraph("Expense Breakdown by Category", self.styles['SubSection']))
+                elements.append(Spacer(1, 8))
+                elements.extend(self._build_expense_category_table(expense_data['category_breakdown']))
+
+            # Expense Status Distribution
+            if 'status_counts' in expense_data and expense_data['status_counts']:
+                elements.append(Spacer(1, 12))
+                elements.append(Paragraph("Expense Status Distribution", self.styles['SubSection']))
+                status_data = []
+                for status in expense_data['status_counts']:
+                    status_data.append([
+                        status.get('status', 'Unknown'),
+                        str(status.get('count', 0)),
+                        f"UGX {float(status.get('total_amount', 0)):,.0f}"
+                    ])
+
+                if status_data:
+                    status_table = Table([['Status', 'Count', 'Amount']] + status_data)
+                    status_table.setStyle(TableStyle([
+                        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#495057')),
+                        ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+                        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+                        ('GRID', (0, 0), (-1, -1), 1, colors.grey),
+                        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#F8F9FA')]),
+                    ]))
+                    elements.append(status_table)
+
+            elements.append(Spacer(1, 20))
+            elements.append(HRFlowable(width="100%", thickness=0.5, color=colors.grey))
+            elements.append(Spacer(1, 20))
+
+        # 6. Inventory Management
+        if 'INVENTORY_STATUS' in self.report_data:
+            elements.append(Paragraph("6. INVENTORY MANAGEMENT", self.styles['SectionHeader']))
+            elements.append(Spacer(1, 10))
+            inventory_data = self.report_data['INVENTORY_STATUS']
+
+            if 'summary' in inventory_data:
+                summary = inventory_data['summary']
+
+                # Create inventory summary table
+                inventory_summary = [
+                    ['Total Products', str(summary.get('total_products', 0))],
+                    ['Total Quantity', f"{summary.get('total_quantity', 0):,.0f} units"],
+                    ['Stock Value', f"UGX {float(summary.get('total_stock_value', 0)):,.0f}"],
+                    ['Retail Value', f"UGX {float(summary.get('total_retail_value', 0)):,.0f}"],
+                    ['Low Stock Items', str(summary.get('low_stock_count', 0))],
+                    ['Out of Stock Items', str(summary.get('out_of_stock_count', 0))],
+                ]
+
+                inventory_table = Table(inventory_summary, colWidths=[180, 170])
+                inventory_table.setStyle(TableStyle([
+                    ('BACKGROUND', (0, 0), (0, -1), colors.HexColor('#E3F2FD')),
+                    ('BACKGROUND', (1, 0), (1, -1), colors.HexColor('#F3F4F6')),
+                    ('GRID', (0, 0), (-1, -1), 1, colors.grey),
+                    ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+                    ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
+                    ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                    ('PADDING', (0, 0), (-1, -1), 8),
+                ]))
+                elements.append(inventory_table)
+
+            # Show alerts if available
+            if 'alerts' in inventory_data and inventory_data['alerts']:
+                elements.append(Spacer(1, 15))
+                elements.append(Paragraph("Stock Alerts", self.styles['SubSection']))
+
+                alert_data = []
+                for i, alert in enumerate(inventory_data['alerts'][:10]):  # Top 10 alerts
+                    alert_data.append([
+                        str(i + 1),
+                        alert.get('product__name', 'Unknown')[:30],
+                        alert.get('store__name', 'Unknown'),
+                        str(alert.get('quantity', 0)),
+                        str(alert.get('low_stock_threshold', 0))
+                    ])
+
+                if alert_data:
+                    alerts_table = Table([['#', 'Product', 'Store', 'Current Qty', 'Reorder Level']] + alert_data)
+                    alerts_table.setStyle(TableStyle([
+                        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#DC3545')),
+                        ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+                        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+                        ('GRID', (0, 0), (-1, -1), 1, colors.grey),
+                        ('TEXTCOLOR', (3, 1), (3, -1), colors.red),
+                    ]))
+                    elements.append(alerts_table)
+
+            elements.append(Spacer(1, 20))
+            elements.append(HRFlowable(width="100%", thickness=0.5, color=colors.grey))
+            elements.append(Spacer(1, 20))
+
+        # 7. Daily Operations (Z-Report)
+        if 'Z_REPORT' in self.report_data:
+            elements.append(Paragraph("7. DAILY OPERATIONS (Z-REPORT)", self.styles['SectionHeader']))
+            elements.append(Spacer(1, 10))
+            z_data = self.report_data['Z_REPORT']
+
+            if 'summary' in z_data:
+                summary = z_data['summary']
+
+                z_report_summary = [
+                    ['Total Sales', f"UGX {float(summary.get('total_sales', 0)):,.0f}"],
+                    ['Total Transactions', str(summary.get('total_transactions', 0))],
+                    ['Average Transaction', f"UGX {float(summary.get('avg_transaction', 0)):,.0f}"],
+                    ['Total Tax', f"UGX {float(summary.get('total_tax', 0)):,.0f}"],
+                    ['Total Discounts', f"UGX {float(summary.get('total_discount', 0)):,.0f}"],
+                ]
+
+                z_table = Table(z_report_summary, colWidths=[180, 170])
+                z_table.setStyle(TableStyle([
+                    ('BACKGROUND', (0, 0), (0, -1), colors.HexColor('#17A2B8')),
+                    ('TEXTCOLOR', (0, 0), (0, -1), colors.white),
+                    ('BACKGROUND', (1, 0), (1, -1), colors.HexColor('#E3F2FD')),
+                    ('GRID', (0, 0), (-1, -1), 1, colors.grey),
+                    ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+                    ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
+                    ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                    ('PADDING', (0, 0), (-1, -1), 8),
+                ]))
+                elements.append(z_table)
+
+            elements.append(Spacer(1, 20))
+            elements.append(HRFlowable(width="100%", thickness=0.5, color=colors.grey))
+            elements.append(Spacer(1, 20))
+
+        # 8. Staff Performance
+        if 'CASHIER_PERFORMANCE' in self.report_data:
+            elements.append(Paragraph("8. STAFF PERFORMANCE", self.styles['SectionHeader']))
+            elements.append(Spacer(1, 10))
+            cashier_data = self.report_data['CASHIER_PERFORMANCE']
+
+            if 'summary' in cashier_data:
+                summary = cashier_data['summary']
+
+                performance_summary = [
+                    ['Total Cashiers', str(summary.get('total_cashiers', 0))],
+                    ['Total Sales', f"UGX {float(summary.get('total_sales', 0)):,.0f}"],
+                    ['Total Transactions', str(summary.get('total_transactions', 0))],
+                    ['Average per Cashier', f"UGX {float(summary.get('avg_per_cashier', 0)):,.0f}"],
+                ]
+
+                perf_table = Table(performance_summary, colWidths=[180, 170])
+                perf_table.setStyle(TableStyle([
+                    ('BACKGROUND', (0, 0), (0, -1), colors.HexColor('#28A745')),
+                    ('TEXTCOLOR', (0, 0), (0, -1), colors.white),
+                    ('BACKGROUND', (1, 0), (1, -1), colors.HexColor('#D4EDDA')),
+                    ('GRID', (0, 0), (-1, -1), 1, colors.grey),
+                    ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+                    ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
+                    ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                    ('PADDING', (0, 0), (-1, -1), 8),
+                ]))
+                elements.append(perf_table)
+
+            # Top Performers
+            if 'performance' in cashier_data and cashier_data['performance']:
+                elements.append(Spacer(1, 15))
+                elements.append(Paragraph("Top Performing Cashiers", self.styles['SubSection']))
+
+                top_performers = []
+                for i, cashier in enumerate(cashier_data['performance'][:5]):  # Top 5
+                    cashier_name = f"{cashier.get('created_by__first_name', '')} {cashier.get('created_by__last_name', '')}".strip() or 'Unknown'
+                    top_performers.append([
+                        str(i + 1),
+                        cashier_name,
+                        f"UGX {float(cashier.get('total_sales', 0)):,.0f}",
+                        str(cashier.get('transaction_count', 0)),
+                        f"UGX {float(cashier.get('avg_transaction', 0)):,.0f}"
+                    ])
+
+                if top_performers:
+                    cashier_table = Table(
+                        [['Rank', 'Cashier', 'Total Sales', 'Transactions', 'Avg Sale']] + top_performers)
+                    cashier_table.setStyle(TableStyle([
+                        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#343A40')),
+                        ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+                        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+                        ('GRID', (0, 0), (-1, -1), 1, colors.grey),
+                        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#F8F9FA')]),
+                    ]))
+                    elements.append(cashier_table)
+
+            elements.append(Spacer(1, 20))
+            elements.append(HRFlowable(width="100%", thickness=0.5, color=colors.grey))
+            elements.append(Spacer(1, 20))
+
+        # 9. Product Performance (if available)
+        if 'PRODUCT_PERFORMANCE' in self.report_data:
+            elements.append(Paragraph("9. PRODUCT PERFORMANCE", self.styles['SectionHeader']))
+            elements.append(Spacer(1, 10))
+            product_data = self.report_data['PRODUCT_PERFORMANCE']
+
+            if 'summary' in product_data:
+                summary = product_data['summary']
+
+                product_summary = [
+                    ['Total Products Sold', str(summary.get('total_products', 0))],
+                    ['Total Quantity Sold', f"{summary.get('total_quantity_sold', 0):,.0f} units"],
+                    ['Total Revenue', f"UGX {float(summary.get('total_revenue', 0)):,.0f}"],
+                    ['Total Profit', f"UGX {float(summary.get('total_profit', 0)):,.0f}"],
+                    ['Average Profit Margin', f"{summary.get('avg_profit_margin', 0):.1f}%"],
+                ]
+
+                product_table = Table(product_summary, colWidths=[180, 170])
+                product_table.setStyle(TableStyle([
+                    ('BACKGROUND', (0, 0), (0, -1), colors.HexColor('#FD7E14')),
+                    ('TEXTCOLOR', (0, 0), (0, -1), colors.white),
+                    ('BACKGROUND', (1, 0), (1, -1), colors.HexColor('#FFF3CD')),
+                    ('GRID', (0, 0), (-1, -1), 1, colors.grey),
+                    ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+                    ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
+                    ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                    ('PADDING', (0, 0), (-1, -1), 8),
+                ]))
+                elements.append(product_table)
+
+            elements.append(Spacer(1, 20))
+            elements.append(HRFlowable(width="100%", thickness=0.5, color=colors.grey))
+            elements.append(Spacer(1, 20))
+
+        # 10. Stock Movement (if available)
+        if 'STOCK_MOVEMENT' in self.report_data:
+            elements.append(Paragraph("10. STOCK MOVEMENT ANALYSIS", self.styles['SectionHeader']))
+            elements.append(Spacer(1, 10))
+            elements.append(Paragraph("Stock movement tracking and analysis", self.styles['Normal']))
+            elements.append(Spacer(1, 20))
+            elements.append(HRFlowable(width="100%", thickness=0.5, color=colors.grey))
+            elements.append(Spacer(1, 20))
+
+        # 11. Customer Insights (if available)
+        if 'CUSTOMER_ANALYTICS' in self.report_data:
+            elements.append(Paragraph("11. CUSTOMER INSIGHTS", self.styles['SectionHeader']))
+            elements.append(Spacer(1, 10))
+            elements.append(Paragraph("Customer behavior and segmentation analysis", self.styles['Normal']))
+            elements.append(Spacer(1, 20))
+            elements.append(HRFlowable(width="100%", thickness=0.5, color=colors.grey))
+            elements.append(Spacer(1, 20))
+
+        # 12. EFRIS Compliance (if available)
+        if 'EFRIS_COMPLIANCE' in self.report_data:
+            elements.append(Paragraph("12. EFRIS COMPLIANCE", self.styles['SectionHeader']))
+            elements.append(Spacer(1, 10))
+            elements.append(Paragraph("URA fiscal device compliance status", self.styles['Normal']))
+            elements.append(Spacer(1, 20))
+
+        # Report Footer
+        elements.append(Spacer(1, 30))
+        elements.append(HRFlowable(width="100%", thickness=2, color=colors.black))
+        elements.append(Spacer(1, 10))
+        elements.append(Paragraph("END OF REPORT", self.styles['Footer']))
+        elements.append(Spacer(1, 5))
+        elements.append(Paragraph("Confidential Business Document - For Internal Use Only", self.styles['Small']))
 
         return elements
 
-    def _build_custom_analytics_section(self) -> List:
+    def _build_business_health_section(self):
+        """Build business health score section"""
+        elements = []
+        health_data = self.report_data['business_health']
+
+        # Health Score Card
+        score_color = colors.green
+        if health_data['percentage'] < 50:
+            score_color = colors.red
+        elif health_data['percentage'] < 70:
+            score_color = colors.orange
+
+        elements.append(Paragraph(
+            f"Overall Health Score: {health_data['score']}/{health_data['max_score']} ({health_data['percentage']:.1f}%)",
+            self.styles['HealthScore']))
+        elements.append(Spacer(1, 5))
+        elements.append(Paragraph(f"Grade: {health_data['grade']}", self.styles['HealthGrade']))
+        elements.append(Spacer(1, 15))
+
+        # Health Factors
+        elements.append(Paragraph("Health Factors:", self.styles['SubSection']))
+        for factor, score in health_data['factors']:
+            elements.append(Paragraph(f"• {factor}: {score} points", self.styles['Normal']))
+
+        return elements
+
+    def _build_custom_analytics_section(self):
         """Build custom analytics section"""
         elements = []
         analytics = self.report_data['custom_analytics']
 
-        elements.append(Paragraph("Key Business Insights", self.styles['SectionHeader']))
-
         # Key Metrics
-        if 'key_metrics' in analytics and analytics['key_metrics']:
-            metrics = analytics['key_metrics']
+        if 'key_metrics' in analytics:
+            elements.append(Paragraph("Key Business Metrics:", self.styles['SubSection']))
 
-            metrics_data = []
+            if 'cash_flow' in analytics['key_metrics']:
+                cash_flow = analytics['key_metrics']['cash_flow']
+                cash_color = colors.green if cash_flow >= 0 else colors.red
+                elements.append(Paragraph(f"Cash Flow: UGX {cash_flow:,.0f}", self.styles['Normal']))
 
-            # Cash Flow
-            if 'cash_flow' in metrics:
-                cash_flow = metrics['cash_flow']
-                color = ColorScheme.SUCCESS if cash_flow >= 0 else ColorScheme.DANGER
-                metrics_data.append([
-                    Paragraph("<b>Cash Flow</b>", self.styles['Normal']),
-                    Paragraph(f"<font color='{color}'><b>UGX {cash_flow:,.2f}</b></font>", self.styles['SummaryText'])
-                ])
+            if 'profitability' in analytics['key_metrics']:
+                profit = analytics['key_metrics']['profitability']
+                elements.append(
+                    Paragraph(f"Net Profit: UGX {profit['net_profit']:,.0f} ({profit['net_margin']:.1f}% margin)",
+                              self.styles['Normal']))
 
-            # Cash Flow Margin
-            if 'cash_flow_margin' in metrics:
-                margin = metrics['cash_flow_margin']
-                color = ColorScheme.get_status_color(margin, 'percentage')
-                metrics_data.append([
-                    Paragraph("<b>Cash Flow Margin</b>", self.styles['Normal']),
-                    Paragraph(f"<font color='{color}'><b>{margin:.2f}%</b></font>", self.styles['SummaryText'])
-                ])
+            if 'expense_to_sales_ratio' in analytics['key_metrics']:
+                ratio = analytics['key_metrics']['expense_to_sales_ratio']
+                ratio_status = "Good" if ratio < 30 else "Moderate" if ratio < 50 else "High"
+                elements.append(Paragraph(f"Expense to Sales Ratio: {ratio:.1f}% ({ratio_status})",
+                                          self.styles['Normal']))
 
-            # Expense to Sales Ratio
-            if 'expense_to_sales_ratio' in metrics:
-                ratio = metrics['expense_to_sales_ratio']
-                if ratio < 30:
-                    color = ColorScheme.SUCCESS
-                elif ratio < 50:
-                    color = ColorScheme.WARNING
-                else:
-                    color = ColorScheme.DANGER
-                metrics_data.append([
-                    Paragraph("<b>Expense to Sales Ratio</b>", self.styles['Normal']),
-                    Paragraph(f"<font color='{color}'><b>{ratio:.2f}%</b></font>", self.styles['SummaryText'])
-                ])
-
-            # Profitability
-            if 'profitability' in metrics:
-                prof = metrics['profitability']
-                if isinstance(prof, dict):
-                    metrics_data.append([
-                        Paragraph("<b>Net Profit</b>", self.styles['Normal']),
-                        Paragraph(f"UGX {prof.get('net_profit', 0):,.2f}", self.styles['SummaryText'])
-                    ])
-                    metrics_data.append([
-                        Paragraph("<b>Net Margin</b>", self.styles['Normal']),
-                        Paragraph(f"{prof.get('net_margin', 0):.2f}%", self.styles['SummaryText'])
-                    ])
-
-            # Credit Sales
-            if 'credit_sales' in metrics:
-                credit = metrics['credit_sales']
-                if isinstance(credit, dict):
-                    metrics_data.append([
-                        Paragraph("<b>Total Credit Sales</b>", self.styles['Normal']),
-                        Paragraph(f"UGX {credit.get('credit_sales', 0):,.2f}", self.styles['SummaryText'])
-                    ])
-                    metrics_data.append([
-                        Paragraph("<b>Outstanding Amount</b>", self.styles['Normal']),
-                        Paragraph(
-                            f"<font color='{ColorScheme.WARNING}'><b>UGX {credit.get('outstanding_amount', 0):,.2f}</b></font>",
-                            self.styles['SummaryText'])
-                    ])
-                    metrics_data.append([
-                        Paragraph("<b>Collection Rate</b>", self.styles['Normal']),
-                        Paragraph(f"{credit.get('collection_rate', 0):.2f}%", self.styles['SummaryText'])
-                    ])
-
-            if metrics_data:
-                col_width = self.doc_width / 2
-                metrics_table = Table(metrics_data, colWidths=[col_width, col_width])
-                metrics_table.setStyle(TableStyle([
-                    ('BACKGROUND', (0, 0), (-1, -1), ColorScheme.BG_LIGHT),
-                    ('GRID', (0, 0), (-1, -1), 0.5, ColorScheme.NEUTRAL),
-                    ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-                    ('ALIGN', (1, 0), (1, -1), 'CENTER'),
-                    ('TOPPADDING', (0, 0), (-1, -1), 8),
-                    ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
-                ]))
-                elements.append(metrics_table)
+            if 'credit_sales' in analytics['key_metrics']:
+                credit = analytics['key_metrics']['credit_sales']
+                if 'outstanding_amount' in credit:
+                    elements.append(Paragraph(f"Outstanding Credit Sales: UGX {credit['outstanding_amount']:,.0f}",
+                                              self.styles['Normal']))
+                    elements.append(Paragraph(f"Collection Rate: {credit.get('collection_rate', 0):.1f}%",
+                                              self.styles['Normal']))
 
         # Recommendations
         if 'recommendations' in analytics and analytics['recommendations']:
-            elements.append(Spacer(1, 15))
-            elements.append(Paragraph("<b>Recommendations:</b>", self.styles['SubSection']))
-
+            elements.append(Spacer(1, 10))
+            elements.append(Paragraph("Recommendations:", self.styles['SubSection']))
             for rec in analytics['recommendations']:
                 elements.append(Paragraph(f"• {rec}", self.styles['Normal']))
-                elements.append(Spacer(1, 5))
 
         return elements
 
@@ -989,38 +1278,48 @@ class PDFExportService:
 
         return elements
 
-    def _build_profit_loss_section(self, pl_report) -> List:
-        """Build profit & loss section for combined report"""
+    def _build_profit_loss_section(self, profit_loss_data):
+        """Build profit & loss section"""
         elements = []
 
-        if 'profit_loss' in pl_report:
-            pl_data = pl_report['profit_loss']
+        if 'profit_loss' in profit_loss_data:
+            pl_data = profit_loss_data['profit_loss']
 
-            summary_data = []
-            if 'revenue' in pl_data:
-                summary_data.append(['Net Revenue', f"UGX {pl_data['revenue'].get('net_revenue', 0):,.2f}"])
-            if 'costs' in pl_data:
-                summary_data.append(['Total Costs', f"UGX {pl_data['costs'].get('total_costs', 0):,.2f}"])
-            if 'profit' in pl_data:
-                net_profit = pl_data['profit'].get('net_profit', 0)
-                color = ColorScheme.get_status_color(net_profit, 'amount')
-                summary_data.append([
-                    'Net Profit',
-                    Paragraph(f"<font color='{color}'><b>UGX {net_profit:,.2f}</b></font>", self.styles['Normal'])
-                ])
-                summary_data.append(['Net Margin', f"{pl_data['profit'].get('net_margin', 0):.2f}%"])
+            # P&L Statement Table
+            pl_table_data = [
+                ['Revenue', '', ''],
+                ['  Gross Revenue', f"UGX {float(pl_data['revenue']['gross_revenue']):,.0f}", ''],
+                ['  Less: Discounts', f"(UGX {float(pl_data['revenue']['discounts']):,.0f})", ''],
+                ['Net Revenue', f"UGX {float(pl_data['revenue']['net_revenue']):,.0f}", ''],
+                ['', '', ''],
+                ['Costs', '', ''],
+                ['  Cost of Goods Sold', f"(UGX {float(pl_data['costs']['cost_of_goods_sold']):,.0f})", ''],
+                ['  Taxes', f"(UGX {float(pl_data['costs']['tax']):,.0f})", ''],
+                ['Total Costs', f"(UGX {float(pl_data['costs']['total_costs']):,.0f})", ''],
+                ['', '', ''],
+                ['Profit', '', ''],
+                ['  Gross Profit', f"UGX {float(pl_data['profit']['gross_profit']):,.0f}",
+                 f"{pl_data['profit']['gross_margin']:.1f}%"],
+                ['  Net Profit', f"UGX {float(pl_data['profit']['net_profit']):,.0f}",
+                 f"{pl_data['profit']['net_margin']:.1f}%"],
+            ]
 
-            if summary_data:
-                # Convert to proper table format
-                table_data = []
-                for label, value in summary_data:
-                    if isinstance(value, str):
-                        table_data.append([Paragraph(f"<b>{label}</b>", self.styles['Normal']),
-                                           Paragraph(value, self.styles['Normal'])])
-                    else:
-                        table_data.append([Paragraph(f"<b>{label}</b>", self.styles['Normal']), value])
-
-                elements.extend(self._build_simple_table_from_paragraphs(table_data))
+            pl_table = Table(pl_table_data, colWidths=[200, 120, 80])
+            pl_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2C3E50')),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+                ('BACKGROUND', (0, 5), (-1, 5), colors.HexColor('#34495E')),
+                ('TEXTCOLOR', (0, 5), (-1, 5), colors.white),
+                ('BACKGROUND', (0, 10), (-1, 10), colors.HexColor('#27AE60')),
+                ('TEXTCOLOR', (0, 10), (-1, 10), colors.white),
+                ('FONTNAME', (0, 0), (0, -1), 'Helvetica-Bold'),
+                ('FONTNAME', (1, 0), (2, -1), 'Helvetica'),
+                ('ALIGN', (1, 0), (2, -1), 'RIGHT'),
+                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                ('GRID', (0, 0), (-1, -1), 1, colors.grey),
+                ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#F8F9FA')]),
+            ]))
+            elements.append(pl_table)
 
         return elements
 
@@ -1116,46 +1415,31 @@ class PDFExportService:
 
         return elements
 
-    def _build_expense_category_table(self, categories: List[Dict]) -> List:
+    def _build_expense_category_table(self, category_breakdown):
         """Build expense category table"""
         elements = []
 
-        if not categories:
-            elements.append(Paragraph("<i>No category data available</i>", self.styles['Normal']))
-            return elements
+        category_data = []
+        for category in category_breakdown[:10]:  # Top 10 categories
+            category_data.append([
+                category.get('category__name', 'Unknown')[:30],
+                f"UGX {float(category.get('total_amount', 0)):,.0f}",
+                str(category.get('expense_count', 0)),
+                f"UGX {float(category.get('avg_amount', 0)):,.0f}"
+            ])
 
-        headers = ['Category', 'Count', 'Total Amount', 'Avg Amount']
-        table_data = [[Paragraph(f"<b>{h}</b>", self.styles['Normal']) for h in headers]]
+        if category_data:
+            category_table = Table([['Category', 'Total Amount', 'Count', 'Average']] + category_data)
+            category_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#6C757D')),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+                ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+                ('ALIGN', (1, 0), (3, -1), 'RIGHT'),
+                ('GRID', (0, 0), (-1, -1), 1, colors.grey),
+                ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#F8F9FA')]),
+            ]))
+            elements.append(category_table)
 
-        for cat in categories[:20]:
-            row = [
-                Paragraph(cat.get('category__name', 'Uncategorized')[:25], self.styles['Normal']),
-                Paragraph(f"{cat.get('expense_count', 0):,}", self.styles['Normal']),
-                Paragraph(f"UGX {cat.get('total_amount', 0):,.2f}", self.styles['Normal']),
-                Paragraph(f"UGX {cat.get('avg_amount', 0):,.2f}", self.styles['Normal']),
-            ]
-            table_data.append(row)
-
-        table = Table(table_data, colWidths=[150, 80, 120, 120], repeatRows=1)
-        table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), ColorScheme.BG_TABLE_HEADER),
-            ('TEXTCOLOR', (0, 0), (-1, 0), ColorScheme.TEXT_LIGHT),
-            ('ALIGN', (0, 0), (0, -1), 'LEFT'),
-            ('ALIGN', (1, 0), (-1, -1), 'CENTER'),
-            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('GRID', (0, 0), (-1, -1), 0.5, ColorScheme.NEUTRAL),
-            ('TOPPADDING', (0, 0), (-1, -1), 8),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
-        ]))
-
-        # Alternate row colors
-        for i in range(1, len(table_data)):
-            if i % 2 == 0:
-                table.setStyle(TableStyle([
-                    ('BACKGROUND', (0, i), (-1, i), ColorScheme.BG_LIGHT)
-                ]))
-
-        elements.append(table)
         return elements
 
     def _build_expense_store_table(self, stores: List[Dict]) -> List:

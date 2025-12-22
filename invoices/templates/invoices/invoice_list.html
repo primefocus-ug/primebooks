@@ -719,199 +719,88 @@ function handleRowClick(event, url) {
     }
     window.location.href = url;
 }
+
+// Toggle select all
+function toggleSelectAll(checkbox) {
+    const checkboxes = document.querySelectorAll('.invoice-checkbox');
+    checkboxes.forEach(cb => cb.checked = checkbox.checked);
+    updateBulkActions();
+}
 // Update bulk actions bar
 function updateBulkActions() {
-    const selectedCount = document.querySelectorAll('.invoice-checkbox:checked').length;
-    const bulkActionsBar = document.getElementById('bulkActionsBar');
-    const selectedCountElement = document.getElementById('selectedCount');
+const checkedBoxes = document.querySelectorAll('.invoice-checkbox:checked');
+const count = checkedBoxes.length;
+const bulkBar = document.getElementById('bulkActionsBar');
+const countDisplay = document.getElementById('selectedCount');
+    countDisplay.textContent = count;
 
-    if (selectedCount > 0) {
-        bulkActionsBar.classList.add('show');
-        selectedCountElement.textContent = selectedCount;
-    } else {
-        bulkActionsBar.classList.remove('show');
-    }
-
-    // Update select all checkbox state
-    const totalCheckboxes = document.querySelectorAll('.invoice-checkbox').length;
-    const checkedCheckboxes = selectedCount;
-    const selectAllCheckbox = document.getElementById('selectAll');
-    const selectAllHeader = document.getElementById('selectAllHeader');
-
-    if (checkedCheckboxes === 0) {
-        selectAllCheckbox.checked = false;
-        selectAllCheckbox.indeterminate = false;
-        selectAllHeader.checked = false;
-        selectAllHeader.indeterminate = false;
-    } else if (checkedCheckboxes === totalCheckboxes) {
-        selectAllCheckbox.checked = true;
-        selectAllCheckbox.indeterminate = false;
-        selectAllHeader.checked = true;
-        selectAllHeader.indeterminate = false;
-    } else {
-        selectAllCheckbox.checked = false;
-        selectAllCheckbox.indeterminate = true;
-        selectAllHeader.checked = false;
-        selectAllHeader.indeterminate = true;
-    }
+if (count > 0) {
+    bulkBar.classList.add('show');
+} else {
+    bulkBar.classList.remove('show');
 }
 
+// Update select all checkbox
+const selectAll = document.getElementById('selectAll');
+const selectAllHeader = document.getElementById('selectAllHeader');
+const allCheckboxes = document.querySelectorAll('.invoice-checkbox');
+
+if (selectAll) selectAll.checked = count === allCheckboxes.length && count > 0;
+if (selectAllHeader) selectAllHeader.checked = count === allCheckboxes.length && count > 0;
+    }
 // Clear selection
 function clearSelection() {
-    document.querySelectorAll('.invoice-checkbox').forEach(cb => cb.checked = false);
-    updateBulkActions();
+const checkboxes = document.querySelectorAll('.invoice-checkbox');
+checkboxes.forEach(cb => cb.checked = false);
+updateBulkActions();
 }
-
-// Bulk action handler
+// Bulk action
 function bulkAction(action) {
-    const selectedInvoices = Array.from(document.querySelectorAll('.invoice-checkbox:checked'))
-        .map(cb => cb.value);
-
-    if (selectedInvoices.length === 0) {
-        showToast('{% trans "Please select at least one invoice" %}', 'warning');
-        return;
-    }
-
-    if (action === 'export_pdf' || action === 'export_csv') {
-        // Handle export actions
-        const form = document.getElementById('bulkActionForm');
-        const actionType = document.getElementById('bulkActionType');
-        const invoiceIds = document.getElementById('bulkInvoiceIds');
-
-        // Clear previous inputs
-        invoiceIds.innerHTML = '';
-
-        // Add selected invoice IDs
-        selectedInvoices.forEach(id => {
-            const input = document.createElement('input');
-            input.type = 'hidden';
-            input.name = 'invoice_ids';
-            input.value = id;
-            invoiceIds.appendChild(input);
-        });
-
-        // Set action type
-        actionType.value = action;
-
-        // Submit form
-        form.submit();
-
-    } else if (action === 'fiscalize') {
-        // Check if all selected invoices can be fiscalized
-        const hasFiscalized = Array.from(document.querySelectorAll('.invoice-checkbox:checked'))
-            .some(cb => {
-                const row = cb.closest('tr');
-                return row.querySelector('.fiscalized-badge');
-            });
-
-        if (hasFiscalized) {
-            showToast('{% trans "Some selected invoices are already fiscalized" %}', 'warning');
-            return;
-        }
-
-        // Confirm fiscalization
-        if (confirm('{% trans "Are you sure you want to fiscalize the selected invoices? This action cannot be undone." %}')) {
-            const form = document.getElementById('bulkActionForm');
-            const actionType = document.getElementById('bulkActionType');
-            const invoiceIds = document.getElementById('bulkInvoiceIds');
-
-            // Clear previous inputs
-            invoiceIds.innerHTML = '';
-
-            // Add selected invoice IDs
-            selectedInvoices.forEach(id => {
-                const input = document.createElement('input');
-                input.type = 'hidden';
-                input.name = 'invoice_ids';
-                input.value = id;
-                invoiceIds.appendChild(input);
-            });
-
-            // Set action type
-            actionType.value = action;
-
-            // Submit form
-            form.submit();
-        }
-    }
+const checkedBoxes = document.querySelectorAll('.invoice-checkbox:checked');
+    if (checkedBoxes.length === 0) {
+    alert('{% trans "Please select at least one invoice" %}');
+    return;
 }
 
-// Confirm invoice cancellation
-function confirmCancel(invoiceId) {
-    if (confirm('{% trans "Are you sure you want to cancel this invoice? This action cannot be undone." %}')) {
-        // Create a form and submit it
-        const form = document.createElement('form');
-        form.method = 'POST';
-        form.action = ``.replace('/0/', `/${invoiceId}/`);
+const form = document.getElementById('bulkActionForm');
+const actionInput = document.getElementById('bulkActionType');
+const idsContainer = document.getElementById('bulkInvoiceIds');
 
-        const csrfInput = document.createElement('input');
-        csrfInput.type = 'hidden';
-        csrfInput.name = 'csrfmiddlewaretoken';
-        csrfInput.value = '{{ csrf_token }}';
-        form.appendChild(csrfInput);
+actionInput.value = action;
+idsContainer.innerHTML = '';
 
-        document.body.appendChild(form);
-        form.submit();
-    }
-}
-
-// Toast notification function
-function showToast(message, type = 'info') {
-    // Check if toast container exists
-    let toastContainer = document.querySelector('.toast-container');
-    if (!toastContainer) {
-        toastContainer = document.createElement('div');
-        toastContainer.className = 'toast-container position-fixed top-0 end-0 p-3';
-        document.body.appendChild(toastContainer);
-    }
-
-    // Create toast
-    const toastId = 'toast-' + Date.now();
-    const toast = document.createElement('div');
-    toast.className = `toast align-items-center text-bg-${type} border-0`;
-    toast.id = toastId;
-    toast.setAttribute('role', 'alert');
-    toast.setAttribute('aria-live', 'assertive');
-    toast.setAttribute('aria-atomic', 'true');
-
-    toast.innerHTML = `
-        <div class="d-flex">
-            <div class="toast-body">
-                ${message}
-            </div>
-            <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
-        </div>
-    `;
-
-    toastContainer.appendChild(toast);
-
-    // Initialize and show toast
-    const bsToast = new bootstrap.Toast(toast, {
-        autohide: true,
-        delay: 3000
-    });
-    bsToast.show();
-
-    // Remove toast from DOM after it's hidden
-    toast.addEventListener('hidden.bs.toast', function () {
-        toast.remove();
-    });
-}
-
-// Auto-submit form when pressing Enter in search input
-document.addEventListener('DOMContentLoaded', function() {
-    const searchInput = document.querySelector('input[name="search"]');
-    if (searchInput) {
-        searchInput.addEventListener('keypress', function(e) {
-            if (e.key === 'Enter') {
-                e.preventDefault();
-                document.getElementById('searchForm').submit();
-            }
-        });
-    }
-
-    // Initialize bulk actions bar state
-    updateBulkActions();
+checkedBoxes.forEach(checkbox => {
+    const input = document.createElement('input');
+    input.type = 'hidden';
+    input.name = 'selected_invoices';
+    input.value = checkbox.value;
+    idsContainer.appendChild(input);
 });
+
+if (action === 'fiscalize') {
+    if (confirm('{% trans "Are you sure you want to fiscalize the selected invoices?" %}')) {
+        form.submit();
+    }
+} else {
+    form.submit();
+}
+    }
+// Confirm cancel
+function confirmCancel(invoiceId) {
+if (confirm('{% trans "Are you sure you want to cancel this invoice? This action cannot be undone." %}')) {
+const form = document.createElement('form');
+form.method = 'POST';
+form.action = /invoices/${invoiceId}/cancel/;
+
+    const csrfInput = document.createElement('input');
+    csrfInput.type = 'hidden';
+    csrfInput.name = 'csrfmiddlewaretoken';
+    csrfInput.value = '{{ csrf_token }}';
+
+    form.appendChild(csrfInput);
+    document.body.appendChild(form);
+    form.submit();
+}
+    }
 </script>
 {% endblock %}

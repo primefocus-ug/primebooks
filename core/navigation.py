@@ -153,7 +153,7 @@ NAVIGATION_ITEMS = [
         ]
     ),
     NavigationItem(
-        name="Companies",
+        name="Company",
         icon="bi bi-building",
         children=[
             NavigationItem(
@@ -203,18 +203,18 @@ NAVIGATION_ITEMS = [
     ),
 
     NavigationItem(
-        name="Stores Dashboard",
+        name="Branch Dashboard",
         url_name="stores:store_dashboard",
         icon="bi bi-speedometer2",
         permission='stores.view_store'
     ),
 
     NavigationItem(
-        name="Stores Management",
+        name="Branch Management",
         icon="bi bi-shop",
         children=[
             NavigationItem(
-                name="All Stores",
+                name="All Branches",
                 url_name="stores:store_list",
                 icon="bi bi-shop-window",
                 permission="stores.view_store"

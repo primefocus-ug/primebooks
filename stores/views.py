@@ -17,6 +17,7 @@ from django.utils.translation import gettext as _
 from datetime import datetime, timedelta
 import json
 import csv
+from company.mixins import CompanyFieldLockMixin
 from django.db.models import (
     Case, When, Value, F, Q, Sum, ExpressionWrapper,
     FloatField, CharField, DecimalField
@@ -1172,7 +1173,7 @@ class StoreDetailView(LoginRequiredMixin, PermissionRequiredMixin, DetailView):
         return context
 
 
-class StoreCreateView(LoginRequiredMixin,CompanyRestrictedFormMixin, PermissionRequiredMixin, CreateView):
+class StoreCreateView(CompanyFieldLockMixin,LoginRequiredMixin, PermissionRequiredMixin, CreateView):
     """Create a new store"""
 
     model = Store
@@ -1230,7 +1231,7 @@ class StoreCreateView(LoginRequiredMixin,CompanyRestrictedFormMixin, PermissionR
         return context
 
 
-class StoreUpdateView(LoginRequiredMixin, PermissionRequiredMixin, UpdateView):
+class StoreUpdateView(CompanyFieldLockMixin,LoginRequiredMixin, PermissionRequiredMixin, UpdateView):
     """Update an existing store"""
 
     model = Store

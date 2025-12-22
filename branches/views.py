@@ -20,6 +20,7 @@ from inventory.models import Stock
 from stores.models import Store, DeviceOperatorLog
 from company.models import Company
 from company.forms import SearchForm
+from company.mixins import CompanyFieldLockMixin
 
 
 @login_required
@@ -830,39 +831,20 @@ class BranchDetailView(LoginRequiredMixin, PermissionRequiredMixin, DetailView):
 
         return context
 
-class BranchCreateView(LoginRequiredMixin, PermissionRequiredMixin, CreateView):
-    """Create new store (backward compatible as branch)."""
+
+class BranchCreateView(CompanyFieldLockMixin, LoginRequiredMixin, PermissionRequiredMixin, CreateView):
     model = Store
     template_name = 'company/branch_form.html'
     permission_required = 'stores.add_store'
-    fields = [
-        'company', 'name', 'code', 'location', 'physical_address',
-        'phone', 'email', 'tin', 'nin', 'is_main_branch',
-        'is_active', 'store_type', 'manager_name', 'manager_phone'
-    ]
+    fields = ['company', 'name', 'code', 'location', ...]
     success_url = reverse_lazy('companies:branch_list')
-
-    def get_form(self, form_class=None):
-        form = super().get_form(form_class)
-
-        current_user = self.request.user
-        if hasattr(current_user, 'company') and current_user.company:
-            company = current_user.company
-            form.fields['company'].queryset = Company.objects.filter(company_id=company.company_id)
-            form.fields['company'].initial = company
-            form.fields['company'].disabled = True
-        else:
-            form.fields['company'].queryset = Company.objects.none()
-
-        return form
 
     def form_valid(self, form):
         messages.success(self.request, _('Store created successfully.'))
         return super().form_valid(form)
 
 
-class BranchUpdateView(LoginRequiredMixin, PermissionRequiredMixin, UpdateView):
-    """Update store (backward compatible as branch)."""
+class BranchUpdateView(CompanyFieldLockMixin, LoginRequiredMixin, PermissionRequiredMixin, UpdateView):
     model = Store
     template_name = 'company/branch_form.html'
     permission_required = 'stores.change_store'
@@ -874,24 +856,9 @@ class BranchUpdateView(LoginRequiredMixin, PermissionRequiredMixin, UpdateView):
     ]
     success_url = reverse_lazy('companies:branch_list')
 
-    def get_form(self, form_class=None):
-        form = super().get_form(form_class)
-
-        current_user = self.request.user
-        if hasattr(current_user, 'company') and current_user.company:
-            company = current_user.company
-            form.fields['company'].queryset = Company.objects.filter(company_id=company.company_id)
-            form.fields['company'].initial = company
-            form.fields['company'].disabled = True
-        else:
-            form.fields['company'].queryset = Company.objects.none()
-
-        return form
-
     def form_valid(self, form):
         messages.success(self.request, _('Store updated successfully.'))
         return super().form_valid(form)
-
 
 class BranchDeleteView(LoginRequiredMixin, PermissionRequiredMixin, DeleteView):
     """Delete store (backward compatible as branch)."""

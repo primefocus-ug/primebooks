@@ -478,8 +478,6 @@ def get_default_roles_config():
                 'pos.can_process_refunds',
             ],
             'permissions': {
-                # Company Management (View only - minimal)
-                'company.company': ['view'],
 
                 # User Management (Own profile only)
                 'accounts.customuser': ['change', 'view'],  # Can edit own profile
@@ -517,12 +515,6 @@ def get_default_roles_config():
                 'customers.customer': ['add', 'view'],
                 'customers.customergroup': ['view'],
                 'customers.customernote': ['add', 'view'],
-
-                # Branch Management (View assigned branch only)
-                'branches.companybranch': ['view'],
-
-                # Expense Management (No access)
-                # 'expenses.expense': [],  # No expense access
 
                 # EFRIS Integration (View only for receipts)
                 'efris.efrisinvoice': ['view'],

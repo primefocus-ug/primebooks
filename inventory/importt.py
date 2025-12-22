@@ -2559,14 +2559,15 @@ def validate_product_row_data(row_data, mapped_columns, row_number):
 def process_product_only_import(cleaned_data, conflict_resolution, user, session, row_number, raw_data):
     """Process product-only import (no stock updates)"""
     from django.db import IntegrityError
+    import uuid
 
     sku = cleaned_data['sku']
     product = None
     created = False
     updated_fields = []
 
-    # Check if product exists
     try:
+        # Check if product exists
         product = Product.objects.get(sku=sku)
 
         if conflict_resolution == 'skip':
@@ -2602,14 +2603,29 @@ def process_product_only_import(cleaned_data, conflict_resolution, user, session
             updated_fields.append('unit_of_measure')
 
         # Optional fields
-        if 'barcode' in cleaned_data and product.barcode != cleaned_data['barcode']:
-            # Check for duplicate barcode
-            if cleaned_data['barcode']:
-                existing_barcode = Product.objects.filter(barcode=cleaned_data['barcode']).exclude(id=product.id).exists()
-                if existing_barcode:
-                    raise ValueError(f"Barcode '{cleaned_data['barcode']}' already exists for another product")
-            product.barcode = cleaned_data['barcode']
-            updated_fields.append('barcode')
+        if 'barcode' in cleaned_data:
+            new_barcode = cleaned_data['barcode']
+            current_barcode = product.barcode
+
+            # Handle empty barcode properly
+            if new_barcode == '':
+                new_barcode = None
+
+            # Only update if different
+            if new_barcode != current_barcode:
+                # Check for duplicate barcode if new_barcode is not None
+                if new_barcode:
+                    existing_barcode = Product.objects.filter(
+                        barcode=new_barcode
+                    ).exclude(id=product.id).exists()
+                    if existing_barcode:
+                        # Generate unique barcode instead of raising error
+                        new_barcode = f"{new_barcode}_{uuid.uuid4().hex[:8]}"
+                        logger.warning(
+                            f"Barcode conflict for product {product.name}, using generated barcode: {new_barcode}")
+
+                product.barcode = new_barcode
+                updated_fields.append('barcode')
 
         if 'description' in cleaned_data and product.description != cleaned_data['description']:
             product.description = cleaned_data['description']
@@ -2623,9 +2639,14 @@ def process_product_only_import(cleaned_data, conflict_resolution, user, session
             product.excise_duty_rate = cleaned_data['excise_duty_rate']
             updated_fields.append('excise_duty_rate')
 
-        if 'min_stock_level' in cleaned_data and product.min_stock_level != int(cleaned_data['min_stock_level']):
-            product.min_stock_level = int(cleaned_data['min_stock_level'])
-            updated_fields.append('min_stock_level')
+        if 'min_stock_level' in cleaned_data:
+            try:
+                new_min_stock = int(cleaned_data['min_stock_level'])
+                if product.min_stock_level != new_min_stock:
+                    product.min_stock_level = new_min_stock
+                    updated_fields.append('min_stock_level')
+            except (ValueError, TypeError):
+                pass  # Keep existing value if invalid
 
         if 'is_active' in cleaned_data and product.is_active != cleaned_data['is_active']:
             product.is_active = cleaned_data['is_active']
@@ -2664,7 +2685,8 @@ def process_product_only_import(cleaned_data, conflict_resolution, user, session
             except Category.DoesNotExist:
                 pass
 
-        if 'efris_excise_duty_code' in cleaned_data and product.efris_excise_duty_code != cleaned_data['efris_excise_duty_code']:
+        if 'efris_excise_duty_code' in cleaned_data and product.efris_excise_duty_code != cleaned_data[
+            'efris_excise_duty_code']:
             product.efris_excise_duty_code = cleaned_data['efris_excise_duty_code']
             updated_fields.append('efris_excise_duty_code')
 
@@ -2676,15 +2698,18 @@ def process_product_only_import(cleaned_data, conflict_resolution, user, session
             product.efris_item_code = cleaned_data['efris_item_code']
             updated_fields.append('efris_item_code')
 
-        if 'efris_has_piece_unit' in cleaned_data and product.efris_has_piece_unit != cleaned_data['efris_has_piece_unit']:
+        if 'efris_has_piece_unit' in cleaned_data and product.efris_has_piece_unit != cleaned_data[
+            'efris_has_piece_unit']:
             product.efris_has_piece_unit = cleaned_data['efris_has_piece_unit']
             updated_fields.append('efris_has_piece_unit')
 
-        if 'efris_piece_measure_unit' in cleaned_data and product.efris_piece_measure_unit != cleaned_data['efris_piece_measure_unit']:
+        if 'efris_piece_measure_unit' in cleaned_data and product.efris_piece_measure_unit != cleaned_data[
+            'efris_piece_measure_unit']:
             product.efris_piece_measure_unit = cleaned_data['efris_piece_measure_unit']
             updated_fields.append('efris_piece_measure_unit')
 
-        if 'efris_piece_unit_price' in cleaned_data and product.efris_piece_unit_price != cleaned_data['efris_piece_unit_price']:
+        if 'efris_piece_unit_price' in cleaned_data and product.efris_piece_unit_price != cleaned_data[
+            'efris_piece_unit_price']:
             product.efris_piece_unit_price = cleaned_data['efris_piece_unit_price']
             updated_fields.append('efris_piece_unit_price')
 
@@ -2693,7 +2718,21 @@ def process_product_only_import(cleaned_data, conflict_resolution, user, session
             updated_fields.append('efris_goods_code_field')
 
         product.import_session = session
-        product.save()
+
+        # Save product
+        try:
+            product.save()
+        except IntegrityError as e:
+            if 'barcode' in str(e).lower() and 'unique' in str(e).lower():
+                # Handle duplicate barcode by generating a unique one
+                if product.barcode:
+                    product.barcode = f"{product.barcode}_{uuid.uuid4().hex[:8]}"
+                else:
+                    product.barcode = f"BC_{sku}_{uuid.uuid4().hex[:6]}"
+                product.save()
+                updated_fields.append('barcode_auto_fixed')
+            else:
+                raise
 
         if updated_fields:
             logger.info(f"✅ Product updated: {product.name} - Fields: {', '.join(updated_fields)}")
@@ -2702,11 +2741,21 @@ def process_product_only_import(cleaned_data, conflict_resolution, user, session
         # Create new product
         created = True
 
-        # Check for duplicate barcode before creating
-        if cleaned_data.get('barcode'):
-            existing_barcode = Product.objects.filter(barcode=cleaned_data['barcode']).exists()
+        # Handle barcode for new product
+        barcode = cleaned_data.get('barcode', '')
+        if barcode == '':
+            barcode = None
+        elif barcode:  # Only check duplicates if barcode is not None/empty
+            existing_barcode = Product.objects.filter(barcode=barcode).exists()
             if existing_barcode:
-                raise ValueError(f"Barcode '{cleaned_data['barcode']}' already exists")
+                # Generate unique barcode instead of raising error
+                barcode = f"{barcode}_{uuid.uuid4().hex[:8]}"
+                logger.warning(f"Duplicate barcode for new product {cleaned_data['product_name']}, using: {barcode}")
+
+        try:
+            min_stock_level = int(cleaned_data.get('min_stock_level', 5))
+        except (ValueError, TypeError):
+            min_stock_level = 5
 
         product = Product(
             sku=sku,
@@ -2717,9 +2766,9 @@ def process_product_only_import(cleaned_data, conflict_resolution, user, session
             unit_of_measure=cleaned_data.get('unit_of_measure', '103'),
             discount_percentage=cleaned_data.get('discount_percentage', 0),
             excise_duty_rate=cleaned_data.get('excise_duty_rate', 0),
-            min_stock_level=int(cleaned_data.get('min_stock_level', 5)),
+            min_stock_level=min_stock_level,
             description=cleaned_data.get('description', ''),
-            barcode=cleaned_data.get('barcode', ''),
+            barcode=barcode,  # Can be None
             is_active=cleaned_data.get('is_active', True),
             import_session=session,
             imported_at=timezone.now()
@@ -2772,19 +2821,33 @@ def process_product_only_import(cleaned_data, conflict_resolution, user, session
         if 'efris_goods_code' in cleaned_data:
             product.efris_goods_code_field = cleaned_data['efris_goods_code']
 
-        product.save()
+        # Save with error handling
+        try:
+            product.save()
+        except IntegrityError as e:
+            if 'barcode' in str(e).lower() and 'unique' in str(e).lower():
+                # Last resort: generate completely new barcode
+                product.barcode = f"IMP_{sku}_{uuid.uuid4().hex[:10]}"
+                product.save()
+            else:
+                raise
+
         logger.info(f"✅ Product created: {product.name} (SKU: {sku})")
 
     # Create import result
     result_type = 'created' if created else 'updated'
-    ImportResult.objects.create(
-        session=session,
-        result_type=result_type,
-        row_number=row_number,
-        product_name=product.name,
-        sku=sku,
-        raw_data=raw_data
-    )
+    try:
+        ImportResult.objects.create(
+            session=session,
+            result_type=result_type,
+            row_number=row_number,
+            product_name=product.name,
+            sku=sku,
+            raw_data=raw_data
+        )
+    except Exception as e:
+        logger.error(f"Failed to create ImportResult for row {row_number}: {str(e)}")
+        # Don't fail the whole import if result logging fails
 
     return {
         'status': result_type,

@@ -640,7 +640,6 @@ def handle_user_logout(sender, request, user, **kwargs):
 
 def create_security_checks(user, store, session, store_device, fingerprint_data,
                           fingerprint_hash, ip_address, latitude, longitude, active_sessions):
-    #                     ^^^^^^^^^^^^^^^^ ADD THIS PARAMETER
     """
     Create security checks and alerts for a new session
     """

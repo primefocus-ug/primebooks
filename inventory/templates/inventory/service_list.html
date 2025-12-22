@@ -592,7 +592,238 @@
 
 {% block extra_js %}
 <script>
-// Services Management with Vanilla JS and Fetch API
+
+window.saveCategory = async function() {
+    console.log('saveCategory called'); // Debug log
+
+    const form = document.getElementById('categoryForm');
+    if (!form) {
+        console.error('Category form not found');
+        return;
+    }
+
+    const formData = new FormData(form);
+
+    // Debug: Log form data
+    console.log('Form data:');
+    for (let pair of formData.entries()) {
+        console.log(pair[0] + ': ' + pair[1]);
+    }
+
+    // Validation
+    const nameInput = document.getElementById('category_name');
+    const name = nameInput ? nameInput.value.trim() : '';
+
+    if (!name) {
+        showNotification('Category name is required', 'warning');
+        if (nameInput) {
+            nameInput.classList.add('is-invalid');
+            nameInput.focus();
+        }
+        return;
+    }
+
+    // Ensure category_type is set (defaults to 'service' for services page)
+    if (!formData.get('category_type')) {
+        formData.append('category_type', 'service');
+    }
+
+    // Ensure is_active is set
+    if (!formData.get('is_active')) {
+        formData.append('is_active', 'true');
+    }
+
+    // Show loading state
+    const saveBtn = document.getElementById('saveCategoryBtn');
+    if (!saveBtn) {
+        console.error('Save button not found');
+        return;
+    }
+
+    const originalText = saveBtn.innerHTML;
+    saveBtn.disabled = true;
+    saveBtn.innerHTML = '<i class="bi bi-spinner bi-spin me-1"></i>Saving...';
+
+    try {
+        console.log('Sending request to:', '{% url "inventory:category_create_ajax" %}');
+
+        const response = await fetch('{% url "inventory:category_create_ajax" %}', {
+            method: 'POST',
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest',
+                'X-CSRFToken': formData.get('csrfmiddlewaretoken')
+            },
+            body: formData
+        });
+
+        console.log('Response status:', response.status);
+
+        const contentType = response.headers.get('content-type');
+        console.log('Content type:', contentType);
+
+        const responseText = await response.text();
+        console.log('Raw response:', responseText);
+
+        let data;
+        try {
+            data = JSON.parse(responseText);
+        } catch (parseError) {
+            console.error('JSON parse error:', parseError);
+            showNotification('Invalid response from server', 'error');
+            return;
+        }
+
+        console.log('Parsed data:', data);
+
+        if (data.success) {
+            console.log('Category created successfully:', data.category);
+
+            // Add new category to service form select dropdown
+            const categorySelect = document.getElementById('id_category');
+            if (categorySelect) {
+                const option = document.createElement('option');
+                option.value = data.category.id;
+                option.textContent = data.category.name;
+                option.selected = true;
+                categorySelect.appendChild(option);
+                console.log('Added to service form dropdown');
+            } else {
+                console.warn('id_category select not found');
+            }
+
+            // Also update filter dropdown
+            const categoryFilter = document.getElementById('categoryFilter');
+            if (categoryFilter) {
+                const filterOption = document.createElement('option');
+                filterOption.value = data.category.id;
+                filterOption.textContent = data.category.name;
+                categoryFilter.appendChild(filterOption);
+                console.log('Added to filter dropdown');
+            } else {
+                console.warn('categoryFilter select not found');
+            }
+
+            // Close modal
+            const categoryModalElement = document.getElementById('categoryModal');
+            const categoryModal = bootstrap.Modal.getInstance(categoryModalElement);
+            if (categoryModal) {
+                categoryModal.hide();
+            } else {
+                // If instance doesn't exist, create and hide
+                const newModal = new bootstrap.Modal(categoryModalElement);
+                newModal.hide();
+            }
+
+            showNotification('Category "' + data.category.name + '" created successfully', 'success');
+
+            // Reset form
+            form.reset();
+            // Clear any validation errors
+            form.querySelectorAll('.is-invalid').forEach(el => el.classList.remove('is-invalid'));
+
+        } else {
+            console.error('Server returned error:', data);
+            const errorMessage = data.message || data.error || 'Error creating category';
+            showNotification(errorMessage, 'error');
+
+            // Display form errors if any
+            if (data.errors) {
+                displayCategoryFormErrors(data.errors);
+            }
+        }
+    } catch (error) {
+        console.error('Fetch error:', error);
+        showNotification('Error creating category: ' + error.message, 'error');
+    } finally {
+        // Reset button state
+        saveBtn.disabled = false;
+        saveBtn.innerHTML = originalText;
+    }
+};
+
+// Display form errors for category modal
+function displayCategoryFormErrors(errors) {
+    console.log('Displaying form errors:', errors);
+
+    // Clear previous errors
+    document.querySelectorAll('#categoryForm .is-invalid').forEach(el => el.classList.remove('is-invalid'));
+    document.querySelectorAll('#categoryForm .invalid-feedback').forEach(el => el.textContent = '');
+
+    // Display new errors
+    for (const field in errors) {
+        const input = document.querySelector(`#categoryForm [name="${field}"]`);
+        if (input) {
+            input.classList.add('is-invalid');
+
+            // Find or create feedback element
+            let feedback = input.parentElement.querySelector('.invalid-feedback');
+            if (!feedback) {
+                feedback = document.createElement('div');
+                feedback.className = 'invalid-feedback';
+                input.parentElement.appendChild(feedback);
+            }
+
+            feedback.textContent = Array.isArray(errors[field]) ? errors[field][0] : errors[field];
+            feedback.style.display = 'block';
+        }
+    }
+}
+
+// Show notification function (must be defined before DOMContentLoaded)
+function showNotification(message, type = 'info') {
+    const toastContainer = document.getElementById('toastContainer');
+
+    if (!toastContainer) {
+        console.error('Toast container not found');
+        alert(message); // Fallback
+        return;
+    }
+
+    const typeClasses = {
+        'success': 'text-bg-success',
+        'error': 'text-bg-danger',
+        'warning': 'text-bg-warning',
+        'info': 'text-bg-info'
+    };
+
+    const icons = {
+        'success': 'bi-check-circle',
+        'error': 'bi-exclamation-circle',
+        'warning': 'bi-exclamation-triangle',
+        'info': 'bi-info-circle'
+    };
+
+    const toast = document.createElement('div');
+    toast.className = `toast align-items-center ${typeClasses[type]} border-0`;
+    toast.setAttribute('role', 'alert');
+    toast.innerHTML = `
+        <div class="d-flex">
+            <div class="toast-body">
+                <i class="bi ${icons[type]} me-2"></i>
+                ${escapeHtml(message)}
+            </div>
+            <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+        </div>
+    `;
+
+    toastContainer.appendChild(toast);
+    const bsToast = new bootstrap.Toast(toast);
+    bsToast.show();
+
+    toast.addEventListener('hidden.bs.toast', () => toast.remove());
+}
+
+// Utility: Escape HTML (must be defined before DOMContentLoaded)
+function escapeHtml(text) {
+    const map = {
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#039;'
+    };
+    return String(text).replace(/[&<>"']/g, m => map[m]);
+}
 document.addEventListener('DOMContentLoaded', function() {
 
     // State management
@@ -1110,40 +1341,7 @@ async function handleServiceSubmit(e) {
 // Handle category form submission
 async function handleCategorySubmit(e) {
     e.preventDefault();
-
-    const formData = new FormData(e.target);
-
-    try {
-        const response = await fetch('{% url "inventory:category_create_ajax" %}', {
-            method: 'POST',
-            body: formData
-        });
-
-        const data = await response.json();
-
-        if (data.success) {
-            // Add new category to select
-            const option = document.createElement('option');
-            option.value = data.category.id;
-            option.textContent = data.category.name;
-            option.selected = true;
-
-            const categorySelect = document.getElementById('id_category');
-            categorySelect.appendChild(option);
-
-            // Also update filter
-            const filterOption = option.cloneNode(true);
-            categoryFilter.appendChild(filterOption);
-
-            bootstrap.Modal.getInstance(document.getElementById('categoryModal')).hide();
-            showNotification('Category created successfully', 'success');
-        } else {
-            showNotification(data.message || 'Error creating category', 'error');
-        }
-    } catch (error) {
-        console.error('Error:', error);
-        showNotification('Error creating category', 'error');
-    }
+    saveCategory();
 }
 
 // Load statistics
@@ -1238,7 +1436,7 @@ function resetServiceForm() {
 // Reset category form
 function resetCategoryForm() {
     document.getElementById('categoryForm').reset();
-    document.querySelectorAll('.is-invalid').forEach(el => el.classList.remove('is-invalid'));
+    document.querySelectorAll('#categoryForm .is-invalid').forEach(el => el.classList.remove('is-invalid'));
 }
 
 // Display form errors
@@ -1344,6 +1542,6 @@ function escapeHtml(text) {
 // Initialize tooltips
 const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
 tooltipTriggerList.map(el => new bootstrap.Tooltip(el));
-    });
+});
 </script>
 {% endblock %}
