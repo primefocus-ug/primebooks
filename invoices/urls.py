@@ -10,6 +10,10 @@ urlpatterns = [
     path('analytics/', views.invoice_analytics, name='analytics'),
     path('bulk-fiscalize/', views.bulk_fiscalize_invoices, name='bulk_fiscalize'),
     path('efris-dashboard/', views.efris_status_dashboard, name='efris_dashboard'),
+    path('credit-customers/',views.customer_credit_dashboard,name='customer_credit_dashboard'),
+    path('credit-detail/<int:pk>/',views.customer_credit_detail,name='customer_credit_detail'),
+    path('credit-report/',views.credit_aging_report,name='credit_aging_report'),
+    path('export-credit-report',views.export_credit_aging_csv,name='export_credit_aging_csv'),
 
     # Invoice CRUD operations
     path('create/', views.InvoiceCreateView.as_view(), name='create'),

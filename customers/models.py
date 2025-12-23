@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 from django.db import models
 from django.core.validators import RegexValidator
 from django.utils.translation import gettext_lazy as _
@@ -141,6 +143,51 @@ class Customer(models.Model,EFRISCustomerMixin):
         verbose_name=_("Alien ID Number"),
         help_text=_("For non-citizen residents")
     )
+    credit_balance = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        default=0,
+        verbose_name=_("Current Credit Balance"),
+        help_text=_("Total outstanding amount owed")
+    )
+
+    credit_available = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        default=0,
+        verbose_name=_("Available Credit"),
+        help_text=_("Credit limit minus current balance")
+    )
+
+    allow_credit = models.BooleanField(
+        default=False,
+        verbose_name=_("Allow Credit Sales"),
+        help_text=_("Whether this customer can buy on credit")
+    )
+
+    credit_days = models.PositiveIntegerField(
+        default=30,
+        verbose_name=_("Credit Payment Days"),
+        help_text=_("Number of days allowed for credit payment")
+    )
+
+    last_credit_review = models.DateField(
+        null=True,
+        blank=True,
+        verbose_name=_("Last Credit Review Date")
+    )
+
+    credit_status = models.CharField(
+        max_length=20,
+        choices=[
+            ('GOOD', _('Good Standing')),
+            ('WARNING', _('Payment Warning')),
+            ('SUSPENDED', _('Credit Suspended')),
+            ('BLOCKED', _('Blocked')),
+        ],
+        default='GOOD',
+        verbose_name=_("Credit Status")
+    )
     created_by = models.ForeignKey(
         'accounts.CustomUser',
         on_delete=models.SET_NULL,
@@ -232,6 +279,115 @@ class Customer(models.Model,EFRISCustomerMixin):
         return self.tin or self.nin or self.brn
 
     @property
+    def total_outstanding(self):
+        """Calculate total outstanding amount from unpaid invoices"""
+        from django.db.models import Sum
+        from sales.models import Sale
+
+        outstanding = Sale.objects.filter(
+            customer=self,
+            document_type='INVOICE',
+            payment_status__in=['PENDING', 'PARTIALLY_PAID', 'OVERDUE']
+        ).aggregate(
+            total=Sum('total_amount')
+        )['total'] or Decimal('0')
+
+        return outstanding
+
+    @property
+    def total_paid_amount(self):
+        """Calculate total amount paid across all invoices"""
+        from django.db.models import Sum
+        from sales.models import Payment
+
+        paid = Payment.objects.filter(
+            sale__customer=self,
+            is_voided=False
+        ).aggregate(
+            total=Sum('amount')
+        )['total'] or Decimal('0')
+
+        return paid
+
+    @property
+    def overdue_amount(self):
+        """Calculate overdue amount"""
+        from django.db.models import Sum
+        from sales.models import Sale
+
+        overdue = Sale.objects.filter(
+            customer=self,
+            document_type='INVOICE',
+            payment_status='OVERDUE'
+        ).aggregate(
+            total=Sum('total_amount')
+        )['total'] or Decimal('0')
+
+        return overdue
+
+    @property
+    def has_overdue_invoices(self):
+        """Check if customer has any overdue invoices"""
+        from sales.models import Sale
+
+        return Sale.objects.filter(
+            customer=self,
+            document_type='INVOICE',
+            payment_status='OVERDUE'
+        ).exists()
+
+    @property
+    def can_purchase_on_credit(self):
+        """Check if customer can make credit purchases"""
+        if not self.allow_credit:
+            return False, "Credit not allowed for this customer"
+
+        if self.credit_status in ['SUSPENDED', 'BLOCKED']:
+            return False, f"Credit {self.credit_status.lower()}"
+
+        if self.has_overdue_invoices:
+            return False, "Customer has overdue invoices"
+
+        return True, "Credit allowed"
+
+    def update_credit_balance(self):
+        """Update credit balance and available credit"""
+        self.credit_balance = self.total_outstanding
+        self.credit_available = max(
+            Decimal('0'),
+            self.credit_limit - self.credit_balance
+        )
+
+        # Update credit status
+        if self.has_overdue_invoices:
+            if self.overdue_amount > (self.credit_limit * Decimal('0.5')):
+                self.credit_status = 'SUSPENDED'
+            else:
+                self.credit_status = 'WARNING'
+        elif self.credit_balance > self.credit_limit:
+            self.credit_status = 'WARNING'
+        else:
+            self.credit_status = 'GOOD'
+
+        self.save(update_fields=['credit_balance', 'credit_available', 'credit_status'])
+
+    def check_credit_limit(self, amount):
+        """Check if purchase amount is within credit limit"""
+        if not self.allow_credit:
+            return False, "Credit purchases not allowed"
+
+        can_purchase, reason = self.can_purchase_on_credit
+        if not can_purchase:
+            return False, reason
+
+        new_balance = self.credit_balance + Decimal(str(amount))
+
+        if new_balance > self.credit_limit:
+            return False, f"Credit limit exceeded. Available: {self.credit_available}, Requested: {amount}"
+
+        return True, "Credit approved"
+
+    @property
     def is_efris_registered(self):
         """Check if customer is registered in eFRIS"""
         return self.efris_status == 'REGISTERED'
@@ -299,6 +455,63 @@ class Customer(models.Model,EFRISCustomerMixin):
         self.efris_sync_error = error_message
         self.save()
 
+
+class CustomerCreditStatement(models.Model):
+    """Track all credit transactions for a customer"""
+
+    TRANSACTION_TYPES = [
+        ('INVOICE', _('Invoice Created')),
+        ('PAYMENT', _('Payment Received')),
+        ('CREDIT_NOTE', _('Credit Note')),
+        ('ADJUSTMENT', _('Balance Adjustment')),
+    ]
+
+    customer = models.ForeignKey(
+        Customer,
+        on_delete=models.CASCADE,
+        related_name='credit_statements'
+    )
+
+    transaction_type = models.CharField(max_length=20, choices=TRANSACTION_TYPES)
+
+    sale = models.ForeignKey(
+        'sales.Sale',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='credit_transactions'
+    )
+
+    payment = models.ForeignKey(
+        'sales.Payment',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True
+    )
+
+    amount = models.DecimalField(max_digits=12, decimal_places=2)
+
+    balance_before = models.DecimalField(max_digits=12, decimal_places=2)
+    balance_after = models.DecimalField(max_digits=12, decimal_places=2)
+
+    description = models.TextField()
+    reference_number = models.CharField(max_length=100, blank=True)
+
+    created_by = models.ForeignKey(
+        'accounts.CustomUser',
+        on_delete=models.SET_NULL,
+        null=True
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = _("Customer Credit Statement")
+        verbose_name_plural = _("Customer Credit Statements")
+
+    def __str__(self):
+        return f"{self.customer.name} - {self.transaction_type} - {self.amount}"
 
 class CustomerGroup(models.Model):
     name = models.CharField(max_length=100, verbose_name=_("Group Name"))

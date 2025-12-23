@@ -139,13 +139,6 @@ def handle_invoice_completion(sale, created, old_state):
                 Invoice.objects.create(
                     sale=sale,
                     store=sale.store,
-                    issue_date=sale.created_at.date(),
-                    due_date=sale.due_date or (sale.created_at.date() + timezone.timedelta(days=30)),
-                    subtotal=getattr(sale, 'subtotal', 0),
-                    tax_amount=getattr(sale, 'tax_amount', 0),
-                    discount_amount=getattr(sale, 'discount_amount', 0),
-                    total_amount=getattr(sale, 'total_amount', 0),
-                    currency_code=sale.currency or 'UGX',
                     status='SENT',
                     fiscalization_status='pending',
                     created_by=sale.created_by

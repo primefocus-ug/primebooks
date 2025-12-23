@@ -344,7 +344,7 @@ def search_services(request):
 
 
 class SalesListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
-    """Enhanced sales list with advanced filtering and pagination"""
+    """Enhanced sales list with advanced filtering, pagination, and credit invoice support"""
     model = Sale
     template_name = 'sales/sales_list.html'
     context_object_name = 'sales'
@@ -428,6 +428,25 @@ class SalesListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
             if status:
                 queryset = queryset.filter(status=status)
 
+            # ADD: Filter by credit status
+            credit_status = form.cleaned_data.get('credit_status')
+            if credit_status:
+                if credit_status == 'CREDIT':
+                    queryset = queryset.filter(
+                        document_type='INVOICE',
+                        payment_method='CREDIT'
+                    )
+                elif credit_status == 'OVERDUE':
+                    queryset = queryset.filter(
+                        document_type='INVOICE',
+                        payment_status='OVERDUE'
+                    )
+                elif credit_status == 'OUTSTANDING':
+                    queryset = queryset.filter(
+                        document_type='INVOICE',
+                        payment_status__in=['PENDING', 'PARTIALLY_PAID', 'OVERDUE']
+                    )
+
         return queryset.order_by('-created_at')
 
     def get_context_data(self, **kwargs):
@@ -460,6 +479,34 @@ class SalesListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
             'invoice_count': queryset.filter(document_type='INVOICE').count(),
             'proforma_count': queryset.filter(document_type='PROFORMA').count(),
             'estimate_count': queryset.filter(document_type='ESTIMATE').count(),
+        }
+
+        # ADD: Credit invoice statistics
+        credit_invoices = queryset.filter(
+            document_type='INVOICE',
+            payment_method='CREDIT'
+        )
+
+        context['credit_stats'] = {
+            'total_credit_invoices': credit_invoices.count(),
+            'total_credit_amount': credit_invoices.aggregate(
+                Sum('total_amount')
+            )['total_amount__sum'] or 0,
+            'overdue_count': credit_invoices.filter(
+                payment_status='OVERDUE'
+            ).count(),
+            'overdue_amount': credit_invoices.filter(
+                payment_status='OVERDUE'
+            ).aggregate(Sum('total_amount'))['total_amount__sum'] or 0,
+            'pending_count': credit_invoices.filter(
+                payment_status__in=['PENDING', 'PARTIALLY_PAID']
+            ).count(),
+            'paid_count': credit_invoices.filter(
+                payment_status='PAID'
+            ).count(),
+            'avg_credit_amount': credit_invoices.aggregate(
+                Avg('total_amount')
+            )['total_amount__avg'] or 0,
         }
 
         # Add document type distribution for chart
@@ -516,12 +563,25 @@ class SalesListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
 
         context['store_performance'] = store_performance
 
+        # Add top customers for credit sales
+        top_credit_customers = queryset.filter(
+            document_type='INVOICE',
+            payment_method='CREDIT'
+        ).values(
+            'customer__id', 'customer__name', 'customer__phone'
+        ).annotate(
+            invoice_count=Count('id'),
+            total_credit=Sum('total_amount'),
+            outstanding_count=Count('id', filter=Q(payment_status__in=['PENDING', 'PARTIALLY_PAID', 'OVERDUE']))
+        ).order_by('-total_credit')[:5]
+
+        context['top_credit_customers'] = top_credit_customers
+
         return context
 
 
-
 class SaleDetailView(LoginRequiredMixin, PermissionRequiredMixin, DetailView):
-    """Enhanced sale detail view with comprehensive information and EFRIS integration"""
+    """Enhanced sale detail view with comprehensive information, EFRIS integration, and credit details"""
     model = Sale
     template_name = 'sales/sales_detail.html'
     context_object_name = 'sale'
@@ -611,6 +671,35 @@ class SaleDetailView(LoginRequiredMixin, PermissionRequiredMixin, DetailView):
         if sale.document_type == 'INVOICE' and hasattr(sale, 'invoice_detail'):
             invoice_detail = sale.invoice_detail
 
+        # Add customer credit information for invoices
+        customer_credit_info = None
+        if sale.customer and sale.document_type == 'INVOICE':
+            # Update credit balance to get current info
+            sale.customer.update_credit_balance()
+
+            customer_credit_info = {
+                'allow_credit': sale.customer.allow_credit,
+                'credit_limit': sale.customer.credit_limit,
+                'credit_balance': sale.customer.credit_balance,
+                'credit_available': sale.customer.credit_available,
+                'credit_status': sale.customer.credit_status,
+                'credit_status_display': sale.customer.get_credit_status_display(),
+                'has_overdue': sale.customer.has_overdue_invoices,
+                'overdue_amount': sale.customer.overdue_amount,
+                'outstanding_invoices_count': Sale.objects.filter(
+                    customer=sale.customer,
+                    document_type='INVOICE',
+                    payment_status__in=['PENDING', 'PARTIALLY_PAID', 'OVERDUE']
+                ).count()
+            }
+
+        # Add payment schedule info for credit invoices
+        payment_schedules = []
+        if (sale.document_type == 'INVOICE' and
+                sale.payment_method == 'CREDIT' and
+                hasattr(sale, 'invoice_detail')):
+            payment_schedules = sale.invoice_detail.payment_schedules.all()
+
         context.update({
             'refund_form': RefundForm(),
             'receipt_form': ReceiptForm(),
@@ -625,6 +714,16 @@ class SaleDetailView(LoginRequiredMixin, PermissionRequiredMixin, DetailView):
             'is_paid_in_full': is_paid_in_full,
             'receipt': receipt,
             'invoice_detail': invoice_detail,
+            'customer_credit_info': customer_credit_info,
+            'payment_schedules': payment_schedules,
+            'is_credit_invoice': (
+                    sale.document_type == 'INVOICE' and
+                    sale.payment_method == 'CREDIT'
+            ),
+            'requires_due_date': (
+                    sale.document_type == 'INVOICE' and
+                    sale.payment_method == 'CREDIT'
+            ),
             **fiscal_data
         })
 
@@ -845,7 +944,7 @@ def create_invoice_for_sale(sale, user):
 @require_GET
 def recent_customers_api(request):
     """
-    API endpoint to fetch recent customers for a store
+    API endpoint to fetch recent customers for a store with credit info
     Used in POS interface and sales forms
     """
     try:
@@ -929,6 +1028,9 @@ def recent_customers_api(request):
         # Prepare response data
         customers_data = []
         for customer in customers:
+            # Update credit balance to get current info
+            customer.update_credit_balance()
+
             # Get EFRIS data if available
             efris_data = {}
             if hasattr(customer, 'get_efris_buyer_details'):
@@ -962,6 +1064,23 @@ def recent_customers_api(request):
                 'total_spent': float(customer.total_spent or 0),
                 'efris': efris_data,
                 'created_at': customer.created_at.isoformat() if customer.created_at else None,
+
+                # ADD CREDIT INFORMATION
+                'credit_info': {
+                    'allow_credit': customer.allow_credit,
+                    'credit_limit': float(customer.credit_limit) if customer.credit_limit else 0.0,
+                    'credit_balance': float(customer.credit_balance) if customer.credit_balance else 0.0,
+                    'credit_available': float(customer.credit_available) if customer.credit_available else 0.0,
+                    'credit_status': customer.credit_status,
+                    'credit_status_display': customer.get_credit_status_display(),
+                    'has_overdue': customer.has_overdue_invoices,
+                    'overdue_amount': float(customer.overdue_amount) if customer.overdue_amount else 0.0,
+                    'can_purchase_credit': customer.can_purchase_on_credit[0] if hasattr(customer,
+                                                                                         'can_purchase_on_credit') else False,
+                    'credit_message': customer.can_purchase_on_credit[1] if hasattr(customer,
+                                                                                    'can_purchase_on_credit') else '',
+                    'credit_days': customer.credit_days if hasattr(customer, 'credit_days') else 30,
+                }
             }
             customers_data.append(customer_data)
 
@@ -1085,7 +1204,7 @@ def render_sale_form(request):
 
 @transaction.atomic
 def process_sale_creation(request):
-    """Process sale creation with background processing"""
+    """Process sale creation with credit checking"""
     sale = None
     company = get_current_tenant(request)
 
@@ -1106,10 +1225,7 @@ def process_sale_creation(request):
                 return render_sale_form(request)
 
             # Pre-validate stock for products
-            stock_errors = validate_stock_availability(
-                sale_data['store'],
-                items_data
-            )
+            stock_errors = validate_stock_availability(sale_data['store'], items_data)
             if stock_errors:
                 for error in stock_errors:
                     messages.error(request, error)
@@ -1121,50 +1237,85 @@ def process_sale_creation(request):
             # Add items
             create_sale_items(sale, items_data)
 
-            # Update totals and mark as completed
+            # Update totals
             sale.update_totals()
-            sale.status = 'COMPLETED' if sale.document_type == 'RECEIPT' else 'PENDING_PAYMENT'
+
+            # CRITICAL: Check credit limit AFTER calculating totals for CREDIT invoices
+            if (sale.document_type == 'INVOICE' and
+                    sale.payment_method == 'CREDIT' and
+                    sale.customer):
+
+                can_purchase, reason = sale.customer.check_credit_limit(sale.total_amount)
+                if not can_purchase:
+                    # Delete the sale and items
+                    sale.delete()
+                    messages.error(
+                        request,
+                        f'Credit limit check failed: {reason}\n'
+                        f'Invoice total: {sale.total_amount:,.0f}\n'
+                        f'Current balance: {sale.customer.credit_balance:,.0f}\n'
+                        f'Credit limit: {sale.customer.credit_limit:,.0f}\n'
+                        f'Available credit: {sale.customer.credit_available:,.0f}'
+                    )
+                    return render_sale_form(request)
+
+            # Mark as completed based on document type and payment method
+            if sale.document_type == 'RECEIPT':
+                sale.status = 'COMPLETED'
+                sale.payment_status = 'PAID'
+            elif sale.document_type == 'INVOICE':
+                if sale.payment_method == 'CREDIT':
+                    sale.status = 'PENDING_PAYMENT'
+                    sale.payment_status = 'PENDING'
+                else:
+                    # Cash/Card invoice - mark as paid
+                    sale.status = 'COMPLETED'
+                    sale.payment_status = 'PAID'
+
             sale.save()
 
-            # Handle payment
-            if request.POST.get('payment_amount'):
+            # Handle payment for non-credit sales
+            if sale.payment_method != 'CREDIT' and request.POST.get('payment_amount'):
                 handle_payment(sale, request.POST)
 
-            # ========== BACKGROUND PROCESSING ==========
+            # Background processing for receipts
             if sale.document_type == 'RECEIPT':
-                # Queue background tasks for receipt
                 from .tasks import process_receipt_async
                 task_result = process_receipt_async.delay(sale.pk, request.user.pk)
 
                 success_message = (
                     f'Receipt #{sale.document_number} created successfully! '
-                    f'Total: {sale.currency} {sale.total_amount:,.2f}\n'
-                    f'Processing in background (Task ID: {task_result.id})'
-                )
-
-            elif sale.document_type == 'INVOICE':
-                # Create stock movements synchronously for invoices
-                create_stock_movements(sale)
-
-                success_message = (
-                    f'Invoice #{sale.document_number} created successfully! '
                     f'Total: {sale.currency} {sale.total_amount:,.2f}'
                 )
 
-                # Auto-fiscalization will happen in Sale.save() method based on store config
+            elif sale.document_type == 'INVOICE':
+                create_stock_movements(sale)
+
+                if sale.payment_method == 'CREDIT':
+                    success_message = (
+                        f'Credit Invoice #{sale.document_number} created successfully! '
+                        f'Total: {sale.currency} {sale.total_amount:,.2f}\n'
+                        f'Customer: {sale.customer.name}\n'
+                        f'Due Date: {sale.due_date}\n'
+                        f'Remaining Credit: {sale.customer.credit_available:,.0f}'
+                    )
+                else:
+                    success_message = (
+                        f'Cash Invoice #{sale.document_number} created successfully! '
+                        f'Total: {sale.currency} {sale.total_amount:,.2f} (PAID)'
+                    )
+
+                # Auto-fiscalization
                 store_config = sale.store.effective_efris_config
                 if store_config.get('enabled', False):
                     success_message += ' Ready for EFRIS fiscalization.'
             else:
-                # Other document types
                 success_message = (
                     f'{sale.get_document_type_display()} #{sale.document_number} created successfully! '
                     f'Total: {sale.currency} {sale.total_amount:,.2f}'
                 )
 
             messages.success(request, success_message)
-
-            # Redirect immediately
             return redirect('sales:sale_detail', pk=sale.pk)
 
     except ValidationError as e:
@@ -1280,8 +1431,9 @@ def task_progress_page(request, task_id):
     """
     return render(request, 'sales/task_progress.html', {'task_id': task_id})
 
+
 def validate_sale_data(post_data, user, company):
-    """Enhanced validation with tenant support"""
+    """Enhanced validation with tenant support and credit checking"""
     required_fields = ['store', 'payment_method']
 
     for field in required_fields:
@@ -1309,30 +1461,6 @@ def validate_sale_data(post_data, user, company):
     except Store.DoesNotExist:
         raise ValidationError('Invalid store selected.')
 
-    # Validate customer
-    customer = None
-    if post_data.get('customer'):
-        try:
-            customer = Customer.objects.get(
-                id=post_data['customer'],
-                store=store
-            )
-
-            # Get store's EFRIS configuration for validation
-            store_config = store.effective_efris_config
-            if store_config.get('enabled', False):
-                # EFRIS validation if enabled for this store
-                if hasattr(customer, 'validate_for_efris'):
-                    is_valid, errors = customer.validate_for_efris()
-                    if not is_valid:
-                        logger.warning(
-                            f"Customer EFRIS validation: {'; '.join(errors)}"
-                        )
-                        # Only warn, don't block sale if customer has minor EFRIS issues
-
-        except Customer.DoesNotExist:
-            raise ValidationError('Invalid customer selected.')
-
     # Validate document type
     document_type = post_data.get('document_type', 'RECEIPT').strip()
     valid_types = [choice[0] for choice in Sale.DOCUMENT_TYPE_CHOICES]
@@ -1358,9 +1486,58 @@ def validate_sale_data(post_data, user, company):
     if len(currency) != 3:
         currency = 'UGX'  # Default to UGX if invalid
 
-    # Validate due date for invoices
+    # Validate customer and credit for INVOICE with CREDIT payment
+    customer = None
+    if post_data.get('customer'):
+        try:
+            customer = Customer.objects.get(
+                id=post_data['customer'],
+                store=store
+            )
+
+            # CRITICAL: Check credit only for INVOICES with CREDIT payment method
+            if document_type == 'INVOICE' and payment_method == 'CREDIT':
+                # Ensure customer allows credit
+                if not customer.allow_credit:
+                    raise ValidationError(
+                        f'Customer "{customer.name}" is not authorized for credit purchases. '
+                        f'Please select a different payment method.'
+                    )
+
+                # Check credit status
+                can_purchase, reason = customer.can_purchase_on_credit
+                if not can_purchase:
+                    raise ValidationError(
+                        f'Credit purchase not allowed for {customer.name}: {reason}'
+                    )
+
+                # Validate will not exceed credit limit (preliminary check)
+                # Full validation happens after totals are calculated
+                if customer.credit_balance >= customer.credit_limit:
+                    raise ValidationError(
+                        f'Customer "{customer.name}" has reached credit limit. '
+                        f'Outstanding: {customer.credit_balance:,.0f}, '
+                        f'Limit: {customer.credit_limit:,.0f}'
+                    )
+
+            # Get store's EFRIS configuration for validation
+            store_config = store.effective_efris_config
+            if store_config.get('enabled', False):
+                if hasattr(customer, 'validate_for_efris'):
+                    is_valid, errors = customer.validate_for_efris()
+                    if not is_valid:
+                        logger.warning(f"Customer EFRIS validation: {'; '.join(errors)}")
+
+        except Customer.DoesNotExist:
+            raise ValidationError('Invalid customer selected.')
+    else:
+        # INVOICE with CREDIT requires customer
+        if document_type == 'INVOICE' and payment_method == 'CREDIT':
+            raise ValidationError('Customer is required for credit invoices.')
+
+    # Validate due date based on document type and payment method
     due_date = None
-    if document_type == 'INVOICE':
+    if document_type == 'INVOICE' and payment_method == 'CREDIT':
         due_date_str = post_data.get('due_date')
         if due_date_str:
             try:
@@ -1370,8 +1547,17 @@ def validate_sale_data(post_data, user, company):
             except (ValueError, TypeError):
                 raise ValidationError('Invalid due date format. Use YYYY-MM-DD.')
         else:
-            # Default to 30 days from now for invoices
-            due_date = timezone.now().date() + timedelta(days=30)
+            # Use customer's credit days if available, otherwise default to 30
+            credit_days = customer.credit_days if customer else 30
+            due_date = timezone.now().date() + timedelta(days=credit_days)
+    elif document_type == 'INVOICE':
+        # Cash/Card invoices don't need due date, but can have one for record keeping
+        due_date_str = post_data.get('due_date')
+        if due_date_str:
+            try:
+                due_date = datetime.strptime(due_date_str, '%Y-%m-%d').date()
+            except (ValueError, TypeError):
+                due_date = None
 
     # Validate store inventory permissions for product items
     # This is a preliminary check - detailed item validation happens later
@@ -1498,7 +1684,23 @@ def validate_items_data(items_json):
 
 
 def create_sale_record(request, sale_data, company):
-    """Create sale record"""
+    """Create sale record with correct initial status"""
+
+    # Determine initial status based on document type and payment method
+    if sale_data['document_type'] == 'RECEIPT':
+        initial_status = 'COMPLETED'
+        initial_payment_status = 'PAID'
+    elif sale_data['document_type'] == 'INVOICE':
+        if sale_data['payment_method'] == 'CREDIT':
+            initial_status = 'PENDING_PAYMENT'
+            initial_payment_status = 'PENDING'
+        else:
+            initial_status = 'COMPLETED'
+            initial_payment_status = 'PAID'
+    else:
+        initial_status = 'DRAFT'
+        initial_payment_status = 'NOT_APPLICABLE'
+
     sale = Sale.objects.create(
         store=sale_data['store'],
         created_by=request.user,
@@ -1509,10 +1711,11 @@ def create_sale_record(request, sale_data, company):
         discount_amount=sale_data['discount_amount'],
         notes=sale_data['notes'],
         due_date=sale_data.get('due_date'),
-        status='DRAFT',
+        status=initial_status,  # ✅ Set correct status immediately
+        payment_status=initial_payment_status,  # ✅ Set payment status too
     )
 
-    logger.info(f"Created sale {sale.id} (#{sale.document_number})")
+    logger.info(f"Created sale {sale.id} (#{sale.document_number}) with status {initial_status}")
     return sale
 
 
@@ -1751,6 +1954,7 @@ def search_customers(request):
 
         customer_data = []
         for customer in customers:
+            customer.update_credit_balance()
             efris_data = {}
             if hasattr(customer, 'get_efris_buyer_details'):
                 try:
@@ -1779,6 +1983,19 @@ def search_customers(request):
                 'brn': getattr(customer, 'brn', '') or '',
                 'customer_type': getattr(customer, 'customer_type', '') or 'INDIVIDUAL',
                 'efris': efris_data,
+
+                # ADD CREDIT INFORMATION
+                'credit_info': {
+                    'allow_credit': customer.allow_credit,
+                    'credit_limit': float(customer.credit_limit),
+                    'credit_balance': float(customer.credit_balance),
+                    'credit_available': float(customer.credit_available),
+                    'credit_status': customer.credit_status,
+                    'has_overdue': customer.has_overdue_invoices,
+                    'overdue_amount': float(customer.overdue_amount),
+                    'can_purchase_credit': customer.can_purchase_on_credit[0],
+                    'credit_message': customer.can_purchase_on_credit[1],
+                }
             })
 
         return JsonResponse({'customers': customer_data})

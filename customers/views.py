@@ -1,3 +1,4 @@
+import json
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -5,12 +6,13 @@ from django.shortcuts import render, get_object_or_404, redirect
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required, permission_required
 from django.contrib.auth.mixins import LoginRequiredMixin, PermissionRequiredMixin
-from django.db.models import Q, Count
+from django.db.models import Q, Count, Sum
 from django.http import JsonResponse, HttpResponse
 from django.urls import reverse_lazy, reverse
 from django.utils.translation import gettext as _
 from django.utils import timezone
 from django.db import  models
+from decimal import Decimal
 from django.views.generic import (
     ListView, DetailView, CreateView, UpdateView, DeleteView, TemplateView
 )
@@ -23,7 +25,7 @@ from .forms import (
     CustomerNoteForm, BulkCustomerActionForm, CustomerImportForm,
      EFRISSyncForm
 )
-from .models import Customer, CustomerGroup, CustomerNote, EFRISCustomerSync
+from .models import Customer, CustomerGroup, CustomerNote, EFRISCustomerSync,CustomerCreditStatement
 from .serializers import (
     CustomerSerializer,
     CustomerGroupSerializer,
@@ -157,12 +159,25 @@ def get_store_customers(request):
     except Exception as e:
         return JsonResponse({'error': str(e), 'customers': [], 'total': 0})
 
+
+
 class CustomerViewSet(viewsets.ModelViewSet):
     queryset = Customer.objects.all()
     serializer_class = CustomerSerializer
 
     def get_queryset(self):
         queryset = super().get_queryset()
+        # Add store filtering
+        store_id = self.request.query_params.get('store_id')
+        # Add credit status filtering
+        credit_status = self.request.query_params.get('credit_status')
+
+        if store_id:
+            queryset = queryset.filter(store_id=store_id)
+        if credit_status:
+            queryset = queryset.filter(credit_status=credit_status)
+
+        # Keep existing filters
         company_id = self.request.query_params.get('company_id')
         customer_type = self.request.query_params.get('customer_type')
         efris_status = self.request.query_params.get('efris_status')
@@ -176,199 +191,169 @@ class CustomerViewSet(viewsets.ModelViewSet):
 
         return queryset
 
-    @action(detail=True, methods=['get'])
-    def tax_info(self, request, pk=None):
-        customer = self.get_object()
-        serializer = CustomerTaxInfoSerializer(customer)
-        return Response(serializer.data)
-
     @action(detail=True, methods=['post'])
-    def sync_to_efris(self, request, pk=None):
-        """Sync single customer to eFRIS"""
+    def update_credit_status(self, request, pk=None):
+        """Manually update credit status and balance"""
         customer = self.get_object()
-
-        if not customer.can_sync_to_efris:
-            return Response(
-                {'error': 'Customer does not have required information for eFRIS sync'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-        try:
-            service = EFRISCustomerService()
-            result = service.register_customer(customer)
-
-            if result['success']:
-                return Response({
-                    'success': True,
-                    'message': 'Customer synced to eFRIS successfully',
-                    'efris_id': result.get('efris_id'),
-                    'reference': result.get('reference')
-                })
-            else:
-                return Response({
-                    'success': False,
-                    'error': result.get('error', 'Unknown error occurred')
-                }, status=status.HTTP_400_BAD_REQUEST)
-
-        except Exception as e:
-            return Response(
-                {'error': f'eFRIS sync failed: {str(e)}'},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
-
-    @action(detail=False, methods=['post'])
-    def bulk_sync_to_efris(self, request):
-        """Bulk sync customers to eFRIS"""
-        customer_ids = request.data.get('customer_ids', [])
-
-        if not customer_ids:
-            return Response(
-                {'error': 'No customers selected'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-        customers = Customer.objects.filter(
-            id__in=customer_ids,
-            efris_status__in=['NOT_REGISTERED', 'FAILED']
-        )
-
-        results = {'success': 0, 'failed': 0, 'skipped': 0, 'errors': []}
-        service = EFRISCustomerService()
-
-        for customer in customers:
-            if not customer.can_sync_to_efris:
-                results['skipped'] += 1
-                results['errors'].append(f'{customer.name}: Missing required information')
-                continue
-
-            try:
-                result = service.register_customer(customer)
-                if result['success']:
-                    results['success'] += 1
-                else:
-                    results['failed'] += 1
-                    results['errors'].append(f'{customer.name}: {result.get("error", "Unknown error")}')
-            except Exception as e:
-                results['failed'] += 1
-                results['errors'].append(f'{customer.name}: {str(e)}')
-
-        return Response(results)
-
-    @action(detail=True, methods=['get'])
-    def efris_status(self, request, pk=None):
-        """Get customer eFRIS status and sync history"""
-        customer = self.get_object()
-        syncs = customer.efris_syncs.all()[:10]
+        customer.update_credit_balance()
 
         return Response({
-            'customer_id': customer.id,
-            'efris_status': customer.efris_status,
-            'efris_customer_id': customer.efris_customer_id,
-            'efris_registered_at': customer.efris_registered_at,
-            'efris_last_sync': customer.efris_last_sync,
-            'can_sync': customer.can_sync_to_efris,
-            'sync_history': EFRISSyncSerializer(syncs, many=True).data
+            'success': True,
+            'message': 'Credit status updated',
+            'credit_balance': customer.credit_balance,
+            'credit_available': customer.credit_available,
+            'credit_status': customer.credit_status
         })
 
-    @action(detail=False, methods=['post'])
-    def import_data(self, request):
-        serializer = CustomerImportSerializer(data=request.data)
-        if not serializer.is_valid():
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    @action(detail=True, methods=['post'])
+    def check_credit(self, request, pk=None):
+        """Check if customer can make a credit purchase"""
+        customer = self.get_object()
+        amount = Decimal(request.data.get('amount', 0))
 
-        file = serializer.validated_data['file']
-        overwrite = serializer.validated_data['overwrite']
-        auto_sync_efris = serializer.validated_data.get('auto_sync_efris', False)
+        can_purchase, reason = customer.check_credit_limit(amount)
 
-        try:
-            ext = file.name.lower().split('.')[-1]
-            if ext == 'xlsx':
-                df = pd.read_excel(file)
-            else:
-                df = pd.read_csv(file)
-        except Exception as e:
-            return Response({'error': f'Failed to read file: {e}'}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({
+            'can_purchase': can_purchase,
+            'reason': reason,
+            'available_credit': customer.credit_available,
+            'requested_amount': amount,
+            'new_balance': customer.credit_balance + amount if can_purchase else None
+        })
 
-        results = {'created': 0, 'updated': 0, 'efris_synced': 0, 'errors': []}
-        service = EFRISCustomerService() if auto_sync_efris else None
+    @action(detail=True, methods=['post'])
+    def adjust_credit_limit(self, request, pk=None):
+        """Adjust customer credit limit"""
+        customer = self.get_object()
+        new_limit = Decimal(request.data.get('credit_limit', 0))
+        reason = request.data.get('reason', '')
 
-        def process_row(row):
-            customer_data = {
-                'name': row['name'],
-                'customer_type': row.get('customer_type', 'INDIVIDUAL'),
-                'email': row.get('email'),
-                'phone': row['phone'],
-                'tin': row.get('tin'),
-                'nin': row.get('nin'),
-                'brn': row.get('brn'),
-                'physical_address': row.get('physical_address'),
-                'postal_address': row.get('postal_address'),
-                'district': row.get('district'),
-                'is_vat_registered': bool(row.get('is_vat_registered', False)),
-            }
+        old_limit = customer.credit_limit
+        customer.credit_limit = new_limit
+        customer.save()
 
-            if overwrite and 'customer_id' in row and pd.notna(row['customer_id']):
-                try:
-                    customer = Customer.objects.get(customer_id=row['customer_id'])
-                except Customer.DoesNotExist:
-                    return 'Customer not found for update'
-                serializer = CustomerSerializer(customer, data=customer_data)
-                if serializer.is_valid():
-                    customer = serializer.save()
+        # Log this change in credit statement
+        if hasattr(customer, 'credit_statements'):
+            CustomerCreditStatement.objects.create(
+                customer=customer,
+                transaction_type='ADJUSTMENT',
+                amount=new_limit - old_limit,
+                balance_before=old_limit,
+                balance_after=new_limit,
+                description=f"Credit limit adjusted: {old_limit} → {new_limit}. Reason: {reason}",
+                created_by=request.user
+            )
 
-                    # Auto sync to eFRIS if enabled
-                    if auto_sync_efris and service and customer.can_sync_to_efris:
-                        try:
-                            result = service.register_customer(customer)
-                            if result['success']:
-                                results['efris_synced'] += 1
-                        except:
-                            pass  # Continue with import even if eFRIS sync fails
-
-                    return 'updated'
-                return serializer.errors
-            else:
-                serializer = CustomerSerializer(data=customer_data)
-                if serializer.is_valid():
-                    customer = serializer.save()
-
-                    # Auto sync to eFRIS if enabled
-                    if auto_sync_efris and service and customer.can_sync_to_efris:
-                        try:
-                            result = service.register_customer(customer)
-                            if result['success']:
-                                results['efris_synced'] += 1
-                        except:
-                            pass  # Continue with import even if eFRIS sync fails
-
-                    return 'created'
-                return serializer.errors
-
-        for _, row in df.iterrows():
-            result = process_row(row)
-            if result == 'created':
-                results['created'] += 1
-            elif result == 'updated':
-                results['updated'] += 1
-            else:
-                results['errors'].append(result)
-
-        return Response(results)
+        return Response({
+            'success': True,
+            'old_limit': old_limit,
+            'new_limit': new_limit,
+            'credit_available': customer.credit_available
+        })
 
     @action(detail=False, methods=['get'])
-    def export(self, request):
-        serializer = CustomerExportSerializer(data=request.query_params)
-        if serializer.is_valid():
-            queryset = self.filter_queryset(self.get_queryset())
-            exporter = CustomerExporter(
-                queryset,
-                serializer.validated_data['format'],
-                serializer.validated_data['include_tax_info'],
-                serializer.validated_data.get('include_efris_info', False)
-            )
-            return exporter.export()
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    def credit_report(self, request):
+        """Generate credit report for customers"""
+        queryset = self.filter_queryset(self.get_queryset())
 
+        report_data = queryset.values(
+            'id', 'name', 'phone', 'credit_limit',
+            'credit_balance', 'credit_available', 'credit_status',
+            'allow_credit', 'has_overdue_invoices'
+        ).order_by('-credit_balance')
+
+        summary = {
+            'total_customers': queryset.count(),
+            'total_credit_limit': sum(c['credit_limit'] for c in report_data),
+            'total_credit_balance': sum(c['credit_balance'] for c in report_data),
+            'customers_over_limit': sum(1 for c in report_data if c['credit_balance'] > c['credit_limit']),
+            'customers_with_overdue': sum(1 for c in report_data if c['has_overdue_invoices']),
+        }
+
+        return Response({
+            'summary': summary,
+            'customers': list(report_data)
+        })
+
+
+class CustomerCreditReportView(LoginRequiredMixin, PermissionRequiredMixin, TemplateView):
+    """Credit report view for customers"""
+    template_name = 'customers/credit_report.html'
+    permission_required = 'customers.view_customer'
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+
+        # Filter parameters
+        store_id = self.request.GET.get('store_id')
+        credit_status = self.request.GET.get('credit_status')
+
+        queryset = Customer.objects.filter(
+            is_active=True,
+            allow_credit=True
+        )
+
+        if store_id:
+            queryset = queryset.filter(store_id=store_id)
+        if credit_status:
+            queryset = queryset.filter(credit_status=credit_status)
+
+        # Calculate statistics
+        stats = {
+            'total_customers': queryset.count(),
+            'total_credit_limit': queryset.aggregate(Sum('credit_limit'))['credit_limit__sum'] or 0,
+            'total_credit_balance': queryset.aggregate(Sum('credit_balance'))['credit_balance__sum'] or 0,
+            'customers_over_limit': queryset.filter(credit_balance__gt=models.F('credit_limit')).count(),
+            'customers_with_overdue': sum(1 for c in queryset if c.has_overdue_invoices),
+        }
+
+        context.update({
+            'customers': queryset,
+            'stats': stats,
+            'filter_store': store_id,
+            'filter_status': credit_status,
+        })
+
+        return context
+
+
+@login_required
+def export_credit_report(request):
+    """Export credit report to CSV"""
+    customers = Customer.objects.filter(
+        is_active=True,
+        allow_credit=True
+    ).select_related('store')
+
+    response = HttpResponse(content_type='text/csv')
+    response['Content-Disposition'] = f'attachment; filename="credit_report_{datetime.now().strftime("%Y%m%d")}.csv"'
+
+    writer = csv.writer(response)
+    writer.writerow([
+        'Customer ID', 'Name', 'Phone', 'Email', 'Store',
+        'Credit Limit', 'Credit Balance', 'Credit Available',
+        'Credit Status', 'Has Overdue Invoices', 'Overdue Amount',
+        'Credit Days', 'Last Credit Review'
+    ])
+
+    for customer in customers:
+        writer.writerow([
+            customer.customer_id,
+            customer.name,
+            customer.phone,
+            customer.email,
+            customer.store.name if customer.store else '',
+            customer.credit_limit,
+            customer.credit_balance,
+            customer.credit_available,
+            customer.get_credit_status_display(),
+            'Yes' if customer.has_overdue_invoices else 'No',
+            customer.overdue_amount,
+            customer.credit_days,
+            customer.last_credit_review.strftime('%Y-%m-%d') if customer.last_credit_review else '',
+        ])
+
+    return response
 
 class CustomerListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
     """Advanced customer list view with search, filtering, and eFRIS integration"""
@@ -454,7 +439,9 @@ class CustomerDetailView(LoginRequiredMixin, PermissionRequiredMixin, DetailView
 
     def get_object(self):
         return get_object_or_404(
-            Customer.objects.select_related('store').prefetch_related('groups', 'notes__author', 'efris_syncs'),
+            Customer.objects.select_related('store').prefetch_related(
+                'groups', 'notes__author', 'efris_syncs', 'credit_statements'
+            ),
             pk=self.kwargs['pk']
         )
 
@@ -467,6 +454,15 @@ class CustomerDetailView(LoginRequiredMixin, PermissionRequiredMixin, DetailView
         context['efris_form'] = EFRISSyncForm()
         context['efris_syncs'] = customer.efris_syncs.all()[:10]
 
+        # Credit information
+        from sales.models import Sale
+        context['credit_statements'] = customer.credit_statements.all()[:20]
+        context['overdue_invoices'] = Sale.objects.filter(
+            customer=customer,
+            payment_status='OVERDUE'
+        )[:10]
+        context['can_purchase_on_credit'], context['credit_message'] = customer.can_purchase_on_credit
+
         # eFRIS status information
         context['efris_status'] = {
             'can_sync': customer.can_sync_to_efris,
@@ -478,6 +474,91 @@ class CustomerDetailView(LoginRequiredMixin, PermissionRequiredMixin, DetailView
 
         return context
 
+
+@login_required
+@permission_required('customers.view_customer', raise_exception=True)
+def store_customer_credit_info(request, store_id):
+    """Get credit information for all customers of a store"""
+    customers = Customer.objects.filter(
+        store_id=store_id,
+        is_active=True,
+        allow_credit=True
+    ).select_related('store')
+
+    data = {
+        'customers': [
+            {
+                'id': c.id,
+                'name': c.name,
+                'phone': c.phone,
+                'credit_limit': c.credit_limit,
+                'credit_balance': c.credit_balance,
+                'credit_available': c.credit_available,
+                'credit_status': c.credit_status,
+                'has_overdue': c.has_overdue_invoices,
+                'overdue_amount': c.overdue_amount,
+            }
+            for c in customers
+        ]
+    }
+
+    return JsonResponse(data)
+
+
+@login_required
+@require_http_methods(["POST"])
+def bulk_update_credit_limits(request):
+    """Bulk update credit limits for multiple customers"""
+    if not request.user.has_perm('customers.change_customer'):
+        return JsonResponse({'error': 'Permission denied'}, status=403)
+
+    try:
+        data = json.loads(request.body)
+        updates = data.get('updates', [])
+
+        results = {'success': [], 'failed': []}
+
+        for update in updates:
+            try:
+                customer = Customer.objects.get(id=update['customer_id'])
+                old_limit = customer.credit_limit
+                new_limit = Decimal(str(update['new_limit']))
+                reason = update.get('reason', 'Bulk update')
+
+                customer.credit_limit = new_limit
+                customer.save()
+
+                # Log the change
+                CustomerCreditStatement.objects.create(
+                    customer=customer,
+                    transaction_type='ADJUSTMENT',
+                    amount=new_limit - old_limit,
+                    balance_before=old_limit,
+                    balance_after=new_limit,
+                    description=f"Bulk credit limit update: {old_limit} → {new_limit}. Reason: {reason}",
+                    created_by=request.user,
+                    reference_number=f"BULK_{datetime.now().strftime('%Y%m%d%H%M%S')}"
+                )
+
+                results['success'].append({
+                    'customer_id': customer.id,
+                    'name': customer.name,
+                    'old_limit': old_limit,
+                    'new_limit': new_limit
+                })
+
+            except Exception as e:
+                results['failed'].append({
+                    'customer_id': update.get('customer_id'),
+                    'error': str(e)
+                })
+
+        return JsonResponse(results)
+
+    except json.JSONDecodeError:
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
 
 class CustomerCreateView(LoginRequiredMixin, PermissionRequiredMixin, CreateView):
     """Create new customer with validation and optional eFRIS sync"""

@@ -299,6 +299,28 @@ class Invoice(models.Model, EFRISInvoiceMixin):
 
         super().save(*args, **kwargs)
 
+        if not self.pk and self.sale.customer and self.sale.document_type == 'INVOICE':
+            self._create_credit_statement_entry()
+
+    def _create_credit_statement_entry(self):
+        """Create credit statement entry when invoice is created"""
+        from customers.models import CustomerCreditStatement
+
+        customer = self.sale.customer
+        balance_before = customer.credit_balance
+        balance_after = balance_before + self.total_amount
+
+        CustomerCreditStatement.objects.create(
+            customer=customer,
+            transaction_type='INVOICE',
+            sale=self.sale,
+            amount=self.total_amount,
+            balance_before=balance_before,
+            balance_after=balance_after,
+            description=f"Invoice {self.sale.document_number} created",
+            reference_number=self.sale.document_number,
+            created_by=self.sale.created_by
+        )
 
     def _determine_business_type(self):
         """Determine business type from sale customer"""

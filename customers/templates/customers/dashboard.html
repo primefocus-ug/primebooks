@@ -1,116 +1,254 @@
-
 {% extends 'base.html' %}
 {% load custom_filters %}
 {% load i18n %}
 {% load static %}
 
-{% block title %}Customer Dashboard |{{ company.trading_name|default:company.name }}|  {{ block.super }}{% endblock %}
+{% block title %}Customer Dashboard | {{ company.trading_name|default:company.name }} | {{ block.super }}{% endblock %}
 
 {% block extra_css %}
+<link rel="stylesheet" href="{% static 'css/select2.min.css' %}">
 <link rel="stylesheet" href="{% static 'themes.css' %}">
 <style>
-    [data-theme="dark"] .card {
-        background-color: #1f2937;
-        color: #d1d5db;
+    .stat-card {
+        border: none;
+        background: linear-gradient(135deg, var(--bg-card), var(--bg-secondary));
+        transition: transform 0.3s ease;
     }
-    [data-theme="dark"] .card-header {
-        background-color: #374151;
+
+    .stat-card:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 10px 20px rgba(0,0,0,0.1);
     }
-    [data-theme="dark"] .list-group-item {
-        background-color: #1f2937;
-        border-color: #374151;
-        color: aliceblue;
+
+    .stat-icon {
+        width: 60px;
+        height: 60px;
+        border-radius: 12px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
     }
-    </style>
+
+    .progress-thin {
+        height: 6px;
+    }
+
+    .quick-action-card {
+        transition: all 0.3s ease;
+        border: none;
+    }
+
+    .quick-action-card:hover {
+        background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+        color: white;
+        transform: scale(1.05);
+    }
+
+    .quick-action-card:hover .text-muted {
+        color: rgba(255,255,255,0.8) !important;
+    }
+
+    .quick-action-card:hover i {
+        color: white !important;
+    }
+
+    .chart-container {
+        height: 300px;
+        position: relative;
+    }
+
+    .customer-avatar-sm {
+        width: 40px;
+        height: 40px;
+        font-size: 0.875rem;
+    }
+
+    .efris-badge {
+        font-size: 0.75rem;
+        padding: 0.2rem 0.5rem;
+    }
+
+    .efris-registered { background-color: #d1e7dd; color: #0f5132; }
+    .efris-pending { background-color: #fff3cd; color: #856404; }
+    .efris-failed { background-color: #f8d7da; color: #842029; }
+
+    .credit-badge {
+        font-size: 0.75rem;
+        padding: 0.2rem 0.5rem;
+    }
+
+    .credit-good { background-color: #d1e7dd; color: #0f5132; }
+    .credit-warning { background-color: #fff3cd; color: #856404; }
+    .credit-suspended { background-color: #f8d7da; color: #842029; }
+    .credit-blocked { background-color: #dc3545; color: white; }
+
+    /* Dark theme adjustments */
+    [data-bs-theme="dark"] .stat-card {
+        background: linear-gradient(135deg, var(--bg-card), var(--bg-secondary));
+    }
+
+    [data-bs-theme="dark"] .quick-action-card {
+        background-color: var(--bg-card);
+    }
+
+    [data-bs-theme="dark"] .quick-action-card:hover {
+        background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+    }
+</style>
 {% endblock %}
+
 {% block page_header %}
 <div class="d-flex justify-content-between align-items-center mb-4">
     <div>
         <h1 class="h3 mb-0">Customer Dashboard</h1>
-        <p class="text-muted mb-0">Manage and track your customer base</p>
+        <p class="text-muted mb-0">Comprehensive overview of customer management with eFRIS and credit analytics</p>
     </div>
-    <div>
+    <div class="d-flex gap-2">
         {% if perms.customers.add_customer %}
         <a href="{% url 'customers:create' %}" class="btn btn-primary">
             <i class="bi bi-plus-lg me-1"></i>Add Customer
         </a>
         {% endif %}
-        <a href="{% url 'customers:customer_import' %}" class="btn btn-outline-primary ms-2">
+        <a href="{% url 'customers:customer_import' %}" class="btn btn-outline-primary">
             <i class="bi bi-upload me-1"></i>Import
+        </a>
+        <a href="{% url 'customers:efris_dashboard' %}" class="btn btn-outline-warning">
+            <i class="bi bi-sync me-1"></i>eFRIS Dashboard
+        </a>
+        <a href="{% url 'customers:credit_report' %}" class="btn btn-outline-danger">
+            <i class="bi bi-credit-card me-1"></i>Credit Report
         </a>
     </div>
 </div>
 {% endblock %}
 
 {% block content %}
-<!-- Statistics Cards -->
+<!-- Main Statistics Row -->
 <div class="row mb-4">
-    <div class="col-xl-3 col-md-6 mb-3">
-        <div class="card border-0 shadow-sm">
-            <div class="card-body">
-                <div class="d-flex align-items-center">
-                    <div class="flex-shrink-0">
-                        <div class="bg-primary bg-gradient rounded-3 p-3">
-                            <i class="bi bi-people-fill text-white fs-4"></i>
-                        </div>
-                    </div>
-                    <div class="flex-grow-1 ms-3">
-                        <h6 class="card-title text-muted mb-1">Total Customers</h6>
-                        <h3 class="mb-0 totall">{{ total_customers|default:0 }}</h3>
-                    </div>
+    <div class="col-xl-2 col-md-4 col-sm-6 mb-3">
+        <div class="card stat-card">
+            <div class="card-body text-center">
+                <div class="stat-icon bg-primary bg-opacity-10 text-primary mb-3 mx-auto">
+                    <i class="bi bi-people-fill fs-3"></i>
                 </div>
+                <h3 class="mb-1 totall">{{ total_customers|default:0 }}</h3>
+                <p class="text-muted mb-0">Total Customers</p>
             </div>
         </div>
     </div>
 
-    <div class="col-xl-3 col-md-6 mb-3">
-        <div class="card border-0 shadow-sm">
-            <div class="card-body">
-                <div class="d-flex align-items-center">
-                    <div class="flex-shrink-0">
-                        <div class="bg-success bg-gradient rounded-3 p-3">
-                            <i class="bi bi-person-check-fill text-white fs-4"></i>
-                        </div>
-                    </div>
-                    <div class="flex-grow-1 ms-3">
-                        <h6 class="card-title text-muted mb-1">Active Customers</h6>
-                        <h3 class="mb-0 totall">{{ active_customers|default:0 }}</h3>
-                    </div>
+    <div class="col-xl-2 col-md-4 col-sm-6 mb-3">
+        <div class="card stat-card">
+            <div class="card-body text-center">
+                <div class="stat-icon bg-success bg-opacity-10 text-success mb-3 mx-auto">
+                    <i class="bi bi-person-check-fill fs-3"></i>
                 </div>
+                <h3 class="mb-1 totall">{{ active_customers|default:0 }}</h3>
+                <p class="text-muted mb-0">Active</p>
             </div>
         </div>
     </div>
 
-    <div class="col-xl-3 col-md-6 mb-3">
-        <div class="card border-0 shadow-sm">
-            <div class="card-body">
-                <div class="d-flex align-items-center">
-                    <div class="flex-shrink-0">
-                        <div class="bg-info bg-gradient rounded-3 p-3">
-                            <i class="bi bi-building text-white fs-4"></i>
-                        </div>
-                    </div>
-                    <div class="flex-grow-1 ms-3">
-                        <h6 class="card-title text-muted mb-1">VAT Registered</h6>
-                        <h3 class="mb-0 totall">{{ vat_customers|default:0 }}</h3>
-                    </div>
+    <div class="col-xl-2 col-md-4 col-sm-6 mb-3">
+        <div class="card stat-card">
+            <div class="card-body text-center">
+                <div class="stat-icon bg-info bg-opacity-10 text-info mb-3 mx-auto">
+                    <i class="bi bi-building fs-3"></i>
                 </div>
+                <h3 class="mb-1 totall">{{ vat_registered|default:0 }}</h3>
+                <p class="text-muted mb-0">VAT Registered</p>
             </div>
         </div>
     </div>
 
-    <div class="col-xl-3 col-md-6 mb-3">
+    <div class="col-xl-2 col-md-4 col-sm-6 mb-3">
+        <div class="card stat-card">
+            <div class="card-body text-center">
+                <div class="stat-icon bg-warning bg-opacity-10 text-warning mb-3 mx-auto">
+                    <i class="bi bi-credit-card fs-3"></i>
+                </div>
+                <h3 class="mb-1 totall">{{ credit_enabled|default:0 }}</h3>
+                <p class="text-muted mb-0">Credit Enabled</p>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-xl-2 col-md-4 col-sm-6 mb-3">
+        <div class="card stat-card">
+            <div class="card-body text-center">
+                <div class="stat-icon bg-danger bg-opacity-10 text-danger mb-3 mx-auto">
+                    <i class="bi bi-clock-history fs-3"></i>
+                </div>
+                <h3 class="mb-1 totall">{{ with_overdue|default:0 }}</h3>
+                <p class="text-muted mb-0">With Overdue</p>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-xl-2 col-md-4 col-sm-6 mb-3">
+        <div class="card stat-card">
+            <div class="card-body text-center">
+                <div class="stat-icon bg-secondary bg-opacity-10 text-secondary mb-3 mx-auto">
+                    <i class="bi bi-person-x-fill fs-3"></i>
+                </div>
+                <h3 class="mb-1 totall">{{ inactive_customers|default:0 }}</h3>
+                <p class="text-muted mb-0">Inactive</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- eFRIS Statistics Row -->
+<div class="row mb-4">
+    <div class="col-lg-12">
         <div class="card border-0 shadow-sm">
+            <div class="card-header bg-transparent border-0">
+                <h5 class="card-title mb-0">
+                    <i class="bi bi-sync me-2"></i>eFRIS Integration Status
+                </h5>
+            </div>
             <div class="card-body">
-                <div class="d-flex align-items-center">
-                    <div class="flex-shrink-0">
-                        <div class="bg-warning bg-gradient rounded-3 p-3">
-                            <i class="bi bi-person-x-fill text-white fs-4"></i>
+                <div class="row">
+                    <div class="col-md-3 col-sm-6 mb-3">
+                        <div class="text-center">
+                            <div class="display-6 fw-bold text-primary">{{ efris_stats.registered|default:0 }}</div>
+                            <small class="text-muted">eFRIS Registered</small>
+                            <div class="progress progress-thin mt-2">
+                                <div class="progress-bar bg-success" role="progressbar"
+                                     style="width: {{ efris_sync_percentage|default:0 }}%"></div>
+                            </div>
+                            <small class="text-muted">{{ efris_sync_percentage|default:0 }}% of total</small>
                         </div>
                     </div>
-                    <div class="flex-grow-1 ms-3">
-                        <h6 class="card-title text-muted mb-1">Inactive</h6>
-                        <h3 class="mb-0 totall">{{ inactive_customers|default:0 }}</h3>
+                    <div class="col-md-3 col-sm-6 mb-3">
+                        <div class="text-center">
+                            <div class="display-6 fw-bold text-warning">{{ efris_stats.pending|default:0 }}</div>
+                            <small class="text-muted">Pending Registration</small>
+                            <div class="progress progress-thin mt-2">
+                                <div class="progress-bar bg-warning" role="progressbar"
+                                     style="width: {{ efris_stats.pending|default:0|divide:total_customers|multiply:100|default:0 }}%"></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3 col-sm-6 mb-3">
+                        <div class="text-center">
+                            <div class="display-6 fw-bold text-danger">{{ efris_stats.failed|default:0 }}</div>
+                            <small class="text-muted">Sync Failed</small>
+                            <div class="progress progress-thin mt-2">
+                                <div class="progress-bar bg-danger" role="progressbar"
+                                     style="width: {{ efris_stats.failed|default:0|divide:total_customers|multiply:100|default:0 }}%"></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3 col-sm-6 mb-3">
+                        <div class="text-center">
+                            <div class="display-6 fw-bold text-success">{{ ready_for_sync|default:0 }}</div>
+                            <small class="text-muted">Ready for Sync</small>
+                            <div class="progress progress-thin mt-2">
+                                <div class="progress-bar bg-info" role="progressbar"
+                                     style="width: {{ ready_for_sync|default:0|divide:total_customers|multiply:100|default:0 }}%"></div>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -119,21 +257,32 @@
 </div>
 
 <div class="row">
-    <!-- Customer Types Chart -->
+    <!-- Customer Types Distribution -->
     <div class="col-lg-6 mb-4">
-        <div class="card border-0 shadow-sm">
-            <div class="card-header bg-transparent border-0">
-                <h5 class="card-title mb-0">Customer Types</h5>
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-header bg-transparent border-0 d-flex justify-content-between align-items-center">
+                <h5 class="card-title mb-0">
+                    <i class="bi bi-pie-chart me-2"></i>Customer Type Distribution
+                </h5>
+                <span class="badge bg-primary">{{ total_customers|default:0 }} total</span>
             </div>
             <div class="card-body">
                 {% if customer_types %}
-                    <div class="list-group list-group-flush">
+                    <div class="chart-container">
+                        <canvas id="customerTypeChart"></canvas>
+                    </div>
+                    <div class="mt-3">
                         {% for type_data in customer_types %}
-                        <div class="list-group-item border-0 px-0">
-                            <div class="d-flex justify-content-between align-items-center">
-                                <span class="fw-medium">{{ type_data.customer_type }}</span>
-                                <span class="badge bg-primary rounded-pill">{{ type_data.count }}</span>
+                        <div class="mb-2">
+                            <div class="d-flex justify-content-between mb-1">
+                                <small class="fw-medium">{{ type_data.customer_type|title }}</small>
+                                <small>{{ type_data.total_count }} ({{ type_data.percentage|default:0 }}%)</small>
                             </div>
+                            <div class="progress" style="height: 8px;">
+                                <div class="progress-bar" role="progressbar"
+                                     style="width: {{ type_data.percentage|default:0 }}%; background-color: {{ type_data.color|default:'#007bff' }};"></div>
+                            </div>
+                            <small class="text-muted">eFRIS Registered: {{ type_data.efris_registered|default:0 }}</small>
                         </div>
                         {% endfor %}
                     </div>
@@ -147,30 +296,73 @@
         </div>
     </div>
 
-    <!-- Top Districts -->
+    <!-- Recent eFRIS Sync Activities -->
     <div class="col-lg-6 mb-4">
-        <div class="card border-0 shadow-sm">
-            <div class="card-header bg-transparent border-0">
-                <h5 class="card-title mb-0">Top Districts</h5>
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-header bg-transparent border-0 d-flex justify-content-between align-items-center">
+                <h5 class="card-title mb-0">
+                    <i class="bi bi-clock-history me-2"></i>Recent eFRIS Sync Activities
+                </h5>
+                <a href="{% url 'customers:efris_dashboard' %}" class="btn btn-outline-primary btn-sm">View All</a>
             </div>
             <div class="card-body">
-                {% if districts %}
-                    <div class="list-group list-group-flush">
-                        {% for district in districts|slice:":5" %}
-                        <div class="list-group-item border-0 px-0">
-                            <div class="d-flex justify-content-between align-items-center">
-                                <span class="fw-medium">{{ district.district|title }}</span>
-                                <span class="badge bg-secondary rounded-pill">{{ district.count }}</span>
-                            </div>
-                        </div>
-                        {% endfor %}
+                {% if recent_syncs %}
+                    <div class="table-responsive">
+                        <table class="table table-sm table-hover">
+                            <thead>
+                                <tr>
+                                    <th>Customer</th>
+                                    <th>Type</th>
+                                    <th>Status</th>
+                                    <th>Time</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for sync in recent_syncs %}
+                                <tr>
+                                    <td>
+                                        <div class="d-flex align-items-center">
+                                            <div class="customer-avatar-sm bg-primary bg-gradient rounded-circle d-flex align-items-center justify-content-center me-2">
+                                                <span class="text-white fw-bold">{{ sync.customer.name|first|upper|default:"C" }}</span>
+                                            </div>
+                                            <div>
+                                                <div class="fw-medium">{{ sync.customer.name|truncatechars:15 }}</div>
+                                                <small class="text-muted">{{ sync.customer.customer_id|truncatechars:8 }}</small>
+                                            </div>
+                                        </div>
+                                    </td>
+                                    <td>
+                                        <span class="badge bg-light text-dark">{{ sync.get_sync_type_display }}</span>
+                                    </td>
+                                    <td>
+                                        <span class="badge {% if sync.status == 'SUCCESS' %}bg-success{% elif sync.status == 'FAILED' %}bg-danger{% else %}bg-warning{% endif %}">
+                                            {{ sync.get_status_display }}
+                                        </span>
+                                    </td>
+                                    <td>{{ sync.created_at|timesince }} ago</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
                     </div>
                 {% else %}
                     <div class="text-center py-4">
-                        <i class="bi bi-geo-alt text-muted fs-1"></i>
-                        <p class="text-muted mt-2">No location data available</p>
+                        <i class="bi bi-sync text-muted fs-1"></i>
+                        <p class="text-muted mt-2">No recent sync activities</p>
                     </div>
                 {% endif %}
+
+                <!-- Quick Sync Actions -->
+                <div class="mt-3">
+                    <div class="d-grid gap-2">
+                        <button class="btn btn-outline-primary" onclick="syncReadyCustomers()">
+                            <i class="bi bi-arrow-repeat me-2"></i>Sync Ready Customers
+                        </button>
+                        <button class="btn btn-outline-warning" onclick="retryFailedSyncs()">
+                            <i class="bi bi-exclamation-triangle me-2"></i>Retry Failed Syncs
+                        </button>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
@@ -181,10 +373,17 @@
     <div class="col-lg-8 mb-4">
         <div class="card border-0 shadow-sm">
             <div class="card-header bg-transparent border-0 d-flex justify-content-between align-items-center">
-                <h5 class="card-title mb-0">Recent Customers</h5>
-                {% if perms.customers.view_customer %}
-                <a href="{% url 'customers:customer_list' %}" class="btn btn-outline-primary btn-sm">View All</a>
-                {% endif %}
+                <h5 class="card-title mb-0">
+                    <i class="bi bi-people me-2"></i>Recent Customers
+                </h5>
+                <div>
+                    {% if perms.customers.view_customer %}
+                    <a href="{% url 'customers:customer_list' %}" class="btn btn-outline-primary btn-sm me-2">View All</a>
+                    {% endif %}
+                    <button class="btn btn-outline-success btn-sm" onclick="exportRecentCustomers()">
+                        <i class="bi bi-download me-1"></i>Export
+                    </button>
+                </div>
             </div>
             <div class="card-body">
                 {% if recent_customers %}
@@ -194,6 +393,8 @@
                                 <tr>
                                     <th>Name</th>
                                     <th>Type</th>
+                                    <th>Credit Status</th>
+                                    <th>eFRIS Status</th>
                                     <th>Contact</th>
                                     <th>Created</th>
                                     <th>Actions</th>
@@ -204,17 +405,40 @@
                                 <tr>
                                     <td>
                                         <div class="d-flex align-items-center">
-                                            <div class="avatar-sm bg-primary bg-gradient rounded-circle d-flex align-items-center justify-content-center me-2">
-                                                <span class="text-white fw-bold">{{ customer.name|first|upper }}</span>
+                                            <div class="customer-avatar-sm bg-primary bg-gradient rounded-circle d-flex align-items-center justify-content-center me-2">
+                                                <span class="text-white fw-bold">{{ customer.name|first|upper|default:"C" }}</span>
                                             </div>
                                             <div>
-                                                <div class="fw-medium">{{ customer.name }}</div>
-                                                <small class="text-muted">ID: {{ customer.customer_id }}</small>
+                                                <div class="fw-medium">{{ customer.name|truncatechars:20 }}</div>
+                                                <small class="text-muted">ID: {{ customer.customer_id|truncatechars:10 }}</small>
                                             </div>
                                         </div>
                                     </td>
                                     <td>
                                         <span class="badge bg-light text-dark">{{ customer.get_customer_type_display }}</span>
+                                        {% if customer.is_vat_registered %}
+                                            <span class="badge bg-info ms-1">VAT</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        {% if customer.allow_credit %}
+                                            <span class="badge credit-{{ customer.credit_status|lower }} credit-badge">
+                                                {{ customer.get_credit_status_display }}
+                                            </span>
+                                            <br>
+                                            <small class="text-muted">{{ customer.credit_available|money }} available</small>
+                                        {% else %}
+                                            <span class="badge bg-secondary">No Credit</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        <span class="badge efris-{{ customer.efris_status|lower|slice:"0:8" }} efris-badge">
+                                            {{ customer.get_efris_status_display }}
+                                        </span>
+                                        {% if customer.efris_customer_id %}
+                                            <br>
+                                            <small class="text-muted">{{ customer.efris_customer_id|truncatechars:8 }}</small>
+                                        {% endif %}
                                     </td>
                                     <td>
                                         <div>
@@ -222,16 +446,24 @@
                                                 <div><i class="bi bi-telephone-fill text-muted me-1"></i>{{ customer.phone }}</div>
                                             {% endif %}
                                             {% if customer.email %}
-                                                <div><i class="bi bi-envelope-fill text-muted me-1"></i>{{ customer.email }}</div>
+                                                <div><i class="bi bi-envelope-fill text-muted me-1"></i>{{ customer.email|truncatechars:15 }}</div>
                                             {% endif %}
                                         </div>
                                     </td>
-                                    <td>{{ customer.created_at|timesince }} ago</td>
-                                    <td>{% if perms.customers.view_customer %}
-                                        <a href="{% url 'customers:detail' customer.pk %}" class="btn btn-outline-primary btn-sm">
-                                            <i class="bi bi-eye"></i>
-                                        </a>
-                                        {% endif %}
+                                    <td>{{ customer.created_at|date:"M d" }}</td>
+                                    <td>
+                                        <div class="btn-group btn-group-sm">
+                                            {% if perms.customers.view_customer %}
+                                            <a href="{% url 'customers:detail' customer.pk %}" class="btn btn-outline-primary" title="View">
+                                                <i class="bi bi-eye"></i>
+                                            </a>
+                                            {% endif %}
+                                            {% if customer.can_sync_to_efris and not customer.is_efris_registered %}
+                                            <button class="btn btn-outline-info" title="Sync to eFRIS" onclick="syncCustomer({{ customer.pk }}, '{{ customer.name|escapejs }}')">
+                                                <i class="bi bi-sync"></i>
+                                            </button>
+                                            {% endif %}
+                                        </div>
                                     </td>
                                 </tr>
                                 {% endfor %}
@@ -251,55 +483,222 @@
         </div>
     </div>
 
-    <!-- Customer Groups -->
-    <div class="col-lg-4 mb-4">
-        <div class="card border-0 shadow-sm">
-            <div class="card-header bg-transparent border-0 d-flex justify-content-between align-items-center">
-                <h5 class="card-title mb-0">Customer Groups</h5>
-                {% if perms.customers.add_customergroup %}
-                <a href="{% url 'customers:group_create' %}" class="btn btn-outline-primary btn-sm">
-                    <i class="bi bi-plus"></i>
-                </a>
-                {% endif %}
+    <!-- Quick Actions & Credit Overview -->
+    <div class="col-lg-4">
+        <!-- Quick Actions -->
+        <div class="card border-0 shadow-sm mb-4">
+            <div class="card-header bg-transparent border-0">
+                <h5 class="card-title mb-0">
+                    <i class="bi bi-lightning me-2"></i>Quick Actions
+                </h5>
             </div>
             <div class="card-body">
-                {% if groups %}
-                    <div class="list-group list-group-flush">
-                        {% for group in groups|slice:":5" %}
-                        <div class="list-group-item border-0 px-0">
-                            <div class="d-flex justify-content-between align-items-center">
-                                <div>
-                                    <div class="fw-medium">{{ group.name }}</div>
-                                    <small class="text-muted">{{ group.customer_count }} members</small>
-                                </div>
-                                {% if group.discount_percentage %}
-                                    <span class="badge bg-success">{{ group.discount_percentage }}% off</span>
-                                {% endif %}
-                            </div>
-                        </div>
-                        {% endfor %}
+                <div class="row g-2">
+                    <div class="col-6">
+                        <a href="{% url 'customers:create' %}" class="card quick-action-card text-center p-3 text-decoration-none">
+                            <i class="bi bi-plus-lg text-primary fs-4 mb-2"></i>
+                            <div class="fw-medium">Add Customer</div>
+                            <small class="text-muted">Create new customer</small>
+                        </a>
                     </div>
-                    <div class="text-center mt-3">
-                        {% if perms.customers.view_customergroup %}
-                        <a href="{% url 'customers:group_list' %}" class="btn btn-outline-secondary btn-sm">View All Groups</a>
-                        {% endif %}
+                    <div class="col-6">
+                        <a href="{% url 'customers:customer_import' %}" class="card quick-action-card text-center p-3 text-decoration-none">
+                            <i class="bi bi-upload text-success fs-4 mb-2"></i>
+                            <div class="fw-medium">Import</div>
+                            <small class="text-muted">Bulk import customers</small>
+                        </a>
                     </div>
-                {% else %}
-                    <div class="text-center py-3">
-                        <i class="bi bi-collection text-muted fs-4"></i>
-                        <p class="text-muted mt-2 mb-0">No groups created</p>
+                    <div class="col-6">
+                        <a href="{% url 'customers:efris_dashboard' %}" class="card quick-action-card text-center p-3 text-decoration-none">
+                            <i class="bi bi-sync text-warning fs-4 mb-2"></i>
+                            <div class="fw-medium">eFRIS Dashboard</div>
+                            <small class="text-muted">Manage eFRIS sync</small>
+                        </a>
                     </div>
-                {% endif %}
+                    <div class="col-6">
+                        <a href="{% url 'customers:credit_report' %}" class="card quick-action-card text-center p-3 text-decoration-none">
+                            <i class="bi bi-credit-card text-danger fs-4 mb-2"></i>
+                            <div class="fw-medium">Credit Report</div>
+                            <small class="text-muted">Credit analytics</small>
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Credit Overview -->
+        <div class="card border-0 shadow-sm">
+            <div class="card-header bg-transparent border-0">
+                <h5 class="card-title mb-0">
+                    <i class="bi bi-credit-card-2-back me-2"></i>Credit Overview
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <div class="d-flex justify-content-between mb-1">
+                        <small>Total Credit Limit</small>
+                        <small class="fw-bold">{{ total_credit_limit|money|default:"UGX 0" }}</small>
+                    </div>
+                    <div class="progress" style="height: 8px;">
+                        <div class="progress-bar bg-info" role="progressbar" style="width: 100%"></div>
+                    </div>
+                </div>
+
+                <div class="mb-3">
+                    <div class="d-flex justify-content-between mb-1">
+                        <small>Credit Utilized</small>
+                        <small class="fw-bold">{{ total_credit_balance|money|default:"UGX 0" }}</small>
+                    </div>
+                    <div class="progress" style="height: 8px;">
+                        <div class="progress-bar bg-warning" role="progressbar"
+                             style="width: {{ credit_utilization_percentage|default:0 }}%"></div>
+                    </div>
+                    <small class="text-muted">{{ credit_utilization_percentage|default:0 }}% utilization</small>
+                </div>
+
+                <div class="mb-3">
+                    <div class="d-flex justify-content-between mb-1">
+                        <small>Overdue Amount</small>
+                        <small class="fw-bold text-danger">{{ total_overdue|money|default:"UGX 0" }}</small>
+                    </div>
+                    <div class="progress" style="height: 8px;">
+                        <div class="progress-bar bg-danger" role="progressbar"
+                             style="width: {{ overdue_percentage|default:0 }}%"></div>
+                    </div>
+                </div>
+
+                <div class="alert alert-light">
+                    <div class="d-flex justify-content-between">
+                        <span>Available Credit:</span>
+                        <span class="fw-bold text-success">{{ total_credit_available|money|default:"UGX 0" }}</span>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
 </div>
 
-<style>
-.avatar-sm {
-    width: 40px;
-    height: 40px;
-    font-size: 0.875rem;
+<!-- JavaScript for Charts and Actions -->
+<script src="{% static 'js/chart.min.js' %}"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Customer Type Chart
+    const ctx = document.getElementById('customerTypeChart');
+    if (ctx) {
+        const chart = new Chart(ctx, {
+            type: 'doughnut',
+            data: {
+                labels: [
+                    {% for type_data in customer_types %}
+                        '{{ type_data.customer_type|title }}',
+                    {% endfor %}
+                ],
+                datasets: [{
+                    data: [
+                        {% for type_data in customer_types %}
+                            {{ type_data.total_count|default:0 }},
+                        {% endfor %}
+                    ],
+                    backgroundColor: [
+                        '#007bff', '#28a745', '#ffc107', '#17a2b8',
+                        '#dc3545', '#6f42c1', '#20c997', '#fd7e14'
+                    ],
+                    borderWidth: 2,
+                    borderColor: 'var(--bg-card)'
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        position: 'right',
+                        labels: {
+                            padding: 20,
+                            usePointStyle: true
+                        }
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                const label = context.label || '';
+                                const value = context.raw || 0;
+                                const total = context.dataset.data.reduce((a, b) => a + b, 0);
+                                const percentage = total > 0 ? Math.round((value / total) * 100) : 0;
+                                return `${label}: ${value} (${percentage}%)`;
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    }
+});
+
+function syncCustomer(customerId, customerName) {
+    if (confirm(`Sync ${customerName} to eFRIS?`)) {
+        const csrfToken = getCookie('csrftoken');
+
+        fetch(`/api/customers/${customerId}/sync_to_efris/`, {
+            method: 'POST',
+            headers: {
+                'X-CSRFToken': csrfToken,
+                'Content-Type': 'application/json',
+            },
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                showNotification(`Successfully synced ${customerName} to eFRIS`, 'success');
+                setTimeout(() => location.reload(), 1500);
+            } else {
+                showNotification(`Failed to sync ${customerName}: ${data.error}`, 'error');
+            }
+        })
+        .catch(error => {
+            console.error('Error syncing to eFRIS:', error);
+            showNotification('Error syncing to eFRIS', 'error');
+        });
+    }
 }
-</style>
+
+function syncReadyCustomers() {
+    if (confirm('Sync all ready customers to eFRIS?')) {
+        window.location.href = "{% url 'customers:bulk_action' %}?action=sync_to_efris&all_ready=true";
+    }
+}
+
+function retryFailedSyncs() {
+    if (confirm('Retry all failed eFRIS syncs?')) {
+        window.location.href = "{% url 'customers:efris_dashboard' %}#retry-all";
+    }
+}
+
+function exportRecentCustomers() {
+    window.location.href = "{% url 'customers:export' %}?recent=true";
+}
+
+function getCookie(name) {
+    let cookieValue = null;
+    if (document.cookie && document.cookie !== '') {
+        const cookies = document.cookie.split(';');
+        for (let i = 0; i < cookies.length; i++) {
+            const cookie = cookies[i].trim();
+            if (cookie.substring(0, name.length + 1) === (name + '=')) {
+                cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                break;
+            }
+        }
+    }
+    return cookieValue;
+}
+
+function showNotification(message, type) {
+    if (typeof toastr !== 'undefined') {
+        toastr[type](message);
+    } else {
+        alert(`${type.toUpperCase()}: ${message}`);
+    }
+}
+</script>
 {% endblock %}

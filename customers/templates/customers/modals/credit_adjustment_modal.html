@@ -1,0 +1,184 @@
+{% load custom_filters %}
+<div class="modal fade" id="creditAdjustmentModal" tabindex="-1" aria-labelledby="creditAdjustmentModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="creditAdjustmentModalLabel">
+                    <i class="bi bi-sliders me-2"></i>Adjust Credit Settings
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form method="post" action="">
+                {% csrf_token %}
+                <div class="modal-body">
+                    <!-- Current Credit Status -->
+                    <div class="alert alert-info mb-3">
+                        <div class="d-flex justify-content-between">
+                            <div>
+                                <strong>Current Status:</strong>
+                                <span class="badge credit-{{ customer.credit_status|lower }} ms-2">
+                                    {{ customer.get_credit_status_display }}
+                                </span>
+                            </div>
+                            <div>
+                                <strong>Available:</strong>
+                                <span class="text-success">{{ customer.credit_available|money }}</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" id="enableCreditToggle"
+                                   name="allow_credit" {% if customer.allow_credit %}checked{% endif %}>
+                            <label class="form-check-label fw-bold" for="enableCreditToggle">
+                                Allow Credit Purchases
+                            </label>
+                            <small class="text-muted d-block">Enable or disable credit for this customer</small>
+                        </div>
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label for="credit_limit" class="form-label">Credit Limit (UGX)</label>
+                            <div class="input-group">
+                                <span class="input-group-text">UGX</span>
+                                <input type="number" class="form-control" id="credit_limit" name="credit_limit"
+                                       value="{{ customer.credit_limit|default:'0' }}" min="0" step="1000"
+                                       {% if not customer.allow_credit %}disabled{% endif %}>
+                            </div>
+                            <small class="text-muted">Maximum amount customer can owe</small>
+                        </div>
+
+                        <div class="col-md-6 mb-3">
+                            <label for="credit_days" class="form-label">Credit Days</label>
+                            <div class="input-group">
+                                <input type="number" class="form-control" id="credit_days" name="credit_days"
+                                       value="{{ customer.credit_days|default:'30' }}" min="0" max="365"
+                                       {% if not customer.allow_credit %}disabled{% endif %}>
+                                <span class="input-group-text">days</span>
+                            </div>
+                            <small class="text-muted">Payment period for credit purchases</small>
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="credit_status" class="form-label">Credit Status</label>
+                        <select class="form-select" id="credit_status" name="credit_status"
+                                {% if not customer.allow_credit %}disabled{% endif %}>
+                            <option value="GOOD" {% if customer.credit_status == 'GOOD' %}selected{% endif %}>Good Standing</option>
+                            <option value="WARNING" {% if customer.credit_status == 'WARNING' %}selected{% endif %}>Payment Warning</option>
+                            <option value="SUSPENDED" {% if customer.credit_status == 'SUSPENDED' %}selected{% endif %}>Credit Suspended</option>
+                            <option value="BLOCKED" {% if customer.credit_status == 'BLOCKED' %}selected{% endif %}>Blocked</option>
+                        </select>
+                        <small class="text-muted">Current credit standing of the customer</small>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="adjustment_reason" class="form-label">Adjustment Reason</label>
+                        <textarea class="form-control" id="adjustment_reason" name="adjustment_reason"
+                                  rows="2" placeholder="Provide reason for credit adjustment..."
+                                  {% if not customer.allow_credit %}disabled{% endif %}></textarea>
+                        <small class="text-muted">Required for audit purposes</small>
+                    </div>
+
+                    <!-- Credit Utilization Warning -->
+                    <div id="creditUtilizationWarning" class="alert alert-warning d-none">
+                        <i class="bi bi-exclamation-triangle me-2"></i>
+                        <span id="warningMessage"></span>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary" id="saveCreditChanges">
+                        <i class="bi bi-save me-1"></i>Save Changes
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const enableToggle = document.getElementById('enableCreditToggle');
+    const creditLimitInput = document.getElementById('credit_limit');
+    const creditDaysInput = document.getElementById('credit_days');
+    const creditStatusSelect = document.getElementById('credit_status');
+    const reasonTextarea = document.getElementById('adjustment_reason');
+    const warningDiv = document.getElementById('creditUtilizationWarning');
+    const warningMessage = document.getElementById('warningMessage');
+    const saveButton = document.getElementById('saveCreditChanges');
+
+    // Toggle credit fields
+    enableToggle.addEventListener('change', function() {
+        const isEnabled = this.checked;
+        creditLimitInput.disabled = !isEnabled;
+        creditDaysInput.disabled = !isEnabled;
+        creditStatusSelect.disabled = !isEnabled;
+        reasonTextarea.disabled = !isEnabled;
+    });
+
+    // Validate credit limit changes
+    creditLimitInput.addEventListener('input', function() {
+        const newLimit = parseFloat(this.value) || 0;
+        const currentBalance = parseFloat('{{ customer.credit_balance|default:0 }}');
+
+        if (newLimit < currentBalance) {
+            warningDiv.classList.remove('d-none');
+            warningMessage.textContent = `Warning: New credit limit (${formatCurrency(newLimit)}) is less than current balance (${formatCurrency(currentBalance)}). This will reduce available credit to 0.`;
+            saveButton.disabled = false;
+        } else {
+            warningDiv.classList.add('d-none');
+            saveButton.disabled = false;
+        }
+
+        // Check if limit is being reduced significantly
+        const oldLimit = parseFloat('{{ customer.credit_limit|default:0 }}');
+        if (newLimit < oldLimit * 0.5) {
+            warningDiv.classList.remove('d-none');
+            warningMessage.textContent = `Warning: Credit limit is being reduced by more than 50%.`;
+            saveButton.disabled = false;
+        }
+    });
+
+    // Validate form submission
+    document.querySelector('#creditAdjustmentModal form').addEventListener('submit', function(e) {
+        const reason = reasonTextarea.value.trim();
+        const isCreditEnabled = enableToggle.checked;
+
+        if (isCreditEnabled && !reason) {
+            e.preventDefault();
+            alert('Please provide a reason for credit adjustment.');
+            reasonTextarea.focus();
+            return false;
+        }
+
+        const newLimit = parseFloat(creditLimitInput.value) || 0;
+        const currentBalance = parseFloat('{{ customer.credit_balance|default:0 }}');
+
+        if (newLimit < currentBalance) {
+            if (!confirm('Credit limit is less than current balance. This may affect customer\'s ability to make new purchases. Continue?')) {
+                e.preventDefault();
+                return false;
+            }
+        }
+
+        // Show loading state
+        saveButton.disabled = true;
+        saveButton.innerHTML = '<i class="bi bi-hourglass-split me-1"></i>Saving...';
+    });
+
+    // Format currency helper
+    function formatCurrency(amount) {
+        return new Intl.NumberFormat('en-UG', {
+            style: 'currency',
+            currency: 'UGX',
+            minimumFractionDigits: 0,
+            maximumFractionDigits: 0
+        }).format(amount);
+    }
+});
+</script>
+{% endblock %}

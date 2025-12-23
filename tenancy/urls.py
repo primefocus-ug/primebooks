@@ -36,8 +36,6 @@ urlpatterns += i18n_patterns(
     path('legal/',include('company.legal')),
     path('invoices/', include('invoices.urls')),
     path('accounts/', include('accounts.urls')),
-    path('accounts/', include('allauth.urls')),
-    path('accounts/social/', include('allauth.socialaccount.urls')),
     path('inventory/', include('inventory.urls')),
     path('sales/', include('sales.urls')),
     path('stores/', include('stores.urls')),

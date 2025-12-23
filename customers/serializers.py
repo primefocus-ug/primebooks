@@ -1,40 +1,65 @@
+from decimal import Decimal, InvalidOperation
+
 from rest_framework import serializers
-from .models import Customer, CustomerGroup, CustomerNote, EFRISCustomerSync
+from .models import Customer, CustomerGroup, CustomerNote, EFRISCustomerSync, CustomerCreditStatement
 from accounts.serializers import UserSerializer
 
 
-# 🔹 Customer Serializer
 class CustomerSerializer(serializers.ModelSerializer):
     primary_identification = serializers.ReadOnlyField()
     is_efris_registered = serializers.ReadOnlyField()
     can_sync_to_efris = serializers.ReadOnlyField()
     tax_details = serializers.ReadOnlyField()
+    has_overdue_invoices = serializers.ReadOnlyField()
+    total_outstanding = serializers.ReadOnlyField()
+    overdue_amount = serializers.ReadOnlyField()
+    credit_status_display = serializers.CharField(source='get_credit_status_display', read_only=True)
+    customer_type_display = serializers.CharField(source='get_customer_type_display', read_only=True)
+    efris_status_display = serializers.CharField(source='get_efris_status_display', read_only=True)
+    store_name = serializers.CharField(source='store.name', read_only=True)
+
+    # Computed credit methods
+    can_purchase_on_credit = serializers.SerializerMethodField()
 
     class Meta:
         model = Customer
         fields = [
             'id', 'customer_id',
-            'customer_type', 'name', 'store', 'email', 'phone',
+            'customer_type', 'customer_type_display', 'name', 'store', 'store_name', 'email', 'phone',
             'tin', 'nin', 'brn',
             'physical_address', 'postal_address', 'district', 'country',
-            'is_vat_registered', 'credit_limit', 'is_active',
+            'is_vat_registered', 'is_active',
+
+            # Credit management fields
+            'credit_limit', 'credit_balance', 'credit_available',
+            'allow_credit', 'credit_days', 'last_credit_review',
+            'credit_status', 'credit_status_display',
+
             # eFRIS fields
-            'efris_customer_type', 'efris_customer_id', 'efris_status',
+            'efris_customer_type', 'efris_customer_id', 'efris_status', 'efris_status_display',
             'efris_registered_at', 'efris_last_sync', 'efris_reference_no',
             'efris_sync_error',
+
             # Additional identification fields
             'passport_number', 'driving_license', 'voter_id', 'alien_id',
+
             # Computed properties
             'primary_identification', 'is_efris_registered', 'can_sync_to_efris',
-            'tax_details',
-            'created_at', 'updated_at'
+            'tax_details', 'has_overdue_invoices', 'total_outstanding',
+            'overdue_amount', 'can_purchase_on_credit',
+
+            # User and timestamps
+            'created_by', 'created_at', 'updated_at'
         ]
         read_only_fields = (
             'customer_id', 'efris_customer_type', 'efris_customer_id',
             'efris_status', 'efris_registered_at', 'efris_last_sync',
             'efris_reference_no', 'efris_sync_error',
             'primary_identification', 'is_efris_registered', 'can_sync_to_efris',
-            'tax_details', 'created_at', 'updated_at'
+            'tax_details', 'has_overdue_invoices', 'total_outstanding',
+            'overdue_amount', 'can_purchase_on_credit',
+            'credit_balance', 'credit_available', 'credit_status',
+            'created_by', 'created_at', 'updated_at'
         )
 
     def validate(self, data):
@@ -56,18 +81,89 @@ class CustomerSerializer(serializers.ModelSerializer):
                     "(NIN, Passport, Driving License, or Voter ID)."
                 )
 
+        # Credit limit validation
+        credit_limit = data.get('credit_limit')
+        if credit_limit is not None:
+            try:
+                credit_limit_decimal = Decimal(str(credit_limit))
+                if credit_limit_decimal < Decimal('0'):
+                    raise serializers.ValidationError({
+                        'credit_limit': "Credit limit cannot be negative."
+                    })
+            except (ValueError, TypeError, InvalidOperation):
+                raise serializers.ValidationError({
+                    'credit_limit': "Invalid credit limit value."
+                })
+
+        # Credit days validation
+        credit_days = data.get('credit_days')
+        if credit_days is not None and credit_days < 0:
+            raise serializers.ValidationError({
+                'credit_days': "Credit days cannot be negative."
+            })
+
         return data
 
-    def validate_phone(self):
-        phone = self.validated_data.get('phone')
-        if phone and not phone.startswith('+'):
-            # Auto-add Uganda country code if not provided
-            if phone.startswith('0'):
-                phone = '+256' + phone[1:]
-            else:
-                phone = '+256' + phone
-        return phone
+    def validate_phone(self, value):
+        if value:
+            # Remove any spaces
+            phone = value.strip()
 
+            # Auto-add Uganda country code if not provided
+            if not phone.startswith('+'):
+                if phone.startswith('0'):
+                    phone = '+256' + phone[1:]
+                elif phone.startswith('256'):
+                    phone = '+' + phone
+                else:
+                    phone = '+256' + phone
+
+            # Validate phone number format
+            import re
+            phone_pattern = r'^\+[1-9]\d{1,14}$'  # E.164 format
+            if not re.match(phone_pattern, phone):
+                raise serializers.ValidationError(
+                    "Enter a valid phone number in international format (e.g., +256XXXXXXXXX)."
+                )
+
+            return phone
+        return value
+
+    def get_can_purchase_on_credit(self, obj):
+        """Serialize the can_purchase_on_credit property"""
+        can_purchase, reason = obj.can_purchase_on_credit
+        return {
+            'can_purchase': can_purchase,
+            'reason': reason,
+            'limit_exceeded': obj.credit_balance + Decimal('0.01') > obj.credit_limit
+        }
+
+    def create(self, validated_data):
+        # Set created_by to current user
+        request = self.context.get('request')
+        if request and request.user.is_authenticated:
+            validated_data['created_by'] = request.user
+
+        # Calculate initial credit available
+        if 'credit_limit' in validated_data:
+            validated_data['credit_available'] = validated_data['credit_limit']
+
+        return super().create(validated_data)
+
+    def update(self, instance, validated_data):
+        # Update credit available if credit limit changes
+        if 'credit_limit' in validated_data:
+            new_limit = validated_data['credit_limit']
+            old_limit = instance.credit_limit
+
+            if new_limit != old_limit:
+                # Calculate new credit available
+                validated_data['credit_available'] = max(
+                    Decimal('0'),
+                    new_limit - instance.credit_balance
+                )
+
+        return super().update(instance, validated_data)
 
 # 🔹 Customer Group Serializer
 class CustomerGroupSerializer(serializers.ModelSerializer):
@@ -88,6 +184,45 @@ class CustomerGroupSerializer(serializers.ModelSerializer):
     def get_customer_count(self, obj):
         return obj.customers.count()
 
+
+# Add to your serializers.py
+class CustomerCreditInfoSerializer(serializers.ModelSerializer):
+    """Serializer for customer credit information"""
+    can_purchase_on_credit = serializers.SerializerMethodField()
+    credit_status_display = serializers.CharField(source='get_credit_status_display')
+
+    class Meta:
+        model = Customer
+        fields = [
+            'id', 'name', 'phone', 'email',
+            'credit_limit', 'credit_balance', 'credit_available',
+            'credit_status', 'credit_status_display',
+            'allow_credit', 'credit_days', 'has_overdue_invoices',
+            'overdue_amount', 'can_purchase_on_credit'
+        ]
+
+    def get_can_purchase_on_credit(self, obj):
+        can_purchase, reason = obj.can_purchase_on_credit
+        return {
+            'can_purchase': can_purchase,
+            'reason': reason
+        }
+
+
+class CustomerCreditStatementSerializer(serializers.ModelSerializer):
+    """Serializer for customer credit statements"""
+    customer_name = serializers.CharField(source='customer.name', read_only=True)
+    transaction_type_display = serializers.CharField(source='get_transaction_type_display', read_only=True)
+
+    class Meta:
+        model = CustomerCreditStatement
+        fields = [
+            'id', 'customer', 'customer_name', 'transaction_type',
+            'transaction_type_display', 'amount', 'balance_before',
+            'balance_after', 'description', 'reference_number',
+            'created_by', 'created_at'
+        ]
+        read_only_fields = ['created_at']
 
 # 🔹 Customer Note Serializer
 class CustomerNoteSerializer(serializers.ModelSerializer):

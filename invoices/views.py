@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 from django.shortcuts import render, get_object_or_404, redirect
 from django.contrib.auth.decorators import login_required, permission_required
 from django.contrib.auth.mixins import LoginRequiredMixin, PermissionRequiredMixin
@@ -13,6 +15,7 @@ import json
 import logging
 from django_tenants.utils import tenant_context
 import csv
+from django.core.exceptions import ValidationError
 from datetime import timedelta, datetime
 from io import BytesIO
 from reportlab.pdfgen import canvas
@@ -107,12 +110,124 @@ class InvoiceListView(LoginRequiredMixin, PermissionRequiredMixin, ListView):
                 if form.cleaned_data.get('is_fiscalized'):
                     queryset = queryset.filter(is_fiscalized=True)
 
+                # ADD: Filter by payment method (credit vs cash)
+                payment_method = form.cleaned_data.get('payment_method')
+                if payment_method:
+                    queryset = queryset.filter(sale__payment_method=payment_method)
+
+                # ADD: Filter by credit status
+                credit_status = form.cleaned_data.get('credit_status')
+                if credit_status:
+                    if credit_status == 'CREDIT_ONLY':
+                        queryset = queryset.filter(sale__payment_method='CREDIT')
+                    elif credit_status == 'OVERDUE_CREDIT':
+                        queryset = queryset.filter(
+                            sale__payment_method='CREDIT',
+                            sale__payment_status='OVERDUE'
+                        )
+                    elif credit_status == 'OUTSTANDING_CREDIT':
+                        queryset = queryset.filter(
+                            sale__payment_method='CREDIT',
+                            sale__payment_status__in=['PENDING', 'PARTIALLY_PAID']
+                        )
+                    elif credit_status == 'PAID_CREDIT':
+                        queryset = queryset.filter(
+                            sale__payment_method='CREDIT',
+                            sale__payment_status='PAID'
+                        )
+
             return queryset.order_by('-sale__created_at')
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context['search_form'] = InvoiceSearchForm(self.request.GET)
+
+        # Get the filtered queryset
+        queryset = self.get_queryset()
+
+        # ADD: Credit invoice statistics
+        credit_invoices = queryset.filter(sale__payment_method='CREDIT')
+        cash_invoices = queryset.filter(sale__payment_method__in=['CASH', 'CARD', 'BANK_TRANSFER'])
+
+        # Calculate overdue days for overdue credit invoices
+        overdue_credit_invoices = credit_invoices.filter(
+            sale__payment_status='OVERDUE'
+        ).select_related('sale')
+
+        overdue_details = []
+        for invoice in overdue_credit_invoices:
+            if invoice.sale.due_date:
+                overdue_days = (timezone.now().date() - invoice.sale.due_date).days
+                overdue_details.append({
+                    'invoice_no': invoice.sale.document_number,
+                    'customer': invoice.sale.customer.name if invoice.sale.customer else 'N/A',
+                    'amount': invoice.sale.total_amount,
+                    'due_date': invoice.sale.due_date,
+                    'overdue_days': overdue_days,
+                    'contact': invoice.sale.customer.phone if invoice.sale.customer else ''
+                })
+
+        context['credit_stats'] = {
+            'total_credit_invoices': credit_invoices.count(),
+            'total_credit_amount': credit_invoices.aggregate(
+                Sum('sale__total_amount')
+            )['sale__total_amount__sum'] or 0,
+            'overdue_credit': credit_invoices.filter(
+                sale__payment_status='OVERDUE'
+            ).count(),
+            'overdue_credit_amount': credit_invoices.filter(
+                sale__payment_status='OVERDUE'
+            ).aggregate(Sum('sale__total_amount'))['sale__total_amount__sum'] or 0,
+            'pending_credit': credit_invoices.filter(
+                sale__payment_status__in=['PENDING', 'PARTIALLY_PAID']
+            ).count(),
+            'paid_credit': credit_invoices.filter(
+                sale__payment_status='PAID'
+            ).count(),
+            'overdue_details': overdue_details[:5],  # Top 5 overdue
+            'cash_invoices_count': cash_invoices.count(),
+            'cash_invoices_amount': cash_invoices.aggregate(
+                Sum('sale__total_amount')
+            )['sale__total_amount__sum'] or 0,
+            'credit_vs_cash_ratio': (
+                (credit_invoices.count() / max(queryset.count(), 1) * 100)
+                if queryset.count() > 0 else 0
+            ),
+        }
+
+        # Add top credit customers
+        top_credit_customers = credit_invoices.values(
+            'sale__customer__id', 'sale__customer__name', 'sale__customer__phone'
+        ).annotate(
+            invoice_count=Count('id'),
+            total_credit=Sum('sale__total_amount'),
+            overdue_count=Count('id', filter=Q(sale__payment_status='OVERDUE'))
+        ).order_by('-total_credit')[:5]
+
+        context['top_credit_customers'] = top_credit_customers
+
+        # Add payment status breakdown for credit invoices
+        credit_payment_stats = credit_invoices.values(
+            'sale__payment_status'
+        ).annotate(
+            count=Count('id'),
+            total=Sum('sale__total_amount')
+        ).order_by('sale__payment_status')
+
+        context['credit_payment_stats'] = [
+            {
+                'status': stat['sale__payment_status'],
+                'status_display': dict(Sale.PAYMENT_STATUS_CHOICES).get(stat['sale__payment_status'],
+                                                                        stat['sale__payment_status']),
+                'count': stat['count'],
+                'total': stat['total'] or 0,
+                'percentage': (stat['count'] / max(credit_invoices.count(), 1) * 100)
+            }
+            for stat in credit_payment_stats
+        ]
+
         return context
+
 
 class InvoiceDetailView(LoginRequiredMixin, PermissionRequiredMixin, DetailView):
     model = Invoice
@@ -132,7 +247,8 @@ class InvoiceDetailView(LoginRequiredMixin, PermissionRequiredMixin, DetailView)
             'created_by', 'fiscalized_by'
         ).prefetch_related(
             'payments__processed_by',
-            'fiscalization_audits'
+            'fiscalization_audits',
+            'payment_schedules'  # ADD: Prefetch payment schedules
         )
 
     def get_context_data(self, **kwargs):
@@ -175,6 +291,95 @@ class InvoiceDetailView(LoginRequiredMixin, PermissionRequiredMixin, DetailView)
                     'reason': 'EFRIS not enabled for this company'
                 }
 
+        # ADD: Customer credit information for credit invoices
+        customer_credit_info = None
+        customer = None  # Initialize customer variable
+        if invoice.sale.customer and invoice.sale.payment_method == 'CREDIT':
+            customer = invoice.sale.customer
+            customer.update_credit_balance()
+
+            # Get other outstanding invoices for this customer
+            other_outstanding = Invoice.objects.filter(
+                sale__customer=customer,
+                sale__document_type='INVOICE',
+                sale__payment_method='CREDIT',
+                sale__payment_status__in=['PENDING', 'PARTIALLY_PAID', 'OVERDUE']
+            ).exclude(id=invoice.id).select_related('sale')
+
+            # Calculate total outstanding including this invoice
+            all_outstanding = other_outstanding | Invoice.objects.filter(id=invoice.id)
+            total_outstanding_amount = all_outstanding.aggregate(
+                Sum('sale__total_amount')
+            )['sale__total_amount__sum'] or 0
+
+            # Calculate remaining credit
+            remaining_credit = max(Decimal('0'), customer.credit_limit - customer.credit_balance)
+
+            customer_credit_info = {
+                'allow_credit': customer.allow_credit,
+                'credit_limit': customer.credit_limit,
+                'credit_balance': customer.credit_balance,
+                'credit_available': customer.credit_available,
+                'credit_status': customer.credit_status,
+                'credit_status_display': customer.get_credit_status_display(),
+                'has_overdue': customer.has_overdue_invoices,
+                'overdue_amount': customer.overdue_amount,
+                'other_outstanding_count': other_outstanding.count(),
+                'other_outstanding_amount': other_outstanding.aggregate(
+                    Sum('sale__total_amount')
+                )['sale__total_amount__sum'] or 0,
+                'total_outstanding_amount': total_outstanding_amount,
+                'remaining_credit': remaining_credit,
+                'credit_days': customer.credit_days,
+                'credit_utilization_percentage': (
+                    (customer.credit_balance / customer.credit_limit * 100)
+                    if customer.credit_limit > 0 else 0
+                ),
+            }
+
+        # ADD: Payment schedule info for credit invoices
+        payment_schedules = []
+        next_payment_due = None
+        payment_schedule_summary = {}
+        if invoice.sale.payment_method == 'CREDIT':
+            payment_schedules = invoice.payment_schedules.all().order_by('due_date')
+            next_payment_due = invoice.get_next_schedule_due()
+
+            # Calculate payment schedule summary
+            if payment_schedules.exists():
+                total_scheduled = payment_schedules.aggregate(
+                    total=Sum('amount')
+                )['total'] or Decimal('0')
+                total_paid_scheduled = payment_schedules.filter(
+                    is_paid=True
+                ).aggregate(
+                    total=Sum('amount')
+                )['total'] or Decimal('0')
+                overdue_schedules = payment_schedules.filter(
+                    due_date__lt=timezone.now().date(),
+                    is_paid=False
+                )
+
+                payment_schedule_summary = {
+                    'total_scheduled': total_scheduled,
+                    'total_paid_scheduled': total_paid_scheduled,
+                    'remaining_scheduled': total_scheduled - total_paid_scheduled,
+                    'overdue_schedules_count': overdue_schedules.count(),
+                    'overdue_schedules_amount': overdue_schedules.aggregate(
+                        total=Sum('amount')
+                    )['total'] or Decimal('0'),
+                    'completed_percentage': (
+                        (total_paid_scheduled / total_scheduled * 100)
+                        if total_scheduled > 0 else 0
+                    ),
+                }
+
+        # Calculate credit terms - FIXED: Use safe access to customer
+        if invoice.sale.customer and invoice.sale.customer.credit_days:
+            credit_terms = f"Net {invoice.sale.customer.credit_days} days"
+        else:
+            credit_terms = "Net 30 days"
+
         context.update({
             'can_fiscalize': can_fiscalize,
             'fiscalize_message': fiscalization_error,
@@ -182,9 +387,496 @@ class InvoiceDetailView(LoginRequiredMixin, PermissionRequiredMixin, DetailView)
             'fiscalization_history': invoice.fiscalization_audits.order_by(
                 '-timestamp'
             )[:10],
+            'customer_credit_info': customer_credit_info,
+            'payment_schedules': payment_schedules,
+            'payment_schedule_summary': payment_schedule_summary,
+            'next_payment_due': next_payment_due,
+            'is_credit_invoice': invoice.sale.payment_method == 'CREDIT',
+            'is_cash_invoice': invoice.sale.payment_method != 'CREDIT',
+            'requires_due_date': invoice.sale.payment_method == 'CREDIT',
+            'overdue_days': (
+                (timezone.now().date() - invoice.sale.due_date).days
+                if invoice.sale.due_date and invoice.sale.due_date < timezone.now().date()
+                else 0
+            ),
+            'credit_terms': credit_terms,  # Use the calculated credit_terms variable
         })
 
         return context
+
+@login_required
+@permission_required('invoices.view_invoice')
+def customer_credit_dashboard(request):
+    """Dashboard showing customer credit status and outstanding invoices"""
+    company = get_current_tenant(request)
+    if not company:
+        messages.error(request, 'No company context found')
+        return redirect('invoices:list')
+
+    with tenant_context(company):
+        from customers.models import Customer
+        from sales.models import Sale  # Import Sale model
+
+        # Get customers with credit enabled
+        credit_customers = Customer.objects.filter(
+            allow_credit=True,
+            is_active=True
+        ).annotate(
+            total_outstanding=Sum(
+                'sale__total_amount',  # Changed from 'sales__' to 'sale__' based on Customer model
+                filter=Q(
+                    sale__document_type='INVOICE',
+                    sale__payment_method='CREDIT',
+                    sale__payment_status__in=['PENDING', 'PARTIALLY_PAID', 'OVERDUE']
+                )
+            ),
+            overdue_amount=Sum(
+                'sale__total_amount',
+                filter=Q(
+                    sale__document_type='INVOICE',
+                    sale__payment_method='CREDIT',
+                    sale__payment_status='OVERDUE'
+                )
+            ),
+            invoice_count=Count(
+                'sale',
+                filter=Q(
+                    sale__document_type='INVOICE',
+                    sale__payment_method='CREDIT',
+                    sale__payment_status__in=['PENDING', 'PARTIALLY_PAID', 'OVERDUE']
+                )
+            )
+        ).order_by('-total_outstanding')
+
+        # Update credit balances
+        for customer in credit_customers:
+            customer.update_credit_balance()
+
+        # Calculate summary statistics
+        total_credit_limit = credit_customers.aggregate(
+            Sum('credit_limit')
+        )['credit_limit__sum'] or 0
+
+        total_credit_used = credit_customers.aggregate(
+            Sum('credit_balance')
+        )['credit_balance__sum'] or 0
+
+        total_credit_available = credit_customers.aggregate(
+            Sum('credit_available')
+        )['credit_available__sum'] or 0
+
+        customers_at_limit = credit_customers.filter(
+            credit_balance__gte=F('credit_limit') * 0.9
+        ).count()
+
+        customers_overdue = credit_customers.filter(
+            credit_status__in=['WARNING', 'SUSPENDED', 'BLOCKED']
+        ).count()
+
+        # Credit status distribution
+        status_distribution = credit_customers.values('credit_status').annotate(
+            count=Count('id'),
+            total_outstanding=Sum('credit_balance')
+        )
+
+        context = {
+            'credit_customers': credit_customers[:50],  # Top 50
+            'total_credit_limit': total_credit_limit,
+            'total_credit_used': total_credit_used,
+            'total_credit_available': total_credit_available,
+            'customers_at_limit': customers_at_limit,
+            'customers_overdue': customers_overdue,
+            'credit_utilization': (total_credit_used / total_credit_limit * 100) if total_credit_limit > 0 else 0,
+            'status_distribution': status_distribution,
+        }
+
+        return render(request, 'invoices/customer_credit_dashboard.html', context)
+
+
+@login_required
+@permission_required('invoices.view_invoice')
+def customer_credit_detail(request, customer_id):
+    """Detailed view of customer's credit account"""
+    company = get_current_tenant(request)
+    if not company:
+        messages.error(request, 'No company context found')
+        return redirect('invoices:list')
+
+    with tenant_context(company):
+        from customers.models import Customer, CustomerCreditStatement
+
+        customer = get_object_or_404(Customer, id=customer_id)
+
+        # Update credit balance
+        customer.update_credit_balance()
+
+        # Get outstanding invoices
+        outstanding_invoices = Invoice.objects.filter(
+            sale__customer=customer,
+            sale__document_type='INVOICE',
+            sale__payment_method='CREDIT',
+            sale__payment_status__in=['PENDING', 'PARTIALLY_PAID', 'OVERDUE']
+        ).select_related('sale').order_by('sale__due_date')
+
+        # Get payment history
+        recent_payments = InvoicePayment.objects.filter(
+            invoice__sale__customer=customer
+        ).select_related('invoice__sale').order_by('-payment_date')[:20]
+
+        # Get credit statement
+        credit_statements = customer.credit_statements.order_by('-created_at')[:50]
+
+        # Calculate aging buckets
+        today = timezone.now().date()
+        aging_buckets = {
+            'current': Decimal('0'),  # Not yet due
+            '1-30': Decimal('0'),  # 1-30 days overdue
+            '31-60': Decimal('0'),  # 31-60 days overdue
+            '61-90': Decimal('0'),  # 61-90 days overdue
+            '90+': Decimal('0'),  # 90+ days overdue
+        }
+
+        for invoice in outstanding_invoices:
+            outstanding = invoice.amount_outstanding
+            if not invoice.due_date or invoice.due_date >= today:
+                aging_buckets['current'] += outstanding
+            else:
+                days_overdue = (today - invoice.due_date).days
+                if days_overdue <= 30:
+                    aging_buckets['1-30'] += outstanding
+                elif days_overdue <= 60:
+                    aging_buckets['31-60'] += outstanding
+                elif days_overdue <= 90:
+                    aging_buckets['61-90'] += outstanding
+                else:
+                    aging_buckets['90+'] += outstanding
+
+        context = {
+            'customer': customer,
+            'outstanding_invoices': outstanding_invoices,
+            'recent_payments': recent_payments,
+            'credit_statements': credit_statements,
+            'aging_buckets': aging_buckets,
+            'credit_info': {
+                'limit': customer.credit_limit,
+                'balance': customer.credit_balance,
+                'available': customer.credit_available,
+                'status': customer.credit_status,
+                'status_display': customer.get_credit_status_display(),
+                'utilization': (
+                            customer.credit_balance / customer.credit_limit * 100) if customer.credit_limit > 0 else 0,
+            }
+        }
+
+        return render(request, 'invoices/customer_credit_detail.html', context)
+
+
+@login_required
+@permission_required('invoices.change_invoice')
+def send_payment_reminder(request, pk):
+    """Send payment reminder to customer"""
+    company = get_current_tenant(request)
+    if not company:
+        return JsonResponse({'success': False, 'error': 'No company context'})
+
+    with tenant_context(company):
+        invoice = get_object_or_404(
+            Invoice.objects.filter(sale__store__company=company),
+            pk=pk
+        )
+
+        # Check if invoice is eligible for reminder
+        if invoice.sale.payment_status not in ['PENDING', 'PARTIALLY_PAID', 'OVERDUE']:
+            return JsonResponse({
+                'success': False,
+                'error': 'Invoice is already paid'
+            })
+
+        if not invoice.sale.customer or not invoice.sale.customer.email:
+            return JsonResponse({
+                'success': False,
+                'error': 'Customer has no email address'
+            })
+
+        try:
+            # Create reminder record
+            from invoices.models import PaymentReminder
+
+            # Determine reminder type based on due date
+            today = timezone.now().date()
+            if invoice.due_date:
+                days_diff = (invoice.due_date - today).days
+                if days_diff > 3:
+                    reminder_type = 'UPCOMING'
+                elif days_diff >= 0:
+                    reminder_type = 'DUE'
+                elif days_diff > -30:
+                    reminder_type = 'OVERDUE'
+                else:
+                    reminder_type = 'FINAL_NOTICE'
+            else:
+                reminder_type = 'DUE'
+
+            reminder = PaymentReminder.objects.create(
+                invoice=invoice,
+                reminder_type=reminder_type,
+                reminder_method='EMAIL',
+                sent_by=request.user,
+                recipient_email=invoice.sale.customer.email,
+                subject=f'Payment Reminder: Invoice {invoice.invoice_number}',
+                message=f'''
+Dear {invoice.sale.customer.name},
+
+This is a reminder regarding invoice {invoice.invoice_number}.
+
+Invoice Amount: {invoice.total_amount:,.2f} {invoice.currency_code}
+Amount Outstanding: {invoice.amount_outstanding:,.2f} {invoice.currency_code}
+Due Date: {invoice.due_date}
+
+Please arrange payment at your earliest convenience.
+
+Thank you,
+{company.name}
+                '''.strip()
+            )
+
+            # Send email (implement your email logic here)
+            from django.core.mail import send_mail
+
+            try:
+                send_mail(
+                    reminder.subject,
+                    reminder.message,
+                    company.email,
+                    [reminder.recipient_email],
+                    fail_silently=False,
+                )
+
+                reminder.is_successful = True
+                reminder.save(update_fields=['is_successful'])
+
+                # Schedule next reminder if appropriate
+                if reminder_type != 'FINAL_NOTICE':
+                    reminder.next_reminder_date = today + timedelta(days=7)
+                    reminder.save(update_fields=['next_reminder_date'])
+
+                return JsonResponse({
+                    'success': True,
+                    'message': f'Payment reminder sent to {invoice.sale.customer.email}'
+                })
+
+            except Exception as e:
+                reminder.is_successful = False
+                reminder.error_message = str(e)
+                reminder.save(update_fields=['is_successful', 'error_message'])
+
+                return JsonResponse({
+                    'success': False,
+                    'error': f'Failed to send email: {str(e)}'
+                })
+
+        except Exception as e:
+            logger.error(f"Error sending payment reminder: {e}", exc_info=True)
+            return JsonResponse({
+                'success': False,
+                'error': str(e)
+            })
+
+
+@login_required
+@permission_required('invoices.view_invoice')
+def credit_aging_report(request):
+    """Accounts receivable aging report for credit invoices"""
+    company = get_current_tenant(request)
+    if not company:
+        messages.error(request, 'No company context found')
+        return redirect('invoices:list')
+
+    with tenant_context(company):
+        from customers.models import Customer
+
+        today = timezone.now().date()
+
+        # Get all credit customers with outstanding balances
+        # FIXED: Changed 'sales__' to 'sale__'
+        customers = Customer.objects.filter(
+            allow_credit=True,
+            is_active=True,
+            sale__document_type='INVOICE',
+            sale__payment_method='CREDIT',
+            sale__payment_status__in=['PENDING', 'PARTIALLY_PAID', 'OVERDUE']
+        ).distinct()
+
+        aging_data = []
+
+        for customer in customers:
+            customer.update_credit_balance()
+
+            # Get outstanding invoices
+            outstanding_invoices = Invoice.objects.filter(
+                sale__customer=customer,
+                sale__document_type='INVOICE',
+                sale__payment_method='CREDIT',
+                sale__payment_status__in=['PENDING', 'PARTIALLY_PAID', 'OVERDUE']
+            ).select_related('sale')
+
+            # Calculate aging buckets
+            current = Decimal('0')
+            days_1_30 = Decimal('0')
+            days_31_60 = Decimal('0')
+            days_61_90 = Decimal('0')
+            days_90_plus = Decimal('0')
+
+            for invoice in outstanding_invoices:
+                outstanding = invoice.amount_outstanding
+
+                if not invoice.sale.due_date or invoice.sale.due_date >= today:
+                    current += outstanding
+                else:
+                    days_overdue = (today - invoice.sale.due_date).days
+                    if days_overdue <= 30:
+                        days_1_30 += outstanding
+                    elif days_overdue <= 60:
+                        days_31_60 += outstanding
+                    elif days_overdue <= 90:
+                        days_61_90 += outstanding
+                    else:
+                        days_90_plus += outstanding
+
+            total_outstanding = current + days_1_30 + days_31_60 + days_61_90 + days_90_plus
+
+            if total_outstanding > 0:
+                aging_data.append({
+                    'customer': customer,
+                    'current': current,
+                    'days_1_30': days_1_30,
+                    'days_31_60': days_31_60,
+                    'days_61_90': days_61_90,
+                    'days_90_plus': days_90_plus,
+                    'total': total_outstanding,
+                    'credit_limit': customer.credit_limit,
+                    'credit_available': customer.credit_available,
+                    'invoice_count': outstanding_invoices.count(),
+                    'overdue_count': outstanding_invoices.filter(
+                        sale__payment_status='OVERDUE'
+                    ).count(),
+                })
+
+        # Sort by total outstanding (highest first)
+        aging_data.sort(key=lambda x: x['total'], reverse=True)
+
+        # Calculate totals
+        totals = {
+            'current': sum(item['current'] for item in aging_data),
+            'days_1_30': sum(item['days_1_30'] for item in aging_data),
+            'days_31_60': sum(item['days_31_60'] for item in aging_data),
+            'days_61_90': sum(item['days_61_90'] for item in aging_data),
+            'days_90_plus': sum(item['days_90_plus'] for item in aging_data),
+            'total': sum(item['total'] for item in aging_data),
+            'customer_count': len(aging_data),
+            'invoice_count': sum(item['invoice_count'] for item in aging_data),
+            'overdue_count': sum(item['overdue_count'] for item in aging_data),
+        }
+
+        context = {
+            'aging_data': aging_data,
+            'totals': totals,
+            'report_date': today,
+        }
+
+        return render(request, 'invoices/credit_aging_report.html', context)
+
+
+@login_required
+@permission_required('invoices.view_invoice')
+def export_credit_aging_csv(request):
+    """Export credit aging report to CSV"""
+    company = get_current_tenant(request)
+    if not company:
+        return HttpResponse('No company context', status=403)
+
+    with tenant_context(company):
+        response = HttpResponse(content_type='text/csv')
+        response['Content-Disposition'] = 'attachment; filename="credit_aging_report.csv"'
+
+        writer = csv.writer(response)
+        writer.writerow([
+            'Customer', 'TIN', 'Phone', 'Credit Limit', 'Current', '1-30 Days',
+            '31-60 Days', '61-90 Days', '90+ Days', 'Total Outstanding',
+            'Credit Available', 'Status', 'Invoice Count', 'Overdue Count'
+        ])
+
+        from customers.models import Customer
+        today = timezone.now().date()
+
+        # FIXED: Changed 'sales__' to 'sale__'
+        customers = Customer.objects.filter(
+            allow_credit=True,
+            is_active=True,
+            sale__document_type='INVOICE',
+            sale__payment_method='CREDIT',
+            sale__payment_status__in=['PENDING', 'PARTIALLY_PAID', 'OVERDUE']
+        ).distinct()
+
+        for customer in customers:
+            customer.update_credit_balance()
+
+            outstanding_invoices = Invoice.objects.filter(
+                sale__customer=customer,
+                sale__document_type='INVOICE',
+                sale__payment_method='CREDIT',
+                sale__payment_status__in=['PENDING', 'PARTIALLY_PAID', 'OVERDUE']
+            )
+
+            # Calculate aging
+            current = Decimal('0')
+            days_1_30 = Decimal('0')
+            days_31_60 = Decimal('0')
+            days_61_90 = Decimal('0')
+            days_90_plus = Decimal('0')
+
+            for invoice in outstanding_invoices:
+                outstanding = invoice.amount_outstanding
+
+                if not invoice.sale.due_date or invoice.sale.due_date >= today:
+                    current += outstanding
+                else:
+                    days_overdue = (today - invoice.sale.due_date).days
+                    if days_overdue <= 30:
+                        days_1_30 += outstanding
+                    elif days_overdue <= 60:
+                        days_31_60 += outstanding
+                    elif days_overdue <= 90:
+                        days_61_90 += outstanding
+                    else:
+                        days_90_plus += outstanding
+
+            total = current + days_1_30 + days_31_60 + days_61_90 + days_90_plus
+
+            if total > 0:
+                overdue_count = outstanding_invoices.filter(
+                    sale__payment_status='OVERDUE'
+                ).count()
+
+                writer.writerow([
+                    customer.name or '',
+                    customer.tin or '',
+                    customer.phone or '',
+                    customer.credit_limit,
+                    current,
+                    days_1_30,
+                    days_31_60,
+                    days_61_90,
+                    days_90_plus,
+                    total,
+                    customer.credit_available,
+                    customer.get_credit_status_display(),
+                    outstanding_invoices.count(),
+                    overdue_count
+                ])
+
+        return response
+
 
 
 @login_required
@@ -1285,7 +1977,7 @@ def ajax_invoice_status(request):
 @login_required
 @permission_required('invoices.view_invoice')
 def invoice_dashboard(request):
-    """Main dashboard with metrics"""
+    """Main dashboard with metrics including credit tracking"""
     company = get_current_tenant(request)
     if not company:
         messages.error(request, 'No company context found')
@@ -1350,10 +2042,76 @@ def invoice_dashboard(request):
 
         fiscalization_rate = (fiscalized_invoices / total_invoices * 100) if total_invoices > 0 else 0
 
-        # Recent activity - FIXED: Use proper ordering
+        # ADD: Credit invoice metrics
+        credit_invoices = invoices.filter(sale__payment_method='CREDIT')
+        cash_invoices = invoices.filter(sale__payment_method__in=['CASH', 'CARD', 'BANK_TRANSFER'])
+
+        # Get detailed credit metrics
+        total_credit_invoices = credit_invoices.count()
+        total_cash_invoices = cash_invoices.count()
+
+        credit_metrics = {
+            'total_credit_invoices': total_credit_invoices,
+            'credit_revenue': credit_invoices.filter(
+                sale__payment_status='PAID'
+            ).aggregate(Sum('sale__total_amount'))['sale__total_amount__sum'] or 0,
+            'outstanding_credit': credit_invoices.filter(
+                sale__payment_status__in=['PENDING', 'PARTIALLY_PAID']
+            ).aggregate(Sum('sale__total_amount'))['sale__total_amount__sum'] or 0,
+            'overdue_credit': credit_invoices.filter(
+                sale__payment_status='OVERDUE'
+            ).aggregate(Sum('sale__total_amount'))['sale__total_amount__sum'] or 0,
+            'overdue_credit_count': credit_invoices.filter(
+                sale__payment_status='OVERDUE'
+            ).count(),
+            'credit_collection_rate': (
+                (credit_invoices.filter(sale__payment_status='PAID').count() / total_credit_invoices * 100)
+                if total_credit_invoices > 0 else 0
+            ),
+            'credit_vs_cash_ratio': (
+                (total_credit_invoices / total_invoices * 100)
+                if total_invoices > 0 else 0
+            ),
+            'avg_credit_amount': credit_invoices.aggregate(
+                avg=Avg('sale__total_amount')
+            )['avg'] or 0,
+            'avg_cash_amount': cash_invoices.aggregate(
+                avg=Avg('sale__total_amount')
+            )['avg'] or 0,
+        }
+
+        # Customer credit summary
+        from customers.models import Customer
+        credit_customers_summary = Customer.objects.filter(
+            allow_credit=True,
+            is_active=True
+        ).aggregate(
+            total_limit=Sum('credit_limit'),
+            total_used=Sum('credit_balance'),
+            total_available=Sum('credit_available'),
+            customers_count=Count('id'),
+            customers_good=Count('id', filter=Q(credit_status='GOOD')),
+            customers_warning=Count('id', filter=Q(credit_status='WARNING')),
+            customers_blocked=Count('id', filter=Q(credit_status__in=['SUSPENDED', 'BLOCKED'])),
+            customers_at_risk=Count('id', filter=Q(
+                credit_status__in=['WARNING', 'SUSPENDED', 'BLOCKED']
+            ))
+        )
+
+        # Calculate credit utilization
+        if credit_customers_summary['total_limit']:
+            credit_utilization_percentage = (
+                    credit_customers_summary['total_used'] / credit_customers_summary['total_limit'] * 100
+            )
+        else:
+            credit_utilization_percentage = 0
+
+        credit_customers_summary['utilization_percentage'] = round(credit_utilization_percentage, 1)
+
+        # Recent activity
         recent_invoices = invoices.select_related(
             'sale__customer', 'sale__created_by'
-        ).order_by('-sale__created_at')[:10]  # Use sale__created_at
+        ).order_by('-sale__created_at')[:10]
 
         recent_payments = InvoicePayment.objects.filter(
             invoice__sale__store__company=company
@@ -1361,7 +2119,7 @@ def invoice_dashboard(request):
             'invoice__sale', 'processed_by'
         ).order_by('-created_at')[:10]
 
-        # Upcoming due dates - add days_until_due
+        # Upcoming due dates
         upcoming_due = today + timedelta(days=7)
         upcoming_invoices_qs = invoices.filter(
             sale__due_date__range=[today, upcoming_due],
@@ -1371,11 +2129,42 @@ def invoice_dashboard(request):
         # Convert to list and add days_until_due
         upcoming_invoices = []
         for invoice in upcoming_invoices_qs:
-            if invoice.due_date:
-                invoice.days_until_due = (invoice.due_date - today).days
+            if invoice.sale.due_date:
+                invoice.days_until_due = (invoice.sale.due_date - today).days
             else:
                 invoice.days_until_due = 0
             upcoming_invoices.append(invoice)
+
+        # Recent credit activity
+        recent_credit_invoices = credit_invoices.select_related(
+            'sale__customer', 'sale__created_by'
+        ).order_by('-sale__created_at')[:5]
+
+        # Top overdue credit invoices
+        top_overdue_credit = credit_invoices.filter(
+            sale__payment_status='OVERDUE'
+        ).select_related(
+            'sale__customer'
+        ).order_by(
+            'sale__due_date'
+        )[:5]
+
+        # Add overdue days to each
+        for invoice in top_overdue_credit:
+            if invoice.sale.due_date:
+                invoice.overdue_days = (today - invoice.sale.due_date).days
+            else:
+                invoice.overdue_days = 0
+
+        # Monthly credit trend
+        from django.db.models.functions import TruncMonth
+        monthly_credit_trend = credit_invoices.annotate(
+            month=TruncMonth('sale__created_at')
+        ).values('month').annotate(
+            count=Count('id'),
+            total=Sum('sale__total_amount'),
+            paid=Sum('sale__total_amount', filter=Q(sale__payment_status='PAID'))
+        ).order_by('month')[:6]
 
         context = {
             'metrics': {
@@ -1391,9 +2180,14 @@ def invoice_dashboard(request):
                 'on_time_rate': round(on_time_rate, 1),
                 'fiscalization_rate': round(fiscalization_rate, 1),
             },
+            'credit_metrics': credit_metrics,
+            'credit_customers_summary': credit_customers_summary,
             'recent_invoices': recent_invoices,
             'recent_payments': recent_payments,
+            'recent_credit_invoices': recent_credit_invoices,
             'upcoming_invoices': upcoming_invoices,
+            'top_overdue_credit': top_overdue_credit,
+            'monthly_credit_trend': monthly_credit_trend,
             'EFRIS_ENABLED': getattr(company, 'efris_enabled', False),
         }
 

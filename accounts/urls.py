@@ -28,14 +28,6 @@ saas_admin_patterns = [
 urlpatterns = [
     path('login/', views.custom_login, name='login'),
     path('login/complete/', complete_tenant_login, name='complete_login'),
-    path('social/', include([
-            path('connections/', views.manage_social_connections, name='manage_social_connections'),
-            path('set-password/', views.set_password_after_social_login, name='set_password_after_social'),
-            path('check-account/', views.check_social_account, name='check_social_account'),
-        ])),
-    path('social/callback/', views.social_login_callback, name='social_login_callback'),
-    path('social/check-account/', views.check_social_account, name='check_social_account'),
-    path('check-social-account/', views.check_social_account, name='api_check_social_account'),
     path('logout/', views.custom_logout, name='custom_logout'),
 
     path('users/', views.UserListView.as_view(), name='user_list'),

@@ -1,0 +1,280 @@
+{% extends 'base.html' %}
+{% load static %}
+{% load custom_filters %}
+
+{% block title %}{{ customer.name }} - Credit Account{% endblock %}
+
+{% block breadcrumb_items %}
+    <li class="breadcrumb-item"><a href="{% url 'user_dashboard' %}">Home</a></li>
+    <li class="breadcrumb-item"><a href="{% url 'invoices:customer_credit_dashboard' %}">Credit Dashboard</a></li>
+    <li class="breadcrumb-item active">{{ customer.name }}</li>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <!-- Customer Header -->
+    <div class="card border-0 shadow-sm mb-4">
+        <div class="card-body">
+            <div class="row align-items-center">
+                <div class="col-md-8">
+                    <div class="d-flex align-items-center">
+                        <div class="avatar-lg rounded-circle bg-primary bg-opacity-10 text-primary d-flex align-items-center justify-content-center me-3" style="width: 64px; height: 64px;">
+                            <i class="bi bi-person fs-1"></i>
+                        </div>
+                        <div>
+                            <h3 class="mb-1">{{ customer.name }}</h3>
+                            <div class="text-muted">
+                                <i class="bi bi-telephone me-1"></i>{{ customer.phone }}
+                                {% if customer.email %}
+                                    <span class="ms-3"><i class="bi bi-envelope me-1"></i>{{ customer.email }}</span>
+                                {% endif %}
+                                {% if customer.tin %}
+                                    <span class="ms-3"><i class="bi bi-receipt me-1"></i>TIN: {{ customer.tin }}</span>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-4 text-md-end mt-3 mt-md-0">
+                    {% if customer.credit_status == 'GOOD' %}
+                        <span class="badge bg-success fs-6">Good Standing</span>
+                    {% elif customer.credit_status == 'WARNING' %}
+                        <span class="badge bg-warning fs-6">Payment Warning</span>
+                    {% elif customer.credit_status == 'SUSPENDED' %}
+                        <span class="badge bg-danger fs-6">Credit Suspended</span>
+                    {% elif customer.credit_status == 'BLOCKED' %}
+                        <span class="badge bg-dark fs-6">Blocked</span>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Credit Summary Cards -->
+    <div class="row g-4 mb-4">
+        <div class="col-md-3">
+            <div class="card border-0 shadow-sm h-100">
+                <div class="card-body">
+                    <h6 class="text-muted mb-2">Credit Limit</h6>
+                    <h3 class="mb-0">UGX {{ credit_info.limit|floatformat:0 }}</h3>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card border-0 shadow-sm h-100">
+                <div class="card-body">
+                    <h6 class="text-muted mb-2">Outstanding Balance</h6>
+                    <h3 class="mb-0 text-warning">UGX {{ credit_info.balance|floatformat:0 }}</h3>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card border-0 shadow-sm h-100">
+                <div class="card-body">
+                    <h6 class="text-muted mb-2">Available Credit</h6>
+                    <h3 class="mb-0 text-success">UGX {{ credit_info.available|floatformat:0 }}</h3>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card border-0 shadow-sm h-100">
+                <div class="card-body">
+                    <h6 class="text-muted mb-2">Credit Utilization</h6>
+                    <h3 class="mb-0">{{ credit_info.utilization|floatformat:1 }}%</h3>
+                    <div class="progress mt-2" style="height: 8px;">
+                        <div class="progress-bar {% if credit_info.utilization >= 90 %}bg-danger{% elif credit_info.utilization >= 70 %}bg-warning{% else %}bg-success{% endif %}"
+                             style="width: {{ credit_info.utilization }}%;"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Aging Buckets -->
+    <div class="card border-0 shadow-sm mb-4">
+        <div class="card-header bg-white">
+            <h5 class="mb-0"><i class="bi bi-calendar-range me-2"></i>Accounts Receivable Aging</h5>
+        </div>
+        <div class="card-body">
+            <div class="row text-center">
+                <div class="col">
+                    <div class="p-3">
+                        <h6 class="text-muted small mb-2">Current</h6>
+                        <h4 class="mb-0">{{ aging_buckets.current|floatformat:0 }}</h4>
+                    </div>
+                </div>
+                <div class="col">
+                    <div class="p-3">
+                        <h6 class="text-muted small mb-2">1-30 Days</h6>
+                        <h4 class="mb-0 text-info">{{ aging_buckets.1-30|floatformat:0 }}</h4>
+                    </div>
+                </div>
+                <div class="col">
+                    <div class="p-3">
+                        <h6 class="text-muted small mb-2">31-60 Days</h6>
+                        <h4 class="mb-0 text-warning">{{ aging_buckets.31-60|floatformat:0 }}</h4>
+                    </div>
+                </div>
+                <div class="col">
+                    <div class="p-3">
+                        <h6 class="text-muted small mb-2">61-90 Days</h6>
+                        <h4 class="mb-0 text-warning">{{ aging_buckets.61-90|floatformat:0 }}</h4>
+                    </div>
+                </div>
+                <div class="col">
+                    <div class="p-3">
+                        <h6 class="text-muted small mb-2">90+ Days</h6>
+                        <h4 class="mb-0 text-danger">{{ aging_buckets.90+|floatformat:0 }}</h4>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+        <!-- Outstanding Invoices -->
+        <div class="col-lg-8 mb-4">
+            <div class="card border-0 shadow-sm">
+                <div class="card-header bg-white d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0"><i class="bi bi-file-earmark-text me-2"></i>Outstanding Invoices</h5>
+                    <span class="badge bg-primary">{{ outstanding_invoices|length }} invoices</span>
+                </div>
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table table-hover align-middle mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Invoice #</th>
+                                    <th>Date</th>
+                                    <th>Due Date</th>
+                                    <th class="text-end">Amount</th>
+                                    <th class="text-end">Outstanding</th>
+                                    <th class="text-center">Days Overdue</th>
+                                    <th class="text-center">Action</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for invoice in outstanding_invoices %}
+                                <tr>
+                                    <td><strong>{{ invoice.invoice_number }}</strong></td>
+                                    <td>{{ invoice.issue_date|date:"Y-m-d" }}</td>
+                                    <td>{{ invoice.due_date|date:"Y-m-d" }}</td>
+                                    <td class="text-end">UGX {{ invoice.total_amount|floatformat:0 }}</td>
+                                    <td class="text-end">
+                                        <strong class="text-warning">UGX {{ invoice.amount_outstanding|floatformat:0 }}</strong>
+                                    </td>
+                                    <td class="text-center">
+                                        {% if invoice.days_overdue > 0 %}
+                                            <span class="badge bg-danger">{{ invoice.days_overdue }} days</span>
+                                        {% else %}
+                                            <span class="badge bg-success">Current</span>
+                                        {% endif %}
+                                    </td>
+                                    <td class="text-center">
+                                        <a href="{% url 'invoices:detail' invoice.pk %}" class="btn btn-sm btn-outline-primary">
+                                            <i class="bi bi-eye"></i>
+                                        </a>
+                                    </td>
+                                </tr>
+                                {% empty %}
+                                <tr>
+                                    <td colspan="7" class="text-center py-4 text-muted">
+                                        No outstanding invoices
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Recent Payments -->
+        <div class="col-lg-4 mb-4">
+            <div class="card border-0 shadow-sm">
+                <div class="card-header bg-white">
+                    <h5 class="mb-0"><i class="bi bi-cash-coin me-2"></i>Recent Payments</h5>
+                </div>
+                <div class="card-body p-0">
+                    <div class="list-group list-group-flush">
+                        {% for payment in recent_payments %}
+                        <div class="list-group-item">
+                            <div class="d-flex justify-content-between align-items-start">
+                                <div>
+                                    <strong class="text-success">UGX {{ payment.amount|floatformat:0 }}</strong><br>
+                                    <small class="text-muted">{{ payment.invoice.invoice_number }}</small><br>
+                                    <small class="text-muted">{{ payment.payment_date|date:"Y-m-d" }}</small>
+                                </div>
+                                <span class="badge bg-{{ payment.payment_method|lower }}">{{ payment.get_payment_method_display }}</span>
+                            </div>
+                        </div>
+                        {% empty %}
+                        <div class="list-group-item text-center text-muted py-4">
+                            No payments yet
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Credit Statement -->
+    <div class="card border-0 shadow-sm">
+        <div class="card-header bg-white">
+            <h5 class="mb-0"><i class="bi bi-list-ul me-2"></i>Credit Statement</h5>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-striped align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>Date</th>
+                            <th>Type</th>
+                            <th>Description</th>
+                            <th class="text-end">Amount</th>
+                            <th class="text-end">Balance Before</th>
+                            <th class="text-end">Balance After</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for statement in credit_statements %}
+                        <tr>
+                            <td>{{ statement.created_at|date:"Y-m-d H:i" }}</td>
+                            <td>
+                                {% if statement.transaction_type == 'INVOICE' %}
+                                    <span class="badge bg-warning">Invoice</span>
+                                {% elif statement.transaction_type == 'PAYMENT' %}
+                                    <span class="badge bg-success">Payment</span>
+                                {% elif statement.transaction_type == 'CREDIT_NOTE' %}
+                                    <span class="badge bg-info">Credit Note</span>
+                                {% elif statement.transaction_type == 'ADJUSTMENT' %}
+                                    <span class="badge bg-secondary">Adjustment</span>
+                                {% endif %}
+                            </td>
+                            <td>{{ statement.description }}</td>
+                            <td class="text-end">
+                                {% if statement.transaction_type == 'INVOICE' %}
+                                    <span class="text-danger">+UGX {{ statement.amount|floatformat:0 }}</span>
+                                {% else %}
+                                    <span class="text-success">-UGX {{ statement.amount|floatformat:0 }}</span>
+                                {% endif %}
+                            </td>
+                            <td class="text-end">UGX {{ statement.balance_before|floatformat:0 }}</td>
+                            <td class="text-end"><strong>UGX {{ statement.balance_after|floatformat:0 }}</strong></td>
+                        </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="6" class="text-center py-4 text-muted">
+                                No statement records
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

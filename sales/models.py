@@ -535,15 +535,10 @@ class Sale(models.Model, EFRISSaleMixin):
             # Check if we should create an invoice
             store_config = self.store.effective_efris_config
 
-            # Only create invoice if:
-            # 1. Store has EFRIS enabled
-            # 2. Auto-fiscalization is enabled
-            # 3. Sale is completed/paid
             if (store_config.get('enabled', False) and
                     store_config.get('auto_fiscalize_sales', False) and
                     self.status in ['COMPLETED', 'PAID']):
 
-                # Import here to avoid circular imports
                 from invoices.models import Invoice
 
                 # Check if invoice already exists
@@ -596,8 +591,8 @@ class Sale(models.Model, EFRISSaleMixin):
 
         super().save(*args, **kwargs)
 
-        # ========== FIXED: Auto-create Invoice record for INVOICE document type ==========
-        if self.document_type == 'INVOICE':
+        if self.document_type == 'INVOICE' and self.customer:
+            self.customer.update_credit_balance()
             # Only create if Invoice doesn't exist
             if not hasattr(self, 'invoice_detail') or self.invoice_detail is None:
                 try:
@@ -1567,6 +1562,9 @@ class Payment(models.Model):
         # Update sale payment status
         if self.sale.is_invoice:
             self.sale.update_payment_status()
+
+            if self.sale.customer:
+                self.sale.customer.update_credit_balance()
 
     def update_payment_status(self):
         """Update sale payment status based on payments"""

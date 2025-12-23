@@ -65,6 +65,53 @@
         margin-top: 0.5rem;
     }
 
+    /* Credit Specific Styles */
+    .credit-metric {
+        border-left: 4px solid var(--info-500);
+    }
+
+    .credit-badge {
+        background: linear-gradient(135deg, var(--info-400), var(--info-600));
+        color: white;
+        font-size: 0.75rem;
+        padding: 0.25rem 0.75rem;
+        border-radius: 50px;
+    }
+
+    .credit-progress {
+        height: 8px;
+        border-radius: 4px;
+        overflow: hidden;
+        background: var(--gray-200);
+    }
+
+    .credit-progress-bar {
+        height: 100%;
+        transition: width 0.6s ease;
+    }
+
+    .credit-progress-good {
+        background: linear-gradient(90deg, var(--green-400), var(--green-600));
+    }
+
+    .credit-progress-warning {
+        background: linear-gradient(90deg, var(--amber-400), var(--amber-600));
+    }
+
+    .credit-progress-danger {
+        background: linear-gradient(90deg, var(--red-400), var(--red-600));
+    }
+
+    .credit-customer-item {
+        padding: 0.75rem;
+        border-bottom: 1px solid var(--border-color-light);
+        transition: all 0.2s ease;
+    }
+
+    .credit-customer-item:hover {
+        background: var(--bg-secondary);
+    }
+
     /* Status Badges */
     .status-badge {
         padding: 0.375rem 0.75rem;
@@ -100,6 +147,12 @@
     .status-DRAFT {
         background: var(--gray-200);
         color: var(--gray-700);
+    }
+
+    .status-CREDIT {
+        background: linear-gradient(135deg, var(--info-100), var(--info-300));
+        color: var(--info-900);
+        border: 1px solid var(--info-300);
     }
 
     /* Chart Container */
@@ -205,6 +258,19 @@
 
     .due-date-warning {
         border-left: 3px solid var(--amber-500);
+    }
+
+    /* Credit Trend Chart */
+    .credit-trend-up {
+        color: var(--green-600);
+    }
+
+    .credit-trend-down {
+        color: var(--red-600);
+    }
+
+    .credit-trend-neutral {
+        color: var(--gray-600);
     }
 
     /* Avatar */
@@ -316,7 +382,7 @@
                 {% trans "Invoice Dashboard" %}
             </h1>
             <p class="text-muted mb-0">
-                {% trans "Overview of your invoicing performance" %}
+                {% trans "Overview of your invoicing performance and credit management" %}
             </p>
         </div>
         <div class="d-flex gap-2">
@@ -324,10 +390,26 @@
                 <i class="bi bi-arrow-clockwise me-2"></i>
                 {% trans "Refresh" %}
             </button>
-            <a href="{% url 'sales:create_sale' %}?type=invoice" class="btn btn-primary">
-                <i class="bi bi-plus-circle me-2"></i>
-                {% trans "New Invoice" %}
-            </a>
+            <div class="dropdown">
+                <button class="btn btn-primary dropdown-toggle" type="button" data-bs-toggle="dropdown">
+                    <i class="bi bi-plus-circle me-2"></i>
+                    {% trans "New Invoice" %}
+                </button>
+                <ul class="dropdown-menu">
+                    <li>
+                        <a class="dropdown-item" href="{% url 'sales:create_sale' %}?type=invoice&payment_method=CASH">
+                            <i class="bi bi-cash me-2"></i>
+                            {% trans "Cash Invoice" %}
+                        </a>
+                    </li>
+                    <li>
+                        <a class="dropdown-item" href="{% url 'sales:create_sale' %}?type=invoice&payment_method=CREDIT">
+                            <i class="bi bi-credit-card me-2"></i>
+                            {% trans "Credit Invoice" %}
+                        </a>
+                    </li>
+                </ul>
+            </div>
         </div>
     </div>
 
@@ -370,18 +452,20 @@
         </div>
 
         <div class="col-xl-2 col-md-4 col-6">
-            <div class="card metric-card" onclick="filterByStatus('PENDING')">
+            <div class="card metric-card credit-metric" onclick="filterByPaymentMethod('CREDIT')">
                 <div class="card-body text-center">
-                    <div class="metric-icon bg-warning bg-opacity-10">
-                        <i class="bi bi-clock text-warning fs-4"></i>
+                    <div class="metric-icon bg-info bg-opacity-10">
+                        <i class="bi bi-credit-card text-info fs-4"></i>
                     </div>
-                    <div class="metric-label">{% trans "Pending Amount" %}</div>
-                    <div class="metric-value text-warning" data-metric="pending_amount">
-                        UGX {{ metrics.pending_amount|floatformat:0|intcomma }}
+                    <div class="metric-label">{% trans "Credit Invoices" %}</div>
+                    <div class="metric-value text-info" data-metric="credit_invoices">
+                        {{ credit_metrics.total_credit_invoices|intcomma }}
                     </div>
-                    <div class="metric-change text-muted">
-                        <span data-metric="pending_invoices">{{ metrics.pending_invoices }}</span>
-                        {% trans "pending" %}
+                    <div class="metric-change">
+                        <span class="{% if credit_metrics.credit_vs_cash_ratio >= 30 %}text-warning{% else %}text-muted{% endif %}">
+                            {{ credit_metrics.credit_vs_cash_ratio|floatformat:1 }}%
+                        </span>
+                        {% trans "of total" %}
                     </div>
                 </div>
             </div>
@@ -393,12 +477,12 @@
                     <div class="metric-icon bg-danger bg-opacity-10">
                         <i class="bi bi-exclamation-triangle text-danger fs-4"></i>
                     </div>
-                    <div class="metric-label">{% trans "Overdue" %}</div>
-                    <div class="metric-value text-danger" data-metric="overdue_invoices">
-                        {{ metrics.overdue_invoices|intcomma }}
+                    <div class="metric-label">{% trans "Overdue Credit" %}</div>
+                    <div class="metric-value text-danger" data-metric="overdue_credit">
+                        {{ credit_metrics.overdue_credit_count|intcomma }}
                     </div>
                     <div class="metric-change text-danger">
-                        {% trans "Requires attention" %}
+                        UGX {{ credit_metrics.overdue_credit|floatformat:0|intcomma }}
                     </div>
                 </div>
             </div>
@@ -407,11 +491,11 @@
         <div class="col-xl-2 col-md-4 col-6">
             <div class="card metric-card" onclick="filterByFiscalized(true)">
                 <div class="card-body text-center">
-                    <div class="metric-icon bg-info bg-opacity-10">
-                        <i class="bi bi-shield-check text-info fs-4"></i>
+                    <div class="metric-icon bg-warning bg-opacity-10">
+                        <i class="bi bi-shield-check text-warning fs-4"></i>
                     </div>
                     <div class="metric-label">{% trans "Fiscalized" %}</div>
-                    <div class="metric-value text-info" data-metric="fiscalized_invoices">
+                    <div class="metric-value text-warning" data-metric="fiscalized_invoices">
                         {{ metrics.fiscalized_invoices|intcomma }}
                     </div>
                     <div class="metric-change text-muted">
@@ -422,18 +506,131 @@
         </div>
 
         <div class="col-xl-2 col-md-4 col-6">
-            <div class="card metric-card">
+            <div class="card metric-card" onclick="window.location.href='{% url 'customers:customer_list' %}?allow_credit=true'">
                 <div class="card-body text-center">
                     <div class="metric-icon bg-secondary bg-opacity-10">
-                        <i class="bi bi-cash-coin text-secondary fs-4"></i>
+                        <i class="bi bi-people text-secondary fs-4"></i>
                     </div>
-                    <div class="metric-label">{% trans "Avg. Invoice" %}</div>
-                    <div class="metric-value text-secondary" data-metric="avg_invoice_amount">
-                        UGX {{ metrics.avg_invoice_amount|floatformat:0|intcomma }}
+                    <div class="metric-label">{% trans "Credit Customers" %}</div>
+                    <div class="metric-value text-secondary" data-metric="credit_customers">
+                        {{ credit_customers_summary.customers_count|default:0|intcomma }}
                     </div>
                     <div class="metric-change text-muted">
-                        {% trans "Average value" %}
+                        {{ credit_customers_summary.customers_at_risk|default:0 }} {% trans "at risk" %}
                     </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Credit Overview Row -->
+    <div class="row g-3 mb-4">
+        <!-- Credit Utilization -->
+        <div class="col-lg-4">
+            <div class="card h-100">
+                <div class="card-header">
+                    <h5 class="mb-0">
+                        <i class="bi bi-pie-chart me-2"></i>
+                        {% trans "Credit Utilization" %}
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div class="text-center mb-4">
+                        <div class="mb-3">
+                            <div class="credit-progress mb-2">
+                                <div class="credit-progress-bar
+                                    {% if credit_customers_summary.utilization_percentage < 60 %}credit-progress-good
+                                    {% elif credit_customers_summary.utilization_percentage < 85 %}credit-progress-warning
+                                    {% else %}credit-progress-danger{% endif %}"
+                                    style="width: {{ credit_customers_summary.utilization_percentage|default:0 }}%">
+                                </div>
+                            </div>
+                            <div class="display-4 fw-bold">
+                                {{ credit_customers_summary.utilization_percentage|default:0|floatformat:1 }}%
+                            </div>
+                            <div class="text-muted">{% trans "Credit Utilization" %}</div>
+                        </div>
+                        <div class="row text-center">
+                            <div class="col-4">
+                                <div class="text-muted small">{% trans "Limit" %}</div>
+                                <div class="fw-bold">UGX {{ credit_customers_summary.total_limit|default:0|floatformat:0|intcomma }}</div>
+                            </div>
+                            <div class="col-4">
+                                <div class="text-muted small">{% trans "Used" %}</div>
+                                <div class="fw-bold">UGX {{ credit_customers_summary.total_used|default:0|floatformat:0|intcomma }}</div>
+                            </div>
+                            <div class="col-4">
+                                <div class="text-muted small">{% trans "Available" %}</div>
+                                <div class="fw-bold">UGX {{ credit_customers_summary.total_available|default:0|floatformat:0|intcomma }}</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Credit vs Cash Comparison -->
+        <div class="col-lg-4">
+            <div class="card h-100">
+                <div class="card-header">
+                    <h5 class="mb-0">
+                        <i class="bi bi-arrow-left-right me-2"></i>
+                        {% trans "Credit vs Cash" %}
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div class="chart-container">
+                        <canvas id="creditCashChart"></canvas>
+                    </div>
+                    <div class="row mt-3 text-center">
+                        <div class="col-6">
+                            <div class="text-muted small">{% trans "Avg Credit Invoice" %}</div>
+                            <div class="fw-bold">UGX {{ credit_metrics.avg_credit_amount|floatformat:0|intcomma }}</div>
+                        </div>
+                        <div class="col-6">
+                            <div class="text-muted small">{% trans "Avg Cash Invoice" %}</div>
+                            <div class="fw-bold">UGX {{ credit_metrics.avg_cash_amount|floatformat:0|intcomma }}</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Top Credit Customers -->
+        <div class="col-lg-4">
+            <div class="card h-100">
+                <div class="card-header">
+                    <h5 class="mb-0">
+                        <i class="bi bi-trophy me-2"></i>
+                        {% trans "Top Credit Customers" %}
+                    </h5>
+                </div>
+                <div class="card-body p-0">
+                    {% for customer in top_credit_customers %}
+                    <div class="credit-customer-item" onclick="window.location.href='{% url 'customers:detail' customer.sale__customer__id %}'">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div class="flex-grow-1">
+                                <div class="fw-semibold">{{ customer.sale__customer__name|truncatechars:25 }}</div>
+                                <div class="small text-muted">
+                                    {{ customer.invoice_count }} {% trans "invoices" %}
+                                </div>
+                            </div>
+                            <div class="text-end">
+                                <div class="fw-bold">UGX {{ customer.total_credit|floatformat:0|intcomma }}</div>
+                                {% if customer.overdue_count > 0 %}
+                                <span class="badge bg-danger">
+                                    {{ customer.overdue_count }} {% trans "overdue" %}
+                                </span>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+                    {% empty %}
+                    <div class="empty-state py-4">
+                        <i class="bi bi-people empty-state-icon" style="font-size: 3rem;"></i>
+                        <div>{% trans "No credit customers" %}</div>
+                    </div>
+                    {% endfor %}
                 </div>
             </div>
         </div>
@@ -447,7 +644,7 @@
                 <div class="card-header d-flex justify-content-between align-items-center">
                     <h5 class="mb-0">
                         <i class="bi bi-graph-up me-2"></i>
-                        {% trans "Revenue Trend" %}
+                        {% trans "Revenue Trend (Credit vs Cash)" %}
                     </h5>
                     <div class="dropdown">
                         <button class="btn btn-sm btn-outline-secondary dropdown-toggle"
@@ -486,24 +683,47 @@
             </div>
         </div>
 
-        <!-- Status Distribution Chart -->
+        <!-- Credit Performance Chart -->
         <div class="col-lg-4">
             <div class="card h-100">
-                <div class="card-header d-flex justify-content-between align-items-center">
+                <div class="card-header">
                     <h5 class="mb-0">
-                        <i class="bi bi-pie-chart me-2"></i>
-                        {% trans "Status Distribution" %}
+                        <i class="bi bi-credit-card me-2"></i>
+                        {% trans "Credit Performance" %}
                     </h5>
-                    <button class="btn btn-sm btn-outline-secondary"
-                            onclick="refreshCharts()"
-                            title="{% trans 'Refresh' %}"
-                            data-bs-toggle="tooltip">
-                        <i class="bi bi-arrow-clockwise"></i>
-                    </button>
                 </div>
-                <div class="card-body position-relative">
-                    <div class="chart-container">
-                        <canvas id="statusDistributionChart"></canvas>
+                <div class="card-body">
+                    <div class="mb-3">
+                        <div class="d-flex justify-content-between mb-1">
+                            <span>{% trans "Collection Rate" %}</span>
+                            <span class="fw-bold">{{ credit_metrics.credit_collection_rate|floatformat:1 }}%</span>
+                        </div>
+                        <div class="progress" style="height: 10px;">
+                            <div class="progress-bar bg-success"
+                                 style="width: {{ credit_metrics.credit_collection_rate }}%"></div>
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <div class="d-flex justify-content-between mb-1">
+                            <span>{% trans "Outstanding Credit" %}</span>
+                            <span class="fw-bold">UGX {{ credit_metrics.outstanding_credit|floatformat:0|intcomma }}</span>
+                        </div>
+                        <div class="progress" style="height: 10px;">
+                            <div class="progress-bar bg-warning"
+                                 style="width: {{ credit_metrics.outstanding_credit|divide:credit_metrics.credit_revenue|multiply:100|default:0|floatformat:0 }}%"></div>
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <div class="d-flex justify-content-between mb-1">
+                            <span>{% trans "Overdue Credit" %}</span>
+                            <span class="fw-bold text-danger">UGX {{ credit_metrics.overdue_credit|floatformat:0|intcomma }}</span>
+                        </div>
+                        <div class="progress" style="height: 10px;">
+                            <div class="progress-bar bg-danger"
+                                 style="width: {{ credit_metrics.overdue_credit|divide:credit_metrics.credit_revenue|multiply:100|default:0|floatformat:0 }}%"></div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -525,10 +745,26 @@
                             <i class="bi bi-list-ul me-1"></i>
                             {% trans "View All" %}
                         </a>
-                        <a href="{% url 'sales:create_sale' %}?type=invoice" class="btn btn-sm btn-primary">
-                            <i class="bi bi-plus-lg me-1"></i>
-                            {% trans "New" %}
-                        </a>
+                        <div class="dropdown">
+                            <button class="btn btn-sm btn-primary dropdown-toggle" type="button" data-bs-toggle="dropdown">
+                                <i class="bi bi-plus-lg me-1"></i>
+                                {% trans "New" %}
+                            </button>
+                            <ul class="dropdown-menu">
+                                <li>
+                                    <a class="dropdown-item" href="{% url 'sales:create_sale' %}?type=invoice&payment_method=CASH">
+                                        <i class="bi bi-cash me-2"></i>
+                                        {% trans "Cash Invoice" %}
+                                    </a>
+                                </li>
+                                <li>
+                                    <a class="dropdown-item" href="{% url 'sales:create_sale' %}?type=invoice&payment_method=CREDIT">
+                                        <i class="bi bi-credit-card me-2"></i>
+                                        {% trans "Credit Invoice" %}
+                                    </a>
+                                </li>
+                            </ul>
+                        </div>
                     </div>
                 </div>
                 <div class="card-body p-0">
@@ -546,29 +782,32 @@
                             </thead>
                             <tbody>
                                 {% for invoice in recent_invoices %}
-                                <tr class="{% if invoice.is_overdue %}overdue-row{% endif %}"
+                                <tr class="{% if invoice.sale.payment_status == 'OVERDUE' %}overdue-row{% endif %}"
                                     onclick="window.location.href='{% url 'invoices:detail' invoice.pk %}'">
                                     <td>
                                         <div class="d-flex align-items-center">
-                                            <strong>{{ invoice.invoice_number }}</strong>
+                                            <strong>{{ invoice.sale.document_number }}</strong>
                                             {% if invoice.is_fiscalized %}
                                             <i class="bi bi-shield-check text-success ms-2"
                                                title="{% trans 'Fiscalized' %}"
                                                data-bs-toggle="tooltip"></i>
                                             {% endif %}
+                                            {% if invoice.sale.payment_method == 'CREDIT' %}
+                                            <span class="credit-badge ms-2">{% trans "CREDIT" %}</span>
+                                            {% endif %}
                                         </div>
                                         <small class="text-muted">
-                                            {{ invoice.issue_date|date:"M d, Y" }}
+                                            {{ invoice.sale.created_at|date:"M d, Y" }}
                                         </small>
                                     </td>
                                     <td>
-                                        {% if invoice.customer %}
+                                        {% if invoice.sale.customer %}
                                             <div class="fw-semibold">
-                                                {{ invoice.customer.name|truncatechars:25 }}
+                                                {{ invoice.sale.customer.name|truncatechars:25 }}
                                             </div>
-                                            {% if invoice.customer.email %}
+                                            {% if invoice.sale.customer.phone %}
                                             <small class="text-muted">
-                                                {{ invoice.customer.email|truncatechars:25 }}
+                                                {{ invoice.sale.customer.phone }}
                                             </small>
                                             {% endif %}
                                         {% else %}
@@ -578,41 +817,47 @@
                                         {% endif %}
                                     </td>
                                     <td class="text-end">
-                                        <div class="fw-bold text-primary">
-                                            UGX {{ invoice.total_amount|floatformat:0|intcomma }}
+                                        <div class="fw-bold {% if invoice.sale.payment_method == 'CREDIT' %}text-info{% else %}text-primary{% endif %}">
+                                            UGX {{ invoice.sale.total_amount|floatformat:0|intcomma }}
                                         </div>
-                                        {% if invoice.amount_outstanding > 0 %}
+                                        {% if invoice.sale.payment_status != 'PAID' %}
                                         <small class="text-danger">
-                                            {% trans "Due:" %} UGX {{ invoice.amount_outstanding|floatformat:0|intcomma }}
+                                            {% trans "Due:" %} UGX {{ invoice.get_balance_due|floatformat:0|intcomma }}
                                         </small>
                                         {% endif %}
                                     </td>
                                     <td>
-                                        <span class="status-badge status-{{ invoice.sale.payment_status }}">
+                                        <span class="status-badge {% if invoice.sale.payment_method == 'CREDIT' %}status-CREDIT{% endif %} status-{{ invoice.sale.payment_status }}">
                                             <i class="bi
                                                 {% if invoice.sale.payment_status == 'PAID' or invoice.sale.payment_status == 'COMPLETED' %}bi-check-circle-fill
                                                 {% elif invoice.sale.payment_status == 'PENDING_PAYMENT' %}bi-clock
                                                 {% elif invoice.sale.payment_status == 'PARTIALLY_PAID' %}bi-hourglass-split
                                                 {% elif invoice.sale.payment_status == 'OVERDUE' %}bi-exclamation-triangle-fill
+                                                {% elif invoice.sale.payment_method == 'CREDIT' %}bi-credit-card
                                                 {% else %}bi-file-earmark{% endif %}">
                                             </i>
                                             {{ invoice.sale.get_payment_status_display }}
+                                            {% if invoice.sale.payment_method == 'CREDIT' %} (Credit){% endif %}
                                         </span>
                                     </td>
                                     <td>
-                                        <div class="{% if invoice.is_overdue %}text-danger fw-bold{% endif %}">
-                                            {{ invoice.due_date|date:"M d, Y" }}
+                                        {% if invoice.sale.due_date %}
+                                        <div class="{% if invoice.sale.payment_status == 'OVERDUE' %}text-danger fw-bold{% endif %}">
+                                            {{ invoice.sale.due_date|date:"M d, Y" }}
                                         </div>
-                                        {% if invoice.is_overdue %}
+                                        {% if invoice.sale.payment_status == 'OVERDUE' %}
                                         <small class="text-danger">
                                             <i class="bi bi-exclamation-circle me-1"></i>
-                                            {{ invoice.days_overdue }} {% trans "days overdue" %}
+                                            {{ overdue_days }} {% trans "days overdue" %}
                                         </small>
-                                        {% elif invoice.days_until_due <= 3 and not invoice.is_paid %}
+                                        {% elif invoice.sale.days_until_due <= 3 and invoice.sale.payment_status != 'PAID' %}
                                         <small class="text-warning">
                                             <i class="bi bi-clock me-1"></i>
                                             {% trans "Due soon" %}
                                         </small>
+                                        {% endif %}
+                                        {% else %}
+                                        <span class="text-muted">{% trans "N/A" %}</span>
                                         {% endif %}
                                     </td>
                                     <td class="text-center" onclick="event.stopPropagation()">
@@ -678,6 +923,11 @@
                             <i class="bi bi-list-ul me-2"></i>
                             {% trans "View All Invoices" %}
                         </a>
+                        <a href="{% url 'customers:customer_list' %}?allow_credit=true"
+                           class="btn btn-outline-info quick-action-btn">
+                            <i class="bi bi-credit-card me-2"></i>
+                            {% trans "Credit Customers" %}
+                        </a>
                         <a href="{% url 'invoices:analytics' %}"
                            class="btn btn-outline-info quick-action-btn">
                             <i class="bi bi-graph-up me-2"></i>
@@ -723,6 +973,23 @@
                     <div class="performance-item">
                         <div class="performance-label">
                             <span class="performance-label-text">
+                                {% trans "Credit Collection" %}
+                            </span>
+                            <span class="performance-value">
+                                {{ credit_metrics.credit_collection_rate|floatformat:1 }}%
+                            </span>
+                        </div>
+                        <div class="progress">
+                            <div class="progress-bar bg-info"
+                                 data-progress="credit_collection_rate"
+                                 style="width: {{ credit_metrics.credit_collection_rate }}%">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="performance-item">
+                        <div class="performance-label">
+                            <span class="performance-label-text">
                                 {% trans "On-Time Payment" %}
                             </span>
                             <span class="performance-value">
@@ -730,7 +997,7 @@
                             </span>
                         </div>
                         <div class="progress">
-                            <div class="progress-bar bg-info"
+                            <div class="progress-bar bg-warning"
                                  data-progress="on_time_rate"
                                  style="width: {{ metrics.on_time_rate }}%">
                             </div>
@@ -747,7 +1014,7 @@
                             </span>
                         </div>
                         <div class="progress">
-                            <div class="progress-bar bg-warning"
+                            <div class="progress-bar bg-purple"
                                  data-progress="fiscalization_rate"
                                  style="width: {{ metrics.fiscalization_rate }}%">
                             </div>
@@ -756,7 +1023,50 @@
                 </div>
             </div>
 
-            <!-- Upcoming Due Dates -->
+            <!-- Top Overdue Credit Invoices -->
+            {% if credit_metrics.overdue_credit_count > 0 %}
+            <div class="card">
+                <div class="card-header bg-danger bg-opacity-10">
+                    <h5 class="mb-0 text-danger">
+                        <i class="bi bi-exclamation-triangle me-2"></i>
+                        {% trans "Top Overdue Credit Invoices" %}
+                    </h5>
+                </div>
+                <div class="card-body p-0">
+                    {% for invoice in top_overdue_credit %}
+                    <div class="due-date-item due-date-urgent"
+                         onclick="window.location.href='{% url 'invoices:detail' invoice.pk %}'">
+                        <div class="d-flex justify-content-between align-items-start">
+                            <div class="flex-grow-1">
+                                <div class="fw-bold">{{ invoice.sale.document_number }}</div>
+                                <div class="small">
+                                    {{ invoice.sale.customer.name|default:"N/A"|truncatechars:25 }}
+                                </div>
+                                <div class="small text-danger mt-1">
+                                    <i class="bi bi-calendar-x me-1"></i>
+                                    {{ invoice.overdue_days }} {% trans "days overdue" %}
+                                </div>
+                            </div>
+                            <div class="text-end">
+                                <div class="fw-bold text-danger">
+                                    UGX {{ invoice.sale.total_amount|floatformat:0|intcomma }}
+                                </div>
+                                <div class="small text-muted">
+                                    Due: {{ invoice.sale.due_date|date:"M d, Y" }}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                    <div class="card-footer bg-white text-center">
+                        <a href="{% url 'invoices:list' %}?credit_status=OVERDUE_CREDIT" class="btn btn-sm btn-outline-danger">
+                            {% trans "View All Overdue" %}
+                        </a>
+                    </div>
+                </div>
+            </div>
+            {% else %}
+            <!-- Regular Upcoming Due Dates -->
             <div class="card">
                 <div class="card-header">
                     <h5 class="mb-0">
@@ -770,12 +1080,12 @@
                          onclick="window.location.href='{% url 'invoices:detail' invoice.pk %}'">
                         <div class="d-flex justify-content-between align-items-start">
                             <div class="flex-grow-1">
-                                <div class="fw-semibold">{{ invoice.invoice_number }}</div>
+                                <div class="fw-semibold">{{ invoice.sale.document_number }}</div>
                                 <div class="small text-muted">
-                                    {{ invoice.customer.name|default:"Walk-in Customer"|truncatechars:30 }}
+                                    {{ invoice.sale.customer.name|default:"Walk-in Customer"|truncatechars:30 }}
                                 </div>
                                 <div class="small mt-1">
-                                    UGX {{ invoice.total_amount|floatformat:0|intcomma }}
+                                    UGX {{ invoice.sale.total_amount|floatformat:0|intcomma }}
                                 </div>
                             </div>
                             <div class="text-end">
@@ -783,7 +1093,7 @@
                                     {{ invoice.days_until_due }} {% trans "days" %}
                                 </span>
                                 <div class="small text-muted mt-1">
-                                    {{ invoice.due_date|date:"M d" }}
+                                    {{ invoice.sale.due_date|date:"M d" }}
                                 </div>
                             </div>
                         </div>
@@ -796,79 +1106,144 @@
                     {% endfor %}
                 </div>
             </div>
+            {% endif %}
         </div>
     </div>
-    <!-- Recent Payments -->
-{% if recent_payments %}
-<div class="row g-3 mt-3">
-    <div class="col-12">
-        <div class="card">
-            <div class="card-header d-flex justify-content-between align-items-center">
-                <h5 class="mb-0">
-                    <i class="bi bi-cash-coin me-2"></i>
-                    {% trans "Recent Payments" %}
-                </h5>
-                <a href="{% url 'invoices:payments' %}" class="btn btn-sm btn-outline-primary">
-                    {% trans "View All" %}
-                </a>
-            </div>
-            <div class="card-body p-0">
-                <div class="table-responsive">
-                    <table class="table mb-0">
-                        <thead class="table-light">
-                            <tr>
-                                <th>{% trans "Invoice" %}</th>
-                                <th>{% trans "Customer" %}</th>
-                                <th class="text-end">{% trans "Amount" %}</th>
-                                <th>{% trans "Method" %}</th>
-                                <th>{% trans "Date" %}</th>
-                                <th>{% trans "Processed By" %}</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for payment in recent_payments %}
-                            <tr>
-                                <td>
-                                    <a href="{% url 'invoices:detail' payment.invoice.pk %}">
-                                        {{ payment.invoice.invoice_number }}
-                                    </a>
-                                </td>
-                                <td>
-                                    {{ payment.invoice.customer.name|default:"Walk-in Customer"|truncatechars:30 }}
-                                </td>
-                                <td class="text-end fw-bold text-success">
-                                    UGX {{ payment.amount|floatformat:0|intcomma }}
-                                </td>
-                                <td>
-                                    <span class="badge bg-primary">
-                                        {{ payment.get_payment_method_display }}
-                                    </span>
-                                </td>
-                                <td>
-                                    {{ payment.payment_date|date:"M d, Y" }}
-                                </td>
-                                <td>
-                                    <div class="d-flex align-items-center">
-                                        <div class="avatar-sm bg-primary bg-opacity-10 me-2">
-                                            <i class="bi bi-person text-primary"></i>
-                                        </div>
-                                        <span>
-                                            {{ payment.processed_by.get_full_name|default:payment.processed_by.username|truncatechars:20 }}
+
+    <!-- Recent Credit Activity -->
+    {% if recent_credit_invoices %}
+    <div class="row g-3 mt-3">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header bg-info bg-opacity-10">
+                    <h5 class="mb-0">
+                        <i class="bi bi-credit-card me-2"></i>
+                        {% trans "Recent Credit Activity" %}
+                    </h5>
+                </div>
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>{% trans "Invoice" %}</th>
+                                    <th>{% trans "Customer" %}</th>
+                                    <th class="text-end">{% trans "Amount" %}</th>
+                                    <th>{% trans "Due Date" %}</th>
+                                    <th>{% trans "Status" %}</th>
+                                    <th>{% trans "Created" %}</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for invoice in recent_credit_invoices %}
+                                <tr onclick="window.location.href='{% url 'invoices:detail' invoice.pk %}'">
+                                    <td>
+                                        <strong>{{ invoice.sale.document_number }}</strong>
+                                    </td>
+                                    <td>
+                                        {{ invoice.sale.customer.name|default:"Walk-in Customer"|truncatechars:30 }}
+                                    </td>
+                                    <td class="text-end fw-bold text-info">
+                                        UGX {{ invoice.sale.total_amount|floatformat:0|intcomma }}
+                                    </td>
+                                    <td>
+                                        {% if invoice.sale.due_date %}
+                                        {{ invoice.sale.due_date|date:"M d, Y" }}
+                                        {% else %}
+                                        <span class="text-muted">{% trans "N/A" %}</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        <span class="status-badge status-{{ invoice.sale.payment_status }}">
+                                            {{ invoice.sale.get_payment_status_display }}
                                         </span>
-                                    </div>
-                                </td>
-                            </tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
+                                    </td>
+                                    <td>
+                                        {{ invoice.sale.created_at|date:"M d" }}
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
         </div>
     </div>
-</div>
-{% endif %}
+    {% endif %}
+
+    <!-- Recent Payments -->
+    {% if recent_payments %}
+    <div class="row g-3 mt-3">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">
+                        <i class="bi bi-cash-coin me-2"></i>
+                        {% trans "Recent Payments" %}
+                    </h5>
+                    <a href="{% url 'invoices:payments' %}" class="btn btn-sm btn-outline-primary">
+                        {% trans "View All" %}
+                    </a>
+                </div>
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table mb-0">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>{% trans "Invoice" %}</th>
+                                    <th>{% trans "Customer" %}</th>
+                                    <th class="text-end">{% trans "Amount" %}</th>
+                                    <th>{% trans "Method" %}</th>
+                                    <th>{% trans "Date" %}</th>
+                                    <th>{% trans "Processed By" %}</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for payment in recent_payments %}
+                                <tr>
+                                    <td>
+                                        <a href="{% url 'invoices:detail' payment.invoice.pk %}">
+                                            {{ payment.invoice.sale.document_number }}
+                                        </a>
+                                    </td>
+                                    <td>
+                                        {{ payment.invoice.sale.customer.name|default:"Walk-in Customer"|truncatechars:30 }}
+                                    </td>
+                                    <td class="text-end fw-bold text-success">
+                                        UGX {{ payment.amount|floatformat:0|intcomma }}
+                                    </td>
+                                    <td>
+                                        <span class="badge bg-primary">
+                                            {{ payment.get_payment_method_display }}
+                                        </span>
+                                    </td>
+                                    <td>
+                                        {{ payment.payment_date|date:"M d, Y" }}
+                                    </td>
+                                    <td>
+                                        <div class="d-flex align-items-center">
+                                            <div class="avatar-sm bg-primary bg-opacity-10 me-2">
+                                                <i class="bi bi-person text-primary"></i>
+                                            </div>
+                                            <span>
+                                                {{ payment.processed_by.get_full_name|default:payment.processed_by.username|truncatechars:20 }}
+                                            </span>
+                                        </div>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
+    {% endif %}
+</div>
 {% endblock %}
+
 {% block extra_js %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script>
@@ -877,7 +1252,8 @@ class InvoiceDashboard {
     constructor() {
         this.charts = {
             revenue: null,
-            status: null
+            status: null,
+            creditCash: null
         };
         this.currentPeriod = 12;
         this.initialize();
@@ -902,12 +1278,62 @@ class InvoiceDashboard {
             if (data) {
                 this.renderRevenueChart(data.monthly_data);
                 this.renderStatusChart(data.status_data);
+                this.renderCreditCashChart();
             }
         } catch (error) {
             console.error('Failed to load charts:', error);
         } finally {
             this.showLoader(false);
         }
+    }
+
+    renderCreditCashChart() {
+        const ctx = document.getElementById('creditCashChart')?.getContext('2d');
+        if (!ctx) return;
+
+        if (this.charts.creditCash) this.charts.creditCash.destroy();
+
+        this.charts.creditCash = new Chart(ctx, {
+            type: 'doughnut',
+            data: {
+                labels: [
+                    '{% trans "Credit Invoices" %}',
+                    '{% trans "Cash Invoices" %}'
+                ],
+                datasets: [{
+                    data: [
+                        {{ credit_metrics.total_credit_invoices|default:0 }},
+                        {{ credit_metrics.cash_invoices_count|default:0 }}
+                    ],
+                    backgroundColor: ['#0EA5E9', '#10B981'],
+                    borderWidth: 2,
+                    borderColor: '#fff'
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                cutout: '70%',
+                plugins: {
+                    legend: {
+                        position: 'bottom',
+                        labels: {
+                            padding: 15,
+                            usePointStyle: true
+                        }
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: ctx => {
+                                const total = ctx.dataset.data.reduce((a, b) => a + b, 0);
+                                const pct = ((ctx.parsed / total) * 100).toFixed(1);
+                                return `${ctx.label}: ${ctx.parsed} (${pct}%)`;
+                            }
+                        }
+                    }
+                }
+            }
+        });
     }
 
     async fetchChartData(period) {
@@ -933,9 +1359,13 @@ class InvoiceDashboard {
             this.updateMetricElement('[data-metric="overdue_invoices"]', metrics.overdue_invoices);
             this.updateMetricElement('[data-metric="fiscalized_invoices"]', metrics.fiscalized_invoices);
             this.updateMetricElement('[data-metric="avg_invoice_amount"]', `UGX ${this.formatNumber(metrics.avg_invoice_amount)}`);
+            this.updateMetricElement('[data-metric="credit_invoices"]', {{ credit_metrics.total_credit_invoices|default:0 }});
+            this.updateMetricElement('[data-metric="overdue_credit"]', {{ credit_metrics.overdue_credit_count|default:0 }});
+            this.updateMetricElement('[data-metric="credit_customers"]', {{ credit_customers_summary.customers_count|default:0 }});
 
             // Update progress bars
             this.updateProgressBar('collection_rate', metrics.collection_rate);
+            this.updateProgressBar('credit_collection_rate', {{ credit_metrics.credit_collection_rate|default:0 }});
             this.updateProgressBar('on_time_rate', metrics.on_time_rate);
             this.updateProgressBar('fiscalization_rate', metrics.fiscalization_rate);
         }
@@ -971,11 +1401,19 @@ class InvoiceDashboard {
             data: {
                 labels: data.map(d => d.month_name),
                 datasets: [{
-                    label: '{% trans "Revenue" %}',
+                    label: '{% trans "Total Revenue" %}',
                     data: data.map(d => d.revenue),
                     borderColor: '#3B82F6',
                     backgroundColor: 'rgba(59, 130, 246, 0.1)',
                     borderWidth: 3,
+                    fill: true,
+                    tension: 0.4
+                }, {
+                    label: '{% trans "Credit Revenue" %}',
+                    data: data.map(d => d.credit_revenue || 0),
+                    borderColor: '#0EA5E9',
+                    backgroundColor: 'rgba(14, 165, 233, 0.1)',
+                    borderWidth: 2,
                     fill: true,
                     tension: 0.4
                 }, {
@@ -1113,6 +1551,10 @@ function refreshCharts() {
 
 function filterByStatus(status) {
     window.location.href = `{% url 'invoices:list' %}?status=${status}`;
+}
+
+function filterByPaymentMethod(method) {
+    window.location.href = `{% url 'invoices:list' %}?payment_method=${method}`;
 }
 
 function filterByFiscalized(fiscalized) {

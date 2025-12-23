@@ -1,0 +1,175 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Credit Aging Report{% endblock %}
+
+{% block breadcrumb_items %}
+    <li class="breadcrumb-item"><a href="{% url 'user_dashboard' %}">Home</a></li>
+    <li class="breadcrumb-item"><a href="{% url 'invoices:customer_credit_dashboard' %}">Credit Dashboard</a></li>
+    <li class="breadcrumb-item active">Aging Report</li>
+{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+
+    <!-- Page Header -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h2 class="mb-1">
+                <i class="bi bi-graph-up-arrow me-2"></i>
+                Accounts Receivable Aging Report
+            </h2>
+            <p class="text-muted mb-0">
+                Report Date: {{ report_date|date:"F d, Y" }}
+            </p>
+        </div>
+        <div>
+            <a href="{% url 'invoices:export_credit_aging_csv' %}" class="btn btn-success">
+                <i class="bi bi-file-earmark-excel"></i> Export to CSV
+            </a>
+        </div>
+    </div>
+
+    <!-- Summary Totals -->
+    <div class="card border-0 shadow-sm mb-4 bg-gradient"
+         style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
+        <div class="card-body text-white">
+            <div class="row text-center">
+                <div class="col">
+                    <h6 class="mb-2 opacity-75">Current</h6>
+                    <h3 class="mb-0">{{ totals.current|floatformat:0 }}</h3>
+                </div>
+                <div class="col">
+                    <h6 class="mb-2 opacity-75">1–30 Days</h6>
+                    <h3 class="mb-0">{{ totals.days_1_30|floatformat:0 }}</h3>
+                </div>
+                <div class="col">
+                    <h6 class="mb-2 opacity-75">31–60 Days</h6>
+                    <h3 class="mb-0">{{ totals.days_31_60|floatformat:0 }}</h3>
+                </div>
+                <div class="col">
+                    <h6 class="mb-2 opacity-75">61–90 Days</h6>
+                    <h3 class="mb-0">{{ totals.days_61_90|floatformat:0 }}</h3>
+                </div>
+                <div class="col">
+                    <h6 class="mb-2 opacity-75">90+ Days</h6>
+                    <h3 class="mb-0">{{ totals.days_90_plus|floatformat:0 }}</h3>
+                </div>
+                <div class="col">
+                    <h6 class="mb-2 opacity-75">Total Outstanding</h6>
+                    <h3 class="mb-0 fw-bold">{{ totals.total|floatformat:0 }}</h3>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Aging Report Table -->
+    <div class="card border-0 shadow-sm">
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="table-dark">
+                        <tr>
+                            <th>Customer</th>
+                            <th class="text-center">TIN</th>
+                            <th class="text-end">Credit Limit</th>
+                            <th class="text-end">Current</th>
+                            <th class="text-end">1–30</th>
+                            <th class="text-end">31–60</th>
+                            <th class="text-end">61–90</th>
+                            <th class="text-end">90+</th>
+                            <th class="text-end">Total</th>
+                            <th class="text-center">Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for item in aging_data %}
+                        <tr>
+                            <td>
+                                <a href="{% url 'invoices:customer_credit_detail' item.customer.id %}"
+                                   class="text-decoration-none">
+                                    <strong>{{ item.customer.name }}</strong><br>
+                                    <small class="text-muted">{{ item.customer.phone }}</small>
+                                </a>
+                            </td>
+                            <td class="text-center">
+                                <small>{{ item.customer.tin|default:"-" }}</small>
+                            </td>
+                            <td class="text-end">
+                                {{ item.credit_limit|floatformat:0 }}
+                            </td>
+                            <td class="text-end">
+                                {{ item.current|floatformat:0 }}
+                            </td>
+                            <td class="text-end {% if item.days_1_30 > 0 %}text-info fw-bold{% endif %}">
+                                {{ item.days_1_30|floatformat:0 }}
+                            </td>
+                            <td class="text-end {% if item.days_31_60 > 0 %}text-warning fw-bold{% endif %}">
+                                {{ item.days_31_60|floatformat:0 }}
+                            </td>
+                            <td class="text-end {% if item.days_61_90 > 0 %}text-warning fw-bold{% endif %}">
+                                {{ item.days_61_90|floatformat:0 }}
+                            </td>
+                            <td class="text-end {% if item.days_90_plus > 0 %}text-danger fw-bold{% endif %}">
+                                {{ item.days_90_plus|floatformat:0 }}
+                            </td>
+                            <td class="text-end">
+                                <strong>{{ item.total|floatformat:0 }}</strong>
+                            </td>
+                            <td class="text-center">
+                                {% if item.customer.credit_status == 'GOOD' %}
+                                    <span class="badge bg-success">Good</span>
+                                {% elif item.customer.credit_status == 'WARNING' %}
+                                    <span class="badge bg-warning">Warning</span>
+                                {% elif item.customer.credit_status == 'SUSPENDED' %}
+                                    <span class="badge bg-danger">Suspended</span>
+                                {% elif item.customer.credit_status == 'BLOCKED' %}
+                                    <span class="badge bg-dark">Blocked</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="10" class="text-center py-5 text-muted">
+                                <i class="bi bi-inbox fs-1 d-block mb-3"></i>
+                                No aging data available
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                    <tfoot class="table-light">
+                        <tr class="fw-bold">
+                            <td colspan="3" class="text-end">TOTALS:</td>
+                            <td class="text-end">{{ totals.current|floatformat:0 }}</td>
+                            <td class="text-end">{{ totals.days_1_30|floatformat:0 }}</td>
+                            <td class="text-end">{{ totals.days_31_60|floatformat:0 }}</td>
+                            <td class="text-end">{{ totals.days_61_90|floatformat:0 }}</td>
+                            <td class="text-end">{{ totals.days_90_plus|floatformat:0 }}</td>
+                            <td class="text-end">{{ totals.total|floatformat:0 }}</td>
+                            <td></td>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+<style>
+@media print {
+    .btn, .breadcrumb, .sidebar, .header {
+        display: none !important;
+    }
+
+    .main-wrapper {
+        margin-left: 0 !important;
+    }
+
+    .card {
+        box-shadow: none !important;
+        border: 1px solid #ccc !important;
+    }
+}
+</style>
+{% endblock %}

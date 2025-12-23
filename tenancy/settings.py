@@ -287,10 +287,6 @@ TENANT_APPS = [
     'django.contrib.admin',
     'django_otp',
     'django_otp.plugins.otp_totp',
-    'allauth',
-    'allauth.account',
-    'allauth.socialaccount',
-    'allauth.socialaccount.providers.google',
     'accounts',
     'branches',
     'stores',
@@ -325,7 +321,6 @@ MIDDLEWARE.extend([
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.middleware.locale.LocaleMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
-    'allauth.account.middleware.AccountMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django_otp.middleware.OTPMiddleware',
     'company.middleware.CompanyAccessMiddleware',
@@ -553,32 +548,8 @@ AUTHENTICATION_BACKENDS = [
     'company.authentication.CompanyAwareAuthBackend',
     'accounts.backends.RoleBasedAuthBackend',
     'django.contrib.auth.backends.ModelBackend',
-    'allauth.account.auth_backends.AuthenticationBackend',
 ]
 
-# Django Allauth
-ACCOUNT_LOGIN_METHODS = {'email'}
-ACCOUNT_SIGNUP_FIELDS = ['email*', 'password1*', 'password2*']
-ACCOUNT_EMAIL_VERIFICATION = 'optional'
-ACCOUNT_UNIQUE_EMAIL = True
-SOCIALACCOUNT_AUTO_SIGNUP = True
-SOCIALACCOUNT_LOGIN_ON_GET = True
-SOCIALACCOUNT_EMAIL_VERIFICATION = 'optional'
-SOCIALACCOUNT_ADAPTER = 'accounts.adapters.CustomSocialAccountAdapter'
-
-# Google OAuth
-SOCIALACCOUNT_PROVIDERS = {
-    'google': {
-        'SCOPE': ['profile', 'email'],
-        'AUTH_PARAMS': {'access_type': 'online'},
-        'APP': {
-            'client_id': os.getenv('GOOGLE_OAUTH_CLIENT_ID', ''),
-            'secret': os.getenv('GOOGLE_OAUTH_CLIENT_SECRET', ''),
-            'key': ''
-        },
-        'REDIRECT_URI': 'http://localhost:8000/accounts/google/login/callback/' if DEBUG else 'https://primebooks.sale/accounts/google/login/callback',
-    }
-}
 VERSION_MAJOR = 1
 VERSION_MINOR = 0
 DEPLOYMENT_YEAR = 2025
